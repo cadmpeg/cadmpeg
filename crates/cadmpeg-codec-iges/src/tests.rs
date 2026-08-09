@@ -1568,7 +1568,7 @@ fn conic_arc_file(form: i64, parameters: &[u8]) -> Vec<u8> {
 
 #[test]
 fn decode_classifies_and_bounds_all_standard_conic_arc_families() {
-    let fixtures: [(i64, &[u8]); 4] = [
+    let fixtures: [(i64, &[u8]); 5] = [
         (0, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;"),
         (1, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;"),
         (
@@ -1576,6 +1576,7 @@ fn decode_classifies_and_bounds_all_standard_conic_arc_families() {
             b"104,0.25,0,-0.1111111111111111,0,0,-1,0,2,0,3.086161269630487,3.525603580931404;",
         ),
         (3, b"104,1,0,0,0,-4,0,0,2,1,-2,1;"),
+        (3, b"104,0,0,1,-4,0,0,0,1,2,1,-2;"),
     ];
     for (form, parameters) in fixtures {
         let result = IgesCodec

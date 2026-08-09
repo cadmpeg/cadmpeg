@@ -154,10 +154,10 @@ pub(super) fn project(
             .max(coeff_f.abs())
             .max(1.0);
         let zero = |value: f64| value.abs() <= coefficient_scale * 1.0e-12;
-        if !zero(*coeff_b) || !zero(*coeff_d) {
+        if !zero(*coeff_b) || (!zero(*coeff_d) && !zero(*coeff_e)) {
             losses.push(entity_loss(
                 entry,
-                "conic is not in the required axis-aligned standard position",
+                "conic axes or center are not in the required standard position",
             ));
             continue;
         }

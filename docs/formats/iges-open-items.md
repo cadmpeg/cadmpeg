@@ -210,14 +210,6 @@ The constant demands about ten correct significant digits in each element. The G
 
 **Need.** We need the authority order between the property flags and the values, and the slack for the declared range.
 
-### GE-13. The unreachable Type 104 parabola branch
-
-**Question.** May a Type 104 parabola open along the XT axis?
-
-**Known.** `conics.rs:160-166` refuses the entity unless coefficients B and D are both zero. `conics.rs:343-373` holds a classification arm that requires `!zero(coeff_d)`, which the earlier gate has made impossible, so about thirty lines cannot execute. A conic written as `C·y² + D·x = 0` is refused with a message about standard position, and the code written to recover it never runs.
-
-**Need.** We need the standard-position requirement for Type 104. The unreachable arm is then removed or its gate is corrected.
-
 ## 5. Surfaces and topology
 
 ### TP-01. The Global minimum resolution serves five unrelated roles

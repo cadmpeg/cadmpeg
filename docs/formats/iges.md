@@ -74,6 +74,8 @@ Type 130 Form 0 defines a planar offset of a base curve. FLAG `1` uses one unifo
 
 Type 106 interpretation flag IP and Directory form are redundant required constraints. Forms 1, 11, 20, 21, 31 through 38, 40, and 63 require IP `1` for planar coordinate pairs with one common Z value. Forms 2 and 12 require IP `2` for coordinate triples. Forms 3 and 13 require IP `3` for point-and-vector sextuples. A disagreement is malformed entity data; IP determines tuple width but does not override the Directory form's entity semantics.
 
+Type 104 defines a nondegenerate ellipse, hyperbola, or parabola in an XY-parallel plane. Standard position requires each conic axis to be parallel to X or Y and centers the conic on the Z axis; a parabola has its vertex on that axis. An axis-aligned parabola may open along X or Y. A Directory Type 124 transformation moves the standard-position conic into model space. Forms 1, 2, and 3 identify ellipse, hyperbola, and parabola, but the form is informational; the coefficients determine the conic family. Form 0 is the deprecated unspecified form.
+
 ## Primitive solids
 
 Primitive solid entities use Form 0. Their native dimensional values remain in declared model units, their origin defaults to `(0,0,0)`, and their axis vectors are dimensionless. An omitted X axis defaults to `(1,0,0)` and an omitted Z or revolution axis defaults to `(0,0,1)`. Every supplied or defaulted axis is unit length. Entities carrying both X and Z axes require them to be orthogonal; local Y is `Z × X`. The Directory transformation remains a separate placement link.
