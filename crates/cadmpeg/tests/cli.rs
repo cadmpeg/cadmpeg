@@ -638,7 +638,7 @@ fn garbage_reports_supported_formats() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains(
-            "supported: FCStd, f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP",
+            "supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP",
         ));
 }
 
@@ -867,7 +867,7 @@ fn inspect_garbage_reports_rhino_among_supported_formats() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains(
-            "supported: FCStd, f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP",
+            "supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP",
         ));
 }
 

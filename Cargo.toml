@@ -8,6 +8,7 @@ members = [
   "crates/cadmpeg-container",
   "crates/cadmpeg-ir",
   "crates/cadmpeg-codec-f3d",
+  "crates/cadmpeg-codec-inventor",
   "crates/cadmpeg-codec-freecad",
   "crates/cadmpeg-codec-sldprt",
   "crates/cadmpeg-codec-catia",
@@ -38,6 +39,7 @@ cadmpeg-core = { path = "crates/cadmpeg-core", version = "0.4.0" }
 cadmpeg-container = { path = "crates/cadmpeg-container", version = "0.4.0" }
 cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.4.0" }
 cadmpeg-codec-f3d = { path = "crates/cadmpeg-codec-f3d", version = "0.4.0" }
+cadmpeg-codec-inventor = { path = "crates/cadmpeg-codec-inventor", version = "0.4.0" }
 cadmpeg-codec-freecad = { path = "crates/cadmpeg-codec-freecad", version = "0.4.0" }
 cadmpeg-codec-sldprt = { path = "crates/cadmpeg-codec-sldprt", version = "0.4.0" }
 cadmpeg-codec-catia = { path = "crates/cadmpeg-codec-catia", version = "0.4.0" }

@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "cadmpeg-codec-inventor"
+description = "Inspect and decode Autodesk Inventor IPT and IAM documents."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/cadmpeg-codec-inventor"
+keywords = ["cad", "inventor", "ipt", "iam", "parser"]
+categories = ["encoding", "parser-implementations", "graphics"]
+
+[features]
+schema = ["dep:schemars", "cadmpeg-core/schema", "cadmpeg-ir/schema"]
+
+[dependencies]
+cadmpeg-container.workspace = true
+cadmpeg-core.workspace = true
+cadmpeg-ir.workspace = true
+schemars = { workspace = true, optional = true }
+serde.workspace = true
+
+[lints]
+workspace = true

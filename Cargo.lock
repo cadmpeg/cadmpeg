@@ -143,6 +143,7 @@ dependencies = [
  "cadmpeg-codec-f3d",
  "cadmpeg-codec-freecad",
  "cadmpeg-codec-iges",
+ "cadmpeg-codec-inventor",
  "cadmpeg-codec-nx",
  "cadmpeg-codec-rhino",
  "cadmpeg-codec-sat",
@@ -247,6 +248,17 @@ dependencies = [
  "serde_json",
  "sha2",
  "toml",
+]
+
+[[package]]
+name = "cadmpeg-codec-inventor"
+version = "0.4.0"
+dependencies = [
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "schemars",
+ "serde",
 ]
 
 [[package]]

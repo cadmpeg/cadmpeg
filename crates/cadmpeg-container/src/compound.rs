@@ -1103,9 +1103,10 @@ impl CompoundPrefixProbe {
             return Self::Malformed("CFB DIFAT does not match its declared FAT count".into());
         }
         let mut fat = Vec::new();
+        let mut loaded_fat_count = 0;
         for &id in &fat_sectors {
             if id as usize >= available {
-                return Self::Incomplete;
+                break;
             }
             let Some(raw) = sector_slice(prefix, sector_size, available, id) else {
                 return Self::Incomplete;
@@ -1114,13 +1115,16 @@ impl CompoundPrefixProbe {
                 raw.chunks_exact(4)
                     .map(|word| u32::from_le_bytes(word.try_into().expect("four-byte chunk"))),
             );
+            loaded_fat_count += 1;
         }
         if fat_sectors
             .iter()
+            .take(loaded_fat_count)
             .any(|id| fat.get(*id as usize) != Some(&FAT_SECTOR))
-            || seen_difat
-                .iter()
-                .any(|id| fat.get(*id as usize) != Some(&DIFAT_SECTOR))
+            || seen_difat.iter().any(|id| {
+                fat.get(*id as usize)
+                    .is_some_and(|role| role != &DIFAT_SECTOR)
+            })
         {
             return Self::Malformed("CFB allocation sector has the wrong role marker".into());
         }
@@ -1139,7 +1143,11 @@ impl CompoundPrefixProbe {
                 return Self::Incomplete;
             }
             let Some(&next) = fat.get(current as usize) else {
-                return Self::Malformed("CFB FAT does not address the directory sector".into());
+                return if loaded_fat_count < fat_count {
+                    Self::Incomplete
+                } else {
+                    Self::Malformed("CFB FAT does not address the directory sector".into())
+                };
             };
             if !seen_directory.insert(current) {
                 return Self::Malformed("CFB directory chain is cyclic".into());
@@ -1555,6 +1563,17 @@ mod tests {
             CompoundPrefixProbe::inspect(&file[..SECTOR_SIZE * 13]),
             CompoundPrefixProbe::Incomplete
         );
+    }
+
+    #[test]
+    fn prefix_probe_uses_available_leading_fat_coverage() {
+        let mut prefix = fixture();
+        put_u32(&mut prefix, 44, 2);
+        put_u32(&mut prefix, 80, 1_000);
+        assert!(matches!(
+            CompoundPrefixProbe::inspect(&prefix),
+            CompoundPrefixProbe::DirectoryEvidence(_)
+        ));
     }
 
     #[test]

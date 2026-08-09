@@ -124,7 +124,7 @@ pub fn inspect(
         Some(ForcedInput::Cadir) => bail!("inspect requires a container input, not cadir"),
         None => {
             match registry.detect(&prefix) {
-                DetectionOutcome::None => return Err(anyhow!("no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP; use --input-format to override detection", path.display())),
+                DetectionOutcome::None => return Err(anyhow!("no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP; use --input-format to override detection", path.display())),
                 DetectionOutcome::Detected { descriptor, confidence } => (
                     descriptor.codec.as_deref().expect("detected descriptor has codec"),
                     Some(confidence),

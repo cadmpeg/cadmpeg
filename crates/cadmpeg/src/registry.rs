@@ -99,6 +99,15 @@ impl Registry {
                     true,
                 ),
                 descriptor(
+                    "inventor",
+                    "Autodesk Inventor",
+                    &["ipt", "iam"],
+                    Some(Box::new(cadmpeg_codec_inventor::InventorCodec)),
+                    None,
+                    Some(cadmpeg_codec_inventor::validate_native),
+                    false,
+                ),
+                descriptor(
                     "sldprt",
                     "SolidWorks Part",
                     &["sldprt"],
@@ -381,6 +390,18 @@ mod tests {
     #[test]
     fn step_is_registered_as_a_reader() {
         assert!(Registry::with_builtins().by_id("step").is_some());
+    }
+
+    #[test]
+    fn inventor_is_registered_as_a_read_only_family_codec() {
+        let registry = Registry::with_builtins();
+        let descriptor = registry
+            .descriptor("inventor")
+            .expect("Inventor descriptor exists");
+        assert_eq!(descriptor.extensions, ["ipt", "iam"]);
+        assert!(descriptor.codec.is_some());
+        assert!(descriptor.encoder.is_none());
+        assert!(descriptor.native_validator.is_some());
     }
 
     #[test]
