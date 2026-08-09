@@ -12,6 +12,8 @@
 //! [`model_curve_point_by_id`] resolves construction-backed curves whose
 //! parameterization is established by model entities.
 
+use std::collections::BinaryHeap;
+
 use crate::geometry::{
     CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurfaceDefinition,
     SurfaceGeometry, SurfaceParameterAxis,
@@ -204,6 +206,745 @@ pub fn analytic_surface_parameters(geometry: &SurfaceGeometry, point: Point3) ->
         _ => return None,
     };
     (result.u.is_finite() && result.v.is_finite()).then_some(result)
+}
+
+#[derive(Clone)]
+struct RationalBezierSurfacePatch {
+    u_domain: [f64; 2],
+    v_domain: [f64; 2],
+    u_degree: usize,
+    v_degree: usize,
+    controls: Vec<[f64; 4]>,
+}
+
+struct SurfacePatchQueueEntry {
+    lower_bound: f64,
+    diameter: f64,
+    sequence: usize,
+    patch: RationalBezierSurfacePatch,
+}
+
+impl PartialEq for SurfacePatchQueueEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.sequence == other.sequence
+    }
+}
+
+impl Eq for SurfacePatchQueueEntry {}
+
+impl PartialOrd for SurfacePatchQueueEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SurfacePatchQueueEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // BinaryHeap is a max-heap. Reverse the lower-bound order so the patch
+        // with the strongest minimum-distance promise is examined first.
+        other
+            .lower_bound
+            .total_cmp(&self.lower_bound)
+            .then_with(|| other.sequence.cmp(&self.sequence))
+    }
+}
+
+#[derive(Clone)]
+struct HomogeneousBezierSpan {
+    domain: [f64; 2],
+    controls: Vec<[f64; 4]>,
+}
+
+fn insert_homogeneous_knot(
+    degree: usize,
+    knots: &mut Vec<f64>,
+    controls: &mut Vec<[f64; 4]>,
+    knot: f64,
+) -> Option<()> {
+    let count = controls.len();
+    let span = knots
+        .windows(2)
+        .position(|pair| pair[0] <= knot && knot < pair[1])?;
+    let multiplicity = knots.iter().filter(|candidate| **candidate == knot).count();
+    if multiplicity >= degree {
+        return Some(());
+    }
+    let mut inserted = vec![[0.0; 4]; count + 1];
+    inserted[..=span - degree].copy_from_slice(&controls[..=span - degree]);
+    inserted[span - multiplicity + 1..].copy_from_slice(&controls[span - multiplicity..]);
+    for index in span - degree + 1..=span - multiplicity {
+        let denominator = knots[index + degree] - knots[index];
+        if !denominator.is_finite() || denominator <= 0.0 {
+            return None;
+        }
+        let alpha = (knot - knots[index]) / denominator;
+        inserted[index] = std::array::from_fn(|axis| {
+            alpha * controls[index][axis] + (1.0 - alpha) * controls[index - 1][axis]
+        });
+    }
+    knots.insert(span + 1, knot);
+    *controls = inserted;
+    Some(())
+}
+
+fn homogeneous_bezier_spans(
+    degree: usize,
+    knots: &[f64],
+    mut controls: Vec<[f64; 4]>,
+) -> Option<Vec<HomogeneousBezierSpan>> {
+    let mut knots = knots.to_vec();
+    let domain = [*knots.get(degree)?, *knots.get(controls.len())?];
+    let mut internal = knots[degree + 1..controls.len()]
+        .iter()
+        .copied()
+        .filter(|knot| domain[0] < *knot && *knot < domain[1])
+        .collect::<Vec<_>>();
+    internal.sort_by(f64::total_cmp);
+    internal.dedup();
+    for knot in internal {
+        while knots.iter().filter(|candidate| **candidate == knot).count() < degree {
+            insert_homogeneous_knot(degree, &mut knots, &mut controls, knot)?;
+        }
+    }
+    let mut boundaries = knots[degree..=controls.len()].to_vec();
+    boundaries.sort_by(f64::total_cmp);
+    boundaries.dedup();
+    let spans = boundaries
+        .windows(2)
+        .enumerate()
+        .filter_map(|(index, domain)| {
+            (domain[0] < domain[1]).then(|| {
+                let start = index.checked_mul(degree)?;
+                Some(HomogeneousBezierSpan {
+                    domain: [domain[0], domain[1]],
+                    controls: controls.get(start..=start + degree)?.to_vec(),
+                })
+            })?
+        })
+        .collect::<Vec<_>>();
+    (!spans.is_empty()).then_some(spans)
+}
+
+fn rational_surface_residual_patches(
+    surface: &NurbsSurface,
+    point: Point3,
+) -> Option<Vec<RationalBezierSurfacePatch>> {
+    let u_degree = usize::try_from(surface.u_degree).ok()?;
+    let v_degree = usize::try_from(surface.v_degree).ok()?;
+    let u_count = usize::try_from(surface.u_count).ok()?;
+    let v_count = usize::try_from(surface.v_count).ok()?;
+    let control_count = u_count.checked_mul(v_count)?;
+    if u_degree == 0
+        || v_degree == 0
+        || u_degree >= u_count
+        || v_degree >= v_count
+        || surface.control_points.len() != control_count
+        || surface.u_knots.len() != u_count.checked_add(u_degree)?.checked_add(1)?
+        || surface.v_knots.len() != v_count.checked_add(v_degree)?.checked_add(1)?
+        || surface
+            .u_knots
+            .iter()
+            .chain(&surface.v_knots)
+            .any(|knot| !knot.is_finite())
+        || surface.u_knots.windows(2).any(|pair| pair[0] > pair[1])
+        || surface.v_knots.windows(2).any(|pair| pair[0] > pair[1])
+        || surface.control_points.iter().any(|control| {
+            !control.x.is_finite() || !control.y.is_finite() || !control.z.is_finite()
+        })
+        || !point.x.is_finite()
+        || !point.y.is_finite()
+        || !point.z.is_finite()
+    {
+        return None;
+    }
+    let weights = match &surface.weights {
+        Some(weights)
+            if weights.len() == control_count
+                && weights
+                    .iter()
+                    .all(|weight| weight.is_finite() && *weight > 0.0) =>
+        {
+            weights.clone()
+        }
+        Some(_) => return None,
+        None => vec![1.0; control_count],
+    };
+    let residual_controls = surface
+        .control_points
+        .iter()
+        .zip(weights)
+        .map(|(control, weight)| {
+            [
+                weight * (control.x - point.x),
+                weight * (control.y - point.y),
+                weight * (control.z - point.z),
+                weight,
+            ]
+        })
+        .collect::<Vec<_>>();
+    if residual_controls
+        .iter()
+        .flatten()
+        .any(|value| !value.is_finite())
+    {
+        return None;
+    }
+    let u_spans_by_v = (0..v_count)
+        .map(|v| {
+            homogeneous_bezier_spans(
+                u_degree,
+                &surface.u_knots,
+                (0..u_count)
+                    .map(|u| residual_controls[u * v_count + v])
+                    .collect(),
+            )
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let u_span_count = u_spans_by_v.first()?.len();
+    if u_span_count == 0 || u_spans_by_v.iter().any(|spans| spans.len() != u_span_count) {
+        return None;
+    }
+    let mut patches = Vec::new();
+    for u_span in 0..u_span_count {
+        let u_domain = u_spans_by_v[0][u_span].domain;
+        if u_spans_by_v
+            .iter()
+            .any(|spans| spans[u_span].domain != u_domain)
+        {
+            return None;
+        }
+        let v_spans_by_u = (0..=u_degree)
+            .map(|u_control| {
+                homogeneous_bezier_spans(
+                    v_degree,
+                    &surface.v_knots,
+                    (0..v_count)
+                        .map(|v| u_spans_by_v[v][u_span].controls[u_control])
+                        .collect(),
+                )
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let v_span_count = v_spans_by_u.first()?.len();
+        if v_span_count == 0 || v_spans_by_u.iter().any(|spans| spans.len() != v_span_count) {
+            return None;
+        }
+        for v_span in 0..v_span_count {
+            let v_domain = v_spans_by_u[0][v_span].domain;
+            if v_spans_by_u
+                .iter()
+                .any(|spans| spans[v_span].domain != v_domain)
+            {
+                return None;
+            }
+            patches.push(RationalBezierSurfacePatch {
+                u_domain,
+                v_domain,
+                u_degree,
+                v_degree,
+                controls: (0..=u_degree)
+                    .flat_map(|u| v_spans_by_u[u][v_span].controls.iter().copied())
+                    .collect(),
+            });
+        }
+    }
+    (!patches.is_empty()).then_some(patches)
+}
+
+fn rational_patch_distance_bounds(patch: &RationalBezierSurfacePatch) -> Option<(f64, f64)> {
+    let mut minimum = [f64::INFINITY; 3];
+    let mut maximum = [f64::NEG_INFINITY; 3];
+    for control in &patch.controls {
+        if !control[3].is_finite() || control[3] <= 0.0 {
+            return None;
+        }
+        for axis in 0..3 {
+            let coordinate = control[axis] / control[3];
+            if !coordinate.is_finite() {
+                return None;
+            }
+            minimum[axis] = minimum[axis].min(coordinate);
+            maximum[axis] = maximum[axis].max(coordinate);
+        }
+    }
+    let lower = (0..3)
+        .map(|axis| {
+            if minimum[axis] > 0.0 {
+                minimum[axis] * minimum[axis]
+            } else if maximum[axis] < 0.0 {
+                maximum[axis] * maximum[axis]
+            } else {
+                0.0
+            }
+        })
+        .sum::<f64>();
+    let diameter = (0..3)
+        .map(|axis| (maximum[axis] - minimum[axis]).powi(2))
+        .sum::<f64>();
+    (lower.is_finite() && diameter.is_finite()).then_some((lower, diameter))
+}
+
+fn split_rational_surface_patch(
+    patch: &RationalBezierSurfacePatch,
+    split_u: bool,
+) -> Option<[RationalBezierSurfacePatch; 2]> {
+    let (degree, line_count) = if split_u {
+        (patch.u_degree, patch.v_degree + 1)
+    } else {
+        (patch.v_degree, patch.u_degree + 1)
+    };
+    let mut first_lines = Vec::with_capacity(line_count);
+    let mut second_lines = Vec::with_capacity(line_count);
+    for line in 0..line_count {
+        let controls = if split_u {
+            (0..=degree)
+                .map(|index| patch.controls[index * (patch.v_degree + 1) + line])
+                .collect::<Vec<_>>()
+        } else {
+            patch.controls[line * (patch.v_degree + 1)..(line + 1) * (patch.v_degree + 1)].to_vec()
+        };
+        let mut levels = vec![controls];
+        while levels.last()?.len() > 1 {
+            levels.push(
+                levels
+                    .last()?
+                    .windows(2)
+                    .map(|pair| std::array::from_fn(|axis| 0.5 * (pair[0][axis] + pair[1][axis])))
+                    .collect(),
+            );
+        }
+        first_lines.push(levels.iter().map(|level| level[0]).collect::<Vec<_>>());
+        second_lines.push(
+            levels
+                .iter()
+                .rev()
+                .map(|level| *level.last().expect("nonempty de Casteljau level"))
+                .collect::<Vec<_>>(),
+        );
+    }
+    let assemble = |lines: Vec<Vec<[f64; 4]>>| {
+        if split_u {
+            (0..=patch.u_degree)
+                .flat_map(|u| {
+                    (0..=patch.v_degree).map({
+                        let lines = &lines;
+                        move |v| lines[v][u]
+                    })
+                })
+                .collect()
+        } else {
+            lines.into_iter().flatten().collect()
+        }
+    };
+    let u_middle = patch.u_domain[0] + (patch.u_domain[1] - patch.u_domain[0]) * 0.5;
+    let v_middle = patch.v_domain[0] + (patch.v_domain[1] - patch.v_domain[0]) * 0.5;
+    let (first_u, second_u, first_v, second_v) = if split_u {
+        (
+            [patch.u_domain[0], u_middle],
+            [u_middle, patch.u_domain[1]],
+            patch.v_domain,
+            patch.v_domain,
+        )
+    } else {
+        (
+            patch.u_domain,
+            patch.u_domain,
+            [patch.v_domain[0], v_middle],
+            [v_middle, patch.v_domain[1]],
+        )
+    };
+    if split_u && (u_middle == patch.u_domain[0] || u_middle == patch.u_domain[1])
+        || !split_u && (v_middle == patch.v_domain[0] || v_middle == patch.v_domain[1])
+    {
+        return None;
+    }
+    Some([
+        RationalBezierSurfacePatch {
+            u_domain: first_u,
+            v_domain: first_v,
+            u_degree: patch.u_degree,
+            v_degree: patch.v_degree,
+            controls: assemble(first_lines),
+        },
+        RationalBezierSurfacePatch {
+            u_domain: second_u,
+            v_domain: second_v,
+            u_degree: patch.u_degree,
+            v_degree: patch.v_degree,
+            controls: assemble(second_lines),
+        },
+    ])
+}
+
+fn refine_nurbs_surface_parameters(
+    surface: &NurbsSurface,
+    point: Point3,
+    mut parameters: Point2,
+    u_domain: [f64; 2],
+    v_domain: [f64; 2],
+) -> Option<Point2> {
+    let squared_distance = |position: Point3| {
+        (position.x - point.x).powi(2)
+            + (position.y - point.y).powi(2)
+            + (position.z - point.z).powi(2)
+    };
+    parameters.u = parameters.u.clamp(u_domain[0], u_domain[1]);
+    parameters.v = parameters.v.clamp(v_domain[0], v_domain[1]);
+    for _ in 0..32 {
+        let position = nurbs_surface_point(surface, parameters.u, parameters.v)?;
+        let residual = Vector3::new(
+            position.x - point.x,
+            position.y - point.y,
+            position.z - point.z,
+        );
+        let partials = nurbs_surface_partials(surface, parameters.u, parameters.v)?;
+        let (du, dv) = (partials.du, partials.dv);
+        let du_squared = du.dot(du);
+        let mixed = du.dot(dv);
+        let dv_squared = dv.dot(dv);
+        let determinant = du_squared * dv_squared - mixed * mixed;
+        if !determinant.is_finite()
+            || determinant.abs() <= f64::EPSILON * du_squared.max(dv_squared).powi(2)
+        {
+            break;
+        }
+        let du_residual = du.dot(residual);
+        let dv_residual = dv.dot(residual);
+        let step = Point2::new(
+            (dv_squared * du_residual - mixed * dv_residual) / determinant,
+            (du_squared * dv_residual - mixed * du_residual) / determinant,
+        );
+        let current_distance = squared_distance(position);
+        let mut scale = 1.0;
+        let mut accepted = None;
+        for _ in 0..16 {
+            let candidate = Point2::new(
+                (parameters.u - scale * step.u).clamp(u_domain[0], u_domain[1]),
+                (parameters.v - scale * step.v).clamp(v_domain[0], v_domain[1]),
+            );
+            let candidate_position = nurbs_surface_point(surface, candidate.u, candidate.v)?;
+            if squared_distance(candidate_position) <= current_distance {
+                accepted = Some(candidate);
+                break;
+            }
+            scale *= 0.5;
+        }
+        let Some(candidate) = accepted else {
+            break;
+        };
+        parameters = candidate;
+        if scale * step.u.abs() <= 1.0e-12 * (1.0 + parameters.u.abs())
+            && scale * step.v.abs() <= 1.0e-12 * (1.0 + parameters.v.abs())
+        {
+            break;
+        }
+    }
+    Some(parameters)
+}
+
+fn complete_nurbs_surface_starts(
+    surface: &NurbsSurface,
+    point: Point3,
+    seed: Option<Point2>,
+    fit_tolerance: Option<f64>,
+) -> Option<Vec<Point2>> {
+    const MAX_PATCHES: usize = 1_000_000;
+
+    let patches = rational_surface_residual_patches(surface, point)?;
+    let coordinate_scale =
+        patches
+            .iter()
+            .flat_map(|patch| &patch.controls)
+            .try_fold(1.0_f64, |scale, control| {
+                let weight = control[3];
+                if !weight.is_finite() || weight <= 0.0 {
+                    return None;
+                }
+                control[..3].iter().try_fold(scale, |scale, coordinate| {
+                    let coordinate = (coordinate / weight).abs();
+                    coordinate.is_finite().then(|| scale.max(coordinate))
+                })
+            })?;
+    let requested_tolerance = match fit_tolerance {
+        Some(tolerance) if tolerance.is_finite() && tolerance >= 0.0 => tolerance,
+        Some(_) => return None,
+        None => 0.0,
+    };
+    let distance_tolerance = requested_tolerance.max(256.0 * f64::EPSILON * coordinate_scale);
+    let squared_tolerance = distance_tolerance * distance_tolerance;
+    let squared_distance = |parameters: Point2| {
+        let position = nurbs_surface_point(surface, parameters.u, parameters.v)?;
+        let distance = (position.x - point.x)
+            .hypot(position.y - point.y)
+            .hypot(position.z - point.z);
+        distance.is_finite().then_some(distance * distance)
+    };
+    let center = |patch: &RationalBezierSurfacePatch| {
+        Point2::new(
+            patch.u_domain[0] + (patch.u_domain[1] - patch.u_domain[0]) * 0.5,
+            patch.v_domain[0] + (patch.v_domain[1] - patch.v_domain[0]) * 0.5,
+        )
+    };
+    let surface_u_domain = [
+        *surface
+            .u_knots
+            .get(usize::try_from(surface.u_degree).ok()?)?,
+        *surface
+            .u_knots
+            .get(usize::try_from(surface.u_count).ok()?)?,
+    ];
+    let surface_v_domain = [
+        *surface
+            .v_knots
+            .get(usize::try_from(surface.v_degree).ok()?)?,
+        *surface
+            .v_knots
+            .get(usize::try_from(surface.v_count).ok()?)?,
+    ];
+    let refined_upper = |start, u_domain, v_domain| {
+        let parameters = refine_nurbs_surface_parameters(surface, point, start, u_domain, v_domain)
+            .unwrap_or(start);
+        Some((parameters, squared_distance(parameters)?))
+    };
+    let mut best_distance = f64::INFINITY;
+    let mut best_upper_parameters = Vec::new();
+    {
+        let mut consider_upper = |(parameters, distance): (Point2, f64)| {
+            if !best_distance.is_finite() {
+                best_distance = distance;
+                best_upper_parameters.push(parameters);
+                return;
+            }
+            let tolerance = 128.0
+                * f64::EPSILON
+                * distance
+                    .abs()
+                    .max(best_distance.abs())
+                    .max(squared_tolerance);
+            if distance < best_distance && best_distance - distance > tolerance {
+                best_distance = distance;
+                best_upper_parameters.clear();
+            }
+            if (distance - best_distance).abs() <= tolerance {
+                best_upper_parameters.push(parameters);
+            }
+        };
+        if let Some(candidate) =
+            seed.and_then(|seed| refined_upper(seed, surface_u_domain, surface_v_domain))
+        {
+            consider_upper(candidate);
+        }
+        for patch in &patches {
+            consider_upper(refined_upper(
+                center(patch),
+                patch.u_domain,
+                patch.v_domain,
+            )?);
+        }
+    }
+    best_distance.is_finite().then_some(())?;
+    // A tolerance-bounded inverse needs a constructive fitting parameter, not
+    // a proof of the global minimum. Every upper candidate is surface-evaluated.
+    if fit_tolerance.is_some() && best_distance <= squared_tolerance {
+        return (!best_upper_parameters.is_empty()).then_some(best_upper_parameters);
+    }
+    let mut queue = BinaryHeap::new();
+    let mut sequence = 0usize;
+    for patch in patches {
+        let (lower_bound, diameter) = rational_patch_distance_bounds(&patch)?;
+        queue.push(SurfacePatchQueueEntry {
+            lower_bound,
+            diameter,
+            sequence,
+            patch,
+        });
+        sequence += 1;
+    }
+    let mut terminal = Vec::<(Point2, f64)>::new();
+    let mut examined = 0usize;
+    while let Some(entry) = queue.pop() {
+        examined += 1;
+        if examined > MAX_PATCHES {
+            return None;
+        }
+        let SurfacePatchQueueEntry {
+            lower_bound,
+            diameter,
+            patch,
+            ..
+        } = entry;
+        let comparison_tolerance = 128.0
+            * f64::EPSILON
+            * lower_bound
+                .abs()
+                .max(best_distance.abs())
+                .max(squared_tolerance);
+        if lower_bound > best_distance + comparison_tolerance {
+            break;
+        }
+        let parameters = center(&patch);
+        let (upper_parameters, center_distance) =
+            refined_upper(parameters, patch.u_domain, patch.v_domain)?;
+        if fit_tolerance.is_some() && center_distance <= squared_tolerance {
+            return Some(vec![upper_parameters]);
+        }
+        let upper_tolerance = 128.0
+            * f64::EPSILON
+            * center_distance
+                .abs()
+                .max(best_distance.abs())
+                .max(squared_tolerance);
+        if center_distance < best_distance && best_distance - center_distance > upper_tolerance {
+            best_distance = center_distance;
+            best_upper_parameters.clear();
+        }
+        if (center_distance - best_distance).abs() <= upper_tolerance {
+            best_upper_parameters.push(upper_parameters);
+        }
+        let indivisible = parameters.u == patch.u_domain[0]
+            || parameters.u == patch.u_domain[1]
+            || parameters.v == patch.v_domain[0]
+            || parameters.v == patch.v_domain[1];
+        if diameter <= squared_tolerance
+            || center_distance - lower_bound <= squared_tolerance
+            || indivisible
+        {
+            terminal.push((upper_parameters, lower_bound));
+            continue;
+        }
+        let control = |u: usize, v: usize| {
+            let homogeneous = patch.controls[u * (patch.v_degree + 1) + v];
+            [
+                homogeneous[0] / homogeneous[3],
+                homogeneous[1] / homogeneous[3],
+                homogeneous[2] / homogeneous[3],
+            ]
+        };
+        let u_variation = (0..patch.u_degree)
+            .flat_map(|u| (0..=patch.v_degree).map(move |v| (u, v)))
+            .map(|(u, v)| {
+                let first = control(u, v);
+                let second = control(u + 1, v);
+                (0..3)
+                    .map(|axis| (second[axis] - first[axis]).powi(2))
+                    .sum::<f64>()
+            })
+            .fold(0.0_f64, f64::max);
+        let v_variation = (0..=patch.u_degree)
+            .flat_map(|u| (0..patch.v_degree).map(move |v| (u, v)))
+            .map(|(u, v)| {
+                let first = control(u, v);
+                let second = control(u, v + 1);
+                (0..3)
+                    .map(|axis| (second[axis] - first[axis]).powi(2))
+                    .sum::<f64>()
+            })
+            .fold(0.0_f64, f64::max);
+        let children = split_rational_surface_patch(&patch, u_variation >= v_variation)?;
+        for patch in children {
+            let (lower_bound, diameter) = rational_patch_distance_bounds(&patch)?;
+            queue.push(SurfacePatchQueueEntry {
+                lower_bound,
+                diameter,
+                sequence,
+                patch,
+            });
+            sequence += 1;
+        }
+    }
+    let final_tolerance = 128.0 * f64::EPSILON * best_distance.abs().max(squared_tolerance);
+    let mut starts = terminal
+        .into_iter()
+        .filter_map(|(parameters, lower)| {
+            (lower <= best_distance + final_tolerance).then_some(parameters)
+        })
+        .collect::<Vec<_>>();
+    starts.extend(best_upper_parameters);
+    (!starts.is_empty()).then_some(starts)
+}
+
+fn solve_nurbs_surface_parameter(
+    surface: &NurbsSurface,
+    point: Point3,
+    seed: Option<Point2>,
+    fit_tolerance: Option<f64>,
+) -> Option<(Point2, f64)> {
+    let seed = seed.filter(|seed| seed.u.is_finite() && seed.v.is_finite());
+    let u_degree = usize::try_from(surface.u_degree).ok()?;
+    let v_degree = usize::try_from(surface.v_degree).ok()?;
+    let u_count = usize::try_from(surface.u_count).ok()?;
+    let v_count = usize::try_from(surface.v_count).ok()?;
+    let u_domain = [
+        *surface.u_knots.get(u_degree)?,
+        *surface.u_knots.get(u_count)?,
+    ];
+    let v_domain = [
+        *surface.v_knots.get(v_degree)?,
+        *surface.v_knots.get(v_count)?,
+    ];
+    if u_domain[0] >= u_domain[1] || v_domain[0] >= v_domain[1] {
+        return None;
+    }
+    let starts = complete_nurbs_surface_starts(surface, point, seed, fit_tolerance)?;
+    let mut best = None;
+    let mut best_distance = f64::INFINITY;
+    let mut best_seed_distance = f64::INFINITY;
+    for start in starts {
+        let Some(parameters) =
+            refine_nurbs_surface_parameters(surface, point, start, u_domain, v_domain)
+        else {
+            continue;
+        };
+        let Some(position) = nurbs_surface_point(surface, parameters.u, parameters.v) else {
+            continue;
+        };
+        let distance = (position.x - point.x)
+            .hypot(position.y - point.y)
+            .hypot(position.z - point.z);
+        let seed_distance = seed.map_or(parameters.u.abs() + parameters.v.abs(), |seed| {
+            (parameters.u - seed.u).hypot(parameters.v - seed.v)
+        });
+        let same_point = (distance - best_distance).abs()
+            <= f64::EPSILON * 64.0 * distance.abs().max(best_distance.abs()).max(1.0);
+        if distance < best_distance && !same_point
+            || same_point && seed_distance < best_seed_distance
+        {
+            best = Some(parameters);
+            best_distance = distance;
+            best_seed_distance = seed_distance;
+        }
+    }
+    best.map(|parameters| (parameters, best_distance))
+}
+
+/// Find a globally closest parameter pair on a finite NURBS surface.
+///
+/// When equivalent closest pairs exist, `seed` selects the nearest parameter
+/// branch. Without a seed, the pair nearest the parameter-space origin wins.
+pub fn nurbs_surface_closest_parameter(
+    surface: &NurbsSurface,
+    point: Point3,
+    seed: Option<Point2>,
+) -> Option<Point2> {
+    solve_nurbs_surface_parameter(surface, point, seed, None).map(|(parameters, _)| parameters)
+}
+
+/// Find a NURBS surface parameter pair whose image is within `tolerance` of
+/// `point`. The result is forward-evaluated before it is returned.
+///
+/// When multiple fitting pairs exist, `seed` selects the nearest parameter
+/// branch. Without a seed, the pair nearest the parameter-space origin wins.
+pub fn nurbs_surface_parameter_within_tolerance(
+    surface: &NurbsSurface,
+    point: Point3,
+    seed: Option<Point2>,
+    tolerance: f64,
+) -> Option<Point2> {
+    if !tolerance.is_finite() || tolerance < 0.0 {
+        return None;
+    }
+    let (parameters, distance) =
+        solve_nurbs_surface_parameter(surface, point, seed, Some(tolerance))?;
+    (distance.is_finite() && distance <= tolerance).then_some(parameters)
 }
 
 /// `base + Σ factorᵢ · directionᵢ` in model space.
@@ -2795,9 +3536,10 @@ mod tests {
     use super::{
         curve_point, curve_second_derivative, curve_tangent, model_surface_partials_by_id,
         model_surface_point_by_id, nurbs_curve_parameter_near_point, nurbs_curve_point,
-        nurbs_curve_speed_bound, nurbs_surface_isocurve, nurbs_surface_isoline,
-        nurbs_surface_partials, nurbs_surface_point, nurbs_surface_second_partials, pcurve_tangent,
-        pcurve_uv, surface_partials, surface_second_partials, IsolineDirection,
+        nurbs_curve_speed_bound, nurbs_surface_closest_parameter, nurbs_surface_isocurve,
+        nurbs_surface_isoline, nurbs_surface_parameter_within_tolerance, nurbs_surface_partials,
+        nurbs_surface_point, nurbs_surface_second_partials, pcurve_tangent, pcurve_uv,
+        surface_partials, surface_second_partials, IsolineDirection,
     };
     use crate::geometry::{
         Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurface,
@@ -2807,6 +3549,69 @@ mod tests {
     use crate::math::{Point2, Point3, Vector3};
     use crate::transform::Transform;
     use crate::CadIr;
+
+    fn bilinear_surface() -> NurbsSurface {
+        NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        }
+    }
+
+    #[test]
+    fn nurbs_surface_inverse_distinguishes_closest_and_tolerance_contracts() {
+        let surface = bilinear_surface();
+        let point = Point3::new(0.3, 0.7, 0.2);
+        let closest = nurbs_surface_closest_parameter(&surface, point, None)
+            .expect("closest surface parameter");
+        assert!((closest.u - 0.3).abs() < 1.0e-12);
+        assert!((closest.v - 0.7).abs() < 1.0e-12);
+        assert!(nurbs_surface_parameter_within_tolerance(&surface, point, None, 0.19).is_none());
+        assert!(
+            nurbs_surface_parameter_within_tolerance(&surface, point, None, 0.2 + 1.0e-12)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn nurbs_surface_inverse_handles_rational_internal_spans() {
+        let surface = NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 3,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(0.5, 0.0, 0.2),
+                Point3::new(0.5, 1.0, 0.2),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            weights: Some(vec![1.0, 1.0, 0.7, 0.7, 1.0, 1.0]),
+            u_periodic: false,
+            v_periodic: false,
+        };
+        let point = nurbs_surface_point(&surface, 0.75, 0.4).expect("surface point");
+        let parameters = nurbs_surface_parameter_within_tolerance(&surface, point, None, 1.0e-10)
+            .expect("rational multi-span inverse");
+        assert!((parameters.u - 0.75).abs() < 1.0e-9);
+        assert!((parameters.v - 0.4).abs() < 1.0e-9);
+    }
 
     #[test]
     fn direct_analytic_curve_inverses_preserve_native_parameters() {
