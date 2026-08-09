@@ -5052,7 +5052,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     };
     bind_pattern_inputs(
         &mut features,
-        &[mirror_history],
+        std::slice::from_ref(&mirror_history),
         std::slice::from_ref(&mirror_lane),
     );
     assert_eq!(features[0].dependencies, [features[2].id.clone()]);
@@ -5068,6 +5068,52 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             && x == 12.0 && y == -25.0 && z == 0.0
             && nx == 0.0 && ny == 1.0 && nz == 0.0
     ));
+
+    features[0].dependencies.clear();
+    features[0].definition = FeatureDefinition::Pattern {
+        seeds: Vec::new(),
+        pattern: PatternKind::Mirror {
+            plane_origin: Point3::new(12.0, -25.0, 0.0),
+            plane_normal: Vector3::new(0.0, 1.0, 0.0),
+        },
+    };
+    bind_pattern_inputs(
+        &mut features,
+        std::slice::from_ref(&mirror_history),
+        std::slice::from_ref(&mirror_lane),
+    );
+    assert!(matches!(
+        features[0].definition,
+        FeatureDefinition::Pattern {
+            ref seeds,
+            pattern: PatternKind::Mirror { .. },
+        } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
+    ));
+    assert_eq!(features[0].dependencies, [features[2].id.clone()]);
+
+    mirror_lane.native_payload[frame..frame + 97].fill(0);
+    features[0].dependencies.clear();
+    features[0].definition = FeatureDefinition::Pattern {
+        seeds: Vec::new(),
+        pattern: PatternKind::Unresolved {
+            form: Some(cadmpeg_ir::features::PatternForm::Mirror),
+        },
+    };
+    bind_pattern_inputs(
+        &mut features,
+        std::slice::from_ref(&mirror_history),
+        std::slice::from_ref(&mirror_lane),
+    );
+    assert!(matches!(
+        features[0].definition,
+        FeatureDefinition::Pattern {
+            ref seeds,
+            pattern: PatternKind::Unresolved {
+                form: Some(cadmpeg_ir::features::PatternForm::Mirror),
+            },
+        } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
+    ));
+    assert_eq!(features[0].dependencies, [features[2].id.clone()]);
 
     let mut sweep_history = history;
     sweep_history.features[0].input_class = Some("moProfileFeature_c".into());

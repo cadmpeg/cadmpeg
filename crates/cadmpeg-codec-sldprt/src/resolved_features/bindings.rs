@@ -87,13 +87,14 @@ pub(crate) fn bind_pattern_inputs(
                 let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
                     continue;
                 };
-                if !matches!(
-                    model_features[model_index].definition,
-                    FeatureDefinition::Pattern {
-                        pattern: PatternKind::Unresolved { .. },
-                        ..
-                    }
-                ) {
+                let (needs_plane, needs_seeds) = match &model_features[model_index].definition {
+                    FeatureDefinition::Pattern { seeds, pattern, .. } => (
+                        matches!(pattern, PatternKind::Unresolved { .. }),
+                        seeds.is_empty(),
+                    ),
+                    _ => continue,
+                };
+                if !needs_plane && !needs_seeds {
                     continue;
                 }
                 let start = usize::try_from(starts[start_index].0).ok();
@@ -102,10 +103,14 @@ pub(crate) fn bind_pattern_inputs(
                     continue;
                 };
                 let object = &lane.native_payload[start..end];
-                let Ok(Some((origin, normal, _))) = explicit_reference_plane_frame(object) else {
+                if needs_plane {
+                    if let Ok(Some((origin, normal, _))) = explicit_reference_plane_frame(object) {
+                        mirror_plane_assignments.push((model_index, origin, normal));
+                    }
+                }
+                if !needs_seeds {
                     continue;
-                };
-                mirror_plane_assignments.push((model_index, origin, normal));
+                }
                 let seed_candidates = (0..object
                     .len()
                     .saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
