@@ -438,16 +438,6 @@ The closure also has no operand. `resolve_face_appearance_bindings` in `decode.r
 
 **Need.** The order is the only arbiter and is not in the specification. A tinted Prism appearance carries both members, and the neutral colour must come from the member the source uses.
 
-### MA-11. Owner join of an indexed-head Design material assignment
-
-**Question.** What bounds an indexed-head material-assignment record and joins its physical-material and visual tokens to the target entity?
-
-**Known.** `f3d.md` §3.1 gives the typed body-presentation owner and its exact material envelope. The indexed-head form instead stores class tag `299`, entity suffix `E`, the physical-material token, a browser-node GUID, node entity `E + 1`, the visual token, and the appearance-library marker pair.
-
-`browser_body_appearance_at` in `materials.rs` validates the indexed-head member sequence but searches up to 65,536 preceding bytes for the nearest class-299 header. It does not prove the owning record boundary or resolve that class tag through the segment type table. An unrelated class-299 record in that window can retarget the assignment.
-
-**Need.** The writer cannot rewrite an indexed-head assignment owner without its exact owner frame. A stream with two nearby class-299 records separates the enclosing owner from the nearest preceding header.
-
 ## 4. T-splines
 
 ### TS-01. `0m cg` wedge partition

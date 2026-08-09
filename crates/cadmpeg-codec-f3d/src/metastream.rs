@@ -20,6 +20,47 @@ pub(crate) struct MetaStream {
     pub(crate) records: Vec<RecordIndexEntry>,
 }
 
+/// One exact sibling-BulkStream extent from the primary record index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PrimaryRecordFrame {
+    pub(crate) entity_id: u64,
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+}
+
+/// Resolve the primary index to nonempty, strictly ordered sibling-BulkStream
+/// extents.
+pub(crate) fn primary_record_frames(
+    meta: &MetaStream,
+    bulk_len: usize,
+) -> Result<Vec<PrimaryRecordFrame>, CodecError> {
+    let mut frames = Vec::with_capacity(meta.records.len());
+    for (ordinal, record) in meta.records.iter().enumerate() {
+        let start = usize::try_from(record.bulk_offset)
+            .map_err(|_| CodecError::Malformed("F3D primary record offset exceeds usize".into()))?;
+        let end = meta.records.get(ordinal + 1).map_or_else(
+            || Ok(bulk_len),
+            |next| {
+                usize::try_from(next.bulk_offset).map_err(|_| {
+                    CodecError::Malformed("F3D primary record end exceeds usize".into())
+                })
+            },
+        )?;
+        if start >= end || end > bulk_len {
+            return Err(CodecError::Malformed(
+                "F3D primary record extents are not nonempty and strictly increasing within the BulkStream"
+                    .into(),
+            ));
+        }
+        frames.push(PrimaryRecordFrame {
+            entity_id: record.entity_id,
+            start,
+            end,
+        });
+    }
+    Ok(frames)
+}
+
 fn take_counted_run(bytes: &[u8], at: &mut usize, stride: usize) -> Option<()> {
     let count = usize::try_from(u32_at(bytes, *at)?).ok()?;
     let start = at.checked_add(4)?;
@@ -282,7 +323,7 @@ pub(crate) fn parse(bytes: &[u8], stream: &str) -> Result<MetaStream, CodecError
 
 #[cfg(test)]
 mod tests {
-    use super::parse;
+    use super::{parse, primary_record_frames, MetaStream, RecordIndexEntry};
 
     fn lp_ascii(out: &mut Vec<u8>, value: &str) {
         out.extend_from_slice(&(value.len() as u32).to_le_bytes());
@@ -355,5 +396,60 @@ mod tests {
         bytes[primary_count..primary_count + 4].copy_from_slice(&u32::MAX.to_le_bytes());
 
         assert!(parse(&bytes, "oversized-primary-index").is_err());
+    }
+
+    #[test]
+    fn primary_index_frames_end_at_the_next_primary_offset() {
+        let meta = MetaStream {
+            types: Vec::new(),
+            records: vec![
+                RecordIndexEntry {
+                    entity_id: 11,
+                    bulk_offset: 3,
+                },
+                RecordIndexEntry {
+                    entity_id: 12,
+                    bulk_offset: 9,
+                },
+            ],
+        };
+
+        let frames = primary_record_frames(&meta, 14).expect("ordered primary extents");
+        assert_eq!(frames[0].start, 3);
+        assert_eq!(frames[0].end, 9);
+        assert_eq!(frames[1].start, 9);
+        assert_eq!(frames[1].end, 14);
+
+        let empty = MetaStream {
+            types: Vec::new(),
+            records: Vec::new(),
+        };
+        assert!(primary_record_frames(&empty, 0)
+            .expect("an empty primary index has no frames")
+            .is_empty());
+
+        let empty_last = MetaStream {
+            types: Vec::new(),
+            records: vec![RecordIndexEntry {
+                entity_id: 11,
+                bulk_offset: 14,
+            }],
+        };
+        assert!(primary_record_frames(&empty_last, 14).is_err());
+
+        let repeated_offset = MetaStream {
+            types: Vec::new(),
+            records: vec![
+                RecordIndexEntry {
+                    entity_id: 11,
+                    bulk_offset: 3,
+                },
+                RecordIndexEntry {
+                    entity_id: 12,
+                    bulk_offset: 3,
+                },
+            ],
+        };
+        assert!(primary_record_frames(&repeated_offset, 14).is_err());
     }
 }

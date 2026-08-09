@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::io::{Cursor, Write};
 
 use crate::records::{DesignBodyBinding, DesignMaterialAssignment};
-use cadmpeg_core::le::{u32_at, u64_at};
+use cadmpeg_core::le::u32_at;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{
     Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
@@ -20,12 +20,10 @@ use cadmpeg_ir::appearance::{
 use cadmpeg_ir::ids::{AppearanceId, BodyId};
 use cadmpeg_ir::topology::Color;
 
-use crate::bytes::{
-    is_guid_prefix, lp_ascii_filtered, lp_utf16_bounded, lp_utf16_bytes, take_lp_utf8,
-};
+use crate::bytes::{is_guid_prefix, lp_ascii_filtered, lp_utf16_bounded, take_lp_utf8};
 use crate::container::{role, ContainerScan};
 use crate::design::presentation::{
-    is_physical_material_token, visual_token, APPEARANCE_LIBRARY_ID, GUID_LEN,
+    visual_token, APPEARANCE_LIBRARY_ID, GUID_LEN,
     MODERN_APPEARANCE_LIBRARY_IDS as APPEARANCE_LIBRARY_ID_PAIR,
 };
 
@@ -719,27 +717,29 @@ pub(crate) fn decode_design_assignments(
     scan: &ContainerScan,
 ) -> Result<Vec<DesignMaterialAssignment>, CodecError> {
     let mut out = Vec::new();
-    let types = crate::design::decode::meta::decode_types(scan)?;
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let stream_types =
-            crate::design::decode::meta::stream_types_by_class_tag(&types, &entry.name);
-        let metadata = crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?;
-        let body_map = metadata.as_ref().map_or_else(
-            || Ok(Vec::new()),
-            |meta| crate::design::decode::body::body_bindings(bytes, meta),
-        )?;
-        let entity_types = crate::design::decode::meta::stream_types_by_entity(&types, &entry.name);
-        for presentation in crate::design::decode::presentation::body_presentations(
-            bytes,
-            &stream_types,
-            &entity_types,
-        ) {
+        let Some(metadata) =
+            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+        else {
+            continue;
+        };
+        let body_map = crate::design::decode::body::body_bindings(bytes, &metadata)?;
+        for presentation in
+            crate::design::decode::presentation::body_presentations(bytes, &metadata)?
+        {
             let Some(material) = presentation.material else {
+                continue;
+            };
+            let crate::design::decode::presentation::BodyPresentationOwner::Named {
+                entity_id,
+                entity_id_offset,
+            } = presentation.owner
+            else {
                 continue;
             };
             let Some(body_binding) =
@@ -757,8 +757,8 @@ pub(crate) fn decode_design_assignments(
                 asm_body_key_offset: body_binding.asm_key_offset as u64,
                 entity_suffix: presentation.entity_suffix,
                 entity_suffix_offset: body_binding.entity_suffix_offset as u64,
-                entity_id: presentation.entity_id,
-                entity_id_offset: presentation.entity_id_offset,
+                entity_id,
+                entity_id_offset,
                 visual_guid: material.visual_guid,
                 visual_guid_offset: material.visual_guid_offset,
                 physical_token: Some(material.physical_token),
@@ -795,12 +795,30 @@ fn decode_body_appearance_overrides(
         .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let metadata = crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?;
-        let body_map = metadata.as_ref().map_or_else(
-            || Ok(Vec::new()),
-            |meta| crate::design::decode::body::body_bindings(bytes, meta),
-        )?;
-        for (entity_suffix, visual_guid) in browser_body_appearances(bytes) {
+        let Some(metadata) =
+            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+        else {
+            continue;
+        };
+        let body_map = crate::design::decode::body::body_bindings(bytes, &metadata)?;
+        let mut appearances = browser_body_appearances(bytes);
+        appearances.extend(
+            crate::design::decode::presentation::body_presentations(bytes, &metadata)?
+                .into_iter()
+                .filter_map(|presentation| {
+                    if presentation.owner
+                        != crate::design::decode::presentation::BodyPresentationOwner::Bare
+                        || presentation.browser_node.is_none()
+                    {
+                        return None;
+                    }
+                    Some((
+                        presentation.entity_suffix,
+                        presentation.material?.visual_guid,
+                    ))
+                }),
+        );
+        for (entity_suffix, visual_guid) in appearances {
             let Some(map_pair) =
                 unique_body_map_pair(&body_map, entity_suffix, "browser body appearance")?
             else {
@@ -953,52 +971,13 @@ fn is_lowercase_guid(value: &str) -> bool {
             .all(|byte| !byte.is_ascii_uppercase())
 }
 
-/// The marker GUID pair that opens the appearance fields of an indexed-head
-/// body-presentation record
-/// ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
-const BODY_RECORD_MARKER_GUIDS: [&str; 2] = [
-    "D87FBE62-3B12-4CA8-9014-BAD31ABDB101",
-    "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C",
-];
-
-/// Scan a Design `BulkStream` for indexed-head body-presentation records that bind an
-/// appearance and return `(body entity suffix, complete visual token)`
-/// pairs.
-///
-/// An indexed-head body-presentation record carries a `299`-tagged head whose entity is the
-/// body's design-entity suffix, the marker GUID pair, the physical-material
-/// token, the browser-node GUID with the node's entity (the body suffix plus
-/// one), the display name, an f32 opacity, the `01 01` marker, and the bound
-/// visual token ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
-/// The scan requires the head entity and node entity to agree before
-/// accepting a record.
-pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
-    let marker: Vec<u8> = lp_utf16_bytes(BODY_RECORD_MARKER_GUIDS[0])
-        .into_iter()
-        .chain(lp_utf16_bytes(BODY_RECORD_MARKER_GUIDS[1]))
-        .collect();
-    let mut out = Vec::new();
-    let mut position = 0usize;
-    while let Some(at) = find(bytes, &marker, position) {
-        position = at + marker.len();
-        let Some(entity_suffix) = browser_body_appearance_at(bytes, at, position) else {
-            continue;
-        };
-        out.push(entity_suffix);
-    }
-    out.extend(browser_node_body_appearances(bytes));
-    let mut seen = std::collections::HashSet::new();
-    out.retain(|binding| seen.insert(binding.clone()));
-    out
-}
-
 /// Decode legacy body-presentation records that identify their body through a
-/// browser-node GUID rather than a class-299 head.
+/// browser-node GUID rather than a typed body owner.
 ///
 /// The terminating visual marker is shared with face-presentation records.
 /// A record is body-owned only when exactly one GUID in its bounded prefix
 /// resolves through a browser-node record to one Design entity suffix.
-fn browser_node_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
+pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
     let nodes = crate::design::decode::body::browser_node_entities(bytes);
     let strings = lp_utf16_strings(bytes);
     let mut out = Vec::new();
@@ -1017,6 +996,8 @@ fn browser_node_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
             out.push((entity_suffix, visual.clone()));
         }
     }
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|binding| seen.insert(binding.clone()));
     out
 }
 
@@ -1040,90 +1021,6 @@ fn body_node_candidate(
             .next()
             .expect("one browser-node candidate was established")
     })
-}
-
-/// Parse the appearance fields of one indexed-head body-presentation record whose marker GUID
-/// pair spans `marker_at..fields_at`; see [`browser_body_appearances`].
-fn browser_body_appearance_at(
-    bytes: &[u8],
-    marker_at: usize,
-    fields_at: usize,
-) -> Option<(u64, String)> {
-    // Physical-material token, then its entity reference.
-    let (token, after) = lp_utf16_bounded(bytes, skip_zeros(bytes, fields_at), 1..=256)?;
-    if !is_physical_material_token(&token) || bytes.get(after)? != &0x01 {
-        return None;
-    }
-    // Browser-node GUID, then the node's entity.
-    let (node_guid, after) = lp_utf16_bounded(bytes, skip_zeros(bytes, after + 9), 1..=256)?;
-    if node_guid.len() != 36 || !is_guid_prefix(&node_guid) || bytes.get(after)? != &0x01 {
-        return None;
-    }
-    let node_entity = u64_at(bytes, after + 1)?;
-    // Optional display name, opacity, and the `01 01` marker.
-    let name_end = match lp_utf16_bounded(bytes, skip_zeros(bytes, after + 9), 1..=256) {
-        Some((_, end)) => end,
-        None => after + 9,
-    };
-    let visual_at = record_tail_visual_offset(bytes, name_end)?;
-    let (visual, _) = lp_utf16_bounded(bytes, visual_at, 1..=256)?;
-    visual_token(&visual)?;
-    // The record head's `299` class tag names the body's design entity; it
-    // precedes the marker pair and equals the node entity minus one.
-    let head_entity = preceding_class_299_entity(bytes, marker_at)?;
-    if head_entity + 1 != node_entity {
-        return None;
-    }
-    Some((head_entity, visual))
-}
-
-/// Skip the zeros and f32 opacity between a body-presentation record's display name and
-/// its `01 01` marker and return the visual token's length-prefix offset.
-fn record_tail_visual_offset(bytes: &[u8], name_end: usize) -> Option<usize> {
-    const OPACITY_ONE: [u8; 4] = [0x00, 0x00, 0x80, 0x3f];
-    for delta in 0..40usize {
-        let at = name_end + delta;
-        if bytes.get(at..at + 2)? != [0x01, 0x01] {
-            continue;
-        }
-        let gap = &bytes[name_end..at];
-        let zeros_only = gap.iter().all(|byte| *byte == 0);
-        let opacity_tail = gap.len() >= 4
-            && gap[gap.len() - 4..] == OPACITY_ONE
-            && gap[..gap.len() - 4].iter().all(|byte| *byte == 0);
-        if !(zeros_only || opacity_tail) {
-            return None;
-        }
-        return Some(skip_zeros_capped(bytes, at + 2, 12));
-    }
-    None
-}
-
-/// Find the `u32 3 + "299"` class tag nearest before `at` and read its
-/// entity value.
-fn preceding_class_299_entity(bytes: &[u8], at: usize) -> Option<u64> {
-    const CLASS_299: [u8; 7] = [3, 0, 0, 0, b'2', b'9', b'9'];
-    let window_start = at.saturating_sub(65536);
-    let window = bytes.get(window_start..at)?;
-    let tag_at = window
-        .windows(CLASS_299.len())
-        .rposition(|candidate| candidate == CLASS_299)?;
-    u64_at(bytes, window_start + tag_at + CLASS_299.len())
-}
-
-/// Encode a string as its length-prefixed UTF-16 byte form.
-/// Advance past at most `cap` zero bytes starting at `position`.
-fn skip_zeros_capped(bytes: &[u8], position: usize, cap: usize) -> usize {
-    let mut at = position;
-    while at < bytes.len() && at - position < cap && bytes[at] == 0 {
-        at += 1;
-    }
-    at
-}
-
-/// Advance past at most eight zero bytes starting at `position`.
-fn skip_zeros(bytes: &[u8], position: usize) -> usize {
-    skip_zeros_capped(bytes, position, 8)
 }
 
 fn bind_bodies(

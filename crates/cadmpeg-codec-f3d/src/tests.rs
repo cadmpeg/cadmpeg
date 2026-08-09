@@ -12608,7 +12608,7 @@ fn generated_design_metastream(records: &[(u64, u64)]) -> Vec<u8> {
         &[
             (
                 crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
-                base,
+                crate::design::presentation::BODY_PRESENTATION_BASE_TYPE_GUID,
                 crate::design::presentation::BODY_PRESENTATION_TYPE_VERSION,
                 "Body",
                 &[985],
@@ -25511,46 +25511,6 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
     });
 }
 
-fn browser_body_record(entity: u64, name: Option<&str>, visual: &str) -> Vec<u8> {
-    let mut bytes = vec![0u8; 8];
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(b"299");
-    bytes.extend_from_slice(&entity.to_le_bytes());
-    bytes.extend(std::iter::repeat_n(0u8, 40));
-    bytes.extend(lp_utf16_bytes("D87FBE62-3B12-4CA8-9014-BAD31ABDB101"));
-    bytes.extend(lp_utf16_bytes("C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C"));
-    bytes.extend([0u8; 4]);
-    bytes.extend(lp_utf16_bytes("PrismMaterial-018"));
-    bytes.push(0x01);
-    bytes.extend_from_slice(&(entity - 100).to_le_bytes());
-    bytes.extend([0u8; 3]);
-    bytes.extend(lp_utf16_bytes("67a722bb-f14e-43d6-94b1-d0539bb8060c"));
-    bytes.push(0x01);
-    bytes.extend_from_slice(&(entity + 1).to_le_bytes());
-    bytes.extend([0u8; 2]);
-    if let Some(name) = name {
-        bytes.extend(lp_utf16_bytes(name));
-    }
-    bytes.extend([0u8; 12]);
-    bytes.extend_from_slice(&1f32.to_le_bytes());
-    bytes.extend([0x01, 0x01]);
-    bytes.extend([0u8; 10]);
-    bytes.extend(lp_utf16_bytes(visual));
-    bytes
-}
-
-#[test]
-fn browser_body_appearance_decodes_named_and_nameless_records() {
-    let visual = "7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015_Post2015";
-    let mut bytes = browser_body_record(200_598, Some("Hexagon 1"), visual);
-    bytes.extend(browser_body_record(454_966, None, visual));
-    let out = crate::materials::browser_body_appearances(&bytes);
-    assert_eq!(
-        out,
-        vec![(200_598, visual.to_string()), (454_966, visual.to_string()),]
-    );
-}
-
 #[test]
 fn protein_revision_suffix_distinguishes_visual_record_identity() {
     assert!(!crate::materials::visual_tokens_match(
@@ -25565,20 +25525,6 @@ fn protein_revision_suffix_distinguishes_visual_record_identity() {
         "not-a-guid_Post2015",
         "not-a-guid",
     ));
-}
-
-#[test]
-fn browser_body_appearance_requires_head_and_node_entity_agreement() {
-    let visual = "7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015";
-    let mut bytes = browser_body_record(200_598, Some("Hexagon 1"), visual);
-    // Corrupt the node entity so it no longer equals the head entity plus one.
-    let node = 200_599_u64.to_le_bytes();
-    let at = bytes
-        .windows(8)
-        .position(|window| window == node)
-        .expect("node entity bytes are present");
-    bytes[at..at + 8].copy_from_slice(&(999u64).to_le_bytes());
-    assert!(crate::materials::browser_body_appearances(&bytes).is_empty());
 }
 
 #[test]

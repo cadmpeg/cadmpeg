@@ -378,26 +378,7 @@ pub(crate) fn body_bindings(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyBinding>, CodecError> {
-    let mut record_offsets = Vec::with_capacity(meta.records.len());
-    for record in &meta.records {
-        let offset = usize::try_from(record.bulk_offset).map_err(|_| {
-            CodecError::Malformed("F3D Design primary record offset exceeds usize".into())
-        })?;
-        if offset > bytes.len() {
-            return Err(CodecError::Malformed(
-                "F3D Design primary record offset exceeds its BulkStream".into(),
-            ));
-        }
-        if record_offsets
-            .last()
-            .is_some_and(|previous| *previous >= offset)
-        {
-            return Err(CodecError::Malformed(
-                "F3D Design primary record offsets are not strictly increasing".into(),
-            ));
-        }
-        record_offsets.push(offset);
-    }
+    let record_frames = crate::metastream::primary_record_frames(meta, bytes.len())?;
 
     let mut primary_by_entity = HashMap::<u64, Option<usize>>::new();
     for (ordinal, record) in meta.records.iter().enumerate() {
@@ -461,11 +442,9 @@ pub(crate) fn body_bindings(
                     )))
                 }
             };
-            let start = record_offsets[record_ordinal];
-            let end = record_offsets
-                .get(record_ordinal + 1)
-                .copied()
-                .unwrap_or(bytes.len());
+            let frame = record_frames[record_ordinal];
+            let start = frame.start;
+            let end = frame.end;
             let record_index = u32::try_from(entity_id).map_err(|_| {
                 CodecError::Malformed(format!(
                     "F3D Design body-map carrier entity {entity_id} exceeds u32"
@@ -684,22 +663,18 @@ pub(crate) fn decode_all_body_visibility(
     scan: &ContainerScan,
 ) -> Result<HashMap<(String, u64), DecodedBodyVisibility>, CodecError> {
     let mut out = HashMap::new();
-    let types = crate::design::decode::meta::decode_types(scan)?;
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let stream_types =
-            crate::design::decode::meta::stream_types_by_class_tag(&types, &entry.name);
-        let entity_types = crate::design::decode::meta::stream_types_by_entity(&types, &entry.name);
-        let hidden_by_entity = typed_browser_node_hidden_flags(bytes, &stream_types, &entity_types);
         let Some(metadata) =
             crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
         else {
             continue;
         };
+        let hidden_by_entity = typed_browser_node_hidden_flags(bytes, &metadata)?;
         for binding in body_bindings(bytes, &metadata)? {
             if let Some(node) = hidden_by_entity.get(&binding.entity_suffix) {
                 out.insert(
@@ -727,12 +702,10 @@ struct BrowserNodeVisibility {
 
 fn typed_browser_node_hidden_flags(
     bytes: &[u8],
-    stream_types: &HashMap<u32, (&str, u32)>,
-    entity_types: &HashMap<u64, (&str, u32)>,
-) -> HashMap<u64, BrowserNodeVisibility> {
-    let nodes = crate::design::decode::presentation::browser_node_records(bytes, stream_types);
-    let presentations =
-        crate::design::decode::presentation::body_presentations(bytes, stream_types, entity_types);
+    meta: &crate::metastream::MetaStream,
+) -> Result<HashMap<u64, BrowserNodeVisibility>, CodecError> {
+    let nodes = crate::design::decode::presentation::browser_node_records(bytes, meta)?;
+    let presentations = crate::design::decode::presentation::body_presentations(bytes, meta)?;
     let mut nodes_by_entity = HashMap::<u64, Vec<_>>::new();
     for node in &nodes {
         nodes_by_entity
@@ -768,7 +741,7 @@ fn typed_browser_node_hidden_flags(
             );
         }
     }
-    out
+    Ok(out)
 }
 
 /// Map each browser-node GUID to its Design entity suffix.
@@ -842,10 +815,12 @@ mod tests {
     use super::*;
     use crate::bytes::lp_utf16_bytes;
     use crate::design::presentation::{
-        APPEARANCE_LIBRARY_ID, BODY_PRESENTATION_TYPE_GUID, BODY_SCENE_NODE_TYPE_GUID,
-        BODY_SCENE_NODE_TYPE_VERSION, BREP_CONTAINER_TYPE_GUID, BREP_CONTAINER_TYPE_VERSION,
-        BROWSER_NODE_TYPE_GUID, PHYSICAL_MATERIAL_LIBRARY_ID,
+        APPEARANCE_LIBRARY_ID, BODY_PRESENTATION_BASE_TYPE_GUID, BODY_PRESENTATION_TYPE_GUID,
+        BODY_PRESENTATION_TYPE_VERSION, BODY_SCENE_NODE_TYPE_GUID, BODY_SCENE_NODE_TYPE_VERSION,
+        BREP_CONTAINER_TYPE_GUID, BREP_CONTAINER_TYPE_VERSION, BROWSER_NODE_BASE_TYPE_GUID,
+        BROWSER_NODE_TYPE_GUID, BROWSER_NODE_TYPE_VERSION, PHYSICAL_MATERIAL_LIBRARY_ID,
     };
+    use crate::records::DESIGN_MODULE_FUSION;
 
     fn push_indexed_header(out: &mut Vec<u8>, class_tag: &str, record_index: u32) {
         out.extend_from_slice(&3u32.to_le_bytes());
@@ -865,6 +840,35 @@ mod tests {
         out.push(1);
         out.extend_from_slice(&target.to_le_bytes());
         out.extend_from_slice(&[0, 0]);
+    }
+
+    fn presentation_type(
+        type_guid: &str,
+        base_type_guid: Option<&str>,
+        version: u32,
+        module: &str,
+        entity_ids: Vec<u64>,
+    ) -> crate::records::SegmentType {
+        crate::records::SegmentType {
+            id: String::new(),
+            byte_offset: 0,
+            type_guid: type_guid.into(),
+            type_guid_offset: 0,
+            base_type_guid: base_type_guid.map(str::to_owned),
+            base_type_guid_offset: base_type_guid.map(|_| 0),
+            version,
+            version_offset: 0,
+            module: module.into(),
+            entity_ids,
+            entity_id_offsets: Vec::new(),
+        }
+    }
+
+    fn primary_record(entity_id: u64, bulk_offset: usize) -> crate::metastream::RecordIndexEntry {
+        crate::metastream::RecordIndexEntry {
+            entity_id,
+            bulk_offset: bulk_offset as u64,
+        }
     }
 
     fn body_map_bytes(prefix_len: usize, declared_count: u32, pairs: &[(u64, u64)]) -> Vec<u8> {
@@ -1004,33 +1008,83 @@ mod tests {
         bytes.extend_from_slice(&[1, 1]);
         bytes.extend(lp_utf16_bytes("12345678-1234-8234-A234-123456789ABC"));
         bytes.extend(lp_utf16_bytes(APPEARANCE_LIBRARY_ID));
+        let selected_start = bytes.len();
         let selected_offset = push_browser_node(&mut bytes, 100, selected_guid, false, entity);
+        let competing_start = bytes.len();
         push_browser_node(&mut bytes, 101, competing_guid, true, entity);
 
-        let stream_types = HashMap::from([
-            (256, (BODY_PRESENTATION_TYPE_GUID, 19)),
-            (257, (BROWSER_NODE_TYPE_GUID, 2)),
-        ]);
-        let entity_types = HashMap::from([
-            (7, (BREP_CONTAINER_TYPE_GUID, BREP_CONTAINER_TYPE_VERSION)),
-            (
-                entity + 1,
-                (BODY_SCENE_NODE_TYPE_GUID, BODY_SCENE_NODE_TYPE_VERSION),
-            ),
-        ]);
-        let visibility = typed_browser_node_hidden_flags(&bytes, &stream_types, &entity_types);
+        let meta = crate::metastream::MetaStream {
+            types: vec![
+                presentation_type(
+                    BODY_PRESENTATION_TYPE_GUID,
+                    Some(BODY_PRESENTATION_BASE_TYPE_GUID),
+                    BODY_PRESENTATION_TYPE_VERSION,
+                    DESIGN_MODULE_BODY,
+                    vec![entity],
+                ),
+                presentation_type(
+                    BROWSER_NODE_TYPE_GUID,
+                    Some(BROWSER_NODE_BASE_TYPE_GUID),
+                    BROWSER_NODE_TYPE_VERSION,
+                    DESIGN_MODULE_FUSION,
+                    vec![100, 101],
+                ),
+                presentation_type(
+                    BREP_CONTAINER_TYPE_GUID,
+                    None,
+                    BREP_CONTAINER_TYPE_VERSION,
+                    "",
+                    vec![7],
+                ),
+                presentation_type(
+                    BODY_SCENE_NODE_TYPE_GUID,
+                    None,
+                    BODY_SCENE_NODE_TYPE_VERSION,
+                    "",
+                    vec![entity + 1],
+                ),
+            ],
+            records: vec![
+                primary_record(entity, 0),
+                primary_record(100, selected_start),
+                primary_record(101, competing_start),
+            ],
+        };
+        let visibility =
+            typed_browser_node_hidden_flags(&bytes, &meta).expect("typed presentation graph");
         let selected = visibility.get(&entity).expect("presentation-selected node");
         assert_eq!(selected.byte_offset, selected_offset);
         assert!(!selected.hidden);
 
         let mut nodes_only = Vec::new();
+        let selected_start = nodes_only.len();
         push_browser_node(&mut nodes_only, 100, selected_guid, false, entity);
+        let competing_start = nodes_only.len();
         push_browser_node(&mut nodes_only, 101, competing_guid, true, entity);
-        let visibility = typed_browser_node_hidden_flags(
-            &nodes_only,
-            &HashMap::from([(257, (BROWSER_NODE_TYPE_GUID, 2))]),
-            &HashMap::new(),
-        );
+        let meta = crate::metastream::MetaStream {
+            types: vec![
+                presentation_type(
+                    BODY_PRESENTATION_TYPE_GUID,
+                    Some(BODY_PRESENTATION_BASE_TYPE_GUID),
+                    BODY_PRESENTATION_TYPE_VERSION,
+                    DESIGN_MODULE_BODY,
+                    Vec::new(),
+                ),
+                presentation_type(
+                    BROWSER_NODE_TYPE_GUID,
+                    Some(BROWSER_NODE_BASE_TYPE_GUID),
+                    BROWSER_NODE_TYPE_VERSION,
+                    DESIGN_MODULE_FUSION,
+                    vec![100, 101],
+                ),
+            ],
+            records: vec![
+                primary_record(100, selected_start),
+                primary_record(101, competing_start),
+            ],
+        };
+        let visibility =
+            typed_browser_node_hidden_flags(&nodes_only, &meta).expect("typed browser nodes");
         assert!(
             !visibility.contains_key(&entity),
             "two unjoined typed nodes are ambiguous"

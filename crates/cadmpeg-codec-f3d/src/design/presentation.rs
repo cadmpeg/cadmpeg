@@ -45,6 +45,7 @@ pub(crate) fn visual_token(value: &str) -> Option<VisualToken<'_>> {
 
 /// Stable Design type of a body record that owns its presentation envelope.
 pub(crate) const BODY_PRESENTATION_TYPE_GUID: &str = "D3937028-C20C-4E65-B010-94AD418A5C20";
+pub(crate) const BODY_PRESENTATION_BASE_TYPE_GUID: &str = "63D6AD42-466A-40B7-9CCD-EB21BC500EF6";
 pub(crate) const BODY_PRESENTATION_TYPE_VERSION: u32 = 19;
 
 /// Stable Design type of the B-rep container referenced by a body
@@ -56,11 +57,15 @@ pub(crate) const BREP_CONTAINER_TYPE_VERSION: u32 = 4;
 pub(crate) const BODY_SCENE_NODE_TYPE_GUID: &str = "702b9cd2-537c-429e-8cc4-22beeeb98c37";
 pub(crate) const BODY_SCENE_NODE_TYPE_VERSION: u32 = 1;
 
-/// Stable Design type of a browser node that carries body visibility.
+/// Stable Design type family containing the body-visibility browser-node
+/// member form.
 pub(crate) const BROWSER_NODE_TYPE_GUID: &str = "D26351F0-5940-4D23-AA20-2C35475A6D9E";
 pub(crate) const BROWSER_NODE_BASE_TYPE_GUID: &str = "CB844AB6-240D-4fc9-9C9F-3679DC896D6F";
 pub(crate) const BROWSER_NODE_TYPE_VERSION: u32 = 2;
 
+/// Marker that opens a bare-owner body presentation envelope.
+pub(crate) const BODY_PRESENTATION_MATERIAL_ENVELOPE_ID: &str =
+    "D87FBE62-3B12-4CA8-9014-BAD31ABDB101";
 /// Physical-material library identifier in a body presentation envelope.
 pub(crate) const PHYSICAL_MATERIAL_LIBRARY_ID: &str = "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C";
 /// Appearance library identifier in a legacy body presentation envelope.
