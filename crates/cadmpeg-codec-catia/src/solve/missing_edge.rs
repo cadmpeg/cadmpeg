@@ -3,10 +3,12 @@
 //! Recovers unmatched edge-row placements against serialized face coverage.
 
 #[cfg(test)]
+use crate::families::standard::fbb::largest_fbb_run;
+#[cfg(test)]
 use crate::families::standard::fbb::parse_fbb_edge_tables;
 use crate::families::standard::fbb::{
-    boundary_cycles, largest_fbb_run, parse_edge_tables, parse_standard_edge_tables,
-    parse_trim_chain, parse_vertex_table,
+    boundary_cycles, parse_edge_tables, parse_standard_edge_tables, parse_trim_chain,
+    parse_vertex_table, selected_standard_run,
 };
 use crate::families::standard::topology::{incidence_cycles, EdgeRow, TrimRecord};
 #[cfg(test)]
@@ -24,12 +26,12 @@ use std::sync::Arc;
 /// possible.
 #[must_use]
 pub fn standard_edge_rows(bytes: &[u8]) -> Option<Vec<EdgeRow>> {
-    let (_, _, after_faces) = largest_fbb_run(bytes)?;
+    let (_, _, after_faces) = selected_standard_run(bytes)?;
     parse_edge_tables(bytes, after_faces).map(|(rows, _)| rows)
 }
 
 pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
-    let (_, _, after_faces) = largest_fbb_run(bytes)?;
+    let (_, _, after_faces) = selected_standard_run(bytes)?;
     let (edge_rows, _) = parse_standard_edge_tables(bytes, after_faces)?;
     edge_rows
         .iter()
@@ -229,7 +231,7 @@ struct StandardMeshAnalysis {
 }
 
 fn standard_mesh_analysis(bytes: &[u8]) -> Option<StandardMeshAnalysis> {
-    let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
+    let (face_start, face_count, after_faces) = selected_standard_run(bytes)?;
     let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
     let mut solutions = Vec::new();
     for width in [1, 2, 3] {
@@ -419,7 +421,7 @@ pub(crate) fn resolve_standard_duplicate_edge_faces(
     serialized: &[[usize; 2]],
     allowed_faces: &[Vec<usize>],
 ) -> Option<Vec<[usize; 2]>> {
-    let face_count = largest_fbb_run(bytes)?.1;
+    let face_count = selected_standard_run(bytes)?.1;
     unique_duplicate_face_assignment(serialized, allowed_faces, face_count, |assignment| {
         standard_mesh_boundary_assignments(bytes, assignment, None).is_some()
     })
@@ -1887,7 +1889,7 @@ pub fn parse_standard_mesh_selection(
     selected_assignments: &[usize],
     edge_directions: &[Vec<Vec<bool>>],
 ) -> Option<StandardTopology> {
-    let (_, face_count, after_faces) = largest_fbb_run(bytes)?;
+    let (_, face_count, after_faces) = selected_standard_run(bytes)?;
     let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
     let assignments = standard_mesh_boundary_assignments(bytes, edge_faces, None)?;
@@ -2040,7 +2042,7 @@ pub fn standard_mesh_prune_endpoint_candidates(
     if edge_faces.len() != edge_candidates.len() {
         return None;
     }
-    let (_, _, after_faces) = largest_fbb_run(bytes)?;
+    let (_, _, after_faces) = selected_standard_run(bytes)?;
     let (_, vertex_header) = parse_edge_tables(bytes, after_faces)?;
     let point_count = parse_vertex_table(bytes, vertex_header)?.len();
     let complete_domain = (0..point_count)
@@ -2156,7 +2158,7 @@ fn standard_mesh_assignment_corner_points(
     }
     let runs = standard_mesh_edge_runs(bytes)?;
     let assignments = standard_mesh_missing_edge_assignments(bytes, edge_faces, None, true)?;
-    let (face_start, face_count, _) = largest_fbb_run(bytes)?;
+    let (face_start, face_count, _) = selected_standard_run(bytes)?;
     let cycle_solutions = [1, 2, 3]
         .into_iter()
         .filter_map(|width| parse_trim_chain(bytes, face_start, face_count, width))

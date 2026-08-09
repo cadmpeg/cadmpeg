@@ -639,6 +639,8 @@ pub struct ContainerScan<'a> {
     pub inner: Option<InnerDir>,
     /// Reconstructed BREP stream (largest `MainDataStream` + `SurfacicReps`).
     pub brep: Option<Vec<u8>>,
+    /// Reconstructed canonical `MainDataStream`, which owns the standard FBB spine.
+    pub main_data_stream: Option<Vec<u8>>,
     /// Exact JPEG previews extracted from summary-information framing.
     pub previews: Vec<PreviewImage>,
     /// Unique saved-by application version from summary information.
@@ -1121,19 +1123,27 @@ fn declaration_class_pair(data: &[u8]) -> Option<(String, String)> {
 /// catalogues the BREP body carries both canonical streams; the contiguous-body
 /// exception has neither and returns `None`.
 pub fn brep_stream(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
-    let main = unique_largest_descriptor(
-        dir.descriptors
-            .iter()
-            .filter(|descriptor| descriptor.name == "MainDataStream"),
-    )?;
+    let mut out = main_data_stream(data, dir)?;
     let surf = unique_largest_descriptor(
         dir.descriptors
             .iter()
             .filter(|descriptor| descriptor.name == "SurfacicReps"),
     )?;
-    let mut out = reconstruct_logical_stream(data, main, dir.inner);
     out.extend(reconstruct_logical_stream(data, surf, dir.inner));
     Some(out)
+}
+
+/// Reconstruct the unique canonical `MainDataStream`, which owns the FBB
+/// topology spine. The surface stream is deliberately excluded: its numeric
+/// payload may contain byte sequences that resemble FBB rows but cannot assign
+/// topology faces.
+pub(crate) fn main_data_stream(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
+    let main = unique_largest_descriptor(
+        dir.descriptors
+            .iter()
+            .filter(|descriptor| descriptor.name == "MainDataStream"),
+    )?;
+    Some(reconstruct_logical_stream(data, main, dir.inner))
 }
 
 fn unique_largest_descriptor<'a>(
@@ -1215,6 +1225,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let outer = parse_outer_stream_directory(&data);
     let inner = parse_stream_directory(&data);
     let brep = inner.as_ref().and_then(|dir| brep_stream(&data, dir));
+    let main_data_stream = inner.as_ref().and_then(|dir| main_data_stream(&data, dir));
     let finjpl_segments = finjpl_segments(&data, 0, data.len());
     let previews = preview_images_in_segments(&data, &finjpl_segments);
     let last_save_version = last_save_version_in_segments(&data, &finjpl_segments);
@@ -1228,7 +1239,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         e5_markers: count_subslice(&data, E5_MARKER),
         ..Default::default()
     };
-    if let Some(b) = &brep {
+    if let Some(b) = main_data_stream.as_deref() {
         let fbb_ranges = fbb_run_ranges(b);
         census.fbb_runs = fbb_ranges.len();
         census.fbb_face_rows = fbb_ranges
@@ -1253,6 +1264,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         outer,
         inner,
         brep,
+        main_data_stream,
         previews,
         last_save_version,
         external_references,
@@ -1600,6 +1612,10 @@ mod tests {
             super::brep_stream(&data, &unique),
             Some(data[4..9].iter().chain(&data[9..11]).copied().collect())
         );
+        assert_eq!(
+            super::main_data_stream(&data, &unique),
+            Some(data[4..9].to_vec())
+        );
     }
 
     #[test]
@@ -1770,6 +1786,7 @@ mod tests {
             }),
             inner: None,
             brep: None,
+            main_data_stream: None,
             previews: Vec::new(),
             last_save_version: None,
             external_references: Vec::new(),
@@ -1879,6 +1896,7 @@ mod tests {
             outer: Some(outer),
             inner: None,
             brep: None,
+            main_data_stream: None,
             previews: Vec::new(),
             last_save_version: None,
             external_references: Vec::new(),

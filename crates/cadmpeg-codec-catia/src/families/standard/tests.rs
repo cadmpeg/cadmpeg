@@ -11,8 +11,8 @@ use cadmpeg_ir::topology::BodyKind;
 use crate::families::standard::fbb::{
     parse_edge_tables_at, parse_edge_tables_scoped_at, parse_fbb_edge_tables,
     parse_fbb_edge_tables_width, parse_trim_chain, parse_trim_record, parse_trim_record_layout,
-    parse_vertex_table, prune_edge_candidates_by_port_domains, standard_face_count,
-    standard_fbb_groups, EDGE_DELIMITER,
+    parse_vertex_table, prune_edge_candidates_by_port_domains, standard_edge_count,
+    standard_face_count, standard_fbb_groups, EDGE_DELIMITER,
 };
 use crate::families::standard::topology::{
     complete_duplicate_face_slots, reconstruct_incidence, solve_boundary_orientation_constraints,
@@ -492,6 +492,28 @@ fn standard_face_population_withholds_multiple_complete_fbb_groups() {
     }));
     assert_eq!(standard_face_count(&bytes), None);
     assert!(crate::families::standard::fbb::parse_standard(&bytes).is_none());
+}
+
+#[test]
+fn standard_helpers_share_the_source_closed_face_population() {
+    let mut bytes = crate::tests::standard_quad_topology_stream();
+    bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xaa, 0xbb, 0xcc, 0xdd]);
+    bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0x11, 0x22, 0x33, 0x44]);
+
+    assert_eq!(standard_face_count(&bytes), Some(1));
+    assert_eq!(standard_edge_count(&bytes), Some(4));
+    assert_eq!(
+        crate::solve::missing_edge::standard_edge_rows(&bytes)
+            .expect("selected edge table")
+            .len(),
+        4
+    );
+    assert_eq!(
+        crate::families::standard::fbb::parse_standard(&bytes)
+            .expect("selected topology")
+            .face_count(),
+        1
+    );
 }
 
 fn trim(kind: u8, handles: [u32; 4]) -> TrimRecord {

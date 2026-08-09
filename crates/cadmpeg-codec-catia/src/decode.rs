@@ -126,7 +126,7 @@ fn finish_decode(
         &native,
         modeling_graph_scope.as_ref(),
         standard_face_population
-            .then_some(scan.brep.as_deref())
+            .then_some(scan.main_data_stream.as_deref().or(scan.brep.as_deref()))
             .flatten(),
     );
     let object_record_count: usize = native

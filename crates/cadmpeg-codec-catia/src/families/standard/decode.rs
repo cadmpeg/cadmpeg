@@ -1139,6 +1139,7 @@ pub(crate) fn try_decode_standard(
 ) -> Option<FamilyOutput> {
     let work_budget = ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
     let brep = scan.brep.as_ref()?;
+    let standard_spine = scan.main_data_stream.as_deref().unwrap_or(brep);
     if !work_budget.charge() {
         return None;
     }
@@ -1146,14 +1147,14 @@ pub(crate) fn try_decode_standard(
         &scan.data,
         container::consolidated_record_ranges(scan),
     );
-    let points = fbb::standard_vertex_points(brep)
+    let points = fbb::standard_vertex_points(standard_spine)
         .unwrap_or_default()
         .into_iter()
         .map(|[x, y, z]| Point3::new(x, y, z))
         .collect::<Vec<_>>();
     let vertex_roster =
         crate::families::standard::records::standard_vertex_roster(&scan.data, points.len());
-    let face_count = fbb::standard_face_count(brep).unwrap_or_default();
+    let face_count = fbb::standard_face_count(standard_spine).unwrap_or_default();
     let records = crate::families::standard::records::standard_surface_records(brep, face_count)
         .unwrap_or_else(|| {
             crate::families::standard::records::surface_prefixes(brep)
@@ -1179,8 +1180,8 @@ pub(crate) fn try_decode_standard(
             crate::families::standard::records::StandardSurfaceRecord::Analytic(_) => None,
         })
         .collect::<HashSet<_>>();
-    let standard_edge_count =
-        crate::families::standard::fbb::standard_edge_count(brep).filter(|count| *count > 0);
+    let standard_edge_count = crate::families::standard::fbb::standard_edge_count(standard_spine)
+        .filter(|count| *count > 0);
     let curve_supports = crate::families::standard::records::standard_curve_supports(
         brep,
         face_count,
@@ -1211,7 +1212,7 @@ pub(crate) fn try_decode_standard(
             )
         })
         .count();
-    let face_frame_vectors = fbb::standard_face_frame_vectors(brep);
+    let face_frame_vectors = fbb::standard_face_frame_vectors(standard_spine);
     let mut curved_surfaces = records
         .iter()
         .map(|record| match record {
@@ -1601,7 +1602,7 @@ pub(crate) fn try_decode_standard(
         &mut topology_ir,
         &mut topology_annotations,
         &face_bindings,
-        brep,
+        standard_spine,
     );
     let mut bound_standard_limit_curve_count = 0;
     let mut topology_diagnostics = StandardTopologyDiagnostics::default();
@@ -1611,6 +1612,7 @@ pub(crate) fn try_decode_standard(
         &face_bindings,
         &records,
         &face_bounds,
+        standard_spine,
         brep,
         &scan.data,
         &object_evidence.edge_owner_faces,
@@ -1671,17 +1673,33 @@ pub(crate) fn try_decode_standard(
         &typed,
         plane_faces,
         analytic_record_count,
-        &crate::assemble::UnresolvedSurfaceCounts {
+        &crate::assemble::GeometryReportCounts {
             face_local_freeform: unresolved_freeform_record_count
                 .saturating_sub(bound_revolution_face_surface_count)
                 .saturating_sub(consolidated_curve_bindings.standard_face_surfaces),
             unbound_revolution: revolution_record_count.saturating_sub(resolved_revolution_count),
+            admitted_standard_face_rows: face_count,
         },
         topology_failure.map(StandardTopologyFailure::message),
     );
     report.coverage.insert(
         "attempted_standard_topology_count".to_string(),
         usize::from(true),
+    );
+    report
+        .coverage
+        .insert("standard_fbb_run_count".to_string(), scan.census.fbb_runs);
+    report.coverage.insert(
+        "standard_fbb_candidate_face_row_count".to_string(),
+        scan.census.fbb_face_rows,
+    );
+    report.coverage.insert(
+        "standard_fbb_admitted_face_row_count".to_string(),
+        face_count,
+    );
+    report.coverage.insert(
+        "standard_fbb_withheld_face_row_count".to_string(),
+        scan.census.fbb_face_rows.saturating_sub(face_count),
     );
     report.coverage.insert(
         "attached_standard_topology_count".to_string(),
@@ -3066,6 +3084,7 @@ fn attach_standard_topology(
     bindings: &[(SurfaceId, bool, usize)],
     records: &[crate::families::standard::records::StandardSurfaceRecord],
     face_bounds: &[Option<crate::families::standard::records::StandardFaceBounds>],
+    spine: &[u8],
     brep: &[u8],
     source: &[u8],
     native_edge_faces: &HashMap<u32, HashSet<u32>>,
@@ -3077,7 +3096,7 @@ fn attach_standard_topology(
 ) -> Result<(), StandardTopologyFailure> {
     let face_count = ir.model.faces.len();
     let Some(edge_count) =
-        crate::families::standard::fbb::standard_edge_count(brep).filter(|count| *count > 0)
+        crate::families::standard::fbb::standard_edge_count(spine).filter(|count| *count > 0)
     else {
         return Err(StandardTopologyFailure::NoCurveSupports);
     };
@@ -3095,7 +3114,7 @@ fn attach_standard_topology(
         .map(|support| support.faces)
         .collect::<Vec<_>>();
     let Some(mut edge_faces) =
-        missing_edge::resolve_standard_edge_faces(brep, &serialized_edge_faces)
+        missing_edge::resolve_standard_edge_faces(spine, &serialized_edge_faces)
     else {
         return Err(StandardTopologyFailure::EdgeFaceAssignment);
     };
@@ -3431,7 +3450,7 @@ fn attach_standard_topology(
             }
         }
         if let Some(completed) =
-            missing_edge::resolve_standard_duplicate_edge_faces(brep, &edge_faces, &allowed_faces)
+            missing_edge::resolve_standard_duplicate_edge_faces(spine, &edge_faces, &allowed_faces)
         {
             edge_faces = completed;
             for (edge, (support, faces)) in supports.iter_mut().zip(&edge_faces).enumerate() {
@@ -3527,7 +3546,7 @@ fn attach_standard_topology(
                 .collect::<Vec<_>>();
             let mut changed = false;
             if let Some(placement_domains) =
-                missing_edge::standard_mesh_placement_endpoint_pairs(brep, &edge_faces, &seeds)
+                missing_edge::standard_mesh_placement_endpoint_pairs(spine, &edge_faces, &seeds)
             {
                 for (edge, mut domain) in placement_domains.into_iter().enumerate() {
                     domain.retain(|pair| endpoint_pair_on_incident_faces(edge, *pair));
@@ -3552,7 +3571,7 @@ fn attach_standard_topology(
                 .all(|domain| !domain.is_empty())
                 .then(|| {
                     missing_edge::standard_mesh_prune_endpoint_candidates(
-                        brep,
+                        spine,
                         &edge_faces,
                         options,
                     )
@@ -3626,7 +3645,7 @@ fn attach_standard_topology(
     });
     let propagated_endpoint_pairs = endpoint_options
         .as_ref()
-        .zip(missing_edge::standard_edge_port_identities(brep))
+        .zip(missing_edge::standard_edge_port_identities(spine))
         .and_then(|(options, ports)| {
             let pairs = options
                 .iter()
@@ -3654,7 +3673,7 @@ fn attach_standard_topology(
         });
     let mesh_propagated_endpoint_pairs = endpoint_options
         .as_ref()
-        .zip(missing_edge::standard_mesh_edge_ports(brep))
+        .zip(missing_edge::standard_mesh_edge_ports(spine))
         .and_then(|(options, ports)| {
             let pairs = options
                 .iter()
@@ -3684,7 +3703,7 @@ fn attach_standard_topology(
     });
     if let (Some(options), Some(ports)) = (
         constrained_endpoint_options.as_mut(),
-        missing_edge::standard_mesh_edge_ports(brep),
+        missing_edge::standard_mesh_edge_ports(spine),
     ) {
         if let Some(pruned) = fbb::prune_edge_candidates_by_port_domains(&ports, options) {
             *options = pruned;
@@ -3709,8 +3728,8 @@ fn attach_standard_topology(
         let pairs = pairs.iter().copied().map(Some).collect::<Vec<_>>();
         include_native_endpoint_pairs(&mut endpoint_candidates, &pairs);
     }
-    let mesh_bound = fbb::parse_standard(brep)
-        .or_else(|| topology::parse_fbb_with_native_vertices(brep, native_ports.as_ref()?))
+    let mesh_bound = fbb::parse_standard(spine)
+        .or_else(|| topology::parse_fbb_with_native_vertices(spine, native_ports.as_ref()?))
         .and_then(|topology| {
             let endpoint_pairs = resolved_endpoint_pairs
                 .clone()
@@ -3764,7 +3783,7 @@ fn attach_standard_topology(
         bound
     } else if let Some(topology) = native_endpoint_pairs.as_ref().and_then(|pairs| {
         fbb::parse_standard_endpoints_with_edge_classes(
-            brep,
+            spine,
             &edge_faces,
             pairs,
             Some(&edge_classes),
@@ -3800,7 +3819,7 @@ fn attach_standard_topology(
         let branch_assignment_dependencies =
             standard_curve_branch_assignment_dependencies(&supports, &branch_groups);
         let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
-            brep,
+            spine,
             &edge_faces,
             &solver_options,
             &edge_classes,
@@ -3836,7 +3855,7 @@ fn attach_standard_topology(
             retry_rejected_mesh_solution(preferred, || {
                 let unconstrained = vec![false; circle_constraint_edges.len()];
                 mesh_quotient::parse_standard_mesh_candidate_outcome(
-                    brep,
+                    spine,
                     &edge_faces,
                     &solver_options,
                     &edge_classes,
@@ -3878,15 +3897,15 @@ fn attach_standard_topology(
     }) {
         bound
     } else if let Some(topology) = constrained_endpoint_options.as_ref().and_then(|options| {
-        missing_edge::standard_mesh_edge_ports(brep)
+        missing_edge::standard_mesh_edge_ports(spine)
             .and_then(|ports| {
-                fbb::parse_standard_port_endpoint_candidates(brep, &edge_faces, options, &ports)
+                fbb::parse_standard_port_endpoint_candidates(spine, &edge_faces, options, &ports)
             })
-            .or_else(|| fbb::parse_standard_endpoint_candidates(brep, &edge_faces, options))
+            .or_else(|| fbb::parse_standard_endpoint_candidates(spine, &edge_faces, options))
     }) {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
-    } else if let Some(topology) = fbb::parse_standard_motif(brep, &edge_faces, &circle_anchors) {
+    } else if let Some(topology) = fbb::parse_standard_motif(spine, &edge_faces, &circle_anchors) {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else {

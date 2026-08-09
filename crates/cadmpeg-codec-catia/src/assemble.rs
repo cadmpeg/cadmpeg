@@ -385,10 +385,11 @@ impl TypedCounts {
     }
 }
 
-/// Counts of typed surface records that still lack an exact neutral carrier.
-pub(crate) struct UnresolvedSurfaceCounts {
+/// Counts used to account for decoded geometry and topology populations.
+pub(crate) struct GeometryReportCounts {
     pub(crate) face_local_freeform: usize,
     pub(crate) unbound_revolution: usize,
+    pub(crate) admitted_standard_face_rows: usize,
 }
 
 pub(crate) fn source_meta(scan: &ContainerScan) -> SourceMeta {
@@ -476,7 +477,7 @@ pub(crate) fn build_geometry_report(
     typed: &TypedCounts,
     plane_faces: usize,
     analytic_record_count: usize,
-    unresolved_surfaces: &UnresolvedSurfaceCounts,
+    report_counts: &GeometryReportCounts,
     topology_failure: Option<&str>,
 ) -> DecodeReport {
     let mut losses = Vec::new();
@@ -512,6 +513,22 @@ pub(crate) fn build_geometry_report(
             provenance: None,
         });
     }
+    let withheld_face_rows = scan
+        .census
+        .fbb_face_rows
+        .saturating_sub(report_counts.admitted_standard_face_rows);
+    if topology_failure.is_none() && scan.census.fbb_runs > 1 && withheld_face_rows > 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
+            severity: Severity::Blocking,
+            message: format!(
+                "{withheld_face_rows} candidate FBB face row(s) in {} marker group(s) were not admitted to the standard topology population; only {} row(s) have a source-closed edge, vertex, trim, and topology binding, and cross-group ownership remains unresolved.",
+                scan.census.fbb_runs,
+                report_counts.admitted_standard_face_rows,
+            ),
+            provenance: None,
+        });
+    }
 
     if plane_faces > 0 {
         losses.push(LossNote {
@@ -537,19 +554,19 @@ pub(crate) fn build_geometry_report(
             provenance: None,
         });
     }
-    if unresolved_surfaces.face_local_freeform > 0 {
+    if report_counts.face_local_freeform > 0 {
         losses.push(LossNote {
             code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
             severity: Severity::Warning,
             message: format!(
                 "{} face-local free-form carrier record(s) retain their tag, bounds, and \
                  orientation, but their aliased surface geometry is not yet transferred.",
-                unresolved_surfaces.face_local_freeform,
+                report_counts.face_local_freeform,
             ),
             provenance: None,
         });
     }
-    if unresolved_surfaces.unbound_revolution > 0 {
+    if report_counts.unbound_revolution > 0 {
         losses.push(LossNote {
             code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
             severity: Severity::Warning,
@@ -557,7 +574,7 @@ pub(crate) fn build_geometry_report(
                 "{} consolidated surface-of-revolution record(s) retain their profile identity, \
                  orthonormal axis frame, angular chart, and profile interval, but the profile \
                  identities are not yet bound to directrix curves.",
-                unresolved_surfaces.unbound_revolution,
+                report_counts.unbound_revolution,
             ),
             provenance: None,
         });

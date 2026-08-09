@@ -487,7 +487,7 @@ fn parse_standard_group(
     })
 }
 
-fn selected_standard_run(bytes: &[u8]) -> Option<(usize, usize, usize)> {
+pub(crate) fn selected_standard_run(bytes: &[u8]) -> Option<(usize, usize, usize)> {
     let ranges = crate::container::fbb_run_ranges(bytes);
     if let [range] = ranges.as_slice() {
         // A single marker run has no competing population to disambiguate.
