@@ -10,7 +10,8 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations};
 use cadmpeg_ir::eval::{
-    nurbs_curve_parameter_domain, nurbs_curve_point, nurbs_surface_isocurve, nurbs_surface_point,
+    analytic_surface_parameters, nurbs_curve_parameter_domain, nurbs_curve_point,
+    nurbs_surface_isocurve, nurbs_surface_point, surface_point,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, Pcurve, PcurveGeometry,
@@ -805,6 +806,7 @@ fn decode_graph(
     // Curves and edges. An edge keeps a curve only when its carrier decodes to a
     // curve kind; a nonzero-but-untyped carrier is counted as loss.
     let mut emitted_curves: HashSet<u16> = HashSet::new();
+    let mut edge_endpoint_positions = HashMap::<u16, [cadmpeg_ir::math::Point3; 2]>::new();
     let mut edge_attrs: Vec<u16> = edge_ends.keys().copied().collect();
     edge_attrs.sort_unstable();
     for e in edge_attrs {
@@ -854,6 +856,20 @@ fn decode_graph(
         } else {
             (VertexId(id_vertex(start_v)), VertexId(id_vertex(end_v)))
         };
+        if resolved_endpoints {
+            let position = |vertex_use: u16| {
+                let point_attr = t.vertex_uses.get(&vertex_use)?.refs.get(4)?;
+                let [x, y, z] = t.points.get(point_attr)?.xyz_m?;
+                Some(cadmpeg_ir::math::Point3::new(
+                    x * LEN_TO_MM,
+                    y * LEN_TO_MM,
+                    z * LEN_TO_MM,
+                ))
+            };
+            if let (Some(start), Some(end)) = (position(start_v), position(end_v)) {
+                edge_endpoint_positions.insert(e, [start, end]);
+            }
+        }
         let eu = t.edge_uses.get(&e);
         let mut curve = None;
         if curve_attr != 0 {
@@ -970,6 +986,44 @@ fn decode_graph(
                 annotations
                     .note(id_coedge(ce_attr), source_stream, ce.offset as u64)
                     .tag("00_11");
+                let pcurves = edge_ends
+                    .get(&edge_attr)
+                    .and_then(|(_, _, curve_attr)| {
+                        let parameterization =
+                            carriers.intersection_parameterization(*curve_attr)?;
+                        let surface = carriers.surface(f.surface_attr)?;
+                        let CarrierGeometry::Surface(surface) = &surface.geometry else {
+                            return None;
+                        };
+                        let (geometry, parameter_range) = intersection_support_pcurve(
+                            parameterization,
+                            f.surface_attr,
+                            surface,
+                            *edge_endpoint_positions.get(&edge_attr)?,
+                        )?;
+                        let id = PcurveId(format!("sldprt:brep:pcurve#intersection:{ce_attr}"));
+                        let offset = carriers
+                            .curve(*curve_attr)
+                            .map_or(0, |carrier| carrier.offset);
+                        annotations
+                            .note(&id, source_stream, offset as u64)
+                            .tag("surface_intersection_uv");
+                        annotations.exactness(&id, Exactness::Derived);
+                        out.pcurves.push(Pcurve {
+                            id: id.clone(),
+                            geometry,
+                            wrapper_reversed: None,
+                            native_tail_flags: None,
+                            parameter_range: Some(parameter_range),
+                            fit_tolerance: None,
+                        });
+                        Some(vec![cadmpeg_ir::topology::PcurveUse {
+                            pcurve: id,
+                            isoparametric: None,
+                            parameter_range: Some(parameter_range),
+                        }])
+                    })
+                    .unwrap_or_default();
                 out.coedges.push(Coedge {
                     id: CoedgeId(id_coedge(ce_attr)),
                     owner_loop: LoopId(id_loop(*loop_attr)),
@@ -980,7 +1034,7 @@ fn decode_graph(
                     sense: sense_of(ce.marker.unwrap_or(0x2b)),
                     use_curve: None,
                     use_curve_parameter_range: None,
-                    pcurves: Vec::new(),
+                    pcurves,
                 });
             }
         }
@@ -2805,6 +2859,113 @@ fn derive_nurbs_isoparametric_pcurves(
     }
 }
 
+fn intersection_support_pcurve(
+    parameterization: &super::intersection::IntersectionParameterization,
+    surface_attr: u16,
+    surface: &SurfaceGeometry,
+    edge_endpoints: [cadmpeg_ir::math::Point3; 2],
+) -> Option<(PcurveGeometry, [f64; 2])> {
+    let support_index = match parameterization
+        .supports
+        .map(|support| support == surface_attr)
+    {
+        [true, false] => 0,
+        [false, true] => 1,
+        _ => return None,
+    };
+    let mut geometry = parameterization.pcurves[support_index].clone();
+    let PcurveGeometry::Nurbs { control_points, .. } = &mut geometry else {
+        return None;
+    };
+    match surface {
+        SurfaceGeometry::Plane { .. } => {
+            for point in control_points.iter_mut() {
+                point.u *= LEN_TO_MM;
+                point.v *= LEN_TO_MM;
+            }
+        }
+        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
+            for point in control_points.iter_mut() {
+                point.v *= LEN_TO_MM;
+            }
+        }
+        SurfaceGeometry::Sphere { .. }
+        | SurfaceGeometry::Torus { .. }
+        | SurfaceGeometry::Nurbs(_) => {}
+        _ => return None,
+    }
+    let mapped_endpoints = [
+        surface_point(
+            surface,
+            control_points.first()?.u,
+            control_points.first()?.v,
+        )?,
+        surface_point(surface, control_points.last()?.u, control_points.last()?.v)?,
+    ];
+    let squared_distance = |left: cadmpeg_ir::math::Point3, right: cadmpeg_ir::math::Point3| {
+        (left.x - right.x).powi(2) + (left.y - right.y).powi(2) + (left.z - right.z).powi(2)
+    };
+    let direct_error = squared_distance(mapped_endpoints[0], edge_endpoints[0])
+        + squared_distance(mapped_endpoints[1], edge_endpoints[1]);
+    let reverse_error = squared_distance(mapped_endpoints[0], edge_endpoints[1])
+        + squared_distance(mapped_endpoints[1], edge_endpoints[0]);
+    let targets = if direct_error <= reverse_error {
+        edge_endpoints
+    } else {
+        [edge_endpoints[1], edge_endpoints[0]]
+    };
+    if !matches!(surface, SurfaceGeometry::Nurbs(_)) {
+        let adjust_periodic = |parameter: f64, reference: f64| {
+            parameter
+                + ((reference - parameter) / std::f64::consts::TAU).round() * std::f64::consts::TAU
+        };
+        let last = control_points.len() - 1;
+        for (index, target) in [(0, targets[0]), (last, targets[1])] {
+            let reference = control_points[index];
+            let mut parameters = analytic_surface_parameters(surface, target)?;
+            match surface {
+                SurfaceGeometry::Cylinder { .. }
+                | SurfaceGeometry::Cone { .. }
+                | SurfaceGeometry::Sphere { .. }
+                | SurfaceGeometry::Torus { .. } => {
+                    parameters.u = adjust_periodic(parameters.u, reference.u);
+                }
+                SurfaceGeometry::Plane { .. } => {}
+                _ => return None,
+            }
+            if matches!(surface, SurfaceGeometry::Torus { .. }) {
+                parameters.v = adjust_periodic(parameters.v, reference.v);
+            }
+            control_points[index] = parameters;
+        }
+    }
+    let tolerance = inverse_coordinate_tolerance(edge_endpoints);
+    if [control_points.first()?, control_points.last()?]
+        .into_iter()
+        .zip(targets)
+        .any(|(parameters, target)| {
+            surface_point(surface, parameters.u, parameters.v)
+                .is_none_or(|point| squared_distance(point, target) > tolerance * tolerance)
+        })
+    {
+        return None;
+    }
+    if control_points.len() != parameterization.model_points.len()
+        || control_points
+            .iter()
+            .zip(&parameterization.model_points)
+            .any(|(parameters, target)| {
+                surface_point(surface, parameters.u, parameters.v).is_none_or(|point| {
+                    squared_distance(point, *target)
+                        > parameterization.fit_tolerance_mm * parameterization.fit_tolerance_mm
+                })
+            })
+    {
+        return None;
+    }
+    Some((geometry, parameterization.parameter_range))
+}
+
 fn resolve_axis_candidates<T, const N: usize>(
     candidates: [InverseResolution<T>; N],
 ) -> InverseResolution<T> {
@@ -3768,6 +3929,57 @@ fn emit_curve(out: &mut Brep, carrier: &Carrier) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn intersection_uv_converts_length_parameters_and_exact_endpoints() {
+        let surface = cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
+            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        let endpoints = [
+            cadmpeg_ir::eval::surface_point(&surface, 0.0, 3.0).expect("cylinder start"),
+            cadmpeg_ir::eval::surface_point(&surface, 0.5, 2.0).expect("cylinder end"),
+        ];
+        let parameterization = super::super::intersection::IntersectionParameterization {
+            supports: [10, 11],
+            pcurves: [
+                cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
+                    degree: 1,
+                    knots: vec![0.0, 0.0, 1.0, 1.0],
+                    control_points: vec![
+                        cadmpeg_ir::math::Point2::new(0.0, 0.0029),
+                        cadmpeg_ir::math::Point2::new(0.5, 0.0018),
+                    ],
+                    weights: None,
+                    periodic: false,
+                },
+                cadmpeg_ir::geometry::PcurveGeometry::Line {
+                    origin: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                    direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                },
+            ],
+            parameter_range: [0.0, 1.0],
+            model_points: endpoints.to_vec(),
+            fit_tolerance_mm: 0.2,
+        };
+        let (geometry, range) =
+            super::intersection_support_pcurve(&parameterization, 10, &surface, endpoints)
+                .expect("support parameterization");
+        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = geometry else {
+            panic!("expected solved UV NURBS");
+        };
+        assert_eq!(control_points[0], cadmpeg_ir::math::Point2::new(0.0, 3.0));
+        assert_eq!(control_points[1], cadmpeg_ir::math::Point2::new(0.5, 2.0));
+        assert_eq!(range, [0.0, 1.0]);
+
+        let ambiguous = super::super::intersection::IntersectionParameterization {
+            supports: [10, 10],
+            ..parameterization
+        };
+        assert!(super::intersection_support_pcurve(&ambiguous, 10, &surface, endpoints).is_none());
+    }
+
     #[test]
     fn canonical_edge_direction_uses_explicit_or_unique_forward_coedge() {
         use std::collections::HashMap;

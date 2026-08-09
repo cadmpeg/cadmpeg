@@ -22,7 +22,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How do we derive the UV curve for a non-isoparametric trim on a B-spline face?
 
-**Known.** `sldprt.md` §7.1 "00 TT  [ff]?" through `sldprt.md` §7.2 "00 2d  marker [ff?]  value_count u32 BE  attr u16 BE  f64[value_count] BE   ; poles /" define exact pcurves for the supported analytic, boundary-isocurve, affine-axis interior-isocurve, polar-NURBS, and ruled-surface cases. The affine-axis constructions apply symmetrically to the `u` and `v` axes. The Parasolid stream does not store a two-dimensional UV control array.
+**Known.** `sldprt.md` §7.1 "00 TT  [ff]?" through `sldprt.md` §7.3 "The chart is a solved cache" define exact pcurves for the supported analytic, boundary-isocurve, affine-axis interior-isocurve, polar-NURBS, ruled-surface, and complete intersection-cache cases. The affine-axis constructions apply symmetrically to the `u` and `v` axes. A complete width-4 intersection witness supplies co-parameterized solved UV caches for both support surfaces. The Parasolid stream does not store a general two-dimensional NURBS trim control array.
 
 **Need.** We must know the convention to construct the trim in the surface parameter space.
 
@@ -30,7 +30,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Where are the chart, terminator, and support-UV witnesses for an intersection composite when its referenced witnesses are absent or inconsistent?
 
-**Known.** `sldprt.md` §7.2 "Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier," through `sldprt.md` §7.3 "An edge's `00 10.refs[3]` can point to either intersection carrier for a curve defined by the" define both intersection carriers and the three witness record families. The two support surfaces define the exact intersection only when the carrier selects a usable branch.
+**Known.** `sldprt.md` §7.2 "Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier," through `sldprt.md` §7.3 "The chart is a solved cache" define both intersection carriers and the three witness record families. A complete width-4 support-UV record supplies the two solved pcurve caches. The two support surfaces define the exact intersection only when the carrier selects a usable branch. A chart and its terminators can be complete while the referenced support-UV record is absent.
 
 **Need.** We must find the witnesses to construct the bounded intersection curve.
 
