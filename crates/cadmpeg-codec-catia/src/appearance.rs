@@ -267,17 +267,30 @@ fn insert_source_binding(ir: &mut CadIr, packet: &SourcedPacket) {
         .as_str()
         .rsplit_once('#')
         .map_or(appearance.as_str(), |(_, key)| key);
+    let source_key = identity_key_fragment(&packet.source_id);
     insert_binding_record(
         ir,
         &appearance,
         AppearanceTarget::Source {
             source_id: packet.source_id.clone(),
         },
-        format!(
-            "catia:appearance:source-binding#{}:{appearance_key}",
-            packet.source_id
-        ),
+        format!("catia:appearance:source-binding#source-{source_key}:{appearance_key}"),
     );
+}
+
+/// Encode a source token before embedding it in an entity identity key.
+///
+/// Source tokens are retained verbatim in [`AppearanceTarget::Source`], but
+/// their delimiters are not part of the entity-key grammar. Hex encoding is
+/// injective and keeps the binding identity to one reserved `#` separator.
+fn identity_key_fragment(value: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut fragment = String::with_capacity(value.len() * 2);
+    for byte in value.bytes() {
+        fragment.push(HEX[usize::from(byte >> 4)] as char);
+        fragment.push(HEX[usize::from(byte & 0x0f)] as char);
+    }
+    fragment
 }
 
 fn insert_binding_record(
@@ -487,6 +500,29 @@ mod tests {
             .iter()
             .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
             .all(|binding| binding.appearance.as_str().contains("d11a1fff")));
+    }
+
+    #[test]
+    fn source_binding_identity_encodes_nested_source_delimiters() {
+        let packet = SourcedPacket {
+            packet: Packet::Body([0x14, 0x3d, 0xe0, 0xff]),
+            source_id: "catia:outer:value-block#0001:field#0002".into(),
+        };
+        let mut ir = model(0);
+        insert_source_binding(&mut ir, &packet);
+        let binding = ir
+            .model
+            .appearance_bindings
+            .first()
+            .expect("source binding");
+        assert_eq!(binding.id.matches('#').count(), 1);
+        assert!(binding
+            .id
+            .starts_with("catia:appearance:source-binding#source-"));
+        assert!(matches!(
+            &binding.target,
+            AppearanceTarget::Source { source_id } if source_id == &packet.source_id
+        ));
     }
 
     #[test]
