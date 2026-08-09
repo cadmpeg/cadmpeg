@@ -1092,7 +1092,7 @@ Spec §2 · layout: byte offsets · size: 151 B
 | 91 | 12 | `zero_before_handles` | `bytes[12]` | little | spec | +91 stores twelve zero bytes |
 | 103 | 8 | `handles` | `bytes[8]` | little | spec | Record +103 stores `c7 cf ff ff c7 cf ff ff` |
 | 111 | 4 | `zero_before_generation` | `u32` | little | spec | +111 stores u32 zero |
-| 115 | 4 | `generation` | `u32` | little | spec | +115 stores the u32 LE generation word `5000`, `7000`, or `10000` |
+| 115 | 4 | `generation` | `u32` | little | spec | +115 stores a nonzero non-sentinel u32 LE generation word |
 | 119 | 8 | `zero_before_origin` | `bytes[8]` | little | spec | +119 stores eight zero bytes |
 | 127 | 24 | `origin` | `f64[3]` | little | spec | Three finite f64 LE values at +127, +135, and +143 store the solved origin in metres |
 

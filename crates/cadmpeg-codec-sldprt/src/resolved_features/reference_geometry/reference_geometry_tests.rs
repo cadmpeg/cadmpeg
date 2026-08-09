@@ -357,6 +357,14 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
         ))
     );
 
+    let mut other_generation = record.lane.native_payload.clone();
+    for offset in
+        std::iter::once(record.origin + 115).chain(record.axes.iter().map(|axis| axis + 12))
+    {
+        other_generation[offset..offset + 4].copy_from_slice(&8000u32.to_le_bytes());
+    }
+    assert!(resolved_coordinate_system(&other_generation).is_some());
+
     let mut malformed = record.lane.native_payload.clone();
     malformed[record.origin + 115..record.origin + 119].copy_from_slice(&9000u32.to_le_bytes());
     assert_eq!(resolved_coordinate_system(&malformed), None);

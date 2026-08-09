@@ -4160,7 +4160,7 @@ name = "generation"
 offset = 115
 type = "u32"
 source = "spec"
-anchor = "+115 stores the u32 LE generation word `5000`, `7000`, or `10000`"
+anchor = "+115 stores a nonzero non-sentinel u32 LE generation word"
 
 [[record.field]]
 name = "zero_before_origin"

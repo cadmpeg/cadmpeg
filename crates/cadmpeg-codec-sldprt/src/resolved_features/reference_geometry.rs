@@ -733,8 +733,6 @@ fn resolved_coordinate_system(record: &[u8]) -> Option<(Point3, Vector3, Vector3
 fn coordinate_system_origin(record: &[u8]) -> Option<(Point3, u32, usize)> {
     const PREFIX: &[u8] = &[0x2f, 0x80, 0x02, 0, 0, 0, 0, 0, 0, 0];
     const HANDLES: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
-    const GENERATIONS: [u32; 3] = [5000, 7000, 10000];
-
     let candidates = record
         .windows(PREFIX.len())
         .enumerate()
@@ -762,7 +760,8 @@ fn coordinate_system_origin(record: &[u8]) -> Option<(Point3, u32, usize)> {
                 || stamp == 0
                 || stamp == u32::MAX
                 || object == 0
-                || !GENERATIONS.contains(&generation)
+                || generation == 0
+                || generation == u32::MAX
             {
                 return None;
             }
