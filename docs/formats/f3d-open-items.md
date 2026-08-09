@@ -296,16 +296,6 @@ The owner is one logical indexed record delimited by two headers that carry the 
 
 **Need.** The projector emits a one-sided blind extent from that value. If the word is the travel direction, the second side is dropped and no loss is recorded. The field that carries the extent of this dialect settles the item.
 
-### DR-50. Construction order of scopes with no history-state identity
-
-**Question.** What gives the construction order of two feature scopes that carry no history-state identity?
-
-**Known.** `f3d.md` §3.1 "A parameter scope is one logical indexed record" gives a partial order only: "When one scope's preceding identity equals another scope's current identity, the former follows and depends on the latter." A suppressed `Extrude`, `Fillet`, or `Chamfer` and every `Sketch` carry no such identity and contribute no edge.
-
-`assign_feature_ordinals` in `design/feature_project.rs` seeds each feature's ordinal from the scope's byte offset and uses it as the tie-break of the topological sort. The neutral `Feature.ordinal` is documented as the stable construction order within the source history.
-
-**Need.** The neutral model states a construction sequence that the file does not state for every state-null scope. The field that carries the timeline position settles the item.
-
 ### DR-51. Authored order of design configuration variants
 
 **Question.** Where does a document store the authored order of the variants of a configuration table?
