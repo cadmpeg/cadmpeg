@@ -64,25 +64,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the selection rule to choose the correct property grammar before property decoding starts.
 
-## 2. Auxiliary records
-
-### AR-01. Application-specific side-entry framing
-
-**Question.** What byte framing does each application-specific side-entry family use when no typed property grammar identifies the family?
-
-**Known.** `freecad_fcstd.md` §2 "`Document.xml` is the authoritative application object and property graph." states that an entry gets semantic meaning from a typed reference in `Document.xml` or `GuiDocument.xml`. An unreferenced entry remains a named archive record. `freecad_fcstd.md` §11 "Application data without a neutral representation retains its owning object and property" defines exact retention for application data without a neutral representation.
-
-**Need.** We must know the framing to parse and validate record boundaries in these side entries.
-
-### AR-02. Application-specific side-entry values
-
-**Question.** What does each field in an application-specific side-entry family mean when no typed property grammar identifies the family?
-
-**Known.** `freecad_fcstd.md` §11 "Application data without a neutral representation retains its owning object and property" requires retention of the owning object, property, declared application type, links, source order, XML bytes, side-entry bytes, byte spans, lengths, and digests.
-
-**Need.** We must know the field meanings to transfer the side entry to a typed native or neutral record.
-
-## 3. Sketch geometry
+## 2. Sketch geometry
 
 ### SG-02. Conic conventions without a FreeCAD-saved witness
 

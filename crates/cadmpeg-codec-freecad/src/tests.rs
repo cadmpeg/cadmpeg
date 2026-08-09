@@ -6134,6 +6134,53 @@ fn retains_every_reference_to_a_shared_side_entry() {
 }
 
 #[test]
+fn unregistered_application_payloads_remain_whole_named_opaque_entries() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Vendor::Feature" name="Owner"/></Objects>
+<ObjectData Count="1"><Object name="Owner"><Properties Count="1">
+<Property name="Payload" type="Vendor::PropertyMeshLike"><Mesh file="Payload.bin"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let payload = [
+        0xd0, 0xc0, 0xb0, 0xa0, 0x00, 0x00, 0x01, 0x00, 0x7f, 0x45, 0x4c, 0x46,
+    ];
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document.as_bytes()),
+                ("Payload.bin", &payload),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("opaque vendor payload");
+    assert!(result.ir.model.tessellations.is_empty());
+    let namespace = result.ir.native.namespace("fcstd").expect("namespace");
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    assert_eq!(properties[0].type_name, "Vendor::PropertyMeshLike");
+    let entries = namespace
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .expect("entries");
+    let entry = entries
+        .iter()
+        .find(|entry| entry.name == "Payload.bin")
+        .expect("payload entry");
+    let spans = namespace
+        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
+        .expect("logical ledger");
+    let span = spans
+        .iter()
+        .find(|span| span.entry == entry.name)
+        .expect("payload span");
+    assert_eq!(span.start, 0);
+    assert_eq!(span.end, payload.len() as u64);
+    assert_eq!(span.classification, "named_opaque");
+    assert_eq!(span.owner.as_deref(), Some(entry.id.as_str()));
+    assert_eq!(entry.data, payload);
+    assert!(crate::validate_native(&result.ir).is_empty());
+}
+
+#[test]
 fn recovers_objects_dynamic_properties_links_and_side_entries() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Properties Count="1"><Property name="Label" type="App::PropertyString"><String value="Demo"/></Property></Properties>

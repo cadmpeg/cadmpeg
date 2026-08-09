@@ -414,6 +414,15 @@ Application data without a neutral representation retains its owning object and 
 declared application type, links, source order, XML bytes, referenced side-entry bytes, byte spans,
 lengths, and digests.
 
+A side entry has field framing and value semantics only when an exact registered runtime property
+type and value tag select that grammar. A file name, extension, value-tag spelling, byte prefix, or
+payload signature does not select an application grammar. Without the registered property
+discriminator, no application-specific record family exists: the complete side entry is one named
+opaque payload owned by its archive entry and referenced by the declaring property. The decoder
+does not infer fields, record boundaries, or neutral values from those bytes. This rule permits
+third-party properties to remain byte-exact without confusing coincidental payload bytes with a
+core mesh, point, shape, list, or asset grammar.
+
 One mesh-kernel property contains one `Mesh` value. The value has zero or one non-empty `file`
 attribute. A non-empty attribute identifies the property's only binary side entry. A `Mesh` value
 without a side entry contains inline XML mesh data and remains in the native property record. The
