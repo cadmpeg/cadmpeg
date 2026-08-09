@@ -1742,6 +1742,20 @@ pub(crate) fn store(
                 form: entry.form,
                 profile: record
                     .and_then(|record| record.integer(1))
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve(
+                            entry.sequence,
+                            1,
+                            sequence,
+                            "curve-entity",
+                            |target| {
+                                matches!(
+                                    target.entity_type,
+                                    100 | 102 | 104 | 106 | 110 | 112 | 126 | 130
+                                )
+                            },
+                        )
+                    })
                     .map(|sequence| format!("iges:entity:directory#{sequence}")),
                 amount: number(2),
                 origin: revolution.then(|| axis(3)),
@@ -1832,10 +1846,47 @@ pub(crate) fn store(
                     .map(|index| NativeAssemblyItem {
                         item: record
                             .and_then(|record| record.integer(2 + index))
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve(
+                                    entry.sequence,
+                                    2 + index,
+                                    sequence,
+                                    if entry.form == 1 {
+                                        "constructive-solid-or-type-186"
+                                    } else {
+                                        "constructive-solid"
+                                    },
+                                    |target| {
+                                        matches!(
+                                            target.entity_type,
+                                            150 | 152
+                                                | 154
+                                                | 156
+                                                | 158
+                                                | 160
+                                                | 162
+                                                | 164
+                                                | 168
+                                                | 180
+                                                | 184
+                                                | 430
+                                        ) || (entry.form == 1 && target.entity_type == 186)
+                                    },
+                                )
+                            })
                             .map(|sequence| format!("iges:entity:directory#{sequence}")),
                         transformation: record
                             .and_then(|record| record.integer(2 + count + index))
                             .filter(|sequence| *sequence != 0)
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve_type(
+                                    entry.sequence,
+                                    2 + count + index,
+                                    sequence,
+                                    124,
+                                    &[],
+                                )
+                            })
                             .map(|sequence| format!("iges:native:transformation#D{sequence}")),
                     })
                     .collect(),
@@ -1855,6 +1906,38 @@ pub(crate) fn store(
                 form: entry.form,
                 solid: record
                     .and_then(|record| record.integer(1))
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve(
+                            entry.sequence,
+                            1,
+                            sequence,
+                            if entry.form == 1 {
+                                "type-186"
+                            } else {
+                                "constructive-solid"
+                            },
+                            |target| {
+                                if entry.form == 1 {
+                                    target.entity_type == 186
+                                } else {
+                                    matches!(
+                                        target.entity_type,
+                                        150 | 152
+                                            | 154
+                                            | 156
+                                            | 158
+                                            | 160
+                                            | 162
+                                            | 164
+                                            | 168
+                                            | 180
+                                            | 184
+                                            | 430
+                                    )
+                                }
+                            },
+                        )
+                    })
                     .map(|sequence| format!("iges:entity:directory#{sequence}")),
                 transformation: (entry.transform > 0)
                     .then(|| format!("iges:native:transformation#D{}", entry.transform)),
@@ -1881,6 +1964,9 @@ pub(crate) fn store(
                     .map(|index| {
                         record
                             .and_then(|record| record.integer(4 + index))
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve_any(entry.sequence, 4 + index, sequence)
+                            })
                             .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
                     .collect(),
@@ -1897,6 +1983,9 @@ pub(crate) fn store(
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 definition: record
                     .and_then(|record| record.integer(1))
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve_type(entry.sequence, 1, sequence, 308, &[0])
+                    })
                     .map(|sequence| format!("iges:product:subfigure-definition#D{sequence}")),
                 translation: [
                     record.and_then(|record| record.number(2)),
@@ -1933,6 +2022,9 @@ pub(crate) fn store(
                     .map(|index| {
                         record
                             .and_then(|record| record.integer(4 + index))
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve_any(entry.sequence, 4 + index, sequence)
+                            })
                             .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
                     .collect(),
@@ -1943,6 +2035,15 @@ pub(crate) fn store(
                 display_template: record
                     .and_then(|record| record.integer(6 + member_count))
                     .filter(|sequence| *sequence != 0)
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve_type(
+                            entry.sequence,
+                            6 + member_count,
+                            sequence,
+                            312,
+                            &[0, 1],
+                        )
+                    })
                     .map(|sequence| format!("iges:entity:directory#{sequence}")),
                 declared_connect_point_count: record
                     .and_then(|record| record.integer(connect_count_index)),
@@ -1951,6 +2052,15 @@ pub(crate) fn store(
                         record
                             .and_then(|record| record.integer(8 + member_count + index))
                             .filter(|sequence| *sequence != 0)
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve_type(
+                                    entry.sequence,
+                                    8 + member_count + index,
+                                    sequence,
+                                    132,
+                                    &[0],
+                                )
+                            })
                             .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
                     .collect(),
@@ -1970,6 +2080,9 @@ pub(crate) fn store(
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 definition: record
                     .and_then(|record| record.integer(1))
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve_type(entry.sequence, 1, sequence, 320, &[0])
+                    })
                     .map(|sequence| format!("iges:product:network-definition#D{sequence}")),
                 translation: [
                     record.and_then(|record| record.number(2)),
@@ -1988,6 +2101,9 @@ pub(crate) fn store(
                 display_template: record
                     .and_then(|record| record.integer(10))
                     .filter(|sequence| *sequence != 0)
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve_type(entry.sequence, 10, sequence, 312, &[0, 1])
+                    })
                     .map(|sequence| format!("iges:entity:directory#{sequence}")),
                 declared_connect_point_count: record.and_then(|record| record.integer(11)),
                 connect_points: (0..connect_count)
@@ -1995,6 +2111,15 @@ pub(crate) fn store(
                         record
                             .and_then(|record| record.integer(12 + index))
                             .filter(|sequence| *sequence != 0)
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve_type(
+                                    entry.sequence,
+                                    12 + index,
+                                    sequence,
+                                    132,
+                                    &[0],
+                                )
+                            })
                             .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
                     .collect(),
@@ -2163,6 +2288,9 @@ pub(crate) fn store(
                     .map(|index| {
                         record
                             .and_then(|record| record.integer(2 + index))
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve_any(entry.sequence, 2 + index, sequence)
+                            })
                             .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
                     .collect(),

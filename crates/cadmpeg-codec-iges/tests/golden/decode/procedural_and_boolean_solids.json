@@ -4611,7 +4611,9 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#1"
+              ],
               "parameter_bytes": [
                 49,
                 54,
@@ -4757,7 +4759,16 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "curve-entity",
+                  "kind": "parameter",
+                  "parameter_index": 1,
+                  "raw_pointer": 1,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#1"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -4856,7 +4867,9 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#3"
+              ],
               "parameter_bytes": [
                 49,
                 54,
@@ -5002,7 +5015,16 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "curve-entity",
+                  "kind": "parameter",
+                  "parameter_index": 1,
+                  "raw_pointer": 3,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#3"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -5107,7 +5129,9 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#3"
+              ],
               "parameter_bytes": [
                 49,
                 54,
@@ -5229,7 +5253,16 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "curve-entity",
+                  "kind": "parameter",
+                  "parameter_index": 1,
+                  "raw_pointer": 3,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#3"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -5436,7 +5469,7 @@
       "parameter_records=9",
       "parameter_tokens=59",
       "external_references=0",
-      "references.resolved=1"
+      "references.resolved=4"
     ]
   },
   "source_fidelity": {

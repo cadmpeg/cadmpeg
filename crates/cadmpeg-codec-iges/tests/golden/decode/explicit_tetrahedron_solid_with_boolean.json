@@ -17407,7 +17407,10 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#55",
+                "iges:entity:directory#57"
+              ],
               "parameter_bytes": [
                 49,
                 56,
@@ -17529,7 +17532,24 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "constructive-solid-or-type-186",
+                  "kind": "parameter",
+                  "parameter_index": 2,
+                  "raw_pointer": 55,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#55"
+                },
+                {
+                  "expected": "constructive-solid-or-type-186",
+                  "kind": "parameter",
+                  "parameter_index": 3,
+                  "raw_pointer": 57,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#57"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -17641,7 +17661,9 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#55"
+              ],
               "parameter_bytes": [
                 52,
                 51,
@@ -17731,7 +17753,16 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-186",
+                  "kind": "parameter",
+                  "parameter_index": 1,
+                  "raw_pointer": 55,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#55"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -18315,7 +18346,8 @@
       "entity.514.form.1=1",
       "parameter_records=32",
       "parameter_tokens=246",
-      "external_references=0"
+      "external_references=0",
+      "references.resolved=3"
     ]
   },
   "source_fidelity": {

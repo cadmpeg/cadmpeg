@@ -1970,7 +1970,9 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#1"
+              ],
               "parameter_bytes": [
                 51,
                 50,
@@ -2123,7 +2125,16 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-132-form-0",
+                  "kind": "parameter",
+                  "parameter_index": 8,
+                  "raw_pointer": 1,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#1"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -2489,7 +2500,10 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#3",
+                "iges:entity:directory#5"
+              ],
               "parameter_bytes": [
                 52,
                 50,
@@ -2668,7 +2682,24 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-320-form-0",
+                  "kind": "parameter",
+                  "parameter_index": 1,
+                  "raw_pointer": 3,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#3"
+                },
+                {
+                  "expected": "type-132-form-0",
+                  "kind": "parameter",
+                  "parameter_index": 12,
+                  "raw_pointer": 5,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#5"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -2871,7 +2902,8 @@
       "entity.420.form.0=1",
       "parameter_records=4",
       "parameter_tokens=52",
-      "external_references=0"
+      "external_references=0",
+      "references.resolved=3"
     ]
   },
   "source_fidelity": {

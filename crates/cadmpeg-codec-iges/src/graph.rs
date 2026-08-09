@@ -80,7 +80,7 @@ impl<'a> ParameterResolver<'a> {
         source: u32,
         parameter_index: usize,
         raw_pointer: i64,
-        expected: &'static str,
+        expected: impl Into<String>,
         accepts: impl FnOnce(&DirectoryEntry) -> bool,
     ) -> Option<u32> {
         if raw_pointer == 0 {
@@ -116,6 +116,44 @@ impl<'a> ParameterResolver<'a> {
         } else {
             None
         }
+    }
+
+    pub(crate) fn resolve_type(
+        &self,
+        source: u32,
+        parameter_index: usize,
+        raw_pointer: i64,
+        entity_type: i64,
+        forms: &[i64],
+    ) -> Option<u32> {
+        let expected = if forms.is_empty() {
+            format!("type-{entity_type}")
+        } else {
+            let forms = forms
+                .iter()
+                .map(i64::to_string)
+                .collect::<Vec<_>>()
+                .join("-or-");
+            format!("type-{entity_type}-form-{forms}")
+        };
+        self.resolve(source, parameter_index, raw_pointer, expected, |target| {
+            target.entity_type == entity_type && (forms.is_empty() || forms.contains(&target.form))
+        })
+    }
+
+    pub(crate) fn resolve_any(
+        &self,
+        source: u32,
+        parameter_index: usize,
+        raw_pointer: i64,
+    ) -> Option<u32> {
+        self.resolve(
+            source,
+            parameter_index,
+            raw_pointer,
+            "existing-directory-entry",
+            |_| true,
+        )
     }
 
     pub(crate) fn append_to(self, graph: &mut BTreeMap<u32, Vec<ReferenceEdge>>) {
