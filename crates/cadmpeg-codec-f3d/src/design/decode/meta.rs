@@ -33,6 +33,21 @@ pub fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, CodecError
     Ok(out)
 }
 
+/// Parse the `MetaStream` paired with one Design `BulkStream`.
+pub(crate) fn metadata_for_bulk_stream(
+    scan: &ContainerScan,
+    bulk_entry_name: &str,
+) -> Result<Option<crate::metastream::MetaStream>, CodecError> {
+    let prefix = bulk_entry_name
+        .strip_suffix("BulkStream.dat")
+        .ok_or_else(|| CodecError::Malformed("Design stream has no BulkStream suffix".into()))?;
+    let meta_name = format!("{prefix}MetaStream.dat");
+    if !scan.entries.iter().any(|entry| entry.name == meta_name) {
+        return Ok(None);
+    }
+    crate::metastream::parse(scan.entry_bytes(&meta_name)?, &meta_name).map(Some)
+}
+
 /// Type GUID and record version keyed by the Design entity ids that carry the
 /// type in the sibling `BulkStream`.
 pub(crate) fn stream_types_by_entity<'a>(

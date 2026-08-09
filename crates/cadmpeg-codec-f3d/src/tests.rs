@@ -12505,12 +12505,14 @@ fn f3d_with_smbh_and_instance_properties(smbh: &[u8], properties: &[Vec<u8>]) ->
         .unwrap();
         zip.write_all(protein).unwrap();
     }
+    let (design_bulk, design_records) = generated_design_bulkstream();
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
         .unwrap();
-    zip.write_all(&generated_design_bulkstream()).unwrap();
+    zip.write_all(&design_bulk).unwrap();
     zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
         .unwrap();
-    zip.write_all(&generated_design_metastream()).unwrap();
+    zip.write_all(&generated_design_metastream(&design_records))
+        .unwrap();
     let (act_bulk, act_records) = generated_act_bulkstream();
     zip.start_file(
         "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat",
@@ -12600,59 +12602,69 @@ fn segment_metastream(
     out
 }
 
-fn generated_design_metastream() -> Vec<u8> {
+fn generated_design_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     let base = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
-    design_metastream(&[
-        (
-            crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
-            base,
-            crate::design::presentation::BODY_PRESENTATION_TYPE_VERSION,
-            "Body",
-            &[985],
-        ),
-        (
-            "22222222-3333-4444-5555-666666666666",
-            base,
-            4,
-            "MSketch",
-            &[277],
-        ),
-        (
-            "33333333-4444-5555-6666-777777777777",
-            "",
-            5,
-            "Dimension",
-            &[270, 271],
-        ),
-        (
-            "60403D47-0C49-49B0-BDE8-1679608164A2",
-            base,
-            1,
-            "MSketch",
-            &[],
-        ),
-        (
-            crate::design::presentation::BROWSER_NODE_TYPE_GUID,
-            crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID,
-            crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
-            crate::records::DESIGN_MODULE_FUSION,
-            &[900],
-        ),
-        (
-            crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
-            base,
-            crate::design::presentation::BREP_CONTAINER_TYPE_VERSION,
-            crate::records::DESIGN_MODULE_BODY,
-            &[7],
-        ),
-        (
-            crate::design::presentation::BODY_SCENE_NODE_TYPE_GUID,
-            base,
-            crate::design::presentation::BODY_SCENE_NODE_TYPE_VERSION,
-            "Scene",
-            &[986],
-        ),
-    ])
+    design_metastream_with_records(
+        &[
+            (
+                crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
+                base,
+                crate::design::presentation::BODY_PRESENTATION_TYPE_VERSION,
+                "Body",
+                &[985],
+            ),
+            (
+                "22222222-3333-4444-5555-666666666666",
+                base,
+                4,
+                "MSketch",
+                &[277],
+            ),
+            (
+                "33333333-4444-5555-6666-777777777777",
+                "",
+                5,
+                "Dimension",
+                &[270, 271],
+            ),
+            (
+                "60403D47-0C49-49B0-BDE8-1679608164A2",
+                base,
+                1,
+                "MSketch",
+                &[],
+            ),
+            (
+                crate::design::presentation::BROWSER_NODE_TYPE_GUID,
+                crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID,
+                crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
+                crate::records::DESIGN_MODULE_FUSION,
+                &[900],
+            ),
+            (
+                crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
+                base,
+                crate::design::presentation::BREP_CONTAINER_TYPE_VERSION,
+                crate::records::DESIGN_MODULE_BODY,
+                &[7],
+            ),
+            (
+                crate::design::presentation::BODY_SCENE_NODE_TYPE_GUID,
+                base,
+                crate::design::presentation::BODY_SCENE_NODE_TYPE_VERSION,
+                "Scene",
+                &[986],
+            ),
+            (
+                crate::design::body::BODY_MAP_CARRIER_TYPE_GUID,
+                crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID,
+                crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
+                crate::records::DESIGN_MODULE_BODY,
+                &[899],
+            ),
+        ],
+        records,
+    )
 }
 
 fn generated_act_metastream(records: &[(u64, u64)]) -> Vec<u8> {
@@ -12838,7 +12850,7 @@ fn generated_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     (out, records)
 }
 
-fn generated_design_bulkstream() -> Vec<u8> {
+fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     fn lp_utf16(out: &mut Vec<u8>, value: &str) {
         let units: Vec<u16> = value.encode_utf16().collect();
         out.extend_from_slice(&(units.len() as u32).to_le_bytes());
@@ -12859,12 +12871,21 @@ fn generated_design_bulkstream() -> Vec<u8> {
     }
 
     let mut out = Vec::new();
+    let mut records = vec![(899, 0)];
+    out.extend_from_slice(&3u32.to_le_bytes());
+    out.extend_from_slice(b"263");
+    out.extend_from_slice(&899u32.to_le_bytes());
+    out.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
     out.extend_from_slice(&1u32.to_le_bytes());
     out.extend_from_slice(&42u64.to_le_bytes());
     out.extend_from_slice(&985u64.to_le_bytes());
     out.extend_from_slice(&1793u64.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
     lp_utf16(&mut out, "BREP.synthetic.smbh");
+    records.push((
+        985,
+        u64::try_from(out.len()).expect("synthetic Design record offset"),
+    ));
     let node_guid = "ABCD0000-1111-8222-A333-444444444444";
     out.extend_from_slice(&3u32.to_le_bytes());
     out.extend_from_slice(b"256");
@@ -12888,6 +12909,10 @@ fn generated_design_bulkstream() -> Vec<u8> {
     lp_utf16(&mut out, "11111111-2222-3333-4444-555555555555");
     lp_utf16(&mut out, crate::design::presentation::APPEARANCE_LIBRARY_ID);
     lp_utf16(&mut out, "Prism-001");
+    records.push((
+        900,
+        u64::try_from(out.len()).expect("synthetic Design record offset"),
+    ));
     out.extend_from_slice(&3u32.to_le_bytes());
     out.extend_from_slice(b"260");
     out.extend_from_slice(&900u32.to_le_bytes());
@@ -12895,6 +12920,10 @@ fn generated_design_bulkstream() -> Vec<u8> {
     lp_utf16(&mut out, node_guid);
     out.extend_from_slice(&[0, 1, 1]);
     out.extend_from_slice(&985u64.to_le_bytes());
+    records.push((
+        277,
+        u64::try_from(out.len()).expect("synthetic Design record offset"),
+    ));
     out.extend_from_slice(&3u32.to_le_bytes());
     out.extend_from_slice(b"269");
     out.extend_from_slice(&277u64.to_le_bytes());
@@ -13101,7 +13130,7 @@ fn generated_design_bulkstream() -> Vec<u8> {
     out.extend_from_slice(b"419");
     out.extend_from_slice(&4646u32.to_le_bytes());
     out.extend_from_slice(b"body_recipe_data");
-    out
+    (out, records)
 }
 
 fn generated_instance_properties_for(guid: &str) -> Vec<u8> {
@@ -24862,7 +24891,7 @@ fn decode_transfers_generated_protein_appearance() {
     assert!(result.report.losses.iter().any(|loss| loss
         .message
         .contains("source parametric edge reference(s) were marked")));
-    assert_eq!(f3d_native(&result.ir).design_types.len(), 7);
+    assert_eq!(f3d_native(&result.ir).design_types.len(), 8);
     let sketch = f3d_native(&result.ir)
         .design_types
         .iter()
@@ -25383,8 +25412,13 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
     }
 
     let mut bulk = Vec::new();
-    // Body-binding record: pair count, (ASM key, member) pairs, the 12-byte
-    // tail, then the blob name.
+    let mut primary_records = vec![(899u64, 0u64)];
+    // Typed body-map record: indexed header, ten zero bytes, pair count,
+    // (ASM key, member) pairs, the 12-byte tail, then the blob name.
+    bulk.extend_from_slice(&3u32.to_le_bytes());
+    bulk.extend_from_slice(b"256");
+    bulk.extend_from_slice(&899u32.to_le_bytes());
+    bulk.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
     bulk.extend_from_slice(&2u32.to_le_bytes());
     for (key, member) in [(3u64, 269u64), (6, 533)] {
         bulk.extend_from_slice(&key.to_le_bytes());
@@ -25399,8 +25433,12 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
         (900u32, "b412e170-dc0c-4932-b699-43fc72cc8b13", 0u8, 269u64),
         (901, "d4b1078c-43bf-4f6d-a50a-963f94273901", 1, 533),
     ] {
+        primary_records.push((
+            u64::from(record_index),
+            u64::try_from(bulk.len()).expect("synthetic BulkStream offset"),
+        ));
         bulk.extend_from_slice(&3u32.to_le_bytes());
-        bulk.extend_from_slice(b"256");
+        bulk.extend_from_slice(b"257");
         bulk.extend_from_slice(&record_index.to_le_bytes());
         bulk.extend_from_slice(&[0; 10]);
         lp_utf16(&mut bulk, guid);
@@ -25417,13 +25455,25 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
     zip.write_all(&bulk).unwrap();
     zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
         .unwrap();
-    zip.write_all(&design_metastream(&[(
-        crate::design::presentation::BROWSER_NODE_TYPE_GUID,
-        crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID,
-        crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
-        crate::records::DESIGN_MODULE_FUSION,
-        &[900, 901],
-    )]))
+    zip.write_all(&design_metastream_with_records(
+        &[
+            (
+                crate::design::body::BODY_MAP_CARRIER_TYPE_GUID,
+                crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID,
+                crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
+                crate::records::DESIGN_MODULE_BODY,
+                &[899],
+            ),
+            (
+                crate::design::presentation::BROWSER_NODE_TYPE_GUID,
+                crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID,
+                crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
+                crate::records::DESIGN_MODULE_FUSION,
+                &[900, 901],
+            ),
+        ],
+        &primary_records,
+    ))
     .unwrap();
     let bytes = zip.finish().unwrap().into_inner();
 

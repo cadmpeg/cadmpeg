@@ -7,7 +7,7 @@
 Source of truth: [`docs/formats/f3d.md`](../../docs/formats/f3d.md).
 Table source: `docs/layouts/f3d.toml`.
 
-Covers the fixed Design-segment headers, the named solid-primitive prologue,
+Covers the fixed Design-segment headers and body-map prefix, the named solid-primitive prologue,
 the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, the
 compact `Loft` prefix and nested profile-region frames, the class-418
 `SplitFace` prefix, the grouped recipe-reference prefix, the three `Combine`
@@ -33,6 +33,39 @@ The 11-byte size is the spec's own "eleven-byte indexed header". §3.1 states th
 Cross-checked against code:
 
 - `docs/formats/f3d.md` — The 11-byte total is stated independently in the companion-record paragraph of the same section.
+
+## `design_body_map_prefix_10`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+Ten-reserved-byte variant. Offsets are relative to the typed body-map indexed header. The first selector/entity pair starts at offset 25.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | eleven-byte indexed header |
+| 11 | 10 | `reserved_zero_run` | `bytes[10]` | little | spec | either ten or eleven reserved zero bytes |
+| 21 | 4 | `pair_count` | `u32` | little | spec | and a `u32 count` |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/body.rs` — The body-map decoder accepts both reserved-zero variants.
+- `crates/cadmpeg-codec-f3d/src/writer/generate/records.rs` — The source-less writer emits the ten-reserved-byte variant.
+
+## `design_body_map_prefix_11`
+
+Spec §3.1 · layout: byte offsets · size: 26 B
+
+Eleven-reserved-byte variant. Offsets are relative to the typed body-map indexed header. The first selector/entity pair starts at offset 26.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | eleven-byte indexed header |
+| 11 | 11 | `reserved_zero_run` | `bytes[11]` | little | spec | either ten or eleven reserved zero bytes |
+| 22 | 4 | `pair_count` | `u32` | little | spec | and a `u32 count` |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/decode/body.rs` — The exact primary-record parser tests each supported reserved-zero width.
 
 ## `assembly_operand_path_locator_reference_run`
 

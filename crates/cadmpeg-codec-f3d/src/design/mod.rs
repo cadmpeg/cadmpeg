@@ -6,6 +6,7 @@
 //! stable identifiers for native regeneration.
 
 pub mod assembly;
+pub(crate) mod body;
 pub mod components;
 pub mod configurations;
 pub mod constraints;

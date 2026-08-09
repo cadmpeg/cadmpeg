@@ -133,15 +133,19 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
             archive.write_all(&payload)?;
         }
     }
-    if let Some(bulk_stream) = encode_design_bulkstream(target, &native, &design_registry)? {
+    let design_bulk = encode_design_bulkstream(target, &native, &design_registry)?;
+    if let Some(bulk_stream) = &design_bulk {
         archive
             .start_file(format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"), options)
             .map_err(|error| {
                 CodecError::Malformed(format!("cannot create F3D Design BulkStream: {error}"))
             })?;
-        archive.write_all(&bulk_stream)?;
+        archive.write_all(&bulk_stream.bytes)?;
     }
-    if let Some(meta_stream) = encode_design_metastream(&design_registry)? {
+    let primary_records = design_bulk.as_ref().map_or(&[][..], |bulk_stream| {
+        bulk_stream.primary_records.as_slice()
+    });
+    if let Some(meta_stream) = encode_design_metastream(&design_registry, primary_records)? {
         archive
             .start_file(format!("{DESIGN_FOLDER}/Design1/MetaStream.dat"), options)
             .map_err(|error| {

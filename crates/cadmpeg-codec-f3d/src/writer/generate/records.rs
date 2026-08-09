@@ -18,6 +18,12 @@ use crate::native::F3dNative;
 use crate::writer::primitives::native_bool;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
+/// Generated Design `BulkStream` and the primary offsets known while writing it.
+pub(crate) struct EncodedDesignBulkStream {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) primary_records: Vec<crate::metastream::RecordIndexEntry>,
+}
+
 pub(crate) fn tolerant_coedge_range(
     index: &NativeGenerationIndex<'_>,
     coedge: &CoedgeId,
@@ -106,7 +112,7 @@ pub(crate) fn encode_design_bulkstream(
     target: &CadIr,
     native: &F3dNative,
     registry: &GeneratedDesignRegistry,
-) -> Result<Option<Vec<u8>>, CodecError> {
+) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
     let (_, projected_parameters) =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
             &crate::design::feature_project::ProjectInputs {
@@ -173,10 +179,21 @@ pub(crate) fn encode_design_bulkstream(
     }
 
     let mut out = Vec::new();
+    let mut primary_records = Vec::new();
     for parameter in &native.design_parameters {
         encode_document_parameter(&mut out, parameter)?;
     }
     if !registry.body_map.is_empty() {
+        let class_tag = registry.body_map_class_tag.as_deref().ok_or_else(|| {
+            CodecError::Malformed("generated F3D body map has no registered type".into())
+        })?;
+        let record_index = registry.body_map_record_index.ok_or_else(|| {
+            CodecError::Malformed("generated F3D body map has no record identity".into())
+        })?;
+        primary_records.push(primary_record(record_index, out.len())?);
+        native_lp_ascii(&mut out, class_tag)?;
+        out.extend_from_slice(&record_index.to_le_bytes());
+        out.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
         let count = u32::try_from(registry.body_map.len())
             .map_err(|_| CodecError::Malformed("Design body map exceeds u32::MAX".into()))?;
         out.extend_from_slice(&count.to_le_bytes());
@@ -188,7 +205,7 @@ pub(crate) fn encode_design_bulkstream(
         out.extend_from_slice(&0u32.to_le_bytes());
         native_lp_utf16(&mut out, "BREP.generated.smbh")?;
     }
-    encode_browser_nodes(&mut out, registry)?;
+    encode_browser_nodes(&mut out, &mut primary_records, registry)?;
     for recipe in &native.construction_recipes {
         let name = construction_recipe_name(recipe.kind);
         let mut prefix = [0u8; 27];
@@ -312,7 +329,22 @@ pub(crate) fn encode_design_bulkstream(
         native_lp_ascii(&mut out, &reference.next_class_tag)?;
         out.extend_from_slice(&reference.next_record_index.to_le_bytes());
     }
-    Ok(Some(out))
+    Ok(Some(EncodedDesignBulkStream {
+        bytes: out,
+        primary_records,
+    }))
+}
+
+fn primary_record(
+    entity_id: u32,
+    bulk_offset: usize,
+) -> Result<crate::metastream::RecordIndexEntry, CodecError> {
+    Ok(crate::metastream::RecordIndexEntry {
+        entity_id: u64::from(entity_id),
+        bulk_offset: u64::try_from(bulk_offset).map_err(|_| {
+            CodecError::Malformed("generated Design record offset exceeds u64".into())
+        })?,
+    })
 }
 
 fn encode_document_parameter(
@@ -731,14 +763,14 @@ pub(crate) fn validate_dynamic_class_tag(value: &str, field: &str) -> Result<(),
 
 pub(crate) fn encode_design_metastream(
     registry: &GeneratedDesignRegistry,
+    primary_records: &[crate::metastream::RecordIndexEntry],
 ) -> Result<Option<Vec<u8>>, CodecError> {
     if registry.types.is_empty() {
         return Ok(None);
     }
 
-    // A generated segment carries no source records, so it writes the modern
-    // header shape, the type table the IR holds, and empty named-entity and
-    // record indexes. The stream closes on its own end, as every segment does.
+    // A generated segment writes the modern header shape, the type table, and
+    // the primary offsets captured while writing its sibling BulkStream.
     let mut out = Vec::new();
     native_lp_ascii(&mut out, "Design")?;
     out.extend_from_slice(&0u32.to_le_bytes());
@@ -781,8 +813,42 @@ pub(crate) fn encode_design_metastream(
             next_entity_id = next_entity_id.max(entity_id.saturating_add(1));
         }
     }
-    // Named-entity list, record index, and secondary index.
-    out.extend_from_slice(&[0; 12]);
+    // Named-entity list, primary record index, and secondary index.
+    out.extend_from_slice(&0u32.to_le_bytes());
+    let record_count = u32::try_from(primary_records.len()).map_err(|_| {
+        CodecError::Malformed("Design primary index exceeds u32::MAX records".into())
+    })?;
+    out.extend_from_slice(&record_count.to_le_bytes());
+    let registered_entities = registry
+        .types
+        .iter()
+        .flat_map(|design_type| design_type.entity_ids.iter().copied())
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut indexed_entities = std::collections::BTreeSet::new();
+    let mut previous_offset = None;
+    for record in primary_records {
+        if !registered_entities.contains(&record.entity_id) {
+            return Err(CodecError::Malformed(format!(
+                "generated Design primary entity {} has no type registration",
+                record.entity_id
+            )));
+        }
+        if !indexed_entities.insert(record.entity_id) {
+            return Err(CodecError::Malformed(format!(
+                "generated Design primary entity {} is indexed more than once",
+                record.entity_id
+            )));
+        }
+        if previous_offset.is_some_and(|previous| previous >= record.bulk_offset) {
+            return Err(CodecError::Malformed(
+                "generated Design primary offsets are not strictly increasing".into(),
+            ));
+        }
+        previous_offset = Some(record.bulk_offset);
+        out.extend_from_slice(&record.entity_id.to_le_bytes());
+        out.extend_from_slice(&record.bulk_offset.to_le_bytes());
+    }
+    out.extend_from_slice(&0u32.to_le_bytes());
     out.extend_from_slice(&next_entity_id.to_le_bytes());
     // Trailing flag and empty property block.
     out.extend_from_slice(&[0; 8]);
@@ -791,6 +857,7 @@ pub(crate) fn encode_design_metastream(
 
 fn encode_browser_nodes(
     out: &mut Vec<u8>,
+    primary_records: &mut Vec<crate::metastream::RecordIndexEntry>,
     registry: &GeneratedDesignRegistry,
 ) -> Result<(), CodecError> {
     if registry.browser_nodes.is_empty() {
@@ -800,6 +867,7 @@ fn encode_browser_nodes(
         CodecError::Malformed("generated F3D browser nodes have no registered type".into())
     })?;
     for node in &registry.browser_nodes {
+        primary_records.push(primary_record(node.record_index, out.len())?);
         native_lp_ascii(out, node_class_tag)?;
         out.extend_from_slice(&node.record_index.to_le_bytes());
         out.extend_from_slice(&[0; 10]);

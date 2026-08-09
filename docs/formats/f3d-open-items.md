@@ -288,14 +288,6 @@ The owner is one logical indexed record delimited by two headers that carry the 
 
 **Need.** The projector emits a one-sided blind extent from that value. If the word is the travel direction, the second side is dropped and no loss is recorded. The field that carries the extent of this dialect settles the item.
 
-### DR-58. Bound of a Design body-map pair count
-
-**Question.** What bounds the pair count of a Design body map?
-
-**Known.** `f3d.md` §3.1 gives the body map as a count followed by that many sixteen-byte pairs. It gives no bound. `body_bindings` in `design/decode/body.rs` tries the counts one through 64 in ascending order and keeps the first count whose stored word equals the trial. The comment states the reason the ascending scan is taken to be unambiguous: the high halves of the little-endian ids are zero. That statement is an observation of the values present and not a checked invariant.
-
-**Need.** A blob with more than 64 pairs produces no binding at all, and every body in it loses its Design binding, its visibility, and its material assignment with no loss recorded. An entity suffix at or above 2^32 whose high word equals a trial count makes the scan accept the wrong count and mis-pair every key.
-
 ### DR-60. Member order of a spline-group constraint
 
 **Question.** Which reference run gives the member order of a neutral spline-group constraint?

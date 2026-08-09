@@ -727,9 +727,12 @@ pub(crate) fn decode_design_assignments(
         .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let body_map = decode_body_map(bytes);
         let stream_types =
             crate::design::decode::meta::stream_types_by_class_tag(&types, &entry.name);
+        let metadata = crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?;
+        let body_map = metadata
+            .as_ref()
+            .map_or_else(|| Ok(BTreeMap::new()), |meta| decode_body_map(bytes, meta))?;
         let entity_types = crate::design::decode::meta::stream_types_by_entity(&types, &entry.name);
         for presentation in crate::design::decode::presentation::body_presentations(
             bytes,
@@ -795,7 +798,10 @@ fn decode_body_appearance_overrides(
         .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let body_map = decode_body_map(bytes);
+        let metadata = crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?;
+        let body_map = metadata
+            .as_ref()
+            .map_or_else(|| Ok(BTreeMap::new()), |meta| decode_body_map(bytes, meta))?;
         for (entity_suffix, visual_guid) in browser_body_appearances(bytes) {
             let matching_keys = body_map
                 .iter()
@@ -1341,8 +1347,11 @@ fn lp_utf16_string_at(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
 /// Callers search this map by entity suffix rather than by key, so an ordered
 /// map is what keeps the answer the same across process runs when two body keys
 /// carry one suffix.
-fn decode_body_map(bytes: &[u8]) -> BTreeMap<u64, (u64, usize, usize)> {
-    crate::design::decode::body::body_bindings(bytes)
+fn decode_body_map(
+    bytes: &[u8],
+    metadata: &crate::metastream::MetaStream,
+) -> Result<BTreeMap<u64, (u64, usize, usize)>, CodecError> {
+    Ok(crate::design::decode::body::body_bindings(bytes, metadata)?
         .into_iter()
         .map(|binding| {
             (
@@ -1354,7 +1363,7 @@ fn decode_body_map(bytes: &[u8]) -> BTreeMap<u64, (u64, usize, usize)> {
                 ),
             )
         })
-        .collect()
+        .collect())
 }
 
 fn instance_properties(protein: &[u8]) -> Option<Vec<u8>> {
