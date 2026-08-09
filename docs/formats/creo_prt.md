@@ -1460,6 +1460,16 @@ whose bodies decode.
 The `ent_tab` and `vert_tab` headers likewise retain their declared counts,
 table-class references, and row-class references independently of validated
 trim rows.
+
+For a complete `eqtn_arr`, the declared count is one greater than the number of
+replayed positional rows because the count includes the named prototype. A
+non-null equation argument is a zero-based ordinal into the containing
+`var_arr` row table. It is not a `uvar_id`, point key, relation identifier, or
+dimension identifier. Function `2` has exactly two argument slots and asserts
+equality of the two referenced scalar rows. When both rows have type `1` or
+both rows have type `2`, the assertion equates the corresponding coordinate of
+their point keys.
+
 Complete native `ent_tab` rows are retained independently of whether `segtab`
 is present, complete, or contains the same external identifiers. Cross-table
 agreement is required only when deriving solved section topology.

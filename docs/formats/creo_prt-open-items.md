@@ -395,9 +395,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `creo_prt.md` §5 "A `segtab` line whose two endpoint identifiers each have complete type-1 and" identifies the dimension-driven `var_arr` state. `uvar_id`, point key, relation identifier, relation dimension selector, and external dimension identifier are distinct identities.
 The named `dimtab_ptr` prototype may also carry `dim_ref` rows with nullable
 `item_id`, `sense`, and two nullable point slots. Those rows are distinct from
-the `var_arr` solver-variable identity.
+the `var_arr` solver-variable identity. A complete `eqtn_arr` uses zero-based
+`var_arr` row ordinals for its argument slots. Function `2` transfers scalar
+equality between two referenced rows; for two type-1 rows or two type-2 rows,
+this transfers equality between the corresponding point coordinates.
 
-**Need.** We must know the join to assign the dimension value to the solver variable.
+**Need.** We must know the non-equality equation and relation joins that assign
+a dimension value to a dimension-driven solver variable.
 
 ### SP-13. `relat_ptr.used` states
 

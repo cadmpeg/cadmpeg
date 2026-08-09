@@ -3420,6 +3420,13 @@ pub(crate) fn resolved_section_coordinates(
             ));
         }
     }
+    for (first, second, coordinate) in
+        section_equation_coordinate_equalities(definition, &ambiguous_point_ids)
+    {
+        equations.push(SectionCoordinateEquation::point_difference(
+            first, second, coordinate, 0.0,
+        ));
+    }
     for &([first, second], coordinate) in &same_coordinate_points {
         equations.push(SectionCoordinateEquation::source_difference(
             first, second, coordinate, 0.0,
@@ -3598,6 +3605,51 @@ pub(crate) fn resolved_section_points(
     resolved_section_coordinates(definition)
         .into_iter()
         .filter_map(|(point, [u, v])| Some((point, [u?, v?])))
+        .collect()
+}
+
+fn section_equation_coordinate_equalities(
+    definition: &crate::feature::FeatureDefinition,
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> Vec<(u32, u32, usize)> {
+    let Some(variables) = definition
+        .variables
+        .as_ref()
+        .filter(|table| table.is_complete())
+    else {
+        return Vec::new();
+    };
+    let Some(equations) =
+        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+    else {
+        return Vec::new();
+    };
+    let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
+        return Vec::new();
+    };
+    if declared_count != equations.rows.len() + 1 {
+        return Vec::new();
+    }
+    equations
+        .rows
+        .iter()
+        .filter(|equation| equation.function_id == 2 && equation.arguments.len() == 2)
+        .filter_map(|equation| {
+            let [Some(first), Some(second)] = equation.arguments.as_slice() else {
+                return None;
+            };
+            let first = variables.rows.get(usize::try_from(*first).ok()?)?;
+            let second = variables.rows.get(usize::try_from(*second).ok()?)?;
+            if first.variable_type != second.variable_type
+                || !matches!(first.variable_type, 1 | 2)
+                || ambiguous_point_ids.contains(&first.key)
+                || ambiguous_point_ids.contains(&second.key)
+                || first.key == second.key
+            {
+                return None;
+            }
+            Some((first.key, second.key, usize::from(first.variable_type == 2)))
+        })
         .collect()
 }
 

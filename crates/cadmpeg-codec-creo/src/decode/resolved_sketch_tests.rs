@@ -6306,6 +6306,70 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
 }
 
 #[test]
+fn equation_function_two_joins_coordinate_rows_by_position() {
+    let definition = crate::feature::FeatureDefinition {
+        id: 40,
+        owner_feature_id: None,
+        body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+                \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                \x01\x02\xf8\x02\x00\x01\xf6\xe2"
+            .to_vec(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: Some(crate::feature::FeatureVariableTable {
+            declared_count: 2,
+            entity_ref: None,
+            rows: vec![
+                crate::feature::FeatureVariableRow {
+                    variable_type: 1,
+                    key: 7,
+                    value: Some(4.0),
+                    value_body: Vec::new(),
+                    guess: Some(4.0),
+                    guess_body: Vec::new(),
+                    guess_dimension_driven: false,
+                    known: Some(0),
+                    homogeneity: Some(1),
+                    uvar_id: Some(10),
+                    dimension_driven: false,
+                    offset: 0,
+                },
+                crate::feature::FeatureVariableRow {
+                    variable_type: 1,
+                    key: 8,
+                    value: None,
+                    value_body: Vec::new(),
+                    guess: None,
+                    guess_body: Vec::new(),
+                    guess_dimension_driven: true,
+                    known: Some(0),
+                    homogeneity: Some(1),
+                    uvar_id: Some(20),
+                    dimension_driven: true,
+                    offset: 0,
+                },
+            ],
+            points: Vec::new(),
+            offset: 0,
+        }),
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+
+    assert_eq!(
+        resolved_section_coordinates(&definition).get(&8),
+        Some(&[Some(4.0), None])
+    );
+}
+
+#[test]
 fn section_line_requires_two_solved_points() {
     let segment = crate::feature::FeatureSegment {
         kind: crate::feature::FeatureSegmentKind::Line,
