@@ -330,15 +330,19 @@ exact XML, and byte range. GUI-only providers remain valid named records rather 
 to an unrelated application object.
 
 For shape-bearing objects, the view provider's shape color, transparency, visibility, and material
-scalars produce an object appearance and explicit body bindings. Packed colors decode as red,
-green, blue, and reserved low byte; the independent transparency percentage determines opacity.
-The effective body display fields mirror this object-level assignment. Per-face `DiffuseColor`,
-per-edge `LineColorArray`, and per-vertex `PointColorArray` lists are higher-precedence presentation
-layers. They are not inferred from the corresponding object color. Each list contains a
-little-endian count followed by packed-color records. A count of one applies its color to every
+scalars describe the application object's exact-shape property named `Shape`. They produce an
+object appearance and explicit bindings only for bodies transferred from that property. Other
+exact-shape properties on the same object do not inherit this view-provider state. Packed colors
+decode as red, green, blue, and reserved low byte; the independent transparency percentage
+determines opacity. The effective body display fields mirror this object-level assignment.
+Per-face `DiffuseColor`, per-edge `LineColorArray`, and per-vertex `PointColorArray` lists are
+higher-precedence presentation layers. They are not inferred from the corresponding object color.
+Each list contains a little-endian count followed by packed-color records. A count of one applies
+its color to every
 member of the corresponding Face, Edge, or Vertex element-map group. Otherwise, the count must
-equal the number of names in that ordered group. Each persistent element name supplies the neutral
-topology occurrences that receive the override. The resulting bindings explicitly record
+equal the number of names in that ordered group. The group comes only from the element map owned by
+the `Shape` property. Each persistent element name supplies the neutral topology occurrences that
+receive the override. The resulting bindings explicitly record
 face-over-object, edge-array-over-line, or vertex-array-over-point precedence. Missing identity or
 a count mismatch leaves the side entry retained without guessing transient topology labels.
 

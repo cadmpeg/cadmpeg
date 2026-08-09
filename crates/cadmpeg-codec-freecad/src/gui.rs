@@ -76,12 +76,14 @@ pub(crate) fn transfer(
     let payloads_by_owner = payloads
         .iter()
         .filter_map(|payload| {
-            let owner = properties
+            let property = properties
                 .iter()
-                .find(|property| property.id == payload.property)?
-                .owner
-                .as_str();
-            Some((owner, payload.id.as_str()))
+                .find(|property| property.id == payload.property)?;
+            Some((
+                property.owner.as_str(),
+                property.name.as_str(),
+                payload.id.as_str(),
+            ))
         })
         .collect::<Vec<_>>();
     let providers = xml
@@ -173,8 +175,8 @@ pub(crate) fn transfer(
         let material = values.get("ShapeMaterial");
         let body_ids = payloads_by_owner
             .iter()
-            .filter(|(owner, _)| *owner == object_id)
-            .flat_map(|(_, payload)| {
+            .filter(|(owner, property, _)| *owner == object_id && *property == "Shape")
+            .flat_map(|(_, _, payload)| {
                 ir.model
                     .bodies
                     .iter()
@@ -209,8 +211,8 @@ pub(crate) fn transfer(
         }
         let payload_prefixes = payloads_by_owner
             .iter()
-            .filter(|(owner, _)| *owner == object_id)
-            .map(|(_, payload)| format!("{}:", crate::native::id_key(payload)))
+            .filter(|(owner, property, _)| *owner == object_id && *property == "Shape")
+            .map(|(_, _, payload)| format!("{}:", crate::native::id_key(payload)))
             .collect::<Vec<_>>();
         if let Some(color) = values
             .get("LineColor")
@@ -733,19 +735,21 @@ fn transfer_topology_colors(
             bytes.len()
         )));
     }
-    let shape_properties = properties
+    let Some(shape_property) = properties
         .iter()
         .filter(|property| property.owner == object_id)
-        .filter(|property| {
+        .filter(|property| property.name == "Shape")
+        .find(|property| {
             payloads
                 .iter()
                 .any(|payload| payload.property == property.id)
         })
-        .map(|property| property.id.as_str())
-        .collect::<Vec<_>>();
+    else {
+        return Ok(());
+    };
     let Some(group) = element_maps
         .iter()
-        .find(|map| shape_properties.contains(&map.property.as_str()))
+        .find(|map| map.property == shape_property.id)
         .and_then(|map| map.maps.last())
         .and_then(|map| {
             map.groups

@@ -100,16 +100,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the value semantics to transfer the property to the correct neutral presentation field.
 
-### GP-04. Topology-color shape-property association
-
-**Question.** Which exact-shape property and element map does a `DiffuseColor`, `LineColorArray`, or `PointColorArray` side entry describe when the application object owns more than one shape property?
-
-**Known.** `freecad_fcstd.md` §11 "For shape-bearing objects, the view provider's shape color" requires each persistent element name to supply the neutral topology occurrences that receive an override. A missing identity leaves the side entry retained without guessing a transient topology label.
-
-**Conflict.** `gui.rs` `transfer_topology_colors` collects all payload-bearing properties on the application object, takes the first matching `ElementMapRecord`, takes its final map node, and takes the first group of the requested topology kind. It does not connect the GUI color property to one shape property. With multiple shape properties, source order can bind the color list to the wrong topology or make a valid count appear invalid.
-
-**Need.** We must find the persisted association rule between a GUI topology-color array and its application shape property. If the format supplies no association, neutral transfer must require one unambiguous shape candidate.
-
 ## 4. Sketch geometry
 
 ### SG-02. Conic conventions without a FreeCAD-saved witness

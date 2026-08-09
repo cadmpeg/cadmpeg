@@ -5503,7 +5503,28 @@ So 1001000 +2 0 *
 fn connects_persistent_element_names_to_neutral_topology() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1" StringHasher="1">
 <Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
-<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape">
+<ObjectData Count="1"><Object name="Shape"><Properties Count="2">
+<Property name="AuxShape" type="Part::PropertyPartShape">
+<Part HasherIndex="0" SaveHasher="1" ElementMap="1.0" file="AuxShape.brp"/>
+<ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap>
+<ElementMap2 count="5">
+41 PostfixCount 0 MapCount 1
+ElementMap 1 41 3
+Face ChildCount 0 NameCount 2
+0
+;FaceStable.0.a 0
+Edge ChildCount 0 NameCount 3
+0
+;EdgeStable1.0.a 0
+;EdgeStable2.0.a 0
+Vertex ChildCount 0 NameCount 3
+0
+;VertexStable1.0.a 0
+;VertexStable2.0.a 0
+EndMap
+</ElementMap2>
+</Property>
+<Property name="Shape" type="Part::PropertyPartShape">
 <Part HasherIndex="0" SaveHasher="1" ElementMap="1.0" file="Shape.brp"/>
 <StringHasher saveall="0" threshold="16" count="0" new="1"/>
 <StringHasher2 count="1">
@@ -5567,6 +5588,7 @@ Co 1001000 +2 0 *
         ("DiffuseColor", &face_colors),
         ("LineColorArray", &edge_colors),
         ("PointColorArray", &point_colors),
+        ("AuxShape.brp", brep),
         ("Shape.brp", brep),
     ]);
     let result = FcstdCodec
@@ -5585,18 +5607,28 @@ Co 1001000 +2 0 *
     let maps = namespace
         .arena_as::<crate::native::ElementMapRecord>("element_maps")
         .expect("required invariant");
-    assert_eq!(maps.len(), 1);
-    assert_eq!(maps[0].hasher_index, Some(0));
-    let groups = &maps[0].maps[0].groups;
+    assert_eq!(maps.len(), 2);
+    let shape_map = maps
+        .iter()
+        .find(|map| map.property.ends_with("#Shape:Shape"))
+        .expect("displayed Shape element map");
+    assert_eq!(shape_map.hasher_index, Some(0));
+    let groups = &shape_map.maps[0].groups;
     assert_eq!(groups[0].names[1][0].topology_ids.len(), 1);
     assert_eq!(groups[1].names[1][0].topology_ids.len(), 1);
     assert_eq!(groups[1].names[2][0].topology_ids.len(), 1);
     assert_eq!(groups[2].names[1][0].topology_ids.len(), 1);
     assert_eq!(groups[2].names[2][0].topology_ids.len(), 1);
+    let shape_face_ids = groups[0]
+        .names
+        .iter()
+        .flatten()
+        .flat_map(|name| &name.topology_ids)
+        .collect::<std::collections::HashSet<_>>();
     assert!(result.ir.model.appearance_bindings.iter().any(|binding| {
         matches!(
-            binding.target,
-            cadmpeg_ir::appearance::AppearanceTarget::Face(_)
+            &binding.target,
+            cadmpeg_ir::appearance::AppearanceTarget::Face(face) if shape_face_ids.contains(&face.0)
         ) && binding.channels.get("precedence").map(String::as_str) == Some("face_over_object")
     }));
     assert_eq!(
