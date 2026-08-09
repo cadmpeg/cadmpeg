@@ -3274,6 +3274,10 @@ fn project_design_history(
     );
     ir.model.configurations = crate::history::project_configurations(&semantic_projection);
     let mut parameter_projection = histories.to_vec();
+    crate::resolved_features::direct_edits::enrich_history_move_face_translations(
+        &mut parameter_projection,
+        lanes,
+    );
     crate::history::enrich_history_parameters_values_only(&mut parameter_projection, lanes);
     crate::resolved_features::holes::
         enrich_history_cosmetic_thread_diameters_without_hole_constructions(

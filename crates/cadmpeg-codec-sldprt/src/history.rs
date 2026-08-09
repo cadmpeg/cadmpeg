@@ -1226,6 +1226,11 @@ fn native_parameter_is_length(feature: &Feature, name: &str, expression: Option<
                             | FeatureClass::RuledSurface
                     )
                 )
+                || (classify(feature) == Some(FeatureClass::MoveFace)
+                    && feature.properties.get("Mode").is_some_and(|mode| {
+                        mode.eq_ignore_ascii_case("Offset")
+                            || mode.eq_ignore_ascii_case("Translate")
+                    }))
                 || is_offset_plane(feature)
                 || cosmetic_thread
         }
@@ -9385,6 +9390,14 @@ fn project_replace_face(feature: &Feature) -> Option<FeatureDefinition> {
 }
 
 fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> {
+    let distance = || {
+        feature
+            .parameters
+            .get("Distance")
+            .or_else(|| feature.parameters.get("D1"))
+            .and_then(|value| parse_length_mm(value))
+            .map(Length)
+    };
     let motion = match feature
         .properties
         .get("Mode")?
@@ -9392,21 +9405,11 @@ fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> {
         .as_str()
     {
         "offset" => FaceMotion::Offset {
-            distance: Length(
-                feature
-                    .parameters
-                    .get("Distance")
-                    .and_then(|value| parse_length_mm(value))?,
-            ),
+            distance: distance()?,
         },
         "translate" => FaceMotion::Translate {
             direction: parse_valid_direction(feature.properties.get("Direction")?)?,
-            distance: Length(
-                feature
-                    .parameters
-                    .get("Distance")
-                    .and_then(|value| parse_length_mm(value))?,
-            ),
+            distance: distance()?,
         },
         "rotate" => FaceMotion::Rotate {
             axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
@@ -9421,7 +9424,11 @@ fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> {
         _ => return None,
     };
     Some(FeatureDefinition::MoveFace {
-        faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
+        faces: feature
+            .properties
+            .get("Faces")
+            .cloned()
+            .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         motion,
     })
 }
@@ -10364,6 +10371,10 @@ fn parse_neutral_parameter_literal(
                 | FeatureDefinition::Shell { .. }
                 | FeatureDefinition::Thicken { .. }
                 | FeatureDefinition::DatumOffsetPlane { .. }
+                | FeatureDefinition::MoveFace {
+                    motion: FaceMotion::Offset { .. } | FaceMotion::Translate { .. },
+                    ..
+                }
         ),
         "D2" => matches!(
             &feature.definition,
@@ -10499,6 +10510,7 @@ pub(crate) fn enrich_history_semantic(
     crate::resolved_features::reference_geometry::enrich_history_sketch_block_references(
         histories, lanes,
     );
+    crate::resolved_features::direct_edits::enrich_history_move_face_translations(histories, lanes);
     enrich_history_parameters_semantic(histories, lanes);
     if matches!(mode, HistoryEnrichment::Read) {
         crate::resolved_features::holes::enrich_history_hole_constructions(histories, lanes);

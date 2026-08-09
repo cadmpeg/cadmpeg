@@ -181,13 +181,22 @@ pub(crate) fn enrich_history_parameters<'a>(
     }
 }
 
-/// Infer a length unit for a standard fillet radius whose native display is a
-/// placeholder such as `R0`. Variable fillets use indexed radius parameters;
-/// their `D1` value is not a constant radius.
+/// Infer a length unit from the owning operation and its native display role.
+/// Move Face stores `D1` as distance. A standard fillet placeholder such as
+/// `R0` also identifies a radius; variable fillets use indexed radii instead.
 fn scalar_unit_from_feature_parameter(
     feature: &crate::records::Feature,
     name: &str,
 ) -> Option<ScalarUnit> {
+    if name == "D1"
+        && crate::classification::classify(feature)
+            == Some(crate::classification::FeatureClass::MoveFace)
+        && feature.properties.get("Mode").is_some_and(|mode| {
+            mode.eq_ignore_ascii_case("Offset") || mode.eq_ignore_ascii_case("Translate")
+        })
+    {
+        return Some(ScalarUnit::Length);
+    }
     let expression = feature.parameters.get(name)?;
     if crate::history::fillet_radius_parameter_has_native_display(feature, name, expression) {
         return Some(ScalarUnit::Length);

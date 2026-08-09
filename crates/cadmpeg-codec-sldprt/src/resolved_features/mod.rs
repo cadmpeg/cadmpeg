@@ -49,6 +49,8 @@ mod curves;
 
 pub(crate) mod dimensions;
 
+pub(crate) mod direct_edits;
+
 mod endpoints;
 
 pub(crate) mod hashes;
