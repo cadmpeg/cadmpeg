@@ -826,9 +826,18 @@ fn is_semantic_note(feature: &Feature) -> bool {
         && feature.properties.is_empty()
 }
 
+fn is_attribute_definition(feature: &Feature) -> bool {
+    feature.input_class.is_none()
+        && feature.source_id.as_deref() == Some("-1")
+        && feature.xml_tag.eq_ignore_ascii_case("Feature")
+        && feature.kind.eq_ignore_ascii_case("Attribute-Definition")
+        && !feature.name.is_empty()
+}
+
 pub(crate) fn is_history_metadata_record(feature: &Feature, features: &[Feature]) -> bool {
     if is_custom_property(feature)
         || is_semantic_note(feature)
+        || is_attribute_definition(feature)
         || matches!(
             feature.input_class.as_deref(),
             Some("moAlignGroup_c" | "moAttribute_c" | "moConfigCommentsFolder_c")
@@ -4128,6 +4137,27 @@ mod history_reference_tests {
         let projected = project_features(std::slice::from_ref(&history));
         assert_eq!(projected.len(), 1);
         assert_eq!(projected[0].native_ref.as_deref(), Some("model"));
+        assert!(project_parameters(&[history]).is_empty());
+    }
+
+    #[test]
+    fn native_attribute_definition_type_is_metadata_without_an_instance_name_match() {
+        let mut definition = feature("definition", Some("-1"), 0);
+        definition.kind = "Attribute-Definition".into();
+        definition.name = "NativeAttributeFamily".into();
+        definition
+            .parameters
+            .insert("NativeAttributeFamily".into(), "0".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![definition],
+        };
+
+        assert!(project_features(std::slice::from_ref(&history)).is_empty());
         assert!(project_parameters(&[history]).is_empty());
     }
 
