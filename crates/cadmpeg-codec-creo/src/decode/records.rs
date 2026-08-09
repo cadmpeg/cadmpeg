@@ -2004,6 +2004,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
             variables: {
                 let resolved_coordinates = resolved_section_coordinates(definition);
                 let resolved_radii = resolved_section_radii(definition);
+                let resolved_scalars = resolved_section_scalar_values(definition);
                 definition
                     .variables
                     .iter()
@@ -2028,7 +2029,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                                 .get(&row.key)
                                 .and_then(|point| point[1]),
                             3 => resolved_radii.get(&row.key).copied(),
-                            _ => None,
+                            _ => resolved_scalars.get(&(row.variable_type, row.key)).copied(),
                         },
                         offset: row.offset,
                     })

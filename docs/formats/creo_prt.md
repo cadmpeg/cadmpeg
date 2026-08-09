@@ -1484,6 +1484,16 @@ function-2 row pairs one type-3 row with one type-0 row, the type-0 key is a
 zero-based ordinal into a complete `dimtab_ptr` row table of dimension type
 `3`. The type-0 scalar, selected dimension value, and type-3 radius scalar are
 equal positive millimetre values; the type-3 row key is the radius identity.
+Function `0` has exactly six argument slots. The first two rows are the type-1 and
+type-2 coordinates of a first point. The next two rows are the type-1 and type-2
+coordinates of a second point. The fifth row has type `0` or `3` and is the
+non-negative radial distance. The sixth row has type `4` or `6` and is an angle
+in radians. The second point equals the first point plus the radial distance
+multiplied by `[cos(angle), sin(angle)]`. A zero radial distance produces a zero
+coordinate difference and does not constrain the angle. A missing radial
+distance or angle is resolved only when the complete point coordinates determine
+a unique value, and a stored value must agree with those coordinates before the
+equation is transferred.
 Function `35` has nine argument slots. The first two rows are the type-1 and
 type-2 coordinates of a target point. The next four rows are the type-1 and
 type-2 coordinates of two distinct reference points. The seventh row has type

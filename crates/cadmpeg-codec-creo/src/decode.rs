@@ -3363,6 +3363,8 @@ pub(crate) fn resolved_section_coordinates(
         definition,
         &ambiguous_point_ids,
     ));
+    let radial_constraints =
+        section_equation_radial_constraints(definition, &points, &ambiguous_point_ids);
     let mut signed_dimensions = BTreeMap::<(u32, u32, usize), Option<f64>>::new();
     for (first, second, coordinate, delta) in signed_dimension_candidates {
         let (key, canonical_delta) = if first <= second {
@@ -3461,6 +3463,22 @@ pub(crate) fn resolved_section_coordinates(
             equations.push(equation);
         }
     }
+    for constraint in &radial_constraints {
+        if let Some(offset) = constraint.offset() {
+            equations.push(SectionCoordinateEquation::point_difference(
+                constraint.first,
+                constraint.second,
+                0,
+                offset[0],
+            ));
+            equations.push(SectionCoordinateEquation::point_difference(
+                constraint.first,
+                constraint.second,
+                1,
+                offset[1],
+            ));
+        }
+    }
     for &([first, second], coordinate) in &same_coordinate_points {
         equations.push(SectionCoordinateEquation::source_difference(
             first, second, coordinate, 0.0,
@@ -3528,6 +3546,35 @@ pub(crate) fn resolved_section_coordinates(
         &unsigned_dimension_candidates,
     );
     for ((point, coordinate), value) in unsigned_coordinates {
+        equations.push(SectionCoordinateEquation::point_value(
+            point, coordinate, value,
+        ));
+    }
+    let solved_coordinates = solve_section_coordinate_equations(&equations, &stored_coordinates);
+    for constraint in
+        section_equation_radial_constraints(definition, &solved_coordinates, &ambiguous_point_ids)
+    {
+        if let Some(offset) = constraint.offset() {
+            equations.push(SectionCoordinateEquation::point_difference(
+                constraint.first,
+                constraint.second,
+                0,
+                offset[0],
+            ));
+            equations.push(SectionCoordinateEquation::point_difference(
+                constraint.first,
+                constraint.second,
+                1,
+                offset[1],
+            ));
+        }
+    }
+    let second_unsigned_coordinates = solve_unsigned_dimension_coordinates(
+        &equations,
+        &stored_coordinates,
+        &unsigned_dimension_candidates,
+    );
+    for ((point, coordinate), value) in second_unsigned_coordinates {
         equations.push(SectionCoordinateEquation::point_value(
             point, coordinate, value,
         ));
@@ -3684,6 +3731,176 @@ fn section_equation_coordinate_equalities(
             }
             Some((first.key, second.key, usize::from(first.variable_type == 2)))
         })
+        .collect()
+}
+
+#[derive(Clone, Copy)]
+struct SectionRadialConstraint {
+    first: u32,
+    second: u32,
+    radius: (u32, u32),
+    angle: (u32, u32),
+    radius_value: Option<f64>,
+    angle_value: Option<f64>,
+}
+
+impl SectionRadialConstraint {
+    fn offset(self) -> Option<[f64; 2]> {
+        let radius = self.radius_value?;
+        if radius.abs() <= 1e-12 {
+            return Some([0.0; 2]);
+        }
+        let angle = self.angle_value?;
+        Some([radius * angle.cos(), radius * angle.sin()])
+    }
+}
+
+fn section_equation_radial_constraints(
+    definition: &crate::feature::FeatureDefinition,
+    coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> Vec<SectionRadialConstraint> {
+    let Some(variables) = definition
+        .variables
+        .as_ref()
+        .filter(|table| table.is_complete())
+    else {
+        return Vec::new();
+    };
+    let Some(equations) =
+        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+    else {
+        return Vec::new();
+    };
+    let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
+        return Vec::new();
+    };
+    if declared_count != equations.rows.len() + 1 {
+        return Vec::new();
+    }
+    equations
+        .rows
+        .iter()
+        .filter(|equation| equation.function_id == 0 && equation.arguments.len() == 6)
+        .filter_map(|equation| {
+            let [
+                Some(first_u),
+                Some(first_v),
+                Some(second_u),
+                Some(second_v),
+                Some(radius),
+                Some(angle),
+            ] = equation.arguments.as_slice()
+            else {
+                return None;
+            };
+            let first_u = variables.rows.get(usize::try_from(*first_u).ok()?)?;
+            let first_v = variables.rows.get(usize::try_from(*first_v).ok()?)?;
+            let second_u = variables.rows.get(usize::try_from(*second_u).ok()?)?;
+            let second_v = variables.rows.get(usize::try_from(*second_v).ok()?)?;
+            let radius = variables.rows.get(usize::try_from(*radius).ok()?)?;
+            let angle = variables.rows.get(usize::try_from(*angle).ok()?)?;
+            if first_u.variable_type != 1
+                || first_v.variable_type != 2
+                || second_u.variable_type != 1
+                || second_v.variable_type != 2
+                || first_u.key != first_v.key
+                || second_u.key != second_v.key
+                || first_u.key == second_u.key
+                || !matches!(radius.variable_type, 0 | 3)
+                || !matches!(angle.variable_type, 4 | 6)
+                || ambiguous_point_ids.contains(&first_u.key)
+                || ambiguous_point_ids.contains(&second_u.key)
+            {
+                return None;
+            }
+            let mut radius_value = match radius.value {
+                Some(value) if value.is_finite() && value >= 0.0 => Some(value),
+                Some(_) => return None,
+                None => None,
+            };
+            let mut angle_value = match angle.value {
+                Some(value) if value.is_finite() => Some(value),
+                Some(_) => return None,
+                None => None,
+            };
+            let first_point = coordinates.get(&first_u.key).and_then(|point| {
+                Some([point[0]?, point[1]?])
+            });
+            let second_point = coordinates.get(&second_u.key).and_then(|point| {
+                Some([point[0]?, point[1]?])
+            });
+            if let (Some(first), Some(second)) = (first_point, second_point) {
+                if !first.into_iter().chain(second).all(f64::is_finite) {
+                    return None;
+                }
+                let delta = [second[0] - first[0], second[1] - first[1]];
+                let distance = delta[0].hypot(delta[1]);
+                let scale = distance
+                    .abs()
+                    .max(radius_value.unwrap_or(0.0).abs())
+                    .max(1.0);
+                if radius_value.is_some_and(|value| (value - distance).abs() > 1e-9 * scale) {
+                    return None;
+                }
+                radius_value.get_or_insert(distance);
+                if distance > 1e-12 {
+                    let derived_angle = delta[1].atan2(delta[0]);
+                    if angle_value.is_some_and(|value| {
+                        let difference = (value - derived_angle).rem_euclid(std::f64::consts::TAU);
+                        difference.min(std::f64::consts::TAU - difference) > 1e-9
+                    }) {
+                        return None;
+                    }
+                    angle_value.get_or_insert(derived_angle);
+                }
+            }
+            Some(SectionRadialConstraint {
+                first: first_u.key,
+                second: second_u.key,
+                radius: (radius.variable_type, radius.key),
+                angle: (angle.variable_type, angle.key),
+                radius_value,
+                angle_value,
+            })
+        })
+        .collect()
+}
+
+pub(crate) fn resolved_section_scalar_values(
+    definition: &crate::feature::FeatureDefinition,
+) -> BTreeMap<(u32, u32), f64> {
+    let coordinates = resolved_section_coordinates(definition);
+    let mut values = BTreeMap::<(u32, u32), Option<f64>>::new();
+    for constraint in
+        section_equation_radial_constraints(definition, &coordinates, &BTreeSet::new())
+    {
+        for (variable, value) in [
+            (constraint.radius, constraint.radius_value),
+            (constraint.angle, constraint.angle_value),
+        ] {
+            let Some(value) = value else {
+                continue;
+            };
+            match values.entry(variable) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(value));
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    let Some(stored) = entry.get() else {
+                        continue;
+                    };
+                    let scale = stored.abs().max(value.abs()).max(1.0);
+                    if (stored - value).abs() > 1e-9 * scale {
+                        *entry.get_mut() = None;
+                    }
+                }
+            }
+        }
+    }
+    values
+        .into_iter()
+        .filter_map(|(variable, value)| Some((variable, value?)))
         .collect()
 }
 
@@ -4753,6 +4970,22 @@ pub(crate) fn resolved_section_radii(
         if row.variable_type == 3 {
             if let Some(value) = row.value.filter(|value| value.is_finite() && *value > 0.0) {
                 candidates.entry(row.key).or_default().push(value);
+            }
+        }
+    }
+    let radial_coordinates = resolved_section_coordinates(definition);
+    for constraint in
+        section_equation_radial_constraints(definition, &radial_coordinates, &BTreeSet::new())
+    {
+        if constraint.radius.0 == 3 {
+            if let Some(value) = constraint
+                .radius_value
+                .filter(|value| value.is_finite() && *value > 0.0)
+            {
+                candidates
+                    .entry(constraint.radius.1)
+                    .or_default()
+                    .push(value);
             }
         }
     }
@@ -34317,26 +34550,50 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
         .flat_map(|variables| &variables.rows)
         .filter(|row| row.guess_dimension_driven)
         .count();
-    let resolved_dimension_driven_coordinate_variable_count = scan
+    let (
+        resolved_dimension_driven_variable_count,
+        resolved_dimension_driven_coordinate_variable_count,
+        resolved_dimension_driven_other_variable_count,
+    ) = scan
         .features
         .definitions
         .iter()
         .map(|definition| {
-            let resolved = resolved_section_coordinates(definition);
+            let resolved_coordinates = resolved_section_coordinates(definition);
+            let resolved_radii = resolved_section_radii(definition);
+            let resolved_scalars = resolved_section_scalar_values(definition);
             definition
                 .variables
                 .iter()
                 .flat_map(|variables| &variables.rows)
-                .filter(|row| {
-                    row.dimension_driven
-                        && matches!(row.variable_type, 1 | 2)
-                        && resolved.get(&row.key).is_some_and(|coordinates| {
-                            coordinates[usize::from(row.variable_type == 2)].is_some()
-                        })
-                })
-                .count()
+                .filter(|row| row.dimension_driven)
+                .fold(
+                    (0usize, 0usize, 0usize),
+                    |(all, coordinates, other), row| {
+                        let resolved = match row.variable_type {
+                            1 | 2 => resolved_coordinates
+                                .get(&row.key)
+                                .and_then(|point| point[usize::from(row.variable_type == 2)]),
+                            3 => resolved_radii.get(&row.key).copied(),
+                            _ => resolved_scalars.get(&(row.variable_type, row.key)).copied(),
+                        };
+                        (
+                            all + usize::from(resolved.is_some()),
+                            coordinates
+                                + usize::from(
+                                    matches!(row.variable_type, 1 | 2) && resolved.is_some(),
+                                ),
+                            other
+                                + usize::from(
+                                    !matches!(row.variable_type, 1 | 2) && resolved.is_some(),
+                                ),
+                        )
+                    },
+                )
         })
-        .sum::<usize>();
+        .fold((0usize, 0usize, 0usize), |total, counts| {
+            (total.0 + counts.0, total.1 + counts.1, total.2 + counts.2)
+        });
     coverage.insert(
         "decoded_feature_dimension_driven_variable_count".to_string(),
         decoded_dimension_driven_variable_count,
@@ -34356,7 +34613,7 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
     );
     coverage.insert(
         "resolved_feature_dimension_driven_variable_count".to_string(),
-        resolved_dimension_driven_coordinate_variable_count,
+        resolved_dimension_driven_variable_count,
     );
     coverage.insert(
         "resolved_feature_dimension_driven_coordinate_variable_count".to_string(),
@@ -34364,12 +34621,12 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
     );
     coverage.insert(
         "resolved_feature_dimension_driven_other_variable_count".to_string(),
-        0,
+        resolved_dimension_driven_other_variable_count,
     );
     coverage.insert(
         "unresolved_feature_dimension_driven_variable_count".to_string(),
         decoded_dimension_driven_variable_count
-            .saturating_sub(resolved_dimension_driven_coordinate_variable_count),
+            .saturating_sub(resolved_dimension_driven_variable_count),
     );
     coverage.insert(
         "unresolved_feature_dimension_driven_coordinate_variable_count".to_string(),
@@ -34379,7 +34636,8 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
     coverage.insert(
         "unresolved_feature_dimension_driven_other_variable_count".to_string(),
         decoded_dimension_driven_variable_count
-            .saturating_sub(decoded_dimension_driven_coordinate_variable_count),
+            .saturating_sub(decoded_dimension_driven_coordinate_variable_count)
+            .saturating_sub(resolved_dimension_driven_other_variable_count),
     );
     coverage.insert(
         "unresolved_feature_dimension_driven_guess_count".to_string(),

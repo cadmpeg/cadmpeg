@@ -6460,6 +6460,88 @@ fn equation_function_two_binds_radius_row_to_dimension_row() {
 }
 
 #[test]
+fn equation_function_zero_solves_radial_endpoint_and_opaque_scalars() {
+    let variable = |variable_type, key, value| crate::feature::FeatureVariableRow {
+        variable_type,
+        key,
+        value,
+        value_body: Vec::new(),
+        guess: value,
+        guess_body: Vec::new(),
+        guess_dimension_driven: false,
+        known: Some(0),
+        homogeneity: Some(1),
+        uvar_id: None,
+        dimension_driven: false,
+        offset: 0,
+    };
+    let definition = |second: [Option<f64>; 2], radius: Option<f64>, angle: Option<f64>| {
+        crate::feature::FeatureDefinition {
+            id: 40,
+            owner_feature_id: None,
+            body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+                \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                \x01\x00\xf8\x06\x00\x01\x02\x03\x04\x05\xf6\xe2"
+                .to_vec(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: Some(crate::feature::FeatureVariableTable {
+                declared_count: 6,
+                entity_ref: None,
+                rows: vec![
+                    variable(1, 1, Some(0.0)),
+                    variable(2, 1, Some(0.0)),
+                    variable(1, 2, second[0]),
+                    variable(2, 2, second[1]),
+                    variable(3, 9, radius),
+                    variable(6, 10, angle),
+                ],
+                points: Vec::new(),
+                offset: 0,
+            }),
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        }
+    };
+
+    let solved = definition([None, None], Some(2.0), Some(std::f64::consts::FRAC_PI_2));
+    let solved_point = resolved_section_points(&solved)
+        .get(&2)
+        .copied()
+        .expect("point");
+    assert!(solved_point[0].abs() <= 1e-12);
+    assert!((solved_point[1] - 2.0).abs() <= 1e-12);
+    assert_eq!(
+        resolved_section_scalar_values(&solved).get(&(3, 9)),
+        Some(&2.0)
+    );
+    assert_eq!(
+        resolved_section_scalar_values(&solved).get(&(6, 10)),
+        Some(&std::f64::consts::FRAC_PI_2)
+    );
+
+    let derived_angle = definition([Some(0.0), Some(2.0)], Some(2.0), None);
+    assert_eq!(
+        resolved_section_scalar_values(&derived_angle).get(&(6, 10)),
+        Some(&std::f64::consts::FRAC_PI_2)
+    );
+
+    let derived_radius = definition(
+        [Some(0.0), Some(2.0)],
+        None,
+        Some(std::f64::consts::FRAC_PI_2),
+    );
+    assert_eq!(resolved_section_radii(&derived_radius).get(&9), Some(&2.0));
+}
+
+#[test]
 fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
     let variable =
         |variable_type, key, value, dimension_driven| crate::feature::FeatureVariableRow {
