@@ -2182,7 +2182,7 @@ fn build_one(
             shell_step,
             "shell record",
         )?;
-        let face_steps = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
+        let (shell_type, face_steps) = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
             let set_type = require_carrier(
                 connected_face_set_type(sr),
                 failure,
@@ -2194,12 +2194,13 @@ fn build_one(
             {
                 typed.remove(&shell_step);
             }
-            require_carrier(
+            let members = require_carrier(
                 connected_set_members(sr, set_type),
                 failure,
                 shell_step,
                 "connected face set member list",
-            )?
+            )?;
+            (set_type, members)
         } else {
             let shell_type = require_carrier(
                 most_specific(sr, &["OPEN_SHELL", "CLOSED_SHELL"]),
@@ -2207,12 +2208,13 @@ fn build_one(
                 shell_step,
                 "shell type",
             )?;
-            require_carrier(
+            let members = require_carrier(
                 named_refs(sr, shell_type, 1),
                 failure,
                 shell_step,
                 "shell face list",
-            )?
+            )?;
+            (shell_type, members)
         };
         if face_steps.is_empty() {
             note_failure(failure, shell_step, "shell face list");
@@ -2666,15 +2668,19 @@ fn build_one(
                 typed.extend([bound_step, loop_step]);
             }
             if outer_bound_count > 1 {
-                losses.push(LossNote {
-                    code: LossKind::TopologyGaugeSubstituted,
-                    severity: Severity::Warning,
-                    message: format!(
-                        "face #{face_step} has {outer_bound_count} FACE_OUTER_BOUND loops; retaining the first outer role and marking the remaining {} roles unspecified",
+                let note = LossNote::new(
+                    LossKind::SourceTopologyInvalid,
+                    format!(
+                        "face #{face_step} violates the STEP face-bound rule with {outer_bound_count} FACE_OUTER_BOUND loops; retaining the first outer role and marking the remaining {} roles unspecified",
                         outer_bound_count - 1
                     ),
-                    provenance: None,
-                });
+                );
+                losses.push(note.with_provenance(cadmpeg_ir::LossProvenance {
+                    format: "step".into(),
+                    stream: String::new(),
+                    offset: fr.span.start as u64,
+                    tag: Some("face".into()),
+                }));
             }
             loop_ids.sort_by_key(|(outer, _)| !outer);
             let loop_ids = loop_ids.into_iter().map(|(_, id)| id).collect();
@@ -2729,11 +2735,25 @@ fn build_one(
                 ),
             );
         }
-        for (component_index, component) in
-            connected_face_components(&face_ids, &loops, &coedges, &component_edge_vertices)
-                .into_iter()
-                .enumerate()
-        {
+        let components =
+            connected_face_components(&face_ids, &loops, &coedges, &component_edge_vertices);
+        if components.len() > 1 {
+            let note = LossNote::new(
+                LossKind::SourceTopologyInvalid,
+                format!(
+                    "source {shell_type} #{shell_step} contains {} disconnected face components across {} faces",
+                    components.len(),
+                    face_ids.len(),
+                ),
+            );
+            losses.push(note.with_provenance(cadmpeg_ir::LossProvenance {
+                format: "step".into(),
+                stream: String::new(),
+                offset: sr.span.start as u64,
+                tag: Some(shell_type.to_ascii_lowercase()),
+            }));
+        }
+        for (component_index, component) in components.into_iter().enumerate() {
             if has_type(root, "BREP_WITH_VOIDS")
                 && shell_steps.first().copied() == Some(shell_reference)
                 && component_index > 0

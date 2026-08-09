@@ -2879,6 +2879,17 @@ fn disconnected_source_shell_is_partitioned_into_connected_ir_shells() {
     assert_eq!(decoded.ir.model.regions.len(), 1);
     assert_eq!(decoded.ir.model.shells.len(), 2);
     assert_eq!(decoded.ir.model.faces.len(), 2);
+    let source_loss = decoded
+        .report
+        .losses
+        .iter()
+        .find(|loss| loss.code == cadmpeg_ir::LossKind::SourceTopologyInvalid)
+        .expect("source topology loss");
+    assert!(source_loss.message.contains("OPEN_SHELL #30"));
+    assert!(source_loss
+        .message
+        .contains("2 disconnected face components"));
+    assert!(source_loss.provenance.is_some());
     let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -10319,7 +10330,8 @@ fn duplicate_face_outer_bounds_are_reported_without_inventing_inner_roles() {
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode duplicate outer bounds");
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::TopologyGaugeSubstituted
+        loss.code == cadmpeg_ir::LossKind::SourceTopologyInvalid
+            && loss.message.contains("violates the STEP face-bound rule")
             && loss
                 .message
                 .contains("marking the remaining 1 roles unspecified")
