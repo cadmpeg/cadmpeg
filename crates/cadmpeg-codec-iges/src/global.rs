@@ -244,6 +244,18 @@ impl Global {
     }
 
     fn validate(&self) -> Result<(), CodecError> {
+        for (index, name) in [
+            (8, "single-precision significance"),
+            (10, "double-precision significance"),
+        ] {
+            let significance = self.integer_field(index, name, None)?;
+            if significance <= 0 || u32::try_from(significance).is_err() {
+                return Err(malformed(format!(
+                    "field {} ({name}) must be a positive u32",
+                    index + 1
+                )));
+            }
+        }
         let scale = self.real_field(12, "model space scale", Some(1.0))?;
         if !scale.is_finite() || scale <= 0.0 {
             return Err(malformed(
@@ -294,6 +306,22 @@ impl Global {
     pub(crate) fn units_flag(&self) -> i64 {
         self.integer_field(13, "units flag", Some(1))
             .expect("validated Global units flag")
+    }
+
+    pub(crate) fn single_precision_significance(&self) -> u32 {
+        self.integer_field(8, "single-precision significance", None)
+            .ok()
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value > 0)
+            .expect("validated Global single-precision significance")
+    }
+
+    pub(crate) fn double_precision_significance(&self) -> u32 {
+        self.integer_field(10, "double-precision significance", None)
+            .ok()
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value > 0)
+            .expect("validated Global double-precision significance")
     }
 
     fn named_unit_factor_mm(&self) -> Option<f64> {

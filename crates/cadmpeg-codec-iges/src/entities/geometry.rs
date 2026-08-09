@@ -693,9 +693,27 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "weights are not strictly positive"));
             continue;
         }
-        let equal_weights = native_weights
-            .first()
-            .is_some_and(|first| native_weights.iter().all(|weight| weight == first));
+        let uncertainty = |index: usize, value: f64| {
+            record
+                .number_significance(index, global)
+                .map_or(0.0, |digits| {
+                    if value == 0.0 {
+                        0.0
+                    } else {
+                        0.5 * 10.0_f64.powf(value.abs().log10().floor() - f64::from(digits) + 1.0)
+                    }
+                })
+        };
+        let equal_within_significance =
+            |left_index: usize, left: f64, right_index: usize, right: f64| {
+                (left - right).abs()
+                    <= uncertainty(left_index, left) + uncertainty(right_index, right)
+            };
+        let equal_weights = native_weights.first().is_some_and(|first| {
+            native_weights.iter().enumerate().all(|(offset, weight)| {
+                equal_within_significance(weight_start, *first, weight_start + offset, *weight)
+            })
+        });
         let polynomial = flags[2] == Some(1);
         if polynomial && !equal_weights {
             losses.push(entity_loss(entry, "polynomial spline has unequal weights"));
@@ -708,16 +726,38 @@ pub(crate) fn project_geometry(
             ));
             continue;
         };
-        let Some(parameter_range) = collect_numbers(range_start, 2) else {
+        let Some(mut parameter_range) = collect_numbers(range_start, 2) else {
             losses.push(entity_loss(
                 entry,
                 "parameter range is missing or non-finite",
             ));
             continue;
         };
-        if parameter_range[0] > parameter_range[1]
-            || parameter_range[0] < knots[degree_usize]
-            || parameter_range[1] > knots[control_count]
+        let domain_start = knots[degree_usize];
+        let domain_end = knots[control_count];
+        if parameter_range[0] < domain_start
+            && equal_within_significance(
+                range_start,
+                parameter_range[0],
+                knot_start + degree_usize,
+                domain_start,
+            )
+        {
+            parameter_range[0] = domain_start;
+        }
+        if parameter_range[1] > domain_end
+            && equal_within_significance(
+                range_start + 1,
+                parameter_range[1],
+                knot_start + control_count,
+                domain_end,
+            )
+        {
+            parameter_range[1] = domain_end;
+        }
+        if parameter_range[0] >= parameter_range[1]
+            || parameter_range[0] < domain_start
+            || parameter_range[1] > domain_end
         {
             losses.push(entity_loss(
                 entry,

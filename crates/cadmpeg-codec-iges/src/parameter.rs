@@ -66,6 +66,22 @@ impl ParameterRecord {
         }
     }
 
+    /// Return the sending-system significance for a real token. A `D`
+    /// exponent selects double precision; every other real syntax selects
+    /// single precision. Integer tokens are exact and have no such bound.
+    pub(crate) fn number_significance(&self, index: usize, global: &Global) -> Option<u32> {
+        let token = self.tokens.get(index)?;
+        if !matches!(token.value, TokenValue::Real(_)) {
+            return None;
+        }
+        let bytes = self.bytes.get(token.span.clone())?;
+        if bytes.iter().any(|byte| matches!(byte, b'D' | b'd')) {
+            Some(global.double_precision_significance())
+        } else {
+            Some(global.single_precision_significance())
+        }
+    }
+
     pub(crate) fn string(&self, index: usize) -> Option<&[u8]> {
         match self.tokens.get(index).map(|token| &token.value)? {
             TokenValue::String(value) => Some(value),

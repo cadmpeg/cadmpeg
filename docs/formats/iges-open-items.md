@@ -174,14 +174,6 @@ The constant demands about ten correct significant digits in each element. The G
 
 **Need.** We need the native parameter domain of each admitted curve type, and one recorded mapping to the IR domain.
 
-### GE-12. Type 126 property flags against the values
-
-**Question.** What does a PROP3 polynomial flag that disagrees with the weights mean, and what slack does the declared parameter range have?
-
-**Known.** `geometry.rs:704-710` tests weight equality with exact `f64` equality, so weights printed as `1.` and `0.9999999999` under PROP3 = 1 lose the curve. `geometry.rs:730-739` compares the declared range with the knot domain with no slack, so a V(0) printed to fewer digits than T(M) loses the curve instead of clamping.
-
-**Need.** We need the authority order between the property flags and the values, and the slack for the declared range.
-
 ## 5. Surfaces and topology
 
 ### TP-01. The Global minimum resolution serves five unrelated roles

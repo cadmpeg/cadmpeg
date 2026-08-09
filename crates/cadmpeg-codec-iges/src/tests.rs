@@ -745,6 +745,32 @@ fn malformed_global_integer_does_not_select_its_default() {
 }
 
 #[test]
+fn real_significance_fields_are_required_and_positive() {
+    for (global, field) in [
+        (
+            b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,,308,15,0H,1.0,2,2HMM,1,1.0,1Hd,0.001,1,1Ha,1Ho,11,0,0H,0H;".as_slice(),
+            9,
+        ),
+        (
+            b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,0,0H,1.0,2,2HMM,1,1.0,1Hd,0.001,1,1Ha,1Ho,11,0,0H,0H;".as_slice(),
+            11,
+        ),
+    ] {
+        let error = IgesCodec
+            .inspect(
+                &mut Cursor::new(fixed_ascii_with_global(global)),
+                &cadmpeg_core::decode::InspectOptions::default(),
+            )
+            .unwrap_err();
+
+        assert!(
+            error.to_string().contains(&format!("field {field}")),
+            "{error}"
+        );
+    }
+}
+
+#[test]
 fn other_units_require_an_exact_supported_standard_name() {
     let global = b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,3,2Hmm,1,1.0,1Hd,0.001,1,1Ha,1Ho,11,0,0H,0H;";
     let error = IgesCodec
@@ -1703,7 +1729,12 @@ fn decode_canonicalizes_ellipse_arc_seam_noise() {
 }
 
 fn nurbs_curve_file() -> Vec<u8> {
+    polynomial_nurbs_curve_file(b"126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,2,0,0,0,1,0,0,1;")
+}
+
+fn polynomial_nurbs_curve_file(parameters: &[u8]) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let parameter_count = parameters.len().div_ceil(64);
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
     bytes.extend(directory_card(
@@ -1711,17 +1742,23 @@ fn nurbs_curve_file() -> Vec<u8> {
         1,
     ));
     bytes.extend(directory_card(
-        ["126", "0", "0", "1", "1", "", "", "NURBS", "0"],
+        [
+            "126",
+            "0",
+            "0",
+            &parameter_count.to_string(),
+            "1",
+            "",
+            "",
+            "NURBS",
+            "0",
+        ],
         2,
     ));
-    bytes.extend(parameter_card(
-        b"126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,2,0,0,0,1,0,0,1;",
-        1,
-        1,
-    ));
+    bytes.extend(parameter_cards(parameters, 1, 1));
     let global_cards = global.len().div_ceil(72);
     bytes.extend(card(
-        format!("S0000001G{global_cards:07}D0000002P0000001").as_bytes(),
+        format!("S0000001G{global_cards:07}D0000002P{parameter_count:07}").as_bytes(),
         b'T',
         1,
     ));
@@ -9231,6 +9268,70 @@ fn decode_projects_a_bounded_polynomial_bspline_curve() {
     assert!(result.report.losses.is_empty());
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_applies_declared_real_significance_to_polynomial_weights() {
+    for (weights, decoded) in [
+        ("1.,0.9999999", true),
+        ("1.,0.99", false),
+        ("1.D0,0.9999999D0", false),
+    ] {
+        let parameters = format!("126,1,1,1,0,1,0,0,0,1,1,{weights},0,0,0,2,0,0,0,1,0,0,1;");
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(polynomial_nurbs_curve_file(parameters.as_bytes())),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            result.ir.model.curves.len(),
+            usize::from(decoded),
+            "{weights}"
+        );
+        assert_eq!(result.report.losses.is_empty(), decoded, "{weights}");
+        if decoded {
+            let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) =
+                &result.ir.model.curves[0].geometry
+            else {
+                panic!("expected a NURBS carrier");
+            };
+            assert_eq!(nurbs.weights, None);
+        } else {
+            assert!(result.report.losses[0]
+                .message
+                .contains("polynomial spline has unequal weights"));
+        }
+    }
+}
+
+#[test]
+fn decode_clamps_bspline_parameter_range_within_declared_real_significance() {
+    for (range_start, decoded) in [("0.12345695", true), ("0.12", false)] {
+        let parameters =
+            format!("126,1,1,1,0,1,0,0.123457,0.123457,1,1,1,1,0,0,0,2,0,0,{range_start},1,0,0,1;");
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(polynomial_nurbs_curve_file(parameters.as_bytes())),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            result.ir.model.edges.len(),
+            usize::from(decoded),
+            "{range_start}"
+        );
+        if decoded {
+            assert_eq!(result.ir.model.edges[0].param_range, Some([0.123_457, 1.0]));
+            assert!(result.report.losses.is_empty());
+        } else {
+            assert!(result.report.losses[0]
+                .message
+                .contains("parameter range lies outside the spline knot domain"));
+        }
+    }
 }
 
 #[test]
