@@ -308,6 +308,8 @@ pub struct Stats {
     /// Faces on a support surface this codec does not type; emitted with an
     /// unknown-geometry carrier.
     pub unknown_surface_faces: usize,
+    /// Hidden procedural support surfaces whose carrier geometry remains opaque.
+    pub unknown_procedural_supports: usize,
     /// Edges whose support curve is an untyped carrier (emitted with no curve).
     pub unknown_curve_edges: usize,
     /// Pcurves withheld because geometric inverse selection was ambiguous.
@@ -443,8 +445,8 @@ fn resolve_sweep_surface(
     }
 }
 
-fn id_offset_surface(attr: u16) -> SurfaceId {
-    SurfaceId(format!("sldprt:brep:offset-support-surf#{attr}"))
+fn id_hidden_support_surface(attr: u16) -> SurfaceId {
+    SurfaceId(format!("sldprt:brep:hidden-support-surf#{attr}"))
 }
 
 fn id_offset_construction(attr: u16) -> ProceduralSurfaceId {
@@ -484,14 +486,30 @@ fn emit_offset_surface(
     });
 }
 
-/// Resolve one carrier as a support of an offset construction. Face-owned
-/// carriers reuse their face surface identity. A support that is not itself
-/// face-owned is emitted as a carrier surface. Offset carriers recurse, and a
-/// cycle invalidates the complete construction.
-fn ensure_offset_support(
+/// Whether one referenced support can be emitted without a procedural cycle.
+///
+/// An untyped reference is still a valid opaque support surface. Offset
+/// carriers recurse because a cycle cannot define a surface.
+fn support_is_acyclic(attr: u16, carriers: &CarrierIndex, resolving: &mut HashSet<u16>) -> bool {
+    if !resolving.insert(attr) {
+        return false;
+    }
+    let acyclic = carriers.surface(attr).is_some()
+        || carriers
+            .offset(attr)
+            .is_none_or(|offset| support_is_acyclic(offset.support, carriers, resolving));
+    resolving.remove(&attr);
+    acyclic
+}
+
+/// Resolve one carrier as a support of a procedural construction. A carrier
+/// owned by an emitted face reuses that face's surface identity. Otherwise the
+/// decoder emits a hidden analytic, NURBS, recursive offset, or opaque support
+/// surface. Offset cycles invalidate the complete construction.
+fn ensure_surface_support(
     attr: u16,
     carriers: &CarrierIndex,
-    face_surface_by_carrier: &HashMap<u16, u16>,
+    emitted_face_surface_by_carrier: &HashMap<u16, u16>,
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
@@ -502,12 +520,12 @@ fn ensure_offset_support(
     }
     let result = (|| {
         if let Some(carrier) = carriers.surface(attr) {
-            let id = face_surface_by_carrier.get(&attr).map_or_else(
-                || id_offset_surface(attr),
+            let id = emitted_face_surface_by_carrier.get(&attr).map_or_else(
+                || id_hidden_support_surface(attr),
                 |bridge| SurfaceId(id_surf(*bridge)),
             );
             if !out.surfaces.iter().any(|surface| surface.id == id)
-                && !face_surface_by_carrier.contains_key(&attr)
+                && !emitted_face_surface_by_carrier.contains_key(&attr)
             {
                 let CarrierGeometry::Surface(geometry) = &carrier.geometry else {
                     unreachable!("surface index contains only surface carriers");
@@ -519,7 +537,7 @@ fn ensure_offset_support(
                 }
                 annotations
                     .note(&id, source_stream, carrier.offset as u64)
-                    .tag("offset_support");
+                    .tag("procedural_support");
                 out.surfaces.push(Surface {
                     id: id.clone(),
                     source_object: None,
@@ -528,20 +546,20 @@ fn ensure_offset_support(
             }
             Some(id)
         } else if let Some(offset) = carriers.offset(attr) {
-            let support = ensure_offset_support(
+            let support = ensure_surface_support(
                 offset.support,
                 carriers,
-                face_surface_by_carrier,
+                emitted_face_surface_by_carrier,
                 out,
                 annotations,
                 source_stream,
                 resolving,
             )?;
-            let surface = face_surface_by_carrier.get(&attr).map_or_else(
-                || id_offset_surface(attr),
+            let surface = emitted_face_surface_by_carrier.get(&attr).map_or_else(
+                || id_hidden_support_surface(attr),
                 |bridge| SurfaceId(id_surf(*bridge)),
             );
-            if !face_surface_by_carrier.contains_key(&attr)
+            if !emitted_face_surface_by_carrier.contains_key(&attr)
                 && !out.surfaces.iter().any(|candidate| candidate.id == surface)
             {
                 let construction = id_offset_construction(attr);
@@ -557,7 +575,22 @@ fn ensure_offset_support(
             }
             Some(surface)
         } else {
-            None
+            let surface = emitted_face_surface_by_carrier.get(&attr).map_or_else(
+                || id_hidden_support_surface(attr),
+                |bridge| SurfaceId(id_surf(*bridge)),
+            );
+            if !emitted_face_surface_by_carrier.contains_key(&attr)
+                && !out.surfaces.iter().any(|candidate| candidate.id == surface)
+            {
+                annotations.exactness(&surface, Exactness::Unknown);
+                out.stats.unknown_procedural_supports += 1;
+                out.surfaces.push(Surface {
+                    id: surface.clone(),
+                    source_object: None,
+                    geometry: SurfaceGeometry::Unknown { record: None },
+                });
+            }
+            Some(surface)
         }
     })();
     resolving.remove(&attr);
@@ -1355,13 +1388,8 @@ fn decode_graph(
             .count();
         faces.retain(|face| bridge_group.contains_key(&face.bridge_attr));
     }
-    let mut surface_ids_by_carrier = HashMap::<u16, u16>::new();
-    let mut face_edges_by_surface_carrier = HashMap::<u16, Vec<(u16, HashSet<u16>)>>::new();
+    let mut face_edges_by_surface_carrier = HashMap::<u16, Vec<HashSet<u16>>>::new();
     for face in &faces {
-        surface_ids_by_carrier
-            .entry(face.surface_attr)
-            .and_modify(|bridge| *bridge = (*bridge).min(face.bridge_attr))
-            .or_insert(face.bridge_attr);
         let edges = face
             .loops
             .iter()
@@ -1373,16 +1401,16 @@ fn decode_graph(
         face_edges_by_surface_carrier
             .entry(face.surface_attr)
             .or_default()
-            .push((face.bridge_attr, edges));
+            .push(edges);
     }
-    let mut offset_surface_ids_by_carrier = HashMap::<u16, u16>::new();
+    let mut emitted_face_surface_by_carrier = HashMap::<u16, u16>::new();
     for face in &faces {
         if face
             .loops
             .iter()
             .any(|(loop_attr, _)| loop_set.contains(loop_attr))
         {
-            offset_surface_ids_by_carrier
+            emitted_face_surface_by_carrier
                 .entry(face.surface_attr)
                 .and_modify(|bridge| *bridge = (*bridge).min(face.bridge_attr))
                 .or_insert(face.bridge_attr);
@@ -1420,10 +1448,13 @@ fn decode_graph(
             }
             _ => {
                 let resolved_offset = carriers.offset(f.surface_attr).and_then(|offset| {
-                    let support = ensure_offset_support(
+                    if !support_is_acyclic(offset.support, carriers, &mut HashSet::new()) {
+                        return None;
+                    }
+                    let support = ensure_surface_support(
                         offset.support,
                         carriers,
-                        &offset_surface_ids_by_carrier,
+                        &emitted_face_surface_by_carrier,
                         &mut out,
                         &mut annotations,
                         source_stream,
@@ -1440,11 +1471,9 @@ fn decode_graph(
                         .filter_map(|coedge| coedge.refs.get(6).copied())
                         .filter(|edge| *edge != 0)
                         .collect();
-                    let [Some(first), Some(second)] = blend.supports.map(|support| {
-                        let bridge = match support {
-                            BlendSupportRef::Surface(attr) => {
-                                surface_ids_by_carrier.get(&attr).copied()
-                            }
+                    let [Some(first_attr), Some(second_attr)] =
+                        blend.supports.map(|support| match support {
+                            BlendSupportRef::Surface(attr) => Some(attr),
                             BlendSupportRef::Pair(attr) => {
                                 let pair = carriers.blend_support_pair(attr)?;
                                 carriers.curve(pair.intersection)?;
@@ -1452,21 +1481,43 @@ fn decode_graph(
                                     face_edges_by_surface_carrier
                                         .get(candidate)?
                                         .iter()
-                                        .filter(|(_, edges)| !face_edges.is_disjoint(edges))
-                                        .map(|(bridge, _)| *bridge)
-                                        .min()
+                                        .any(|edges| !face_edges.is_disjoint(edges))
+                                        .then_some(*candidate)
                                 });
-                                let bridge = adjacent.next()?;
+                                let support = adjacent.next()?;
                                 if adjacent.next().is_some() {
                                     return None;
                                 }
-                                Some(bridge)
+                                Some(support)
                             }
-                        }?;
-                        Some(SurfaceId(id_surf(bridge)))
-                    }) else {
+                        })
+                    else {
                         return None;
                     };
+                    if ![first_attr, second_attr]
+                        .into_iter()
+                        .all(|attr| support_is_acyclic(attr, carriers, &mut HashSet::new()))
+                    {
+                        return None;
+                    }
+                    let first = ensure_surface_support(
+                        first_attr,
+                        carriers,
+                        &emitted_face_surface_by_carrier,
+                        &mut out,
+                        &mut annotations,
+                        source_stream,
+                        &mut HashSet::new(),
+                    )?;
+                    let second = ensure_surface_support(
+                        second_attr,
+                        carriers,
+                        &emitted_face_surface_by_carrier,
+                        &mut out,
+                        &mut annotations,
+                        source_stream,
+                        &mut HashSet::new(),
+                    )?;
                     Some((blend, first, second))
                 });
                 if let Some((offset, support)) = resolved_offset {
@@ -1800,6 +1851,7 @@ fn decode_graph(
     out.vertices.sort_by(|a, b| a.id.cmp(&b.id));
     out.points.sort_by(|a, b| a.id.cmp(&b.id));
     out.surfaces.sort_by(|a, b| a.id.cmp(&b.id));
+    out.procedural_surfaces.sort_by(|a, b| a.id.cmp(&b.id));
     out.curves.sort_by(|a, b| a.id.cmp(&b.id));
     out.pcurves.sort_by(|a, b| a.id.cmp(&b.id));
     out.annotations = annotations.build();
@@ -1816,6 +1868,11 @@ fn decode_graph(
         .chain(out.vertices.iter().map(|entity| entity.id.0.as_str()))
         .chain(out.points.iter().map(|entity| entity.id.0.as_str()))
         .chain(out.surfaces.iter().map(|entity| entity.id.0.as_str()))
+        .chain(
+            out.procedural_surfaces
+                .iter()
+                .map(|entity| entity.id.0.as_str()),
+        )
         .chain(out.curves.iter().map(|entity| entity.id.0.as_str()))
         .chain(out.pcurves.iter().map(|entity| entity.id.0.as_str()))
         .collect::<HashSet<_>>();

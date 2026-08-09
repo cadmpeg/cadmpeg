@@ -2048,6 +2048,9 @@ fn merge_brep(target: &mut Brep, mut source: Brep) {
     target.vertices.append(&mut source.vertices);
     target.points.append(&mut source.points);
     target.surfaces.append(&mut source.surfaces);
+    target
+        .procedural_surfaces
+        .append(&mut source.procedural_surfaces);
     target.curves.append(&mut source.curves);
     target.pcurves.append(&mut source.pcurves);
     target.unknowns.append(&mut source.unknowns);
@@ -2055,6 +2058,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) {
     target.face_atoms.append(&mut source.face_atoms);
     target.body_modifiers.append(&mut source.body_modifiers);
     target.stats.unknown_surface_faces += source.stats.unknown_surface_faces;
+    target.stats.unknown_procedural_supports += source.stats.unknown_procedural_supports;
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
     target.stats.ambiguous_pcurve_parameters += source.stats.ambiguous_pcurve_parameters;
     target.stats.source_entity_records += source.stats.source_entity_records;
@@ -2859,17 +2863,26 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     let s = &decoded.stats;
     let mut losses = Vec::new();
 
-    if s.unknown_surface_faces > 0 {
-        losses.push(
-            SldprtLossCode::GeometryFaceSupportSurfaceUntyped.note(format!(
+    if s.unknown_surface_faces > 0 || s.unknown_procedural_supports > 0 {
+        let mut message = Vec::new();
+        if s.unknown_surface_faces > 0 {
+            message.push(format!(
                 "{} face(s) rest on a support surface this codec does not type (swept, blended, \
-                 intersection, spline-on-surface, or another unsupported family); \
-                 the face, its loops, and trims are emitted with an unknown-geometry surface \
-                 linking to the preserved record bytes. Topology is transferred; the underlying \
-                 surface shape is not.",
+                 intersection, spline-on-surface, or another unsupported family); the face, its \
+                 loops, and trims are emitted with an unknown-geometry surface linking to the \
+                 preserved record bytes. Topology is transferred; the underlying surface shape \
+                 is not.",
                 s.unknown_surface_faces
-            )),
-        );
+            ));
+        }
+        if s.unknown_procedural_supports > 0 {
+            message.push(format!(
+                "{} untyped surface carrier(s) are retained as opaque hidden supports of exact \
+                 procedural constructions.",
+                s.unknown_procedural_supports
+            ));
+        }
+        losses.push(SldprtLossCode::GeometryFaceSupportSurfaceUntyped.note(message.join(" ")));
     }
     if s.unknown_curve_edges > 0 {
         losses.push(

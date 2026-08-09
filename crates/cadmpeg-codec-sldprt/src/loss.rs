@@ -70,7 +70,7 @@ pub enum SldprtLossCode {
     FeatureTypedOperandIncomplete,
     /// Body delete/keep feature retains native selection without a decoded mode.
     FeatureBodyRetentionUnresolved,
-    /// Face rests on a support surface this codec does not type; shape is opaque.
+    /// Face or procedural construction references an untyped support surface.
     GeometryFaceSupportSurfaceUntyped,
     /// Edge references an untyped support curve carried opaque.
     GeometryEdgeSupportCurveUntyped,

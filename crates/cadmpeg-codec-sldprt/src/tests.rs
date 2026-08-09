@@ -370,6 +370,43 @@ fn offset_surface_carrier(attr: u16, support: u16, distance: f64) -> Vec<u8> {
     bytes
 }
 
+/// A compact type-56 constant-radius rolling-ball blend.
+fn blend_surface_carrier(attr: u16, supports: [u16; 2], spine: u16, signed_radius: f64) -> Vec<u8> {
+    let mut bytes = vec![0x00, 0x38];
+    be16(&mut bytes, attr);
+    be32(&mut bytes, 0);
+    for _ in 0..5 {
+        be16(&mut bytes, 0);
+    }
+    bytes.push(0x2b);
+    bytes.push(b'R');
+    for reference in supports.into_iter().chain([spine]) {
+        be16(&mut bytes, reference);
+    }
+    for value in [signed_radius, signed_radius, 1.0, 1.0] {
+        bef64(&mut bytes, value);
+    }
+    bytes
+}
+
+fn blend_triangle_body() -> Vec<u8> {
+    let mut body = triangle_body();
+    let bridge = body
+        .windows(2)
+        .position(|window| window == [0x00, 0x0e])
+        .expect("bridge");
+    body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
+    body.extend(blend_surface_carrier(180, [181, 182], 183, 0.002));
+    body.extend(plane_carrier(
+        181,
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    ));
+    body.extend(line_carrier(183, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
+    body
+}
+
 /// A compact analytic line carrier (tag `00 1e`, 6 f64): point, direction.
 fn line_carrier(attr: u16, point: [f64; 3], dir: [f64; 3]) -> Vec<u8> {
     let mut b = vec![0x00, 0x1e];
@@ -8304,7 +8341,7 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
     }));
     assert!(result.ir.model.surfaces.iter().any(|surface| {
         matches!(surface.geometry, SurfaceGeometry::Plane { .. })
-            && surface.id.0.contains("offset-support-surf#100")
+            && surface.id.0.contains("hidden-support-surf#100")
     }));
 
     let face_surface = &result.ir.model.faces[0].surface;
@@ -8316,6 +8353,102 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
     )
     .expect("nested offset evaluation");
     assert!((point.z - 5.0).abs() < 1.0e-12);
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&blend_triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir.model.procedural_surfaces.len(), 1);
+    assert_eq!(result.ir.model.surfaces.len(), 3);
+    let ProceduralSurfaceDefinition::Blend { supports, .. } =
+        &result.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("rolling-ball construction");
+    };
+    let support_surfaces: Vec<_> = supports
+        .iter()
+        .flatten()
+        .map(|support| {
+            result
+                .ir
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == support.surface)
+                .expect("materialized blend support")
+        })
+        .collect();
+    assert!(matches!(
+        support_surfaces[0].geometry,
+        SurfaceGeometry::Plane { .. }
+    ));
+    assert!(matches!(
+        support_surfaces[1].geometry,
+        SurfaceGeometry::Unknown { .. }
+    ));
+    for surface in support_surfaces {
+        assert!(surface.id.0.contains("hidden-support-surf#"));
+    }
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("1 untyped surface carrier(s) are retained as opaque hidden supports")
+    }));
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn merged_sites_retain_procedural_surface_constructions() {
+    let mut source = outer_header();
+    for (type_id, section) in [
+        (0x20, "Contents/Config-0-Partition"),
+        (0x21, "Contents/Config-1-Partition"),
+    ] {
+        source.extend(make_block(
+            type_id,
+            section,
+            &parasolid_with_body(
+                "partition body",
+                "SCH_SW_33103_11000",
+                &blend_triangle_body(),
+            ),
+        ));
+    }
+
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.model.procedural_surfaces.len(), 2);
+    assert!(result
+        .ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .all(|construction| {
+            result.ir.model.surfaces.iter().any(|surface| {
+                matches!(
+                    &surface.geometry,
+                    cadmpeg_ir::geometry::SurfaceGeometry::Procedural {
+                        construction: candidate,
+                    } if candidate == &construction.id
+                )
+            })
+        }));
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("2 untyped surface carrier(s) are retained as opaque hidden supports")
+    }));
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
