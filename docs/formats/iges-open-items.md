@@ -154,14 +154,6 @@ The constant demands about ten correct significant digits in each element. The G
 
 **Need.** Files whose only free-form curve type is Type 112 lose their complete curve content. We need the continuity budget as a function of the breakpoint width and the declared precision.
 
-### GE-04. Type 130 unused parameter fields
-
-**Question.** May a producer leave the unused Type 130 fields blank?
-
-**Known.** `offsets.rs:186-198` requires each unused field to be an explicit integer `0` or real `0.0`. `parameter.rs:54-60` gives `None` for an omitted field, so a blank unused field fails. The loss text is "uniform offset has a nonzero unused field", which states the opposite of the condition that occurred. `integer()` also gives `None` for a real token, so an unused pointer field written as `0.` fails.
-
-**Need.** The existence of `TokenValue::Omitted` is the codec's own evidence that a producer may leave a field blank. We need the rule for the unused fields of Type 130, and a message that names the condition.
-
 ### GE-05. Type 102 carrier concatenation uses a private tolerance and degrades silently
 
 **Question.** Which tolerance joins Type 102 composite children, and what does a failed join mean?

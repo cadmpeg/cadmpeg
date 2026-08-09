@@ -978,6 +978,10 @@ fn transformed_circular_arc_file(matrix: &[u8], arc: &[u8]) -> Vec<u8> {
 }
 
 fn uniform_offset_circle_file() -> Vec<u8> {
+    uniform_offset_circle_file_with_parameters(b"130,1,1,0,,,0.5,,,,0,0,1,0,1.5707963267948966;")
+}
+
+fn uniform_offset_circle_file_with_parameters(offset: &[u8]) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
@@ -998,11 +1002,7 @@ fn uniform_offset_circle_file() -> Vec<u8> {
         4,
     ));
     bytes.extend(parameter_card(b"100,0,0,0,2,0,0,2;", 1, 1));
-    bytes.extend(parameter_card(
-        b"130,1,1,0,0,0,0.5,0,0,0,0,0,1,0,1.5707963267948966;",
-        3,
-        2,
-    ));
+    bytes.extend(parameter_card(offset, 3, 2));
     let global_cards = global.len().div_ceil(72);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000004P0000002").as_bytes(),
@@ -9254,7 +9254,7 @@ fn decode_rejects_arc_endpoints_beyond_model_resolution() {
 }
 
 #[test]
-fn decode_solves_a_uniform_planar_curve_offset() {
+fn decode_defaults_unused_uniform_offset_scalars_to_zero() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(uniform_offset_circle_file()),
@@ -9285,6 +9285,30 @@ fn decode_solves_a_uniform_planar_curve_offset() {
     assert!(result.report.losses.is_empty());
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_does_not_default_an_unused_offset_pointer() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(uniform_offset_circle_file_with_parameters(
+                b"130,1,1,,,,0.5,,,,0,0,1,0,1.5707963267948966;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result
+        .ir
+        .model
+        .curves
+        .iter()
+        .all(|curve| curve.id.0 != "iges:model:curve#D3"));
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| { loss.message.contains("DE2 is not explicit integer zero") }));
 }
 
 #[test]

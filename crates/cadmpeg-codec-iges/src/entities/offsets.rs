@@ -4,7 +4,7 @@
 use super::geometry::{entity_loss, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
-use crate::parameter::ParameterRecord;
+use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, CurveOffsetDistanceLaw, CurveOffsetLawBasis, NurbsCurve, ProceduralCurve,
     ProceduralCurveDefinition,
@@ -54,6 +54,20 @@ fn coordinate(point: Point3, index: u8) -> Option<f64> {
 fn greville(knots: &[f64], degree: usize, control: usize) -> Option<f64> {
     let values = knots.get(control + 1..=control + degree)?;
     Some(values.iter().sum::<f64>() / degree as f64)
+}
+
+fn omitted_or_integer_zero(record: &ParameterRecord, index: usize) -> bool {
+    matches!(
+        record.tokens.get(index).map(|token| &token.value),
+        Some(TokenValue::Omitted | TokenValue::Integer(0))
+    )
+}
+
+fn omitted_or_numeric_zero(record: &ParameterRecord, index: usize) -> bool {
+    matches!(
+        record.tokens.get(index).map(|token| &token.value),
+        Some(TokenValue::Omitted | TokenValue::Integer(0) | TokenValue::Real(0.0))
+    )
 }
 
 pub(super) struct OffsetProjection {
@@ -180,16 +194,20 @@ pub(super) fn project(
         }
         let (distance, distance_law, geometry) = match flag {
             1 => {
-                if record.integer(3) != Some(0)
-                    || record.integer(4) != Some(0)
-                    || record.integer(5) != Some(0)
-                    || record.number(7) != Some(0.0)
-                    || record.number(8) != Some(0.0)
-                    || record.number(9) != Some(0.0)
+                if record.integer(3) != Some(0) {
+                    losses.push(entity_loss(
+                        entry,
+                        "uniform offset DE2 is not explicit integer zero",
+                    ));
+                    continue;
+                }
+                if !omitted_or_integer_zero(record, 4)
+                    || !omitted_or_integer_zero(record, 5)
+                    || !(7..=9).all(|index| omitted_or_numeric_zero(record, index))
                 {
                     losses.push(entity_loss(
                         entry,
-                        "uniform offset has a nonzero unused field",
+                        "uniform offset has an unused scalar field that is neither zero nor omitted",
                     ));
                     continue;
                 }
@@ -239,10 +257,17 @@ pub(super) fn project(
                 (distance, None, geometry)
             }
             2 => {
-                if record.integer(3) != Some(0) || record.integer(4) != Some(0) {
+                if record.integer(3) != Some(0) {
                     losses.push(entity_loss(
                         entry,
-                        "linear offset has a nonzero function field",
+                        "linear offset DE2 is not explicit integer zero",
+                    ));
+                    continue;
+                }
+                if !omitted_or_integer_zero(record, 4) {
+                    losses.push(entity_loss(
+                        entry,
+                        "linear offset NDIM is neither zero nor omitted",
                     ));
                     continue;
                 }
@@ -371,10 +396,10 @@ pub(super) fn project(
                         continue;
                     }
                 };
-                if (6..=9).any(|index| record.number(index) != Some(0.0)) {
+                if !(6..=9).all(|index| omitted_or_numeric_zero(record, index)) {
                     losses.push(entity_loss(
                         entry,
-                        "function offset has a nonzero unused field",
+                        "function offset has an unused distance field that is neither zero nor omitted",
                     ));
                     continue;
                 }
