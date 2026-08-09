@@ -144,10 +144,13 @@ pub(crate) fn write_semantic_with_records(
         .flat_map(|native| &native.feature_histories)
         .enumerate()
     {
-        sections.push((
-            format!("Contents/Keywords-{index}"),
-            history_payload(history)?,
-        ));
+        let section = annotations
+            .provenance
+            .get(&history.id)
+            .and_then(|provenance| annotations.streams.get(provenance.stream as usize))
+            .cloned()
+            .unwrap_or_else(|| format!("Contents/Keywords-{index}"));
+        sections.push((section, history_payload(history)?));
     }
     for lane in native.iter().flat_map(|native| &native.feature_input_lanes) {
         let section = lane.configuration.as_ref().map_or_else(
@@ -335,21 +338,52 @@ fn section_directory_entries(
 ) -> Result<Vec<Vec<u8>>, CodecError> {
     let source = source_image(records);
     let source_scan = source.map(crate::container::scan_bytes);
+    let source_trailer = if let Some(scan) = source_scan.as_ref() {
+        let mut trailers = scan.directory.iter().map(|entry| entry.trailer);
+        if let Some(first) = trailers.next() {
+            if trailers.any(|trailer| trailer != first) {
+                return Err(CodecError::Malformed(
+                    "SLDPRT source directory has inconsistent entry trailers".into(),
+                ));
+            }
+            Some(first)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     sections
         .iter()
         .zip(type_ids)
         .map(|((section, payload), type_id)| {
             let size = u32::try_from(payload.len())
                 .map_err(|_| CodecError::Malformed("SLDPRT section exceeds 4 GiB".into()))?;
-            let retained = source_scan.as_ref().and_then(|scan| {
-                let entry = scan.directory.iter().find(|entry| {
-                    entry.name == *section && entry.type_id == *type_id && entry.size == size
-                })?;
-                let source = source?;
-                let end = entry.offset.checked_add(46 + entry.name.len())?;
-                source.get(entry.offset..end).map(<[u8]>::to_vec)
+            let source_entry = source_scan.as_ref().and_then(|scan| {
+                scan.directory
+                    .iter()
+                    .find(|entry| entry.name == *section && entry.type_id == *type_id)
             });
-            Ok(retained.unwrap_or_else(|| directory_entry(*type_id, size, section)))
+            if let (Some(entry), Some(source)) =
+                (source_entry.filter(|entry| entry.size == size), source)
+            {
+                let end = entry
+                    .offset
+                    .checked_add(46 + entry.name.len())
+                    .ok_or_else(|| {
+                        CodecError::Malformed("SLDPRT directory entry extent overflow".into())
+                    })?;
+                if let Some(retained) = source.get(entry.offset..end) {
+                    return Ok(retained.to_vec());
+                }
+            }
+            Ok(directory_entry(
+                *type_id,
+                size,
+                section,
+                source_entry.map_or([0; 14], |entry| entry.descriptor),
+                source_trailer.unwrap_or([0xe5, 0x4b, 0x57, 0x5b, 0, 0]),
+            ))
         })
         .collect()
 }
@@ -2905,7 +2939,13 @@ fn block(payload: &[u8], section: &str, type_id: u32) -> Result<Vec<u8>, CodecEr
     Ok(out)
 }
 
-fn directory_entry(type_id: u32, size: u32, section: &str) -> Vec<u8> {
+fn directory_entry(
+    type_id: u32,
+    size: u32,
+    section: &str,
+    descriptor: [u8; 14],
+    trailer: [u8; 6],
+) -> Vec<u8> {
     let name = section
         .bytes()
         .map(|byte| byte.rotate_left(4))
@@ -2916,9 +2956,9 @@ fn directory_entry(type_id: u32, size: u32, section: &str) -> Vec<u8> {
     out.extend_from_slice(&size.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
     out.extend_from_slice(&(name.len() as u32).to_le_bytes());
-    out.extend_from_slice(&[0; 14]);
+    out.extend_from_slice(&descriptor);
     out.extend_from_slice(&name);
-    out.extend_from_slice(&[0xe5, 0x4b, 0x57, 0x5b, 0, 0]);
+    out.extend_from_slice(&trailer);
     out
 }
 fn tag(out: &mut Vec<u8>, kind: u8) {

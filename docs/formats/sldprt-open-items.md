@@ -498,12 +498,12 @@ The metadata attributes carry `Exactness::ByteExact` (`metadata.rs:311`), which 
 
 **Need.** We must know what the undecoded bytes hold before the writer regenerates the record. A decode and re-encode with no edit must not replace them.
 
-### EV-04. Tail-directory entry trailer
+### EV-04. Tail-directory descriptor semantics
 
-**Question.** Which value does a tail-directory entry's 14-byte descriptor and 6-byte trailer hold?
+**Question.** Which value does a tail-directory entry's 14-byte descriptor hold?
 
 **Known.** `sldprt.md` §1.3 "The file tail carries an **OPC package section directory**" states that the 6-byte trailer "has one value for all entries in a file, for example `e5 4b 57 5b 00 00`", and that its first four bytes are the directory separator.
 
-`crates/cadmpeg-codec-sldprt/src/container.rs:542` never reads the descriptor or the trailer, so `DirectoryEntry` cannot carry them. `crates/cadmpeg-codec-sldprt/src/writer.rs:2827` emits 14 zero bytes and the specification's example trailer for every regenerated entry. `writer.rs:342` replays a source entry verbatim when the name, `type_id`, and size all match, so a file whose separator differs and one of whose sections changed size gets two different separators in one directory.
+The decoder retains each descriptor and trailer. A rewritten existing entry retains its descriptor. Every generated entry uses the source directory's unique trailer, so one directory does not mix separators.
 
-**Need.** We must read and retain both fields. A file must keep one separator for all entries.
+**Need.** We must know the descriptor semantics before a new entry can derive a nonzero descriptor without a same-name source entry.

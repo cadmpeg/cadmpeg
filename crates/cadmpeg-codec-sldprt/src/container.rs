@@ -145,6 +145,10 @@ pub struct DirectoryEntry {
     pub size: u32,
     /// Decoded section name.
     pub name: String,
+    /// Per-entry descriptor bytes at frame offset +26.
+    pub descriptor: [u8; 14],
+    /// File-level directory trailer following the encoded name.
+    pub trailer: [u8; 6],
 }
 
 /// One cache-cell section-index entry.
@@ -554,11 +558,18 @@ fn try_directory_entry(bytes: &[u8], off: usize) -> Option<DirectoryEntry> {
     let name_start = off + 40; // 26 + 14-byte descriptor
     let raw = bytes.get(name_start..name_start + name_len as usize)?;
     let name = nibble_swap_name(raw)?;
+    let descriptor = bytes.get(off + 26..off + 40)?.try_into().ok()?;
+    let trailer = bytes
+        .get(name_start + name_len as usize..name_start + name_len as usize + 6)?
+        .try_into()
+        .ok()?;
     Some(DirectoryEntry {
         offset: off,
         type_id,
         size,
         name,
+        descriptor,
+        trailer,
     })
 }
 

@@ -1987,6 +1987,8 @@ fn scan_classifies_blocks_cells_and_directory() {
     assert_eq!(scan.cache_cells[0].name, "Contents/DisplayLists");
     assert_eq!(scan.cache_cells[0].logical_len, 90);
     assert_eq!(scan.directory[0].name, "[Content_Types].xml");
+    assert_eq!(scan.directory[0].descriptor, [0; 14]);
+    assert_eq!(scan.directory[0].trailer, [0xe5, 0x4b, 0x57, 0x5b, 0, 0]);
 }
 
 #[test]
@@ -22505,12 +22507,23 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         .iter()
         .find(|block| block.section.as_deref() == Some("Contents/Config-0-Partition"))
         .unwrap();
+    let keywords = indexed
+        .blocks
+        .iter()
+        .find(|block| block.section.as_deref() == Some("Contents/Keywords"))
+        .unwrap();
     let mut directory = make_directory_entry(
         partition.type_id,
         partition.uncomp_sz,
         "Contents/Config-0-Partition",
     );
     directory[26] = 0xab;
+    let trailer = directory.len() - 6;
+    directory[trailer..trailer + 4].copy_from_slice(&[0x11, 0x22, 0x33, 0x44]);
+    source.extend(directory);
+    let mut directory =
+        make_directory_entry(keywords.type_id, keywords.uncomp_sz, "Contents/Keywords");
+    directory[26] = 0xcd;
     let trailer = directory.len() - 6;
     directory[trailer..trailer + 4].copy_from_slice(&[0x11, 0x22, 0x33, 0x44]);
     source.extend(directory);
@@ -22530,7 +22543,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     update_sldprt_native(&mut decoded.ir, |native| {
         native.feature_histories[0].features[0]
             .parameters
-            .insert("Depth".into(), "30mm".into());
+            .insert("Depth".into(), "30000mm".into());
     });
     decoded.source_fidelity.annotations.exactness.clear();
     assert_eq!(crate::decode::brep_local_sha256(&decoded.ir), brep_hash);
@@ -22568,6 +22581,19 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     assert_eq!(encoded[partition_directory.offset + 26], 0xab);
     let trailer = partition_directory.offset + 40 + partition_directory.name.len();
     assert_eq!(&encoded[trailer..trailer + 4], &[0x11, 0x22, 0x33, 0x44]);
+    assert!(written_scan
+        .directory
+        .iter()
+        .all(|entry| entry.trailer == [0x11, 0x22, 0x33, 0x44, 0, 0]));
+    let keywords_directory = written_scan
+        .directory
+        .iter()
+        .find(|entry| entry.name == "Contents/Keywords")
+        .unwrap();
+    assert_eq!(
+        keywords_directory.descriptor,
+        [0xcd, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    );
     assert!(written_scan.blocks.iter().any(|block| {
         block.section.as_deref() == Some("Contents/Config-0-GhostPartition")
             && block.payload == b"opaque-ghost"
@@ -22581,7 +22607,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     ));
     assert_eq!(
         sldprt_native(&regenerated.ir).feature_histories[0].features[0].parameters["Depth"],
-        "30mm"
+        "30000mm"
     );
 }
 
