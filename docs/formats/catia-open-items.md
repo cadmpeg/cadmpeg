@@ -272,9 +272,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### SN-12. Consolidated persistent-tag namespace
 
-**Question.** How does an `op1` or absolute persistent CGM tag select a serialized record outside the exact class-`0x19` analytic-circle binding?
+**Question.** How does an `op1` or absolute persistent CGM tag select a serialized record outside the exact class-`0x19` circle and embedded type-`3` cylinder bindings?
 
-**Known.** `catia.md` §6.3 "When the `op1` support identity equals" defines the exact unique class-`0x19` binding. The decoder retains other persistent identities.
+**Known.** `catia.md` §6.3 "When the `op1` support identity equals" defines the exact unique class-`0x19` binding and the unique embedded type-`3` cylinder binding. The decoder retains other persistent identities.
 
 **Need.** We must resolve the namespace to bind other consolidated curve and support records.
 
@@ -293,14 +293,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `catia.md` §5.6 "**Circle/arc endpoints by support intersection:**" defines arc selection when one of these witnesses fixes the branch.
 
 **Need.** We must know the remaining selector to reconstruct the arc.
-
-### SN-16. Class-`0x20` persistent reference
-
-**Question.** How does the `op1` or persistent-tag reference in an `a5 03 20` record select a serialized record?
-
-**Known.** `catia.md` §6.3 "`b2 03 20` is the B-family form" defines the pcurve payload and support binding for exact identity and chart matches.
-
-**Need.** We must resolve other references to bind the pcurve support.
 
 ### SN-17. Class-`0x62` owner bounds
 
