@@ -106,8 +106,9 @@ same transformed vertices and zero-based triangle indices remain available as oc
 tessellation; no analytic carrier is inferred from sampled data.
 
 A shape value optionally carries an element-map version and a zero-based document string-table
-index. A newly encoded string table consists of a legacy marker followed by a second XML element,
-either containing the table stream or naming a side entry. Side-entry streams begin with
+index. A newly encoded string table consists of a legacy marker whose immediately following XML
+element is `StringHasher2`, either containing the table stream or naming a side entry. Side-entry
+streams begin with
 `StringTableStart v1` and a decimal record count. Each record begins with a hexadecimal string id,
 a hexadecimal flag word, and zero or more dotted hexadecimal string-id references. A leading
 minus on an id encodes a positive delta from the preceding id. Dotted references are deltas from

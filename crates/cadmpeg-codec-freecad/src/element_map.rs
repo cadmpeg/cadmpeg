@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Persistent string-table and element-map recovery.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use cadmpeg_core::cursor::bounded_len;
 use cadmpeg_core::CodecError;
@@ -33,7 +33,6 @@ pub(crate) fn parse(
         .collect::<HashMap<_, _>>();
 
     let mut tables = Vec::new();
-    let mut claimed_new_layout_records = HashSet::new();
     for node in xml
         .descendants()
         .filter(|node| node.has_tag_name("StringHasher"))
@@ -44,23 +43,18 @@ pub(crate) fn parse(
         let owner_property = owning_property(node, properties);
         let new_layout = node.attribute("new").is_some_and(|value| value != "0");
         let data_node = if new_layout {
-            node.parent()
-                .into_iter()
-                .flat_map(|parent| parent.children())
-                .find(|sibling| {
-                    sibling.has_tag_name("StringHasher2")
-                        && sibling.range().start > node.range().end
-                        && !claimed_new_layout_records.contains(&sibling.range().start)
-                })
+            node.next_siblings()
+                .skip(1)
+                .find(roxmltree::Node::is_element)
+                .filter(|sibling| sibling.has_tag_name("StringHasher2"))
                 .ok_or_else(|| {
-                    CodecError::Malformed("StringHasher new=1 has no StringHasher2 record".into())
+                    CodecError::Malformed(
+                        "StringHasher new=1 is not followed by StringHasher2".into(),
+                    )
                 })?
         } else {
             node
         };
-        if new_layout {
-            claimed_new_layout_records.insert(data_node.range().start);
-        }
         let source_entry = data_node.attribute("file").filter(|name| !name.is_empty());
         let bytes = if let Some(name) = source_entry {
             *entry_data.get(name).ok_or_else(|| {

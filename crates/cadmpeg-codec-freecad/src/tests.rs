@@ -5973,6 +5973,24 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
 }
 
 #[test]
+fn rejects_interleaved_new_string_hasher_payload() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1">
+<Property name="Shape" type="Part::PropertyPartShape"><Part file=""/>
+<StringHasher new="1" count="0"/><Interleaved/><StringHasher2 count="0"/>
+</Property></Properties></Object></ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("interleaved string table must fail");
+
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
 fn detects_marker_but_not_arbitrary_zip() {
     assert_eq!(
         FcstdCodec.detect(&archive(

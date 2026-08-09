@@ -182,16 +182,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 6. Persistent topology identity
 
-### PT-01. `StringHasher2` association
-
-**Question.** Which `StringHasher2` element supplies the data for a `StringHasher new="1"` marker?
-
-**Known.** FreeCAD's `StringHasher::Save` writes `StringHasher2` immediately after the compatibility marker. `StringHasher::Restore` calls `readElement("StringHasher2")` directly after it reads a marker whose `new` attribute is true. `freecad_fcstd.md` §7 "A shape value optionally carries an element-map version" states that the marker is followed by the second XML element.
-
-**Conflict.** `element_map.rs` `parse` searches all later siblings and takes the first unclaimed `StringHasher2`. If the marker's immediate successor is missing or another element is interleaved, it can claim a later table that belongs to another marker instead of rejecting the malformed sequence.
-
-**Need.** The decoder must require the direct successor that the grammar defines. A malformed association must not shift every later string-table index.
-
 ### PT-02. Element-map position to neutral-occurrence order
 
 **Question.** What exact relation connects each final element-map name position to neutral topology occurrences, including repeated placed roots?
