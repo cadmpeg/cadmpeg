@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -29,9 +30,12 @@ mod validation;
 pub(super) const MAX_RECORD_GRAPH_DEPTH: usize = 256;
 
 /// Decode a complete clear-text exchange structure.
-pub fn decode(input: &[u8], options: DecodeOptions) -> Result<DecodeResult, CodecError> {
-    let (exchange, diagnostics) =
-        parse::parse(input).map_err(|error| CodecError::Malformed(error.to_string()))?;
+pub fn decode(
+    input: &[u8],
+    options: DecodeOptions,
+    ctx: &DecodeContext<'_>,
+) -> Result<DecodeResult, CodecError> {
+    let (exchange, diagnostics) = parse::parse_with_context(input, ctx)?;
     Ok(decode_exchange(input, options, &exchange, &diagnostics))
 }
 

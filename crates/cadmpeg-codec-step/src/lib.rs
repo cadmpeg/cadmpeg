@@ -4362,8 +4362,7 @@ impl Codec for StepCodec {
         if self.detect(bytes) == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
         }
-        let (exchange, diagnostics) =
-            parse::parse(bytes).map_err(|error| CodecError::Malformed(error.to_string()))?;
+        let (exchange, diagnostics) = parse::parse_with_context(bytes, ctx)?;
         let (decoded, opaque_offsets) = reader::inspect_exchange(bytes, &exchange, &diagnostics);
         let mut entries = vec![ContainerEntry {
             name: "HEADER".into(),
@@ -4514,6 +4513,7 @@ impl Codec for StepCodec {
                 container_only: ctx.container_only(),
                 policy: *ctx.policy(),
             },
+            ctx,
         )
     }
 }
@@ -4599,6 +4599,7 @@ fn decode_zip(
             container_only: ctx.container_only(),
             policy: *ctx.policy(),
         },
+        ctx,
     )?;
     if let Some(source) = &mut result.ir.source {
         source

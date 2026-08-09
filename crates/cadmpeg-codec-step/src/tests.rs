@@ -256,6 +256,22 @@ fn parser_rejects_excessive_parameter_nesting_without_recursing_unboundedly() {
 }
 
 #[test]
+fn parser_uses_the_decode_session_work_budget() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','','',(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits the test policy");
+    let error = crate::parse::parse_with_context(source, &ctx).expect_err("budget must refuse");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+    ));
+}
+
+#[test]
 fn parser_enforces_the_part21_header_contract() {
     let cases = [
         (

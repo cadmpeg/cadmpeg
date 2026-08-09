@@ -11,6 +11,8 @@ use std::ops::Range;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 use crate::lex::{BinaryValue, LexError, Lexer, Token, TokenKind};
 
@@ -316,6 +318,9 @@ pub enum ParseError {
     /// Tokenization failed.
     #[error(transparent)]
     Lex(#[from] LexError),
+    /// The caller's decode policy refused additional parser work or storage.
+    #[error(transparent)]
+    Resource(#[from] CodecError),
     /// Token sequence violates the exchange grammar.
     #[error("{message} at byte {offset}")]
     Syntax {
@@ -349,27 +354,54 @@ pub struct ParseDiagnostic {
 
 /// Parse one complete clear-text exchange structure and resolve DATA references.
 pub fn parse(input: &[u8]) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
-    let mut lexer = Lexer::new(input);
-    Parser {
-        current: lexer.next_token()?,
+    parse_inner(input, None)
+}
+
+/// Parse one exchange structure while charging the caller's decode session.
+pub fn parse_with_context(
+    input: &[u8],
+    ctx: &DecodeContext<'_>,
+) -> Result<(Exchange, Vec<ParseDiagnostic>), CodecError> {
+    parse_inner(input, Some(ctx)).map_err(ParseError::into_codec_error)
+}
+
+fn parse_inner(
+    input: &[u8],
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
+    let lexer = Lexer::new(input);
+    let mut parser = Parser {
+        current: None,
         lexer,
         last_end: 0,
         depth: 0,
         diagnostics: Vec::new(),
         omitted_entity_name_count: 0,
         first_omitted_entity_name_offset: None,
-    }
-    .exchange()
+        budget,
+    };
+    parser.current = parser.lex_next()?;
+    parser.exchange()
 }
 
-struct Parser<'a> {
-    lexer: Lexer<'a>,
+impl ParseError {
+    fn into_codec_error(self) -> CodecError {
+        match self {
+            Self::Resource(error) => error,
+            error => CodecError::Malformed(error.to_string()),
+        }
+    }
+}
+
+struct Parser<'input, 'ctx, 'arena> {
+    lexer: Lexer<'input>,
     current: Option<Token>,
     last_end: usize,
     depth: usize,
     diagnostics: Vec<ParseDiagnostic>,
     omitted_entity_name_count: usize,
     first_omitted_entity_name_offset: Option<usize>,
+    budget: Option<&'ctx DecodeContext<'arena>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -519,7 +551,7 @@ fn omitted_entity_name(partial: &PartialRecord) -> bool {
         )
 }
 
-impl Parser<'_> {
+impl Parser<'_, '_, '_> {
     fn exchange(mut self) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
         let exchange_start = self.current_offset();
         self.name("ISO-10303-21")?;
@@ -930,6 +962,7 @@ impl Parser<'_> {
             return self.err("expected instance name");
         };
         self.punct(&TokenKind::Equals)?;
+        self.charge_entities(1, "step_parse_record")?;
         let partials = if self.peek(&TokenKind::LParen) {
             self.next_kind()?;
             let mut parts = Vec::new();
@@ -1003,6 +1036,7 @@ impl Parser<'_> {
             return Ok(values);
         }
         loop {
+            self.charge_collection_items(1, "step_parse_parameter")?;
             values.push(self.value()?);
             if self.peek(&TokenKind::Comma) {
                 self.next_kind()?;
@@ -1089,8 +1123,34 @@ impl Parser<'_> {
             return self.err("unexpected end of input");
         };
         self.last_end = token.span.end;
-        self.current = self.lexer.next_token()?;
+        self.current = self.lex_next()?;
         Ok(token.kind)
+    }
+    fn lex_next(&mut self) -> Result<Option<Token>, ParseError> {
+        let token = self.lexer.next_token()?;
+        if token.is_some() {
+            self.charge_work(1, "step_lex_token")?;
+        }
+        Ok(token)
+    }
+    fn charge_work(&self, units: u64, operation: &'static str) -> Result<(), ParseError> {
+        self.budget
+            .map_or(Ok(()), |ctx| ctx.charge_work(units, operation))
+            .map_err(ParseError::Resource)
+    }
+    fn charge_entities(&self, count: u64, operation: &'static str) -> Result<(), ParseError> {
+        self.budget
+            .map_or(Ok(()), |ctx| ctx.charge_entities(count, operation))
+            .map_err(ParseError::Resource)
+    }
+    fn charge_collection_items(
+        &self,
+        count: u64,
+        operation: &'static str,
+    ) -> Result<(), ParseError> {
+        self.budget
+            .map_or(Ok(()), |ctx| ctx.charge_collection_items(count, operation))
+            .map_err(ParseError::Resource)
     }
     fn current_offset(&self) -> usize {
         self.current
