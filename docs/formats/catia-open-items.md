@@ -839,11 +839,3 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `catia.md` defines both color packets. The `EB` value applies to the complete face population. The `EC` value supplies the override color asset. The positional FBB rows independently store the effective face colors, so neutral face appearance binding does not depend on this UUID incidence. The application object graph contains `FeatureForColor` and `SelectingFeatureForColorUuid`, but the UUID-to-standard-face incidence is not assigned.
 
 **Need.** We must know the incidence to preserve or write the native selection relation independently of the effective FBB presentation population.
-
-### AP-02. Positional colour population scope
-
-**Question.** Which condition proves that the face population of the document is the FBB face-row population?
-
-**Known.** `catia.md` §7.4 "An inline `EB 01 R G B` value is an opaque display color" gives the positional rule and scopes it: "The FBB sequence then binds the effective colors to the standard face population." `appearance::transfer` runs after every route, and it binds the FBB colour sequence to the faces of the document by position. Its gates are the equal count of colours and faces, and the equal sequence or multiset of colours against the packet population. No gate tests which route made the faces.
-
-**Need.** `container::identify_variant` tests `coherent_e5` before it tests the FBB run count, so a file with both a coherent E5 stream and an FBB colour run decodes its faces in E5 order and keeps the FBB rows. The colour then binds to the face at the FBB row index. We must know the condition to hold the rule inside its stated scope.
