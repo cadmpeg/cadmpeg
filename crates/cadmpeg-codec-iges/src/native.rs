@@ -1449,7 +1449,7 @@ pub(crate) fn store(
                 components: (1..=3)
                     .map(|index| parameters.and_then(|record| record.number(index)))
                     .collect(),
-                physically_dependent: entry.status.subordinate == 1,
+                physically_dependent: entry.status.is_physically_dependent(),
                 has_transform: entry.transform != 0,
             }
         })
@@ -3728,7 +3728,7 @@ pub(crate) fn store(
                                     "drawing-space-annotation",
                                     |target| {
                                         target.status.use_flag == 1
-                                            && target.status.subordinate == 1
+                                            && target.status.is_physically_dependent()
                                     },
                                 )
                             })
@@ -3994,7 +3994,7 @@ pub(crate) fn store(
                                 "parameterized-curve",
                                 |target| {
                                     parameterized_curve_type(target)
-                                        && target.status.subordinate == 1
+                                        && target.status.is_physically_dependent()
                                         && target.status.use_flag == 1
                                 },
                             )
@@ -4140,7 +4140,7 @@ pub(crate) fn store(
                                         matches!(
                                             (target.entity_type, target.form),
                                             (100 | 102, 0) | (106, 63)
-                                        ) && target.status.subordinate == 1
+                                        ) && target.status.is_physically_dependent()
                                             && target.status.use_flag == 1
                                     },
                                 )
@@ -4187,7 +4187,7 @@ pub(crate) fn store(
                                                 sequence,
                                                 "subordinate-annotation-geometry",
                                                 |target| {
-                                                    target.status.subordinate == 1
+                                                    target.status.is_physically_dependent()
                                                         && target.status.use_flag == 1
                                                 },
                                             )

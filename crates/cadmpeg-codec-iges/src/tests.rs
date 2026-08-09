@@ -849,7 +849,7 @@ fn direction_file() -> Vec<u8> {
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
     bytes.extend(directory_card(
-        ["123", "1", "0", "0", "0", "0", "0", "0", "00010000"],
+        ["123", "1", "0", "0", "0", "0", "0", "0", "00030000"],
         1,
     ));
     bytes.extend(directory_card(
@@ -867,7 +867,7 @@ fn direction_file() -> Vec<u8> {
 }
 
 #[test]
-fn decode_retains_a_typed_dimensionless_direction() {
+fn decode_treats_subordinate_switch_three_as_physically_dependent() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(direction_file()),

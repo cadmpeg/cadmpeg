@@ -676,7 +676,7 @@ pub(super) fn project(
         if child_sequences.iter().any(|sequence| {
             entries
                 .get(sequence)
-                .is_none_or(|child| child.status.subordinate != 1)
+                .is_none_or(|child| !child.status.is_physically_dependent())
         }) {
             losses.push(entity_loss(
                 entry,

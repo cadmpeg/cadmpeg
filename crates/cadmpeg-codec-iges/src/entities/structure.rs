@@ -743,7 +743,7 @@ fn predefined_associativity_valid(
                 && geometry_valid
                 && arrow_cardinality_valid
                 && dimension.is_some_and(|dimension| back_pointer_owners == [dimension])
-                && entry.status.subordinate == 1
+                && entry.status.is_physically_dependent()
         }
         _ => false,
     }
@@ -951,7 +951,7 @@ pub(super) fn project(
                             .is_some_and(|owner| matches!(owner.entity_type, 116 | 132))
                     })
             }
-            27 => entry.status.subordinate == 1 && owners.len() == 1,
+            27 => entry.status.is_physically_dependent() && owners.len() == 1,
             28 | 29 => {
                 !owners.is_empty()
                     && owners.iter().all(|owner| {
@@ -1015,7 +1015,7 @@ pub(super) fn project(
                 owners_valid
             }
             31 => {
-                entry.status.subordinate == 1
+                entry.status.is_physically_dependent()
                     && owners.len() == 1
                     && entries
                         .get(&owners[0])

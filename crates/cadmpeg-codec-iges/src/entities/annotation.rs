@@ -181,7 +181,7 @@ fn child_valid(
     entries.get(&sequence).is_some_and(|entry| {
         entry.entity_type == entity_type
             && forms(entry.form)
-            && entry.status.subordinate == 1
+            && entry.status.is_physically_dependent()
             && entry.status.use_flag == 1
             && records
                 .get(&sequence)
@@ -281,13 +281,13 @@ fn dimension_valid(
                 curves.map(|curve| curve.and_then(|sequence| entries.get(&sequence).copied()));
             let curves_valid = curve_entries[0].is_some_and(|curve| {
                 parameterized_curve_type(curve)
-                    && curve.status.subordinate == 1
+                    && curve.status.is_physically_dependent()
                     && curve.status.use_flag == 1
             }) && match record.integer(3) {
                 Some(0) => true,
                 Some(_) => curve_entries[1].is_some_and(|curve| {
                     parameterized_curve_type(curve)
-                        && curve.status.subordinate == 1
+                        && curve.status.is_physically_dependent()
                         && curve.status.use_flag == 1
                         && !(curve.entity_type == 110
                             && curve_entries[0].is_some_and(|first| first.entity_type == 110))
@@ -425,7 +425,7 @@ fn dimension_valid(
                 Some(_) => enclosure.is_some_and(|sequence| {
                     entries.get(&sequence).is_some_and(|entry| {
                         matches!((entry.entity_type, entry.form), (100 | 102, 0) | (106, 63))
-                            && entry.status.subordinate == 1
+                            && entry.status.is_physically_dependent()
                             && entry.status.use_flag == 1
                     })
                 }),
@@ -537,9 +537,9 @@ fn general_symbol_valid(
     };
     let geometry_valid = (0..geometry_count).all(|offset| {
         pointer(record, 3 + offset, entries).is_some_and(|sequence| {
-            entries
-                .get(&sequence)
-                .is_some_and(|target| target.status.subordinate == 1 && target.status.use_flag == 1)
+            entries.get(&sequence).is_some_and(|target| {
+                target.status.is_physically_dependent() && target.status.use_flag == 1
+            })
         })
     });
     let leader_count_index = 3 + geometry_count;

@@ -93,7 +93,9 @@ pub(super) fn project(
                     .integer(start)
                     .and_then(|value| u32::try_from(value).ok())
                     .and_then(|sequence| entries.get(&sequence).copied())
-                    .is_some_and(|view| view.entity_type == 410 && view.status.subordinate == 2)
+                    .is_some_and(|view| {
+                        view.entity_type == 410 && view.status.is_logically_dependent()
+                    })
                     && (start + 1..=start + 2)
                         .all(|index| record.number(index).is_some_and(f64::is_finite))
                     && (entry.form == 0
@@ -112,7 +114,8 @@ pub(super) fn project(
                     .and_then(|value| u32::try_from(value).ok())
                     .and_then(|sequence| entries.get(&sequence).copied())
                     .is_some_and(|annotation| {
-                        annotation.status.use_flag == 1 && annotation.status.subordinate == 1
+                        annotation.status.use_flag == 1
+                            && annotation.status.is_physically_dependent()
                     })
             })
         });

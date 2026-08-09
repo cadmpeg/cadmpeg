@@ -172,18 +172,6 @@ The constant demands about ten correct significant digits in each element. The G
 
 **Need.** We need the join tolerance for Type 102, and a loss for every degraded carrier.
 
-### GE-06. Subordinate entity switch 03
-
-**Question.** Is an entity with subordinate switch 03 physically dependent?
-
-**Known.** The subordinate entity switch has values 00 independent, 01 physically dependent, 02 logically dependent, and 03 physically and logically dependent. `directory.rs:85-91` keeps the raw value. Each consumer tests `== 1` or `!= 1`, so 03 is treated as not physically dependent: `native.rs:1333`, `geometry.rs:293`, `composite.rs:679`, `annotation.rs:184`, `:284`, `:290`, `:428`, `:542`, `structure.rs:746`, `:954`, `:1018`, `drawing.rs:115`.
-
-**Conflict.** `iges.md` "Geometry" states the Type 123 rule as "is physically dependent", which 03 satisfies. `geometry.rs:293` implements it as `!= 1`. The native field at `native.rs:1333` is named `physically_dependent` and is false for a value that is physically dependent.
-
-**Note.** Value 03 is normal when geometry is both owned by its parent and a member of a Type 402 group. A drafting file that groups its dimensions by sheet loses each grouped dimension: `child_valid` fails, `dimension_valid` fails, and the owning Type 216 or 218 becomes a loss although every parameter is correct.
-
-**Need.** We need the correct test, and a check of every listed site.
-
 ### GE-07. The curve parameter-domain convention
 
 **Question.** Which parameter domain does each IGES curve type give to its neutral edge?

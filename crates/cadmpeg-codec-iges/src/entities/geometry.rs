@@ -290,7 +290,7 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "direction is zero or non-finite"));
             continue;
         }
-        if entry.status.subordinate != 1 {
+        if !entry.status.is_physically_dependent() {
             losses.push(entity_loss(
                 entry,
                 "Direction Entity is not marked physically dependent",
