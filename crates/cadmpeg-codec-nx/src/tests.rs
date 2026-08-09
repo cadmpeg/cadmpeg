@@ -9303,13 +9303,63 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             },
             native_ref: None,
         },
+        Feature {
+            id: FeatureId("test:feature#inactive-native".into()),
+            ordinal: 2,
+            name: Some("inactive-native".into()),
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "DELETE".into(),
+                parameters: Default::default(),
+                properties: Default::default(),
+            },
+            native_ref: None,
+        },
+        Feature {
+            id: FeatureId("test:feature#inactive-datum-csys".into()),
+            ordinal: 3,
+            name: Some("inactive-datum-csys".into()),
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::DatumCoordinateSystemUnresolved,
+            native_ref: None,
+        },
+        Feature {
+            id: FeatureId("test:feature#inactive-sketch".into()),
+            ordinal: 4,
+            name: Some("inactive-sketch".into()),
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Unresolved,
+                sketch: None,
+            },
+            native_ref: None,
+        },
     ]);
 
     let mut losses = Vec::new();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
-    assert!(!losses.iter().any(|loss| loss
-        .message
-        .contains("Suppression state remains unresolved")));
+    assert!(losses.is_empty());
 }
 
 #[test]

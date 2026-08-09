@@ -10493,6 +10493,11 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .collect::<Vec<_>>();
     let active_features = crate::native::history::active_feature_closure(ir, &current_body_ids);
     let suppression_scope = active_features.as_ref().map_or("", |_| "active ");
+    let feature_in_active_scope = |feature: &Feature| {
+        active_features
+            .as_ref()
+            .is_none_or(|active| active.contains(&feature.id))
+    };
     let unresolved_suppression_count = ir
         .model
         .features
@@ -10572,6 +10577,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
 
     let mut native_feature_kinds = BTreeMap::<&str, usize>::new();
     for feature in &ir.model.features {
+        if !feature_in_active_scope(feature) {
+            continue;
+        }
         if let FeatureDefinition::Native { kind, .. } = &feature.definition {
             *native_feature_kinds.entry(kind.as_str()).or_default() += 1;
         }
@@ -10595,6 +10603,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
 
     let mut unresolved_feature_families = BTreeMap::<&str, usize>::new();
     for feature in &ir.model.features {
+        if !feature_in_active_scope(feature) {
+            continue;
+        }
         let family = match feature.definition {
             FeatureDefinition::DatumPlaneUnresolved => "datum plane",
             FeatureDefinition::DatumPointUnresolved => "datum point",
@@ -10633,6 +10644,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .map(|state| &state.output_of)
         .collect::<BTreeSet<_>>();
     for feature in &ir.model.features {
+        if !feature_in_active_scope(feature) {
+            continue;
+        }
         let is_exact_empty_base = matches!(
             &feature.definition,
             FeatureDefinition::BaseFeature {
@@ -10873,12 +10887,14 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .model
         .features
         .iter()
+        .filter(|feature| feature_in_active_scope(feature))
         .filter(|feature| matches!(feature.definition, FeatureDefinition::Sketch { .. }))
         .count();
     let unresolved_sketch_feature_count = ir
         .model
         .features
         .iter()
+        .filter(|feature| feature_in_active_scope(feature))
         .filter(|feature| {
             matches!(
                 feature.definition,
@@ -10899,10 +10915,27 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         });
     }
 
+    let active_sketch_ids = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| feature_in_active_scope(feature))
+        .filter_map(|feature| match &feature.definition {
+            FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+                ..
+            } => Some(sketch.clone()),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let sketch_in_active_scope = |sketch: &cadmpeg_ir::sketches::SketchId| {
+        active_features.is_none() || active_sketch_ids.contains(sketch)
+    };
     let native_sketch_entity_count = ir
         .model
         .sketch_entities
         .iter()
+        .filter(|entity| sketch_in_active_scope(&entity.sketch))
         .filter(|entity| {
             matches!(
                 entity.geometry,
@@ -10914,6 +10947,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .model
         .sketch_constraints
         .iter()
+        .filter(|constraint| sketch_in_active_scope(&constraint.sketch))
         .filter(|constraint| {
             matches!(
                 constraint.definition,
