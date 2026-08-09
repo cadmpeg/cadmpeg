@@ -53,6 +53,7 @@ fn add_bounded_curve(
     start: Point3,
     end: Point3,
     parameter_range: [f64; 2],
+    tolerance: Option<f64>,
 ) -> EdgeId {
     let stem = format!("D{}", entry.sequence);
     let start_point = PointId(format!("iges:model:point#{stem}-start"));
@@ -77,12 +78,12 @@ fn add_bounded_curve(
         Vertex {
             id: start_vertex.clone(),
             point: start_point,
-            tolerance: None,
+            tolerance,
         },
         Vertex {
             id: end_vertex.clone(),
             point: end_point,
-            tolerance: None,
+            tolerance,
         },
     ]);
     ir.model.curves.push(Curve {
@@ -96,7 +97,7 @@ fn add_bounded_curve(
         start: start_vertex,
         end: end_vertex,
         param_range: Some(parameter_range),
-        tolerance: None,
+        tolerance,
     });
     edge
 }
@@ -379,7 +380,36 @@ pub(super) fn project(
             ));
             continue;
         };
-        let edge = add_bounded_curve(ir, entry, geometry, start, end, parameter_range);
+        let Some(evaluated_start) = cadmpeg_ir::eval::curve_point(&geometry, parameter_range[0])
+        else {
+            losses.push(entity_loss(entry, "conic start point cannot be evaluated"));
+            continue;
+        };
+        let Some(evaluated_end) = cadmpeg_ir::eval::curve_point(&geometry, parameter_range[1])
+        else {
+            losses.push(entity_loss(
+                entry,
+                "conic terminate point cannot be evaluated",
+            ));
+            continue;
+        };
+        let resolution = global.minimum_resolution_mm();
+        if difference(start, evaluated_start).norm() > resolution {
+            losses.push(entity_loss(
+                entry,
+                "conic start point disagrees with the evaluated carrier beyond the minimum resolution",
+            ));
+            continue;
+        }
+        if difference(end, evaluated_end).norm() > resolution {
+            losses.push(entity_loss(
+                entry,
+                "conic terminate point disagrees with the evaluated carrier beyond the minimum resolution",
+            ));
+            continue;
+        }
+        let tolerance = (resolution > 0.0).then_some(resolution);
+        let edge = add_bounded_curve(ir, entry, geometry, start, end, parameter_range, tolerance);
         wire_edges.push(edge);
         decoded.insert(entry.sequence);
     }

@@ -1632,6 +1632,13 @@ fn decode_classifies_and_bounds_all_standard_conic_arc_families() {
 
         assert_eq!(result.ir.model.curves.len(), 1, "form {form}");
         assert_eq!(result.ir.model.edges.len(), 1, "form {form}");
+        assert_eq!(result.ir.model.edges[0].tolerance, Some(0.001));
+        assert!(result
+            .ir
+            .model
+            .vertices
+            .iter()
+            .all(|vertex| vertex.tolerance == Some(0.001)));
         match (&result.ir.model.curves[0].geometry, form) {
             (cadmpeg_ir::geometry::CurveGeometry::Ellipse { .. }, 0 | 1)
             | (cadmpeg_ir::geometry::CurveGeometry::Hyperbola { .. }, 2)
@@ -1644,6 +1651,32 @@ fn decode_classifies_and_bounds_all_standard_conic_arc_families() {
             validation.is_ok(),
             "form {form}: {:#?}",
             validation.findings
+        );
+    }
+}
+
+#[test]
+fn decode_rejects_conic_endpoints_off_the_coefficient_defined_carrier() {
+    for (parameters, point_name) in [
+        (b"104,0.25,0,1,0,0,-1,0,4,0,0,1;".as_slice(), "start"),
+        (b"104,0.25,0,1,0,0,-1,0,2,0,0,2;".as_slice(), "terminate"),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(conic_arc_file(1, parameters)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert!(result.ir.model.curves.is_empty(), "{point_name}");
+        assert!(result.ir.model.edges.is_empty(), "{point_name}");
+        assert_eq!(result.report.losses.len(), 1, "{point_name}");
+        assert!(
+            result.report.losses[0]
+                .message
+                .contains(&format!("conic {point_name} point disagrees")),
+            "{point_name}: {:?}",
+            result.report.losses
         );
     }
 }

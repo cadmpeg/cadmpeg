@@ -59,7 +59,8 @@
             -1.0,
             1.0
           ],
-          "start": "iges:model:vertex#D1-start"
+          "start": "iges:model:vertex#D1-start",
+          "tolerance": 0.001
         }
       ],
       "faces": [],
@@ -124,11 +125,13 @@
       "vertices": [
         {
           "id": "iges:model:vertex#D1-end",
-          "point": "iges:model:point#D1-end"
+          "point": "iges:model:point#D1-end",
+          "tolerance": 0.001
         },
         {
           "id": "iges:model:vertex#D1-start",
-          "point": "iges:model:point#D1-start"
+          "point": "iges:model:point#D1-start",
+          "tolerance": 0.001
         }
       ],
       "view_presentations": []

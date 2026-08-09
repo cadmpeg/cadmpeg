@@ -174,16 +174,6 @@ The constant demands about ten correct significant digits in each element. The G
 
 **Need.** We need the native parameter domain of each admitted curve type, and one recorded mapping to the IR domain.
 
-### GE-09. Type 104 endpoints are not tested against the conic
-
-**Question.** Must a Type 104 start and terminate point lie on its conic?
-
-**Known.** `conics.rs:227-233` gets the parameter of an endpoint through `atan2` of the two normalized in-plane projections, so the radial component is discarded and a point at twice the true radius gives the same parameter. `add_bounded_curve` stores the raw file coordinates as the edge vertices while the curve is the ideal conic, with `tolerance: None`.
-
-**Note.** Type 100 does test this agreement (`geometry.rs:369-389`). The codec treats endpoint consistency as decode-relevant for arcs and not for conics.
-
-**Need.** The output is an edge whose start vertex is off its own curve, with no loss and no recorded tolerance. We need the endpoint agreement rule for Type 104.
-
 ### GE-12. Type 126 property flags against the values
 
 **Question.** What does a PROP3 polynomial flag that disagrees with the weights mean, and what slack does the declared parameter range have?
