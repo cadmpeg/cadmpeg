@@ -1749,7 +1749,7 @@ pub(crate) fn project_fixed_fillet(
                     let [operand] = matches.as_slice() else {
                         return None;
                     };
-                    Some(*operand)
+                    operand.compact_layout.then_some(*operand)
                 })
                 .collect::<Option<Vec<_>>>()?;
             radius_edge_identity_group_candidates(&identities, radius.0)?;
@@ -1951,6 +1951,16 @@ mod radius_identity_tests {
                 tangency_weight: Some(1.0),
             }] if edges.len() == 2
         ));
+    }
+
+    #[test]
+    fn full_layout_identity_does_not_assign_the_fixed_fillet_edge_role() {
+        let scope = fixed_scope();
+        let group = group(2, 10);
+        let mut identity = identity(10, &[(17, 3.0), (19, 3.0)]);
+        identity.compact_layout = false;
+
+        assert!(project_fixed_fillet(&scope, &[group], &[], &[identity]).is_none());
     }
 
     #[test]
