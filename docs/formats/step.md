@@ -355,6 +355,16 @@ curve segments retain order, same-sense, transition continuity, and carrier
 identity. A curve construction that references a `SURFACE_CURVE` uses its
 3D `curve_3d` carrier for geometry and parameterization.
 
+The endpoint vertices of an `EDGE_CURVE` trim its curve carrier. A
+non-periodic carrier has an increasing parameter interval from the start
+vertex witness to the end vertex witness. Its domain endpoints select the
+first and last branches when the same model-space point occurs at more than
+one parameter. A periodic carrier normalizes the start parameter into its
+fundamental domain and stores the positive directed sweep to the end witness.
+The sweep is not greater than one period. An edge has no parameter interval
+when either endpoint cannot be inverted on the carrier or the witnesses do not
+define such an interval.
+
 Bounded-surface boundaries use `BOUNDARY_CURVE` or a degenerate pcurve. A
 `BOUNDARY_CURVE` is a closed composite curve on its bounded surface. Its
 segments resolve to bounded surface curves, bounded pcurves, or nested
