@@ -2425,6 +2425,29 @@ fn valid_sketch_geometry(geometry: &SketchCurveGeometry) -> bool {
     }
 }
 
+pub(crate) fn encode_sketch_relation_state(
+    relation_id: &str,
+    raw_bytes: &[u8],
+    state: u64,
+) -> Result<Vec<u8>, CodecError> {
+    match crate::design::decode::sketch::relation_mask_width(raw_bytes).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "F3D sketch relation {relation_id} has no valid mask-width discriminator"
+        ))
+    })? {
+        crate::design::decode::sketch::SketchRelationMaskWidth::U64 => {
+            Ok(state.to_le_bytes().to_vec())
+        }
+        crate::design::decode::sketch::SketchRelationMaskWidth::U32 => u32::try_from(state)
+            .map(|state| state.to_le_bytes().to_vec())
+            .map_err(|_| {
+                CodecError::NotImplemented(format!(
+                    "F3D sketch relation {relation_id} stores a u32 mask that cannot carry the requested 64-bit state"
+                ))
+            }),
+    }
+}
+
 pub(crate) fn validate_sketch_relation_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<SketchRelationEdit>>, CodecError> {
@@ -2525,24 +2548,8 @@ pub(crate) fn validate_sketch_relation_edits(
             &mut values,
         )?;
         if relation.state != before.state {
-            // The stored mask width follows the record's class version: a u64
-            // with the paired member run, a u32 without it.
-            let paired_run =
-                crate::design::decode::sketch::relation_has_paired_member_run(&relation.raw_bytes)
-                    .unwrap_or(true);
-            let encoded = if paired_run {
-                relation.state.to_le_bytes().to_vec()
-            } else {
-                u32::try_from(relation.state)
-                    .map_err(|_| {
-                        CodecError::NotImplemented(format!(
-                            "F3D sketch relation {} stores a u32 mask that cannot carry the requested 64-bit state",
-                            relation.id
-                        ))
-                    })?
-                    .to_le_bytes()
-                    .to_vec()
-            };
+            let encoded =
+                encode_sketch_relation_state(&relation.id, &before.raw_bytes, relation.state)?;
             values.push((
                 relation.byte_offset + u64::from(relation.state_offset),
                 encoded,

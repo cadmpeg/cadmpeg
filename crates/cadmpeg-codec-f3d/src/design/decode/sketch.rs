@@ -3061,16 +3061,31 @@ impl SketchRelationClass {
 /// misparse rather than a record that owns that many members.
 const MAX_RELATION_RUN: usize = 4096;
 
-/// Whether a sketch-relation record carries the paired member run. That leading
-/// byte also selects the constraint-mask width: a u64 with the run, a u32 at
-/// class version 0, which has neither.
-pub(crate) fn relation_has_paired_member_run(record: &[u8]) -> Option<bool> {
-    let (_, start) = lp_ascii_filtered(record, 15, 0..=256, u8::is_ascii_graphic)?;
-    match record.get(start)? {
-        1 => Some(true),
-        0 => Some(false),
-        _ => None,
+/// Serialized width selected by a sketch relation's leading-block member.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SketchRelationMaskWidth {
+    U32,
+    U64,
+}
+
+impl SketchRelationMaskWidth {
+    fn from_leading_block(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(Self::U32),
+            1 => Some(Self::U64),
+            _ => None,
+        }
     }
+
+    fn has_paired_member_run(self) -> bool {
+        self == Self::U64
+    }
+}
+
+/// Read the relation's mask width from its leading-block presence member.
+pub(crate) fn relation_mask_width(record: &[u8]) -> Option<SketchRelationMaskWidth> {
+    let (_, start) = lp_ascii_filtered(record, 15, 0..=256, u8::is_ascii_graphic)?;
+    SketchRelationMaskWidth::from_leading_block(*record.get(start)?)
 }
 
 /// Take one reference member at `cursor`, returning its 32-bit target and the
@@ -3238,9 +3253,9 @@ fn parse_relation_class_members(
 /// ordinal)` pairs, the property-block presence byte and its block, the
 /// class-defined members, the `ParentNode` reference naming the owning sketch,
 /// a u64 constraint mask, a u32 count and that many bare references, and one
-/// zero byte. At class version 0 the leading byte is zero, the pair list is
-/// absent, and the mask is a u32. Both reference runs hold the same members;
-/// only the second is in semantic order.
+/// zero byte. At relation base-class version 0 the leading byte is zero, the
+/// pair list is absent, and the mask is a u32. Both reference runs hold the
+/// same members; only the second is in semantic order.
 pub(crate) fn parse_classed_sketch_relation(
     payload: &[u8],
     class: SketchRelationClass,
@@ -3252,11 +3267,8 @@ fn parse_relation(payload: &[u8], class: SketchRelationClass) -> Option<ParsedSk
     // The record header is the LP-ASCII class tag, the u64 entity id, and the
     // LP-ASCII record name; the member payload follows it.
     let (_, start) = lp_ascii_filtered(payload, 15, 0..=256, u8::is_ascii_graphic)?;
-    let paired_run = match payload.get(start)? {
-        1 => true,
-        0 => false,
-        _ => return None,
-    };
+    let mask_width = SketchRelationMaskWidth::from_leading_block(*payload.get(start)?)?;
+    let paired_run = mask_width.has_paired_member_run();
     let mut cursor = start + 1;
     let mut members = Vec::new();
     let mut member_offsets = Vec::new();
@@ -3300,9 +3312,9 @@ fn parse_relation(payload: &[u8], class: SketchRelationClass) -> Option<ParsedSk
     let (owner_reference, owner_reference_offset) = take_relation_reference(payload, &mut cursor)?;
     let state_offset = cursor;
     // The constraint mask follows `ParentNode` directly. It is a u64 in the
-    // paired-run form and a u32 at class version 0.
-    let (state, mut cursor) = if paired_run {
-        (
+    // paired-run form and a u32 at relation base-class version 0.
+    let (state, mut cursor) = match mask_width {
+        SketchRelationMaskWidth::U64 => (
             u64::from_le_bytes(
                 payload
                     .get(state_offset..state_offset + 8)?
@@ -3310,9 +3322,10 @@ fn parse_relation(payload: &[u8], class: SketchRelationClass) -> Option<ParsedSk
                     .ok()?,
             ),
             state_offset + 8,
-        )
-    } else {
-        (u64::from(u32_at(payload, state_offset)?), state_offset + 4)
+        ),
+        SketchRelationMaskWidth::U32 => {
+            (u64::from(u32_at(payload, state_offset)?), state_offset + 4)
+        }
     };
     let return_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
     if return_count > MAX_RELATION_RUN {
@@ -3494,7 +3507,10 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
 
 #[cfg(test)]
 mod relation_class_tests {
-    use super::{decode_pattern_definition, parse_classed_sketch_relation, SketchRelationClass};
+    use super::{
+        decode_pattern_definition, parse_classed_sketch_relation, relation_mask_width,
+        SketchRelationClass, SketchRelationMaskWidth,
+    };
     use crate::records::{SketchPatternDefinition, SketchPatternDirection};
 
     /// One present reference: the presence byte, the u64 target, and the
@@ -3537,6 +3553,29 @@ mod relation_class_tests {
         }
         out.push(0);
         out.extend_from_slice(class_members);
+        push_reference(&mut out, owner);
+        out.extend_from_slice(&mask.to_le_bytes());
+        out.extend_from_slice(
+            &u32::try_from(returns.len())
+                .expect("return count fits a u32")
+                .to_le_bytes(),
+        );
+        for reference in returns {
+            push_reference(&mut out, *reference);
+        }
+        out.push(0);
+        out
+    }
+
+    /// A relation-base-class version-0 record: no paired run and a u32 mask.
+    fn legacy_relation_record(owner: u32, mask: u32, returns: &[u32]) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&3u32.to_le_bytes());
+        out.extend_from_slice(b"298");
+        out.extend_from_slice(&7u32.to_le_bytes());
+        out.extend_from_slice(&[0u8; 8]);
+        out.push(0);
+        out.push(0);
         push_reference(&mut out, owner);
         out.extend_from_slice(&mask.to_le_bytes());
         out.extend_from_slice(
@@ -3636,6 +3675,35 @@ mod relation_class_tests {
             SketchRelationClass::of("69EE2FA7-BCC7-449E-9CA9-976CEFDFED44", 0),
             None
         );
+    }
+
+    #[test]
+    fn relation_leading_block_selects_member_run_and_mask_width() {
+        let modern = relation_record(&[(300, 0)], &[], 201, 0x0020_0000_0000, &[300]);
+        assert_eq!(
+            relation_mask_width(&modern),
+            Some(SketchRelationMaskWidth::U64)
+        );
+        let modern_parsed =
+            parse_classed_sketch_relation(&modern, SketchRelationClass::Plain).unwrap();
+        assert_eq!(modern_parsed.state, 0x0020_0000_0000);
+        assert_eq!(modern_parsed.members, [300]);
+
+        let legacy = legacy_relation_record(201, 0x8000_0000, &[300]);
+        assert_eq!(
+            relation_mask_width(&legacy),
+            Some(SketchRelationMaskWidth::U32)
+        );
+        let legacy_parsed =
+            parse_classed_sketch_relation(&legacy, SketchRelationClass::Plain).unwrap();
+        assert_eq!(legacy_parsed.state, 0x8000_0000);
+        assert!(legacy_parsed.members.is_empty());
+        assert_eq!(legacy_parsed.return_members, [300]);
+
+        let mut invalid = legacy;
+        invalid[19] = 2;
+        assert_eq!(relation_mask_width(&invalid), None);
+        assert!(parse_classed_sketch_relation(&invalid, SketchRelationClass::Plain).is_none());
     }
 
     #[test]

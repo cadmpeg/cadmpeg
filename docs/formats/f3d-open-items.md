@@ -288,14 +288,6 @@ The owner is one logical indexed record delimited by two headers that carry the 
 
 **Need.** The projector emits a one-sided blind extent from that value. If the word is the travel direction, the second side is dropped and no loss is recorded. The field that carries the extent of this dialect settles the item.
 
-### DR-56. Mask width of a sketch-relation state word
-
-**Question.** Which class member gives the width of a sketch-relation's stored state mask?
-
-**Known.** `relation_has_paired_member_run` in `design/decode/sketch.rs` reads a discriminator byte and returns no answer when the leading scan fails or when the byte is neither zero nor one. `validate_sketch_relation_edits` in `writer/patch/edits.rs` then assumes the wide form and writes eight bytes at the state offset. A record that stores the u32 form loses the four bytes after the mask, which are the next member of the record.
-
-**Need.** The writer substitutes a width for an unresolved discriminator instead of refusing. The class member that gives the width settles the item.
-
 ### DR-57. Members of a generated presentation envelope and browser-node join
 
 **Question.** Which GUID of a presentation envelope joins to a browser-node record, and which members must a generated envelope hold?
