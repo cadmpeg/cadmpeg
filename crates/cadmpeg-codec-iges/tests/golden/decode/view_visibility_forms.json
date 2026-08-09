@@ -1637,7 +1637,9 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#3"
+              ],
               "parameter_bytes": [
                 52,
                 49,
@@ -1807,7 +1809,16 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-212-or-type-312-or-type-402",
+                  "kind": "parameter",
+                  "parameter_index": 10,
+                  "raw_pointer": 3,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#3"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -2128,7 +2139,9 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#7"
+              ],
               "parameter_bytes": [
                 52,
                 49,
@@ -2298,7 +2311,16 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-212-or-type-312-or-type-402",
+                  "kind": "parameter",
+                  "parameter_index": 10,
+                  "raw_pointer": 7,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#7"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -2733,7 +2755,7 @@
       "parameter_records=4",
       "parameter_tokens=36",
       "external_references=0",
-      "references.resolved=2"
+      "references.resolved=4"
     ]
   },
   "source_fidelity": {

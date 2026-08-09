@@ -2527,6 +2527,9 @@
               "line_font": 0,
               "line_weight": 0,
               "links": [
+                "iges:entity:directory#5",
+                "iges:entity:directory#7",
+                "iges:entity:directory#9",
                 "iges:entity:directory#1",
                 "iges:entity:directory#3"
               ],
@@ -2712,6 +2715,30 @@
                 "iges:entity:directory#9"
               ],
               "references": [
+                {
+                  "expected": "type-316-or-type-322-or-type-406-or-type-422",
+                  "kind": "parameter",
+                  "parameter_index": 10,
+                  "raw_pointer": 5,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#5"
+                },
+                {
+                  "expected": "type-316-or-type-322-or-type-406-or-type-422",
+                  "kind": "parameter",
+                  "parameter_index": 11,
+                  "raw_pointer": 7,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#7"
+                },
+                {
+                  "expected": "type-316-or-type-322-or-type-406-or-type-422",
+                  "kind": "parameter",
+                  "parameter_index": 12,
+                  "raw_pointer": 9,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#9"
+                },
                 {
                   "expected": "type-410-form-0-or-1",
                   "kind": "parameter",
@@ -3755,7 +3782,7 @@
       "parameter_records=6",
       "parameter_tokens=38",
       "external_references=0",
-      "references.resolved=2"
+      "references.resolved=5"
     ]
   },
   "source_fidelity": {

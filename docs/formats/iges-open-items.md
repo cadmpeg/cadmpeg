@@ -114,20 +114,6 @@ from a conformant file.
 
 ## 1. Physical framing and lexical rules
 
-### PH-03. The boundary between entity parameters and the trailing pointer groups
-
-**Question.** Where does an entity's own parameter list stop and its associativity group start?
-
-**Known.** IGES puts no marker between them; only per-entity arity gives the boundary. `parameter.rs:84-136` replaces arity with a search over every token index, and `min_by_key(|groups| groups.token_start)` accepts the earliest index at which the arithmetic closes and each pointer is odd and refers to a Type 212, 312, or 402 entry.
-
-The result decides two unrelated things: where an entity's own parameters stop, which feeds every arity test in `structure.rs`, `annotation.rs`, `drawing.rs`, and `presentation.rs` (`structure.rs:225-231`); and which entity owns each Type 406 property (`structure.rs:909-915`), which drives the per-form owner rules.
-
-**Conflict.** `iges.md` "Entity graph" gives "dangling" and "even-sequence" as reference states that the format model records. `parameter.rs:112` uses a dangling or even pointer as proof that the group is absent. The group then disappears with no `LossNote` and the file decodes as a success.
-
-**Note.** The type and parity filters make an accidental early match hard to construct. The demonstrated defect is the silent removal of a group that holds an unresolvable pointer, not the early split.
-
-**Need.** A Type 402 Form 1 group needs a back pointer in each member (`iges.md` "Product structure"). If one member's group holds a pointer to an absent entry, the membership evidence is lost silently. We need per-entity parameter arity, or a rule that keeps an unresolvable group as a finding.
-
 ### PH-06. Compressed ASCII and Binary detection constants
 
 **Question.** What are the flag-record fields of the Compressed ASCII and Binary representations?

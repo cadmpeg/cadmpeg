@@ -39,6 +39,15 @@ pub(crate) struct TrailingPointerGroups {
     pub(crate) token_start: usize,
     pub(crate) associations: Vec<u32>,
     pub(crate) properties: Vec<u32>,
+    pub(crate) association_pointers: Vec<TrailingPointer>,
+    pub(crate) property_pointers: Vec<TrailingPointer>,
+    pub(crate) fully_valid: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TrailingPointer {
+    pub(crate) token_index: usize,
+    pub(crate) raw_pointer: i64,
 }
 
 impl ParameterRecord {
@@ -87,6 +96,16 @@ pub(crate) fn trailing_pointer_groups(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Option<TrailingPointerGroups> {
+    trailing_pointer_group_candidates(record, directory)
+        .into_iter()
+        .filter(|groups| groups.fully_valid)
+        .min_by_key(|groups| groups.token_start)
+}
+
+pub(crate) fn trailing_pointer_group_candidates(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+) -> Vec<TrailingPointerGroups> {
     (1..record.tokens.len())
         .filter_map(|association_count_index| {
             let association_count = record
@@ -106,11 +125,29 @@ pub(crate) fn trailing_pointer_groups(
             if end != record.tokens.len() {
                 return None;
             }
-            let associations = (0..association_count)
+            let association_pointers = (0..association_count)
                 .map(|index| {
-                    record
-                        .integer(association_start + index)
-                        .and_then(|value| u32::try_from(value).ok())
+                    let token_index = association_start + index;
+                    Some(TrailingPointer {
+                        token_index,
+                        raw_pointer: record.integer(token_index)?,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let property_pointers = (0..property_count)
+                .map(|index| {
+                    let token_index = property_count_index + 1 + index;
+                    Some(TrailingPointer {
+                        token_index,
+                        raw_pointer: record.integer(token_index)?,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let associations = association_pointers
+                .iter()
+                .filter_map(|pointer| {
+                    u32::try_from(pointer.raw_pointer)
+                        .ok()
                         .filter(|sequence| sequence % 2 == 1)
                         .filter(|sequence| {
                             directory
@@ -118,12 +155,12 @@ pub(crate) fn trailing_pointer_groups(
                                 .is_some_and(|entry| matches!(entry.entity_type, 212 | 312 | 402))
                         })
                 })
-                .collect::<Option<Vec<_>>>()?;
-            let properties = (0..property_count)
-                .map(|index| {
-                    record
-                        .integer(property_count_index + 1 + index)
-                        .and_then(|value| u32::try_from(value).ok())
+                .collect::<Vec<_>>();
+            let properties = property_pointers
+                .iter()
+                .filter_map(|pointer| {
+                    u32::try_from(pointer.raw_pointer)
+                        .ok()
                         .filter(|sequence| sequence % 2 == 1)
                         .filter(|sequence| {
                             directory.get(sequence).is_some_and(|entry| {
@@ -131,14 +168,19 @@ pub(crate) fn trailing_pointer_groups(
                             })
                         })
                 })
-                .collect::<Option<Vec<_>>>()?;
+                .collect::<Vec<_>>();
+            let fully_valid = associations.len() == association_pointers.len()
+                && properties.len() == property_pointers.len();
             Some(TrailingPointerGroups {
                 token_start: association_count_index,
                 associations,
                 properties,
+                association_pointers,
+                property_pointers,
+                fully_valid,
             })
         })
-        .min_by_key(|groups| groups.token_start)
+        .collect()
 }
 
 fn malformed(sequence: u32, message: impl Into<String>) -> CodecError {

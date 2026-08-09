@@ -8,7 +8,9 @@ use crate::entities::geometry::{resolve_transform, Affine};
 use crate::entities::structure::array_base_type;
 use crate::global::Global;
 use crate::graph::{ParameterResolver, ReferenceEdge};
-use crate::parameter::{trailing_pointer_groups, ParameterRecord, Token, TokenValue};
+use crate::parameter::{
+    trailing_pointer_group_candidates, trailing_pointer_groups, ParameterRecord, Token, TokenValue,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::CadIr;
 use serde::Serialize;
@@ -1313,11 +1315,82 @@ pub(crate) fn store(
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
     let parameter_resolver = ParameterResolver::new(directory);
+    let mut required_back_pointer_members = std::collections::BTreeSet::new();
+    for group in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 1 | 14))
+    {
+        let record = by_directory.get(&group.sequence).copied();
+        let count = record
+            .and_then(|record| record.count(1))
+            .unwrap_or_default();
+        for index in 0..count {
+            if let Some(sequence) = record
+                .and_then(|record| record.integer(2 + index))
+                .and_then(|value| u32::try_from(value).ok())
+                .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence))
+            {
+                required_back_pointer_members.insert(sequence);
+            }
+        }
+    }
     let mut entities = directory
         .iter()
         .map(|entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
             let trailing = parameters.and_then(|record| trailing_pointer_groups(record, &entries));
+            let invalid_trailing = (trailing.is_none()
+                && required_back_pointer_members.contains(&entry.sequence))
+            .then(|| {
+                parameters.and_then(|record| {
+                    trailing_pointer_group_candidates(record, &entries)
+                        .into_iter()
+                        .filter(|groups| !groups.association_pointers.is_empty())
+                        .min_by_key(|groups| groups.token_start)
+                })
+            })
+            .flatten();
+            let edge_trailing = trailing.as_ref().or(invalid_trailing.as_ref());
+            let resolved_associations = edge_trailing
+                .as_ref()
+                .into_iter()
+                .flat_map(|groups| groups.association_pointers.iter())
+                .filter_map(|pointer| {
+                    parameter_resolver.resolve(
+                        entry.sequence,
+                        pointer.token_index,
+                        pointer.raw_pointer,
+                        "type-212-or-type-312-or-type-402",
+                        |target| matches!(target.entity_type, 212 | 312 | 402),
+                    )
+                })
+                .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                .collect::<Vec<_>>();
+            let resolved_properties = edge_trailing
+                .as_ref()
+                .into_iter()
+                .flat_map(|groups| groups.property_pointers.iter())
+                .filter_map(|pointer| {
+                    parameter_resolver.resolve(
+                        entry.sequence,
+                        pointer.token_index,
+                        pointer.raw_pointer,
+                        "type-316-or-type-322-or-type-406-or-type-422",
+                        |target| matches!(target.entity_type, 316 | 322 | 406 | 422),
+                    )
+                })
+                .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                .collect::<Vec<_>>();
+            let association_links = if trailing.is_some() {
+                resolved_associations
+            } else {
+                Vec::new()
+            };
+            let property_links = if trailing.is_some() {
+                resolved_properties
+            } else {
+                Vec::new()
+            };
             NativeEntity {
                 id: format!("iges:entity:directory#{}", entry.sequence),
                 directory_sequence: entry.sequence,
@@ -1349,18 +1422,8 @@ pub(crate) fn store(
                     .into_iter()
                     .flat_map(|record| record.tokens.iter().map(token))
                     .collect(),
-                association_links: trailing
-                    .as_ref()
-                    .into_iter()
-                    .flat_map(|groups| groups.associations.iter())
-                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                    .collect(),
-                property_links: trailing
-                    .as_ref()
-                    .into_iter()
-                    .flat_map(|groups| groups.properties.iter())
-                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                    .collect(),
+                association_links,
+                property_links,
                 comment: parameters
                     .map(|record| record.comment.clone())
                     .unwrap_or_default(),

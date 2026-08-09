@@ -6340,6 +6340,60 @@ fn decode_preserves_group_order_and_back_pointer_policy() {
 }
 
 #[test]
+fn decode_reports_an_unresolvable_required_trailing_back_pointer() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 1,
+            label: "GROUP".into(),
+            status: "00000200",
+            parameters: "402,1,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "MEMBER".into(),
+            status: "00000000",
+            parameters: "116,0,0,0,0,1,99,0;".into(),
+        },
+    ]);
+    let pointer_offset = bytes
+        .windows(6)
+        .position(|window| window == b",1,99,")
+        .unwrap()
+        + 3;
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir.native.namespace("iges").unwrap();
+    let member = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#3")
+        .unwrap();
+
+    assert!(member.fields()["association_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let reference = &member.fields()["references"][0];
+    assert_eq!(reference["kind"], "parameter");
+    assert_eq!(reference["parameter_index"], 6);
+    assert_eq!(reference["raw_pointer"], 99);
+    assert_eq!(reference["resolution"], "dangling");
+    let loss = result
+        .report
+        .losses
+        .iter()
+        .find(|loss| loss.message.contains("D3 Parameter pointer 99"))
+        .unwrap();
+    assert_eq!(loss.code, cadmpeg_ir::LossKind::ReferenceGraphNotClosed);
+    assert_eq!(
+        loss.provenance.as_ref().unwrap().offset,
+        pointer_offset as u64
+    );
+}
+
+#[test]
 fn decode_types_all_attribute_table_definition_forms() {
     let result = IgesCodec
         .decode(
