@@ -7,15 +7,16 @@
 Source of truth: [`docs/formats/iges.md`](../../docs/formats/iges.md).
 Table source: `docs/layouts/iges.toml`.
 
-IGES has no binary byte layout, but its card is a fixed 80-column text record,
-so the layouts here use `kind = "column"`: 1-based inclusive character columns
+The Binary representation starts with a fixed 80-byte flag. The Fixed and
+Compressed ASCII representations use records with an 80-column text envelope,
+so their layouts use `kind = "column"`: 1-based inclusive character columns
 that must tile the 80-column card exactly.
 
 `iges.md` uses unnumbered headings, so the `section` keys below are the heading
 titles rather than section numbers.
 
-Covers the ordinary card, the Parameter Data card, the Terminate data area, and
-both Directory Entry cards. Per-entity parameter slot order is not in the
+Covers the Binary flag, the ordinary card, the Parameter Data card, the
+Terminate data area, and both Directory Entry cards. Per-entity parameter slot order is not in the
 specification; `corpus/iges-envelope-a.toml` already carries the entity and form
 matrix, and the per-entity parameter order lives only in the parser.
 
@@ -28,6 +29,28 @@ matrix, and the per-entity parameter order lives only in the parser.
 | `D` | Directory Entry section | variable | two cards per entry, twenty fixed eight-column fields | §Physical representation |
 | `P` | Parameter Data section | variable | columns 1-64 are parameter fragments, 65-72 the owning Directory Entry sequence | §Physical representation |
 | `T` | Terminate section | variable | four eight-column section counts | §Physical representation |
+
+## `binary_flag`
+
+Spec §Physical representation · layout: byte offsets · size: 80 B
+
+The six one-byte primitive length fields select the bit widths used by the remaining Binary representation. Each displacement counts its section and any following null padding.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `identifier` | `bytes[1]` | — | spec | Byte 1 is ASCII `B`. |
+| 1 | 4 | `remaining_byte_count` | `u32` | big | spec | Bytes 2 through 5 are the big-endian unsigned 32-bit value `75` |
+| 5 | 6 | `primitive_bit_lengths` | `bytes[6]` | — | spec | Bytes 6 through 11 are the one-byte bit lengths `Is`, `Id`, `NXs`, `NFs`, `NXd`, and `NFd`. |
+| 11 | 30 | `section_displacements` | `bytes[30]` | — | spec | Six repetitions of a one-byte ASCII section identifier and a big-endian u32 displacement. |
+| 41 | 31 | `unassigned` | `bytes[31]` | — | spec | Bytes 42 through 72 are unassigned. |
+| 72 | 1 | `section_marker` | `bytes[1]` | — | spec | Byte 73 is ASCII `B` |
+| 73 | 6 | `sequence_padding` | `bytes[6]` | — | spec | bytes 74 through 79 are ASCII blanks or zeroes |
+| 79 | 1 | `sequence` | `bytes[1]` | — | spec | byte 80 is ASCII `1`. |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-iges/src/layout.rs` — Representation detection requires the fixed big-endian byte count.
+- `crates/cadmpeg-codec-iges/src/layout.rs` — Representation detection validates the six-byte Binary sequence padding.
 
 ## `canonical_card`
 

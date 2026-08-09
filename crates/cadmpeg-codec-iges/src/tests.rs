@@ -11370,8 +11370,6 @@ fn inspect_preserves_transform_cycles_as_named_reference_states() {
 fn compressed_and_binary_representations_are_detected_inspected_and_refused() {
     let mut compressed = vec![b' '; 80];
     compressed[72] = b'C';
-    compressed.push(b'\n');
-    compressed.extend(card(b"compressed fixture", b'S', 1));
     assert_eq!(IgesCodec.detect(&compressed), Confidence::High);
     let summary = IgesCodec
         .inspect(
@@ -11391,7 +11389,18 @@ fn compressed_and_binary_representations_are_detected_inspected_and_refused() {
     let mut binary = vec![0_u8; 80];
     binary[0] = b'B';
     binary[1..5].copy_from_slice(&75_u32.to_be_bytes());
+    for (offset, identifier) in [
+        (11, b'B'),
+        (16, b'S'),
+        (21, b'G'),
+        (26, b'D'),
+        (31, b'P'),
+        (36, b'T'),
+    ] {
+        binary[offset] = identifier;
+    }
     binary[72] = b'B';
+    binary[73..79].fill(b'0');
     binary[79] = b'1';
     assert_eq!(IgesCodec.detect(&binary), Confidence::High);
     let summary = IgesCodec
@@ -11408,6 +11417,49 @@ fn compressed_and_binary_representations_are_detected_inspected_and_refused() {
             .to_string(),
         "not implemented yet: IGES Binary representation decode"
     );
+}
+
+#[test]
+fn representation_detection_rejects_malformed_flag_constants() {
+    let mut compressed = vec![b' '; 80];
+    compressed[72] = b'C';
+    compressed[4] = b'\n';
+    assert_eq!(IgesCodec.detect(&compressed), Confidence::No);
+
+    let mut binary = vec![0_u8; 80];
+    binary[0] = b'B';
+    binary[1..5].copy_from_slice(&75_u32.to_be_bytes());
+    for (offset, identifier) in [
+        (11, b'B'),
+        (16, b'S'),
+        (21, b'G'),
+        (26, b'D'),
+        (31, b'P'),
+        (36, b'T'),
+    ] {
+        binary[offset] = identifier;
+    }
+    binary[72] = b'B';
+    binary[73..79].fill(b' ');
+    binary[79] = b'1';
+
+    for offset in [11, 16, 21, 26, 31, 36, 72, 79] {
+        let mut malformed = binary.clone();
+        malformed[offset] ^= 1;
+        assert_eq!(
+            IgesCodec.detect(&malformed),
+            Confidence::No,
+            "offset {offset}"
+        );
+    }
+
+    let mut little_endian_count = binary.clone();
+    little_endian_count[1..5].copy_from_slice(&75_u32.to_le_bytes());
+    assert_eq!(IgesCodec.detect(&little_endian_count), Confidence::No);
+
+    let mut malformed_tail = binary;
+    malformed_tail[75] = b'X';
+    assert_eq!(IgesCodec.detect(&malformed_tail), Confidence::No);
 }
 
 #[test]

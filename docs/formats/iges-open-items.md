@@ -114,16 +114,6 @@ from a conformant file.
 
 ## 1. Physical framing and lexical rules
 
-### PH-06. Compressed ASCII and Binary detection constants
-
-**Question.** What are the flag-record fields of the Compressed ASCII and Binary representations?
-
-**Known.** `iges.md` covers Fixed ASCII only, and `docs/layouts/iges.toml` holds Fixed ASCII records only. `layout.rs:28-52` holds three byte meanings with no source in this repository: byte 1 is `C` or `B`, the Binary flag holds the value 75 in bytes 2 through 5, and the first Start card sequence field is the exact bytes `"      1"`.
-
-**Note.** The Binary test accepts 75 in both byte orders. Acceptance of both byte orders is a record that the field's byte order is unknown. The unknown is in the code and not in this document.
-
-**Need.** Both representations give `NotImplemented`, so a wrong constant changes the reported identity only. We need the flag-record layout to give the correct refusal instead of `Representation::Unknown`.
-
 ## 3. Directory fields, the reference graph, and the native arenas
 
 ## 4. Geometry carriers and tolerances

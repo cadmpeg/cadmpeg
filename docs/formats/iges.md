@@ -1,10 +1,14 @@
-# IGES 5.1/5.2/5.3 Fixed ASCII format specification
+# IGES 5.1/5.2/5.3 format specification
 
 > **License:** This document is released under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/). Attribute to the cadmpeg project.
 
 Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/iges.md`](../layouts/iges.md), generated from `docs/layouts/iges.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
 
 ## Physical representation
+
+The representation flag is in the first 80 bytes. A `C` in byte 73 identifies Compressed ASCII. The other bytes of its flag record are printable ASCII. An `S` in byte 73 identifies Fixed ASCII.
+
+The Binary representation starts with one 80-byte Binary Flag Section. Byte 1 is ASCII `B`. Bytes 2 through 5 are the big-endian unsigned 32-bit value `75`, which is the count of the remaining flag bytes. Bytes 6 through 11 are the one-byte bit lengths `Is`, `Id`, `NXs`, `NFs`, `NXd`, and `NFd`. Bytes 12, 17, 22, 27, 32, and 37 are ASCII `B`, `S`, `G`, `D`, `P`, and `T`. Each letter is followed by a big-endian unsigned 32-bit displacement for that section. Bytes 42 through 72 are unassigned. Byte 73 is ASCII `B`, bytes 74 through 79 are ASCII blanks or zeroes, and byte 80 is ASCII `1`. The Binary Flag Section contains no control bytes.
 
 The Fixed ASCII representation is an ordered sequence of physical lines. A canonical line contains an 80-byte card followed by a line ending. Card bytes 1 through 72 are section data. Byte 73 is the section marker. Bytes 74 through 80 are the right-aligned decimal sequence field. Parameter Data cards instead use bytes 65 through 72 for the right-aligned Directory Entry back-pointer, byte 73 for the `P` marker, and bytes 74 through 80 for the Parameter Data sequence.
 
