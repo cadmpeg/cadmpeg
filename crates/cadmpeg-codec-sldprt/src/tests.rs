@@ -21844,6 +21844,7 @@ fn decode_extracts_document_envelope() {
         .iter()
         .find(|attribute| attribute.name == "transformed_reference_plane")
         .expect("transformed reference plane");
+    assert!(transformed.id.0.ends_with(":147"));
     assert_eq!(
         transformed.values,
         vec![
@@ -21888,6 +21889,87 @@ fn decode_extracts_document_envelope() {
         .find(|attribute| attribute.name == "source_linear_unit_name")
         .unwrap();
     assert_eq!(unit_name.values, vec![AttributeValue::String("IN".into())]);
+}
+
+#[test]
+fn transformed_reference_plane_requires_fixed_prefix() {
+    let mut source = sldprt_with_body(&triangle_body());
+    let mut payload = b"moTransRefPlaneData_c".to_vec();
+    payload.extend_from_slice(&[0; 8]);
+    for value in [0.01f64, 0.02, 0.03, 0.1, 0.2, 1.0, 0.0, -1.0, 0.5] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+    source.extend(make_block(0x43, "SWObjects", &payload));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(!decoded
+        .ir
+        .model
+        .attributes
+        .iter()
+        .any(|attribute| attribute.name == "transformed_reference_plane"));
+}
+
+#[test]
+fn semantic_writer_preserves_transformed_reference_plane_prefix() {
+    use cadmpeg_ir::attributes::AttributeValue;
+
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_envelope(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let transformed = decoded
+        .ir
+        .model
+        .attributes
+        .iter_mut()
+        .find(|attribute| attribute.name == "transformed_reference_plane")
+        .unwrap();
+    let AttributeValue::Vector(center) = &mut transformed.values[0] else {
+        panic!("transformed plane center");
+    };
+    center[0] = 25.0;
+
+    let mut written = Vec::new();
+    SldprtCodec
+        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut written)
+        .unwrap();
+
+    let scan = container::scan_bytes(&written);
+    let payload = scan
+        .blocks
+        .iter()
+        .find(|block| {
+            block
+                .payload
+                .windows(b"moTransRefPlaneData_c".len())
+                .any(|bytes| bytes == b"moTransRefPlaneData_c")
+        })
+        .map(|block| block.payload.as_slice())
+        .unwrap();
+    let token = b"moTransRefPlaneData_c";
+    let offset = payload
+        .windows(token.len())
+        .position(|bytes| bytes == token)
+        .unwrap()
+        + token.len();
+    assert_eq!(&payload[offset..offset + 8], &[0xff; 8]);
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    let transformed = regenerated
+        .ir
+        .model
+        .attributes
+        .iter()
+        .find(|attribute| attribute.name == "transformed_reference_plane")
+        .unwrap();
+    assert!(transformed.id.0.ends_with(":147"));
 }
 
 #[test]

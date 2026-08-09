@@ -46,30 +46,35 @@ fn scan_transformed_reference_plane(
     annotations: &mut Annotations,
 ) {
     const TOKEN: &[u8] = b"moTransRefPlaneData_c";
+    const PREFIX: &[u8] = &[0xff; 8];
     let payload = section.payload();
     for offset in payload
         .windows(TOKEN.len())
         .enumerate()
         .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
     {
-        let body = offset + TOKEN.len();
-        let Some((start, values)) = (0..64).find_map(|skip| {
-            let start = body + skip;
-            let values = (0..9)
-                .map(|index| f64_le(payload, start + index * 8))
-                .collect::<Option<Vec<_>>>()?;
-            (values
-                .iter()
-                .all(|value| value.is_finite() && value.abs() < 1_000.0)
-                && values[3] > 1.0e-5
-                && values[4] > 1.0e-5)
-                .then_some((start, values))
-        }) else {
+        let prefix = offset + TOKEN.len();
+        if payload.get(prefix..prefix + PREFIX.len()) != Some(PREFIX) {
+            continue;
+        }
+        let start = prefix + PREFIX.len();
+        let Some(values) = (0..9)
+            .map(|index| f64_le(payload, start + index * 8))
+            .collect::<Option<Vec<_>>>()
+        else {
             continue;
         };
+        if !values
+            .iter()
+            .all(|value| value.is_finite() && value.abs() < 1_000.0)
+            || values[3] <= 1.0e-5
+            || values[4] <= 1.0e-5
+        {
+            continue;
+        }
         out.push(attribute(
             section,
-            start,
+            offset,
             "transformed_reference_plane",
             TOKEN,
             vec![

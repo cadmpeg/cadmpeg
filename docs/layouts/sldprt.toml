@@ -3716,6 +3716,65 @@ type = "bytes[11]"
 source = "spec"
 anchor = "class name `sgCircleDim` at marker +110"
 
+[[record]]
+name = "transformed_reference_plane_metadata"
+kind = "byte"
+section = "8"
+anchor = "`moTransRefPlaneData_c` | +0 | bytes[8]"
+size = 80
+endianness = "little"
+note = "Offsets begin immediately after the `moTransRefPlaneData_c` class token."
+
+[[record.field]]
+name = "prefix"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "`ff ff ff ff ff ff ff ff`"
+note = "Fixed prefix."
+
+[[record.field]]
+name = "center"
+offset = 8
+type = "f64[3]"
+source = "spec"
+anchor = "+8 | f64[3] | plane center xyz, metres"
+note = "Plane center xyz in metres."
+
+[[record.field]]
+name = "extents"
+offset = 32
+type = "f64[2]"
+source = "spec"
+anchor = "+32 | f64[2] | plane extents, metres"
+note = "Plane extents in metres."
+
+[[record.field]]
+name = "auxiliary_frame"
+offset = 48
+type = "f64[3]"
+source = "spec"
+anchor = "+48 | f64[3] | auxiliary frame, dimensionless"
+note = "Dimensionless auxiliary frame."
+
+[[record.field]]
+name = "diagonal"
+offset = 72
+type = "f64"
+source = "spec"
+anchor = "+72 | f64 | plane diagonal, metres"
+note = "Plane diagonal in metres."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/metadata.rs"
+contains = "const PREFIX: &[u8] = &[0xff; 8];"
+note = "The parser requires the fixed prefix before reading the value fields."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/writer.rs"
+contains = "objects.extend_from_slice(&[0xff; 8]);"
+note = "The writer emits the fixed prefix before the value fields."
+
 # --- Not tabulated ---------------------------------------------------------
 
 [[not_applicable]]

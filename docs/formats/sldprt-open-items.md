@@ -126,20 +126,6 @@ The table has no schema dimension. The count bounds bare u16 references only. A 
 
 `crates/cadmpeg-codec-sldprt/src/brep/attrib.rs:78` and `attrib.rs:126` accept a `00 4f` name length and a `00 52` list count in the range `1..64`. `sldprt.md` states no bound for either. Both modules scan every byte offset for the tags, which is the practice this item names.
 
-### CM-07. `moTransRefPlaneData_c` gap
-
-**Question.** What does the byte run between the `moTransRefPlaneData_c` class token and the first of its nine f64 values encode, and what fixes its length?
-
-**Known.** `sldprt.md` §8 "**Materials / metadata**" gives the field offsets of each document metadata record from the end of its class token. Every other record in that table starts its fields at token end +0. This one starts them after a gap. The decoder finds the value block by the first offset in `0..64` at which nine finite f64 values satisfy the extent constraints.
-
-Observed gap:
-
-| gap length | bytes | record that follows |
-| --- | --- | --- |
-| 8 | `ff ff ff ff ff ff ff ff` | plane center xyz |
-
-**Need.** We must know the gap to write the record back. A writer that omits it moves every later record in the SW Objects payload, which moves the byte offset each `sldprt:metadata:` identifier carries, so a rewrite that changes nothing still renames those attributes.
-
 ### CM-09. Active body stream selection
 
 **Question.** Which field identifies the active B-rep stream when no configuration record selects one?

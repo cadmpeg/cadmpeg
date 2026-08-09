@@ -1124,11 +1124,11 @@ For a blend record, `spine` names the center/spine curve that selects the blend 
 | | +28 | f64 | maximum radius, metres |
 | `moDefaultRefPlnData_c` | +0 | f64[3] | datum origin xyz, metres |
 | | +24 | f64[6] | datum frame, dimensionless |
-| `moTransRefPlaneData_c` | +0 | bytes | gap, see `sldprt-open-items.md` CM-07 |
-| | gap end +0 | f64[3] | plane center xyz, metres |
-| | gap end +24 | f64[2] | plane extents, metres |
-| | gap end +40 | f64[3] | auxiliary frame, dimensionless |
-| | gap end +64 | f64 | plane diagonal, metres |
+| `moTransRefPlaneData_c` | +0 | bytes[8] | `ff ff ff ff ff ff ff ff` |
+| | +8 | f64[3] | plane center xyz, metres |
+| | +32 | f64[2] | plane extents, metres |
+| | +48 | f64[3] | auxiliary frame, dimensionless |
+| | +72 | f64 | plane diagonal, metres |
 | `moPart_c` | +0 | u32 | part identifier |
 | | +4 | u32 | `0` |
 | | +8 | u32 | part version |

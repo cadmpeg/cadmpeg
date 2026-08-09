@@ -117,7 +117,7 @@
           ]
         },
         {
-          "id": "sldprt:metadata:transformed_reference_plane#247:176",
+          "id": "sldprt:metadata:transformed_reference_plane#247:147",
           "name": "transformed_reference_plane",
           "target": {
             "kind": "document"
@@ -598,8 +598,8 @@
           "stream": 1,
           "tag": "moLengthUserUnits_c"
         },
-        "sldprt:metadata:transformed_reference_plane#247:176": {
-          "offset": 176,
+        "sldprt:metadata:transformed_reference_plane#247:147": {
+          "offset": 147,
           "stream": 1,
           "tag": "moTransRefPlaneData_c"
         }

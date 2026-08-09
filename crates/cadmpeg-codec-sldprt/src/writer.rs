@@ -1196,6 +1196,7 @@ fn metadata_payloads(
                     ));
                 }
                 objects.extend_from_slice(b"moTransRefPlaneData_c");
+                objects.extend_from_slice(&[0xff; 8]);
                 for value in center
                     .iter()
                     .chain(extents)

@@ -965,6 +965,25 @@ The radial ordinal is zero-based in the feature-owned raw coordinate roster, inc
 | 108 | 2 | `class_length` | `u16` | little | spec | u16 length `11` |
 | 110 | 11 | `class_name` | `bytes[11]` | little | spec | class name `sgCircleDim` at marker +110 |
 
+## `transformed_reference_plane_metadata`
+
+Spec §8 · layout: byte offsets · size: 80 B
+
+Offsets begin immediately after the `moTransRefPlaneData_c` class token.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `prefix` | `bytes[8]` | little | spec | Fixed prefix. |
+| 8 | 24 | `center` | `f64[3]` | little | spec | Plane center xyz in metres. |
+| 32 | 16 | `extents` | `f64[2]` | little | spec | Plane extents in metres. |
+| 48 | 24 | `auxiliary_frame` | `f64[3]` | little | spec | Dimensionless auxiliary frame. |
+| 72 | 8 | `diagonal` | `f64` | little | spec | Plane diagonal in metres. |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/metadata.rs` — The parser requires the fixed prefix before reading the value fields.
+- `crates/cadmpeg-codec-sldprt/src/writer.rs` — The writer emits the fixed prefix before the value fields.
+
 ## Not tabulated
 
 | Area | Spec | Reason |
