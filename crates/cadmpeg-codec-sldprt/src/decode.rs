@@ -3689,6 +3689,38 @@ fn stamp_local_digests(ir: &mut CadIr) {
             .attributes
             .insert("brep_local_sha256".into(), brep_hash);
     }
+    let has_swobjects_semantics = ir
+        .model
+        .attributes
+        .iter()
+        .any(|attribute| attribute.id.0.starts_with("sldprt:metadata:"))
+        || ir
+            .model
+            .appearances
+            .iter()
+            .any(|appearance| appearance.schema.as_deref() == Some("moVisualProperties_c"));
+    if has_swobjects_semantics {
+        if let (Ok(swobjects_hash), Ok(material_hash)) = (
+            crate::writer::swobjects_local_sha256(ir),
+            crate::writer::swobjects_material_local_sha256(ir),
+        ) {
+            let identity_hash = crate::writer::swobjects_metadata_identity_local_sha256(ir);
+            if let Some(source) = &mut ir.source {
+                source.attributes.insert(
+                    crate::writer::SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE.into(),
+                    swobjects_hash,
+                );
+                source.attributes.insert(
+                    crate::writer::SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE.into(),
+                    material_hash,
+                );
+                source.attributes.insert(
+                    crate::writer::SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE.into(),
+                    identity_hash,
+                );
+            }
+        }
+    }
     let hash = document_local_sha256(ir);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(

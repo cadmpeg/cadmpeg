@@ -457,13 +457,13 @@ The disc-`0x0014` path reads its color at a computed offset and does not use thi
 
 **Question.** What do the undecoded bytes of a regenerated `SWObjects` metadata record hold?
 
-**Known.** `crates/cadmpeg-codec-sldprt/src/writer.rs:806` drops every source section whose name contains `swobjects`, and `writer.rs:126` writes a regenerated payload in its place. There is no replay path.
+**Known.** The semantic writer computes machine-local digests over the decoded metadata attributes, their source identities, and the material state represented by `SWObjects`. When that state is unchanged, it replays every retained `SWObjects` section byte-for-byte. It patches decoded fixed-width metadata fields in place while preserving every other byte. It refuses material edits, record-set changes, and variable-width edits because replacing or shifting a retained record would discard or relocate undecoded bytes. A source-less document uses the generated record forms.
 
-The decoder reads three fields of the configuration-manager record (`metadata.rs:268`: `+66`, `+107`, `+117`), two fields of `moPart_c` (`metadata.rs:238`), and the colour and name of `moVisualProperties_c` (`appearance.rs:27`). The writer emits a 125-byte record with every other byte zero (`writer.rs:1234`), a 13-byte `moPart_c` record (`writer.rs:1212`), and the constant `0x00c0_c0c0` inside each material record (`writer.rs:1801`). That constant is not in `sldprt.md`. The two record lengths are not fixed by any field or specification sentence.
+The decoder reads configuration-manager fields at `+66`, `+107`, and `+117`, two fields of `moPart_c`, and the colour and name of `moVisualProperties_c`. The source-less writer emits a 125-byte configuration-manager record with every other byte zero, a 13-byte `moPart_c` record, and the constant `0x00c0_c0c0` inside each material record. That constant is not in `sldprt.md`. The two record lengths are not fixed by any field or specification sentence.
 
-The metadata attributes carry `Exactness::ByteExact` (`metadata.rs:311`), which the round trip does not hold to.
+The metadata attributes carry `Exactness::ByteExact`. Retained-section replay satisfies that contract for an unchanged decoded state.
 
-**Need.** We must know what the undecoded bytes hold before the writer regenerates the record. A decode and re-encode with no edit must not replace them.
+**Need.** We must know what the undecoded bytes hold before the writer can edit a retained record or claim that a generated record is complete.
 
 ### EV-04. Tail-directory descriptor semantics
 

@@ -2366,6 +2366,68 @@ fn retained_source_image_round_trips_byte_exactly() {
 }
 
 #[test]
+fn semantic_writer_replays_unchanged_swobjects_payload() {
+    let mut payload = material_payload("Steel", [32, 64, 128]);
+    payload.extend([0xde, 0xad, 0xbe, 0xef]);
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x40, "SWObjects", &payload));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    decoded
+        .ir
+        .source
+        .as_mut()
+        .unwrap()
+        .attributes
+        .remove(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
+
+    let mut encoded = Vec::new();
+    let path = SldprtCodec
+        .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
+        .unwrap();
+    assert_eq!(path, cadmpeg_ir::WritePath::Patched);
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let retained = regenerated
+        .source_fidelity
+        .retained_records
+        .iter()
+        .find(|record| record.stream == "SWObjects")
+        .unwrap();
+    assert_eq!(retained.data.as_deref(), Some(payload.as_slice()));
+}
+
+#[test]
+fn semantic_writer_rejects_edits_to_retained_swobjects_semantics() {
+    let source = sldprt_with_body_and_material(&triangle_body(), "Steel", [32, 64, 128]);
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    decoded.ir.model.appearances[0].base_color = Some(cadmpeg_ir::topology::Color {
+        r: 1.0,
+        g: 0.0,
+        b: 0.0,
+        a: 1.0,
+    });
+
+    let error = SldprtCodec
+        .write_preserved_with_source_fidelity(
+            &decoded.ir,
+            &decoded.source_fidelity,
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("cannot edit retained SWObjects semantics"),
+        "{error}"
+    );
+}
+
+#[test]
 fn encoder_writes_source_less_ir() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     ir.model.bodies[0].name = None;
