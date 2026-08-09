@@ -4363,7 +4363,8 @@ impl Codec for StepCodec {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
         }
         let (exchange, diagnostics) = parse::parse_with_context(bytes, ctx)?;
-        let (decoded, opaque_offsets) = reader::inspect_exchange(bytes, &exchange, &diagnostics);
+        let (decoded, opaque_offsets) =
+            reader::inspect_exchange(bytes, &exchange, &diagnostics, Some(ctx))?;
         let mut entries = vec![ContainerEntry {
             name: "HEADER".into(),
             role: "metadata".into(),

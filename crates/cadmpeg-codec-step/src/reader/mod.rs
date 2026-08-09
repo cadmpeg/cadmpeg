@@ -36,7 +36,7 @@ pub fn decode(
     ctx: &DecodeContext<'_>,
 ) -> Result<DecodeResult, CodecError> {
     let (exchange, diagnostics) = parse::parse_with_context(input, ctx)?;
-    Ok(decode_exchange(input, options, &exchange, &diagnostics))
+    decode_exchange(input, options, &exchange, &diagnostics, Some(ctx))
 }
 
 pub(super) fn decode_exchange(
@@ -44,21 +44,24 @@ pub(super) fn decode_exchange(
     options: DecodeOptions,
     exchange: &Exchange,
     diagnostics: &[ParseDiagnostic],
-) -> DecodeResult {
-    decode_exchange_mode(input, options, exchange, diagnostics, true).0
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<DecodeResult, CodecError> {
+    decode_exchange_mode(input, options, exchange, diagnostics, true, ctx).map(|(result, _)| result)
 }
 
 pub(super) fn inspect_exchange(
     input: &[u8],
     exchange: &Exchange,
     diagnostics: &[ParseDiagnostic],
-) -> (DecodeResult, BTreeSet<usize>) {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(DecodeResult, BTreeSet<usize>), CodecError> {
     decode_exchange_mode(
         input,
         DecodeOptions::default(),
         exchange,
         diagnostics,
         false,
+        ctx,
     )
 }
 
@@ -68,7 +71,8 @@ fn decode_exchange_mode(
     exchange: &Exchange,
     diagnostics: &[ParseDiagnostic],
     retain_opaque: bool,
-) -> (DecodeResult, BTreeSet<usize>) {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(DecodeResult, BTreeSet<usize>), CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut attributes = BTreeMap::new();
     attributes.insert("schema".into(), schema_name(exchange));
@@ -116,20 +120,84 @@ fn decode_exchange_mode(
         })
     }));
     if options.container_only {
-        return (
+        return Ok((
             DecodeResult::new(ir, report, cadmpeg_ir::SourceFidelity::default()),
             BTreeSet::new(),
-        );
+        ));
     }
 
+    let semantic_input_work = semantic_input_work(exchange);
+    let mut admitted_ir_entities = 0;
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        &mut admitted_ir_entities,
+        "step_geometry_decode",
+    )?;
     let mut geometry = geometry::decode(exchange, &mut ir);
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        &mut admitted_ir_entities,
+        "step_dependency_decode",
+    )?;
     let dependencies = dependencies::decode(exchange);
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        &mut admitted_ir_entities,
+        "step_carrier_index",
+    )?;
     let carrier_index = index::CarrierIndex::from_ir(&ir);
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        &mut admitted_ir_entities,
+        "step_topology_decode",
+    )?;
+    if let Some(ctx) = ctx {
+        ctx.charge_work(
+            implicit_face_plane_work(exchange),
+            "step_implicit_face_plane",
+        )?;
+    }
     let topology = topology::decode(exchange, &mut ir, &carrier_index);
     let owned_carriers = geometry::topology_owned_carriers(&ir, &carrier_index);
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        &mut admitted_ir_entities,
+        "step_topology_association",
+    )?;
     geometry::associate_topology_carriers(exchange, &mut ir, &carrier_index, &owned_carriers);
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        &mut admitted_ir_entities,
+        "step_replica_association",
+    )?;
     geometry::associate_replica_bases(exchange, &mut ir, &carrier_index);
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        &mut admitted_ir_entities,
+        "step_pcurve_association",
+    )?;
     geometry::associate_pcurve_supports(exchange, &mut ir, &carrier_index);
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        &mut admitted_ir_entities,
+        "step_geometric_set_association",
+    )?;
     geometry::associate_free_geometric_set_members(
         exchange,
         &mut ir,
@@ -137,6 +205,13 @@ fn decode_exchange_mode(
         &owned_carriers,
         &mut geometry.losses,
     );
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        &mut admitted_ir_entities,
+        "step_representation_association",
+    )?;
     geometry::associate_free_representation_members(
         exchange,
         &mut ir,
@@ -144,6 +219,13 @@ fn decode_exchange_mode(
         &owned_carriers,
         &mut geometry.losses,
     );
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        &mut admitted_ir_entities,
+        "step_presentation_carrier_association",
+    )?;
     geometry::associate_free_presentation_carriers(
         exchange,
         &mut ir,
@@ -151,16 +233,58 @@ fn decode_exchange_mode(
         &owned_carriers,
         &mut geometry.losses,
     );
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        &mut admitted_ir_entities,
+        "step_surface_curve_association",
+    )?;
     geometry::associate_surface_curve_supports(exchange, &mut ir, &carrier_index, &owned_carriers);
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        &mut admitted_ir_entities,
+        "step_product_decode",
+    )?;
     let product = product::decode(exchange, &geometry, &topology, &mut ir);
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        &mut admitted_ir_entities,
+        "step_tessellation_decode",
+    )?;
     let tessellation = tessellation::decode(exchange, &geometry, &topology, &mut ir);
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        &mut admitted_ir_entities,
+        "step_pmi_decode",
+    )?;
     let pmi = pmi::decode(exchange, &geometry, &mut ir);
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        &mut admitted_ir_entities,
+        "step_presentation_decode",
+    )?;
     let presentation = presentation::decode(
         exchange,
         &topology,
         &mut ir,
         &product.product_definition_ids_by_source,
     );
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        &mut admitted_ir_entities,
+        "step_validation_decode",
+    )?;
     let validation = validation::decode(exchange, &geometry, &mut ir);
     report.notes.extend(dependencies.notes);
     report.notes.extend(validation.notes);
@@ -241,10 +365,24 @@ fn decode_exchange_mode(
     typed_records.extend(pmi.typed_records);
     typed_records.extend(dependencies.typed_records);
     typed_records.extend(validation.typed_records);
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        &mut admitted_ir_entities,
+        "step_drawing_decode",
+    )?;
     let drawing = drawing::decode(exchange, &mut ir, &typed_records);
     report.losses.extend(drawing.losses);
     typed_records.extend(drawing.typed_records);
     let mut post_decode_warnings = Vec::new();
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        &mut admitted_ir_entities,
+        "step_carrier_retention",
+    )?;
     retain_unowned_carriers(
         exchange,
         &mut ir,
@@ -260,6 +398,13 @@ fn decode_exchange_mode(
             provenance: None,
         }));
 
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        &mut admitted_ir_entities,
+        "step_opaque_record_retention",
+    )?;
     let opaque_offsets = if retain_opaque {
         BTreeSet::new()
     } else {
@@ -291,8 +436,19 @@ fn decode_exchange_mode(
                 .collect::<Vec<_>>()
                 .join("+");
             *counts.entry(kind).or_default() += 1;
-            let bytes = input[record.span.clone()].to_vec();
             let mut links = BTreeSet::new();
+            let reference_work = record
+                .partials
+                .iter()
+                .flat_map(|partial| partial.parameters.iter())
+                .map(reference_work_units)
+                .fold(0, u64::saturating_add);
+            let bytes = if let Some(ctx) = ctx {
+                ctx.charge_collection_items(reference_work, "step_opaque_record_links")?;
+                ctx.copy_retained(&input[record.span.clone()], "step_opaque_record", None)?
+            } else {
+                input[record.span.clone()].to_vec()
+            };
             for partial in &record.partials {
                 partial
                     .parameters
@@ -318,7 +474,11 @@ fn decode_exchange_mode(
             });
         }
         for (index, signature) in exchange.signatures.iter().enumerate() {
-            let bytes = input[signature.clone()].to_vec();
+            let bytes = if let Some(ctx) = ctx {
+                ctx.copy_retained(&input[signature.clone()], "step_signature_record", None)?
+            } else {
+                input[signature.clone()].to_vec()
+            };
             *counts.entry("SIGNATURE".into()).or_default() += 1;
             opaque.push(UnknownRecord {
                 id: UnknownId(format!("step:signature#{index}")),
@@ -344,7 +504,18 @@ fn decode_exchange_mode(
             *counts.entry(kind).or_default() += 1;
         }
     }
-    let accounting = byte_accounting(input, exchange, &typed_records);
+    let accounting = {
+        if let Some(ctx) = ctx {
+            ctx.charge_work(
+                u64::try_from(input.len()).unwrap_or(u64::MAX),
+                "step_byte_accounting",
+            )?;
+        }
+        let _reservation = ctx
+            .map(|ctx| ctx.reserve_scoped(input.len() as u64, "step_byte_accounting", None))
+            .transpose()?;
+        byte_accounting(input, exchange, &typed_records)
+    };
     if let Some(source) = &mut ir.source {
         source
             .attributes
@@ -383,10 +554,140 @@ fn decode_exchange_mode(
             message: format!("preserved {count} {name} instance(s) as named opaque STEP records"),
             provenance: None,
         }));
-    (
+    charge_pending_ir_entities(
+        ctx,
+        &ir,
+        &mut admitted_ir_entities,
+        "step_admit_ir_entities",
+    )?;
+    Ok((
         DecodeResult::new(ir, report, cadmpeg_ir::SourceFidelity::default()),
         opaque_offsets,
-    )
+    ))
+}
+
+fn charge_semantic_stage(
+    ctx: Option<&DecodeContext<'_>>,
+    input_work: u64,
+    ir: &CadIr,
+    admitted_ir_entities: &mut u64,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    charge_pending_ir_entities(ctx, ir, admitted_ir_entities, operation)?;
+    let output_work = u64::try_from(ir.model.entity_count()).unwrap_or(u64::MAX);
+    let units = input_work.saturating_add(output_work);
+    ctx.map_or(Ok(()), |ctx| ctx.charge_work(units, operation))
+}
+
+fn charge_pending_ir_entities(
+    ctx: Option<&DecodeContext<'_>>,
+    ir: &CadIr,
+    admitted_ir_entities: &mut u64,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let current_entities = u64::try_from(ir.model.entity_count()).unwrap_or(u64::MAX);
+    let additional_entities = current_entities.saturating_sub(*admitted_ir_entities);
+    if let Some(ctx) = ctx {
+        ctx.charge_entities(additional_entities, operation)?;
+    }
+    *admitted_ir_entities = current_entities;
+    Ok(())
+}
+
+/// Count the source graph nodes that each semantic pass may inspect.
+fn semantic_input_work(exchange: &Exchange) -> u64 {
+    let records = exchange.records.values().map(|record| {
+        1_u64.saturating_add(
+            record
+                .partials
+                .iter()
+                .map(|partial| {
+                    1_u64.saturating_add(
+                        partial
+                            .parameters
+                            .iter()
+                            .map(value_work_units)
+                            .fold(0, u64::saturating_add),
+                    )
+                })
+                .fold(0, u64::saturating_add),
+        )
+    });
+    let headers = exchange.header.iter().map(|record| {
+        1_u64.saturating_add(
+            record
+                .parameters
+                .iter()
+                .map(value_work_units)
+                .fold(0, u64::saturating_add),
+        )
+    });
+    let anchors = exchange
+        .anchors
+        .iter()
+        .map(|anchor| 1_u64.saturating_add(value_work_units(&anchor.value)));
+    let data = exchange.data.iter().map(|section| {
+        1_u64
+            .saturating_add(
+                section
+                    .parameters
+                    .iter()
+                    .map(value_work_units)
+                    .fold(0, u64::saturating_add),
+            )
+            .saturating_add(u64::try_from(section.records.len()).unwrap_or(u64::MAX))
+    });
+    let references = u64::try_from(exchange.references.len()).unwrap_or(u64::MAX);
+    records
+        .chain(headers)
+        .chain(anchors)
+        .chain(data)
+        .fold(references, u64::saturating_add)
+}
+
+fn value_work_units(value: &Value) -> u64 {
+    match value {
+        Value::List(values) => 1_u64.saturating_add(
+            values
+                .iter()
+                .map(value_work_units)
+                .fold(0, u64::saturating_add),
+        ),
+        Value::Typed(_, value) => 1_u64.saturating_add(value_work_units(value)),
+        _ => 1,
+    }
+}
+
+fn reference_work_units(value: &Value) -> u64 {
+    match value {
+        Value::Reference(_) => 1,
+        Value::List(values) => values
+            .iter()
+            .map(reference_work_units)
+            .fold(0, u64::saturating_add),
+        Value::Typed(_, value) => reference_work_units(value),
+        _ => 0,
+    }
+}
+
+/// Reserve the linear scan used to derive a plane for an implicit face.
+fn implicit_face_plane_work(exchange: &Exchange) -> u64 {
+    exchange
+        .records
+        .values()
+        .filter_map(|record| {
+            record
+                .partials
+                .iter()
+                .find(|partial| partial.name == "POLY_LOOP")
+                .and_then(|partial| partial.parameters.get(1))
+                .and_then(|value| match value {
+                    Value::List(values) => Some(values),
+                    _ => None,
+                })
+                .map(|points| u64::try_from(points.len()).unwrap_or(u64::MAX))
+        })
+        .fold(0, u64::saturating_add)
 }
 
 fn retain_unowned_carriers(
@@ -929,7 +1230,9 @@ mod tests {
             &exchange,
             &[],
             true,
+            None,
         )
+        .expect("synthesized unknown record conversion")
         .0;
         assert!(result.report.losses.iter().any(|loss| {
             loss.code == LossKind::DecodeDiagnostic
@@ -948,5 +1251,23 @@ mod tests {
         assert!(classes[1..6]
             .iter()
             .all(|class| *class == ByteClass::Structural));
+    }
+
+    #[test]
+    fn semantic_work_counts_nested_source_graph_nodes() {
+        let simple = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+        let nested = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(((1,2),TYPE((3,4))));ENDSEC;END-ISO-10303-21;";
+        let (simple_exchange, _) = crate::parse::parse(simple).expect("simple exchange");
+        let (nested_exchange, _) = crate::parse::parse(nested).expect("nested exchange");
+
+        assert!(semantic_input_work(&nested_exchange) > semantic_input_work(&simple_exchange));
+    }
+
+    #[test]
+    fn implicit_face_plane_work_scales_with_point_count() {
+        let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=POLY_LOOP('',(#2,#3,#4,#5));#2=ITEM();#3=ITEM();#4=ITEM();#5=ITEM();ENDSEC;END-ISO-10303-21;";
+        let (exchange, _) = crate::parse::parse(source).expect("polygon exchange");
+
+        assert_eq!(implicit_face_plane_work(&exchange), 4);
     }
 }
