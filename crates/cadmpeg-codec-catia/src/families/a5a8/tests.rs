@@ -660,6 +660,14 @@ fn a5_surface_parser_rejects_zero_tail_codes_without_underflow() {
 }
 
 #[test]
+fn a5_surface_parser_rejects_untagged_int_bytes_without_underflow() {
+    let bytes = [
+        0xa5, 0xa5, 0x03, 0x34, 0, 0, 0, 0, 0, 0, 0, 0xa5, 0xb3, 0xa5, 0xa5, 0xb3, 0xb3, 0xa5,
+    ];
+    assert!(crate::families::a5a8::records::a5_surfaces(&bytes).is_empty());
+}
+
+#[test]
 fn a5_surface_parser_accepts_each_structured_tail_variant() {
     for tail in [
         a5_surface_short_tail(),

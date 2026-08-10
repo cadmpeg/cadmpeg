@@ -1611,7 +1611,7 @@ fn strictly_increasing_finite(values: &[f64]) -> bool {
 }
 
 fn a5_int(byte: u8) -> Option<u32> {
-    (byte % 4 == 1).then_some(((byte - 1) / 4) as u32)
+    (byte % 4 == 1).then(|| u32::from((byte - 1) / 4))
 }
 
 fn a5_array_marker(bytes: &[u8], at: usize) -> Option<usize> {
