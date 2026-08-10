@@ -735,13 +735,26 @@ fn validate_ufrx(data: &NativeData, findings: &mut Vec<Finding>) {
         }
         UfrxRecordState::ParsedPrefix => {
             record.directory_id.is_some()
-                && record.schema == Some(11)
+                && record
+                    .schema
+                    .is_some_and(|schema| (11..=14).contains(&schema))
                 && record.section_versions.len() >= 5
                 && record.original_file_name.is_some()
                 && record.caption.is_some()
                 && record.reference_count == data.external_references.len() as u64
                 && record.tail_sha256.is_some()
                 && record.detail.is_none()
+        }
+        UfrxRecordState::UnsupportedSchema => {
+            record.directory_id.is_some()
+                && record.schema.is_some()
+                && !record.section_versions.is_empty()
+                && record.original_file_name.is_none()
+                && record.caption.is_none()
+                && record.reference_count == 0
+                && record.tail_sha256.is_some()
+                && record.detail.is_some()
+                && data.external_references.is_empty()
         }
         UfrxRecordState::Malformed => {
             record.directory_id.is_some()

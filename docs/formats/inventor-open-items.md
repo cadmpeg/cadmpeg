@@ -54,6 +54,8 @@ This document lists unknown Inventor byte semantics. [inventor.md](inventor.md) 
 
 **Known.** `UFRxDoc` stores external document references and an occurrence count. That count does not define occurrence identity or hierarchy.
 
+`UFRxDoc` schema 15 inserts a model-state table before the external-reference table. Its record grammar and boundary are unresolved. The codec retains the complete stream and its section-version table without classifying valid schema-15 bytes as malformed.
+
 **Need.** We must construct ordered occurrences without multiplying a reference count into invented entities.
 
 ### AS-02. Occurrence transforms

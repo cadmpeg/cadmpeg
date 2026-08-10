@@ -196,7 +196,7 @@ anchor = "a u32 payload length"
 name = "ufrx_header"
 kind = "byte"
 section = "8"
-anchor = "`UFRxDoc` schema 11 starts with"
+anchor = "`UFRxDoc` schemas 11 through 14 start with"
 size = 4
 
 [[record.field]]

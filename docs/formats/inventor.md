@@ -67,7 +67,7 @@ The root `Protein` stream starts with a u32 payload length. Zero length is the c
 
 ## 8. External references
 
-`UFRxDoc` schema 11 starts with a u16 schema and a u16 section-version count. The section-version table governs optional header fields. The external-reference table contains counted UTF-16LE paths and names, state groups, 16-byte document and database identifiers, a u32 reference identifier, u32 occurrence count, u32 version, and u32 flags. Persisted paths remain unresolved. The codec does not open them.
+`UFRxDoc` schemas 11 through 14 start with a u16 schema and a u16 section-version count. The section-version table governs optional header fields. The external-reference table contains counted UTF-16LE paths and names, state groups, 16-byte document and database identifiers, a u32 reference identifier, u32 occurrence count, u32 version, and u32 flags. Persisted paths remain unresolved. The codec does not open them.
 
 ## 9. Document kind
 

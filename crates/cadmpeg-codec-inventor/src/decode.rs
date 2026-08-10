@@ -297,6 +297,28 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             },
             Vec::new(),
         ),
+        UfrxState::Unsupported {
+            stream,
+            schema,
+            section_versions,
+            source,
+            detail,
+        } => (
+            UfrxRecord {
+                id: "inventor:ufrx:state#root".into(),
+                state: UfrxRecordState::UnsupportedSchema,
+                directory_id: Some(stream.directory_id()),
+                schema: Some(*schema),
+                section_versions: section_versions.clone(),
+                original_file_name: None,
+                caption: None,
+                reference_count: 0,
+                tail_len: source.window().len() as u64,
+                tail_sha256: Some(sha256_hex(source.window())),
+                detail: Some(detail.clone()),
+            },
+            Vec::new(),
+        ),
         UfrxState::Parsed(document) => {
             let references = document
                 .references
@@ -1026,7 +1048,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         match &container.ufrx {
         UfrxState::Malformed { .. } => losses.push(LossNote::new(
             LossKind::DecodeDiagnostic,
-            "The UFRxDoc external-reference table is malformed or outside the implemented schema.",
+            "The UFRxDoc external-reference table is malformed.",
+        )),
+        UfrxState::Unsupported { schema, .. } => losses.push(LossNote::new(
+            LossKind::AssemblyComponentsExternal,
+            format!(
+                "Retained UFRxDoc schema {schema} without external-reference or occurrence transfer."
+            ),
         )),
         UfrxState::Parsed(_) if matches!(document_kind, DocumentKind::Assembly) => {
             if !external_references.is_empty() {

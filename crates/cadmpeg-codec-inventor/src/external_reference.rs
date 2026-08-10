@@ -9,6 +9,13 @@ use cadmpeg_core::CodecError;
 pub(crate) enum UfrxState<'a> {
     Absent,
     Parsed(UfrxDocument<'a>),
+    Unsupported {
+        stream: CompoundStreamId,
+        schema: u16,
+        section_versions: Vec<u16>,
+        source: View<'a>,
+        detail: String,
+    },
     Malformed {
         stream: CompoundStreamId,
         detail: String,
@@ -60,6 +67,16 @@ pub(crate) fn parse<'a>(
             references: document.references,
             unparsed_tail: document.unparsed_tail,
         }),
+        Err(CodecError::NotImplemented(detail)) => {
+            let (schema, section_versions) = parse_schema_table(ctx, source)?;
+            UfrxState::Unsupported {
+                stream: stream.id(),
+                schema,
+                section_versions,
+                source,
+                detail,
+            }
+        }
         Err(error) => UfrxState::Malformed {
             stream: stream.id(),
             detail: error.to_string(),
@@ -82,7 +99,7 @@ fn parse_stream<'a>(
 ) -> Result<ParsedUfrx<'a>, CodecError> {
     let mut cursor = Cursor::new(source.window());
     let schema = cursor.u16("schema")?;
-    if schema != 11 {
+    if !(11..=14).contains(&schema) {
         return Err(CodecError::NotImplemented(format!(
             "UFRxDoc schema {schema} is not implemented"
         )));
@@ -229,6 +246,24 @@ fn parse_stream<'a>(
     })
 }
 
+fn parse_schema_table(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+) -> Result<(u16, Vec<u16>), CodecError> {
+    let mut cursor = Cursor::new(source.window());
+    let schema = cursor.u16("schema")?;
+    let section_count = cursor.count16("section-version count", 256)?;
+    ctx.charge_collection_items(
+        section_count as u64,
+        "admit UFRxDoc section-version entries",
+    )?;
+    let mut section_versions = Vec::with_capacity(section_count);
+    for _ in 0..section_count {
+        section_versions.push(cursor.u16("section version")?);
+    }
+    Ok((schema, section_versions))
+}
+
 struct Cursor<'a> {
     bytes: &'a [u8],
     position: usize,
@@ -335,23 +370,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn schema_11_frames_external_references_and_retains_the_tail() {
-        let (bytes, _) = fixture();
+    fn supported_schemas_frame_external_references_and_retain_the_tail() {
+        for schema in 11..=14 {
+            let (bytes, _) = fixture(schema);
+            let arena = DecodeArena::new();
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+                    .expect("synthetic UFRxDoc fits policy");
+            let document = parse_stream(&ctx, root).expect("synthetic UFRxDoc parses");
+            assert_eq!(document.schema, schema);
+            assert_eq!(document.original_file_name, "synthetic.ipt");
+            assert_eq!(document.references.len(), 1);
+            assert_eq!(document.references[0].path, "relative/component.ipt");
+            assert_eq!(document.references[0].occurrence_count, 2);
+            assert_eq!(document.unparsed_tail.window(), b"tail");
+        }
+    }
+
+    #[test]
+    fn unsupported_schema_is_rejected() {
+        let (bytes, _) = fixture(15);
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic UFRxDoc fits policy");
-        let document = parse_stream(&ctx, root).expect("synthetic UFRxDoc parses");
-        assert_eq!(document.schema, 11);
-        assert_eq!(document.original_file_name, "synthetic.ipt");
-        assert_eq!(document.references.len(), 1);
-        assert_eq!(document.references[0].path, "relative/component.ipt");
-        assert_eq!(document.references[0].occurrence_count, 2);
-        assert_eq!(document.unparsed_tail.window(), b"tail");
+        assert!(matches!(
+            parse_stream(&ctx, root),
+            Err(CodecError::NotImplemented(_))
+        ));
     }
 
     #[test]
     fn schema_11_rejects_nonzero_header_invariant() {
-        let (mut bytes, invariant_offset) = fixture();
+        let (mut bytes, invariant_offset) = fixture(11);
         bytes[invariant_offset..invariant_offset + 2].copy_from_slice(&2_u16.to_le_bytes());
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
@@ -359,12 +409,35 @@ mod tests {
         assert!(parse_stream(&ctx, root).is_err());
     }
 
-    fn fixture() -> (Vec<u8>, usize) {
+    fn fixture(schema: u16) -> (Vec<u8>, usize) {
         let mut bytes = Vec::new();
-        push_u16(&mut bytes, 11);
+        push_u16(&mut bytes, schema);
         push_u16(&mut bytes, 23);
+        let header_section_version = 12;
         for value in [
-            31, 19, 12, 18, 1, 2, 4, 2, 1, 3, 1, 2, 6, 2, 2, 5, 0, 1, 2, 0, 0, 0, 0,
+            31,
+            19,
+            header_section_version,
+            18,
+            1,
+            2,
+            4,
+            2,
+            1,
+            3,
+            1,
+            2,
+            6,
+            2,
+            2,
+            5,
+            0,
+            1,
+            2,
+            0,
+            0,
+            0,
+            0,
         ] {
             push_u16(&mut bytes, value);
         }
@@ -388,6 +461,9 @@ mod tests {
         push_u16(&mut bytes, 1);
         push_u32(&mut bytes, 1);
         push_u32(&mut bytes, 0);
+        if header_section_version >= 13 {
+            bytes.extend_from_slice(&[0; 32]);
+        }
         push_u32(&mut bytes, 0);
         push_u32(&mut bytes, 1);
         push_utf16(&mut bytes, "References");
