@@ -1213,6 +1213,23 @@ fn generate_ir_seeds() {
         fs::write(custom.join(name), input).unwrap();
     }
 
+    let iges_writer = Path::new("seeds/iges_writer");
+    replace_seed_directory(iges_writer);
+    for (name, control, data) in [
+        ("minimal_v5_1.json", 0_u8, minimal.as_bytes()),
+        ("unit_cube_v5_2.json", 1_u8, cube.as_bytes()),
+        (
+            "directed_subd_v5_3.json",
+            2_u8,
+            directed_subd_sum.as_bytes(),
+        ),
+        ("unsupported_native.json", 0x80_u8, minimal.as_bytes()),
+    ] {
+        let mut input = vec![control];
+        input.extend_from_slice(data);
+        fs::write(iges_writer.join(name), input).unwrap();
+    }
+
     let diff = Path::new("seeds/ir_diff");
     replace_seed_directory(diff);
     for (name, selector, left, right) in [
