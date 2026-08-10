@@ -159,15 +159,3 @@ from a conformant file.
 **Note.** GE-01 is the demonstrated case. Commit `f20d17e65` set `TRANSFORM_TOLERANCE` and authored the fixture that justifies it in the same commit, perturbed to 5e-11 against a threshold of 1e-10.
 
 **Need.** We need each tolerance and default in sections 2 through 5 traced to evidence outside this repository, or marked as a project convention in `iges.md` rather than as a format rule.
-
-### TE-01a. Integration arena rows do not name the subject entity's arena
-
-**Question.** Which arena must each integration fixture populate, and which entity in that fixture must populate it?
-
-**Known.** TE-01 asked for a per-fixture expectation table. Commit `0352402f3` delivered one: `integration_tests.rs:47-62` names an arena per fixture and fails with the fixture name. The union assertions are gone. The remaining defects are narrower than TE-01 and are recorded here:
-
-- Every row asserts `arena_count(...) > 0`. No row declares a count.
-- Some rows name an arena that a different entity in the same fixture fills. `mixed_analytic_composite_curve` (`tests.rs:854-880`) holds a Type 100, a Type 110, and a Type 102, and maps to `ModelCurves` (`integration_tests.rs:120-124`). The matrix gives Type 102 the destination `model.procedural_curves`, and Types 100 and 110 fill `model.curves` on their own. The row passes when the Type 102 decoder emits nothing. The same shape applies to `procedural_and_boolean_solids` and to five drawing fixtures that all name `Native("annotations")` while each holds a Type 212 that satisfies the row alone.
-- The table names the decoder's internal arena keys and is not cross-checked against the `destination` column of `corpus/iges-envelope-a.toml`. Envelope admission is cross-checked against that file (`tests.rs:190-242`); the arena table is not.
-
-**Need.** We need each row to name the arena of the entity the fixture exists to exercise, and a test that compares the table with the matrix `destination` column.
