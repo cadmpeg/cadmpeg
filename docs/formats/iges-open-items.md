@@ -118,16 +118,6 @@ from a conformant file.
 
 ## 4. Geometry carriers and tolerances
 
-### GE-03. Type 112 segment continuity
-
-**Question.** What join residual does a conformant Type 112 parametric spline have?
-
-**Known.** `splines.rs:28-30` gives a relative 1e-10 test and `splines.rs:273-289` makes a failure fatal to the entity. A Type 112 segment is a power-basis cubic evaluated as `a + b·w + c·w² + d·w³`, so coefficient round-off is multiplied by `w³`, where `w` is the breakpoint width. The comparison scale is the coordinate magnitude and not the breakpoint width.
-
-**Note.** The terminal-derivative test at `splines.rs:316-325` uses the same helper and only warns. The codec accepts this residual class in one place and refuses the entity for it in another.
-
-**Need.** Files whose only free-form curve type is Type 112 lose their complete curve content. We need the continuity budget as a function of the breakpoint width and the declared precision.
-
 ### GE-05. Type 102 carrier concatenation uses a private tolerance and degrades silently
 
 **Question.** Which tolerance joins Type 102 composite children, and what does a failed join mean?

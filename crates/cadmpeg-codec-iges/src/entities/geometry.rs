@@ -17,12 +17,12 @@ const MAX_TRANSFORM_DEPTH: usize = 64;
 const COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
 
 #[derive(Clone, Copy)]
-struct Interval {
+pub(crate) struct DeclaredInterval {
     lower: f64,
     upper: f64,
 }
 
-impl Interval {
+impl DeclaredInterval {
     fn outward(lower: f64, upper: f64) -> Self {
         Self {
             lower: lower.next_down(),
@@ -30,7 +30,7 @@ impl Interval {
         }
     }
 
-    fn around(value: f64, uncertainty: f64) -> Self {
+    pub(crate) fn around(value: f64, uncertainty: f64) -> Self {
         if uncertainty == 0.0 {
             Self {
                 lower: value,
@@ -41,15 +41,15 @@ impl Interval {
         }
     }
 
-    fn add(self, other: Self) -> Self {
+    pub(crate) fn add(self, other: Self) -> Self {
         Self::outward(self.lower + other.lower, self.upper + other.upper)
     }
 
-    fn subtract(self, other: Self) -> Self {
+    pub(crate) fn subtract(self, other: Self) -> Self {
         Self::outward(self.lower - other.upper, self.upper - other.lower)
     }
 
-    fn multiply(self, other: Self) -> Self {
+    pub(crate) fn multiply(self, other: Self) -> Self {
         let products = [
             self.lower * other.lower,
             self.lower * other.upper,
@@ -62,8 +62,16 @@ impl Interval {
         )
     }
 
-    fn contains(self, value: f64) -> bool {
+    pub(crate) fn scale(self, factor: f64) -> Self {
+        self.multiply(Self::around(factor, 0.0))
+    }
+
+    pub(crate) fn contains(self, value: f64) -> bool {
         self.lower <= value && value <= self.upper
+    }
+
+    pub(crate) fn overlaps(self, other: Self) -> bool {
+        self.lower <= other.upper && other.lower <= self.upper
     }
 }
 
@@ -78,14 +86,14 @@ pub(crate) fn declared_unit_vector(
     }
     let values = [vector.x, vector.y, vector.z];
     let components = std::array::from_fn::<_, 3, _>(|offset| {
-        Interval::around(
+        DeclaredInterval::around(
             values[offset],
             record.number_uncertainty(start + offset, values[offset], precision),
         )
     });
     components
         .into_iter()
-        .fold(Interval::around(0.0, 0.0), |sum, component| {
+        .fold(DeclaredInterval::around(0.0, 0.0), |sum, component| {
             sum.add(component.multiply(component))
         })
         .contains(1.0)
@@ -102,12 +110,12 @@ pub(crate) fn declared_orthogonal_vectors(
     let left_values = [left.x, left.y, left.z];
     let right_values = [right.x, right.y, right.z];
     (0..3)
-        .fold(Interval::around(0.0, 0.0), |sum, offset| {
-            let left = Interval::around(
+        .fold(DeclaredInterval::around(0.0, 0.0), |sum, offset| {
+            let left = DeclaredInterval::around(
                 left_values[offset],
                 record.number_uncertainty(left_start + offset, left_values[offset], precision),
             );
-            let right = Interval::around(
+            let right = DeclaredInterval::around(
                 right_values[offset],
                 record.number_uncertainty(right_start + offset, right_values[offset], precision),
             );
@@ -261,14 +269,14 @@ pub(crate) fn resolve_transform(
             let row = offset / 3;
             let column = offset % 3;
             let value_index = row * 4 + column;
-            Interval::around(
+            DeclaredInterval::around(
                 values[value_index],
                 record.number_uncertainty(value_index + 1, values[value_index], precision),
             )
         });
         let interval = |row: usize, column: usize| coefficient_intervals[row * 3 + column];
         let column_dot_interval = |left: usize, right: usize| {
-            (0..3).fold(Interval::around(0.0, 0.0), |sum, row| {
+            (0..3).fold(DeclaredInterval::around(0.0, 0.0), |sum, row| {
                 sum.add(interval(row, left).multiply(interval(row, right)))
             })
         };

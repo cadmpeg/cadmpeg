@@ -1771,7 +1771,6 @@ fn polynomial_nurbs_curve_file(parameters: &[u8]) -> Vec<u8> {
 }
 
 fn parametric_spline_curve_file() -> Vec<u8> {
-    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let values = [
         "112", "3", "1", "3", "2", "0", "1", "2", // Header and breakpoints.
         "0", "1", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", // Segment 1.
@@ -1779,6 +1778,11 @@ fn parametric_spline_curve_file() -> Vec<u8> {
         "2", "1", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", // Terminal block.
     ];
     let parameters = format!("{};", values.join(","));
+    parametric_spline_curve_file_with_parameters(parameters.as_bytes())
+}
+
+fn parametric_spline_curve_file_with_parameters(parameters: &[u8]) -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let parameter_count = parameters.len().div_ceil(64);
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
@@ -1800,7 +1804,7 @@ fn parametric_spline_curve_file() -> Vec<u8> {
         ],
         2,
     ));
-    bytes.extend(parameter_cards(parameters.as_bytes(), 1, 1));
+    bytes.extend(parameter_cards(parameters, 1, 1));
     let global_cards = global.len().div_ceil(72);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000002P{parameter_count:07}").as_bytes(),
@@ -1918,6 +1922,40 @@ fn decode_converts_piecewise_power_splines_to_exact_cubic_nurbs() {
     assert!(result.report.losses.is_empty());
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_propagates_declared_precision_through_parametric_spline_segments() {
+    for (first_slope, second_start, terminal_x, decoded, terminal_loss) in [
+        ("1.", "1000.004", "2000.012", true, false),
+        ("1.", "1000.02", "2000.02", false, false),
+        ("1.D0", "1000.004D0", "2000.004D0", false, false),
+        ("1.", "1000.004", "2000.1", true, true),
+    ] {
+        let parameters = format!(
+            "112,3,0,3,2,0,1000,2000,0,{first_slope},0,0,0,0,0,0,0,0,0,0,{second_start},1.,0,0,0,0,0,0,0,0,0,0,{terminal_x},1.,0,0,0,0,0,0,0,0,0,0;"
+        );
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(parametric_spline_curve_file_with_parameters(
+                    parameters.as_bytes(),
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert_eq!(result.ir.model.curves.len(), usize::from(decoded));
+        let has_terminal_loss = result.report.losses.iter().any(|loss| {
+            loss.message
+                .contains("terminal derivative block disagrees with the last polynomial")
+        });
+        assert_eq!(has_terminal_loss, terminal_loss);
+        if !decoded {
+            assert!(result.report.losses.iter().any(|loss| loss
+                .message
+                .contains("spline segments violate planar or positional continuity")));
+        }
+    }
 }
 
 #[test]
