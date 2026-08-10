@@ -384,6 +384,50 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
     extended_origin[record.origin + 105..record.origin + 117].fill(0);
     assert!(resolved_coordinate_system(&extended_origin).is_some());
 
+    let first_point = extended_origin[record.origin..record.origin + 165].to_vec();
+    let mut second_point = first_point.clone();
+    for (index, value) in [0.125_f64, 0.75, 0.5].into_iter().enumerate() {
+        let offset = 141 + index * 8;
+        second_point[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    let mut two_point_frame = record.lane.native_payload[..record.origin].to_vec();
+    two_point_frame.extend_from_slice(&first_point);
+    two_point_frame
+        .extend_from_slice(&[2, 0, 1, 0, 0, 0, 0x99, 0xc4, 1, 0, 0x9b, 0xc4, 0x90, 0x81]);
+    two_point_frame.extend_from_slice(&second_point);
+    two_point_frame.extend_from_slice(&(-0.25f64).to_le_bytes());
+    two_point_frame.extend_from_slice(&0.5f64.to_le_bytes());
+    for value in [1.0_f64, 0.0, 0.0] {
+        two_point_frame.extend_from_slice(&value.to_le_bytes());
+    }
+    two_point_frame.push(0);
+    for value in [1.0_f64, 0.0, 0.0] {
+        two_point_frame.extend_from_slice(&value.to_le_bytes());
+    }
+    two_point_frame.extend_from_slice(&[0; 3]);
+    for value in [0.125_f64, -0.25, 0.5] {
+        two_point_frame.extend_from_slice(&value.to_le_bytes());
+    }
+    two_point_frame.extend_from_slice(&0xc491u16.to_le_bytes());
+    assert_eq!(
+        resolved_coordinate_system(&two_point_frame),
+        Some((
+            Point3::new(125.0, -250.0, 500.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ))
+    );
+    let mut malformed_two_point = two_point_frame.clone();
+    let separator = record.origin + first_point.len();
+    malformed_two_point[separator] = 3;
+    assert_eq!(resolved_coordinate_system(&malformed_two_point), None);
+    let mut malformed_two_point = two_point_frame;
+    let repeated_direction = record.origin + first_point.len() + 14 + second_point.len() + 41;
+    malformed_two_point[repeated_direction..repeated_direction + 8]
+        .copy_from_slice(&(-1.0f64).to_le_bytes());
+    assert_eq!(resolved_coordinate_system(&malformed_two_point), None);
+
     let mut component_path_origin = Vec::new();
     component_path_origin
         .extend_from_slice(&record.lane.native_payload[record.origin..record.origin + 73]);

@@ -4482,6 +4482,104 @@ contains = "fn coordinate_system_ordinal_axes("
 note = "The parser validates the exact tail, maps distinct one-based ordinals to the global basis, and constructs the cross-product Z axis."
 
 [[record]]
+name = "coordinate_system_two_point_separator"
+kind = "byte"
+section = "2"
+anchor = "The 14-byte separator between the records"
+size = 14
+endianness = "little"
+
+[[record.field]]
+name = "selectors"
+offset = 0
+type = "u16[3]"
+source = "spec"
+anchor = "stores u16 LE values `2`, `1`, and `0`"
+
+[[record.field]]
+name = "first_token"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "a nonzero u16 token"
+
+[[record.field]]
+name = "one"
+offset = 8
+type = "u16"
+source = "spec"
+anchor = "u16 `1`"
+
+[[record.field]]
+name = "final_tokens"
+offset = 10
+type = "u16[2]"
+source = "spec"
+anchor = "and two nonzero u16 tokens"
+
+[[record]]
+name = "coordinate_system_two_point_tail"
+kind = "byte"
+section = "2"
+anchor = "A 94-byte solved tail follows the second record"
+size = 94
+endianness = "little"
+
+[[record.field]]
+name = "origin_yz"
+offset = 0
+type = "f64[2]"
+source = "spec"
+anchor = "Tail +0 and +8 repeat the first point's Y and Z coordinates in metres"
+
+[[record.field]]
+name = "x_direction"
+offset = 16
+type = "f64[3]"
+source = "spec"
+anchor = "A unit X direction occupies tail +16 through +39"
+
+[[record.field]]
+name = "separator"
+offset = 40
+type = "u8"
+source = "spec"
+anchor = "Byte +40 is zero"
+
+[[record.field]]
+name = "repeated_x_direction"
+offset = 41
+type = "f64[3]"
+source = "spec"
+anchor = "the same direction is repeated at unaligned f64 offsets +41, +49, and +57"
+
+[[record.field]]
+name = "zero_before_origin"
+offset = 65
+type = "bytes[3]"
+source = "spec"
+anchor = "Tail +65 stores three zero bytes"
+
+[[record.field]]
+name = "origin"
+offset = 68
+type = "f64[3]"
+source = "spec"
+anchor = "Three f64 LE values at +68 store the complete first point"
+
+[[record.field]]
+name = "terminal_token"
+offset = 92
+type = "u16"
+source = "spec"
+anchor = "tail +92 stores a nonzero u16 token"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
+contains = "fn coordinate_system_two_point_frame("
+note = "The parser requires two extended point records, validates the complete repeated cache, and constructs Y from the point displacement perpendicular to X."
+
+[[record]]
 name = "coordinate_system_line_axis"
 kind = "byte"
 section = "2"

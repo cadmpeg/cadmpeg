@@ -684,6 +684,9 @@ pub(crate) fn enrich_history_coordinate_systems(
 fn resolved_coordinate_system(record: &[u8]) -> Option<(Point3, Vector3, Vector3, Vector3)> {
     const AXIS_RECORD_LEN: usize = 113;
 
+    if let Some(frame) = coordinate_system_two_point_frame(record) {
+        return Some(frame);
+    }
     let (origin, generation, origin_end) = coordinate_system_origin(record)?;
     let axes = coordinate_system_line_axes(record, generation, origin_end);
     if axes.is_empty() {
@@ -795,10 +798,34 @@ fn coordinate_system_tail(
     Some(*flips)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CoordinateSystemOriginKind {
+    Standard,
+    Extended,
+    ComponentPath,
+}
+
+#[derive(Clone, Copy)]
+struct CoordinateSystemOrigin {
+    point: Point3,
+    generation: u32,
+    start: usize,
+    end: usize,
+    kind: CoordinateSystemOriginKind,
+}
+
 fn coordinate_system_origin(record: &[u8]) -> Option<(Point3, u32, usize)> {
+    let candidates = coordinate_system_origins(record);
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some((candidate.point, candidate.generation, candidate.end))
+}
+
+fn coordinate_system_origins(record: &[u8]) -> Vec<CoordinateSystemOrigin> {
     const PREFIX_SUFFIX: &[u8] = &[0x80, 0x02, 0, 0, 0, 0, 0, 0, 0];
     const HANDLES: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
-    let candidates = record
+    record
         .windows(PREFIX_SUFFIX.len() + 1)
         .enumerate()
         .filter(|(_, bytes)| matches!(bytes[0], 0x2d | 0x2f) && bytes[1..] == *PREFIX_SUFFIX)
@@ -814,13 +841,19 @@ fn coordinate_system_origin(record: &[u8]) -> Option<(Point3, u32, usize)> {
                 return None;
             }
             if let Some(candidate) = coordinate_system_component_path_origin(record, prefix) {
-                return Some(candidate);
+                return Some(CoordinateSystemOrigin {
+                    point: candidate.0,
+                    generation: candidate.1,
+                    start: prefix,
+                    end: candidate.2,
+                    kind: CoordinateSystemOriginKind::ComponentPath,
+                });
             }
             let stamp = u32::from_le_bytes(record.get(prefix + 73..prefix + 77)?.try_into().ok()?);
             if stamp == 0 || stamp == u32::MAX {
                 return None;
             }
-            let (object, generation, origin_offset, record_len) = if record
+            let (object, generation, origin_offset, record_len, kind) = if record
                 .get(prefix + 77..prefix + 79)
                 == Some(&[0; 2])
                 && record.get(prefix + 79..prefix + 81) == Some(&1u16.to_le_bytes())
@@ -835,6 +868,7 @@ fn coordinate_system_origin(record: &[u8]) -> Option<(Point3, u32, usize)> {
                     u32::from_le_bytes(record.get(prefix + 115..prefix + 119)?.try_into().ok()?),
                     127,
                     151,
+                    CoordinateSystemOriginKind::Standard,
                 )
             } else if record.get(prefix + 81..prefix + 85) == Some(&[0xff; 4])
                 && record.get(prefix + 85..prefix + 89) == Some(&[0; 4])
@@ -857,6 +891,7 @@ fn coordinate_system_origin(record: &[u8]) -> Option<(Point3, u32, usize)> {
                     u32::from_le_bytes(record.get(prefix + 129..prefix + 133)?.try_into().ok()?),
                     141,
                     165,
+                    CoordinateSystemOriginKind::Extended,
                 )
             } else {
                 return None;
@@ -864,21 +899,87 @@ fn coordinate_system_origin(record: &[u8]) -> Option<(Point3, u32, usize)> {
             if object == 0 || generation == 0 || generation == u32::MAX {
                 return None;
             }
-            Some((
-                Point3::new(
+            Some(CoordinateSystemOrigin {
+                point: Point3::new(
                     finite_f64(record, prefix + origin_offset)? * 1000.0,
                     finite_f64(record, prefix + origin_offset + 8)? * 1000.0,
                     finite_f64(record, prefix + origin_offset + 16)? * 1000.0,
                 ),
                 generation,
-                prefix.checked_add(record_len)?,
-            ))
+                start: prefix,
+                end: prefix.checked_add(record_len)?,
+                kind,
+            })
         })
-        .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
+        .collect()
+}
+
+fn coordinate_system_two_point_frame(record: &[u8]) -> Option<(Point3, Vector3, Vector3, Vector3)> {
+    let origins = coordinate_system_origins(record);
+    let [origin, axis_point] = origins.as_slice() else {
         return None;
     };
-    Some(*candidate)
+    if origin.kind != CoordinateSystemOriginKind::Extended
+        || axis_point.kind != CoordinateSystemOriginKind::Extended
+        || origin.generation != axis_point.generation
+    {
+        return None;
+    }
+    let separator = record.get(origin.end..axis_point.start)?;
+    if separator.len() != 14
+        || separator.get(0..6)? != [2, 0, 1, 0, 0, 0]
+        || separator.get(8..10)? != [1, 0]
+        || [6usize, 10, 12]
+            .into_iter()
+            .any(|offset| separator.get(offset..offset + 2) == Some(&[0, 0]))
+    {
+        return None;
+    }
+    let tail = record.get(axis_point.end..)?;
+    if tail.len() != 94
+        || tail.get(40) != Some(&0)
+        || tail.get(65..68)? != [0; 3]
+        || tail.get(92..94) == Some(&[0, 0])
+    {
+        return None;
+    }
+    let cached_origin = Point3::new(
+        finite_f64(tail, 68)? * 1000.0,
+        finite_f64(tail, 76)? * 1000.0,
+        finite_f64(tail, 84)? * 1000.0,
+    );
+    if reference_point_key(&cached_origin) != reference_point_key(&origin.point)
+        || (finite_f64(tail, 0)? * 1000.0 + 0.0).to_bits() != (origin.point.y + 0.0).to_bits()
+        || (finite_f64(tail, 8)? * 1000.0 + 0.0).to_bits() != (origin.point.z + 0.0).to_bits()
+    {
+        return None;
+    }
+    let x_axis = Vector3::new(
+        finite_f64(tail, 16)?,
+        finite_f64(tail, 24)?,
+        finite_f64(tail, 32)?,
+    );
+    let repeated = Vector3::new(
+        finite_f64(tail, 41)?,
+        finite_f64(tail, 49)?,
+        finite_f64(tail, 57)?,
+    );
+    if (x_axis.dot(x_axis) - 1.0).abs() > 1.0e-9 || x_axis != repeated {
+        return None;
+    }
+    let y_source = Vector3::new(
+        axis_point.point.x - origin.point.x,
+        axis_point.point.y - origin.point.y,
+        axis_point.point.z - origin.point.z,
+    );
+    let projection = x_axis.dot(y_source);
+    let y_axis = Vector3::new(
+        y_source.x - projection * x_axis.x,
+        y_source.y - projection * x_axis.y,
+        y_source.z - projection * x_axis.z,
+    )
+    .unit()?;
+    Some((origin.point, x_axis, y_axis, x_axis.cross(y_axis).unit()?))
 }
 
 fn coordinate_system_component_path_origin(

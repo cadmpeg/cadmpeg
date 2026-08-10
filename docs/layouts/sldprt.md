@@ -1185,6 +1185,35 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser validates the exact tail, maps distinct one-based ordinals to the global basis, and constructs the cross-product Z axis.
 
+## `coordinate_system_two_point_separator`
+
+Spec §2 · layout: byte offsets · size: 14 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 6 | `selectors` | `u16[3]` | little | spec | stores u16 LE values `2`, `1`, and `0` |
+| 6 | 2 | `first_token` | `u16` | little | spec | a nonzero u16 token |
+| 8 | 2 | `one` | `u16` | little | spec | u16 `1` |
+| 10 | 4 | `final_tokens` | `u16[2]` | little | spec | and two nonzero u16 tokens |
+
+## `coordinate_system_two_point_tail`
+
+Spec §2 · layout: byte offsets · size: 94 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 16 | `origin_yz` | `f64[2]` | little | spec | Tail +0 and +8 repeat the first point's Y and Z coordinates in metres |
+| 16 | 24 | `x_direction` | `f64[3]` | little | spec | A unit X direction occupies tail +16 through +39 |
+| 40 | 1 | `separator` | `u8` | little | spec | Byte +40 is zero |
+| 41 | 24 | `repeated_x_direction` | `f64[3]` | little | spec | the same direction is repeated at unaligned f64 offsets +41, +49, and +57 |
+| 65 | 3 | `zero_before_origin` | `bytes[3]` | little | spec | Tail +65 stores three zero bytes |
+| 68 | 24 | `origin` | `f64[3]` | little | spec | Three f64 LE values at +68 store the complete first point |
+| 92 | 2 | `terminal_token` | `u16` | little | spec | tail +92 stores a nonzero u16 token |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires two extended point records, validates the complete repeated cache, and constructs Y from the point displacement perpendicular to X.
+
 ## `coordinate_system_line_axis`
 
 Spec §2 · layout: byte offsets · size: 113 B
