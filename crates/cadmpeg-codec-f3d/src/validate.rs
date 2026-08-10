@@ -670,6 +670,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_body_bindings(&ctx, &mut findings);
     validate_body_bounds(&ctx, &mut findings);
     validate_canvas_images(&ctx, &mut findings);
+    validate_mesh_features(&ctx, &mut findings);
     validate_component_occurrences(&ctx, &mut findings);
     validate_configurations(&ctx, &mut findings);
     validate_feature_timelines(&ctx, &mut findings);
@@ -1298,6 +1299,332 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 severity: Severity::Error,
                 message: "Fusion Design history edge runs forward in its feature timeline".into(),
                 entity: Some(scope.id.clone()),
+            });
+        }
+    }
+}
+
+fn valid_mesh_record_identity(record: &records::DesignMeshRecordIdentity) -> bool {
+    record.record_index != 0
+        && record.frame_length >= 11
+        && record
+            .byte_offset
+            .checked_add(record.frame_length)
+            .is_some()
+        && record.class_tag.len() == 3
+        && record.class_tag.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn mesh_record_offset_is(
+    record: &records::DesignMeshRecordIdentity,
+    relative: u64,
+    offset: u64,
+) -> bool {
+    record.byte_offset.checked_add(relative) == Some(offset)
+}
+
+/// Validate complete `Base Mesh Feature` record graphs and their neutral links.
+fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
+    let mut feature_ids = HashSet::new();
+    let mut scope_records = HashSet::new();
+    let mut collection_records = HashSet::new();
+    let mut body_records = HashSet::new();
+    let mut entry_records = HashSet::new();
+    let mut guid_records = HashSet::new();
+    let mut wrapper_records = HashSet::new();
+    let mut state_records = HashSet::new();
+    let mut node_records = HashSet::new();
+    let mut auxiliary_records = HashSet::new();
+    let mut collection_owner_records = HashSet::new();
+    let mut body_owner_records = HashMap::new();
+    let mut texture_table_records = HashSet::new();
+    let mut filename_records = HashMap::new();
+    let mut projected_tessellations = HashSet::new();
+    let asset_ids = ctx
+        .ir
+        .model
+        .assets
+        .iter()
+        .map(|asset| &asset.id)
+        .collect::<HashSet<_>>();
+    let tessellation_ids = ctx
+        .ir
+        .model
+        .tessellations
+        .iter()
+        .map(|tessellation| tessellation.id.as_str())
+        .collect::<HashSet<_>>();
+    for feature in &ctx.native.design_mesh_features {
+        let stream = design_stream(&feature.id);
+        let scope = ctx
+            .scopes_by_index
+            .get(&(stream, feature.scope_record.record_index));
+        let body_count = feature.body_record_indices.len();
+        let body_count_u64 = u64::try_from(body_count).unwrap_or(u64::MAX);
+        let expected_collection_length = body_count_u64
+            .checked_mul(11)
+            .and_then(|body_bytes| body_bytes.checked_add(73));
+        let expected_collection_owner_reference = body_count_u64
+            .checked_mul(11)
+            .and_then(|body_bytes| body_bytes.checked_add(62))
+            .and_then(|relative| feature.collection_record.byte_offset.checked_add(relative));
+        let expected_scope_offsets = (0..body_count)
+            .filter_map(|ordinal| {
+                u64::try_from(ordinal)
+                    .ok()?
+                    .checked_mul(11)?
+                    .checked_add(feature.scope_record.byte_offset.checked_add(25)?)
+            })
+            .collect::<Vec<_>>();
+        let expected_collection_offsets = (0..body_count)
+            .filter_map(|ordinal| {
+                u64::try_from(ordinal)
+                    .ok()?
+                    .checked_mul(11)?
+                    .checked_add(feature.collection_record.byte_offset.checked_add(62)?)
+            })
+            .collect::<Vec<_>>();
+        let mut valid = feature_ids.insert(feature.id.as_str())
+            && scope_records.insert((stream, feature.scope_record.record_index))
+            && collection_records.insert((stream, feature.collection_record.record_index))
+            && valid_mesh_record_identity(&feature.scope_record)
+            && valid_mesh_record_identity(&feature.scope_base_record)
+            && valid_mesh_record_identity(&feature.collection_record)
+            && valid_mesh_record_identity(&feature.collection_base_record)
+            && valid_mesh_record_identity(&feature.texture_table_record)
+            && valid_mesh_record_identity(&feature.collection_owner_record)
+            && texture_table_records.insert((stream, feature.texture_table_record.record_index))
+            && collection_owner_records
+                .insert((stream, feature.collection_owner_record.record_index))
+            && feature.scope_base_record.record_index == feature.scope_record.record_index
+            && feature.collection_base_record.record_index
+                == feature.collection_record.record_index
+            && feature
+                .scope_record
+                .byte_offset
+                .checked_add(scope.map_or(0, |scope| scope.frame_length))
+                == Some(feature.scope_base_record.byte_offset)
+            && feature.scope_base_record.frame_length == 30
+            && feature
+                .scope_base_record
+                .byte_offset
+                .checked_add(feature.scope_base_record.frame_length)
+                == feature
+                    .scope_record
+                    .byte_offset
+                    .checked_add(feature.scope_record.frame_length)
+            && feature.collection_record.byte_offset.checked_add(38)
+                == Some(feature.collection_base_record.byte_offset)
+            && feature
+                .collection_base_record
+                .byte_offset
+                .checked_add(feature.collection_base_record.frame_length)
+                == feature
+                    .collection_record
+                    .byte_offset
+                    .checked_add(feature.collection_record.frame_length)
+            && Some(feature.collection_record.frame_length) == expected_collection_length
+            && mesh_record_offset_is(&feature.scope_record, 21, feature.body_count_offsets[0])
+            && mesh_record_offset_is(
+                &feature.collection_record,
+                21,
+                feature.body_count_offsets[1],
+            )
+            && mesh_record_offset_is(
+                &feature.collection_record,
+                58,
+                feature.body_count_offsets[2],
+            )
+            && feature.scope_body_reference_offsets == expected_scope_offsets
+            && feature.collection_body_reference_offsets == expected_collection_offsets
+            && mesh_record_offset_is(
+                &feature.collection_record,
+                27,
+                feature.texture_table_reference_offset,
+            )
+            && expected_collection_owner_reference
+                == Some(feature.collection_owner_reference_offset)
+            && feature.collection_owner_record.frame_length >= 273
+            && mesh_record_offset_is(
+                &feature.collection_owner_record,
+                262,
+                feature.collection_owner_backlink_offset,
+            )
+            && mesh_record_offset_is(
+                &feature.scope_base_record,
+                19,
+                feature.scope_owner_reference_offset,
+            )
+            && feature.scope_owner_record_index != 0
+            && mesh_record_offset_is(
+                &feature.texture_table_record,
+                21,
+                feature.texture_flags_count_offset,
+            )
+            && feature.bodies.len() == body_count
+            && scope.is_some_and(|scope| {
+                scope.kind == "Base Mesh Feature"
+                    && scope.byte_offset == feature.scope_record.byte_offset
+                    && scope.paired_byte_offset == feature.scope_base_record.byte_offset
+            });
+
+        let mut texture_cursor = feature.texture_table_record.byte_offset.checked_add(25);
+        let mut resources = feature.textures.iter().collect::<Vec<_>>();
+        let mut resource_guids = HashSet::new();
+        resources.sort_by_key(|resource| resource.ordinal);
+        let flag_order_valid = resources.iter().enumerate().all(|(ordinal, resource)| {
+            let offsets_valid = texture_cursor.is_some_and(|cursor| {
+                cursor.checked_add(4) == Some(resource.flags_guid_offset)
+                    && cursor.checked_add(40) == Some(resource.flags_offset)
+            });
+            let valid = resource.ordinal == u32::try_from(ordinal).unwrap_or(u32::MAX)
+                && valid_design_guid(&resource.resource_guid)
+                && resource_guids.insert(resource.resource_guid.to_ascii_uppercase())
+                && offsets_valid;
+            texture_cursor = texture_cursor.and_then(|cursor| cursor.checked_add(44));
+            valid
+        });
+        valid &= flag_order_valid
+            && texture_cursor == Some(feature.texture_filename_count_offset)
+            && u32::try_from(feature.textures.len()).is_ok();
+        texture_cursor = texture_cursor.and_then(|cursor| cursor.checked_add(4));
+        resources.sort_by_key(|resource| resource.filename_ordinal);
+        let filename_order_valid = resources.iter().enumerate().all(|(ordinal, resource)| {
+            let filename_units = u64::try_from(resource.filename.encode_utf16().count()).ok();
+            let filename_key = (stream, resource.filename_record.record_index);
+            let filename_record_consistent = filename_records
+                .get(&filename_key)
+                .is_none_or(|record| *record == &resource.filename_record);
+            filename_records
+                .entry(filename_key)
+                .or_insert(&resource.filename_record);
+            let offsets_valid = texture_cursor.is_some_and(|cursor| {
+                cursor.checked_add(4) == Some(resource.filename_guid_offset)
+                    && cursor.checked_add(40) == Some(resource.filename_record_reference_offset)
+            });
+            let valid = resource.filename_ordinal == u32::try_from(ordinal).unwrap_or(u32::MAX)
+                && offsets_valid
+                && valid_mesh_record_identity(&resource.filename_record)
+                && filename_record_consistent
+                && mesh_record_offset_is(&resource.filename_record, 25, resource.filename_offset)
+                && filename_units
+                    .and_then(|units| units.checked_mul(2))
+                    .and_then(|bytes| bytes.checked_add(25))
+                    == Some(resource.filename_record.frame_length)
+                && resource.archive_entry_name.rsplit('/').next()
+                    == Some(resource.filename.as_str())
+                && asset_ids.contains(&resource.asset);
+            texture_cursor = texture_cursor.and_then(|cursor| cursor.checked_add(51));
+            valid
+        });
+        valid &= filename_order_valid
+            && feature
+                .texture_table_record
+                .byte_offset
+                .checked_add(feature.texture_table_record.frame_length)
+                == texture_cursor;
+
+        for (ordinal, body) in feature.bodies.iter().enumerate() {
+            let expected_record_index = feature.body_record_indices.get(ordinal).copied();
+            let owner_key = (stream, body.owner_record.record_index);
+            let owner_consistent = body_owner_records
+                .get(&owner_key)
+                .is_none_or(|record| *record == &body.owner_record);
+            body_owner_records
+                .entry(owner_key)
+                .or_insert(&body.owner_record);
+            let body_end = body
+                .body_record
+                .byte_offset
+                .checked_add(body.body_record.frame_length);
+            valid &= expected_record_index == Some(body.body_record.record_index)
+                && body_records.insert((stream, body.body_record.record_index))
+                && entry_records.insert((stream, body.entry_name_record.record_index))
+                && guid_records.insert((stream, body.guid_record.record_index))
+                && wrapper_records.insert((stream, body.wrapper_record.record_index))
+                && state_records.insert((stream, body.scene_state_record.record_index))
+                && node_records.insert((stream, body.scene_node_record.record_index))
+                && auxiliary_records.insert((stream, body.scene_auxiliary_record.record_index))
+                && valid_mesh_record_identity(&body.body_record)
+                && valid_mesh_record_identity(&body.entry_name_record)
+                && valid_mesh_record_identity(&body.guid_record)
+                && valid_mesh_record_identity(&body.wrapper_record)
+                && valid_mesh_record_identity(&body.scene_state_record)
+                && valid_mesh_record_identity(&body.scene_node_record)
+                && valid_mesh_record_identity(&body.scene_auxiliary_record)
+                && valid_mesh_record_identity(&body.owner_record)
+                && owner_consistent
+                && body.body_record.frame_length >= 575
+                && body.wrapper_record.frame_length == 40
+                && body.scene_state_record.frame_length == 95
+                && body.scene_node_record.frame_length == 133
+                && mesh_record_offset_is(&body.body_record, 508, body.scope_reference_offset)
+                && mesh_record_offset_is(&body.body_record, 519, body.wrapper_reference_offset)
+                && mesh_record_offset_is(&body.body_record, 530, body.owner_reference_offset)
+                && mesh_record_offset_is(&body.body_record, 541, body.guid_reference_offset)
+                && mesh_record_offset_is(&body.body_record, 553, body.scene_node_reference_offset)
+                && body_end.and_then(|end| end.checked_sub(11))
+                    == Some(body.collection_reference_offset)
+                && mesh_record_offset_is(
+                    &body.wrapper_record,
+                    21,
+                    body.wrapper_body_reference_offset,
+                )
+                && mesh_record_offset_is(
+                    &body.entry_name_record,
+                    21,
+                    body.entry_guid_reference_offset,
+                )
+                && mesh_record_offset_is(&body.guid_record, 72, body.guid_entry_reference_offset)
+                && mesh_record_offset_is(
+                    &body.scene_node_record,
+                    33,
+                    body.scene_state_reference_offset,
+                )
+                && mesh_record_offset_is(
+                    &body.scene_node_record,
+                    48,
+                    body.scene_auxiliary_reference_offset,
+                )
+                && mesh_record_offset_is(&body.body_record, 42, body.transform_offsets[0])
+                && mesh_record_offset_is(&body.body_record, 171, body.transform_offsets[1])
+                && mesh_record_offset_is(&body.entry_name_record, 36, body.entry_name_offset)
+                && u64::try_from(body.entry_name.encode_utf16().count())
+                    .ok()
+                    .and_then(|units| units.checked_mul(2))
+                    .and_then(|bytes| bytes.checked_add(36))
+                    == Some(body.entry_name_record.frame_length)
+                && valid_design_guid(&body.fusion_uuid)
+                && mesh_record_offset_is(&body.guid_record, 36, body.fusion_uuid_offset)
+                && body.guid_record.frame_length >= 83
+                && design::decode::mesh::valid_mesh_transform(body.transform)
+                && body.tessellation_id.as_deref().is_none_or(|id| {
+                    tessellation_ids.contains(id) && projected_tessellations.insert(id)
+                });
+        }
+        let projected = feature
+            .bodies
+            .iter()
+            .filter_map(|body| body.tessellation_id.as_deref())
+            .collect::<Vec<_>>();
+        if !projected.is_empty() {
+            valid &= scope.is_some_and(|scope| {
+                ctx.ir.model.features.iter().any(|neutral| {
+                    neutral.native_ref.as_deref() == Some(scope.id.as_str())
+                        && matches!(
+                            &neutral.definition,
+                            cadmpeg_ir::features::FeatureDefinition::MeshImport { tessellations }
+                                if tessellations.iter().map(String::as_str).eq(projected.iter().copied())
+                        )
+                })
+            });
+        }
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design mesh feature has an invalid frame or object graph".into(),
+                entity: Some(feature.id.clone()),
             });
         }
     }

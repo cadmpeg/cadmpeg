@@ -40,11 +40,11 @@ use crate::records::{
     DesignDimensionNullLocusPair, DesignDimensionRecipeRecord, DesignEdgeIdentityOperand,
     DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFaceOperand,
-    DesignFeatureTimeline, DesignFilletRadiusGroup, DesignMaterialAssignment, DesignParameter,
-    DesignParameterCompanion, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
-    DesignSketchPlacement, LostEdgeReference, PersistentDesignLink, PersistentReference,
-    PersistentSubentityTag, SegmentType, SketchCurveIdentity, SketchCurveLink, SketchPoint,
-    SketchRelation, SketchSurface, SketchText, XrefDesign, XrefReference,
+    DesignFeatureTimeline, DesignFilletRadiusGroup, DesignMaterialAssignment, DesignMeshFeature,
+    DesignParameter, DesignParameterCompanion, DesignParameterOwner, DesignParameterScope,
+    DesignRecordHeader, DesignSketchPlacement, LostEdgeReference, PersistentDesignLink,
+    PersistentReference, PersistentSubentityTag, SegmentType, SketchCurveIdentity, SketchCurveLink,
+    SketchPoint, SketchRelation, SketchSurface, SketchText, XrefDesign, XrefReference,
 };
 use cadmpeg_asm::brep::records::{
     BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceSidedness, MeshSurfaceSentinel,
@@ -118,6 +118,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_feature_timelines",
     "design_fillet_radius_groups",
     "design_material_assignments",
+    "design_mesh_features",
     "design_parameter_companions",
     "design_parameter_owners",
     "design_parameter_scopes",
@@ -417,6 +418,16 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
         note: None,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_canvas_images),
         len: |model| model.design_canvas_images.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "design_mesh_features",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_mesh_features),
+        len: |model| model.design_mesh_features.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -1122,6 +1133,9 @@ pub struct F3dNative {
     /// Exact image-plane bindings owned by Canvas timeline objects.
     #[serde(default)]
     pub design_canvas_images: Vec<DesignCanvasImage>,
+    /// Complete typed `Base Mesh Feature` Design graphs.
+    #[serde(default)]
+    pub design_mesh_features: Vec<DesignMeshFeature>,
     /// Exact local component-definition and placed-occurrence carriers.
     #[serde(default)]
     pub design_component_occurrences: Vec<DesignComponentOccurrence>,
@@ -1299,6 +1313,7 @@ impl Default for F3dNative {
             design_types: Vec::new(),
             design_body_recipe_operands: Vec::new(),
             design_canvas_images: Vec::new(),
+            design_mesh_features: Vec::new(),
             design_component_occurrences: Vec::new(),
             design_dimension_annotation_frames: Vec::new(),
             design_dimension_locus_pairs: Vec::new(),
@@ -1373,6 +1388,7 @@ impl F3dNative {
             body_visibilities: namespace.arena_as("body_visibilities")?,
             design_types: namespace.arena_as("design_types")?,
             design_canvas_images: namespace.arena_as("design_canvas_images")?,
+            design_mesh_features: namespace.arena_as("design_mesh_features")?,
             design_component_occurrences: namespace.arena_as("design_component_occurrences")?,
             design_body_recipe_operands: namespace.arena_as("design_body_recipe_operands")?,
             design_dimension_annotation_frames: namespace

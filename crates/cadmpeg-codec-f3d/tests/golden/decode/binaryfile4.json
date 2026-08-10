@@ -297,6 +297,7 @@
           "design_feature_timelines": [],
           "design_fillet_radius_groups": [],
           "design_material_assignments": [],
+          "design_mesh_features": [],
           "design_parameter_companions": [],
           "design_parameter_owners": [],
           "design_parameter_scopes": [],

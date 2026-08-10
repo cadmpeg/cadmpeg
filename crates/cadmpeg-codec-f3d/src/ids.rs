@@ -775,6 +775,11 @@ native_record_id!(
     "mesh-body"
 );
 native_record_id!(
+    /// The native Design mesh-feature graph key.
+    native_design_mesh_feature_id,
+    "design-mesh-feature"
+);
+native_record_id!(
     /// The native design-body-member record key.
     native_design_body_member_id,
     "design-body-member"

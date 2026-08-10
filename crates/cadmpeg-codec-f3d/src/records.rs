@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
+use cadmpeg_ir::assets::AssetId;
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::{BodyId, EdgeId, FaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -4453,6 +4454,158 @@ impl DesignEntityHeader {
     pub fn in_sketch_module(&self) -> bool {
         self.module.as_deref() == Some(DESIGN_MODULE_SKETCH)
     }
+}
+
+/// Exact identity and source extent of one indexed Design mesh record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignMeshRecordIdentity {
+    /// Source per-file dynamic three-digit ASCII class tag.
+    pub class_tag: String,
+    /// Stream-local indexed-record identity.
+    pub record_index: u32,
+    /// Byte offset of the indexed header in the Design `BulkStream`.
+    pub byte_offset: u64,
+    /// Complete primary or nested record length in bytes.
+    pub frame_length: u64,
+}
+
+/// One texture resource owned by a Design mesh feature.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignMeshTextureResource {
+    /// Zero-based position in the serialized flags map.
+    pub ordinal: u32,
+    /// Stable resource GUID used as the key in both texture maps.
+    pub resource_guid: String,
+    /// Byte offset of the flags-map GUID payload.
+    pub flags_guid_offset: u64,
+    /// Opaque resource flags retained without reinterpretation.
+    pub flags: u32,
+    /// Byte offset of `flags`.
+    pub flags_offset: u64,
+    /// Zero-based position of the same GUID in the serialized filename map.
+    pub filename_ordinal: u32,
+    /// Byte offset of the filename-map GUID payload.
+    pub filename_guid_offset: u64,
+    /// Record storing the archive-entry basename.
+    pub filename_record: DesignMeshRecordIdentity,
+    /// Byte offset of the filename-record reference.
+    pub filename_record_reference_offset: u64,
+    /// Archive-entry basename stored by `filename_record`.
+    pub filename: String,
+    /// Byte offset of the UTF-16LE filename code units.
+    pub filename_offset: u64,
+    /// Complete matching archive-entry name.
+    pub archive_entry_name: String,
+    /// Neutral embedded asset projected from the matching archive entry.
+    pub asset: AssetId,
+}
+
+/// One mesh body and its complete Design identity graph.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignMeshBody {
+    /// Mesh-body record carrying placement and graph references.
+    pub body_record: DesignMeshRecordIdentity,
+    /// Entry-name record joining the body to one `.paramesh` archive entry.
+    pub entry_name_record: DesignMeshRecordIdentity,
+    /// GUID record joining the body to the container's `fusion_uuid`.
+    pub guid_record: DesignMeshRecordIdentity,
+    /// One-to-one `ParaMesh` wrapper around `body_record`.
+    pub wrapper_record: DesignMeshRecordIdentity,
+    /// Fixed Scene-state record owned by this mesh body.
+    pub scene_state_record: DesignMeshRecordIdentity,
+    /// Scene node connecting `body_record` to its state and auxiliary cache.
+    pub scene_node_record: DesignMeshRecordIdentity,
+    /// Separately typed Scene auxiliary cache reached through the Scene node.
+    pub scene_auxiliary_record: DesignMeshRecordIdentity,
+    /// Typed Design body-owner record referenced by `body_record`.
+    /// Multiple mesh bodies can reference the same owner.
+    pub owner_record: DesignMeshRecordIdentity,
+    /// Stored `.paramesh` archive-entry basename.
+    pub entry_name: String,
+    /// Byte offset of the UTF-16LE entry-name code units.
+    pub entry_name_offset: u64,
+    /// Container identity stored by both Design and `.paramesh` payloads.
+    pub fusion_uuid: String,
+    /// Byte offset of the ASCII `fusion_uuid` payload.
+    pub fusion_uuid_offset: u64,
+    /// Equal row-major container-to-model-centimetre affine transform.
+    pub transform: [[f64; 4]; 4],
+    /// Byte offsets of the two equal serialized transform blocks.
+    pub transform_offsets: [u64; 2],
+    /// Byte offset of the body-to-feature-scope reference.
+    pub scope_reference_offset: u64,
+    /// Byte offset of the body-to-wrapper reference.
+    pub wrapper_reference_offset: u64,
+    /// Byte offset of the body-to-owner reference.
+    pub owner_reference_offset: u64,
+    /// Byte offset of the body-to-GUID reference.
+    pub guid_reference_offset: u64,
+    /// Byte offset of the body-to-Scene-node reference.
+    pub scene_node_reference_offset: u64,
+    /// Byte offset of the body's final collection backlink.
+    pub collection_reference_offset: u64,
+    /// Byte offset of the wrapper's reciprocal body reference.
+    pub wrapper_body_reference_offset: u64,
+    /// Byte offset of the entry-name record's GUID reference.
+    pub entry_guid_reference_offset: u64,
+    /// Byte offset of the GUID record's entry-name backlink.
+    pub guid_entry_reference_offset: u64,
+    /// Byte offset of the Scene node's state-record reference.
+    pub scene_state_reference_offset: u64,
+    /// Byte offset of the Scene node's auxiliary-record reference.
+    pub scene_auxiliary_reference_offset: u64,
+    /// Neutral tessellation projected from the joined container, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tessellation_id: Option<String>,
+}
+
+/// One complete `Base Mesh Feature` Design graph.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignMeshFeature {
+    /// Globally unique deterministic identity keyed by the feature-scope record.
+    pub id: String,
+    /// Typed `Base Mesh Feature` scope record.
+    pub scope_record: DesignMeshRecordIdentity,
+    /// Paired same-index base record closing the feature scope.
+    pub scope_base_record: DesignMeshRecordIdentity,
+    /// Typed `ParaMesh` body-collection record.
+    pub collection_record: DesignMeshRecordIdentity,
+    /// Paired same-index base record inside the collection.
+    pub collection_base_record: DesignMeshRecordIdentity,
+    /// Typed `ParaMesh` texture-table record owned by the collection.
+    pub texture_table_record: DesignMeshRecordIdentity,
+    /// Three equal body counts: scope, collection prefix, collection base.
+    pub body_count_offsets: [u64; 3],
+    /// Ordered mesh-body record identities owned by the feature.
+    pub body_record_indices: Vec<u32>,
+    /// Scope body-reference offsets parallel to `body_record_indices`.
+    pub scope_body_reference_offsets: Vec<u64>,
+    /// Collection body-reference offsets parallel to `body_record_indices`.
+    pub collection_body_reference_offsets: Vec<u64>,
+    /// Byte offset of the collection's texture-table reference.
+    pub texture_table_reference_offset: u64,
+    /// Typed Design owner of the mesh-body collection.
+    pub collection_owner_record: DesignMeshRecordIdentity,
+    /// Byte offset of the collection's owner reference.
+    pub collection_owner_reference_offset: u64,
+    /// Byte offset of the owner's reciprocal collection reference.
+    pub collection_owner_backlink_offset: u64,
+    /// Design owner of the feature scope.
+    pub scope_owner_record_index: u32,
+    /// Byte offset of the paired scope record's owner reference.
+    pub scope_owner_reference_offset: u64,
+    /// Byte offset of the texture flags-map count.
+    pub texture_flags_count_offset: u64,
+    /// Byte offset of the texture filename-map count.
+    pub texture_filename_count_offset: u64,
+    /// Mesh bodies in the source collection order.
+    pub bodies: Vec<DesignMeshBody>,
+    /// Texture resources in flags-map order.
+    pub textures: Vec<DesignMeshTextureResource>,
 }
 
 /// Exact image-plane binding owned by one Design `Canvas` scope.

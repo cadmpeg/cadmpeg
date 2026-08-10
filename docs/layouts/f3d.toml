@@ -7,7 +7,8 @@ spec = "docs/formats/f3d.md"
 endianness = "little"
 note = """
 Covers the fixed Design-segment headers and body-map prefix, the named solid-primitive prologue,
-the ParaMesh entry-name, container-GUID, mesh-body transform, and scope-join fields,
+the ParaMesh entry-name, container-GUID, body graph, collection, texture table,
+feature scope, wrapper, and Scene records,
 the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, the
 compact `Loft` prefix and nested profile-region frames, the class-418
 `SplitFace` prefix, the grouped recipe-reference prefix, the three `Combine`
@@ -208,7 +209,7 @@ name = "paramesh_mesh_body_join_prefix"
 kind = "byte"
 section = "3.1"
 anchor = "It carries two equal row-major 4×4 f64 affine matrices at record-relative offsets 42 and 171."
-size = 552
+size = 564
 note = "Offsets are relative to the mesh-body primary indexed header. Presentation fields occupy the unstated spans, and the primary record can continue after this fixed prefix."
 
 [[record.field]]
@@ -259,19 +260,40 @@ name = "feature_scope_reference"
 offset = 508
 type = "bytes[11]"
 source = "spec"
-anchor = "A marked same-segment reference at offset 508 names the owning `Base Mesh Feature` scope."
+anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning `Base Mesh Feature` scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
 
-[[record.gap]]
+[[record.field]]
+name = "wrapper_reference"
 offset = 519
-size = 22
-note = "Presentation fields occupy the span between the feature-scope and container-GUID references."
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning `Base Mesh Feature` scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
+
+[[record.field]]
+name = "body_owner_reference"
+offset = 530
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning `Base Mesh Feature` scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
 
 [[record.field]]
 name = "container_guid_reference"
 offset = 541
 type = "bytes[11]"
 source = "spec"
-anchor = "A marked same-segment reference at offset 541 names the GUID record."
+anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning `Base Mesh Feature` scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
+
+[[record.gap]]
+offset = 552
+size = 1
+note = "One structural byte separates the GUID and Scene-node references."
+
+[[record.field]]
+name = "scene_node_reference"
+offset = 553
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked same-segment references at offsets 508, 519, 530, 541, and 553 name the owning `Base Mesh Feature` scope, the reciprocal body wrapper, a `Body` owner, the GUID record, and a Scene node."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
@@ -282,6 +304,442 @@ note = "The typed mesh-body parser reads the feature-scope reference at the tabu
 path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
 contains = "const MESH_BODY_GUID_REFERENCE_AT: usize = 541;"
 note = "The typed mesh-body parser reads the container-GUID reference at the tabulated offset."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
+contains = "const MESH_BODY_WRAPPER_REFERENCE_AT: usize = 519;"
+note = "The typed mesh-body parser reads the reciprocal wrapper reference at the tabulated offset."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
+contains = "const MESH_BODY_OWNER_REFERENCE_AT: usize = 530;"
+note = "The typed mesh-body parser reads the shared Body-owner reference at the tabulated offset."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
+contains = "const MESH_BODY_SCENE_NODE_REFERENCE_AT: usize = 553;"
+note = "The typed mesh-body parser reads the Scene-node reference at the tabulated offset."
+
+[[record]]
+name = "paramesh_mesh_collection_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Its indexed header is followed by ten zero bytes, a u32 body count at offset 21, bytes `01 01` at offset 25, a marked same-segment texture-table reference at offset 27, and a nested same-index record at offset 38."
+size = 38
+note = "Offsets are relative to the mesh-collection indexed header. The nested CommonData record starts at the end of this prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its indexed header is followed by ten zero bytes"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "followed by ten zero bytes, a u32 body count at offset 21"
+
+[[record.field]]
+name = "body_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "a u32 body count at offset 21"
+
+[[record.field]]
+name = "constant_01_01"
+offset = 25
+type = "bytes[2]"
+source = "spec"
+anchor = "bytes `01 01` at offset 25"
+
+[[record.field]]
+name = "texture_table_reference"
+offset = 27
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked same-segment texture-table reference at offset 27"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
+contains = "const MESH_COLLECTION_TEXTURE_REFERENCE_AT: usize = 27;"
+note = "The typed collection parser reads the texture-table reference at the tabulated offset."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
+contains = "const MESH_COLLECTION_BASE_RECORD_AT: usize = 38;"
+note = "The typed collection parser starts the nested CommonData record at the end of this prefix."
+
+[[record]]
+name = "paramesh_mesh_collection_base_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Its indexed header is followed by nine zero bytes, a second u32 body count at collection offset 58, that many ordered marked same-segment body references at offset 62, and one marked same-segment owner reference."
+size = 24
+note = "Offsets are relative to the nested CommonData indexed header at collection offset 38. The variable body-reference list starts at nested offset 24, which is collection offset 62."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its indexed header is followed by nine zero bytes"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "followed by nine zero bytes"
+
+[[record.field]]
+name = "body_count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "a second u32 body count at collection offset 58"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
+contains = "const MESH_COLLECTION_BASE_BODY_COUNT_AT: usize = 58;"
+note = "The parser addresses this nested-relative field from the collection header."
+
+[[record]]
+name = "paramesh_texture_table_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Its indexed header is followed by ten zero bytes and a u32 flags-map count at offset 21."
+size = 25
+note = "Offsets are relative to the texture-table indexed header. The first variable flags-map entry starts at offset 25."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its indexed header is followed by ten zero bytes"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "followed by ten zero bytes and a u32 flags-map count"
+
+[[record.field]]
+name = "flags_map_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "a u32 flags-map count at offset 21"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
+contains = "const MESH_TEXTURE_FLAGS_COUNT_AT: usize = 21;"
+note = "The typed texture-table parser starts the flags map at the tabulated count."
+
+[[record]]
+name = "paramesh_texture_filename_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Its indexed header is followed by ten zero bytes and one nonempty u32-count UTF-16LE archive-entry basename."
+size = 25
+note = "Offsets are relative to the filename-record indexed header. UTF-16LE code units start at offset 25 and continue to the primary-record boundary."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its indexed header is followed by ten zero bytes"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "followed by ten zero bytes and one nonempty u32-count UTF-16LE archive-entry basename"
+
+[[record.field]]
+name = "basename_code_unit_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "one nonempty u32-count UTF-16LE archive-entry basename"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
+contains = "let (filename, end) = lp_utf16_bounded(record, 21, 1..=1024)?;"
+note = "The typed filename parser reads the count at the tabulated offset and requires an exact record end."
+
+[[record]]
+name = "paramesh_body_wrapper"
+kind = "byte"
+section = "3.1"
+anchor = "It is exactly 40 bytes: its indexed header, ten zero bytes, a marked same-segment body reference at offset 21, and eight zero bytes."
+size = 40
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "its indexed header, ten zero bytes"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes"
+
+[[record.field]]
+name = "body_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked same-segment body reference at offset 21"
+
+[[record.field]]
+name = "zero_tail_8"
+offset = 32
+type = "bytes[8]"
+source = "spec"
+anchor = "and eight zero bytes"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
+contains = "const MESH_WRAPPER_BODY_REFERENCE_AT: usize = 21;"
+note = "The wrapper parser reads the reciprocal body reference at the tabulated offset."
+
+[[record]]
+name = "paramesh_feature_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Its indexed header is followed by ten zero bytes, a u32 body count at offset 21, and that many ordered marked same-segment body references at offset 25."
+size = 25
+note = "Offsets are relative to the `Base Mesh Feature` indexed header. The ordered body-reference list starts at offset 25."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its indexed header is followed by ten zero bytes"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "followed by ten zero bytes, a u32 body count at offset 21"
+
+[[record.field]]
+name = "body_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "a u32 body count at offset 21"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
+contains = "const MESH_FEATURE_BODY_COUNT_AT: usize = 21;"
+note = "The typed scope parser reads the ordered body run from the tabulated count."
+
+[[record]]
+name = "paramesh_feature_scope_base"
+kind = "byte"
+section = "3.1"
+anchor = "This closing record is exactly 30 bytes: its indexed header, eight zero bytes, and a marked same-segment owner reference at offset 19."
+size = 30
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "its indexed header, eight zero bytes"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes"
+
+[[record.field]]
+name = "scope_owner_reference"
+offset = 19
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked same-segment owner reference at offset 19"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
+contains = "paired_relative.checked_add(30) == Some(record.len())"
+note = "The scope parser requires the nested base record to end exactly 30 bytes after its header."
+
+[[record]]
+name = "paramesh_scene_state"
+kind = "byte"
+section = "3.1"
+anchor = "It is exactly 95 bytes: its indexed header, 34 zero bytes, byte `01`, and a 49-byte mask."
+size = 95
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "its indexed header, 34 zero bytes"
+
+[[record.field]]
+name = "zero_run_34"
+offset = 11
+type = "bytes[34]"
+source = "spec"
+anchor = "34 zero bytes"
+
+[[record.field]]
+name = "footer_marker"
+offset = 45
+type = "u8"
+source = "spec"
+anchor = "byte `01`"
+
+[[record.field]]
+name = "footer_mask"
+offset = 46
+type = "bytes[49]"
+source = "spec"
+anchor = "and a 49-byte mask"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
+contains = "const SCENE_FOOTER_BYTES: usize = 50;"
+note = "The Scene-state and Scene-node parsers share the exact footer validator."
+
+[[record]]
+name = "paramesh_scene_node"
+kind = "byte"
+section = "3.1"
+anchor = "It is exactly 133 bytes."
+size = 133
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its indexed header is followed by 14 zero bytes"
+
+[[record.field]]
+name = "zero_run_14"
+offset = 11
+type = "bytes[14]"
+source = "spec"
+anchor = "followed by 14 zero bytes"
+
+[[record.field]]
+name = "constant_two_a"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "u32 values `2` at offsets 25 and 29"
+
+[[record.field]]
+name = "constant_two_b"
+offset = 29
+type = "u32"
+source = "spec"
+anchor = "u32 values `2` at offsets 25 and 29"
+
+[[record.field]]
+name = "scene_state_reference"
+offset = 33
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked same-segment Scene-state reference at offset 33"
+
+[[record.field]]
+name = "constant_three"
+offset = 44
+type = "u32"
+source = "spec"
+anchor = "u32 value `3` at offset 44"
+
+[[record.field]]
+name = "auxiliary_record_reference"
+offset = 48
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked same-segment auxiliary-record reference at offset 48"
+
+[[record.field]]
+name = "zero_run_24"
+offset = 59
+type = "bytes[24]"
+source = "spec"
+anchor = "24 zero bytes at offset 59"
+
+[[record.field]]
+name = "footer_marker"
+offset = 83
+type = "u8"
+source = "spec"
+anchor = "the same 50-byte Scene footer at offset 83"
+
+[[record.field]]
+name = "footer_mask"
+offset = 84
+type = "bytes[49]"
+source = "spec"
+anchor = "the same 50-byte Scene footer at offset 83"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
+contains = "const SCENE_NODE_STATE_REFERENCE_AT: usize = 33;"
+note = "The Scene-node parser reads the state reference at the tabulated offset."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
+contains = "const SCENE_NODE_AUXILIARY_REFERENCE_AT: usize = 48;"
+note = "The Scene-node parser reads the auxiliary reference at the tabulated offset."
+
+[[record]]
+name = "paramesh_collection_owner_backlink_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Its marked same-segment reference at offset 262 points back to the collection."
+size = 273
+note = "Offsets are relative to the collection-owner indexed header. The record can continue after this fixed backlink prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The owner has type GUID"
+
+[[record.gap]]
+offset = 11
+size = 251
+note = "The owner payload before the reciprocal collection reference is outside this table."
+
+[[record.field]]
+name = "collection_backlink"
+offset = 262
+type = "bytes[11]"
+source = "spec"
+anchor = "Its marked same-segment reference at offset 262 points back to the collection."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
+contains = "const MESH_COLLECTION_OWNER_BACKLINK_AT: usize = 262;"
+note = "The typed owner parser reads the reciprocal collection reference at the tabulated offset."
 
 [[record]]
 name = "assembly_operand_path_locator_reference_run"
