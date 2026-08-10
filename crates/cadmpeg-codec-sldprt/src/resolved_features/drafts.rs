@@ -2,7 +2,9 @@
 
 use super::axes::canonical_unit_direction;
 use super::scalars::feature_object_name;
-use super::selections::{component_vector_path_at, COMPACT_EDGE_VECTOR_MARKER};
+use super::selections::{
+    compact_mixed_component_path, component_vector_path_at, COMPACT_EDGE_VECTOR_MARKER,
+};
 use crate::classification::{classify, FeatureClass};
 use crate::records::{FeatureInputComponentPathEntry, FeatureInputLane};
 use cadmpeg_ir::math::Vector3;
@@ -17,13 +19,19 @@ const MAX_PATH_CELLS: usize = 65;
 
 #[derive(Clone, Debug)]
 pub(super) struct DraftOperands {
-    pub(super) neutral_plane: Vec<FeatureInputComponentPathEntry>,
+    pub(super) anchor: DraftAnchor,
     pub(super) faces: Vec<Vec<FeatureInputComponentPathEntry>>,
     pub(super) pull_direction: Vector3,
 }
 
+#[derive(Clone, Debug)]
+pub(super) enum DraftAnchor {
+    NeutralPlane(Vec<FeatureInputComponentPathEntry>),
+    PartingTool(Vec<Vec<FeatureInputComponentPathEntry>>),
+}
+
 pub(super) fn same_draft_operands(left: &DraftOperands, right: &DraftOperands) -> bool {
-    same_component_path_semantics(&left.neutral_plane, &right.neutral_plane)
+    same_draft_anchor(&left.anchor, &right.anchor)
         && left.faces.len() == right.faces.len()
         && left
             .faces
@@ -44,6 +52,17 @@ pub(super) fn draft_operands(
     if classify(feature) != Some(FeatureClass::Draft) || object_start >= object_end {
         return None;
     }
+    if let Some(operands) = declared_draft_operands(lane, object_start, object_end) {
+        return Some(operands);
+    }
+    compact_parting_line_draft_operands(lane, object_start, object_end)
+}
+
+fn declared_draft_operands(
+    lane: &FeatureInputLane,
+    object_start: usize,
+    object_end: usize,
+) -> Option<DraftOperands> {
     let token = unique_declared_plane_reference_token(lane)?;
     let end = object_end.min(lane.native_payload.len());
     let final_record_start = end.checked_sub(PLANE_REFERENCE_HEADER_LEN + 18)?;
@@ -67,10 +86,117 @@ pub(super) fn draft_operands(
         }
     }
     (!faces.is_empty()).then_some(DraftOperands {
-        neutral_plane,
+        anchor: DraftAnchor::NeutralPlane(neutral_plane),
         faces,
         pull_direction,
     })
+}
+
+fn compact_parting_line_draft_operands(
+    lane: &FeatureInputLane,
+    object_start: usize,
+    object_end: usize,
+) -> Option<DraftOperands> {
+    let end = object_end.min(lane.native_payload.len());
+    let final_marker = end.checked_sub(COMPACT_EDGE_VECTOR_MARKER.len())?;
+    let records = (object_start.saturating_add(12)..=final_marker)
+        .filter(|marker| {
+            lane.native_payload
+                .get(*marker..*marker + COMPACT_EDGE_VECTOR_MARKER.len())
+                == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
+        })
+        .filter_map(|marker| {
+            compact_draft_selection_at(&lane.native_payload, marker)
+                .map(|(role, paths, selection_end)| (marker, role, paths, selection_end))
+        })
+        .collect::<Vec<_>>();
+    let parting_records = records
+        .iter()
+        .filter(|(_, role, _, _)| *role == 2)
+        .collect::<Vec<_>>();
+    let [parting_record] = parting_records.as_slice() else {
+        return None;
+    };
+    let first_face = records
+        .iter()
+        .find(|(marker, role, _, _)| *role == 3 && *marker > parting_record.0)?;
+    let pull_direction =
+        unique_draft_direction(&lane.native_payload, parting_record.3, first_face.0)?;
+    let faces = records
+        .iter()
+        .filter(|(marker, role, _, _)| *role == 3 && *marker > parting_record.0)
+        .flat_map(|(_, _, paths, _)| paths.iter().cloned())
+        .fold(
+            Vec::<Vec<FeatureInputComponentPathEntry>>::new(),
+            |mut paths, path| {
+                if !paths
+                    .iter()
+                    .any(|existing| same_component_path_semantics(existing, &path))
+                {
+                    paths.push(path);
+                }
+                paths
+            },
+        );
+    (!faces.is_empty()).then_some(DraftOperands {
+        anchor: DraftAnchor::PartingTool(parting_record.2.clone()),
+        faces,
+        pull_direction,
+    })
+}
+
+fn compact_draft_selection_at(
+    payload: &[u8],
+    marker: usize,
+) -> Option<(u8, Vec<Vec<FeatureInputComponentPathEntry>>, usize)> {
+    let header = marker.checked_sub(12)?;
+    usize::try_from(u32::from_le_bytes(
+        payload.get(header..header + 4)?.try_into().ok()?,
+    ))
+    .ok()
+    .filter(|count| (1..=MAX_PATH_CELLS).contains(count))?;
+    let role_bytes = payload.get(header + 4..header + 8)?;
+    let role = match role_bytes {
+        [0, 2, 0, 0] => 2,
+        [0, 3, 0, 0] => 3,
+        _ => return None,
+    };
+    if payload.get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len())? != COMPACT_EDGE_VECTOR_MARKER
+        || payload.get(marker + COMPACT_EDGE_VECTOR_MARKER.len()..marker + 18)? != [0, 0]
+    {
+        return None;
+    }
+    let mut cursor = marker + 18;
+    let mut paths = Vec::new();
+    loop {
+        let candidates = (1..=MAX_PATH_CELLS)
+            .filter_map(|length| compact_mixed_component_path(payload, cursor, length, false))
+            .filter(|(_, path_end)| {
+                payload.get(*path_end..path_end + 8) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0])
+            })
+            .collect::<Vec<_>>();
+        let Some((path, path_end)) = candidates.iter().min_by_key(|(_, path_end)| *path_end) else {
+            return (!paths.is_empty()).then_some((role, paths, cursor));
+        };
+        paths.push(path.clone());
+        cursor = path_end + 8;
+    }
+}
+
+fn same_draft_anchor(left: &DraftAnchor, right: &DraftAnchor) -> bool {
+    match (left, right) {
+        (DraftAnchor::NeutralPlane(left), DraftAnchor::NeutralPlane(right)) => {
+            same_component_path_semantics(left, right)
+        }
+        (DraftAnchor::PartingTool(left), DraftAnchor::PartingTool(right)) => {
+            left.len() == right.len()
+                && left
+                    .iter()
+                    .zip(right)
+                    .all(|(left, right)| same_component_path_semantics(left, right))
+        }
+        _ => false,
+    }
 }
 
 fn same_component_path_semantics(
@@ -279,6 +405,46 @@ mod tests {
         }
     }
 
+    fn compact_selection(role: u8, paths: &[&[(u16, u32, u32, u32)]]) -> Vec<u8> {
+        let mut bytes = 6u32.to_le_bytes().to_vec();
+        bytes.extend([0, role, 0, 0]);
+        bytes.extend(17u32.to_le_bytes());
+        bytes.extend(COMPACT_EDGE_VECTOR_MARKER);
+        bytes.extend([0, 0]);
+        for path in paths {
+            for (instance, source, identity, local_id) in *path {
+                bytes.extend(component(*instance, *source, *identity, *local_id));
+            }
+            bytes.extend([0xff; 4]);
+            bytes.extend([0; 4]);
+        }
+        bytes
+    }
+
+    fn aligned_direction(direction: [f64; 3]) -> Vec<u8> {
+        let mut bytes = vec![0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
+        bytes.extend(0u32.to_le_bytes());
+        bytes.extend(5000u32.to_le_bytes());
+        bytes.extend([0; 8]);
+        for value in [
+            1.0f64,
+            1.0,
+            -1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            direction[0],
+            direction[1],
+            direction[2],
+        ] {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes
+    }
+
     #[test]
     fn extended_draft_direction_uses_its_unaligned_discriminated_vector() {
         let mut payload = vec![0; 8];
@@ -306,6 +472,72 @@ mod tests {
             unique_draft_direction(&payload, frame, end),
             Some(Vector3::new(0.0, -1.0, 0.0))
         );
+    }
+
+    #[test]
+    fn compact_draft_separates_parting_tool_faces_and_direction() {
+        let parting_a = [(0x8083, 80, 900, 1)];
+        let parting_b = [(0x8041, 80, 901, 1), (0x8041, 80, 902, 12)];
+        let face_a = [(0x8036, 80, 903, 4), (0x8041, 80, 904, 1)];
+        let face_b = [(0x8021, 80, 905, 3)];
+        let mut payload = vec![0; 64];
+        let object_start = payload.len();
+        payload.extend(compact_selection(2, &[&parting_a, &parting_b]));
+        let parting_selection_end = payload.len();
+        payload.extend([0; 24]);
+        payload.extend(aligned_direction([0.0, -1.0, 0.0]));
+        payload.extend([0; 16]);
+        let face_marker = payload.len() + 12;
+        payload.extend(compact_selection(3, &[&face_a, &face_b]));
+        payload.extend([0; 32]);
+        let object_end = payload.len();
+        let feature = draft_feature();
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: payload,
+            classes: Vec::new(),
+            names: vec![FeatureInputName {
+                id: "name".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: object_start as u64,
+                value: "Draft1".into(),
+                object_id: Some(7),
+            }],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+
+        let (_, parting_paths, parsed_parting_end) =
+            compact_draft_selection_at(&lane.native_payload, object_start + 12)
+                .expect("compact parting-tool selection");
+        assert_eq!(parting_paths.len(), 2);
+        assert_eq!(parsed_parting_end, parting_selection_end);
+        assert_eq!(
+            unique_draft_direction(&lane.native_payload, parsed_parting_end, face_marker),
+            Some(Vector3::new(0.0, -1.0, 0.0))
+        );
+        assert_eq!(
+            compact_draft_selection_at(&lane.native_payload, face_marker)
+                .expect("compact drafted-face selection")
+                .1
+                .len(),
+            2
+        );
+
+        let operands = draft_operands(&feature, &lane, object_start, object_end)
+            .expect("compact parting-line draft operands");
+        assert!(matches!(operands.anchor, DraftAnchor::PartingTool(ref paths) if paths.len() == 2));
+        assert_eq!(operands.faces.len(), 2);
+        assert_eq!(operands.pull_direction, Vector3::new(0.0, -1.0, 0.0));
     }
 
     #[test]
@@ -371,7 +603,10 @@ mod tests {
         );
         let operands = draft_operands(&feature, &lane, object_start, class_offset)
             .expect("complete draft operands");
-        assert_eq!(operands.neutral_plane.last().unwrap().local_id, Some(3));
+        assert!(matches!(
+            operands.anchor,
+            DraftAnchor::NeutralPlane(ref path) if path.last().unwrap().local_id == Some(3)
+        ));
         assert_eq!(operands.faces.len(), 1);
         assert_eq!(operands.faces[0].last().unwrap().local_id, Some(8));
         assert_eq!(operands.pull_direction, Vector3::new(0.0, 0.0, 1.0));

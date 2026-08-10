@@ -1425,6 +1425,24 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs` — The parser locates the 16-byte component marker at prefix offset +94.
 
+## `draft_compact_selection_prefix`
+
+Spec §2 · layout: byte offsets · size: 30 B
+
+Variable mixed component paths follow this prefix. Offsets begin at the bounded cell field.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `cell_field` | `u32` | little | spec | a bounded u32 LE cell field in `1..65` |
+| 4 | 4 | `selection_role` | `bytes[4]` | little | spec | `00 02 00 00` for the parting-tool selection or `00 03 00 00` for a drafted-face selection |
+| 8 | 4 | `selector` | `u32` | little | spec | a u32 LE selector |
+| 12 | 16 | `component_marker` | `bytes[16]` | little | spec | the 16-byte duplicated component marker |
+| 28 | 2 | `marker_tail` | `u16` | little | spec | a u16 LE zero tail |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs` — The compact Draft parser validates the fixed selection prefix and its path delimiters.
+
 ## `draft_aligned_direction_frame`
 
 Spec §2 · layout: byte offsets · size: 120 B

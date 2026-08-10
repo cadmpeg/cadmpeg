@@ -5271,6 +5271,55 @@ contains = "const PLANE_REFERENCE_HEADER_LEN: usize = 94;"
 note = "The parser locates the 16-byte component marker at prefix offset +94."
 
 [[record]]
+name = "draft_compact_selection_prefix"
+kind = "byte"
+section = "2"
+anchor = "The 30-byte fixed prefix starts 12 bytes before the duplicated marker"
+size = 30
+endianness = "little"
+note = "Variable mixed component paths follow this prefix. Offsets begin at the bounded cell field."
+
+[[record.field]]
+name = "cell_field"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "a bounded u32 LE cell field in `1..65`"
+
+[[record.field]]
+name = "selection_role"
+offset = 4
+type = "bytes[4]"
+source = "spec"
+anchor = "`00 02 00 00` for the parting-tool selection or `00 03 00 00` for a drafted-face selection"
+
+[[record.field]]
+name = "selector"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "a u32 LE selector"
+
+[[record.field]]
+name = "component_marker"
+offset = 12
+type = "bytes[16]"
+source = "spec"
+anchor = "the 16-byte duplicated component marker"
+
+[[record.field]]
+name = "marker_tail"
+offset = 28
+type = "u16"
+source = "spec"
+anchor = "a u16 LE zero tail"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs"
+contains = "let header = marker.checked_sub(12)?;"
+note = "The compact Draft parser validates the fixed selection prefix and its path delimiters."
+
+[[record]]
 name = "draft_aligned_direction_frame"
 kind = "byte"
 section = "2"

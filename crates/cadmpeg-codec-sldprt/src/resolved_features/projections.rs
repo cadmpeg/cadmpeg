@@ -4,7 +4,7 @@ use super::component_paths::{
     compact_body_selection_value, compact_edge_path_value, compact_edge_selection_set_value,
     component_path_feature, component_path_terminal_feature, ComponentPathEnd,
 };
-use super::drafts::{draft_operand_candidates, same_draft_operands, DraftOperands};
+use super::drafts::{draft_operand_candidates, same_draft_operands, DraftAnchor, DraftOperands};
 use super::holes::feature_object_byte_ranges;
 use super::parameters::value_only_scalar_offset;
 use super::relation_geometry::owned_relation_parameters;
@@ -927,23 +927,38 @@ pub(crate) fn project_draft_operands(
         let FeatureDefinition::Draft {
             faces,
             neutral_plane,
+            parting_tool,
             pull_direction,
             ..
         } = &mut feature.definition
         else {
             continue;
         };
-        if matches!(
-            neutral_plane,
-            cadmpeg_ir::features::FaceSelection::Unresolved
-        ) {
-            *neutral_plane = draft_face_selection(
-                std::slice::from_ref(&first.neutral_plane),
-                native_ref,
-                &history_features,
-                &feature_ids_by_native,
-                &mut feature.dependencies,
-            );
+        match &first.anchor {
+            DraftAnchor::NeutralPlane(path)
+                if matches!(
+                    neutral_plane,
+                    cadmpeg_ir::features::FaceSelection::Unresolved
+                ) =>
+            {
+                *neutral_plane = draft_face_selection(
+                    std::slice::from_ref(path),
+                    native_ref,
+                    &history_features,
+                    &feature_ids_by_native,
+                    &mut feature.dependencies,
+                );
+            }
+            DraftAnchor::PartingTool(paths) if parting_tool.is_none() => {
+                *parting_tool = Some(draft_face_selection(
+                    paths,
+                    native_ref,
+                    &history_features,
+                    &feature_ids_by_native,
+                    &mut feature.dependencies,
+                ));
+            }
+            _ => {}
         }
         if matches!(faces, cadmpeg_ir::features::FaceSelection::Unresolved) {
             *faces = draft_face_selection(
