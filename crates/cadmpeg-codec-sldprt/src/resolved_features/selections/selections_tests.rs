@@ -9,7 +9,7 @@ use super::{
     compact_edge_selections, compact_general_curve_ref_at,
     compact_sketch_surface_component_path_at, compact_surface_selection_at,
     component_face_reference_at, component_face_reference_in_record, component_profile_source_at,
-    component_reference_curve_path_at, coordinate_marker_local_links,
+    component_reference_curve_path_at, component_vector_path_at, coordinate_marker_local_links,
     cosmetic_thread_cylinder_marker_reference, cosmetic_thread_cylinder_reference_at,
     cosmetic_thread_cylinder_references, cosmetic_thread_diameter_child_tail,
     generated_surface_identities, history_features_with_object_sources,
@@ -1371,6 +1371,30 @@ fn mirror_pattern_path_count_includes_the_unserialized_root_cell() {
             3
         );
     }
+}
+
+#[test]
+fn component_vector_cell_count_includes_interleaved_path_slots() {
+    let marker = 12;
+    let mut payload = vec![0; marker];
+    payload[..4].copy_from_slice(&7u32.to_le_bytes());
+    payload.extend(COMPACT_EDGE_VECTOR_MARKER);
+    payload.extend([0, 0]);
+    for index in 0..4u32 {
+        payload.extend(0x803e_u16.to_le_bytes());
+        payload.extend([0, 0]);
+        payload.extend([0x34, 0x80, 0x37, 0]);
+        payload.extend((37 + index).to_le_bytes());
+        payload.extend(0x4ad9_837au32.wrapping_add(index).to_le_bytes());
+        payload.extend((index + 1).to_le_bytes());
+        if index != 3 {
+            payload.extend((25 + index * 2).to_le_bytes());
+        }
+    }
+
+    let path = component_vector_path_at(&payload, marker).expect("interleaved path slots");
+    assert_eq!(path.len(), 4);
+    assert_eq!(path.last().expect("terminal component").local_id, Some(4));
 }
 
 #[test]

@@ -1086,6 +1086,11 @@ pub(super) fn component_vector_path_at(
         (cell_count > 2)
             .then(|| compact_mixed_component_path(payload, marker + 18, cell_count - 2, true))
             .flatten(),
+        (cell_count % 2 == 1)
+            .then(|| {
+                compact_mixed_component_path(payload, marker + 18, cell_count.div_ceil(2), true)
+            })
+            .flatten(),
     ]
     .into_iter()
     .flatten()
