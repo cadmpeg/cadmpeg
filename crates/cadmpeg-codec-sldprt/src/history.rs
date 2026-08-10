@@ -531,29 +531,31 @@ fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) 
             continue;
         };
         let reference_id = reference_id.clone();
-        let invalid = match ordinals.get(&reference_id) {
-            None => true,
-            Some((reference_ordinal, reference_frame, is_principal)) => {
-                let geometrically_compatible =
-                    reference_frame
-                        .zip(result_frame)
-                        .map(|(reference_frame, result_frame)| {
-                            offset_frame_matches(reference_frame, result_frame, *distance)
-                        });
-                let explicit_principal_identity_without_face_fallback = explicit_native_reference
-                    && *is_principal
-                    && !(feature
-                        .source_properties
-                        .contains_key("ReferenceFaceOrigin")
-                        || feature
-                            .source_properties
-                            .contains_key("ReferenceFaceNormal")
-                        || feature.source_properties.contains_key("ReferenceFaceUAxis"));
-                *reference_ordinal >= feature.ordinal
-                    && !(explicit_native_reference && geometrically_compatible == Some(true)
-                        || explicit_principal_identity_without_face_fallback)
-            }
-        };
+        let invalid = reference_id == feature.id
+            || match ordinals.get(&reference_id) {
+                None => true,
+                Some((reference_ordinal, reference_frame, is_principal)) => {
+                    let geometrically_compatible =
+                        reference_frame
+                            .zip(result_frame)
+                            .map(|(reference_frame, result_frame)| {
+                                offset_frame_matches(reference_frame, result_frame, *distance)
+                            });
+                    let explicit_principal_identity_without_face_fallback =
+                        explicit_native_reference
+                            && *is_principal
+                            && !(feature
+                                .source_properties
+                                .contains_key("ReferenceFaceOrigin")
+                                || feature
+                                    .source_properties
+                                    .contains_key("ReferenceFaceNormal")
+                                || feature.source_properties.contains_key("ReferenceFaceUAxis"));
+                    *reference_ordinal >= feature.ordinal
+                        && !(explicit_native_reference && geometrically_compatible == Some(true)
+                            || explicit_principal_identity_without_face_fallback)
+                }
+            };
         if invalid {
             *reference = None;
             feature
@@ -3104,6 +3106,37 @@ mod history_reference_tests {
             FeatureDefinition::DatumOffsetPlane {
                 reference: None,
                 distance: Length(6.0),
+            }
+        ));
+        assert!(projected[0].dependencies.is_empty());
+    }
+
+    #[test]
+    fn explicit_offset_plane_reference_cannot_bind_itself() {
+        let mut offset = feature("sldprt:history:feature#0:0", Some("35"), 0);
+        offset.input_class = Some("moRefPlane_c".into());
+        offset.parameters.insert("D1".into(), "0mm".into());
+        offset.properties.insert("Reference".into(), "35".into());
+        offset
+            .properties
+            .insert("Origin".into(), "0mm,0mm,0mm".into());
+        offset.properties.insert("Normal".into(), "0,0,1".into());
+        offset.properties.insert("UAxis".into(), "1,0,0".into());
+
+        let projected = project_features(&[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![offset],
+        }]);
+
+        assert!(matches!(
+            projected[0].definition,
+            FeatureDefinition::DatumOffsetPlane {
+                reference: None,
+                distance: Length(0.0),
             }
         ));
         assert!(projected[0].dependencies.is_empty());
