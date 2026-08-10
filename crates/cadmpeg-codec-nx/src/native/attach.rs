@@ -28,8 +28,8 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
-    AppearanceId, AttributeId, BodyId, FaceId, FeatureResultTopologyId, LoopId, SurfaceId,
-    UnknownId,
+    AppearanceId, AttributeId, BodyId, CurveId, EdgeId, FaceId, FeatureResultTopologyId, LoopId,
+    SurfaceId, UnknownId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::semantic_annotations::{
@@ -1647,13 +1647,25 @@ fn attach_feature_operations(
         &operation_positions,
     )
     .unwrap_or_default();
-    let (hole_outputs, simple_hole_diameters) =
-        match hole_body_projection(ir, &simple_hole_operations, &explicit_simple_hole_outputs) {
-            Some(projection) => (projection.outputs, projection.diameters),
-            None => (explicit_simple_hole_outputs, BTreeMap::new()),
-        };
+    let mut hole_outputs = explicit_simple_hole_outputs;
+    let mut simple_hole_diameters = BTreeMap::new();
+    if let Some(projection) = hole_body_projection(ir, &simple_hole_operations, &hole_outputs) {
+        hole_outputs.extend(projection.outputs);
+        simple_hole_diameters = projection.diameters;
+    }
+    let counterbore_operations =
+        counterbore_operations(simple_hole_templates, &operation_positions).unwrap_or_default();
+    let mut counterbore_dimensions = BTreeMap::new();
+    if let Some(projection) =
+        counterbore_body_projection(ir, &counterbore_operations, &hole_outputs)
+    {
+        hole_outputs.extend(projection.outputs);
+        counterbore_dimensions = projection.counterbores;
+    }
     let simple_hole_placements =
         hole_axis_placements_for_operations(ir, &simple_hole_operations, &hole_outputs);
+    let counterbore_hole_placements =
+        counterbore_axis_placements_for_operations(ir, &counterbore_operations, &hole_outputs);
     let simple_hole_chamfers = simple_hole_chamfers(ir, simple_hole_templates, &hole_outputs);
     let hole_packages = hole_package_projection(
         ir,
@@ -3187,6 +3199,7 @@ fn attach_feature_operations(
                                 .get(label.id.as_str())
                                 .cloned()
                                 .into_iter()
+                                .chain(counterbore_hole_placements.get(label.id.as_str()).cloned())
                                 .chain(
                                     hole_packages
                                         .placements
@@ -3199,6 +3212,7 @@ fn attach_feature_operations(
                                 .get(label.id.as_str())
                                 .or_else(|| hole_packages.diameters.get(label.id.as_str()))
                                 .copied(),
+                            counterbore: counterbore_dimensions.get(label.id.as_str()).copied(),
                             chamfer: simple_hole_chamfers
                                 .get(label.id.as_str())
                                 .or_else(|| hole_packages.chamfers.get(label.id.as_str()))
@@ -5139,8 +5153,15 @@ fn non_boolean_feature_definition(
 struct HoleProjection {
     pub(crate) placements: Vec<HolePlacement>,
     pub(crate) diameter: Option<Length>,
+    pub(crate) counterbore: Option<CounterboreDimensions>,
     pub(crate) chamfer: Option<HoleKind>,
     pub(crate) grouped_simple_through: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CounterboreDimensions {
+    diameter: Length,
+    depth: Length,
 }
 
 fn non_boolean_feature_definition_with_parameters(
@@ -5290,6 +5311,22 @@ fn non_boolean_feature_definition_with_parameters(
                     (kind, exit_kind, extent)
                 },
             );
+            let template_kind = match (
+                hole.counterbore,
+                matches!(
+                    &template_kind,
+                    HoleKind::Unresolved {
+                        form: Some(HoleForm::Counterbore),
+                        ..
+                    }
+                ),
+            ) {
+                (Some(dimensions), true) => HoleKind::Counterbore {
+                    diameter: dimensions.diameter,
+                    depth: dimensions.depth,
+                },
+                _ => template_kind,
+            };
             FeatureDefinition::Hole {
                 profile: None,
                 profile_filter: None,
@@ -5513,6 +5550,49 @@ fn simple_hole_operations(
     })
 }
 
+/// Return counterbored through-hole operations in feature-history order.
+/// Counterbore construction groups are not inferred from the scalar lanes:
+/// each operation must have its own unambiguous body and topology witness.
+fn counterbore_operations(
+    templates: &[crate::native::features::FeatureSimpleHoleTemplate],
+    operation_positions: &BTreeMap<&str, usize>,
+) -> Option<Vec<String>> {
+    let template_counts = templates
+        .iter()
+        .fold(BTreeMap::new(), |mut counts, template| {
+            *counts
+                .entry(template.operation_label.as_str())
+                .or_insert(0usize) += 1;
+            counts
+        });
+    let mut operations = templates
+        .iter()
+        .filter(|template| {
+            template.form == crate::native::features::SimpleHoleForm::Counterbored
+                && template.extent == crate::native::features::SimpleHoleExtent::Through
+                && template.start_treatment == crate::native::features::SimpleHoleEndTreatment::None
+                && template.end_treatment == crate::native::features::SimpleHoleEndTreatment::None
+        })
+        .filter(|template| template_counts.get(template.operation_label.as_str()) == Some(&1))
+        .map(|template| template.operation_label.clone())
+        .collect::<Vec<_>>();
+    if operations.is_empty()
+        || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
+        || operations
+            .iter()
+            .any(|operation| !operation_positions.contains_key(operation.as_str()))
+    {
+        return None;
+    }
+    operations.sort_by(|first, second| {
+        operation_positions
+            .get(first.as_str())
+            .cmp(&operation_positions.get(second.as_str()))
+            .then_with(|| first.cmp(second))
+    });
+    Some(operations)
+}
+
 #[derive(Default)]
 struct HolePackageProjection {
     internal_operations: BTreeSet<String>,
@@ -5664,6 +5744,7 @@ fn hole_package_projection(
 struct HoleBodyProjection {
     outputs: BTreeMap<String, Vec<BodyId>>,
     diameters: BTreeMap<String, Length>,
+    counterbores: BTreeMap<String, CounterboreDimensions>,
 }
 
 fn hole_body_projection(
@@ -5702,6 +5783,49 @@ fn hole_body_projection(
     Some(HoleBodyProjection {
         outputs: projected_outputs,
         diameters,
+        counterbores: BTreeMap::new(),
+    })
+}
+
+fn counterbore_body_projection(
+    ir: &CadIr,
+    operations: &[String],
+    outputs: &BTreeMap<String, Vec<BodyId>>,
+) -> Option<HoleBodyProjection> {
+    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
+    {
+        return None;
+    }
+    let operations_by_body = hole_operations_by_body(ir, operations, outputs)?;
+    let mut projected_outputs = BTreeMap::new();
+    let mut diameters = BTreeMap::new();
+    let mut counterbores = BTreeMap::new();
+    for (body, operations) in operations_by_body {
+        let [operation] = operations.as_slice() else {
+            // A counterbore pair has no serialized operation-to-pair relation
+            // once multiple operations share one result body. Do not assign
+            // geometry to history order.
+            return None;
+        };
+        let body_faces = connected_solid_body_faces(ir, &body)?;
+        let witnesses = counterbore_cylinders(ir, &body_faces)?;
+        let [witness] = witnesses.as_slice() else {
+            return None;
+        };
+        projected_outputs.insert(operation.clone(), vec![body.clone()]);
+        diameters.insert(operation.clone(), Length(witness.bore_radius * 2.0));
+        counterbores.insert(
+            operation.clone(),
+            CounterboreDimensions {
+                diameter: Length(witness.counterbore_radius * 2.0),
+                depth: Length(witness.depth),
+            },
+        );
+    }
+    Some(HoleBodyProjection {
+        outputs: projected_outputs,
+        diameters,
+        counterbores,
     })
 }
 
@@ -5732,6 +5856,43 @@ fn hole_axis_placements_for_operations(
             continue;
         }
         placements.insert(operation.clone(), body_placements.remove(0));
+    }
+    placements
+}
+
+fn counterbore_axis_placements_for_operations(
+    ir: &CadIr,
+    operations: &[String],
+    outputs: &BTreeMap<String, Vec<BodyId>>,
+) -> BTreeMap<String, HolePlacement> {
+    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
+    {
+        return BTreeMap::new();
+    }
+    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
+        return BTreeMap::new();
+    };
+    let mut placements = BTreeMap::new();
+    for (body, operations) in operations_by_body {
+        let [operation] = operations.as_slice() else {
+            return BTreeMap::new();
+        };
+        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
+            return BTreeMap::new();
+        };
+        let Some(witnesses) = counterbore_cylinders(ir, &body_faces) else {
+            return BTreeMap::new();
+        };
+        let [witness] = witnesses.as_slice() else {
+            return BTreeMap::new();
+        };
+        placements.insert(
+            operation.clone(),
+            HolePlacement::Axis {
+                origin: witness.line_origin,
+                axis: witness.axis,
+            },
+        );
     }
     placements
 }
@@ -5787,6 +5948,435 @@ fn hole_placement_key(placement: &HolePlacement) -> [u64; 6] {
     ]
 }
 
+#[derive(Clone, Debug)]
+struct CylindricalFaceWitness {
+    line_origin: Point3,
+    axis: Vector3,
+    radius: f64,
+    stations: [f64; 2],
+    loop_ids: [LoopId; 2],
+}
+
+#[derive(Clone, Copy)]
+struct CounterboreCylinderWitness {
+    line_origin: Point3,
+    axis: Vector3,
+    bore_radius: f64,
+    counterbore_radius: f64,
+    depth: f64,
+}
+
+fn canonical_axis(axis: Vector3, angular_tolerance: f64) -> Option<Vector3> {
+    let mut axis = unit_vector(axis)?;
+    let leading = [axis.x, axis.y, axis.z]
+        .into_iter()
+        .find(|component| component.abs() > angular_tolerance)?;
+    if leading < 0.0 {
+        axis = Vector3::new(-axis.x, -axis.y, -axis.z);
+    }
+    Some(axis)
+}
+
+fn circular_loop_geometry(
+    loop_id: &LoopId,
+    coedges_by_loop: &BTreeMap<&LoopId, Vec<&Coedge>>,
+    edges: &BTreeMap<&EdgeId, Option<&CurveId>>,
+    curves: &BTreeMap<&CurveId, &CurveGeometry>,
+    linear_tolerance: f64,
+    angular_tolerance: f64,
+) -> Option<(Point3, Vector3, f64)> {
+    let coedges = coedges_by_loop.get(loop_id)?;
+    if coedges.is_empty() {
+        return None;
+    }
+    let mut witness: Option<(Point3, Vector3, f64)> = None;
+    for coedge in coedges {
+        let curve_id = edges.get(&coedge.edge).copied().flatten()?;
+        let CurveGeometry::Circle {
+            center,
+            axis,
+            radius,
+            ..
+        } = curves.get(curve_id)?
+        else {
+            return None;
+        };
+        let axis = canonical_axis(*axis, angular_tolerance)?;
+        if ![center.x, center.y, center.z, *radius]
+            .into_iter()
+            .all(f64::is_finite)
+            || *radius <= 0.0
+        {
+            return None;
+        }
+        if let Some((previous_center, previous_axis, previous_radius)) = witness {
+            if (radius - previous_radius).abs() > linear_tolerance
+                || (1.0 - dot_vector(axis, previous_axis).abs()) > angular_tolerance
+                || Vector3::new(
+                    center.x - previous_center.x,
+                    center.y - previous_center.y,
+                    center.z - previous_center.z,
+                )
+                .norm()
+                    > linear_tolerance
+            {
+                return None;
+            }
+        }
+        witness = Some((*center, axis, *radius));
+    }
+    witness
+}
+
+fn loop_edge_ids(
+    loop_id: &LoopId,
+    coedges_by_loop: &BTreeMap<&LoopId, Vec<&Coedge>>,
+) -> Option<BTreeSet<EdgeId>> {
+    let coedges = coedges_by_loop.get(loop_id)?;
+    (!coedges.is_empty()).then(|| {
+        coedges
+            .iter()
+            .map(|coedge| coedge.edge.clone())
+            .collect::<BTreeSet<_>>()
+    })
+}
+
+fn cylindrical_face_witnesses(
+    ir: &CadIr,
+    body_faces: &[&Face],
+) -> Option<Vec<CylindricalFaceWitness>> {
+    let surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, &surface.geometry))
+        .collect::<BTreeMap<_, _>>();
+    let edges = ir
+        .model
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge.curve.as_ref()))
+        .collect::<BTreeMap<_, _>>();
+    let curves = ir
+        .model
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, &curve.geometry))
+        .collect::<BTreeMap<_, _>>();
+    let mut coedges_by_loop = BTreeMap::<&LoopId, Vec<&Coedge>>::new();
+    for coedge in &ir.model.coedges {
+        coedges_by_loop
+            .entry(&coedge.owner_loop)
+            .or_default()
+            .push(coedge);
+    }
+    let linear_tolerance = ir.tolerances.linear.max(1e-9);
+    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let mut witnesses = Vec::new();
+    for face in body_faces
+        .iter()
+        .copied()
+        .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
+    {
+        let Some(SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            radius,
+            ..
+        }) = surfaces.get(&face.surface)
+        else {
+            continue;
+        };
+        if ![origin.x, origin.y, origin.z, *radius]
+            .into_iter()
+            .all(f64::is_finite)
+            || *radius <= 0.0
+        {
+            return None;
+        }
+        let axis = canonical_axis(*axis, angular_tolerance)?;
+        let axial_offset = dot_vector(Vector3::new(origin.x, origin.y, origin.z), axis);
+        let line_origin = Point3::new(
+            origin.x - axial_offset * axis.x,
+            origin.y - axial_offset * axis.y,
+            origin.z - axial_offset * axis.z,
+        );
+        let [first_loop, second_loop] = face.loops.as_slice() else {
+            return None;
+        };
+        let mut stations = Vec::with_capacity(2);
+        for loop_id in &face.loops {
+            let (center, circle_axis, circle_radius) = circular_loop_geometry(
+                loop_id,
+                &coedges_by_loop,
+                &edges,
+                &curves,
+                linear_tolerance,
+                angular_tolerance,
+            )?;
+            if (circle_radius - *radius).abs() > linear_tolerance
+                || (1.0 - dot_vector(axis, circle_axis).abs()) > angular_tolerance
+                || cross_vector(
+                    Vector3::new(
+                        center.x - origin.x,
+                        center.y - origin.y,
+                        center.z - origin.z,
+                    ),
+                    axis,
+                )
+                .norm()
+                    > linear_tolerance
+            {
+                return None;
+            }
+            let station = dot_vector(Vector3::new(center.x, center.y, center.z), axis);
+            if !station.is_finite() {
+                return None;
+            }
+            stations.push(station);
+        }
+        let [first, second] = stations.as_slice() else {
+            return None;
+        };
+        if (first - second).abs() <= linear_tolerance {
+            return None;
+        }
+        witnesses.push(CylindricalFaceWitness {
+            line_origin,
+            axis,
+            radius: *radius,
+            stations: [*first, *second],
+            loop_ids: [first_loop.clone(), second_loop.clone()],
+        });
+    }
+    Some(witnesses)
+}
+
+fn plane_annulus_witness(
+    ir: &CadIr,
+    body_faces: &[&Face],
+    small: &CylindricalFaceWitness,
+    small_station_ordinal: usize,
+    large: &CylindricalFaceWitness,
+    large_station_ordinal: usize,
+) -> bool {
+    let line_origin = small.line_origin;
+    let axis = small.axis;
+    let station = small.stations[small_station_ordinal];
+    let inner_radius = small.radius;
+    let outer_radius = large.radius;
+    let inner_loop = &small.loop_ids[small_station_ordinal];
+    let outer_loop = &large.loop_ids[large_station_ordinal];
+    let surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, &surface.geometry))
+        .collect::<BTreeMap<_, _>>();
+    let edges = ir
+        .model
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge.curve.as_ref()))
+        .collect::<BTreeMap<_, _>>();
+    let curves = ir
+        .model
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, &curve.geometry))
+        .collect::<BTreeMap<_, _>>();
+    let mut coedges_by_loop = BTreeMap::<&LoopId, Vec<&Coedge>>::new();
+    for coedge in &ir.model.coedges {
+        coedges_by_loop
+            .entry(&coedge.owner_loop)
+            .or_default()
+            .push(coedge);
+    }
+    let linear_tolerance = ir.tolerances.linear.max(1e-9);
+    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let mut matches = 0;
+    for face in body_faces {
+        if face.loops.len() != 2 {
+            continue;
+        }
+        let Some(SurfaceGeometry::Plane { origin, normal, .. }) = surfaces.get(&face.surface)
+        else {
+            continue;
+        };
+        let Some(normal) = canonical_axis(*normal, angular_tolerance) else {
+            continue;
+        };
+        if (1.0 - dot_vector(normal, axis).abs()) > angular_tolerance
+            || (dot_vector(
+                Vector3::new(
+                    origin.x - line_origin.x,
+                    origin.y - line_origin.y,
+                    origin.z - line_origin.z,
+                ),
+                axis,
+            ) - station)
+                .abs()
+                > linear_tolerance
+        {
+            continue;
+        }
+        let mut boundaries = Vec::with_capacity(2);
+        let mut valid = true;
+        for loop_id in &face.loops {
+            let Some((center, circle_axis, radius)) = circular_loop_geometry(
+                loop_id,
+                &coedges_by_loop,
+                &edges,
+                &curves,
+                linear_tolerance,
+                angular_tolerance,
+            ) else {
+                valid = false;
+                break;
+            };
+            if (1.0 - dot_vector(circle_axis, normal).abs()) > angular_tolerance
+                || (dot_vector(
+                    Vector3::new(
+                        center.x - origin.x,
+                        center.y - origin.y,
+                        center.z - origin.z,
+                    ),
+                    normal,
+                ))
+                .abs()
+                    > linear_tolerance
+                || cross_vector(
+                    Vector3::new(
+                        center.x - line_origin.x,
+                        center.y - line_origin.y,
+                        center.z - line_origin.z,
+                    ),
+                    axis,
+                )
+                .norm()
+                    > linear_tolerance
+                || (dot_vector(Vector3::new(center.x, center.y, center.z), axis) - station).abs()
+                    > linear_tolerance
+            {
+                valid = false;
+                break;
+            }
+            boundaries.push((radius, loop_id.clone()));
+        }
+        if !valid {
+            continue;
+        }
+        boundaries.sort_by(|(first, _), (second, _)| first.total_cmp(second));
+        let [(inner, inner_boundary), (outer, outer_boundary)] = boundaries.as_slice() else {
+            continue;
+        };
+        if (inner - inner_radius).abs() <= linear_tolerance
+            && (outer - outer_radius).abs() <= linear_tolerance
+            && loop_edge_ids(inner_boundary, &coedges_by_loop)
+                == loop_edge_ids(inner_loop, &coedges_by_loop)
+            && loop_edge_ids(outer_boundary, &coedges_by_loop)
+                == loop_edge_ids(outer_loop, &coedges_by_loop)
+        {
+            matches += 1;
+        }
+    }
+    matches == 1
+}
+
+fn counterbore_cylinders(
+    ir: &CadIr,
+    body_faces: &[&Face],
+) -> Option<Vec<CounterboreCylinderWitness>> {
+    let cylinders = cylindrical_face_witnesses(ir, body_faces)?;
+    if cylinders.is_empty() || cylinders.len() % 2 != 0 {
+        return None;
+    }
+    let linear_tolerance = ir.tolerances.linear.max(1e-9);
+    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let mut candidates = vec![Vec::<(usize, CounterboreCylinderWitness)>::new(); cylinders.len()];
+    for (first_index, first) in cylinders.iter().enumerate() {
+        for (second_index, second) in cylinders.iter().enumerate().skip(first_index + 1) {
+            let (small, large) = if first.radius < second.radius {
+                (first, second)
+            } else {
+                (second, first)
+            };
+            if large.radius - small.radius <= linear_tolerance
+                || (1.0 - dot_vector(small.axis, large.axis).abs()) > angular_tolerance
+                || cross_vector(
+                    Vector3::new(
+                        large.line_origin.x - small.line_origin.x,
+                        large.line_origin.y - small.line_origin.y,
+                        large.line_origin.z - small.line_origin.z,
+                    ),
+                    small.axis,
+                )
+                .norm()
+                    > linear_tolerance
+            {
+                continue;
+            }
+            let mut common = Vec::new();
+            for (small_ordinal, small_station) in small.stations.iter().enumerate() {
+                for (large_ordinal, large_station) in large.stations.iter().enumerate() {
+                    if (small_station - large_station).abs() <= linear_tolerance {
+                        common.push((small_ordinal, large_ordinal, *small_station));
+                    }
+                }
+            }
+            let [(small_shared, large_shared, shared_station)] = common.as_slice() else {
+                continue;
+            };
+            let small_other = small.stations[1 - small_shared];
+            let large_other = large.stations[1 - large_shared];
+            let depth = (large_other - shared_station).abs();
+            if depth <= linear_tolerance
+                || (small_other - shared_station).abs() <= linear_tolerance
+                || !plane_annulus_witness(
+                    ir,
+                    body_faces,
+                    small,
+                    *small_shared,
+                    large,
+                    *large_shared,
+                )
+            {
+                continue;
+            }
+            let witness = CounterboreCylinderWitness {
+                line_origin: small.line_origin,
+                axis: small.axis,
+                bore_radius: small.radius,
+                counterbore_radius: large.radius,
+                depth,
+            };
+            candidates[first_index].push((second_index, witness));
+            candidates[second_index].push((first_index, witness));
+        }
+    }
+    if candidates.iter().any(|candidates| candidates.len() != 1) {
+        return None;
+    }
+    let mut witnesses = Vec::with_capacity(cylinders.len() / 2);
+    let mut used = vec![false; cylinders.len()];
+    for first_index in 0..cylinders.len() {
+        if used[first_index] {
+            continue;
+        }
+        let (second_index, witness) = candidates[first_index][0];
+        if used[second_index]
+            || candidates[second_index][0].0 != first_index
+            || first_index == second_index
+        {
+            return None;
+        }
+        used[first_index] = true;
+        used[second_index] = true;
+        witnesses.push(witness);
+    }
+    Some(witnesses)
+}
+
 /// Resolve hole operations to their explicit output bodies, or to the one
 /// connected solid when NX omits every operation-output relation.
 fn hole_operations_by_body(
@@ -5832,95 +6422,12 @@ fn hole_operations_by_body(
 }
 
 fn through_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<(Point3, Vector3, f64)>> {
-    let surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, &surface.geometry))
-        .collect::<BTreeMap<_, _>>();
-    let edges = ir
-        .model
-        .edges
-        .iter()
-        .map(|edge| (&edge.id, edge.curve.as_ref()))
-        .collect::<BTreeMap<_, _>>();
-    let curves = ir
-        .model
-        .curves
-        .iter()
-        .map(|curve| (&curve.id, &curve.geometry))
-        .collect::<BTreeMap<_, _>>();
-    let mut coedges_by_loop = BTreeMap::<&LoopId, Vec<&Coedge>>::new();
-    for coedge in &ir.model.coedges {
-        coedges_by_loop
-            .entry(&coedge.owner_loop)
-            .or_default()
-            .push(coedge);
-    }
-    let linear_tolerance = ir.tolerances.linear.max(1e-9);
-    let angular_tolerance = ir.tolerances.angular.max(1e-12);
-    body_faces
-        .iter()
-        .copied()
-        .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
-        .filter_map(|face| match surfaces.get(&face.surface)? {
-            SurfaceGeometry::Cylinder {
-                origin,
-                axis,
-                radius,
-                ..
-            } if radius.is_finite() && *radius > 0.0 => Some((face, *origin, *axis, *radius)),
-            _ => None,
-        })
-        .map(|(face, origin, axis, radius)| {
-            let mut loop_offsets = Vec::with_capacity(2);
-            for loop_id in &face.loops {
-                let coedges = coedges_by_loop.get(loop_id)?;
-                if coedges.is_empty() {
-                    return None;
-                }
-                let mut loop_offset = None::<f64>;
-                for coedge in coedges {
-                    let curve_id = edges.get(&coedge.edge).copied().flatten()?;
-                    let CurveGeometry::Circle {
-                        center,
-                        axis: circle_axis,
-                        radius: circle_radius,
-                        ..
-                    } = curves.get(curve_id)?
-                    else {
-                        return None;
-                    };
-                    if (circle_radius - radius).abs() > linear_tolerance
-                        || (1.0 - dot_vector(axis, *circle_axis).abs()) > angular_tolerance
-                    {
-                        return None;
-                    }
-                    let delta = Vector3::new(
-                        center.x - origin.x,
-                        center.y - origin.y,
-                        center.z - origin.z,
-                    );
-                    if cross_vector(delta, axis).norm() > linear_tolerance {
-                        return None;
-                    }
-                    let offset = dot_vector(delta, axis);
-                    if loop_offset.is_some_and(|value| (value - offset).abs() > linear_tolerance) {
-                        return None;
-                    }
-                    loop_offset = Some(offset);
-                }
-                loop_offsets.push(loop_offset?);
-            }
-            let [first, second] = loop_offsets.as_slice() else {
-                return None;
-            };
-            if (first - second).abs() <= linear_tolerance {
-                return None;
-            }
-            Some((origin, axis, radius))
-        })
-        .collect()
+    Some(
+        cylindrical_face_witnesses(ir, body_faces)?
+            .into_iter()
+            .map(|witness| (witness.line_origin, witness.axis, witness.radius))
+            .collect(),
+    )
 }
 
 /// Derive identical entry and exit chamfer treatments only when every simple
@@ -10791,6 +11298,319 @@ mod tests {
         };
         *radius = 3.0;
         assert!(simple_hole_diameters(&mismatched, &templates, &[group], &outputs,).is_empty());
+    }
+
+    #[test]
+    fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
+        use crate::native::features::{
+            FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily,
+            SimpleHoleForm,
+        };
+        use cadmpeg_ir::document::{CadIr, Model, IR_VERSION};
+        use cadmpeg_ir::features::{FeatureDefinition, HoleKind, HolePlacement, Length};
+        use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
+        use cadmpeg_ir::ids::{
+            BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId,
+            VertexId,
+        };
+        use cadmpeg_ir::math::{Point3, Vector3};
+        use cadmpeg_ir::native::Native;
+        use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
+        use cadmpeg_ir::units::{Tolerances, Units};
+
+        let operation = "counterbore".to_string();
+        let template = FeatureSimpleHoleTemplate {
+            id: "template-counterbore".into(),
+            operation_label: operation.clone(),
+            payload_string: "payload-counterbore".into(),
+            family: SimpleHoleFamily::GeneralHole,
+            form: SimpleHoleForm::Counterbored,
+            extent: SimpleHoleExtent::Through,
+            start_treatment: SimpleHoleEndTreatment::None,
+            end_treatment: SimpleHoleEndTreatment::None,
+        };
+        assert_eq!(
+            super::counterbore_operations(
+                std::slice::from_ref(&template),
+                &BTreeMap::from([("counterbore", 0usize)]),
+            ),
+            Some(vec![operation.clone()]),
+        );
+        let competing_template = FeatureSimpleHoleTemplate {
+            form: SimpleHoleForm::Simple,
+            ..template.clone()
+        };
+        assert!(super::counterbore_operations(
+            &[template.clone(), competing_template],
+            &BTreeMap::from([("counterbore", 0usize)]),
+        )
+        .is_none());
+        let mut model = Model::default();
+        let mut add_circle_loop =
+            |name: &str, shared_edge: Option<&str>, center: Point3, radius: f64| {
+                let loop_id = LoopId(format!("{name}-loop"));
+                let edge_name = shared_edge.unwrap_or(name);
+                let curve_id = CurveId(format!("{edge_name}-curve"));
+                let edge_id = EdgeId(format!("{edge_name}-edge"));
+                let coedge_id = CoedgeId(format!("{name}-coedge"));
+                if !model.edges.iter().any(|edge| edge.id == edge_id) {
+                    model.curves.push(Curve {
+                        id: curve_id.clone(),
+                        geometry: CurveGeometry::Circle {
+                            center,
+                            axis: Vector3::new(0.0, 0.0, 1.0),
+                            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                            radius,
+                        },
+                        source_object: None,
+                    });
+                    model.edges.push(Edge {
+                        id: edge_id.clone(),
+                        curve: Some(curve_id),
+                        start: VertexId("vertex".into()),
+                        end: VertexId("vertex".into()),
+                        param_range: None,
+                        tolerance: None,
+                    });
+                }
+                model.coedges.push(Coedge {
+                    id: coedge_id.clone(),
+                    owner_loop: loop_id.clone(),
+                    edge: edge_id,
+                    next: coedge_id.clone(),
+                    previous: coedge_id.clone(),
+                    radial_next: coedge_id,
+                    sense: Sense::Forward,
+                    pcurves: Vec::new(),
+                    use_curve: None,
+                    use_curve_parameter_range: None,
+                });
+                loop_id
+            };
+        let mut add_face = |id: &str, surface: SurfaceId, sense: Sense, loops: Vec<LoopId>| {
+            model.faces.push(Face {
+                id: FaceId(id.into()),
+                shell: ShellId("shell".into()),
+                surface,
+                sense,
+                loops,
+                name: None,
+                color: None,
+                tolerance: None,
+            });
+        };
+        let bore_surface = SurfaceId("bore-surface".into());
+        model.surfaces.push(Surface {
+            id: bore_surface.clone(),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+            source_object: None,
+        });
+        let bore_loops = vec![
+            add_circle_loop("bore-entry", None, Point3::new(0.0, 0.0, 0.0), 2.0),
+            add_circle_loop(
+                "bore-shoulder",
+                Some("bore-shoulder"),
+                Point3::new(0.0, 0.0, 10.0),
+                2.0,
+            ),
+        ];
+        add_face("bore-face", bore_surface, Sense::Reversed, bore_loops);
+
+        let counterbore_surface = SurfaceId("counterbore-surface".into());
+        model.surfaces.push(Surface {
+            id: counterbore_surface.clone(),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 10.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 4.0,
+            },
+            source_object: None,
+        });
+        let counterbore_loops = vec![
+            add_circle_loop(
+                "counterbore-shoulder",
+                Some("counterbore-shoulder"),
+                Point3::new(0.0, 0.0, 10.0),
+                4.0,
+            ),
+            add_circle_loop("counterbore-entry", None, Point3::new(0.0, 0.0, 12.0), 4.0),
+        ];
+        add_face(
+            "counterbore-face",
+            counterbore_surface,
+            Sense::Reversed,
+            counterbore_loops,
+        );
+
+        let shoulder_surface = SurfaceId("shoulder-surface".into());
+        model.surfaces.push(Surface {
+            id: shoulder_surface.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 10.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        let shoulder_loops = vec![
+            add_circle_loop(
+                "shoulder-inner",
+                Some("bore-shoulder"),
+                Point3::new(0.0, 0.0, 10.0),
+                2.0,
+            ),
+            add_circle_loop(
+                "shoulder-outer",
+                Some("counterbore-shoulder"),
+                Point3::new(0.0, 0.0, 10.0),
+                4.0,
+            ),
+        ];
+        add_face(
+            "shoulder-face",
+            shoulder_surface,
+            Sense::Forward,
+            shoulder_loops,
+        );
+
+        let body = BodyId("body".into());
+        model.bodies.push(Body {
+            id: body.clone(),
+            kind: BodyKind::Solid,
+            regions: vec![RegionId("region".into())],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        model.regions.push(Region {
+            id: RegionId("region".into()),
+            body: body.clone(),
+            shells: vec![ShellId("shell".into())],
+        });
+        model.shells.push(Shell {
+            id: ShellId("shell".into()),
+            region: RegionId("region".into()),
+            faces: vec![
+                FaceId("bore-face".into()),
+                FaceId("counterbore-face".into()),
+                FaceId("shoulder-face".into()),
+            ],
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+        let ir = CadIr {
+            ir_version: IR_VERSION.into(),
+            source: None,
+            units: Units::default(),
+            tolerances: Tolerances::default(),
+            model,
+            native: Native::default(),
+        };
+        let operations = vec![operation.clone()];
+        let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
+        let body_faces = super::connected_solid_body_faces(&ir, &body).expect("solid body faces");
+        assert_eq!(body_faces.len(), 3);
+        let cylinders = super::cylindrical_face_witnesses(&ir, &body_faces).unwrap();
+        assert_eq!(cylinders.len(), 2);
+        assert!(super::plane_annulus_witness(
+            &ir,
+            &body_faces,
+            &cylinders[0],
+            1,
+            &cylinders[1],
+            0,
+        ));
+        assert!(super::counterbore_cylinders(&ir, &body_faces).is_some());
+        let projection = super::counterbore_body_projection(&ir, &operations, &outputs)
+            .expect("coaxial counterbore witness");
+        assert_eq!(projection.outputs, outputs);
+        assert_eq!(
+            projection.diameters,
+            BTreeMap::from([(operation.clone(), Length(4.0))])
+        );
+        assert_eq!(
+            projection.counterbores,
+            BTreeMap::from([(
+                operation.clone(),
+                super::CounterboreDimensions {
+                    diameter: Length(8.0),
+                    depth: Length(2.0),
+                },
+            )])
+        );
+        let inferred = super::counterbore_body_projection(&ir, &operations, &BTreeMap::new())
+            .expect("unique connected solid counterbore witness");
+        assert_eq!(inferred.outputs, outputs);
+        assert_eq!(inferred.counterbores, projection.counterbores);
+        assert_eq!(
+            super::counterbore_axis_placements_for_operations(&ir, &operations, &outputs),
+            BTreeMap::from([(
+                operation.clone(),
+                HolePlacement::Axis {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+            )])
+        );
+        let definition = super::non_boolean_feature_definition_with_parameters(
+            "CBORE_HOLE",
+            &["Hole_GeneralHole_Counterbored_Through"],
+            None,
+            None,
+            super::HoleProjection {
+                placements: vec![HolePlacement::Axis {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                }],
+                diameter: Some(Length(4.0)),
+                counterbore: projection.counterbores.get(&operation).copied(),
+                ..super::HoleProjection::default()
+            },
+            BTreeMap::new(),
+        );
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Hole {
+                kind: HoleKind::Counterbore {
+                    diameter: Length(8.0),
+                    depth: Length(2.0),
+                },
+                diameter: Some(Length(4.0)),
+                extent: Some(cadmpeg_ir::features::Termination::ThroughAll),
+                placements,
+                ..
+            } if placements == [HolePlacement::Axis {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+            }]
+        ));
+
+        let mut missing_shoulder = ir.clone();
+        missing_shoulder.model.shells[0]
+            .faces
+            .retain(|face| face != &FaceId("shoulder-face".into()));
+        assert!(
+            super::counterbore_body_projection(&missing_shoulder, &operations, &outputs).is_none()
+        );
+        let mut sheet = ir.clone();
+        sheet.model.bodies[0].kind = BodyKind::Sheet;
+        assert!(super::counterbore_body_projection(&sheet, &operations, &outputs).is_none());
+        assert!(super::counterbore_body_projection(
+            &ir,
+            &[operation.clone(), "second-operation".into()],
+            &BTreeMap::from([
+                (operation, vec![body.clone()]),
+                ("second-operation".into(), vec![body]),
+            ]),
+        )
+        .is_none());
     }
 
     #[test]
