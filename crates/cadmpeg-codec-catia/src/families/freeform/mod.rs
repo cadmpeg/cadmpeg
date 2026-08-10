@@ -36,6 +36,171 @@ struct FreeformSurfaceCarrier {
     source_tag: String,
 }
 
+#[derive(Clone)]
+pub(crate) struct ConsolidatedRevolutionBinding {
+    pub(crate) geometry: SurfaceGeometry,
+    pub(crate) profile_sweep: f64,
+}
+
+/// Transfer resolved consolidated axis-and-profile revolution carriers.
+pub(crate) fn append_consolidated_revolutions(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    resolved: &[crate::families::b2::records::B2ResolvedRevolution],
+) -> Vec<ConsolidatedRevolutionBinding> {
+    let mut bindings = Vec::new();
+    for carrier in resolved {
+        let index = carrier.revolution_index;
+        let revolution = &carrier.revolution;
+        let profile = &carrier.profile;
+        let direction_x = Vector3::new(
+            revolution.direction_x[0],
+            revolution.direction_x[1],
+            revolution.direction_x[2],
+        );
+        let direction_y = Vector3::new(
+            revolution.direction_y[0],
+            revolution.direction_y[1],
+            revolution.direction_y[2],
+        );
+        let axis = Vector3::new(revolution.axis[0], revolution.axis[1], revolution.axis[2]);
+        let origin = Point3::new(
+            revolution.origin[0],
+            revolution.origin[1],
+            revolution.origin[2],
+        );
+        let transverse_coordinate =
+            origin.x * direction_x.x + origin.y * direction_x.y + origin.z * direction_x.z;
+        let center = Point3::new(
+            transverse_coordinate * direction_x.x
+                + profile.center_pair[0] * direction_y.x
+                + profile.center_pair[1] * axis.x,
+            transverse_coordinate * direction_x.y
+                + profile.center_pair[0] * direction_y.y
+                + profile.center_pair[1] * axis.y,
+            transverse_coordinate * direction_x.z
+                + profile.center_pair[0] * direction_y.z
+                + profile.center_pair[1] * axis.z,
+        );
+        let directrix = CurveId(format!(
+            "catia:consolidated:surface-revolution-directrix#{index}"
+        ));
+        annotate(
+            annotations,
+            &directrix,
+            "consolidated_b2_03_19",
+            profile.pos as u64,
+            format!("circle:{}", profile.record_id),
+            Exactness::ByteExact,
+        );
+        ir.model.curves.push(Curve {
+            id: directrix.clone(),
+            geometry: CurveGeometry::Circle {
+                center,
+                axis: direction_x,
+                ref_direction: direction_y,
+                radius: profile.radius,
+            },
+            source_object: Some(cgm_source("profile-circle", profile.record_id)),
+        });
+        let surface = SurfaceId(format!(
+            "catia:consolidated:surface-revolution-surface#{index}"
+        ));
+        let center_offset = Vector3::new(
+            center.x - origin.x,
+            center.y - origin.y,
+            center.z - origin.z,
+        );
+        let axis_coordinate =
+            center_offset.x * axis.x + center_offset.y * axis.y + center_offset.z * axis.z;
+        let radial = Vector3::new(
+            center_offset.x - axis.x * axis_coordinate,
+            center_offset.y - axis.y * axis_coordinate,
+            center_offset.z - axis.z * axis_coordinate,
+        );
+        let major_radius = radial.x.hypot(radial.y).hypot(radial.z);
+        let profile_plane_contains_axis =
+            (direction_x.x * axis.x + direction_x.y * axis.y + direction_x.z * axis.z).abs()
+                <= 1e-12;
+        let radial_follows_profile_reference = major_radius > 0.0
+            && ((radial.x * direction_y.x + radial.y * direction_y.y + radial.z * direction_y.z)
+                .abs()
+                / major_radius
+                - 1.0)
+                .abs()
+                <= 1e-12;
+        let torus_geometry = (major_radius > 0.0
+            && major_radius.is_finite()
+            && profile.radius > 0.0
+            && profile.radius.is_finite()
+            && profile_plane_contains_axis
+            && radial_follows_profile_reference)
+            .then(|| {
+                let ref_direction = Vector3::new(
+                    radial.x / major_radius,
+                    radial.y / major_radius,
+                    radial.z / major_radius,
+                );
+                let torus_center = Point3::new(
+                    center.x - radial.x,
+                    center.y - radial.y,
+                    center.z - radial.z,
+                );
+                SurfaceGeometry::Torus {
+                    center: torus_center,
+                    axis,
+                    ref_direction,
+                    major_radius,
+                    minor_radius: profile.radius,
+                }
+            });
+        annotate(
+            annotations,
+            &surface,
+            "consolidated_b2_03_2d",
+            revolution.pos as u64,
+            format!("profile-allocation:{}", revolution.profile_allocation_id),
+            Exactness::ByteExact,
+        );
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: torus_geometry
+                .clone()
+                .unwrap_or(SurfaceGeometry::Unknown { record: None }),
+            source_object: Some(cgm_source(
+                "revolution",
+                u32::from(revolution.profile_allocation_id),
+            )),
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId(format!("catia:consolidated:surface-revolution#{index}")),
+            surface,
+            definition: ProceduralSurfaceDefinition::Revolution {
+                directrix,
+                axis_origin: origin,
+                axis_direction: axis,
+                angular_interval: [
+                    revolution.angular_range[0] / revolution.angular_scale,
+                    revolution.angular_range[1] / revolution.angular_scale,
+                ],
+                parameter_interval: Some(revolution.profile_range),
+                transposed: false,
+                revision_form: None,
+            },
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        });
+        if let Some(geometry) = torus_geometry {
+            bindings.push(ConsolidatedRevolutionBinding {
+                geometry,
+                profile_sweep: (revolution.profile_range[1] - revolution.profile_range[0]).abs()
+                    / profile.radius,
+            });
+        }
+    }
+    bindings
+}
+
 fn typed_face_counts(
     records: &std::collections::BTreeMap<u32, crate::families::b5::graph::B5FaceRecord>,
     resolved_count: usize,
@@ -60,6 +225,31 @@ fn typed_face_counts(
     ]
 }
 
+fn typed_multi_surface_face_count(graph: &crate::families::b5::graph::B5Graph) -> usize {
+    graph
+        .face_records
+        .values()
+        .filter(|face| {
+            let Some(&carrier) = face.references.first() else {
+                return false;
+            };
+            let Some(canonical_carrier) =
+                crate::families::b5::graph::canonical_surface_id(&graph.surface_aliases, carrier)
+            else {
+                return false;
+            };
+            face.references[1..].iter().any(|reference| {
+                graph.surfaces.contains_key(reference)
+                    && crate::families::b5::graph::canonical_surface_id(
+                        &graph.surface_aliases,
+                        *reference,
+                    )
+                    .is_some_and(|candidate| candidate != canonical_carrier)
+            })
+        })
+        .count()
+}
+
 fn loop_metadata_counts<'a>(
     records: impl Iterator<Item = &'a crate::families::b5::graph::B5Loop>,
 ) -> [usize; 5] {
@@ -81,7 +271,19 @@ pub(crate) fn try_decode_freeform_surfaces(
     _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Option<FamilyOutput> {
-    let mut b5_graph = crate::families::b5::graph::parse(&scan.data);
+    let object_frames = crate::families::b5::graph::object_stream_frames(&scan.data);
+    let object_records =
+        crate::families::b5::graph::records_from_frames(&scan.data, &object_frames);
+    let consolidated_records = crate::wire::records::consolidated_records_in_ranges(
+        &scan.data,
+        container::consolidated_record_ranges(scan),
+    );
+    let mut b5_graph = crate::families::b5::graph::parse_from_records(
+        &scan.data,
+        &object_records,
+        &object_frames,
+        true,
+    );
     let face_terminal_controls = b5_graph.as_ref().map(|graph| {
         graph.faces.iter().fold([0usize; 3], |mut counts, face| {
             match face.terminal_control {
@@ -96,10 +298,15 @@ pub(crate) fn try_decode_freeform_surfaces(
     let typed_face_counts = if let Some(graph) = &b5_graph {
         Some(typed_face_counts(&graph.face_records, graph.faces.len()))
     } else {
-        let records = crate::families::b5::graph::typed_face_records(&scan.data);
+        let records = crate::families::b5::graph::typed_face_records_from_records(&object_records);
         (!records.is_empty()).then(|| typed_face_counts(&records, 0))
     };
-    let typed_edge_records = crate::families::b5::graph::typed_edge_records(&scan.data);
+    let typed_multi_surface_face_count = b5_graph
+        .as_ref()
+        .map(typed_multi_surface_face_count)
+        .unwrap_or_default();
+    let typed_edge_records =
+        crate::families::b5::graph::typed_edge_records_from_records(&object_records);
     let edge_terminal_controls = (!typed_edge_records.is_empty()).then(|| {
         typed_edge_records
             .values()
@@ -120,7 +327,7 @@ pub(crate) fn try_decode_freeform_surfaces(
             })
     });
     let typed_vertex_incidence_links =
-        crate::families::b5::graph::typed_vertex_incidence_links(&scan.data);
+        crate::families::b5::graph::typed_vertex_incidence_links_from_records(&object_records);
     let vertex_incidence_terminal_controls =
         (!typed_vertex_incidence_links.is_empty()).then(|| {
             typed_vertex_incidence_links
@@ -139,7 +346,8 @@ pub(crate) fn try_decode_freeform_surfaces(
     let resolved_loop_metadata_counts = b5_graph
         .as_ref()
         .map(|graph| loop_metadata_counts(graph.loops.values()));
-    let typed_loop_records = crate::families::b5::graph::typed_loop_records(&scan.data);
+    let typed_loop_records =
+        crate::families::b5::graph::typed_loop_records_from_records(&object_records);
     let typed_loop_metadata_counts = (!typed_loop_records.is_empty()).then(|| {
         let resolved_count = b5_graph.as_ref().map_or(0, |graph| graph.loops.len());
         (
@@ -158,31 +366,53 @@ pub(crate) fn try_decode_freeform_surfaces(
             .count()
     });
     let typed_class_21_pcurve_count =
-        crate::families::b5::graph::typed_class_21_pcurves(&scan.data).len();
+        crate::families::b5::graph::typed_class_21_pcurves_from_records(&object_records).len();
     let typed_parameter_incidences =
-        crate::families::b5::graph::typed_parameter_incidences(&scan.data);
+        crate::families::b5::graph::typed_parameter_incidences_from_records(&object_records);
     let typed_parameter_incidence_member_count = typed_parameter_incidences
         .values()
         .map(|incidence| incidence.curves.len())
         .sum();
     let typed_vertex_incidence_rosters =
-        crate::families::b5::graph::typed_vertex_incidence_rosters(&scan.data);
+        crate::families::b5::graph::typed_vertex_incidence_rosters_from_records(&object_records);
     let typed_vertex_incidence_roster_member_count =
         typed_vertex_incidence_rosters.values().map(Vec::len).sum();
     let mut fallback_surfaces = b5_graph
         .is_none()
-        .then(|| freeform_surface_carriers(&scan.data));
-    let b2_nurbs_curves = crate::families::b2::records::b2_nurbs_curves(&scan.data);
+        .then(|| freeform_surface_carriers(&scan.data, &consolidated_records));
+    let b2_nurbs_curves = crate::families::b2::records::b2_nurbs_curves_from_records(
+        &scan.data,
+        &consolidated_records,
+    );
     let b2_nurbs_curve_count = b2_nurbs_curves.len();
-    let a5_nurbs_curves = crate::families::a5a8::records::a5_nurbs_curves(&scan.data);
+    let a5_nurbs_curves = crate::families::a5a8::records::a5_nurbs_curves_from_records(
+        &scan.data,
+        &consolidated_records,
+    );
     let a5_nurbs_curve_count = a5_nurbs_curves.len();
-    let b2_spatial_circles = crate::families::b2::records::b2_spatial_circles(&scan.data);
+    let b2_spatial_circles = crate::families::b2::records::b2_spatial_circles_from_records(
+        &scan.data,
+        &consolidated_records,
+    );
+    let b2_line_profile_count = crate::families::b2::records::b2_line_profiles_from_records(
+        &scan.data,
+        &consolidated_records,
+    )
+    .len();
+    let resolved_consolidated_revolutions =
+        crate::families::b2::records::b2_resolved_revolutions_from_records(
+            &scan.data,
+            &consolidated_records,
+        );
+    let resolved_consolidated_revolution_count = resolved_consolidated_revolutions.len();
     let b2_spatial_circle_count = b2_spatial_circles.len();
     if fallback_surfaces.as_ref().is_some_and(Vec::is_empty)
         && crate::families::a5a8::records::a8_freeform_curves(&scan.data).is_empty()
         && b2_nurbs_curves.is_empty()
         && a5_nurbs_curves.is_empty()
         && b2_spatial_circles.is_empty()
+        && b2_line_profile_count == 0
+        && resolved_consolidated_revolution_count == 0
     {
         return None;
     }
@@ -210,7 +440,7 @@ pub(crate) fn try_decode_freeform_surfaces(
     if !topology_transferred {
         let surfaces = fallback_surfaces
             .take()
-            .unwrap_or_else(|| freeform_surface_carriers(&scan.data));
+            .unwrap_or_else(|| freeform_surface_carriers(&scan.data, &consolidated_records));
         for (index, surface) in surfaces.iter().enumerate() {
             let id = SurfaceId(format!("catia:a8:surf#{index}"));
             annotate(
@@ -228,9 +458,18 @@ pub(crate) fn try_decode_freeform_surfaces(
             });
         }
     }
+    let _ = append_consolidated_revolutions(
+        &mut ir,
+        &mut annotations,
+        &resolved_consolidated_revolutions,
+    );
     append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data);
-    append_consolidated_line_profiles(&mut ir, &mut annotations, &scan.data);
-    let mut standalone_wires = Vec::new();
+    let mut standalone_wires = append_consolidated_line_profiles(
+        &mut ir,
+        &mut annotations,
+        &scan.data,
+        &consolidated_records,
+    );
     for curve in b2_nurbs_curves {
         let id = CurveId(format!("catia:b2:nurbs-curve#{}", ir.model.curves.len()));
         let parameter_range = [
@@ -405,6 +644,14 @@ pub(crate) fn try_decode_freeform_surfaces(
             unresolved,
         );
     }
+    if typed_multi_surface_face_count != 0 {
+        coverage.insert(
+            crate::coverage::TYPED_MULTI_SURFACE_OBJECT_STREAM_FACE_COUNT
+                .0
+                .to_string(),
+            typed_multi_surface_face_count,
+        );
+    }
     if let Some(counts) = edge_terminal_controls {
         for (control, count) in [0x01, 0x02, 0x21, 0x22, 0x25, 0x26, 0x29, 0x2a]
             .into_iter()
@@ -509,6 +756,7 @@ pub(crate) fn try_decode_freeform_surfaces(
         },
         annotations,
         unknowns,
+        standard_face_population: false,
     })
 }
 
@@ -633,10 +881,15 @@ fn attach_standalone_wires(
     true
 }
 
-fn freeform_surface_carriers(data: &[u8]) -> Vec<FreeformSurfaceCarrier> {
+fn freeform_surface_carriers(
+    data: &[u8],
+    records: &[crate::wire::records::ConsolidatedRecord],
+) -> Vec<FreeformSurfaceCarrier> {
     let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(data)
         .into_iter()
-        .chain(crate::families::a5a8::records::a5_surfaces(data))
+        .chain(crate::families::a5a8::records::a5_surfaces_from_records(
+            data, records,
+        ))
         .map(|surface| {
             let (source_object, source_tag) = freeform_surface_source(&surface);
             FreeformSurfaceCarrier {
@@ -648,7 +901,7 @@ fn freeform_surface_carriers(data: &[u8]) -> Vec<FreeformSurfaceCarrier> {
         })
         .collect::<Vec<_>>();
     surfaces.extend(
-        crate::families::b2::records::b2_cylinders(data)
+        crate::families::b2::records::b2_cylinders_from_records(data, records)
             .into_iter()
             .map(|surface| FreeformSurfaceCarrier {
                 pos: surface.pos,
@@ -658,7 +911,7 @@ fn freeform_surface_carriers(data: &[u8]) -> Vec<FreeformSurfaceCarrier> {
             }),
     );
     surfaces.extend(
-        crate::families::b2::records::b2_embedded_cylinders(data)
+        crate::families::b2::records::b2_embedded_cylinders_from_records(data, records)
             .into_iter()
             .map(|surface| FreeformSurfaceCarrier {
                 pos: surface.pos,
@@ -668,7 +921,7 @@ fn freeform_surface_carriers(data: &[u8]) -> Vec<FreeformSurfaceCarrier> {
             }),
     );
     surfaces.extend(
-        crate::families::b2::records::b2_cones(data)
+        crate::families::b2::records::b2_cones_from_records(data, records)
             .into_iter()
             .map(|surface| FreeformSurfaceCarrier {
                 pos: surface.pos,
@@ -678,7 +931,7 @@ fn freeform_surface_carriers(data: &[u8]) -> Vec<FreeformSurfaceCarrier> {
             }),
     );
     surfaces.extend(
-        crate::families::b2::records::b2_spheres(data)
+        crate::families::b2::records::b2_spheres_from_records(data, records)
             .into_iter()
             .map(|surface| FreeformSurfaceCarrier {
                 pos: surface.pos,
@@ -688,7 +941,7 @@ fn freeform_surface_carriers(data: &[u8]) -> Vec<FreeformSurfaceCarrier> {
             }),
     );
     surfaces.extend(
-        crate::families::b2::records::b2_tori(data)
+        crate::families::b2::records::b2_tori_from_records(data, records)
             .into_iter()
             .map(|surface| FreeformSurfaceCarrier {
                 pos: surface.pos,
@@ -720,8 +973,10 @@ fn append_consolidated_line_profiles(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     data: &[u8],
-) {
-    for (index, line) in crate::families::b2::records::b2_line_profiles(data)
+    records: &[crate::wire::records::ConsolidatedRecord],
+) -> Vec<(CurveId, [f64; 2], usize)> {
+    let mut standalone_wires = Vec::new();
+    for (index, line) in crate::families::b2::records::b2_line_profiles_from_records(data, records)
         .into_iter()
         .enumerate()
     {
@@ -735,7 +990,7 @@ fn append_consolidated_line_profiles(
             Exactness::ByteExact,
         );
         ir.model.curves.push(Curve {
-            id,
+            id: id.clone(),
             geometry: CurveGeometry::Line {
                 origin: Point3::new(line.origin[0], line.origin[1], line.origin[2]),
                 direction: Vector3::new(line.direction[0], line.direction[1], line.direction[2]),
@@ -745,7 +1000,9 @@ fn append_consolidated_line_profiles(
                 format!("{:010}", line.pos),
             )),
         });
+        standalone_wires.push((id, line.range, line.pos));
     }
+    standalone_wires
 }
 
 /// Append standalone freeform carriers and return the number of consolidated
@@ -754,9 +1011,12 @@ pub(crate) fn append_freeform_surface_pools(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     data: &[u8],
+    records: &[crate::wire::records::ConsolidatedRecord],
 ) -> ConsolidatedCurveBindingCounts {
     let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(data);
-    surfaces.extend(crate::families::a5a8::records::a5_surfaces(data));
+    surfaces.extend(crate::families::a5a8::records::a5_surfaces_from_records(
+        data, records,
+    ));
     let mut carrier_ids = Vec::with_capacity(surfaces.len());
     for surface in &surfaces {
         let (source_object, source_tag) = freeform_surface_source(surface);
@@ -778,7 +1038,7 @@ pub(crate) fn append_freeform_surface_pools(
         });
     }
 
-    let offsets = crate::families::b2::records::b2_offset_supports(data);
+    let offsets = crate::families::b2::records::b2_offset_supports_from_records(data, records);
     let bindings = crate::families::b2::records::offset_support_carriers(&offsets, &surfaces);
     for (offset, carrier) in offsets
         .iter()
@@ -819,19 +1079,24 @@ pub(crate) fn append_freeform_surface_pools(
             definition: ProceduralSurfaceDefinition::Offset {
                 support: carrier_ids[carrier].clone(),
                 distance: offset.distance,
-                u_sense: Some(1),
-                v_sense: Some(1),
+                u_sense: None,
+                v_sense: None,
                 extension_flags: Vec::new(),
                 revision_form: None,
             },
             cache_fit_tolerance: None,
-            record_bounds: None,
+            record_bounds: Some([
+                Some(offset.domain[0]),
+                Some(offset.domain[1]),
+                Some(offset.domain[2]),
+                Some(offset.domain[3]),
+            ]),
         });
     }
 
-    append_consolidated_line_profiles(ir, annotations, data);
+    let _ = append_consolidated_line_profiles(ir, annotations, data, records);
 
-    for guide in crate::families::a5a8::records::a5_guide_curves(data) {
+    for guide in crate::families::a5a8::records::a5_guide_curves_from_records(data, records) {
         let points = guide
             .sites
             .iter()
@@ -881,7 +1146,7 @@ pub(crate) fn append_freeform_surface_pools(
         });
     }
 
-    for jet in crate::families::a5a8::records::a5_freeform_curves(data) {
+    for jet in crate::families::a5a8::records::a5_freeform_curves_from_records(data, records) {
         for second_limit in [false, true] {
             let Some(curve) =
                 crate::families::a5a8::records::rolling_ball_limit_curve(&jet, second_limit)
@@ -964,7 +1229,14 @@ pub(crate) fn append_freeform_surface_pools(
     }
 
     append_a8_rolling_ball_pools(ir, annotations, data);
-    append_resolved_consolidated_surface_curves(ir, annotations, data, &surfaces, &carrier_ids)
+    append_resolved_consolidated_surface_curves(
+        ir,
+        annotations,
+        data,
+        records,
+        &surfaces,
+        &carrier_ids,
+    )
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -974,6 +1246,7 @@ pub(crate) enum ConsolidatedCarrierKey {
     Cone(usize),
     Sphere(usize),
     Torus(usize),
+    Plane(usize),
     NurbsOffset(usize, u64),
 }
 
@@ -1076,35 +1349,42 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     data: &[u8],
+    records: &[crate::wire::records::ConsolidatedRecord],
     freeform_surfaces: &[crate::families::a5a8::records::FreeformSurface],
     freeform_surface_ids: &[SurfaceId],
 ) -> ConsolidatedCurveBindingCounts {
-    let standalone = crate::families::b2::records::b2_cylinders(data)
+    let standalone = crate::families::b2::records::b2_cylinders_from_records(data, records)
         .into_iter()
         .map(|cylinder| (cylinder.pos, cylinder))
         .collect::<HashMap<_, _>>();
-    let embedded = crate::families::b2::records::b2_embedded_cylinders(data)
+    let embedded = crate::families::b2::records::b2_embedded_cylinders_from_records(data, records)
         .into_iter()
         .map(|value| (value.pos, value))
         .collect::<HashMap<_, _>>();
-    let cones = crate::families::b2::records::b2_cones(data)
+    let cones = crate::families::b2::records::b2_cones_from_records(data, records)
         .into_iter()
         .map(|cone| (cone.pos, cone))
         .collect::<HashMap<_, _>>();
-    let spheres = crate::families::b2::records::b2_spheres(data)
+    let spheres = crate::families::b2::records::b2_spheres_from_records(data, records)
         .into_iter()
         .map(|sphere| (sphere.pos, sphere))
         .collect::<HashMap<_, _>>();
-    let tori = crate::families::b2::records::b2_tori(data)
+    let tori = crate::families::b2::records::b2_tori_from_records(data, records)
         .into_iter()
         .map(|torus| (torus.pos, torus))
         .collect::<HashMap<_, _>>();
+    let planes = crate::families::b2::records::b2_plane_carriers_from_records(data, records)
+        .into_iter()
+        .map(|plane| (plane.pos, plane))
+        .collect::<HashMap<_, _>>();
     let complete_runs =
-        crate::families::consolidated::records::consolidated_topology_edge_runs(data)
-            .into_iter()
-            .filter(|run| run.edge.co_parametric && run.identity_chain_consistent)
-            .map(|run| (run.edge.pcurves[0].pos, run))
-            .collect::<HashMap<_, _>>();
+        crate::families::consolidated::records::consolidated_topology_edge_runs_from_records(
+            data, records,
+        )
+        .into_iter()
+        .filter(|run| run.edge.co_parametric && run.identity_chain_consistent)
+        .map(|run| (run.edge.pcurves[0].pos, run))
+        .collect::<HashMap<_, _>>();
 
     let mut surface_ids = HashMap::<ConsolidatedCarrierKey, SurfaceId>::new();
     let point_positions = ir
@@ -1226,7 +1506,11 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
     let mut attached_curves = HashSet::new();
     let mut binding_counts = ConsolidatedCurveBindingCounts::default();
 
-    for resolved in crate::families::consolidated::records::resolve_consolidated_edge_blocks(data) {
+    for resolved in
+        crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
+            data, records,
+        )
+    {
         let Some(run) = complete_runs.get(&resolved.block.pcurves[0].pos) else {
             continue;
         };
@@ -1295,8 +1579,8 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                             definition: ProceduralSurfaceDefinition::Offset {
                                 support,
                                 distance: *offset,
-                                u_sense: Some(1),
-                                v_sense: Some(1),
+                                u_sense: None,
+                                v_sense: None,
                                 extension_flags: Vec::new(),
                                 revision_form: None,
                             },
@@ -1405,6 +1689,23 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         "torus",
                     )
                 }
+                Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Plane { pos }) => {
+                    let Some(plane) = planes.get(pos) else {
+                        continue;
+                    };
+                    let Some(carrier) = crate::families::b2::records::b2_plane_geometry(plane)
+                    else {
+                        continue;
+                    };
+                    (
+                        ConsolidatedCarrierKey::Plane(*pos),
+                        carrier,
+                        None,
+                        ConsolidatedCarrierChart::Identity,
+                        "consolidated_b2_03_27_plane",
+                        "plane",
+                    )
+                }
                 Some(
                     crate::families::consolidated::records::ConsolidatedSupportBinding::Circle { .. }
                     | crate::families::consolidated::records::ConsolidatedSupportBinding::NurbsCarrier { .. },
@@ -1428,6 +1729,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         | ConsolidatedCarrierKey::Cone(pos)
                         | ConsolidatedCarrierKey::Sphere(pos)
                         | ConsolidatedCarrierKey::Torus(pos)
+                        | ConsolidatedCarrierKey::Plane(pos)
                         | ConsolidatedCarrierKey::NurbsOffset(pos, _) => pos as u64,
                     },
                     "resolved_pcurve_support",
@@ -1601,17 +1903,17 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                             // chart, which is not the standard partner face's
                             // chart. Recover the isometry between them from the
                             // block's shared 3D loci.
-                            let chart = resolved
-                                .shared_loci
-                                .as_deref()
-                                .and_then(|loci| {
-                                    solve_planar_chart_rechart(
-                                        &resolved.block.pcurves[partner].points,
-                                        loci,
-                                        standard_partner_geometry,
-                                    )
-                                })
-                                .unwrap_or(ConsolidatedCarrierChart::Identity);
+                            let Some(chart) = resolved.shared_loci.as_deref().and_then(|loci| {
+                                solve_planar_chart_rechart(
+                                    &resolved.block.pcurves[partner].points,
+                                    loci,
+                                    standard_partner_geometry,
+                                )
+                            }) else {
+                                // The free side has no defined chart relation
+                                // to a non-planar or unresolved partner.
+                                return Some((identity, None));
+                            };
                             let mut pcurve =
                                 consolidated_jet_pcurve(&resolved.block.pcurves[partner], &chart)?;
                             if reversed {
@@ -1926,7 +2228,7 @@ fn solve_planar_chart_rechart(
         reflected_cross += su * iv + sv * iu;
     }
     let candidates = [(dot, cross, 1.0), (reflected_dot, reflected_cross, -1.0)];
-    let mut best: Option<(f64, ConsolidatedCarrierChart<'static>)> = None;
+    let mut admissible = Vec::new();
     for (dot, cross, determinant) in candidates {
         let norm = dot.hypot(cross);
         if !norm.is_finite() || norm <= f64::EPSILON {
@@ -1952,12 +2254,15 @@ fn solve_planar_chart_rechart(
         if !residual.is_finite() {
             continue;
         }
-        if best.as_ref().is_none_or(|(current, _)| residual < *current) {
-            best = Some((residual, chart));
+        if residual <= CONSOLIDATED_SITE_TOLERANCE {
+            admissible.push(chart);
         }
     }
-    let (residual, chart) = best?;
-    (residual <= CONSOLIDATED_SITE_TOLERANCE).then_some(chart)
+    if admissible.len() == 1 {
+        admissible.pop()
+    } else {
+        None
+    }
 }
 
 /// Does `pcurve`, mapped through `surface`, reach `endpoints` over `range`?
@@ -1968,8 +2273,7 @@ fn solve_planar_chart_rechart(
 /// positions within `allowance`. Either endpoint assignment satisfies it,
 /// because pcurve parameter direction is independent of edge sense.
 ///
-/// A carrier with no geometry has no chart, so it admits no witness and no
-/// disagreement. The binding then records the pairing alone and is retained.
+/// A carrier with no geometry has no chart and therefore admits no witness.
 fn pcurve_lift_reaches_endpoints(
     pcurve: &PcurveGeometry,
     surface: &SurfaceGeometry,
@@ -1978,7 +2282,7 @@ fn pcurve_lift_reaches_endpoints(
     allowance: f64,
 ) -> bool {
     if matches!(surface, SurfaceGeometry::Unknown { .. }) {
-        return true;
+        return false;
     }
     let lift = |parameter| {
         let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)?;
@@ -2242,8 +2546,9 @@ pub(crate) fn rolling_ball_derivative(values: [f64; 10]) -> RollingBallJetDeriva
 #[cfg(test)]
 mod tests {
     use super::{
-        append_freeform_surface_pools, append_resolved_consolidated_surface_curves,
-        attach_standalone_wires, freeform_surface_carriers, pcurve_lift_reaches_endpoints,
+        append_consolidated_line_profiles, append_freeform_surface_pools,
+        append_resolved_consolidated_surface_curves, attach_standalone_wires,
+        freeform_surface_carriers, pcurve_lift_reaches_endpoints,
         rechart_equivalent_surface_pcurve, same_surface_locus, solve_planar_chart_rechart,
         unique_endpoint_pair_match, unique_paired_surface_lift_match, ConsolidatedCarrierChart,
     };
@@ -2297,12 +2602,46 @@ mod tests {
     }
 
     #[test]
+    fn consolidated_line_profile_retains_its_stored_wire_interval() {
+        let mut ir = CadIr::empty(Units::default());
+        let bytes = crate::tests::b2_line_profile_stream();
+        let wires = append_consolidated_line_profiles(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &bytes,
+            &crate::wire::records::consolidated_records(&bytes),
+        );
+        assert_eq!(wires.len(), 1);
+        assert!(attach_standalone_wires(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &wires,
+        ));
+        assert_eq!(ir.model.edges[0].param_range, Some([-4.0, 9.0]));
+        let expected_start = Point3::new(1.0, -0.4, -0.2);
+        let expected_end = Point3::new(1.0, 7.4, 10.2);
+        for (actual, expected) in [
+            (ir.model.points[1].position, expected_start),
+            (ir.model.points[0].position, expected_end),
+        ] {
+            assert!((actual.x - expected.x).abs() < 1e-12);
+            assert!((actual.y - expected.y).abs() < 1e-12);
+            assert!((actual.z - expected.z).abs() < 1e-12);
+        }
+        ir.finalize();
+        let validation = cadmpeg_ir::validate(&ir, Vec::new());
+        assert!(validation.is_ok(), "{:?}", validation.findings);
+    }
+
+    #[test]
     fn rolling_ball_pool_retains_both_exact_limiting_curves() {
         let mut ir = CadIr::empty(Units::default());
+        let bytes = crate::tests::a5_freeform_curve_stream();
         append_freeform_surface_pools(
             &mut ir,
             &mut AnnotationBuilder::new(),
-            &crate::tests::a5_freeform_curve_stream(),
+            &bytes,
+            &crate::wire::records::consolidated_records(&bytes),
         );
 
         assert!(matches!(
@@ -2325,7 +2664,8 @@ mod tests {
         let mut bytes = crate::tests::b2_cylinder_stream();
         bytes.extend_from_slice(&crate::tests::b2_embedded_cylinder_stream());
 
-        let carriers = freeform_surface_carriers(&bytes);
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let carriers = freeform_surface_carriers(&bytes, &records);
         assert_eq!(carriers.len(), 2);
         assert!(carriers[0].source_tag.starts_with("b2_03_28:"));
         assert!(carriers[1].source_tag.starts_with("b2_03_60:"));
@@ -2566,17 +2906,15 @@ mod tests {
             &mut ir,
             &mut AnnotationBuilder::new(),
             &bytes,
+            &crate::wire::records::consolidated_records(&bytes),
             &[],
             &[],
         );
         assert_eq!(attached.standard_edges, 1);
-        assert_eq!(attached.partner_face_pcurve_pairs, 1);
-        assert_eq!(ir.model.pcurves.len(), 2);
-        assert!(ir
-            .model
-            .coedges
-            .iter()
-            .all(|coedge| coedge.pcurves.len() == 1));
+        assert_eq!(attached.partner_face_pcurve_pairs, 0);
+        assert_eq!(ir.model.pcurves.len(), 0);
+        assert_eq!(ir.model.coedges[0].pcurves.len(), 0);
+        assert_eq!(ir.model.coedges[1].pcurves.len(), 0);
         assert_eq!(ir.model.curves.len(), 1);
         assert_eq!(ir.model.edges[0].curve.as_ref(), Some(&curve_id));
         let ProceduralCurveDefinition::SurfaceCurve { context, .. } =
@@ -2599,6 +2937,104 @@ mod tests {
         .expect("reversed pcurve start");
         assert_eq!([start.u, start.v], [0.5, 1.0]);
         assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
+    }
+
+    #[test]
+    fn consolidated_plane_support_transfers_both_surface_curve_sides() {
+        let plane_stream = crate::tests::b2_plane_carrier_stream();
+        let plane_end = crate::families::b2::records::b2_plane_carriers(&plane_stream)[0].end;
+        let mut bytes = plane_stream[..plane_end].to_vec();
+        let points = [Point3::new(10.0, 20.0, 0.0), Point3::new(11.0, 20.0, 1.0)];
+        for point in points {
+            bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+            for value in [point.x, point.y, point.z] {
+                bytes.extend_from_slice(&(value as f32).to_le_bytes());
+            }
+        }
+        bytes.extend_from_slice(&crate::tests::a5_native_edge_run_stream(6, 139, 142));
+
+        let mut ir = CadIr::empty(Units::default());
+        for (index, position) in points.into_iter().enumerate() {
+            ir.model.points.push(Point {
+                id: PointId(format!("point#{index}")),
+                position,
+                source_object: None,
+            });
+            ir.model.vertices.push(Vertex {
+                id: VertexId(format!("vertex#{index}")),
+                point: PointId(format!("point#{index}")),
+                tolerance: None,
+            });
+        }
+        let curve_id = CurveId("standard-plane-curve".to_string());
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        ir.model.edges.push(Edge {
+            id: EdgeId("standard-plane-edge".to_string()),
+            curve: Some(curve_id.clone()),
+            start: VertexId("vertex#0".to_string()),
+            end: VertexId("vertex#1".to_string()),
+            param_range: None,
+            tolerance: None,
+        });
+        let plane = SurfaceGeometry::Plane {
+            origin: Point3::new(10.0, 20.0, 0.0),
+            normal: Vector3::new(0.0, -1.0, 0.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let support_ids = [
+            SurfaceId("standard-plane#0".to_string()),
+            SurfaceId("standard-plane#1".to_string()),
+        ];
+        for support_id in &support_ids {
+            ir.model.surfaces.push(Surface {
+                id: support_id.clone(),
+                geometry: plane.clone(),
+                source_object: None,
+            });
+        }
+        ir.model.procedural_curves.push(ProceduralCurve {
+            id: ProceduralCurveId("standard-plane-intersection".to_string()),
+            curve: curve_id,
+            definition: ProceduralCurveDefinition::Intersection {
+                context: IntcurveSupportContext {
+                    sides: std::array::from_fn(|side| IntcurveSupportSide {
+                        surface: Some(support_ids[side].clone()),
+                        pcurve: None,
+                        pcurve_parameter_range: None,
+                    }),
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: std::array::from_fn(|_| Vec::new()),
+                },
+                discontinuity_flag: false,
+            },
+            cache_fit_tolerance: None,
+        });
+
+        let attached = append_resolved_consolidated_surface_curves(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &bytes,
+            &crate::wire::records::consolidated_records(&bytes),
+            &[],
+            &[],
+        );
+        assert_eq!(attached.standard_edges, 1);
+        assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
+        let ProceduralCurveDefinition::Intersection { context, .. } =
+            &ir.model.procedural_curves[0].definition
+        else {
+            panic!("plane support keeps an intersection construction");
+        };
+        assert!(context.sides.iter().all(|side| {
+            side.surface
+                .as_ref()
+                .is_some_and(|id| id.0.starts_with("catia:consolidated:plane#"))
+                && side.pcurve.is_some()
+        }));
     }
 
     /// A plane whose chart origin and axes differ from the stored chart used by
@@ -2700,6 +3136,15 @@ mod tests {
             &SurfaceGeometry::Unknown { record: None }
         )
         .is_none());
+        // Two sites leave both orientation choices valid. Three collinear
+        // sites have the same ambiguity, so neither admits a unique chart.
+        assert!(solve_planar_chart_rechart(&stored[..2], &loci[..2], &target).is_none());
+        let collinear_sites = [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]];
+        let collinear_loci = collinear_sites
+            .iter()
+            .map(|[u, v]| cadmpeg_ir::eval::surface_point(&target, *u, *v).expect("plane"))
+            .collect::<Vec<_>>();
+        assert!(solve_planar_chart_rechart(&collinear_sites, &collinear_loci, &target).is_none());
     }
 
     #[test]
@@ -2750,8 +3195,8 @@ mod tests {
             [endpoints[1], endpoints[0]],
             cadmpeg_ir::units::COINCIDENCE_TOLERANCE
         ));
-        // A carrier with no geometry admits no witness and no disagreement.
-        assert!(pcurve_lift_reaches_endpoints(
+        // A carrier with no geometry has no chart and admits no witness.
+        assert!(!pcurve_lift_reaches_endpoints(
             &naive,
             &SurfaceGeometry::Unknown { record: None },
             range,
@@ -2762,7 +3207,9 @@ mod tests {
 
     #[test]
     fn freeform_fallback_retains_exact_consolidated_spheres() {
-        let carriers = freeform_surface_carriers(&crate::tests::b2_sphere_stream());
+        let bytes = crate::tests::b2_sphere_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let carriers = freeform_surface_carriers(&bytes, &records);
         assert!(matches!(
             carriers.as_slice(),
             [carrier]
@@ -2782,7 +3229,9 @@ mod tests {
 
     #[test]
     fn freeform_fallback_retains_exact_consolidated_tori() {
-        let carriers = freeform_surface_carriers(&crate::tests::b2_torus_stream());
+        let bytes = crate::tests::b2_torus_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let carriers = freeform_surface_carriers(&bytes, &records);
         assert!(matches!(
             carriers.as_slice(),
             [carrier]
@@ -2803,7 +3252,9 @@ mod tests {
 
     #[test]
     fn freeform_fallback_retains_range_origin_cylinder_carriers() {
-        let carriers = freeform_surface_carriers(&crate::tests::b2_range_origin_cylinder_stream());
+        let bytes = crate::tests::b2_range_origin_cylinder_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let carriers = freeform_surface_carriers(&bytes, &records);
         assert!(matches!(
             carriers.as_slice(),
             [carrier]

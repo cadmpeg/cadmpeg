@@ -14,7 +14,7 @@ use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralCurveId, SurfaceId, VertexId};
 use cadmpeg_ir::topology::Edge;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
-use super::super::graph::B5Graph;
+use super::super::graph::{bounded_occurrence_range, B5Graph};
 use super::{annotate, distance, B5Support, CurvePlan, SurfacePlan, TransferPlan};
 use crate::assemble::cgm_source;
 
@@ -97,28 +97,6 @@ pub(super) fn b5_vertex_point(graph: &B5Graph, vertex: usize) -> Option<[f64; 3]
     })
 }
 
-pub(super) fn edge_pcurve_parameters(graph: &B5Graph, edge: u32, pcurve: u32) -> Option<[f64; 2]> {
-    graph
-        .edge_parameter_incidences
-        .get(&edge)?
-        .map(|incidence_id| {
-            let incidence = graph.parameter_incidences.get(&incidence_id)?;
-            let mut parameters = incidence
-                .curves
-                .iter()
-                .zip(&incidence.parameters)
-                .filter_map(|(&curve, &parameter)| (curve == pcurve).then_some(parameter));
-            let parameter = parameters.next()?;
-            parameters
-                .all(|other| other == parameter)
-                .then_some(parameter)
-        })
-        .into_iter()
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()
-}
-
 pub(super) fn ordered_subrange(parameters: [f64; 2], domain: [f64; 2]) -> Option<[f64; 2]> {
     let parameters = bounded_occurrence_range(parameters, domain)?;
     Some(if parameters[0] < parameters[1] {
@@ -126,28 +104,6 @@ pub(super) fn ordered_subrange(parameters: [f64; 2], domain: [f64; 2]) -> Option
     } else {
         [parameters[1], parameters[0]]
     })
-}
-
-pub(super) fn bounded_occurrence_range(parameters: [f64; 2], domain: [f64; 2]) -> Option<[f64; 2]> {
-    const RELATIVE_PARAMETER_TOLERANCE: f64 = 1e-10;
-
-    let domain_span = domain[1] - domain[0];
-    if !domain.into_iter().all(f64::is_finite)
-        || !domain_span.is_finite()
-        || domain_span <= 0.0
-        || !parameters.into_iter().all(f64::is_finite)
-        || parameters[0] == parameters[1]
-    {
-        return None;
-    }
-    let tolerance = RELATIVE_PARAMETER_TOLERANCE * domain_span;
-    if parameters
-        .iter()
-        .any(|parameter| *parameter < domain[0] - tolerance || *parameter > domain[1] + tolerance)
-    {
-        return None;
-    }
-    Some(parameters.map(|parameter| parameter.clamp(domain[0], domain[1])))
 }
 
 pub(super) fn b5_edge_support_definition(

@@ -58,37 +58,23 @@ struct E5Record {
     size: usize,
 }
 
-fn e5_records(data: &[u8]) -> Vec<E5Record> {
-    const MARKER: &[u8; 3] = b"\xe5\x0d\x03";
+const MARKER: &[u8; 3] = b"\xe5\x0d\x03";
 
-    let mut records = Vec::new();
-    let mut position = 0;
-    while position + 13 <= data.len() {
-        let Some(relative) = data[position..]
-            .windows(MARKER.len())
-            .position(|bytes| bytes == MARKER)
-        else {
-            break;
-        };
-        let pos = position + relative;
-        let Some(size) = u16_le(data, pos + 5).map(usize::from) else {
-            break;
-        };
-        let Some(end) = pos.checked_add(size + 13) else {
-            break;
-        };
-        if end > data.len() {
-            break;
-        }
-        records.push(E5Record {
-            pos,
-            end,
-            class: data[pos + 3],
-            size,
-        });
-        position = end;
-    }
-    records
+fn e5_records(data: &[u8]) -> Vec<E5Record> {
+    debug_assert_eq!(MARKER, crate::container::E5_MARKER);
+    crate::container::all_e5_record_spans(data)
+        .into_iter()
+        .filter_map(|range| {
+            let pos = range.start;
+            let size = u16_le(data, pos + 5).map(usize::from)?;
+            Some(E5Record {
+                pos,
+                end: range.end,
+                class: data[pos + 3],
+                size,
+            })
+        })
+        .collect()
 }
 
 /// Read the complete ordered E5 `05 08 01` coordinate roster matching the
@@ -250,11 +236,15 @@ pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
     for record in e5_records(data) {
         let pos = record.pos;
         let decoded = match record.class {
-            0xc9 => e5_cylinder(data, pos).map(|geometry| {
+            0xc9 => e5_cylinder(data, pos).and_then(|geometry| {
                 let SurfaceGeometry::Cylinder { radius, .. } = geometry else {
                     unreachable!()
                 };
-                (geometry, [1.0 / radius, 1.0])
+                let parameter_scale = [1.0 / radius, 1.0];
+                parameter_scale
+                    .into_iter()
+                    .all(f64::is_finite)
+                    .then_some((geometry, parameter_scale))
             }),
             0xca => e5_cone(data, pos).and_then(|geometry| {
                 let SurfaceGeometry::Cone { half_angle, .. } = geometry else {
@@ -270,7 +260,7 @@ pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
                     && parameter_scale.into_iter().all(f64::is_finite))
                 .then_some((geometry, parameter_scale))
             }),
-            0xcc => e5_torus(data, pos).map(|geometry| {
+            0xcc => e5_torus(data, pos).and_then(|geometry| {
                 let SurfaceGeometry::Torus {
                     major_radius,
                     minor_radius,
@@ -279,7 +269,11 @@ pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
                 else {
                     unreachable!()
                 };
-                (geometry, [1.0 / major_radius, 1.0 / minor_radius])
+                let parameter_scale = [1.0 / major_radius, 1.0 / minor_radius];
+                parameter_scale
+                    .into_iter()
+                    .all(f64::is_finite)
+                    .then_some((geometry, parameter_scale))
             }),
             _ => None,
         };

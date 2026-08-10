@@ -1189,6 +1189,12 @@ fn parse_role_selectors(
             if name_selector == 0 || data.get(page_offset) != Some(&0xe3) {
                 return None;
             }
+            // A declared one-byte text field owns its following FE terminator.
+            // Do not reinterpret that same byte as an unresolved role selector
+            // merely because E3 follows it (DI-25).
+            if length_closed_text(data, payload + 1, value_length, end).is_some() {
+                return None;
+            }
             let selector_low = *data.get(low_offset)?;
             if role_offset.checked_add(3)? > end
                 || text_value_allow_empty(data.get(payload.checked_add(1)?..role_offset)?).is_none()
@@ -1221,36 +1227,36 @@ fn parse_role_selectors(
             {
                 return None;
             }
-            if let Some(role_offset) = field_offset
+            let fixed = field_offset
                 .checked_sub(6)
                 .filter(|offset| *offset >= start)
-            {
-                let name_selector = *data.get(role_offset)?;
-                if name_selector != 0 && data.get(role_offset + 1) == Some(&0x80) {
+                .and_then(|role_offset| {
+                    let name_selector = *data.get(role_offset)?;
+                    (name_selector != 0 && data.get(role_offset + 1) == Some(&0x80))
+                        .then_some(())?;
                     let selector = u32::from_le_bytes(
                         data.get(role_offset + 2..field_offset)?.try_into().ok()?,
                     );
-                    if selector != 0 {
-                        return Some(LegacyRoleSelector {
-                            offset: role_offset,
-                            entity_id,
-                            name: LegacyRoleName::Selector(name_selector),
-                            encoding: LegacyRoleSelectorEncoding::FixedU32,
-                            selector,
-                            field_code: None,
-                        });
-                    }
-                }
-            }
-            if let Some(role_offset) = field_offset
+                    (selector != 0).then_some(LegacyRoleSelector {
+                        offset: role_offset,
+                        entity_id,
+                        name: LegacyRoleName::Selector(name_selector),
+                        encoding: LegacyRoleSelectorEncoding::FixedU32,
+                        selector,
+                        field_code: None,
+                    })
+                });
+            let paged = field_offset
                 .checked_sub(3)
                 .filter(|offset| *offset >= start)
-            {
-                let name_selector = *data.get(role_offset)?;
-                let page = *data.get(role_offset + 1)?;
-                if name_selector != 0 && (0xd1..=0xe4).contains(&page) {
+                .and_then(|role_offset| {
+                    let name_selector = *data.get(role_offset)?;
+                    let page = *data.get(role_offset + 1)?;
+                    if name_selector == 0 || !(0xd1..=0xe4).contains(&page) {
+                        return None;
+                    }
                     let low = *data.get(role_offset + 2)?;
-                    return Some(LegacyRoleSelector {
+                    Some(LegacyRoleSelector {
                         offset: role_offset,
                         entity_id,
                         name: LegacyRoleName::Selector(name_selector),
@@ -1260,10 +1266,15 @@ fn parse_role_selectors(
                             .checked_add(u32::from(low))?
                             .checked_add(1)?,
                         field_code: None,
-                    });
-                }
+                    })
+                });
+            // DI-24: fixed-width and paged selector layouts have no
+            // precedence when both fit the same field boundary.
+            match (fixed, paged) {
+                (Some(_), Some(_)) => None,
+                (Some(role), None) | (None, Some(role)) => Some(role),
+                (None, None) => None,
             }
-            None
         })
         .collect::<Vec<_>>();
     roles.extend(field_bound_roles);
@@ -1903,6 +1914,34 @@ mod tests {
         assert_eq!(run.relations[1].expression, "#1_ + #2_");
         assert_eq!(run.relations[1].body_selector, None);
         assert_eq!(run.relations[1].parameter_selector, None);
+    }
+
+    #[test]
+    fn text_terminator_precedes_an_e3_shaped_unresolved_role() {
+        let mut bytes = Vec::new();
+        identity(&mut bytes, 1);
+        bytes.extend_from_slice(TEXT_OPEN);
+        bytes.extend_from_slice(&[2, b'x', 0xfe, 0xe3, 0x17]);
+        identity(&mut bytes, 2);
+        bytes.extend_from_slice(CATALOG_OPEN);
+
+        let run = &parse_runs(&bytes)[0];
+        assert_eq!(run.text_fields.len(), 1);
+        assert_eq!(
+            run.text_fields[0].encoding,
+            super::LegacyTextEncoding::U8InclusiveLength
+        );
+        assert_eq!(run.text_fields[0].value, "x");
+        assert!(!run
+            .role_selectors
+            .iter()
+            .any(|role| { matches!(role.name, super::LegacyRoleName::Selector(0xfe)) }));
+    }
+
+    #[test]
+    fn rejects_ambiguous_unresolved_role_selector_framing() {
+        let bytes = [0x81, 0x80, 0x01, 0x82, 0xd1, 0x17, 0xe8, 0x00, 0x1c, 0x01];
+        assert!(super::parse_role_selectors(&bytes, 0, bytes.len(), 1).is_empty());
     }
 
     #[test]

@@ -28,29 +28,35 @@ pub(crate) fn transfer_parameters(
         .collect::<HashMap<_, _>>();
     let mut candidates = BTreeMap::<ParameterId, FormulaParameterCandidate>::new();
     let mut conflicting_inputs = BTreeSet::<ParameterId>::new();
+    collect_definition_chain_parameters(
+        native,
+        graph_scope,
+        &mut candidates,
+        &mut conflicting_inputs,
+    );
     let mut programs = Vec::<FormulaProgramCandidate>::new();
-    let formula_definition_counts = native
-        .entity_records
-        .iter()
-        .filter(|entity| {
-            graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
-        })
-        .filter_map(|entity| {
-            entity
-                .formula_relation
-                .as_ref()?
-                .output_entity
-                .reference
-                .entity
-                .as_deref()
-        })
-        .fold(
-            HashMap::<ParameterId, usize>::new(),
-            |mut counts, parameter| {
-                *counts.entry(neutral_parameter_id(parameter)).or_default() += 1;
-                counts
-            },
-        );
+    let mut formula_definition_counts = HashMap::<ParameterId, usize>::new();
+    for entity in native.entity_records.iter().filter(|entity| {
+        graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
+    }) {
+        let outputs = entity
+            .formula_relation
+            .as_ref()
+            .and_then(|relation| relation.output_entity.reference.entity.as_deref())
+            .into_iter()
+            .chain(
+                entity
+                    .relation_program_instance
+                    .as_ref()
+                    .and_then(|instance| instance.output_entity.as_ref())
+                    .and_then(|output| output.entity.as_deref()),
+            );
+        for output in outputs {
+            *formula_definition_counts
+                .entry(neutral_parameter_id(output))
+                .or_default() += 1;
+        }
+    }
     let legacy_scope = match graph_scope {
         None => LegacyModelingScope::Unbounded,
         Some(scope) => native
@@ -85,11 +91,8 @@ pub(crate) fn transfer_parameters(
             else {
                 continue;
             };
-            let Some(parameter) = &entity.parameter_value else {
-                continue;
-            };
             let Some(candidate) =
-                typed_entity_parameter_candidate(entity, parameter, input.value_type.as_str())
+                typed_entity_parameter_candidate_for_source(entity, input.value_type.as_str())
             else {
                 continue;
             };
@@ -170,13 +173,8 @@ pub(crate) fn transfer_parameters(
                 all_inputs_typed = false;
                 continue;
             };
-            let Some(parameter) = &entity.parameter_value else {
-                all_inputs_complete = false;
-                all_inputs_typed = false;
-                continue;
-            };
             let Some(candidate) =
-                typed_entity_parameter_candidate(entity, parameter, &input.input_type)
+                typed_entity_parameter_candidate_for_source(entity, &input.input_type)
             else {
                 all_inputs_complete = false;
                 all_inputs_typed = false;
@@ -266,7 +264,7 @@ pub(crate) fn transfer_parameters(
                             let parameter_type = canonical_parameter_type(&signature.result_type)
                                 .expect("typed evaluation requires a supported type");
                             programs.push(FormulaProgramCandidate {
-                                formula_entity: formula_entity.id.clone(),
+                                relation_entity: formula_entity.id.clone(),
                                 expression_entity: expression_entity.id.clone(),
                                 output: output_id.clone(),
                                 inputs: dependencies.clone(),
@@ -285,7 +283,10 @@ pub(crate) fn transfer_parameters(
                                         TypedParameterEvaluation::Value(value) => Some(value),
                                     },
                                     dependencies,
-                                    properties: parameter_properties(parameter_type),
+                                    properties: parameter_properties(
+                                        parameter_type,
+                                        Some(output_value.binding.value.as_str()),
+                                    ),
                                     pmi: None,
                                     native_ref: Some(output.id.clone()),
                                 },
@@ -300,41 +301,54 @@ pub(crate) fn transfer_parameters(
             }
         }
 
-        for mut candidate in transferred {
-            match candidates.get(&candidate.parameter.id) {
-                Some(existing) if !formula_parameter_candidates_agree(existing, &candidate) => {
-                    match (existing.formula_output, candidate.formula_output) {
-                        (true, true) => {}
-                        (true, false) => {
-                            conflicting_inputs.insert(candidate.parameter.id);
-                        }
-                        (false, true) => {
-                            conflicting_inputs.insert(candidate.parameter.id.clone());
-                            candidates.insert(candidate.parameter.id.clone(), candidate);
-                        }
-                        (false, false) => {
-                            conflicting_inputs.insert(candidate.parameter.id);
-                        }
-                    }
-                }
-                Some(existing) if !existing.formula_output && candidate.formula_output => {
-                    candidate.input_fallback =
-                        Some((existing.parameter.clone(), existing.parameter_type));
-                    candidates.insert(candidate.parameter.id.clone(), candidate);
-                }
-                Some(existing) if existing.formula_output && !candidate.formula_output => {
-                    candidates
-                        .get_mut(&candidate.parameter.id)
-                        .expect("candidate exists")
-                        .input_fallback
-                        .get_or_insert((candidate.parameter, candidate.parameter_type));
-                }
-                Some(_) => {}
-                None => {
-                    candidates.insert(candidate.parameter.id.clone(), candidate);
-                }
-            }
+        for candidate in transferred {
+            merge_formula_parameter_candidate(&mut candidates, &mut conflicting_inputs, candidate);
         }
+    }
+
+    for relation_entity in native.entity_records.iter().filter(|entity| {
+        graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
+    }) {
+        let Some(instance) = relation_entity.relation_program_instance.as_ref() else {
+            continue;
+        };
+        let Some(output_entity) = instance
+            .output_entity
+            .as_ref()
+            .and_then(|output| output.entity.as_deref())
+            .and_then(|output| entities.get(output))
+        else {
+            continue;
+        };
+        let Some(expression_entity) = instance
+            .relation_expression
+            .as_deref()
+            .and_then(|expression| entities.get(expression))
+        else {
+            continue;
+        };
+        let Some(expression) = &expression_entity.relation_expression else {
+            continue;
+        };
+        let Some(signature) = &expression.signature else {
+            continue;
+        };
+        let Some(inputs) = instance.inputs.as_ref() else {
+            continue;
+        };
+        let Some((program, candidate)) = relation_program_output_candidate(
+            relation_entity,
+            expression_entity,
+            output_entity,
+            expression,
+            signature,
+            inputs,
+            &entities,
+        ) else {
+            continue;
+        };
+        programs.push(program);
+        merge_formula_parameter_candidate(&mut candidates, &mut conflicting_inputs, candidate);
     }
 
     for id in &conflicting_inputs {
@@ -437,7 +451,7 @@ pub(crate) fn transfer_parameters(
                 .iter()
                 .all(|input| candidates.contains_key(input))
         {
-            consumed_entity_records.insert(program.formula_entity);
+            consumed_entity_records.insert(program.relation_entity);
             consumed_entity_records.insert(program.expression_entity);
         }
     }
@@ -465,6 +479,17 @@ pub(crate) fn transfer_parameters(
     else {
         return FormulaTransfer::default();
     };
+    let definition_chain_parameter_count = parameters
+        .iter()
+        .filter(|candidate| {
+            candidate
+                .parameter
+                .native_ref
+                .as_ref()
+                .and_then(|native_ref| entities.get(native_ref.as_str()))
+                .is_some_and(|entity| entity.definition_chain_value.is_some())
+        })
+        .count();
     for candidate in &parameters {
         annotations
             .exactness
@@ -487,6 +512,7 @@ pub(crate) fn transfer_parameters(
         .extend(parameters.into_iter().map(|candidate| candidate.parameter));
     FormulaTransfer {
         typed_parameter_count: transferred.saturating_sub(legacy_transfer.parameters),
+        definition_chain_parameter_count,
         relation_program_parameter_count,
         legacy_parameter_count: legacy_transfer.parameters,
         legacy_selector_parameter_count: legacy_transfer.selector_parameters,
@@ -495,9 +521,146 @@ pub(crate) fn transfer_parameters(
     }
 }
 
+/// Add only typed scalar values from the exact two-definition chain grammar.
+///
+/// The first definition names the parameter field and the second definition
+/// names its source type. The suffix selector must already agree with the
+/// first definition; the native decoder enforces that invariant. Other suffix
+/// states remain native because they do not contain a neutral parameter value.
+fn collect_definition_chain_parameters(
+    native: &CatiaNative,
+    graph_scope: Option<&HashSet<String>>,
+    candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate>,
+    conflicting_inputs: &mut BTreeSet<ParameterId>,
+) {
+    for entity in native.entity_records.iter().filter(|entity| {
+        graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
+    }) {
+        let Some(chain) = entity.definition_chain_value.as_ref() else {
+            continue;
+        };
+        let Some(candidate) = definition_chain_parameter_candidate(entity, chain) else {
+            continue;
+        };
+        let id = candidate.parameter.id.clone();
+        match candidates.get(&id) {
+            None => {
+                candidates.insert(id, candidate);
+            }
+            Some(existing) if !formula_parameter_candidates_agree(existing, &candidate) => {
+                conflicting_inputs.insert(id);
+            }
+            Some(_) => {}
+        }
+    }
+}
+
+fn definition_chain_parameter_candidate(
+    entity: &crate::native::CatiaEntityRecord,
+    chain: &crate::native::CatiaDefinitionChainValue,
+) -> Option<FormulaParameterCandidate> {
+    let parameter_type = canonical_parameter_type(&chain.role.value)?;
+    let (evaluation, evaluation_opcode_offset, atom_value) = match &chain.value {
+        crate::native::CatiaEntitySuffixSchemaValue::Evaluation {
+            opcode_offset,
+            evaluation,
+        } => (
+            typed_parameter_evaluation(&chain.role.value, evaluation)?,
+            Some(*opcode_offset),
+            None,
+        ),
+        crate::native::CatiaEntitySuffixSchemaValue::Atom { value }
+            if parameter_type == "Boolean" =>
+        {
+            (
+                TypedParameterEvaluation::Value(ParameterValue::Boolean(match value {
+                    0 => false,
+                    1 => true,
+                    _ => return None,
+                })),
+                None,
+                Some(*value),
+            )
+        }
+        _ => return None,
+    };
+    let name = (!chain.selector.value.is_empty()).then(|| chain.selector.value.clone())?;
+    let (expression, value) = match evaluation {
+        TypedParameterEvaluation::Unset => (String::new(), None),
+        TypedParameterEvaluation::Value(value) => {
+            let expression = parameter_expression(&value);
+            (expression, Some(value))
+        }
+    };
+    // A definition chain names the parameter in its first definition. It does
+    // not carry the named-parameter value record's scope/expression binding,
+    // so do not publish the definition name as `catia_binding`.
+    let mut properties = parameter_properties(parameter_type, None);
+    properties.insert(
+        "catia_definition_selector_entry".to_string(),
+        chain.selector.entry.clone(),
+    );
+    properties.insert(
+        "catia_definition_selector_ordinal".to_string(),
+        chain.selector.ordinal.to_string(),
+    );
+    properties.insert(
+        "catia_definition_selector_offset".to_string(),
+        chain.selector.offset.to_string(),
+    );
+    properties.insert(
+        "catia_definition_role_entry".to_string(),
+        chain.role.entry.clone(),
+    );
+    properties.insert(
+        "catia_definition_role_ordinal".to_string(),
+        chain.role.ordinal.to_string(),
+    );
+    properties.insert(
+        "catia_definition_role_offset".to_string(),
+        chain.role.offset.to_string(),
+    );
+    if let Some(opcode_offset) = evaluation_opcode_offset {
+        properties.insert(
+            "catia_definition_evaluation_opcode_offset".to_string(),
+            opcode_offset.to_string(),
+        );
+    }
+    if let Some(atom_value) = atom_value {
+        properties.insert(
+            "catia_definition_value_kind".to_string(),
+            "atom".to_string(),
+        );
+        properties.insert(
+            "catia_definition_atom_value".to_string(),
+            atom_value.to_string(),
+        );
+    }
+    Some(FormulaParameterCandidate {
+        parameter: DesignParameter {
+            id: neutral_parameter_id(&entity.id),
+            owner: None,
+            ordinal: 0,
+            name,
+            expression,
+            display: None,
+            value,
+            dependencies: Vec::new(),
+            properties,
+            pmi: None,
+            native_ref: Some(entity.id.clone()),
+        },
+        parameter_type,
+        formula_output: false,
+        input_fallback: None,
+        source_order: entity.byte_offset,
+    })
+}
+
 #[derive(Default)]
 pub(crate) struct FormulaTransfer {
     pub(crate) typed_parameter_count: usize,
+    pub(crate) definition_chain_parameter_count: usize,
     pub(crate) relation_program_parameter_count: usize,
     pub(crate) legacy_parameter_count: usize,
     pub(crate) legacy_selector_parameter_count: usize,
@@ -531,6 +694,7 @@ fn collect_legacy_parameters(
         .filter(|run| outer_container_in_scope(run.outer_container.as_ref(), modeling_scope))
     {
         let mut parameters_by_entity = HashMap::<u32, Vec<ParameterId>>::new();
+        let mut parameters_by_name = HashMap::<String, Vec<ParameterId>>::new();
         for scalar in &run.scalar_values {
             if scalar.encoding != crate::native::CatiaLegacyScalarEncoding::Named84 {
                 continue;
@@ -580,7 +744,7 @@ fn collect_legacy_parameters(
                         display: None,
                         value,
                         dependencies: Vec::new(),
-                        properties: parameter_properties(parameter_type),
+                        properties: parameter_properties(parameter_type, None),
                         pmi: None,
                         native_ref: Some(run.id.clone()),
                     },
@@ -593,7 +757,8 @@ fn collect_legacy_parameters(
             parameters_by_entity
                 .entry(scalar.entity_id)
                 .or_default()
-                .push(id);
+                .push(id.clone());
+            parameters_by_name.entry(name.clone()).or_default().push(id);
             transfer.parameters += 1;
             transfer.selector_parameters += usize::from(selected);
         }
@@ -621,6 +786,7 @@ fn collect_legacy_parameters(
             if candidates.contains_key(&id) {
                 continue;
             }
+            let value = ParameterValue::String(string.value.clone());
             candidates.insert(
                 id.clone(),
                 FormulaParameterCandidate {
@@ -629,11 +795,11 @@ fn collect_legacy_parameters(
                         owner: None,
                         ordinal: 0,
                         name: name.clone(),
-                        expression: String::new(),
+                        expression: parameter_expression(&value),
                         display: None,
-                        value: Some(ParameterValue::String(string.value.clone())),
+                        value: Some(value),
                         dependencies: Vec::new(),
-                        properties: parameter_properties("String"),
+                        properties: parameter_properties("String", None),
                         pmi: None,
                         native_ref: Some(run.id.clone()),
                     },
@@ -646,7 +812,8 @@ fn collect_legacy_parameters(
             parameters_by_entity
                 .entry(string.entity_id)
                 .or_default()
-                .push(id);
+                .push(id.clone());
+            parameters_by_name.entry(name.clone()).or_default().push(id);
             transfer.parameters += 1;
             transfer.selector_parameters += usize::from(selected);
         }
@@ -687,7 +854,7 @@ fn collect_legacy_parameters(
                         display: None,
                         value: Some(value),
                         dependencies: Vec::new(),
-                        properties: parameter_properties("Integer"),
+                        properties: parameter_properties("Integer", None),
                         pmi: None,
                         native_ref: Some(run.id.clone()),
                     },
@@ -700,20 +867,19 @@ fn collect_legacy_parameters(
             parameters_by_entity
                 .entry(integer.entity_id)
                 .or_default()
-                .push(id);
+                .push(id.clone());
+            parameters_by_name.entry(name.clone()).or_default().push(id);
             transfer.parameters += 1;
             transfer.selector_parameters += usize::from(selected);
         }
         let mut relations_by_parameter =
             HashMap::<u32, Vec<&crate::native::CatiaLegacyRelation>>::new();
         for relation in &run.relations {
-            if relation.inputs.is_empty() && relation.output.is_none() {
-                if let Some(parameter) = relation.parameter_entity_id {
-                    relations_by_parameter
-                        .entry(parameter)
-                        .or_default()
-                        .push(relation);
-                }
+            if let Some(parameter) = relation.parameter_entity_id {
+                relations_by_parameter
+                    .entry(parameter)
+                    .or_default()
+                    .push(relation);
             }
         }
         for (entity_id, relations) in relations_by_parameter {
@@ -726,32 +892,136 @@ fn collect_legacy_parameters(
             ) else {
                 continue;
             };
-            let Some(candidate) = candidates.get_mut(parameter) else {
-                continue;
-            };
-            if canonical_parameter_type(&relation.result_type) != Some(candidate.parameter_type) {
-                continue;
-            }
-            let bindings = BTreeMap::new();
-            let Some(evaluated) = evaluate_formula_expression(&relation.expression, &bindings)
-                .filter(|value| value.satisfies_source_type(&relation.result_type))
+            let Some(evaluation) =
+                legacy_relation_evaluation(relation, &parameters_by_name, candidates)
             else {
                 continue;
             };
+            let Some(candidate) = candidates.get_mut(parameter) else {
+                continue;
+            };
+            if canonical_parameter_type(evaluation.source_type) != Some(candidate.parameter_type) {
+                continue;
+            }
             if let Some(stored) = candidate.parameter.value.clone() {
-                if !evaluated.agrees_with(&TypedParameterEvaluation::Value(stored)) {
+                if !evaluation
+                    .evaluated
+                    .agrees_with(&TypedParameterEvaluation::Value(stored))
+                {
                     continue;
                 }
             }
-            candidate
-                .parameter
-                .expression
-                .clone_from(&relation.expression);
+            candidate.parameter.expression = evaluation.expression.to_string();
+            candidate.parameter.dependencies = evaluation.dependencies;
             candidate.formula_output = true;
             transfer.formulas += 1;
         }
     }
     transfer
+}
+
+#[cfg(test)]
+fn evaluate_legacy_output_assignment(
+    source: &str,
+    output_parameter: &str,
+) -> Option<EvaluatedFormulaValue> {
+    let expression = legacy_output_assignment_expression(source, output_parameter)?;
+    evaluate_formula_expression(expression, &BTreeMap::new())
+}
+
+struct LegacyRelationEvaluation<'a> {
+    source_type: &'a str,
+    expression: &'a str,
+    evaluated: EvaluatedFormulaValue,
+    dependencies: Vec<ParameterId>,
+}
+
+// A legacy relation is evaluable only when its signature names a unique,
+// typed, same-run packet for every input. This is the complete local binding
+// rule; unresolved selector namespaces never participate in the join.
+fn legacy_relation_evaluation<'a>(
+    relation: &'a crate::native::CatiaLegacyRelation,
+    parameters_by_name: &HashMap<String, Vec<ParameterId>>,
+    candidates: &BTreeMap<ParameterId, FormulaParameterCandidate>,
+) -> Option<LegacyRelationEvaluation<'a>> {
+    let (source_type, expression) = match relation.output.as_ref() {
+        Some(output) if relation.result_type == "VoidType" => (
+            output.value_type.as_str(),
+            legacy_output_assignment_expression(&relation.expression, &output.parameter)?,
+        ),
+        None if relation.result_type != "VoidType" => {
+            (relation.result_type.as_str(), relation.expression.as_str())
+        }
+        _ => return None,
+    };
+    let symbols = (!relation.inputs.is_empty())
+        .then(|| crate::native::relation_symbols(&relation.expression));
+    let mut bindings = BTreeMap::new();
+    let mut dependencies = Vec::with_capacity(relation.inputs.len());
+    for input in &relation.inputs {
+        let symbols = symbols.as_ref()?;
+        if !symbols
+            .iter()
+            .any(|(_, symbol)| legacy_symbol_matches_input(symbol, &input.parameter))
+        {
+            return None;
+        }
+        let [parameter_id] = parameters_by_name
+            .get(&input.parameter)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+        else {
+            return None;
+        };
+        if dependencies.contains(parameter_id) {
+            return None;
+        }
+        let candidate = candidates.get(parameter_id)?;
+        if canonical_parameter_type(&input.value_type) != Some(candidate.parameter_type) {
+            return None;
+        }
+        let value = candidate.parameter.value.as_ref()?;
+        bindings.insert(
+            input.parameter.as_str(),
+            EvaluatedFormulaValue::from_parameter_value(value),
+        );
+        dependencies.push(parameter_id.clone());
+    }
+    let evaluated = evaluate_formula_expression(expression, &bindings)?;
+    evaluated
+        .satisfies_source_type(source_type)
+        .then_some(LegacyRelationEvaluation {
+            source_type,
+            expression,
+            evaluated,
+            dependencies,
+        })
+}
+
+fn legacy_symbol_matches_input(symbol: &str, input: &str) -> bool {
+    let Some(suffix) = symbol.strip_prefix(input) else {
+        return false;
+    };
+    let suffix = suffix.trim_start_matches(|character: char| character.is_ascii_whitespace());
+    suffix.is_empty()
+        || suffix.strip_prefix('/').is_some_and(|ordinal| {
+            !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+        })
+}
+
+fn legacy_output_assignment_expression<'a>(
+    source: &'a str,
+    output_parameter: &str,
+) -> Option<&'a str> {
+    let source = source.trim_matches(|character: char| character.is_ascii_whitespace());
+    let remainder = source.strip_prefix(output_parameter)?;
+    let remainder = remainder.trim_start_matches(|character: char| character.is_ascii_whitespace());
+    let remainder = remainder.strip_prefix('=')?;
+    if remainder.starts_with('=') {
+        return None;
+    }
+    let expression = remainder.trim_matches(|character: char| character.is_ascii_whitespace());
+    (!expression.is_empty()).then_some(expression)
 }
 
 fn outer_container_in_scope(
@@ -904,7 +1174,10 @@ fn typed_entity_parameter_candidate(
             display: None,
             value,
             dependencies: Vec::new(),
-            properties: parameter_properties(parameter_type),
+            properties: parameter_properties(
+                parameter_type,
+                Some(parameter.binding.value.as_str()),
+            ),
             pmi: None,
             native_ref: Some(entity.id.clone()),
         },
@@ -915,12 +1188,184 @@ fn typed_entity_parameter_candidate(
     })
 }
 
+fn typed_entity_parameter_candidate_for_source(
+    entity: &crate::native::CatiaEntityRecord,
+    source_type: &str,
+) -> Option<FormulaParameterCandidate> {
+    if let Some(parameter) = &entity.parameter_value {
+        return typed_entity_parameter_candidate(entity, parameter, source_type);
+    }
+    let chain = entity.definition_chain_value.as_ref()?;
+    let candidate = definition_chain_parameter_candidate(entity, chain)?;
+    (canonical_parameter_type(source_type) == Some(candidate.parameter_type)).then_some(candidate)
+}
+
 struct FormulaProgramCandidate {
-    formula_entity: String,
+    relation_entity: String,
     expression_entity: String,
     output: ParameterId,
     inputs: Vec<ParameterId>,
     input_parameters: Vec<(DesignParameter, &'static str)>,
+}
+
+fn merge_formula_parameter_candidate(
+    candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate>,
+    conflicting_inputs: &mut BTreeSet<ParameterId>,
+    mut candidate: FormulaParameterCandidate,
+) {
+    match candidates.get(&candidate.parameter.id) {
+        Some(existing) if !formula_parameter_candidates_agree(existing, &candidate) => {
+            match (existing.formula_output, candidate.formula_output) {
+                (true, true) => {}
+                (true, false) => {
+                    conflicting_inputs.insert(candidate.parameter.id);
+                }
+                (false, true) => {
+                    conflicting_inputs.insert(candidate.parameter.id.clone());
+                    candidates.insert(candidate.parameter.id.clone(), candidate);
+                }
+                (false, false) => {
+                    conflicting_inputs.insert(candidate.parameter.id);
+                }
+            }
+        }
+        Some(existing) if !existing.formula_output && candidate.formula_output => {
+            candidate.input_fallback = Some((existing.parameter.clone(), existing.parameter_type));
+            candidates.insert(candidate.parameter.id.clone(), candidate);
+        }
+        Some(existing) if existing.formula_output && !candidate.formula_output => {
+            candidates
+                .get_mut(&candidate.parameter.id)
+                .expect("candidate exists")
+                .input_fallback
+                .get_or_insert((candidate.parameter, candidate.parameter_type));
+        }
+        Some(_) => {}
+        None => {
+            candidates.insert(candidate.parameter.id.clone(), candidate);
+        }
+    }
+}
+
+fn relation_program_output_candidate(
+    relation_entity: &crate::native::CatiaEntityRecord,
+    expression_entity: &crate::native::CatiaEntityRecord,
+    output_entity: &crate::native::CatiaEntityRecord,
+    expression: &crate::native::CatiaRelationExpression,
+    signature: &crate::native::CatiaRelationTypeSignature,
+    inputs: &[crate::native::CatiaRelationProgramInput],
+    entities: &HashMap<&str, &crate::native::CatiaEntityRecord>,
+) -> Option<(FormulaProgramCandidate, FormulaParameterCandidate)> {
+    if inputs.len() != signature.inputs.len()
+        || inputs
+            .iter()
+            .zip(&signature.inputs)
+            .any(|(input, declared)| {
+                input.parameter != declared.parameter || input.value_type != declared.input_type
+            })
+    {
+        return None;
+    }
+
+    let mut dependencies = Vec::with_capacity(inputs.len());
+    let mut input_parameters = Vec::with_capacity(inputs.len());
+    let mut expression_bindings = BTreeMap::new();
+    let mut type_bindings = BTreeMap::new();
+    let mut all_inputs_complete = true;
+    for input in inputs {
+        let input_entity = input
+            .entity
+            .entity
+            .as_deref()
+            .and_then(|id| entities.get(id))?;
+        let candidate =
+            typed_entity_parameter_candidate_for_source(input_entity, &input.value_type)?;
+        if dependencies.contains(&candidate.parameter.id) {
+            return None;
+        }
+        dependencies.push(candidate.parameter.id.clone());
+        type_bindings.insert(
+            input.parameter.as_str(),
+            static_formula_value(candidate.parameter_type)?,
+        );
+        match candidate.parameter.value.as_ref() {
+            Some(value) => {
+                expression_bindings.insert(
+                    input.parameter.as_str(),
+                    EvaluatedFormulaValue::from_parameter_value(value),
+                );
+            }
+            None => all_inputs_complete = false,
+        }
+        input_parameters.push((candidate.parameter, candidate.parameter_type));
+    }
+
+    let type_checked_expression =
+        evaluate_formula_expression_with_mode(&expression.expression.value, &type_bindings, false)
+            .filter(|value| value.satisfies_source_type(&signature.result_type));
+    let evaluated_expression = all_inputs_complete
+        .then(|| evaluate_formula_expression(&expression.expression.value, &expression_bindings))
+        .flatten()
+        .filter(|value| value.satisfies_source_type(&signature.result_type));
+    (if all_inputs_complete {
+        evaluated_expression.as_ref()
+    } else {
+        type_checked_expression.as_ref()
+    })?;
+    let output_value = output_entity.parameter_value.as_ref()?;
+    let output_id = neutral_parameter_id(&output_entity.id);
+    if dependencies.contains(&output_id) {
+        return None;
+    }
+    let value = typed_parameter_evaluation(&signature.result_type, &output_value.evaluation)?;
+    let accepted = match &value {
+        TypedParameterEvaluation::Unset => true,
+        TypedParameterEvaluation::Value(value) => {
+            evaluated_expression.as_ref().is_some_and(|evaluated| {
+                evaluated.agrees_with(&TypedParameterEvaluation::Value(value.clone()))
+            })
+        }
+    };
+    if !accepted {
+        return None;
+    }
+    let parameter_type = canonical_parameter_type(&signature.result_type)
+        .expect("typed evaluation requires a supported type");
+    let candidate = FormulaParameterCandidate {
+        parameter: DesignParameter {
+            id: output_id.clone(),
+            owner: None,
+            ordinal: 0,
+            name: output_value.name.value.clone(),
+            expression: expression.expression.value.clone(),
+            display: None,
+            value: match value {
+                TypedParameterEvaluation::Unset => None,
+                TypedParameterEvaluation::Value(value) => Some(value),
+            },
+            dependencies: dependencies.clone(),
+            properties: parameter_properties(
+                parameter_type,
+                Some(output_value.binding.value.as_str()),
+            ),
+            pmi: None,
+            native_ref: Some(output_entity.id.clone()),
+        },
+        parameter_type,
+        formula_output: true,
+        input_fallback: None,
+        source_order: output_entity.byte_offset,
+    };
+    Some((
+        FormulaProgramCandidate {
+            relation_entity: relation_entity.id.clone(),
+            expression_entity: expression_entity.id.clone(),
+            output: output_id,
+            inputs: dependencies,
+            input_parameters,
+        },
+        candidate,
+    ))
 }
 
 fn formula_parameter_candidates_agree(
@@ -986,12 +1431,27 @@ fn parameter_expression(value: &ParameterValue) -> String {
         ParameterValue::Angle(Angle(value)) => format!("{value} rad"),
         ParameterValue::Real(value) => value.to_string(),
         ParameterValue::Integer(value) => value.to_string(),
-        ParameterValue::Boolean(_) | ParameterValue::String(_) => unreachable!(),
+        ParameterValue::Boolean(value) => value.to_string(),
+        ParameterValue::String(value) => string_literal_expression(value).unwrap_or_default(),
     }
 }
 
-fn parameter_properties(parameter_type: &'static str) -> BTreeMap<String, String> {
-    BTreeMap::from([("value_type".to_string(), parameter_type.to_string())])
+fn string_literal_expression(value: &str) -> Option<String> {
+    value
+        .chars()
+        .all(|character| character != '"' && character != '\\' && !character.is_control())
+        .then(|| format!("\"{value}\""))
+}
+
+fn parameter_properties(
+    parameter_type: &'static str,
+    binding: Option<&str>,
+) -> BTreeMap<String, String> {
+    let mut properties = BTreeMap::from([("value_type".to_string(), parameter_type.to_string())]);
+    if let Some(binding) = binding {
+        properties.insert("catia_binding".to_string(), binding.to_string());
+    }
+    properties
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2052,16 +2512,16 @@ impl FormulaExpressionParser<'_, '_> {
         (self.peek()? == b'"').then_some(())?;
         self.at += 1;
         let start = self.at;
-        while let Some(byte) = self.peek() {
-            if byte == b'"' {
+        while let Some(character) = self.source.get(self.at..)?.chars().next() {
+            if character == '"' {
                 let value = self.source.get(start..self.at)?.to_string();
-                self.at += 1;
+                self.at += character.len_utf8();
                 return Some(value);
             }
-            if byte.is_ascii_control() || byte == b'\\' {
+            if character.is_control() || character == '\\' {
                 return None;
             }
-            self.at += 1;
+            self.at += character.len_utf8();
         }
         None
     }
@@ -2751,7 +3211,10 @@ fn canonical_parameter_type(source_type: &str) -> Option<&'static str> {
 }
 
 fn neutral_parameter_id(native_id: &str) -> ParameterId {
-    ParameterId(format!("{native_id}:parameter"))
+    ParameterId(crate::design_feature::neutral_history_id(
+        native_id,
+        "parameter",
+    ))
 }
 
 #[cfg(test)]
@@ -2790,6 +3253,38 @@ mod parser_tests {
             &unset_candidate("LENGTH"),
             &unset_candidate("Real")
         ));
+    }
+
+    #[test]
+    fn string_parameter_expressions_match_literal_grammar() {
+        let literal = ParameterValue::String("Cilas Evans".to_string());
+        assert_eq!(parameter_expression(&literal), "\"Cilas Evans\"");
+        assert!(string_literal_expression("").is_some_and(|expression| expression == "\"\""));
+        for value in ["quote\"", "backslash\\", "line\n", "control\u{0085}"] {
+            assert!(string_literal_expression(value).is_none(), "{value:?}");
+            assert!(parameter_expression(&ParameterValue::String(value.to_string())).is_empty());
+        }
+        assert_eq!(
+            evaluate_formula_expression("\"Cilas Evans\"", &BTreeMap::new())
+                .and_then(EvaluatedFormulaValue::string),
+            Some("Cilas Evans".to_string())
+        );
+    }
+
+    #[test]
+    fn legacy_output_assignment_requires_one_exact_assignment() {
+        let value = evaluate_legacy_output_assignment("#1_ = 2 + 3", "#1_")
+            .and_then(EvaluatedFormulaValue::scalar)
+            .expect("numeric assignment result");
+        assert_eq!(value.value, 5.0);
+        assert!(evaluate_legacy_output_assignment("#1_ == 5", "#1_").is_none());
+        assert!(evaluate_legacy_output_assignment("#1_ = 2 = 3", "#1_").is_none());
+        assert!(evaluate_legacy_output_assignment("#2_ = 5", "#1_").is_none());
+        assert_eq!(
+            evaluate_legacy_output_assignment("#1_ = \"a=b\"", "#1_")
+                .and_then(EvaluatedFormulaValue::string),
+            Some("a=b".to_string())
+        );
     }
 
     #[test]
@@ -3400,6 +3895,7 @@ mod parser_tests {
         for expression in [
             "\"unterminated",
             "\"unsupported\\\\escape\"",
+            "\"control\u{0085}\"",
             "\"text\" + 1",
             "ToString(1.5)",
             "ReplaceSubText(\"text\",\"\",\"x\")",

@@ -14,7 +14,8 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell,
+    Vertex, VertexUse,
 };
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
@@ -29,171 +30,14 @@ use crate::assemble::{
     unwrap_angle, TypedCounts,
 };
 use crate::container::{self, ContainerScan};
-use crate::families::freeform::append_freeform_surface_pools;
+use crate::families::freeform::{
+    append_consolidated_revolutions, append_freeform_surface_pools, ConsolidatedRevolutionBinding,
+};
 use crate::families::standard::{fbb, topology};
 use crate::families::FamilyOutput;
 use crate::solve::{mesh_quotient, missing_edge};
-
-#[derive(Clone)]
-struct ConsolidatedRevolutionBinding {
-    geometry: SurfaceGeometry,
-    profile_sweep: f64,
-}
-
-fn append_consolidated_revolutions(
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
-    bytes: &[u8],
-) -> (usize, Vec<ConsolidatedRevolutionBinding>) {
-    let resolved = crate::families::b2::records::b2_resolved_revolutions(bytes);
-    let mut bindings = Vec::new();
-    for resolved in &resolved {
-        let index = resolved.revolution_index;
-        let revolution = &resolved.revolution;
-        let profile = &resolved.profile;
-        let direction_x = Vector3::new(
-            revolution.direction_x[0],
-            revolution.direction_x[1],
-            revolution.direction_x[2],
-        );
-        let direction_y = Vector3::new(
-            revolution.direction_y[0],
-            revolution.direction_y[1],
-            revolution.direction_y[2],
-        );
-        let axis = Vector3::new(revolution.axis[0], revolution.axis[1], revolution.axis[2]);
-        let origin = Point3::new(
-            revolution.origin[0],
-            revolution.origin[1],
-            revolution.origin[2],
-        );
-        let transverse_coordinate =
-            origin.x * direction_x.x + origin.y * direction_x.y + origin.z * direction_x.z;
-        let center = Point3::new(
-            transverse_coordinate * direction_x.x
-                + profile.center_pair[0] * direction_y.x
-                + profile.center_pair[1] * axis.x,
-            transverse_coordinate * direction_x.y
-                + profile.center_pair[0] * direction_y.y
-                + profile.center_pair[1] * axis.y,
-            transverse_coordinate * direction_x.z
-                + profile.center_pair[0] * direction_y.z
-                + profile.center_pair[1] * axis.z,
-        );
-        let directrix = CurveId(format!("catia:standard:revolution-directrix#{index}"));
-        annotate(
-            annotations,
-            &directrix,
-            "consolidated_b2_03_19",
-            profile.pos as u64,
-            format!("circle:{}", profile.record_id),
-            Exactness::ByteExact,
-        );
-        ir.model.curves.push(Curve {
-            id: directrix.clone(),
-            geometry: CurveGeometry::Circle {
-                center,
-                axis: direction_x,
-                ref_direction: direction_y,
-                radius: profile.radius,
-            },
-            source_object: Some(cgm_source("profile-circle", profile.record_id)),
-        });
-        let surface = SurfaceId(format!("catia:standard:revolution-surface#{index}"));
-        let center_offset = Vector3::new(
-            center.x - origin.x,
-            center.y - origin.y,
-            center.z - origin.z,
-        );
-        let axis_coordinate =
-            center_offset.x * axis.x + center_offset.y * axis.y + center_offset.z * axis.z;
-        let radial = Vector3::new(
-            center_offset.x - axis.x * axis_coordinate,
-            center_offset.y - axis.y * axis_coordinate,
-            center_offset.z - axis.z * axis_coordinate,
-        );
-        let major_radius = radial.x.hypot(radial.y).hypot(radial.z);
-        let profile_plane_contains_axis =
-            (direction_x.x * axis.x + direction_x.y * axis.y + direction_x.z * axis.z).abs()
-                <= 1e-12;
-        let radial_follows_profile_reference = major_radius > 0.0
-            && ((radial.x * direction_y.x + radial.y * direction_y.y + radial.z * direction_y.z)
-                .abs()
-                / major_radius
-                - 1.0)
-                .abs()
-                <= 1e-12;
-        let torus_geometry = (major_radius > 0.0
-            && major_radius.is_finite()
-            && profile.radius > 0.0
-            && profile.radius.is_finite()
-            && profile_plane_contains_axis
-            && radial_follows_profile_reference)
-            .then(|| {
-                let ref_direction = Vector3::new(
-                    radial.x / major_radius,
-                    radial.y / major_radius,
-                    radial.z / major_radius,
-                );
-                let torus_center = Point3::new(
-                    center.x - radial.x,
-                    center.y - radial.y,
-                    center.z - radial.z,
-                );
-                SurfaceGeometry::Torus {
-                    center: torus_center,
-                    axis,
-                    ref_direction,
-                    major_radius,
-                    minor_radius: profile.radius,
-                }
-            });
-        annotate(
-            annotations,
-            &surface,
-            "consolidated_b2_03_2d",
-            revolution.pos as u64,
-            format!("profile-allocation:{}", revolution.profile_allocation_id),
-            Exactness::ByteExact,
-        );
-        ir.model.surfaces.push(Surface {
-            id: surface.clone(),
-            geometry: torus_geometry
-                .clone()
-                .unwrap_or(SurfaceGeometry::Unknown { record: None }),
-            source_object: Some(cgm_source(
-                "revolution",
-                u32::from(revolution.profile_allocation_id),
-            )),
-        });
-        ir.model.procedural_surfaces.push(ProceduralSurface {
-            id: ProceduralSurfaceId(format!("catia:standard:revolution#{index}")),
-            surface,
-            definition: ProceduralSurfaceDefinition::Revolution {
-                directrix,
-                axis_origin: origin,
-                axis_direction: axis,
-                angular_interval: [
-                    revolution.angular_range[0] / revolution.angular_scale,
-                    revolution.angular_range[1] / revolution.angular_scale,
-                ],
-                parameter_interval: Some(revolution.profile_range),
-                transposed: false,
-                revision_form: None,
-            },
-            cache_fit_tolerance: None,
-            record_bounds: None,
-        });
-        if let Some(geometry) = torus_geometry {
-            bindings.push(ConsolidatedRevolutionBinding {
-                geometry,
-                profile_sweep: (revolution.profile_range[1] - revolution.profile_range[0]).abs()
-                    / profile.radius,
-            });
-        }
-    }
-    (resolved.len(), bindings)
-}
+use crate::variant::Variant;
+use crate::wire::records::ConsolidatedRecord;
 
 fn bind_consolidated_revolution_faces_and_seams(
     ir: &mut CadIr,
@@ -537,7 +381,8 @@ fn bind_consolidated_revolution_faces_and_seams(
 
 #[cfg(test)]
 mod consolidated_revolution_binding_tests {
-    use super::{bind_consolidated_revolution_faces_and_seams, ConsolidatedRevolutionBinding};
+    use super::bind_consolidated_revolution_faces_and_seams;
+    use crate::families::freeform::ConsolidatedRevolutionBinding;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
@@ -687,6 +532,7 @@ mod consolidated_revolution_binding_tests {
 
 fn refine_consolidated_analytic_surfaces(
     bytes: &[u8],
+    records: &[ConsolidatedRecord],
     surfaces: &mut [Option<SurfaceGeometry>],
 ) -> HashMap<usize, usize> {
     fn exactly_one<T>(mut values: impl Iterator<Item = T>) -> Option<T> {
@@ -694,10 +540,10 @@ fn refine_consolidated_analytic_surfaces(
         values.next().is_none().then_some(value)
     }
 
-    let cylinders = crate::families::b2::records::b2_cylinders(bytes);
-    let cones = crate::families::b2::records::b2_cones(bytes);
-    let spheres = crate::families::b2::records::b2_spheres(bytes);
-    let tori = crate::families::b2::records::b2_tori(bytes);
+    let cylinders = crate::families::b2::records::b2_cylinders_from_records(bytes, records);
+    let cones = crate::families::b2::records::b2_cones_from_records(bytes, records);
+    let spheres = crate::families::b2::records::b2_spheres_from_records(bytes, records);
+    let tori = crate::families::b2::records::b2_tori_from_records(bytes, records);
     let quantized = |value: f64| f64::from(value as f32);
     let same_point = |point: Point3, stored: [f64; 3]| {
         point.x.to_bits() == quantized(stored[0]).to_bits()
@@ -823,7 +669,11 @@ mod consolidated_analytic_refinement_tests {
             minor_radius: 2.0,
         };
         let mut surfaces = vec![Some(coarse.clone()), Some(coarse)];
-        let refined = refine_consolidated_analytic_surfaces(&bytes, &mut surfaces);
+        let refined = refine_consolidated_analytic_surfaces(
+            &bytes,
+            &crate::wire::records::consolidated_records(&bytes),
+            &mut surfaces,
+        );
         assert_eq!(refined, [(0, 0), (1, 0)].into());
         for surface in surfaces {
             assert!(matches!(
@@ -846,7 +696,11 @@ mod consolidated_analytic_refinement_tests {
         };
         let mut unique = vec![Some(coarse.clone())];
         assert_eq!(
-            refine_consolidated_analytic_surfaces(&bytes, &mut unique),
+            refine_consolidated_analytic_surfaces(
+                &bytes,
+                &crate::wire::records::consolidated_records(&bytes),
+                &mut unique,
+            ),
             [(0, 0)].into()
         );
         assert!(matches!(
@@ -856,7 +710,12 @@ mod consolidated_analytic_refinement_tests {
 
         bytes.extend_from_slice(&bytes.clone());
         let mut ambiguous = vec![Some(coarse)];
-        assert!(refine_consolidated_analytic_surfaces(&bytes, &mut ambiguous).is_empty());
+        assert!(refine_consolidated_analytic_surfaces(
+            &bytes,
+            &crate::wire::records::consolidated_records(&bytes),
+            &mut ambiguous,
+        )
+        .is_empty());
     }
 
     #[test]
@@ -880,7 +739,12 @@ mod consolidated_analytic_refinement_tests {
             }),
         ];
         assert_eq!(
-            refine_consolidated_analytic_surfaces(&bytes, &mut surfaces).len(),
+            refine_consolidated_analytic_surfaces(
+                &bytes,
+                &crate::wire::records::consolidated_records(&bytes),
+                &mut surfaces,
+            )
+            .len(),
             2
         );
         assert!(matches!(
@@ -1116,17 +980,27 @@ pub(crate) fn try_decode_standard(
 ) -> Option<FamilyOutput> {
     let work_budget = ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
     let brep = scan.brep.as_ref()?;
+    let standard_spine = scan.main_data_stream.as_deref().unwrap_or(brep);
+    let fbb_only = scan.variant == Variant::FbbOnly;
     if !work_budget.charge() {
         return None;
     }
-    let points = fbb::standard_vertex_points(brep)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|[x, y, z]| Point3::new(x, y, z))
-        .collect::<Vec<_>>();
+    let consolidated_records = crate::wire::records::consolidated_records_in_ranges(
+        &scan.data,
+        container::consolidated_record_ranges(scan),
+    );
+    let points = (if fbb_only {
+        fbb::fbb_only_vertex_points(standard_spine)
+    } else {
+        fbb::standard_vertex_points(standard_spine)
+    })
+    .unwrap_or_default()
+    .into_iter()
+    .map(|[x, y, z]| Point3::new(x, y, z))
+    .collect::<Vec<_>>();
     let vertex_roster =
         crate::families::standard::records::standard_vertex_roster(&scan.data, points.len());
-    let face_count = fbb::standard_face_count(brep).unwrap_or_default();
+    let face_count = fbb::standard_face_count(standard_spine).unwrap_or_default();
     let records = crate::families::standard::records::standard_surface_records(brep, face_count)
         .unwrap_or_else(|| {
             crate::families::standard::records::surface_prefixes(brep)
@@ -1152,15 +1026,29 @@ pub(crate) fn try_decode_standard(
             crate::families::standard::records::StandardSurfaceRecord::Analytic(_) => None,
         })
         .collect::<HashSet<_>>();
-    let curve_supports =
-        crate::families::standard::records::standard_curve_supports(brep, face_count);
+    let standard_edge_count = (if fbb_only {
+        fbb::fbb_only_edge_count(standard_spine)
+    } else {
+        fbb::standard_edge_count(standard_spine)
+    })
+    .filter(|count| *count > 0);
+    let curve_supports = crate::families::standard::records::standard_curve_supports(
+        brep,
+        face_count,
+        standard_edge_count,
+    );
     let edge_tags = curve_supports
         .iter()
         .map(|support| support.tag)
         .collect::<HashSet<_>>();
-    let object_evidence = standard_object_evidence(scan, &freeform_tags, &edge_tags);
+    let object_evidence =
+        standard_object_evidence(scan, &freeform_tags, &edge_tags, &consolidated_records);
     let standard_limit_curve_count = object_evidence.limit_curves.len();
-    let revolution_record_count = crate::families::b2::records::b2_revolutions(&scan.data).len();
+    let revolution_record_count = crate::families::b2::records::b2_revolutions_from_records(
+        &scan.data,
+        &consolidated_records,
+    )
+    .len();
     let freeform_geometries = &object_evidence.surface_geometries;
     let freeform_procedural_surfaces = &object_evidence.procedural_surfaces;
     let unresolved_freeform_record_count = records
@@ -1174,7 +1062,7 @@ pub(crate) fn try_decode_standard(
             )
         })
         .count();
-    let face_frame_vectors = fbb::standard_face_frame_vectors(brep);
+    let face_frame_vectors = fbb::standard_face_frame_vectors(standard_spine);
     let mut curved_surfaces = records
         .iter()
         .map(|record| match record {
@@ -1187,50 +1075,12 @@ pub(crate) fn try_decode_standard(
             | crate::families::standard::records::StandardSurfaceRecord::Freeform { .. } => None,
         })
         .collect::<Vec<_>>();
-    let refined_analytic_surfaces =
-        refine_consolidated_analytic_surfaces(&scan.data, &mut curved_surfaces);
-    let mut plane_normal_candidates = HashMap::<u32, Option<[f64; 3]>>::new();
-    let mut derived_plane_targets = HashSet::new();
-    let mut exact_plane_targets = HashSet::new();
-    for (face, record) in records.iter().enumerate() {
-        let crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix) = record
-        else {
-            continue;
-        };
-        if prefix.kind != 0x32 {
-            continue;
-        }
-        let frame_normal = face_frame_vectors.get(face).copied().flatten();
-        let normal = frame_normal
-            .or_else(|| {
-                standard_plane_normal_from_adjacent_circle_carriers(
-                    &curve_supports,
-                    &curved_surfaces,
-                    face,
-                )
-            })
-            .or_else(|| standard_plane_normal_from_circle_centers(&curve_supports, face));
-        let Some(normal) = normal else {
-            continue;
-        };
-        if frame_normal.is_none() {
-            derived_plane_targets.insert(prefix.target);
-        } else {
-            exact_plane_targets.insert(prefix.target);
-        }
-        plane_normal_candidates
-            .entry(prefix.target)
-            .and_modify(|stored| {
-                if stored.is_some_and(|stored| stored != normal) {
-                    *stored = None;
-                }
-            })
-            .or_insert(Some(normal));
-    }
-    let plane_normals = plane_normal_candidates
-        .into_iter()
-        .filter_map(|(target, normal)| Some((target, normal?)))
-        .collect::<HashMap<_, _>>();
+    let refined_analytic_surfaces = refine_consolidated_analytic_surfaces(
+        &scan.data,
+        &consolidated_records,
+        &mut curved_surfaces,
+    );
+    let plane_normals = standard_plane_normals_from_face_frames(&records, &face_frame_vectors);
     let planes: HashMap<u32, crate::families::standard::records::PlaneParams> =
         crate::families::standard::records::plane_params(brep, &plane_normals)
             .into_iter()
@@ -1329,13 +1179,7 @@ pub(crate) fn try_decode_standard(
                     annotation_stream,
                     annotation_offset,
                     annotation_tag,
-                    if derived_plane_targets.contains(&prefix.target)
-                        && !exact_plane_targets.contains(&prefix.target)
-                    {
-                        Exactness::Derived
-                    } else {
-                        Exactness::ByteExact
-                    },
+                    Exactness::ByteExact,
                 ));
                 surfaces.push(Surface {
                     id,
@@ -1479,16 +1323,14 @@ pub(crate) fn try_decode_standard(
                         support_id
                     }
                 };
-                annotations.derived(&procedural_id, "definition.u_sense");
-                annotations.derived(&procedural_id, "definition.v_sense");
                 (
                     "object_stream_b5_03_30",
                     carrier_object_id,
                     ProceduralSurfaceDefinition::Offset {
                         support: support_id,
                         distance,
-                        u_sense: Some(0),
-                        v_sense: Some(0),
+                        u_sense: None,
+                        v_sense: None,
                         extension_flags: Vec::new(),
                         revision_form: None,
                     },
@@ -1561,8 +1403,17 @@ pub(crate) fn try_decode_standard(
         });
     }
     ir.model.surfaces = surfaces;
-    let (resolved_revolution_count, consolidated_revolutions) =
-        append_consolidated_revolutions(&mut ir, &mut annotations, &scan.data);
+    let resolved_consolidated_revolutions =
+        crate::families::b2::records::b2_resolved_revolutions_from_records(
+            &scan.data,
+            &consolidated_records,
+        );
+    let resolved_revolution_count = resolved_consolidated_revolutions.len();
+    let consolidated_revolutions = append_consolidated_revolutions(
+        &mut ir,
+        &mut annotations,
+        &resolved_consolidated_revolutions,
+    );
 
     for (i, p) in points.iter().enumerate() {
         let point_id = PointId(format!("catia:standard:pt#{i}"));
@@ -1606,7 +1457,7 @@ pub(crate) fn try_decode_standard(
         &mut topology_ir,
         &mut topology_annotations,
         &face_bindings,
-        brep,
+        standard_spine,
     );
     let mut bound_standard_limit_curve_count = 0;
     let mut topology_diagnostics = StandardTopologyDiagnostics::default();
@@ -1616,6 +1467,8 @@ pub(crate) fn try_decode_standard(
         &face_bindings,
         &records,
         &face_bounds,
+        standard_spine,
+        fbb_only,
         brep,
         &scan.data,
         &object_evidence.edge_owner_faces,
@@ -1636,8 +1489,20 @@ pub(crate) fn try_decode_standard(
         ir = topology_ir;
         annotations = topology_annotations;
     } else {
-        attach_standard_circles(&mut ir, &mut annotations, &face_bindings, brep);
-        attach_standard_lines(&mut ir, &mut annotations, &face_bindings, brep);
+        attach_standard_circles(
+            &mut ir,
+            &mut annotations,
+            &face_bindings,
+            brep,
+            standard_edge_count,
+        );
+        attach_standard_lines(
+            &mut ir,
+            &mut annotations,
+            &face_bindings,
+            brep,
+            standard_edge_count,
+        );
         if !ir.model.vertices.is_empty() {
             attach_free_vertices(
                 &mut ir,
@@ -1654,7 +1519,7 @@ pub(crate) fn try_decode_standard(
             &consolidated_revolutions,
         );
     let consolidated_curve_bindings =
-        append_freeform_surface_pools(&mut ir, &mut annotations, &scan.data);
+        append_freeform_surface_pools(&mut ir, &mut annotations, &scan.data, &consolidated_records);
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
     let annotations = annotations.build();
 
@@ -1664,17 +1529,33 @@ pub(crate) fn try_decode_standard(
         &typed,
         plane_faces,
         analytic_record_count,
-        &crate::assemble::UnresolvedSurfaceCounts {
+        &crate::assemble::GeometryReportCounts {
             face_local_freeform: unresolved_freeform_record_count
                 .saturating_sub(bound_revolution_face_surface_count)
                 .saturating_sub(consolidated_curve_bindings.standard_face_surfaces),
             unbound_revolution: revolution_record_count.saturating_sub(resolved_revolution_count),
+            admitted_standard_face_rows: face_count,
         },
         topology_failure.map(StandardTopologyFailure::message),
     );
     report.coverage.insert(
         "attempted_standard_topology_count".to_string(),
         usize::from(true),
+    );
+    report
+        .coverage
+        .insert("standard_fbb_run_count".to_string(), scan.census.fbb_runs);
+    report.coverage.insert(
+        "standard_fbb_candidate_face_row_count".to_string(),
+        scan.census.fbb_face_rows,
+    );
+    report.coverage.insert(
+        "standard_fbb_admitted_face_row_count".to_string(),
+        face_count,
+    );
+    report.coverage.insert(
+        "standard_fbb_withheld_face_row_count".to_string(),
+        scan.census.fbb_face_rows.saturating_sub(face_count),
     );
     report.coverage.insert(
         "attached_standard_topology_count".to_string(),
@@ -1885,6 +1766,7 @@ pub(crate) fn try_decode_standard(
         report,
         annotations,
         unknowns,
+        standard_face_population: true,
     })
 }
 
@@ -2073,6 +1955,7 @@ pub(crate) fn standard_object_evidence(
     scan: &ContainerScan,
     tags: &HashSet<u32>,
     edge_tags: &HashSet<u32>,
+    consolidated_records: &[ConsolidatedRecord],
 ) -> StandardObjectEvidence {
     let streams = [scan.outer.as_ref(), scan.inner.as_ref()]
         .into_iter()
@@ -2083,12 +1966,20 @@ pub(crate) fn standard_object_evidence(
             })
         });
     let mut evidence = standard_object_evidence_from_streams(streams, tags, edge_tags);
-    merge_standard_limit_curves(&mut evidence.limit_curves, &scan.data);
+    merge_standard_limit_curves_from_records(
+        &mut evidence.limit_curves,
+        &scan.data,
+        consolidated_records,
+    );
     evidence
 }
 
-fn merge_standard_limit_curves(curves: &mut Vec<NurbsCurve>, data: &[u8]) {
-    for jet in crate::families::a5a8::records::a5_freeform_curves(data) {
+fn merge_standard_limit_curves_from_records(
+    curves: &mut Vec<NurbsCurve>,
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) {
+    for jet in crate::families::a5a8::records::a5_freeform_curves_from_records(data, records) {
         for second_limit in [false, true] {
             let Some(geometry) =
                 crate::families::a5a8::records::rolling_ball_limit_curve(&jet, second_limit)
@@ -2114,8 +2005,11 @@ pub(crate) fn standard_object_evidence_from_streams(
     let mut edge_support_candidates = HashMap::<u32, Option<StandardEdgeSupport>>::new();
     let mut limit_curves = Vec::<NurbsCurve>::new();
     for stream in streams {
-        merge_standard_limit_curves(&mut limit_curves, &stream);
-        let face_surfaces = crate::families::b5::graph::face_surface_references(&stream);
+        let records = crate::wire::records::consolidated_records(&stream);
+        merge_standard_limit_curves_from_records(&mut limit_curves, &stream, &records);
+        let frames = crate::families::b5::graph::object_stream_frames(&stream);
+        let face_surfaces =
+            crate::families::b5::graph::face_surface_references_from_frames(&stream, &frames);
         let surface_bindings = tags
             .iter()
             .map(|&tag| (tag, tag))
@@ -2130,9 +2024,13 @@ pub(crate) fn standard_object_evidence_from_streams(
             .iter()
             .map(|(_, surface_id)| *surface_id)
             .collect::<HashSet<_>>();
-        let targeted_surfaces =
-            crate::families::b5::graph::targeted_surfaces(&stream, &requested_surfaces);
-        let targeted_graph = crate::families::b5::graph::targeted_geometry_graph(&stream);
+        let targeted_surfaces = crate::families::b5::graph::targeted_surfaces_from_frames(
+            &stream,
+            &requested_surfaces,
+            &frames,
+        );
+        let targeted_graph =
+            crate::families::b5::graph::targeted_geometry_graph_from_frames(&stream, &frames);
         for &(object_id, surface_id) in &surface_bindings {
             let Some(surface) = targeted_surfaces.get(&surface_id) else {
                 continue;
@@ -2184,8 +2082,9 @@ pub(crate) fn standard_object_evidence_from_streams(
                 merge_standard_surface_evidence(&mut surface_candidates, object_id, evidence);
             }
         }
-        let edge_pcurves =
-            crate::families::b5::graph::edge_support_pcurve_references(&stream, edge_tags);
+        let edge_pcurves = crate::families::b5::graph::edge_support_pcurve_references_from_frames(
+            &stream, edge_tags, &frames,
+        );
         let requested_pcurves = edge_pcurves
             .values()
             .flatten()
@@ -2218,8 +2117,11 @@ pub(crate) fn standard_object_evidence_from_streams(
             .filter_map(Option::as_ref)
             .map(|pcurve| pcurve.support_id)
             .collect::<HashSet<_>>();
-        let targeted_surfaces =
-            crate::families::b5::graph::targeted_surfaces(&stream, &surface_ids);
+        let targeted_surfaces = crate::families::b5::graph::targeted_surfaces_from_frames(
+            &stream,
+            &surface_ids,
+            &frames,
+        );
         for (edge, references) in edge_pcurves {
             let sides = references.map(|reference| {
                 let pcurve = pcurves.get(&reference)?.as_ref()?;
@@ -2250,7 +2152,7 @@ pub(crate) fn standard_object_evidence_from_streams(
                 })
                 .or_insert(Some(evidence));
         }
-        let Some(graph) = crate::families::b5::graph::parse(&stream) else {
+        let Some(graph) = crate::families::b5::graph::parse_from_frames(&stream, &frames) else {
             continue;
         };
         let mut stream_edge_faces = HashMap::<u32, HashSet<u32>>::new();
@@ -3038,6 +2940,8 @@ fn attach_standard_topology(
     bindings: &[(SurfaceId, bool, usize)],
     records: &[crate::families::standard::records::StandardSurfaceRecord],
     face_bounds: &[Option<crate::families::standard::records::StandardFaceBounds>],
+    spine: &[u8],
+    fbb_only: bool,
     brep: &[u8],
     source: &[u8],
     native_edge_faces: &HashMap<u32, HashSet<u32>>,
@@ -3048,8 +2952,19 @@ fn attach_standard_topology(
     bound_limit_curve_count: &mut usize,
 ) -> Result<(), StandardTopologyFailure> {
     let face_count = ir.model.faces.len();
-    let mut supports =
-        crate::families::standard::records::standard_curve_supports(brep, face_count);
+    let Some(edge_count) = (if fbb_only {
+        crate::families::standard::fbb::fbb_only_edge_count(spine)
+    } else {
+        crate::families::standard::fbb::standard_edge_count(spine)
+    })
+    .filter(|count| *count > 0) else {
+        return Err(StandardTopologyFailure::NoCurveSupports);
+    };
+    let mut supports = crate::families::standard::records::standard_curve_supports(
+        brep,
+        face_count,
+        Some(edge_count),
+    );
     if supports.is_empty() {
         return Err(StandardTopologyFailure::NoCurveSupports);
     }
@@ -3059,7 +2974,7 @@ fn attach_standard_topology(
         .map(|support| support.faces)
         .collect::<Vec<_>>();
     let Some(mut edge_faces) =
-        missing_edge::resolve_standard_edge_faces(brep, &serialized_edge_faces)
+        missing_edge::resolve_standard_edge_faces(spine, &serialized_edge_faces)
     else {
         return Err(StandardTopologyFailure::EdgeFaceAssignment);
     };
@@ -3188,9 +3103,13 @@ fn attach_standard_topology(
             .map_or(edge, |candidate| edge_classes[candidate]);
         edge_classes.push(class);
     }
-    let native_edges = crate::families::b5::graph::edge_vertex_references(source);
+    let topology_graph = crate::families::b5::graph::parse(source);
+    let native_edges = topology_graph
+        .as_ref()
+        .and_then(crate::families::b5::graph::B5Graph::referenced_edge_vertex_references)
+        .unwrap_or_else(|| crate::families::b5::graph::edge_vertex_references(source));
     let graph_endpoint_pairs = standard_native_graph_endpoint_pairs(
-        source,
+        topology_graph.as_ref(),
         &supports,
         &native_edges,
         &ir.model.points,
@@ -3230,6 +3149,18 @@ fn attach_standard_topology(
     let allocation_endpoint_pairs = vertex_roster
         .as_ref()
         .map(|roster| standard_successor_endpoint_pairs(&supports, roster, &endpoint_candidates));
+    let native_support_ids = native_edge_supports.keys().copied().collect::<HashSet<_>>();
+    let native_support_edge_ids = standard_native_support_edge_ids(
+        &supports,
+        &native_edges,
+        &native_support_ids,
+        vertex_roster.as_deref(),
+        &endpoint_candidates,
+    );
+    let native_supports_by_row = native_support_edge_ids
+        .iter()
+        .map(|edge| edge.and_then(|edge| native_edge_supports.get(&edge).cloned()))
+        .collect::<Vec<_>>();
     let Ok(native_endpoint_evidence) = merge_native_endpoint_evidence(
         graph_endpoint_pairs.as_deref(),
         roster_endpoint_pairs.as_deref(),
@@ -3273,9 +3204,10 @@ fn attach_standard_topology(
         }
     }
     if let Some(options) = &mut endpoint_options {
-        for (edge, support) in supports.iter().enumerate() {
-            let Some(pair) = native_edge_supports
-                .get(&support.tag)
+        for edge in 0..supports.len() {
+            let Some(pair) = native_supports_by_row
+                .get(edge)
+                .and_then(Option::as_ref)
                 .and_then(|native| {
                     standard_native_support_endpoint_pair(
                         native,
@@ -3360,14 +3292,25 @@ fn attach_standard_topology(
             })
             .collect::<Vec<_>>();
         for edge in 0..allowed_faces.len() {
+            let mut exhausted = false;
             allowed_faces[edge].retain(|face| {
                 let mut trial = edge_faces.clone();
                 trial[edge][1] = *face;
-                missing_edge::face_endpoint_candidates_close(&trial, options, *face)
+                match missing_edge::face_endpoint_candidates_close(&trial, options, *face) {
+                    missing_edge::FaceEndpointClosureOutcome::Closed => true,
+                    missing_edge::FaceEndpointClosureOutcome::Rejected => false,
+                    missing_edge::FaceEndpointClosureOutcome::Exhausted => {
+                        exhausted = true;
+                        true
+                    }
+                }
             });
+            if exhausted {
+                return Err(StandardTopologyFailure::TopologySearchExhausted);
+            }
         }
         if let Some(completed) =
-            missing_edge::resolve_standard_duplicate_edge_faces(brep, &edge_faces, &allowed_faces)
+            missing_edge::resolve_standard_duplicate_edge_faces(spine, &edge_faces, &allowed_faces)
         {
             edge_faces = completed;
             for (edge, (support, faces)) in supports.iter_mut().zip(&edge_faces).enumerate() {
@@ -3463,7 +3406,7 @@ fn attach_standard_topology(
                 .collect::<Vec<_>>();
             let mut changed = false;
             if let Some(placement_domains) =
-                missing_edge::standard_mesh_placement_endpoint_pairs(brep, &edge_faces, &seeds)
+                missing_edge::standard_mesh_placement_endpoint_pairs(spine, &edge_faces, &seeds)
             {
                 for (edge, mut domain) in placement_domains.into_iter().enumerate() {
                     domain.retain(|pair| endpoint_pair_on_incident_faces(edge, *pair));
@@ -3488,7 +3431,7 @@ fn attach_standard_topology(
                 .all(|domain| !domain.is_empty())
                 .then(|| {
                     missing_edge::standard_mesh_prune_endpoint_candidates(
-                        brep,
+                        spine,
                         &edge_faces,
                         options,
                     )
@@ -3562,7 +3505,7 @@ fn attach_standard_topology(
     });
     let propagated_endpoint_pairs = endpoint_options
         .as_ref()
-        .zip(missing_edge::standard_edge_port_identities(brep))
+        .zip(missing_edge::edge_port_identities(spine))
         .and_then(|(options, ports)| {
             let pairs = options
                 .iter()
@@ -3590,7 +3533,7 @@ fn attach_standard_topology(
         });
     let mesh_propagated_endpoint_pairs = endpoint_options
         .as_ref()
-        .zip(missing_edge::standard_mesh_edge_ports(brep))
+        .zip(missing_edge::standard_mesh_edge_ports(spine))
         .and_then(|(options, ports)| {
             let pairs = options
                 .iter()
@@ -3620,14 +3563,17 @@ fn attach_standard_topology(
     });
     if let (Some(options), Some(ports)) = (
         constrained_endpoint_options.as_mut(),
-        missing_edge::standard_mesh_edge_ports(brep),
+        missing_edge::standard_mesh_edge_ports(spine),
     ) {
         if let Some(pruned) = fbb::prune_edge_candidates_by_port_domains(&ports, options) {
             *options = pruned;
         }
     }
     if let Some(options) = &mut constrained_endpoint_options {
-        bind_ordered_standard_curve_branches(&supports, options);
+        // A same-incidence row relation is not an endpoint identity. Keep its
+        // complete candidate domain for the mesh solver; allocation-rank
+        // reduction is valid only after the solver has fixed the surrounding
+        // face frontier and the remaining branch relation can be checked.
         diagnostics.empty_endpoint_domains =
             options.iter().filter(|domain| domain.is_empty()).count();
         diagnostics.singleton_endpoint_domains =
@@ -3642,33 +3588,43 @@ fn attach_standard_topology(
         let pairs = pairs.iter().copied().map(Some).collect::<Vec<_>>();
         include_native_endpoint_pairs(&mut endpoint_candidates, &pairs);
     }
-    let mesh_bound = fbb::parse_standard(brep)
-        .or_else(|| topology::parse_fbb_with_native_vertices(brep, native_ports.as_ref()?))
-        .and_then(|topology| {
-            let endpoint_pairs = resolved_endpoint_pairs
-                .clone()
-                .or_else(|| {
-                    endpoint_candidates
-                        .iter()
-                        .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
-                        .collect::<Option<Vec<[usize; 2]>>>()
-                })
-                .or_else(|| {
-                    let ports = topology
-                        .edge_vertices()?
-                        .into_iter()
-                        .map(|[left, right]| {
-                            Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?])
-                        })
-                        .collect::<Option<Vec<_>>>()?;
-                    missing_edge::bind_edge_port_candidates(
-                        &ports,
-                        constrained_endpoint_options.as_ref()?,
-                    )
-                })?;
-            let point_assignment = topology.bind_vertex_points(&endpoint_pairs)?;
-            Some((topology, point_assignment))
-        });
+    let fbb_mesh_ports = fbb_only
+        .then(|| missing_edge::standard_mesh_edge_ports(spine))
+        .flatten();
+    let mesh_topology = if fbb_only {
+        fbb_mesh_ports
+            .as_deref()
+            .and_then(|ports| topology::parse_fbb_with_native_vertices(spine, ports))
+            .or_else(|| topology::parse_fbb(spine))
+    } else {
+        fbb::parse_standard(spine)
+            .or_else(|| topology::parse_fbb_with_native_vertices(spine, native_ports.as_ref()?))
+    };
+    let mesh_bound = mesh_topology.and_then(|topology| {
+        let endpoint_pairs = resolved_endpoint_pairs
+            .clone()
+            .or_else(|| {
+                endpoint_candidates
+                    .iter()
+                    .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
+                    .collect::<Option<Vec<[usize; 2]>>>()
+            })
+            .or_else(|| {
+                let ports = topology
+                    .edge_vertices()?
+                    .into_iter()
+                    .map(|[left, right]| {
+                        Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?])
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                missing_edge::bind_edge_port_candidates(
+                    &ports,
+                    constrained_endpoint_options.as_ref()?,
+                )
+            })?;
+        let point_assignment = topology.bind_vertex_points(&endpoint_pairs)?;
+        Some((topology, point_assignment))
+    });
     let circle_anchors: Vec<Option<[usize; 2]>> = supports
         .iter()
         .zip(&endpoint_candidates)
@@ -3695,9 +3651,11 @@ fn attach_standard_topology(
     let mut mesh_search_exhausted = false;
     let (mut topology, point_assignment) = if let Some(bound) = mesh_bound {
         bound
+    } else if fbb_only {
+        return Err(StandardTopologyFailure::NoTopologySolution);
     } else if let Some(topology) = native_endpoint_pairs.as_ref().and_then(|pairs| {
         fbb::parse_standard_endpoints_with_edge_classes(
-            brep,
+            spine,
             &edge_faces,
             pairs,
             Some(&edge_classes),
@@ -3722,6 +3680,7 @@ fn attach_standard_topology(
             options,
             &branch_groups,
             &initial_assignment,
+            Some(work_budget),
         )?;
         let mut branch_preferred_edges = vec![false; options.len()];
         for edge in branch_groups
@@ -3733,7 +3692,7 @@ fn attach_standard_topology(
         let branch_assignment_dependencies =
             standard_curve_branch_assignment_dependencies(&supports, &branch_groups);
         let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
-            brep,
+            spine,
             &edge_faces,
             &solver_options,
             &edge_classes,
@@ -3747,6 +3706,7 @@ fn attach_standard_topology(
                     &solver_options,
                     &branch_groups,
                     pairs,
+                    Some(work_budget),
                 ) && standard_circle_pair_solution_is_simple(
                     ir,
                     bindings,
@@ -3769,7 +3729,7 @@ fn attach_standard_topology(
             retry_rejected_mesh_solution(preferred, || {
                 let unconstrained = vec![false; circle_constraint_edges.len()];
                 mesh_quotient::parse_standard_mesh_candidate_outcome(
-                    brep,
+                    spine,
                     &edge_faces,
                     &solver_options,
                     &edge_classes,
@@ -3783,6 +3743,7 @@ fn attach_standard_topology(
                             &solver_options,
                             &branch_groups,
                             pairs,
+                            Some(work_budget),
                         )
                     },
                 )
@@ -3811,15 +3772,15 @@ fn attach_standard_topology(
     }) {
         bound
     } else if let Some(topology) = constrained_endpoint_options.as_ref().and_then(|options| {
-        missing_edge::standard_mesh_edge_ports(brep)
+        missing_edge::standard_mesh_edge_ports(spine)
             .and_then(|ports| {
-                fbb::parse_standard_port_endpoint_candidates(brep, &edge_faces, options, &ports)
+                fbb::parse_standard_port_endpoint_candidates(spine, &edge_faces, options, &ports)
             })
-            .or_else(|| fbb::parse_standard_endpoint_candidates(brep, &edge_faces, options))
+            .or_else(|| fbb::parse_standard_endpoint_candidates(spine, &edge_faces, options))
     }) {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
-    } else if let Some(topology) = fbb::parse_standard_motif(brep, &edge_faces, &circle_anchors) {
+    } else if let Some(topology) = fbb::parse_standard_motif(spine, &edge_faces, &circle_anchors) {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else {
@@ -3867,7 +3828,7 @@ fn attach_standard_topology(
         &edge_vertices,
         &point_assignment,
         &topology,
-        native_edge_supports,
+        &native_supports_by_row,
         &resolved_limit_curve_bindings,
         limit_curves,
     );
@@ -3938,6 +3899,53 @@ fn validate_standard_topology(
     Some(edge_vertices)
 }
 
+fn standard_boundary_roles(
+    ir: &CadIr,
+    bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
+    topology: &crate::families::standard::topology::StandardTopology,
+    face_index: usize,
+    point_assignment: &[usize],
+) -> Vec<LoopBoundaryRole> {
+    let Some(face_topology) = topology.faces().get(face_index) else {
+        return Vec::new();
+    };
+    if face_topology.boundaries.len() <= 1 {
+        return if face_topology.boundaries.is_empty() {
+            Vec::new()
+        } else {
+            vec![LoopBoundaryRole::Outer]
+        };
+    }
+    let Some(surface_id) = bindings.get(face_index).map(|binding| &binding.0) else {
+        return vec![LoopBoundaryRole::Unspecified; face_topology.boundaries.len()];
+    };
+    let Some(&surface_index) = surface_indices.get(surface_id) else {
+        return vec![LoopBoundaryRole::Unspecified; face_topology.boundaries.len()];
+    };
+    let Some(surface) = ir.model.surfaces.get(surface_index) else {
+        return vec![LoopBoundaryRole::Unspecified; face_topology.boundaries.len()];
+    };
+    let Some(boundaries) = face_topology
+        .boundaries
+        .iter()
+        .map(|boundary| {
+            boundary
+                .coedges
+                .iter()
+                .map(|coedge| {
+                    let point_index = *point_assignment.get(coedge.start_vertex)?;
+                    Some(ir.model.points.get(point_index)?.position)
+                })
+                .collect::<Option<Vec<_>>>()
+        })
+        .collect::<Option<Vec<_>>>()
+    else {
+        return vec![LoopBoundaryRole::Unspecified; face_topology.boundaries.len()];
+    };
+    crate::boundary_roles::classify_planar_boundary_roles(&surface.geometry, &boundaries)
+}
+
 /// Emits the edge, loop, coedge, and pcurve IR layers for the solved topology.
 #[allow(
     clippy::too_many_arguments,
@@ -3953,7 +3961,7 @@ fn emit_standard_topology(
     edge_vertices: &[[usize; 2]],
     point_assignment: &[usize],
     topology: &crate::families::standard::topology::StandardTopology,
-    native_edge_supports: &HashMap<u32, StandardEdgeSupport>,
+    native_edge_supports: &[Option<StandardEdgeSupport>],
     limit_curve_bindings: &[Option<StandardLimitCurveBinding>],
     limit_curves: &[NurbsCurve],
 ) {
@@ -3962,15 +3970,18 @@ fn emit_standard_topology(
     {
         let start_point = point_assignment[logical_vertices[0]];
         let end_point = point_assignment[logical_vertices[1]];
-        let native_support = native_edge_supports.get(&support.tag).filter(|native| {
-            standard_native_support_endpoint_pair(
-                native,
-                &ir.model.points,
-                &[start_point, end_point],
-                Some([start_point, end_point]),
-            )
-            .is_some()
-        });
+        let native_support = native_edge_supports
+            .get(edge_index)
+            .and_then(Option::as_ref)
+            .filter(|native| {
+                standard_native_support_endpoint_pair(
+                    native,
+                    &ir.model.points,
+                    &[start_point, end_point],
+                    Some([start_point, end_point]),
+                )
+                .is_some()
+            });
         let (curve, param_range) = build_standard_edge_curve(
             ir,
             annotations,
@@ -4026,13 +4037,35 @@ fn emit_standard_topology(
         .collect::<HashMap<_, _>>();
     let mut edge_coedges = vec![Vec::new(); ir.model.edges.len()];
     for (face_index, face_topology) in topology.faces().iter().enumerate() {
+        let boundary_roles = standard_boundary_roles(
+            ir,
+            bindings,
+            surface_indices,
+            topology,
+            face_index,
+            point_assignment,
+        );
         for (loop_index, boundary) in face_topology.boundaries.iter().enumerate() {
             let loop_id = LoopId(format!("catia:standard:loop#{face_index}:{loop_index}"));
+            let boundary_role = boundary_roles.get(loop_index).copied().unwrap_or_default();
             let coedge_ids: Vec<CoedgeId> = (0..boundary.coedges.len())
                 .map(|coedge_index| {
                     CoedgeId(format!(
                         "catia:standard:coedge#{face_index}:{loop_index}:{coedge_index}"
                     ))
+                })
+                .collect();
+            let vertex_uses: Vec<VertexUse> = boundary
+                .coedges
+                .iter()
+                .enumerate()
+                .map(|(coedge_index, edge_use)| VertexUse {
+                    vertex: VertexId(format!(
+                        "catia:standard:v#{}",
+                        point_assignment[edge_use.end_vertex]
+                    )),
+                    after: Some(coedge_ids[coedge_index].clone()),
+                    pcurves: Vec::new(),
                 })
                 .collect();
             for (coedge_index, edge_use) in boundary.coedges.iter().enumerate() {
@@ -4077,7 +4110,7 @@ fn emit_standard_topology(
                         fit_tolerance: None,
                         native_tail_flags: None,
                     });
-                    id
+                    (id, range)
                 });
                 let arena_index = ir.model.coedges.len();
                 edge_coedges[edge_use.edge_row].push(arena_index);
@@ -4117,10 +4150,10 @@ fn emit_standard_topology(
                         Sense::Forward
                     },
                     pcurves: pcurve_id
-                        .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
+                        .map(|(pcurve, range)| cadmpeg_ir::topology::PcurveUse {
                             pcurve,
                             isoparametric: None,
-                            parameter_range: None,
+                            parameter_range: edge_use.reversed.then_some([range[1], range[0]]),
                         })
                         .into_iter()
                         .collect(),
@@ -4138,13 +4171,17 @@ fn emit_standard_topology(
             );
             annotations
                 .derived(&loop_id, "face")
-                .derived(&loop_id, "coedges");
+                .derived(&loop_id, "coedges")
+                .derived(&loop_id, "vertex_uses");
+            if boundary_role != LoopBoundaryRole::Unspecified {
+                annotations.derived(&loop_id, "boundary_role");
+            }
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: FaceId(format!("catia:standard:face#{face_index}")),
-                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                boundary_role,
                 coedges: coedge_ids,
-                vertex_uses: Vec::new(),
+                vertex_uses,
             });
             ir.model.faces[face_index].loops.push(loop_id);
         }
@@ -4414,13 +4451,316 @@ where
 
 /// Bind curve branches when their surviving endpoint relation and serialized
 /// cardinality establish corresponding allocation ranks.
-pub(crate) fn bind_ordered_standard_curve_branches(
+#[cfg(test)]
+fn bind_ordered_standard_curve_branches(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     candidates: &mut [Vec<[usize; 2]>],
+) {
+    bind_ordered_standard_curve_branches_with_focus(supports, candidates, None);
+}
+
+#[cfg(test)]
+fn bind_ordered_standard_curve_branches_for_group(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    candidates: &mut [Vec<[usize; 2]>],
+    group: &[usize],
+) {
+    let focused_edges = group.iter().copied().collect::<HashSet<_>>();
+    bind_ordered_standard_curve_branches_with_focus(supports, candidates, Some(&focused_edges));
+}
+
+/// Apply the ranked-family phases to one branch group without materializing a
+/// full candidate matrix for every group. The focused helper above is kept for
+/// the standalone tests and for the general all-edge binding path; the mesh
+/// solver supplies one group at a time and only needs the line/B-spline phases.
+fn bind_standard_curve_branch_group(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    candidates: &mut [Vec<[usize; 2]>],
+    group: &[usize],
+    all_candidates: &[Vec<[usize; 2]>],
+    assignment: &[Option<[usize; 2]>],
+) {
+    if supports.len() != all_candidates.len()
+        || supports.len() != assignment.len()
+        || candidates.len() != group.len()
+        || group.len() < 2
+    {
+        return;
+    }
+    let is_ranked_family =
+        |geometry: &crate::families::standard::records::StandardCurveGeometry| {
+            matches!(
+                geometry,
+                crate::families::standard::records::StandardCurveGeometry::Line
+                    | crate::families::standard::records::StandardCurveGeometry::Bspline
+            )
+        };
+    let same_ranked_family =
+        |left: &crate::families::standard::records::StandardCurveGeometry,
+         right: &crate::families::standard::records::StandardCurveGeometry| {
+            is_ranked_family(left) && std::mem::discriminant(left) == std::mem::discriminant(right)
+        };
+    let normalize = |pairs: &[[usize; 2]]| {
+        let mut pairs = pairs
+            .iter()
+            .copied()
+            .map(|mut pair| {
+                pair.sort_unstable();
+                pair
+            })
+            .collect::<Vec<_>>();
+        pairs.sort_unstable();
+        pairs.dedup();
+        pairs
+    };
+    let positions = group
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(position, edge)| (edge, position))
+        .collect::<HashMap<_, _>>();
+    if group.windows(2).any(|edges| edges[0] >= edges[1]) {
+        return;
+    }
+    if group.iter().any(|edge| *edge >= supports.len()) {
+        return;
+    }
+    let mut faces = supports[group[0]].faces;
+    faces.sort_unstable();
+    if group.iter().any(|edge| {
+        *edge >= supports.len() || !is_ranked_family(&supports[*edge].geometry) || {
+            let mut candidate_faces = supports[*edge].faces;
+            candidate_faces.sort_unstable();
+            candidate_faces != faces
+        }
+    }) {
+        return;
+    }
+
+    let fixed_relations =
+        |normalized: &[Vec<[usize; 2]>], excluded: &HashSet<usize>, vertices: &HashSet<usize>| {
+            (0..supports.len())
+                .filter_map(|edge| {
+                    if excluded.contains(&edge) {
+                        return None;
+                    }
+                    let pair = if let Some(position) = positions.get(&edge) {
+                        (normalized[*position].len() == 1).then_some(normalized[*position][0])
+                    } else {
+                        assignment[edge].or_else(|| {
+                            all_candidates[edge]
+                                .first()
+                                .copied()
+                                .filter(|_| all_candidates[edge].len() == 1)
+                        })
+                    }?;
+                    if !supports[edge].faces.iter().any(|face| faces.contains(face))
+                        || !pair.iter().all(|point| vertices.contains(point))
+                    {
+                        return None;
+                    }
+                    let mut pair = pair;
+                    pair.sort_unstable();
+                    Some(pair)
+                })
+                .collect::<HashSet<_>>()
+        };
+
+    let mut grouped = vec![false; group.len()];
+    let mut normalized = candidates
+        .iter()
+        .map(|pairs| normalize(pairs))
+        .collect::<Vec<_>>();
+    for first_position in 0..group.len() {
+        if grouped[first_position] || normalized[first_position].len() < 4 {
+            continue;
+        }
+        let first = group[first_position];
+        let edges = (first_position..group.len())
+            .filter(|position| {
+                let edge = group[*position];
+                !grouped[*position]
+                    && same_ranked_family(&supports[edge].geometry, &supports[first].geometry)
+                    && {
+                        let mut candidate_faces = supports[edge].faces;
+                        candidate_faces.sort_unstable();
+                        candidate_faces == faces
+                    }
+                    && normalized[*position] == normalized[first_position]
+            })
+            .map(|position| group[position])
+            .collect::<Vec<_>>();
+        let branch_count = edges.len();
+        if branch_count < 2 {
+            continue;
+        }
+        let vertices = normalized[first_position]
+            .iter()
+            .flatten()
+            .copied()
+            .collect::<HashSet<_>>();
+        let excluded = edges.iter().copied().collect::<HashSet<_>>();
+        let fixed_relations = fixed_relations(&normalized, &excluded, &vertices);
+        let relation = normalized[first_position]
+            .iter()
+            .copied()
+            .filter(|pair| !fixed_relations.contains(pair))
+            .collect::<Vec<_>>();
+        let Some(sides) = bipartite_relation_sides(relation.iter().copied()) else {
+            continue;
+        };
+        let ranked_side = match [
+            sides[0].len() == branch_count,
+            sides[1].len() == branch_count,
+        ] {
+            [true, true] => None,
+            [true, false] => Some(0),
+            [false, true] => Some(1),
+            [false, false] => continue,
+        };
+        if sides[0]
+            .len()
+            .checked_mul(sides[1].len())
+            .is_none_or(|count| relation.len() != count)
+        {
+            continue;
+        }
+        let cross_relations = sides[0]
+            .iter()
+            .flat_map(|left| {
+                sides[1].iter().map(move |right| {
+                    let mut pair = [*left, *right];
+                    pair.sort_unstable();
+                    pair
+                })
+            })
+            .collect::<HashSet<_>>();
+        if relation.iter().copied().collect::<HashSet<_>>() != cross_relations
+            || normalized[first_position]
+                .iter()
+                .any(|pair| !cross_relations.contains(pair) && !fixed_relations.contains(pair))
+        {
+            continue;
+        }
+        for (rank, edge) in edges.into_iter().enumerate() {
+            let position = positions[&edge];
+            candidates[position] = ranked_side.map_or_else(
+                || vec![[sides[0][rank], sides[1][rank]]],
+                |side| {
+                    normalized[first_position]
+                        .iter()
+                        .copied()
+                        .filter(|pair| pair.contains(&sides[side][rank]))
+                        .collect()
+                },
+            );
+            grouped[position] = true;
+        }
+    }
+
+    normalized = candidates.iter().map(|pairs| normalize(pairs)).collect();
+    for first_position in 0..group.len() {
+        if grouped[first_position] || normalized[first_position].len() < 2 {
+            continue;
+        }
+        let first = group[first_position];
+        let edges = group
+            .iter()
+            .enumerate()
+            .filter(|(position, edge)| {
+                !grouped[*position]
+                    && same_ranked_family(&supports[**edge].geometry, &supports[first].geometry)
+                    && {
+                        let mut candidate_faces = supports[**edge].faces;
+                        candidate_faces.sort_unstable();
+                        candidate_faces == faces
+                    }
+                    && normalized[*position].len() >= 2
+            })
+            .map(|(_, edge)| *edge)
+            .collect::<Vec<_>>();
+        let branch_count = edges.len();
+        if edges.first() != Some(&first) || branch_count < 2 {
+            continue;
+        }
+        let vertices = edges
+            .iter()
+            .flat_map(|edge| normalized[positions[edge]].iter().flatten().copied())
+            .collect::<HashSet<_>>();
+        let excluded = edges.iter().copied().collect::<HashSet<_>>();
+        let fixed_relations = fixed_relations(&normalized, &excluded, &vertices);
+        let anchored = edges
+            .iter()
+            .map(|edge| {
+                let position = positions[edge];
+                let relation = normalized[position]
+                    .iter()
+                    .copied()
+                    .filter(|pair| !fixed_relations.contains(pair))
+                    .collect::<Vec<_>>();
+                let anchor = relation
+                    .first()?
+                    .iter()
+                    .copied()
+                    .find(|point| relation.iter().all(|pair| pair.contains(point)))?;
+                let mut opposite = relation
+                    .iter()
+                    .map(|pair| if pair[0] == anchor { pair[1] } else { pair[0] })
+                    .collect::<Vec<_>>();
+                opposite.sort_unstable();
+                opposite.dedup();
+                (opposite.len() == relation.len()).then_some((anchor, opposite))
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(anchored) = anchored else {
+            continue;
+        };
+        let anchors = anchored
+            .iter()
+            .map(|(anchor, _)| *anchor)
+            .collect::<Vec<_>>();
+        if anchors.len() != branch_count
+            || anchors.windows(2).any(|pair| pair[0] == pair[1])
+            || anchored
+                .iter()
+                .any(|(_, opposite)| opposite != &anchored[0].1)
+            || anchored[0].1.len() != branch_count
+            || anchors.iter().any(|anchor| anchored[0].1.contains(anchor))
+        {
+            continue;
+        }
+        let diagonal = edges
+            .iter()
+            .enumerate()
+            .map(|(rank, edge)| {
+                let mut pair = [anchors[rank], anchored[0].1[rank]];
+                pair.sort_unstable();
+                let position = positions[edge];
+                normalized[position]
+                    .contains(&pair)
+                    .then_some((position, pair))
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(diagonal) = diagonal else {
+            continue;
+        };
+        for (position, pair) in diagonal {
+            candidates[position] = vec![pair];
+            grouped[position] = true;
+        }
+    }
+}
+
+#[cfg(test)]
+fn bind_ordered_standard_curve_branches_with_focus(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    candidates: &mut [Vec<[usize; 2]>],
+    focused_edges: Option<&HashSet<usize>>,
 ) {
     if supports.len() != candidates.len() {
         return;
     }
+    let is_focused = |edge: usize| focused_edges.is_none_or(|edges| edges.contains(&edge));
     let normalize = |candidates: &[Vec<[usize; 2]>]| {
         candidates
             .iter()
@@ -4456,6 +4796,7 @@ pub(crate) fn bind_ordered_standard_curve_branches(
     let mut grouped = vec![false; supports.len()];
     for first in 0..supports.len() {
         if grouped[first]
+            || !is_focused(first)
             || !matches!(
                 supports[first].geometry,
                 crate::families::standard::records::StandardCurveGeometry::Circle { .. }
@@ -4483,7 +4824,8 @@ pub(crate) fn bind_ordered_standard_curve_branches(
                     ) => candidate_center == center && candidate_radius == radius,
                     _ => false,
                 };
-                !grouped[*edge]
+                is_focused(*edge)
+                    && !grouped[*edge]
                     && same_circle
                     && candidate_faces == faces
                     && normalized[*edge] == normalized[first]
@@ -4500,6 +4842,7 @@ pub(crate) fn bind_ordered_standard_curve_branches(
     let normalized = normalize(candidates);
     for first in 0..supports.len() {
         if grouped[first]
+            || !is_focused(first)
             || !matches!(
                 supports[first].geometry,
                 crate::families::standard::records::StandardCurveGeometry::Circle { .. }
@@ -4523,7 +4866,10 @@ pub(crate) fn bind_ordered_standard_curve_branches(
                     ) => candidate_center == center && candidate_radius == radius,
                     _ => false,
                 };
-                !grouped[*edge] && same_circle && normalized[*edge] == normalized[first]
+                is_focused(*edge)
+                    && !grouped[*edge]
+                    && same_circle
+                    && normalized[*edge] == normalized[first]
             })
             .collect::<Vec<_>>();
         if edges.len() != normalized[first].len() {
@@ -4571,6 +4917,7 @@ pub(crate) fn bind_ordered_standard_curve_branches(
     let normalized = normalize(candidates);
     for first in 0..supports.len() {
         if grouped[first]
+            || !is_focused(first)
             || !is_ranked_family(&supports[first].geometry)
             || normalized[first].len() < 4
         {
@@ -4582,7 +4929,8 @@ pub(crate) fn bind_ordered_standard_curve_branches(
             .filter(|edge| {
                 let mut candidate_faces = supports[*edge].faces;
                 candidate_faces.sort_unstable();
-                !grouped[*edge]
+                is_focused(*edge)
+                    && !grouped[*edge]
                     && same_ranked_family(&supports[*edge].geometry, &supports[first].geometry)
                     && candidate_faces == faces
                     && normalized[*edge] == normalized[first]
@@ -4669,6 +5017,7 @@ pub(crate) fn bind_ordered_standard_curve_branches(
     let normalized = normalize(candidates);
     for first in 0..supports.len() {
         if grouped[first]
+            || !is_focused(first)
             || !is_ranked_family(&supports[first].geometry)
             || normalized[first].len() < 2
         {
@@ -4680,7 +5029,8 @@ pub(crate) fn bind_ordered_standard_curve_branches(
             .filter(|edge| {
                 let mut candidate_faces = supports[*edge].faces;
                 candidate_faces.sort_unstable();
-                !grouped[*edge]
+                is_focused(*edge)
+                    && !grouped[*edge]
                     && same_ranked_family(&supports[*edge].geometry, &supports[first].geometry)
                     && candidate_faces == faces
                     && normalized[*edge].len() >= 2
@@ -4899,9 +5249,19 @@ fn standard_curve_branch_candidates_after_partial_assignment(
     candidates: &[Vec<[usize; 2]>],
     groups: &[StandardCurveBranchGroup],
     assignment: &[Option<[usize; 2]>],
+    budget: Option<&WorkBudget<'_>>,
 ) -> Option<Vec<Vec<[usize; 2]>>> {
     if supports.len() != candidates.len() || candidates.len() != assignment.len() {
         return None;
+    }
+    if let Some(budget) = budget {
+        let candidate_count = candidates.iter().map(Vec::len).sum::<usize>();
+        let work = groups
+            .len()
+            .checked_mul(supports.len().saturating_add(candidate_count))?;
+        if !budget.charge_by(work) {
+            return None;
+        }
     }
     let mut constrained = candidates.to_vec();
     for StandardCurveBranchGroup {
@@ -4909,14 +5269,6 @@ fn standard_curve_branch_candidates_after_partial_assignment(
         faces,
     } in groups
     {
-        let mut group_constrained = candidates.to_vec();
-        for (edge, pair) in assignment.iter().copied().enumerate() {
-            if !group.contains(&edge) {
-                if let Some(pair) = pair {
-                    group_constrained[edge] = vec![pair];
-                }
-            }
-        }
         let frontiers = faces.map(|face| {
             let complete = supports.iter().enumerate().all(|(edge, support)| {
                 group.contains(&edge)
@@ -4945,21 +5297,32 @@ fn standard_curve_branch_candidates_after_partial_assignment(
         if left != right || left.len() != group.len().saturating_mul(2) {
             continue;
         }
-        for &edge in group {
-            group_constrained[edge].retain(|pair| pair.iter().all(|point| left.contains(point)));
-        }
-        bind_ordered_standard_curve_branches(supports, &mut group_constrained);
-        if group.iter().copied().any(|edge| {
-            assignment[edge].is_some_and(|assigned| {
-                !group_constrained[edge]
+        let mut group_constrained = group
+            .iter()
+            .map(|edge| {
+                let mut candidates = candidates[*edge].clone();
+                candidates.retain(|pair| pair.iter().all(|point| left.contains(point)));
+                candidates
+            })
+            .collect::<Vec<_>>();
+        bind_standard_curve_branch_group(
+            supports,
+            &mut group_constrained,
+            group,
+            candidates,
+            assignment,
+        );
+        if group.iter().enumerate().any(|(position, edge)| {
+            assignment[*edge].is_some_and(|assigned| {
+                !group_constrained[position]
                     .iter()
                     .any(|candidate| missing_edge::same_unordered_pair(*candidate, assigned))
             })
         }) {
             return None;
         }
-        for &edge in group {
-            constrained[edge].clone_from(&group_constrained[edge]);
+        for (position, edge) in group.iter().enumerate() {
+            constrained[*edge].clone_from(&group_constrained[position]);
         }
     }
     Some(constrained)
@@ -4970,9 +5333,10 @@ fn standard_curve_branch_assignment_is_ranked(
     candidates: &[Vec<[usize; 2]>],
     groups: &[StandardCurveBranchGroup],
     assignment: &[Option<[usize; 2]>],
+    budget: Option<&WorkBudget<'_>>,
 ) -> bool {
     standard_curve_branch_candidates_after_partial_assignment(
-        supports, candidates, groups, assignment,
+        supports, candidates, groups, assignment, budget,
     )
     .is_some()
 }
@@ -5007,7 +5371,7 @@ pub(crate) fn standard_circle_endpoint_candidates(
 /// matches take precedence; otherwise an unused native edge may contribute
 /// only when its logical point pair is unique inside the row's geometric domain.
 pub(crate) fn standard_native_graph_endpoint_pairs(
-    source: &[u8],
+    graph: Option<&crate::families::b5::graph::B5Graph>,
     supports: &[crate::families::standard::records::StandardCurveSupport],
     native_edges: &BTreeMap<u32, [u32; 2]>,
     points: &[Point],
@@ -5016,7 +5380,7 @@ pub(crate) fn standard_native_graph_endpoint_pairs(
     if supports.len() != endpoint_candidates.len() {
         return None;
     }
-    let graph = crate::families::b5::graph::parse(source)?;
+    let graph = graph?;
     let identity_points = unique_native_identity_points(
         &graph.logical_vertex_refs,
         &graph.logical_vertex_points,
@@ -5059,6 +5423,100 @@ pub(crate) fn standard_native_graph_endpoint_pairs(
             })
             .collect(),
     )
+}
+
+/// Resolve native two-sided edge carriers for standard rows. An exact native
+/// edge identity wins. Without that identity, endpoint-roster incidence may
+/// bind a carrier only when it leaves one unused native edge identity; a
+/// repeated endpoint pair remains unresolved because it does not select a
+/// physical carrier.
+pub(crate) fn standard_native_support_edge_ids(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    native_edges: &BTreeMap<u32, [u32; 2]>,
+    native_support_ids: &HashSet<u32>,
+    vertex_roster: Option<&[u32]>,
+    endpoint_candidates: &[Vec<usize>],
+) -> Vec<Option<u32>> {
+    if supports.len() != endpoint_candidates.len() {
+        return vec![None; supports.len()];
+    }
+
+    let exact_edge_ids = supports
+        .iter()
+        .filter_map(|support| {
+            (native_edges.contains_key(&support.tag) || native_support_ids.contains(&support.tag))
+                .then_some(support.tag)
+        })
+        .collect::<HashSet<_>>();
+    let mut exact_row_counts = HashMap::<u32, usize>::new();
+    for support in supports {
+        if native_edges.contains_key(&support.tag) || native_support_ids.contains(&support.tag) {
+            *exact_row_counts.entry(support.tag).or_default() += 1;
+        }
+    }
+
+    let mut bindings = supports
+        .iter()
+        .map(|support| {
+            (native_support_ids.contains(&support.tag)
+                && exact_row_counts.get(&support.tag) == Some(&1))
+            .then_some(support.tag)
+        })
+        .collect::<Vec<_>>();
+    let mut fallback_candidates = vec![Vec::<u32>::new(); supports.len()];
+
+    if let Some(vertex_roster) = vertex_roster {
+        let point_by_identity = vertex_roster
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(point, identity)| (identity, point))
+            .collect::<HashMap<_, _>>();
+        for (row, (support, candidates)) in supports.iter().zip(endpoint_candidates).enumerate() {
+            if native_edges.contains_key(&support.tag) || native_support_ids.contains(&support.tag)
+            {
+                continue;
+            }
+            for (&edge, [start_identity, end_identity]) in native_edges {
+                if exact_edge_ids.contains(&edge) || !native_support_ids.contains(&edge) {
+                    continue;
+                }
+                let Some(&start) = point_by_identity.get(start_identity) else {
+                    continue;
+                };
+                let Some(&end) = point_by_identity.get(end_identity) else {
+                    continue;
+                };
+                if candidates.contains(&start) && candidates.contains(&end) {
+                    fallback_candidates[row].push(edge);
+                }
+            }
+        }
+    }
+
+    let mut used = exact_edge_ids;
+    loop {
+        let mut changed = false;
+        for row in 0..bindings.len() {
+            if bindings[row].is_some() {
+                continue;
+            }
+            let available = fallback_candidates[row]
+                .iter()
+                .copied()
+                .filter(|edge| !used.contains(edge))
+                .collect::<Vec<_>>();
+            if let [edge] = available.as_slice() {
+                bindings[row] = Some(*edge);
+                used.insert(*edge);
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    bindings
 }
 
 /// Return the sole distinct unordered native pair contained in a geometric
@@ -5278,96 +5736,38 @@ pub(crate) fn intersection_line_direction(
     }
 }
 
-pub(crate) fn standard_plane_normal_from_circle_centers(
-    supports: &[crate::families::standard::records::StandardCurveSupport],
-    face: usize,
-) -> Option<[f64; 3]> {
-    const TOLERANCE: f64 = 1e-5;
-
-    let mut centers = supports
-        .iter()
-        .filter(|support| support.faces.contains(&face))
-        .filter_map(|support| match &support.geometry {
-            crate::families::standard::records::StandardCurveGeometry::Circle {
-                center, ..
-            } => Some(*center),
-            crate::families::standard::records::StandardCurveGeometry::Line
-            | crate::families::standard::records::StandardCurveGeometry::Bspline => None,
-        })
-        .collect::<Vec<_>>();
-    let mut distinct: Vec<Point3> = Vec::new();
-    for center in centers {
-        if !distinct
-            .iter()
-            .any(|stored| (*stored).distance_squared(center) <= TOLERANCE.powi(2))
-        {
-            distinct.push(center);
-        }
-    }
-    centers = distinct;
-    let origin = *centers.first()?;
-    let normal = centers[1..]
-        .iter()
-        .enumerate()
-        .flat_map(|(left, &left_center)| {
-            centers[left + 2..].iter().map(move |&right_center| {
-                left_center
-                    .vector_from(origin)
-                    .cross(right_center.vector_from(origin))
-            })
-        })
-        .find(|normal| (*normal).norm() > TOLERANCE)?;
-    let norm = normal.norm();
-    let mut normal = [normal.x / norm, normal.y / norm, normal.z / norm];
-    if centers.iter().any(|center| {
-        let offset = (*center).vector_from(origin);
-        (offset.x * normal[0] + offset.y * normal[1] + offset.z * normal[2]).abs() > TOLERANCE
-    }) {
-        return None;
-    }
-    if normal
-        .iter()
-        .find(|component| component.abs() > TOLERANCE)
-        .is_some_and(|component| *component < 0.0)
-    {
-        normal = normal.map(|component| -component);
-    }
-    Some(normal)
-}
-
-pub(crate) fn standard_plane_normal_from_adjacent_circle_carriers(
-    supports: &[crate::families::standard::records::StandardCurveSupport],
-    surfaces: &[Option<SurfaceGeometry>],
-    face: usize,
-) -> Option<[f64; 3]> {
-    let mut axes = supports.iter().filter_map(|support| {
-        let crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } =
-            &support.geometry
+/// Collect plane normals only from trim-packet frame vectors, which carry the
+/// stored normal's signed sense. A target with conflicting frame vectors stays
+/// unresolved.
+pub(crate) fn standard_plane_normals_from_face_frames(
+    records: &[crate::families::standard::records::StandardSurfaceRecord],
+    face_frame_vectors: &[Option<[f64; 3]>],
+) -> HashMap<u32, [f64; 3]> {
+    let mut candidates = HashMap::<u32, Option<[f64; 3]>>::new();
+    for (face, record) in records.iter().enumerate() {
+        let crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix) = record
         else {
-            return None;
+            continue;
         };
-        let adjacent = if support.faces[0] == face {
-            support.faces[1]
-        } else if support.faces[1] == face {
-            support.faces[0]
-        } else {
-            return None;
+        if prefix.kind != 0x32 {
+            continue;
+        }
+        let Some(normal) = face_frame_vectors.get(face).copied().flatten() else {
+            continue;
         };
-        circle_axis_from_carrier(*center, *radius, surfaces.get(adjacent)?.as_ref()?)
-    });
-    let axis = axes.next()?;
-    if axes.any(|other| axis.dot(other).abs() < 0.9999) {
-        return None;
+        candidates
+            .entry(prefix.target)
+            .and_modify(|stored| {
+                if stored.is_some_and(|stored| stored != normal) {
+                    *stored = None;
+                }
+            })
+            .or_insert(Some(normal));
     }
-    let mut normal = [axis.x, axis.y, axis.z];
-    if normal
-        .iter()
-        .find(|component| component.abs() > 1e-5)
-        .is_some_and(|component| *component < 0.0)
-    {
-        normal = normal.map(|component| -component);
-    }
-    Some(normal)
+    candidates
+        .into_iter()
+        .filter_map(|(target, normal)| normal.map(|normal| (target, normal)))
+        .collect()
 }
 
 pub(crate) fn face_surface<'a>(
@@ -5464,13 +5864,36 @@ pub(crate) fn standard_pcurve_geometry(
     }
 
     if let (
-        SurfaceGeometry::Plane { .. },
+        SurfaceGeometry::Plane { normal, .. },
         crate::families::standard::records::StandardCurveGeometry::Circle { center, radius },
     ) = (surface, &support.geometry)
     {
+        const CIRCLE_TOLERANCE: f64 = 2e-3;
+        let contained_carrier = point_on_surface(*center, surface)
+            && (start.distance(*center) - *radius).abs() <= CIRCLE_TOLERANCE
+            && (end.distance(*center) - *radius).abs() <= CIRCLE_TOLERANCE
+            && edge_curve.is_none_or(|curve| {
+                matches!(
+                    curve,
+                    CurveGeometry::Circle {
+                        axis,
+                        radius: curve_radius,
+                        ..
+                    } if axis.cross(*normal).norm() <= CIRCLE_TOLERANCE
+                        && (*curve_radius - *radius).abs() <= CIRCLE_TOLERANCE
+                )
+            });
+        if !contained_carrier {
+            return None;
+        }
         let center_uv = analytic_surface_uv(surface, *center)?;
-        let range = uv.map(|point| (point.v - center_uv.v).atan2(point.u - center_uv.u));
-        let range = ordered_range([range[0], unwrap_angle(range[1], range[0])]);
+        let range = if start == end {
+            let angle = (uv[0].v - center_uv.v).atan2(uv[0].u - center_uv.u);
+            [angle, angle + std::f64::consts::TAU]
+        } else {
+            let range = uv.map(|point| (point.v - center_uv.v).atan2(point.u - center_uv.u));
+            ordered_range([range[0], unwrap_angle(range[1], range[0])])
+        };
         let geometry = rational_pcurve_arc([center_uv.u, center_uv.v], *radius, range)?;
         return Some((geometry, range));
     }
@@ -5862,50 +6285,58 @@ pub(crate) fn build_standard_edge_curve(
             {
                 return (None, None);
             }
-            let candidates = [axis, axis.scale(-1.0)]
-                .into_iter()
-                .filter_map(|axis| {
-                    let ref_direction = cadmpeg_ir::geometry::derive_reference_direction(axis);
-                    let range = standard_circle_param_range(
-                        ir,
-                        bindings,
-                        surface_indices,
-                        brep,
-                        support,
-                        *center,
-                        *radius,
+            let (axis, ref_direction, param_range) = if points[0] == points[1] {
+                let Some((axis, ref_direction)) = full_circle_frame(*center, *radius, axis, start)
+                else {
+                    return (None, None);
+                };
+                (axis, ref_direction, Some([0.0, std::f64::consts::TAU]))
+            } else {
+                let candidates = [axis, axis.scale(-1.0)]
+                    .into_iter()
+                    .filter_map(|axis| {
+                        let ref_direction = cadmpeg_ir::geometry::derive_reference_direction(axis);
+                        let range = standard_circle_param_range(
+                            ir,
+                            bindings,
+                            surface_indices,
+                            brep,
+                            support,
+                            *center,
+                            *radius,
+                            axis,
+                            ref_direction,
+                            start,
+                            end,
+                        )
+                        .or_else(|| {
+                            native_support.and_then(|native| {
+                                native_support_circle_param_range(
+                                    native,
+                                    *center,
+                                    *radius,
+                                    axis,
+                                    ref_direction,
+                                    start,
+                                    end,
+                                )
+                            })
+                        })?;
+                        Some((
+                            axis,
+                            ref_direction,
+                            crate::nurbs::canonical_periodic_range(range)?,
+                        ))
+                    })
+                    .collect::<Vec<_>>();
+                match candidates.as_slice() {
+                    [(axis, reference, range)] => (*axis, *reference, Some(*range)),
+                    _ => (
                         axis,
-                        ref_direction,
-                        start,
-                        end,
-                    )
-                    .or_else(|| {
-                        native_support.and_then(|native| {
-                            native_support_circle_param_range(
-                                native,
-                                *center,
-                                *radius,
-                                axis,
-                                ref_direction,
-                                start,
-                                end,
-                            )
-                        })
-                    })?;
-                    Some((
-                        axis,
-                        ref_direction,
-                        crate::nurbs::canonical_periodic_range(range)?,
-                    ))
-                })
-                .collect::<Vec<_>>();
-            let (axis, ref_direction, param_range) = match candidates.as_slice() {
-                [(axis, reference, range)] => (*axis, *reference, Some(*range)),
-                _ => (
-                    axis,
-                    cadmpeg_ir::geometry::derive_reference_direction(axis),
-                    None,
-                ),
+                        cadmpeg_ir::geometry::derive_reference_direction(axis),
+                        None,
+                    ),
+                }
             };
             (
                 CurveGeometry::Circle {
@@ -6364,8 +6795,11 @@ pub(crate) fn attach_standard_circles(
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
     brep: &[u8],
+    edge_count: Option<usize>,
 ) {
-    for circle in crate::families::standard::records::standard_circles(brep, bindings.len()) {
+    for circle in
+        crate::families::standard::records::standard_circles(brep, bindings.len(), edge_count)
+    {
         let axes: Vec<Vector3> = circle
             .faces
             .iter()
@@ -6431,6 +6865,27 @@ fn circle_axis_from_endpoints(
     (normal.norm() > 1e-6 * start_length * end_length)
         .then(|| unit_vector(normal))
         .flatten()
+}
+
+fn full_circle_frame(
+    center: Point3,
+    radius: f64,
+    axis: Vector3,
+    start: Point3,
+) -> Option<(Vector3, Vector3)> {
+    const TOLERANCE: f64 = 2e-3;
+
+    if !radius.is_finite() || radius <= 0.0 {
+        return None;
+    }
+    let axis = unit_vector(axis)?;
+    let radial = start.vector_from(center);
+    let radial_length = radial.norm();
+    if !radial_length.is_finite() || (radial_length - radius).abs() > TOLERANCE {
+        return None;
+    }
+    let ref_direction = unit_vector(radial)?;
+    (axis.dot(ref_direction).abs() <= TOLERANCE).then_some((axis, ref_direction))
 }
 
 pub(crate) fn circle_axis_from_carrier(
@@ -6531,8 +6986,10 @@ pub(crate) fn attach_standard_lines(
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
     brep: &[u8],
+    edge_count: Option<usize>,
 ) {
-    for line in crate::families::standard::records::standard_lines(brep, bindings.len()) {
+    for line in crate::families::standard::records::standard_lines(brep, bindings.len(), edge_count)
+    {
         let Some((origin_a, normal_a)) = plane_for_face(ir, bindings, line.faces[0]) else {
             continue;
         };
@@ -6620,9 +7077,11 @@ mod route_tests {
         rational_pcurve_arc,
     };
     use crate::families::standard::decode::{
-        analytic_surface_uv, bind_ordered_standard_curve_branches, build_standard_edge_curve,
-        circle_axis_from_endpoints, circular_ranges_are_nonoverlapping_or_coincident,
-        combine_propagated_endpoint_pairs, corroborate_successor_endpoint_points,
+        analytic_surface_uv, bind_ordered_standard_curve_branches,
+        bind_ordered_standard_curve_branches_for_group, bind_standard_curve_branch_group,
+        build_standard_edge_curve, circle_axis_from_endpoints,
+        circular_ranges_are_nonoverlapping_or_coincident, combine_propagated_endpoint_pairs,
+        corroborate_successor_endpoint_points, emit_standard_topology,
         include_native_endpoint_pairs, intersection_line_direction, merge_native_endpoint_evidence,
         native_support_circle_param_range, plane_intersection_line, point_on_known_surface,
         point_on_standard_face, point_on_surface, resolve_standard_endpoint_pairs,
@@ -6632,8 +7091,7 @@ mod route_tests {
         standard_curve_branch_candidates_after_partial_assignment, standard_curve_branch_groups,
         standard_limit_curve_bindings, standard_native_support_endpoint_pair,
         standard_object_evidence_from_streams, standard_pcurve_geometry,
-        standard_plane_normal_from_adjacent_circle_carriers,
-        standard_plane_normal_from_circle_centers, standard_spline_line,
+        standard_plane_normals_from_face_frames, standard_spline_line,
         standard_successor_endpoint_pairs, standard_successor_endpoint_points,
         standard_surface_evidence, unique_native_identity_points, witness_arc_end,
         StandardEdgeSupport, StandardSurfaceProcedure,
@@ -6643,21 +7101,23 @@ mod route_tests {
     use crate::tests::{append_b5_record, b5_closed_triangle_stream, le_f64};
 
     use crate::families::standard::records::{
-        StandardCurveGeometry, StandardCurveSupport, StandardFaceBounds,
+        StandardCurveGeometry, StandardCurveSupport, StandardFaceBounds, StandardSurfaceRecord,
+        SurfacePrefix,
     };
 
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::{pcurve_uv, surface_point};
     use cadmpeg_ir::geometry::{
-        CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
-        ProceduralSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative,
-        RollingBallJetSite, Surface, SurfaceGeometry,
+        Curve, CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurve,
+        ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
+        RollingBallJetDerivative, RollingBallJetSite, Surface, SurfaceGeometry,
     };
-    use cadmpeg_ir::ids::{PointId, SurfaceId, VertexId};
+    use cadmpeg_ir::ids::{FaceId, PointId, ShellId, SurfaceId, VertexId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
-    use cadmpeg_ir::topology::{Point, Vertex};
+    use cadmpeg_ir::topology::{Face, Point, Sense, Vertex};
     use cadmpeg_ir::units::Units;
 
+    use cadmpeg_core::decode::WorkBudget;
     use cadmpeg_ir::AnnotationBuilder;
     use std::cell::Cell;
     use std::collections::BTreeMap;
@@ -6962,65 +7422,31 @@ mod route_tests {
     }
 
     #[test]
-    fn incident_circle_centers_determine_a_unique_plane_normal() {
-        let circle = |center| StandardCurveSupport {
-            pos: 0,
-            tag: 0,
-            faces: [2, 3],
-            geometry: StandardCurveGeometry::Circle {
-                center,
-                radius: 1.0,
-            },
+    fn standard_plane_normals_require_signed_face_frame_vectors() {
+        let plane = |target| {
+            StandardSurfaceRecord::Analytic(SurfacePrefix {
+                pos: 0,
+                target,
+                kind: 0x32,
+            })
         };
-        let mut supports = vec![
-            circle(Point3::new(0.0, 0.0, 2.0)),
-            circle(Point3::new(2.0, 0.0, 2.0)),
-            circle(Point3::new(0.0, 3.0, 2.0)),
-        ];
+        let records = vec![plane(10), plane(20), plane(30)];
 
+        assert!(standard_plane_normals_from_face_frames(&records, &[None, None, None]).is_empty());
         assert_eq!(
-            standard_plane_normal_from_circle_centers(&supports, 2),
-            Some([0.0, 0.0, 1.0])
-        );
-        supports.push(circle(Point3::new(1.0, 1.0, 2.5)));
-        assert!(standard_plane_normal_from_circle_centers(&supports, 2).is_none());
-    }
-
-    #[test]
-    fn adjacent_cone_latitudes_determine_a_cap_plane_normal() {
-        let cone = SurfaceGeometry::Cone {
-            origin: Point3::new(0.0, 0.0, 52.5),
-            axis: Vector3::new(0.0, 0.0, -1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 0.0,
-            ratio: 1.0,
-            half_angle: std::f64::consts::FRAC_PI_4,
-        };
-        let supports = vec![StandardCurveSupport {
-            pos: 0,
-            tag: 0,
-            faces: [2, 3],
-            geometry: StandardCurveGeometry::Circle {
-                center: Point3::new(0.0, 0.0, 50.0),
-                radius: 2.5,
-            },
-        }];
-        let surfaces = vec![None, None, None, Some(cone)];
-
-        assert_eq!(
-            standard_plane_normal_from_adjacent_circle_carriers(&supports, &surfaces, 2),
-            Some([0.0, 0.0, 1.0])
+            standard_plane_normals_from_face_frames(
+                &records,
+                &[Some([0.0, 0.0, 1.0]), None, Some([0.0, 0.0, -1.0])],
+            ),
+            HashMap::from([(10, [0.0, 0.0, 1.0]), (30, [0.0, 0.0, -1.0])]),
         );
 
-        let mut mismatched = supports;
-        let StandardCurveGeometry::Circle { radius, .. } = &mut mismatched[0].geometry else {
-            unreachable!()
-        };
-        *radius = 3.0;
-        assert!(
-            standard_plane_normal_from_adjacent_circle_carriers(&mismatched, &surfaces, 2)
-                .is_none()
-        );
+        let conflicting = vec![plane(10), plane(10)];
+        assert!(standard_plane_normals_from_face_frames(
+            &conflicting,
+            &[Some([0.0, 0.0, 1.0]), Some([0.0, 0.0, -1.0])],
+        )
+        .is_empty());
     }
 
     #[test]
@@ -7922,6 +8348,31 @@ mod route_tests {
     }
 
     #[test]
+    fn standard_spline_group_binding_does_not_rank_unfocused_groups() {
+        let supports = [10, 11, 20, 21].map(|tag| StandardCurveSupport {
+            pos: tag as usize,
+            tag,
+            faces: if tag < 20 { [1, 2] } else { [3, 4] },
+            geometry: StandardCurveGeometry::Bspline,
+        });
+        let unfocused_domain = vec![[0, 1], [0, 2], [3, 1], [3, 2]];
+        let focused_domain = vec![[4, 5], [4, 6], [7, 5], [7, 6]];
+        let mut candidates = [
+            unfocused_domain.clone(),
+            unfocused_domain.clone(),
+            focused_domain.clone(),
+            focused_domain,
+        ];
+
+        bind_ordered_standard_curve_branches_for_group(&supports, &mut candidates, &[2, 3]);
+
+        assert_eq!(candidates[0], unfocused_domain);
+        assert_eq!(candidates[1], unfocused_domain);
+        assert_eq!(candidates[2], vec![[4, 5]]);
+        assert_eq!(candidates[3], vec![[7, 6]]);
+    }
+
+    #[test]
     fn standard_line_rows_bind_complete_bipartite_domains_by_allocation_rank() {
         let supports = [10, 11].map(|tag| StandardCurveSupport {
             pos: tag as usize,
@@ -7935,6 +8386,92 @@ mod route_tests {
         bind_ordered_standard_curve_branches(&supports, &mut candidates);
 
         assert_eq!(candidates, [vec![[2, 8]], vec![[3, 9]]]);
+    }
+
+    #[test]
+    fn standard_line_rows_keep_complete_relation_before_face_frontiers() {
+        let supports = [10, 11].map(|tag| StandardCurveSupport {
+            pos: tag as usize,
+            tag,
+            faces: [3, 7],
+            geometry: StandardCurveGeometry::Line,
+        });
+        let domain = vec![[2, 8], [2, 9], [3, 8], [3, 9]];
+        let candidates = [domain.clone(), domain];
+        let groups = standard_curve_branch_groups(&supports, &candidates);
+        let assignment = [None, None];
+
+        let constrained = standard_curve_branch_candidates_after_partial_assignment(
+            &supports,
+            &candidates,
+            &groups,
+            &assignment,
+            None,
+        )
+        .expect("unresolved branch relation remains admissible");
+
+        assert_eq!(constrained, candidates);
+    }
+
+    #[test]
+    fn standard_branch_ranking_stops_when_its_work_budget_is_exhausted() {
+        let supports = [10, 11].map(|tag| StandardCurveSupport {
+            pos: tag as usize,
+            tag,
+            faces: [3, 7],
+            geometry: StandardCurveGeometry::Line,
+        });
+        let domain = vec![[2, 8], [2, 9], [3, 8], [3, 9]];
+        let candidates = [domain.clone(), domain];
+        let groups = standard_curve_branch_groups(&supports, &candidates);
+        let budget = WorkBudget::new(1);
+
+        assert!(standard_curve_branch_candidates_after_partial_assignment(
+            &supports,
+            &candidates,
+            &groups,
+            &[None, None],
+            Some(&budget),
+        )
+        .is_none());
+        assert!(budget.exhausted());
+    }
+
+    #[test]
+    fn standard_branch_group_binding_ignores_empty_unrelated_domains() {
+        let supports = [
+            StandardCurveSupport {
+                pos: 10,
+                tag: 10,
+                faces: [0, 1],
+                geometry: StandardCurveGeometry::Line,
+            },
+            StandardCurveSupport {
+                pos: 11,
+                tag: 11,
+                faces: [0, 1],
+                geometry: StandardCurveGeometry::Line,
+            },
+            StandardCurveSupport {
+                pos: 12,
+                tag: 12,
+                faces: [8, 9],
+                geometry: StandardCurveGeometry::Line,
+            },
+        ];
+        let domain = vec![[0, 2], [0, 3], [1, 2], [1, 3]];
+        let all_candidates = [domain.clone(), domain, Vec::new()];
+        let mut group_candidates = all_candidates[..2].to_vec();
+
+        bind_standard_curve_branch_group(
+            &supports,
+            &mut group_candidates,
+            &[0, 1],
+            &all_candidates,
+            &[None, None, None],
+        );
+
+        assert_eq!(group_candidates, [vec![[0, 2]], vec![[1, 3]]]);
     }
 
     #[test]
@@ -8121,18 +8658,21 @@ mod route_tests {
             &candidates,
             &groups,
             &ranked,
+            None,
         ));
         assert!(!standard_curve_branch_assignment_is_ranked(
             &supports,
             &candidates,
             &groups,
             &crossed,
+            None,
         ));
         assert!(standard_curve_branch_assignment_is_ranked(
             &supports,
             &candidates,
             &groups,
             &partial,
+            None,
         ));
     }
 
@@ -8169,13 +8709,15 @@ mod route_tests {
             &supports,
             &candidates,
             &groups,
-            &ranked
+            &ranked,
+            None,
         ));
         assert!(!standard_curve_branch_assignment_is_ranked(
             &supports,
             &candidates,
             &groups,
-            &crossed
+            &crossed,
+            None,
         ));
     }
 
@@ -8210,6 +8752,7 @@ mod route_tests {
             &candidates,
             &groups,
             &assignment,
+            None,
         )
         .expect("fixed frontiers establish a valid branch relation");
 
@@ -8667,6 +9210,315 @@ mod route_tests {
                 direction: cadmpeg_ir::math::Point2::new(3.0, 4.0),
             }
         );
+    }
+
+    #[test]
+    fn standard_emission_reverses_only_face_pcurve_use_range() {
+        for reversed in [false, true] {
+            let mut ir = CadIr::empty(Units::default());
+            ir.model.points.extend([
+                Point {
+                    id: PointId("point-0".into()),
+                    position: Point3::new(0.0, 0.0, 0.0),
+                    source_object: None,
+                },
+                Point {
+                    id: PointId("point-1".into()),
+                    position: Point3::new(1.0, 0.0, 0.0),
+                    source_object: None,
+                },
+            ]);
+            ir.model.surfaces.push(Surface {
+                id: SurfaceId("surface-0".into()),
+                geometry: SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
+            });
+            ir.model.faces.push(Face {
+                id: FaceId("catia:standard:face#0".into()),
+                shell: ShellId("shell-0".into()),
+                surface: SurfaceId("surface-0".into()),
+                sense: Sense::Forward,
+                loops: Vec::new(),
+                name: None,
+                color: None,
+                tolerance: None,
+            });
+            let bindings = [(SurfaceId("surface-0".into()), false, 0)];
+            let surface_indices = HashMap::from([(bindings[0].0.clone(), 0)]);
+            let supports = [StandardCurveSupport {
+                pos: 0,
+                tag: 1,
+                faces: [0, 0],
+                geometry: StandardCurveGeometry::Line,
+            }];
+            let topology = crate::families::standard::topology::StandardTopology {
+                faces: vec![crate::families::standard::topology::FaceTopology {
+                    boundaries: vec![crate::families::standard::topology::Boundary {
+                        coedges: vec![crate::families::standard::topology::CoedgeUse {
+                            edge_row: 0,
+                            reversed,
+                            start_vertex: 0,
+                            end_vertex: 1,
+                        }],
+                    }],
+                }],
+                edge_rows: vec![crate::families::standard::topology::EdgeRow {
+                    kind: 1,
+                    handles: vec![0, 1],
+                    boundary_layout:
+                        crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun,
+                }],
+                vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+                logical_vertex_count: 2,
+            };
+            let mut annotations = AnnotationBuilder::new();
+            emit_standard_topology(
+                &mut ir,
+                &mut annotations,
+                &bindings,
+                &[],
+                &surface_indices,
+                &supports,
+                &[[0, 1]],
+                &[0, 1],
+                &topology,
+                &[None],
+                &[None],
+                &[],
+            );
+
+            let [loop_] = ir.model.loops.as_slice() else {
+                panic!("standard edge emission must create one loop");
+            };
+            let [vertex_use] = loop_.vertex_uses.as_slice() else {
+                panic!("standard edge emission must retain one vertex use");
+            };
+            assert_eq!(
+                vertex_use.vertex,
+                VertexId("catia:standard:v#1".to_string())
+            );
+            assert_eq!(
+                vertex_use.after,
+                Some(cadmpeg_ir::ids::CoedgeId(
+                    "catia:standard:coedge#0:0:0".to_string()
+                ))
+            );
+
+            let [pcurve] = ir.model.coedges[0].pcurves.as_slice() else {
+                panic!("standard line occurrence must retain its pcurve");
+            };
+            assert_eq!(pcurve.parameter_range, reversed.then_some([1.0, 0.0]));
+        }
+    }
+
+    #[test]
+    fn standard_plane_circle_pcurve_preserves_contained_carrier() {
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let center = Point3::new(0.0, 0.0, 0.0);
+        let radius = 2.0;
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Circle { center, radius },
+        };
+        let carrier = CurveGeometry::Circle {
+            center,
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        };
+        let start = Point3::new(radius, 0.0, 0.0);
+        let end = Point3::new(0.0, radius, 0.0);
+        let (geometry, range) =
+            standard_pcurve_geometry(&surface, &support, start, end, None, Some(&carrier))
+                .expect("contained plane circle pcurve");
+        let mapped = range.map(|parameter| {
+            let uv = pcurve_uv(&geometry, parameter).expect("plane circle pcurve endpoint");
+            surface_point(&surface, uv.u, uv.v).expect("plane circle surface endpoint")
+        });
+        assert!(mapped[0].distance(start) <= 1e-9);
+        assert!(mapped[1].distance(end) <= 1e-9);
+    }
+
+    #[test]
+    fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let center = Point3::new(0.0, 0.0, 0.0);
+        let radius = 2.0;
+        let start = Point3::new(radius, 0.0, 0.0);
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Circle { center, radius },
+        };
+        let carrier = CurveGeometry::Circle {
+            center,
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        };
+        let (geometry, range) =
+            standard_pcurve_geometry(&surface, &support, start, start, None, Some(&carrier))
+                .expect("closed contained plane circle pcurve");
+        assert_eq!(range, [0.0, std::f64::consts::TAU]);
+        let PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            ..
+        } = &geometry
+        else {
+            panic!("closed plane circle must use a rational arc");
+        };
+        assert_eq!(*degree, 2);
+        assert_eq!(knots.len(), 12);
+        assert_eq!(control_points.len(), 9);
+        assert_eq!(weights.as_ref().map(Vec::len), Some(9));
+        for parameter in [range[0], range[1]] {
+            let uv = pcurve_uv(&geometry, parameter).expect("closed pcurve endpoint");
+            let point = surface_point(&surface, uv.u, uv.v).expect("closed surface endpoint");
+            assert!(point.distance(start) <= 1e-9);
+        }
+        let midpoint_uv =
+            pcurve_uv(&geometry, std::f64::consts::PI).expect("closed pcurve midpoint");
+        let midpoint =
+            surface_point(&surface, midpoint_uv.u, midpoint_uv.v).expect("closed surface midpoint");
+        assert!(midpoint.distance(Point3::new(-radius, 0.0, 0.0)) <= 1e-9);
+    }
+
+    #[test]
+    fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.points.push(Point {
+            id: PointId("point-0".into()),
+            position: Point3::new(2.0, 0.0, 0.0),
+            source_object: None,
+        });
+        let surface_id = SurfaceId("surface-0".into());
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 0],
+            geometry: StandardCurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+        };
+        let (curve, range) = build_standard_edge_curve(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &[(surface_id.clone(), false, 0)],
+            &HashMap::from([(surface_id, 0)]),
+            &[],
+            &support,
+            [0, 0],
+            None,
+            None,
+        );
+        assert_eq!(range, Some([0.0, std::f64::consts::TAU]));
+        let curve = curve.expect("closed circle support identifies a curve");
+        assert!(matches!(
+            ir.model.curves.iter().find(|candidate| candidate.id == curve),
+            Some(Curve {
+                geometry: CurveGeometry::Circle {
+                    axis,
+                    ref_direction,
+                    radius,
+                    ..
+                },
+                ..
+            }) if *axis == Vector3::new(0.0, 0.0, 1.0)
+                && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && *radius == 2.0
+        ));
+    }
+
+    #[test]
+    fn standard_plane_circle_pcurve_rejects_carrier_outside_face_plane() {
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let center = Point3::new(0.0, 0.0, 1.0);
+        let radius = 2.0_f64.sqrt();
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Circle { center, radius },
+        };
+        let carrier = CurveGeometry::Circle {
+            center,
+            axis: Vector3::new(1.0, 0.0, 0.0),
+            ref_direction: Vector3::new(0.0, 1.0, 0.0),
+            radius,
+        };
+        assert!(standard_pcurve_geometry(
+            &surface,
+            &support,
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, -1.0, 0.0),
+            None,
+            Some(&carrier),
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn standard_plane_circle_pcurve_rejects_tilted_carrier() {
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let center = Point3::new(0.0, 0.0, 0.0);
+        let radius = 2.0;
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Circle { center, radius },
+        };
+        let carrier = CurveGeometry::Circle {
+            center,
+            axis: Vector3::new(1.0, 0.0, 0.0),
+            ref_direction: Vector3::new(0.0, 1.0, 0.0),
+            radius,
+        };
+        assert!(standard_pcurve_geometry(
+            &surface,
+            &support,
+            Point3::new(0.0, radius, 0.0),
+            Point3::new(0.0, -radius, 0.0),
+            None,
+            Some(&carrier),
+        )
+        .is_none());
     }
 
     #[test]
