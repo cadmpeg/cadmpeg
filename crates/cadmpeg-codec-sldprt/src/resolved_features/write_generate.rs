@@ -721,6 +721,7 @@ fn generated_marker_kind(geometry: &SketchGeometry) -> SketchInputKind {
         | SketchGeometry::Hyperbola { .. }
         | SketchGeometry::Parabola { .. }
         | SketchGeometry::Nurbs { .. }
+        | SketchGeometry::ExternalReference { .. }
         | SketchGeometry::Native { .. } => SketchInputKind::LineOrCircle,
         SketchGeometry::Text { .. } => unreachable!("sketch text has no marker loci"),
     }

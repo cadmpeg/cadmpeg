@@ -123,6 +123,22 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
     }
     if matches!(
         kind,
+        FeatureInputOperandKind::Native(0x80cc | 0x8152 | 0x8ab6 | 0x8dcb | 0x929d | 0xbd69)
+    ) {
+        let indexed = entities
+            .iter()
+            .copied()
+            .filter(|entity| entity.object_index == Some(u32::from(address)))
+            .filter(|entity| entity.coordinates_m.is_some())
+            .filter(|entity| operand_accepts_marker(kind, entity.kind))
+            .filter(|entity| !excluded.contains(&entity.id))
+            .collect::<Vec<_>>();
+        if let [entity] = indexed.as_slice() {
+            return Some(*entity);
+        }
+    }
+    if matches!(
+        kind,
         FeatureInputOperandKind::E1 | FeatureInputOperandKind::Native(0x8386)
     ) {
         let indexed = entities

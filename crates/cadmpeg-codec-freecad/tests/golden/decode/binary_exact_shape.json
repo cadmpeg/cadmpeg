@@ -77,10 +77,6 @@
           "owner_loop": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1",
           "pcurves": [
             {
-              "parameter_range": [
-                0.0,
-                6.283185307179586
-              ],
               "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:10%3A1%3A1"
             }
           ],
@@ -760,8 +756,8 @@
     },
     "native": {
       "__elided": "native arenas are pinned by digest, not by value",
-      "__serialized_len": 120107,
-      "__sha256": "8b242c191499b3b61d81b40fda8ff67090cf2c1a4df80261e4a233030d60d7a3"
+      "__serialized_len": 120162,
+      "__sha256": "f4b01971e22b71e16e2e05f5e4c81c1fe65643714d19e607733807591b5d5232"
     },
     "source": {
       "attributes": {

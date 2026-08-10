@@ -1,0 +1,50 @@
+€{
+  "ir_version": "5",
+  "units": {
+    "length": "millimeter"
+  },
+  "tolerances": {
+    "linear": 1e-6,
+    "angular": 1e-10
+  },
+  "model": {
+    "bodies": [],
+    "regions": [],
+    "shells": [],
+    "faces": [],
+    "loops": [],
+    "coedges": [],
+    "edges": [],
+    "vertices": [],
+    "points": [],
+    "surfaces": [],
+    "curves": [],
+    "subds": [],
+    "pcurves": [],
+    "procedural_surfaces": [],
+    "procedural_curves": [],
+    "features": [],
+    "configurations": [],
+    "parameters": [],
+    "sketches": [],
+    "sketch_entities": [],
+    "sketch_constraints": [],
+    "spatial_sketches": [],
+    "spatial_sketch_entities": [],
+    "spreadsheets": [],
+    "product_definitions": [],
+    "occurrences": [],
+    "assembly_joints": [],
+    "drawings": [],
+    "semantic_annotations": [],
+    "presentation_documents": [],
+    "view_presentations": [],
+    "tessellations": [],
+    "appearances": [],
+    "appearance_bindings": [],
+    "attributes": [],
+    "pmi": [],
+    "presentation_layers": []
+  },
+  "native": {}
+}

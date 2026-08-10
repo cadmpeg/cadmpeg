@@ -510,6 +510,8 @@
       "decoded_feature_entity_count": 0,
       "decoded_feature_entity_reference_count": 0,
       "decoded_feature_entity_table_count": 0,
+      "decoded_feature_equation_count": 0,
+      "decoded_feature_equation_table_count": 0,
       "decoded_feature_geometry_table_count": 0,
       "decoded_feature_loop_history_entry_count": 0,
       "decoded_feature_loop_restore_direction_count": 0,
@@ -607,6 +609,8 @@
       "transferred_feature_extrusion_surface_count": 0,
       "transferred_feature_extrusion_vertex_orbit_curve_count": 0,
       "transferred_feature_relation_constraint_count": 0,
+      "transferred_feature_result_edge_count": 0,
+      "transferred_feature_result_topology_count": 0,
       "transferred_feature_revolution_brep_count": 0,
       "transferred_feature_revolution_surface_count": 0,
       "transferred_feature_revolution_vertex_orbit_curve_count": 0,
@@ -768,7 +772,7 @@
       },
       {
         "code": "topology_not_transferred",
-        "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates.",
+        "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; multi-loop faces use strict containment in a placed or boundary-proven plane. Remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates.",
         "severity": "blocking"
       },
       {

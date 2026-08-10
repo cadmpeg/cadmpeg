@@ -174,6 +174,48 @@ fn propagates_unique_pcurve_endpoints_through_a_vertex_component() {
 }
 
 #[test]
+fn boundary_nurbs_endpoint_witnesses_use_the_intrinsic_domain() {
+    let geometry = CurveGeometry::Nurbs(NurbsCurve {
+        degree: 2,
+        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        control_points: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 2.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+        ],
+        weights: Some(vec![1.0, 2.0, 1.0]),
+        periodic: false,
+    });
+    assert_eq!(
+        nonperiodic_nurbs_endpoint_points(&geometry),
+        Some([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
+    );
+
+    let CurveGeometry::Nurbs(mut periodic) = geometry else {
+        unreachable!("test geometry is NURBS");
+    };
+    periodic.periodic = true;
+    assert!(nonperiodic_nurbs_endpoint_points(&CurveGeometry::Nurbs(periodic)).is_none());
+}
+
+#[test]
+fn boundary_nurbs_endpoints_propagate_as_unordered_edge_constraints() {
+    let first = [0.0, 0.0, 0.0];
+    let middle = [1.0, 0.0, 0.0];
+    let last = [2.0, 0.0, 0.0];
+    let constraints = [([1, 2], [first, middle]), ([2, 3], [last, middle])];
+    assert_eq!(
+        solve_pcurve_vertex_domains(
+            &constraints,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        ),
+        BTreeMap::from([(1, first), (2, middle), (3, last)])
+    );
+}
+
+#[test]
 fn pcurve_direction_flags_assign_endpoint_order() {
     let points = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
     assert_eq!(directed_pcurve_points([0x01, 0xf6], points), Some(points));

@@ -6762,15 +6762,35 @@
       "pcurves": [
         {
           "geometry": {
-            "direction": {
-              "u": -1.0,
-              "v": 0.0
+            "basis": {
+              "direction": {
+                "u": 1.0,
+                "v": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "u": 0.0,
+                "v": 0.0
+              }
             },
-            "kind": "line",
-            "origin": {
-              "u": -0.0,
-              "v": 0.0
-            }
+            "kind": "transformed",
+            "transform": [
+              [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
           },
           "id": "fcstd:model:pcurve#Body:Shape:Body.Shape.brp:12%3A2%3A1",
           "parameter_range": [
@@ -6780,15 +6800,35 @@
         },
         {
           "geometry": {
-            "direction": {
-              "u": -0.0,
-              "v": 1.0
+            "basis": {
+              "direction": {
+                "u": 0.0,
+                "v": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "u": 1.5707963267948966,
+                "v": 0.0
+              }
             },
-            "kind": "line",
-            "origin": {
-              "u": -1.5707963267948966,
-              "v": 0.0
-            }
+            "kind": "transformed",
+            "transform": [
+              [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
           },
           "id": "fcstd:model:pcurve#Body:Shape:Body.Shape.brp:21%3A2%3A1",
           "parameter_range": [
@@ -6798,15 +6838,35 @@
         },
         {
           "geometry": {
-            "direction": {
-              "u": -1.0,
-              "v": 0.0
+            "basis": {
+              "direction": {
+                "u": 1.0,
+                "v": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "u": 0.0,
+                "v": 10.0
+              }
             },
-            "kind": "line",
-            "origin": {
-              "u": -0.0,
-              "v": 10.0
-            }
+            "kind": "transformed",
+            "transform": [
+              [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
           },
           "id": "fcstd:model:pcurve#Body:Shape:Body.Shape.brp:22%3A2%3A1",
           "parameter_range": [
@@ -6888,15 +6948,35 @@
         },
         {
           "geometry": {
-            "direction": {
-              "u": -0.0,
-              "v": 1.0
+            "basis": {
+              "direction": {
+                "u": 0.0,
+                "v": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "u": 0.0,
+                "v": 0.0
+              }
             },
-            "kind": "line",
-            "origin": {
-              "u": -0.0,
-              "v": 0.0
-            }
+            "kind": "transformed",
+            "transform": [
+              [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
           },
           "id": "fcstd:model:pcurve#Body:Shape:Body.Shape.brp:5%3A2%3A1",
           "parameter_range": [
@@ -6906,15 +6986,35 @@
         },
         {
           "geometry": {
-            "direction": {
-              "u": -1.0,
-              "v": 0.0
+            "basis": {
+              "direction": {
+                "u": 1.0,
+                "v": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "u": 0.0,
+                "v": 0.0
+              }
             },
-            "kind": "line",
-            "origin": {
-              "u": -0.0,
-              "v": 0.0
-            }
+            "kind": "transformed",
+            "transform": [
+              [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
           },
           "id": "fcstd:model:pcurve#Fillet:Shape:Fillet.Shape.brp:11%3A2%3A1",
           "parameter_range": [
@@ -6947,15 +7047,35 @@
         },
         {
           "geometry": {
-            "direction": {
-              "u": -0.0,
-              "v": 1.0
+            "basis": {
+              "direction": {
+                "u": 0.0,
+                "v": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "u": 1.5707963267948966,
+                "v": 0.0
+              }
             },
-            "kind": "line",
-            "origin": {
-              "u": -1.5707963267948966,
-              "v": 0.0
-            }
+            "kind": "transformed",
+            "transform": [
+              [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
           },
           "id": "fcstd:model:pcurve#Fillet:Shape:Fillet.Shape.brp:20%3A2%3A1",
           "parameter_range": [
@@ -6983,15 +7103,35 @@
         },
         {
           "geometry": {
-            "direction": {
-              "u": -1.0,
-              "v": 0.0
+            "basis": {
+              "direction": {
+                "u": 1.0,
+                "v": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "u": 0.0,
+                "v": 10.0
+              }
             },
-            "kind": "line",
-            "origin": {
-              "u": -0.0,
-              "v": 10.0
-            }
+            "kind": "transformed",
+            "transform": [
+              [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
           },
           "id": "fcstd:model:pcurve#Fillet:Shape:Fillet.Shape.brp:21%3A2%3A1",
           "parameter_range": [
@@ -7096,15 +7236,35 @@
         },
         {
           "geometry": {
-            "direction": {
-              "u": -0.0,
-              "v": 1.0
+            "basis": {
+              "direction": {
+                "u": 0.0,
+                "v": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "u": 0.0,
+                "v": 0.0
+              }
             },
-            "kind": "line",
-            "origin": {
-              "u": -0.0,
-              "v": 0.0
-            }
+            "kind": "transformed",
+            "transform": [
+              [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
           },
           "id": "fcstd:model:pcurve#Fillet:Shape:Fillet.Shape.brp:5%3A2%3A1",
           "parameter_range": [
@@ -7973,6 +8133,7 @@
               0.0,
               1.5707963267948966
             ],
+            "sense": true,
             "source": "fcstd:model:curve#Body:Shape:Body.Shape.brp:10:basis"
           },
           "id": "fcstd:model:curve#Body:Shape:Body.Shape.brp:10:construction"
@@ -7985,6 +8146,7 @@
               0.0,
               1.5707963267948966
             ],
+            "sense": true,
             "source": "fcstd:model:curve#Body:Shape:Body.Shape.brp:5:basis"
           },
           "id": "fcstd:model:curve#Body:Shape:Body.Shape.brp:5:construction"
@@ -7997,6 +8159,7 @@
               0.0,
               1.5707963267948966
             ],
+            "sense": true,
             "source": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:4:basis"
           },
           "id": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:4:construction"
@@ -8009,6 +8172,7 @@
               0.0,
               1.5707963267948966
             ],
+            "sense": true,
             "source": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:9:basis"
           },
           "id": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:9:construction"
@@ -10107,8 +10271,8 @@
     },
     "native": {
       "__elided": "native arenas are pinned by digest, not by value",
-      "__serialized_len": 1546449,
-      "__sha256": "9d33d936a6334689898a3556305120d35a450f993eb2aba6545a811049b4ebd0"
+      "__serialized_len": 1546416,
+      "__sha256": "640124984a9cc3261b58586be7a2673d967fd9978bcdaf6a077424cd4df42c1f"
     },
     "source": {
       "attributes": {

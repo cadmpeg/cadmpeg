@@ -19,58 +19,16 @@
         {
           "edge": "sldprt:brep:edge#40",
           "id": "sldprt:brep:coedge#30",
-          "next": "sldprt:brep:coedge#seam:10:0",
+          "next": "sldprt:brep:coedge#30",
           "owner_loop": "sldprt:brep:loop#20",
           "pcurves": [
             {
               "pcurve": "sldprt:brep:pcurve#cylinder:30"
             }
           ],
-          "previous": "sldprt:brep:coedge#seam:10:1",
+          "previous": "sldprt:brep:coedge#30",
           "radial_next": "sldprt:brep:coedge#30",
           "sense": "forward"
-        },
-        {
-          "edge": "sldprt:brep:edge#41",
-          "id": "sldprt:brep:coedge#31",
-          "next": "sldprt:brep:coedge#seam:10:1",
-          "owner_loop": "sldprt:brep:loop#20",
-          "pcurves": [
-            {
-              "pcurve": "sldprt:brep:pcurve#cylinder:31"
-            }
-          ],
-          "previous": "sldprt:brep:coedge#seam:10:0",
-          "radial_next": "sldprt:brep:coedge#31",
-          "sense": "reversed"
-        },
-        {
-          "edge": "sldprt:brep:edge#seam:10",
-          "id": "sldprt:brep:coedge#seam:10:0",
-          "next": "sldprt:brep:coedge#31",
-          "owner_loop": "sldprt:brep:loop#20",
-          "pcurves": [
-            {
-              "pcurve": "sldprt:brep:pcurve#cylinder:seam:10:0"
-            }
-          ],
-          "previous": "sldprt:brep:coedge#30",
-          "radial_next": "sldprt:brep:coedge#seam:10:1",
-          "sense": "forward"
-        },
-        {
-          "edge": "sldprt:brep:edge#seam:10",
-          "id": "sldprt:brep:coedge#seam:10:1",
-          "next": "sldprt:brep:coedge#30",
-          "owner_loop": "sldprt:brep:loop#20",
-          "pcurves": [
-            {
-              "pcurve": "sldprt:brep:pcurve#cylinder:seam:10:1"
-            }
-          ],
-          "previous": "sldprt:brep:coedge#31",
-          "radial_next": "sldprt:brep:coedge#seam:10:0",
-          "sense": "reversed"
         }
       ],
       "configurations": [
@@ -107,44 +65,6 @@
             }
           },
           "id": "sldprt:brep:curve#70"
-        },
-        {
-          "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1000.0
-            },
-            "kind": "circle",
-            "radius": 1000.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
-          },
-          "id": "sldprt:brep:curve#71"
-        },
-        {
-          "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -1000.0,
-              "y": 0.0,
-              "z": 0.0
-            }
-          },
-          "id": "sldprt:brep:curve#seam:10"
         }
       ],
       "drawings": [],
@@ -153,22 +73,6 @@
           "curve": "sldprt:brep:curve#70",
           "end": "sldprt:brep:vertex#50",
           "id": "sldprt:brep:edge#40",
-          "start": "sldprt:brep:vertex#50"
-        },
-        {
-          "curve": "sldprt:brep:curve#71",
-          "end": "sldprt:brep:vertex#51",
-          "id": "sldprt:brep:edge#41",
-          "start": "sldprt:brep:vertex#51"
-        },
-        {
-          "curve": "sldprt:brep:curve#seam:10",
-          "end": "sldprt:brep:vertex#51",
-          "id": "sldprt:brep:edge#seam:10",
-          "param_range": [
-            0.0,
-            1000.0
-          ],
           "start": "sldprt:brep:vertex#50"
         }
       ],
@@ -188,10 +92,7 @@
         {
           "boundary_role": "unspecified",
           "coedges": [
-            "sldprt:brep:coedge#30",
-            "sldprt:brep:coedge#seam:10:0",
-            "sldprt:brep:coedge#31",
-            "sldprt:brep:coedge#seam:10:1"
+            "sldprt:brep:coedge#30"
           ],
           "face": "sldprt:brep:face#10",
           "id": "sldprt:brep:loop#20"
@@ -213,48 +114,6 @@
             }
           },
           "id": "sldprt:brep:pcurve#cylinder:30"
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 1.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 1000.0
-            }
-          },
-          "id": "sldprt:brep:pcurve#cylinder:31"
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 0.0,
-              "v": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 3.141592653589793,
-              "v": 0.0
-            }
-          },
-          "id": "sldprt:brep:pcurve#cylinder:seam:10:0"
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 0.0,
-              "v": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 3.141592653589793,
-              "v": 0.0
-            }
-          },
-          "id": "sldprt:brep:pcurve#cylinder:seam:10:1"
         }
       ],
       "pmi": [],
@@ -265,14 +124,6 @@
             "x": -1000.0,
             "y": 0.0,
             "z": 0.0
-          }
-        },
-        {
-          "id": "sldprt:brep:point#61",
-          "position": {
-            "x": -1000.0,
-            "y": 0.0,
-            "z": 1000.0
           }
         }
       ],
@@ -336,10 +187,6 @@
         {
           "id": "sldprt:brep:vertex#50",
           "point": "sldprt:brep:point#60"
-        },
-        {
-          "id": "sldprt:brep:vertex#51",
-          "point": "sldprt:brep:point#61"
         }
       ],
       "view_presentations": []
@@ -435,28 +282,7 @@
         "sldprt:brep:body#0": {
           "entity": "derived"
         },
-        "sldprt:brep:coedge#seam:10:0": {
-          "entity": "derived"
-        },
-        "sldprt:brep:coedge#seam:10:1": {
-          "entity": "derived"
-        },
-        "sldprt:brep:curve#seam:10": {
-          "entity": "derived"
-        },
-        "sldprt:brep:edge#seam:10": {
-          "entity": "derived"
-        },
         "sldprt:brep:pcurve#cylinder:30": {
-          "entity": "derived"
-        },
-        "sldprt:brep:pcurve#cylinder:31": {
-          "entity": "derived"
-        },
-        "sldprt:brep:pcurve#cylinder:seam:10:0": {
-          "entity": "derived"
-        },
-        "sldprt:brep:pcurve#cylinder:seam:10:1": {
           "entity": "derived"
         },
         "sldprt:brep:region#0": {
@@ -483,50 +309,15 @@
           "stream": 0,
           "tag": "00_11"
         },
-        "sldprt:brep:coedge#31": {
-          "offset": 391,
-          "stream": 0,
-          "tag": "00_11"
-        },
-        "sldprt:brep:coedge#seam:10:0": {
-          "offset": 0,
-          "stream": 0,
-          "tag": "derived_periodic_seam"
-        },
-        "sldprt:brep:coedge#seam:10:1": {
-          "offset": 0,
-          "stream": 0,
-          "tag": "derived_periodic_seam"
-        },
         "sldprt:brep:curve#70": {
           "offset": 99,
           "stream": 0,
           "tag": "compact_curve"
         },
-        "sldprt:brep:curve#71": {
-          "offset": 198,
-          "stream": 0,
-          "tag": "compact_curve"
-        },
-        "sldprt:brep:curve#seam:10": {
-          "offset": 0,
-          "stream": 0,
-          "tag": "derived_periodic_seam"
-        },
         "sldprt:brep:edge#40": {
           "offset": 414,
           "stream": 0,
           "tag": "00_10"
-        },
-        "sldprt:brep:edge#41": {
-          "offset": 444,
-          "stream": 0,
-          "tag": "00_10"
-        },
-        "sldprt:brep:edge#seam:10": {
-          "offset": 0,
-          "stream": 0,
-          "tag": "derived_periodic_seam"
         },
         "sldprt:brep:face#10": {
           "offset": 297,
@@ -543,28 +334,8 @@
           "stream": 0,
           "tag": "derived_cylindrical_pcurve"
         },
-        "sldprt:brep:pcurve#cylinder:31": {
-          "offset": 0,
-          "stream": 0,
-          "tag": "derived_cylindrical_pcurve"
-        },
-        "sldprt:brep:pcurve#cylinder:seam:10:0": {
-          "offset": 0,
-          "stream": 0,
-          "tag": "derived_cylindrical_pcurve"
-        },
-        "sldprt:brep:pcurve#cylinder:seam:10:1": {
-          "offset": 0,
-          "stream": 0,
-          "tag": "derived_cylindrical_pcurve"
-        },
         "sldprt:brep:point#60": {
           "offset": 526,
-          "stream": 0,
-          "tag": "00_1d"
-        },
-        "sldprt:brep:point#61": {
-          "offset": 566,
           "stream": 0,
           "tag": "00_1d"
         },
@@ -585,11 +356,6 @@
         },
         "sldprt:brep:vertex#50": {
           "offset": 474,
-          "stream": 0,
-          "tag": "00_12"
-        },
-        "sldprt:brep:vertex#51": {
-          "offset": 500,
           "stream": 0,
           "tag": "00_12"
         },

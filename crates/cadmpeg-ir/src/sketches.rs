@@ -314,6 +314,17 @@ pub enum SketchGeometry {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         vertical_alignment: Option<SketchTextVerticalAlignment>,
     },
+    /// Geometry referenced from another object when no solved sketch-space carrier is stored.
+    ExternalReference {
+        /// External document identity, absent for a reference within the current document.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        document: Option<String>,
+        /// Referenced object identity.
+        object: String,
+        /// Ordered source subelement selectors.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        subelements: Vec<String>,
+    },
     /// Source-native geometry not yet reduced to a neutral family.
     Native {
         /// Source geometry family.

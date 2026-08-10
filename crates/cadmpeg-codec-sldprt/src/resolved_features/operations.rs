@@ -5,6 +5,33 @@ use crate::records::{FeatureInputLane, FeatureInputName};
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition};
 use std::collections::HashMap;
 
+pub(crate) const SPLIT_LINE_MODE_PROPERTY: &str = "SplitLineMode";
+pub(crate) const SPLIT_LINE_PROJECTION_MODE: &str = "Projection";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FormCodePadding {
+    Four,
+    Eight,
+}
+
+impl FormCodePadding {
+    fn bytes(self) -> usize {
+        match self {
+            Self::Four => 4,
+            Self::Eight => 8,
+        }
+    }
+}
+
+pub(crate) fn form_code_padding(sw_version: Option<&str>) -> Option<FormCodePadding> {
+    let version = sw_version?.parse::<u32>().ok()?;
+    (version > 0).then_some(if version >= 12_000 {
+        FormCodePadding::Eight
+    } else {
+        FormCodePadding::Four
+    })
+}
+
 pub(super) fn repeated_class_token(payload: &[u8], name_offset: usize) -> Option<u16> {
     let start = name_offset.checked_sub(2)?;
     Some(u16::from_le_bytes(
@@ -16,6 +43,7 @@ pub(super) fn feature_operation_code(
     lane: &FeatureInputLane,
     name: &FeatureInputName,
     class: Option<&str>,
+    form_padding: Option<FormCodePadding>,
 ) -> Option<u32> {
     let name_offset = usize::try_from(name.offset).ok()?;
     let direct_class = lane
@@ -31,14 +59,41 @@ pub(super) fn feature_operation_code(
         {
             return Some(u32::MAX);
         }
-        [8usize, 4].into_iter().find_map(|padding| {
-            let code_offset = class_offset.checked_sub(4 + padding)?;
-            lane.native_payload
-                .get(code_offset + 4..class_offset)?
-                .iter()
-                .all(|byte| *byte == 0)
-                .then_some(code_offset)
-        })?
+        let candidates = [8usize, 4]
+            .into_iter()
+            .filter(|padding| form_padding.is_none_or(|expected| expected.bytes() == *padding))
+            .filter_map(|padding| {
+                let code_offset = class_offset.checked_sub(4 + padding)?;
+                if !lane
+                    .native_payload
+                    .get(code_offset + 4..class_offset)?
+                    .iter()
+                    .all(|byte| *byte == 0)
+                {
+                    return None;
+                }
+                let code = u32::from_le_bytes(
+                    lane.native_payload
+                        .get(code_offset..code_offset + 4)?
+                        .try_into()
+                        .ok()?,
+                );
+                Some((code_offset, code))
+            })
+            .collect::<Vec<_>>();
+        if form_padding.is_none() {
+            // A zero form code makes four- and eight-byte padding both match. A
+            // different candidate code is not a byte-level discriminator.
+            match candidates.as_slice() {
+                [(code_offset, _)] => *code_offset,
+                [(first_offset, first_code), (_, second_code)] if first_code == second_code => {
+                    *first_offset
+                }
+                _ => return None,
+            }
+        } else {
+            candidates.first().map(|(code_offset, _)| *code_offset)?
+        }
     } else {
         let repeated_token = repeated_class_token(&lane.native_payload, name_offset)?;
         if repeated_token & 0x8000 == 0 || repeated_token == u16::MAX {
@@ -55,6 +110,10 @@ pub(super) fn feature_operation_code(
                 &[8, 4]
             };
             paddings.iter().copied().find_map(|padding| {
+                if padding != 0 && form_padding.is_some_and(|expected| expected.bytes() != padding)
+                {
+                    return None;
+                }
                 let code_offset = name_offset.checked_sub(6 + padding)?;
                 lane.native_payload
                     .get(code_offset + 4..name_offset - 2)?
@@ -86,7 +145,7 @@ pub(super) fn extrusion_operation(class: Option<&str>, code: u32) -> Option<Bool
         (Some("moExtrusion_c"), 1 | 4 | 82) | (Some("moICE_c"), 6 | 21 | 0x3ee4_f8b5) | (_, 3) => {
             Some(BooleanOp::Join)
         }
-        (Some("moICE_c"), 0 | 1 | 2 | 5 | 7 | 10 | 14 | 15 | 22_993 | u32::MAX) | (_, 11) => {
+        (Some("moICE_c"), 0 | 1 | 2 | 5 | 7 | 10 | 14 | 15 | 22_993 | u32::MAX) => {
             Some(BooleanOp::Cut)
         }
         _ => None,
@@ -98,6 +157,7 @@ pub(crate) fn bind_revolution_operations(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
+    form_padding: Option<FormCodePadding>,
 ) {
     let history_features = histories
         .iter()
@@ -122,7 +182,7 @@ pub(crate) fn bind_revolution_operations(
             let name = feature_object_name(history, lane)?;
             revolution_operation(
                 history.input_class.as_deref(),
-                feature_operation_code(lane, name, history.input_class.as_deref())?,
+                feature_operation_code(lane, name, history.input_class.as_deref(), form_padding)?,
             )
         });
         let Some(first) = operations.next() else {
@@ -139,6 +199,7 @@ pub(crate) fn bind_sweep_operations(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
+    form_padding: Option<FormCodePadding>,
 ) {
     let history_features = histories
         .iter()
@@ -167,7 +228,7 @@ pub(crate) fn bind_sweep_operations(
             let name = feature_object_name(history, lane)?;
             match (
                 history.input_class.as_deref(),
-                feature_operation_code(lane, name, history.input_class.as_deref())?,
+                feature_operation_code(lane, name, history.input_class.as_deref(), form_padding)?,
             ) {
                 (Some("moSweep_c"), 15) => Some(BooleanOp::Join),
                 _ => None,
@@ -182,13 +243,11 @@ pub(crate) fn bind_sweep_operations(
     }
 }
 
-/// Inline extrusion trailer fields: the low byte of the family word and the
-/// operation byte. The family word is `0x0140` for `moExtrusion_c` objects
-/// and `0x01ca` for `moICE_c` objects.
+/// Inline extrusion trailer fields: the family word and operation byte.
 pub(super) fn feature_inline_operation_fields(
     lane: &FeatureInputLane,
     name: &FeatureInputName,
-) -> Option<(u8, u8)> {
+) -> Option<(u16, u8)> {
     let name_offset = usize::try_from(name.offset).ok()?;
     let name_bytes = name.value.encode_utf16().count().checked_mul(2)?;
     let trailer = name_offset.checked_add(6 + name_bytes)?;
@@ -201,7 +260,8 @@ pub(super) fn feature_inline_operation_fields(
                 (suffix[..6] == [0; 6]
                     && suffix[6..8] == [1, 0]
                     && suffix[8..10] != [0, 0]
-                    && suffix[10..22] == [0; 12]
+                    && suffix[10..14] != [0xff; 4]
+                    && suffix[14..22] == [0; 8]
                     && suffix[22..24] != [0, 0])
                     || (suffix[..4] == [0, 0, 1, 0]
                         && suffix[4..8] != [0; 4]
@@ -210,7 +270,6 @@ pub(super) fn feature_inline_operation_fields(
                         && suffix[20..24] == [0; 4])
             });
     if bytes[..4] != [0; 4]
-        || bytes[5] != 1
         || bytes[8..12] != name.object_id?.to_le_bytes()
         || bytes[12..16] != [0; 4]
         || !terminated
@@ -218,58 +277,19 @@ pub(super) fn feature_inline_operation_fields(
     {
         return None;
     }
-    Some((bytes[4], bytes[6]))
+    Some((u16::from_le_bytes([bytes[4], bytes[5]]), bytes[6]))
 }
 
-/// Inline Boolean operation, when the trailer carries one. A zero operation
-/// byte on an `moICE_c` object is not an operation carrier; those objects use
-/// class-scoped form semantics instead.
+/// Project an inline Boolean operation from a recognized complete family.
 pub(super) fn feature_inline_operation(
     lane: &FeatureInputLane,
     name: &FeatureInputName,
 ) -> Option<BooleanOp> {
     match feature_inline_operation_fields(lane, name)? {
-        (0x40, 0) => Some(BooleanOp::Join),
-        (0xca, 2) => Some(BooleanOp::Cut),
+        (0x0140, 0) => Some(BooleanOp::Join),
+        (0x01ca, 0 | 2) => Some(BooleanOp::Cut),
         _ => None,
     }
-}
-
-pub(super) fn class_scoped_extrusion_operation(
-    feature: &crate::records::Feature,
-    features: &[&crate::records::Feature],
-    lane: &FeatureInputLane,
-    name: &FeatureInputName,
-) -> Option<BooleanOp> {
-    if feature.input_class.as_deref() != Some("moICE_c")
-        || feature_inline_operation_fields(lane, name) != Some((0xca, 0))
-        || !lane.classes.iter().any(|class| {
-            class.name == "moICE_c" && class.offset + 6 + class.name.len() as u64 == name.offset
-        })
-    {
-        return None;
-    }
-    let siblings = features
-        .iter()
-        .copied()
-        .filter(|candidate| {
-            candidate.id != feature.id && candidate.input_class == feature.input_class
-        })
-        .collect::<Vec<_>>();
-    if siblings.len() < 2 {
-        return None;
-    }
-    let mut operations = siblings.iter().map(|sibling| {
-        let sibling_name = feature_object_name(sibling, lane)?;
-        extrusion_operation(
-            sibling.input_class.as_deref(),
-            feature_operation_code(lane, sibling_name, sibling.input_class.as_deref())?,
-        )
-    });
-    let operation = operations.next()??;
-    operations
-        .all(|candidate| candidate == Some(operation))
-        .then_some(operation)
 }
 
 /// Project the feature-input operation discriminator onto typed extrusions.
@@ -277,6 +297,7 @@ pub(crate) fn bind_extrusion_operations(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
+    form_padding: Option<FormCodePadding>,
 ) {
     let history_features = histories
         .iter()
@@ -305,14 +326,9 @@ pub(crate) fn bind_extrusion_operations(
             if let Some(operation) = feature_inline_operation(lane, name) {
                 return Some(operation);
             }
-            if let Some(operation) =
-                class_scoped_extrusion_operation(history, &history_features, lane, name)
-            {
-                return Some(operation);
-            }
             extrusion_operation(
                 history.input_class.as_deref(),
-                feature_operation_code(lane, name, history.input_class.as_deref())?,
+                feature_operation_code(lane, name, history.input_class.as_deref(), form_padding)?,
             )
         });
         let Some(first) = operations.next() else {
@@ -320,6 +336,58 @@ pub(crate) fn bind_extrusion_operations(
         };
         if operations.all(|operation| operation == first) {
             *op = first;
+        }
+    }
+}
+
+/// Establish projected split-line mode from the class owned by each
+/// `moPLine_c` feature-input object.
+pub(crate) fn enrich_history_split_line_modes(
+    histories: &mut [crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    let features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .collect::<Vec<_>>();
+    let mut observations = HashMap::<String, (bool, bool)>::new();
+    for lane in lanes {
+        let mut objects = features
+            .iter()
+            .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
+            .collect::<Vec<_>>();
+        objects.sort_unstable_by_key(|(offset, _)| *offset);
+        for (index, (start, feature)) in objects.iter().enumerate() {
+            if feature.input_class.as_deref() != Some("moPLine_c") {
+                continue;
+            }
+            let end = objects
+                .get(index + 1)
+                .map_or(lane.native_payload.len() as u64, |(offset, _)| *offset);
+            let project_classes = lane
+                .classes
+                .iter()
+                .filter(|class| {
+                    class.name == "moPLineProject_c" && class.offset >= *start && class.offset < end
+                })
+                .count();
+            let observation = observations.entry(feature.id.clone()).or_default();
+            if project_classes == 1 {
+                observation.0 = true;
+            } else {
+                observation.1 = true;
+            }
+        }
+    }
+    for feature in histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+    {
+        if observations.get(&feature.id) == Some(&(true, false)) {
+            feature.properties.insert(
+                SPLIT_LINE_MODE_PROPERTY.into(),
+                SPLIT_LINE_PROJECTION_MODE.into(),
+            );
         }
     }
 }

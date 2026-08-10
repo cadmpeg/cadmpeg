@@ -54,11 +54,19 @@ A section payload beginning `1f 9d <flags>` uses Unix `compress` LZW framing.
 The low five flag bits give the maximum code width from 9 through 16; bit 7
 enables block mode. In block mode, code 256 clears the dictionary. Without
 block mode (for example `1f 9d 10`), code 256 is a literal dictionary entry.
-Codes are packed least significant bit first in code-width-sized byte blocks.
-Block alignment resets when the code width increases or, in block mode, a clear
-code resets it to nine. Expansion is valid only when the output length equals
-the TOC expanded-length field. The expanded payload begins directly with its
-PSB named record.
+The initial dictionary contains the 256 one-byte values in slots `0` through
+`255`. The initial code width is nine bits. The next free slot is `256` in a
+non-block stream and `257` in a block-mode stream because block mode reserves
+`256` for the clear code. A decoded code adds one dictionary entry after the
+first code in a block; the reader increases the width from `w` to `w + 1`
+before the first code that requires a value above `(2^w)-1`. Codes are packed
+least significant bit first in code-width-sized byte blocks. Block alignment
+resets when the code width increases or, in block mode, a clear code resets it
+to nine. Expansion is valid only when the output length equals the TOC
+expanded-length field. For model-data sections, the expanded payload begins
+directly with its PSB named record. `THMB_IMG_MAIN` is an auxiliary exception:
+its expanded payload contains the JPEG payload and is identified by the
+`FF D8 FF` marker.
 
 PSB does not use the Parasolid neutral-binary encoding. Parasolid terminology may describe some geometric concepts, but it does not define PSB byte semantics.
 
@@ -68,6 +76,13 @@ PSB does not use the Parasolid neutral-binary encoding. Parasolid terminology ma
 | ------ | -----------------------: | --------------------------------------------------------------------- |
 | ND     | approximately 40 or more | Dense PSB rows in `VisibGeom`, including `srf_array` and `crv_array`. |
 | DEPDB  |         approximately 12 | Sparse PSB views and feature/section records.                         |
+
+The outer layout discriminator is the first record in `DEPDB_DATA`. A
+`DEPDB_DATA` payload that begins with `e0 00 p_dep_db\0 e3` is a DEPDB layout.
+Names of embedded records may carry an `ND:` decoration; that decoration does
+not change the outer layout. An `ND:` decoration on an outer section identifies
+an ND layout. A file with neither discriminator is an unknown layout. Section
+cardinality is descriptive and does not select a layout.
 
 ### 1.2 Section map
 
@@ -83,7 +98,7 @@ PSB does not use the Parasolid neutral-binary encoding. Parasolid terminology ma
 | `FamilyInf`                      | Family-table driver pointer for configurations.                                                                      |
 | `MdlRefInfo`                     | Model-space reference entities, including finite line endpoints.                                                     |
 | `NeuPrtSld` and display sections | Material, appearance, display, and tessellation data.                                                                |
-| `THMB_IMG_MAIN`                  | JPEG thumbnail. The payload begins with `FF D8 FF` and does not contain model geometry.                              |
+| `THMB_IMG_MAIN`                  | JPEG thumbnail. Its raw payload begins with `FF D8 FF` or uses Unix-compress framing; after expansion, bytes from the `FF D8 FF` marker through the payload end are the JPEG payload. It does not contain model geometry. |
 
 ### 1.3 Units
 
@@ -180,7 +195,7 @@ coordinate lane. Its `19 <tail7>`, `32 <tail7>`, `37 <tail7>`, and
 `34 XX YY` forms occupy three bytes; the unresolved `01 XX YY ZZ` form
 occupies four.
 
-Lane-specific seven-byte forms include `6a <tail6>` for positive IEEE with leading byte `40` and implicit trailing `00`; `9e <tail6>` and `a3 <tail6>` for positive and negative forms paired with the section-local `46` cache; `b9`, `d1`, `d3`, `de`, and `df` for negative sub-unit forms with leading byte `BF`; and `41`, `4b`, `66`, `67`, `68`, `77`, and `82..8f` for positive sub-unit forms with leading byte `3F`. A paired form finds the `46 <byte1> <tail6>` token with the same six-byte tail and reconstructs `40 <byte1> <tail6>` for `9e` or `C0 <byte1> <tail6>` for `a3`.
+Lane-specific seven-byte forms include `6a <tail6>` for positive IEEE with leading byte `40` and implicit trailing `00`; `9e <tail6>` and `a3 <tail6>` for positive and negative forms paired with the section-local `46` cache; `b9`, `d1`, `d3`, `de`, and `df` for negative sub-unit forms with leading byte `BF`; and `41`, `4b`, `66`, `67`, `68`, `77`, and `82..8f` for positive sub-unit forms with leading byte `3F`. A paired form finds exactly one distinct `46 <byte1> <tail6>` token with the same six-byte tail and reconstructs `40 <byte1> <tail6>` for `9e` or `C0 <byte1> <tail6>` for `a3`. Duplicate copies of one token do not add a candidate; differing `<byte1>` values leave the paired scalar unresolved.
 
 In positional surface and curve row lanes, `71 <tail6>` is a seven-byte
 sub-unit form reconstructed as `3F <tail6> 00`. In named scalar lanes, `71`
@@ -203,7 +218,7 @@ World-coordinate tokens normally occupy eight bytes. Their final seven bytes hol
 
 #### Constants and cache references
 
-`0d` encodes negative one, `0f` and `e6` encode zero, and `e4` encodes one. In row and `f9` scalar lanes, `e8 00` encodes standalone `1.0`; other contexts use a different selector grammar. `18 <index>` indexes a raw section-local `46` cache. Build that cache by scanning the raw section bytes, including `46` values that occur within other token tails. In a row or `f9` body, `18` followed by any defined scalar opener encodes a standalone zero and the following byte begins a new token. In a saved-line coordinate row, `18` immediately before the row close or trailing entity reference is a standalone zero. At the byte-bounded end of a positional scalar-slot array, terminal `18` is a standalone zero.
+`0d` encodes negative one, `0f` and `e6` encode zero, and `e4` encodes one. In row and `f9` scalar lanes, `e8 00` encodes standalone `1.0`; other contexts use a different selector grammar. `18 <index>` indexes a raw section-local `46` cache. Build that cache by scanning the raw section bytes, including `46` values that occur within other token tails. The standalone-zero test is local to the enclosing scalar lane: `18` followed by the first byte of a scalar form defined in that lane encodes zero, and the following byte begins a new token. A prefix defined only by another lane remains a compact cache index. The positional row lane additionally defines `0e` as negative one half; the positional surface-row lane additionally defines `73`, `92`, `a0`, `bb`, and `da`. In a saved-line coordinate row, `18` immediately before the row close or trailing entity reference is a standalone zero. At the byte-bounded end of a positional scalar-slot array, terminal `18` is a standalone zero.
 
 An expanded model scalar section stores `double_xar\0 f8 <count>` followed by exactly `count` ordered slots. `10` is the literal-one slot and `0b` is the literal-zero slot. The exact recursive placeholder images `e5 07 23 11 2e` and `e8 26 d6 95` each occupy one unresolved slot. Other slots use their defined scalar token widths. The final counted slot is `e0`, an explicit terminal null. Literal slots retain their decoded values; recursive placeholders retain their exact bytes.
 
@@ -243,6 +258,7 @@ frame opaque.
 A positional surface parameter body ends at its compound close, the next validated surface-row header, or a named-record header. A named-record boundary has `e0`, a field-type byte in `00..24`, a nonempty ASCII identifier beginning with a letter, and a null terminator. An `e0` byte inside an opaque numeric or pointer token is not a boundary.
 
 Row bodies end at a valid row-close marker, named-record header, or a following positional row header that matches the row schema. Scalar-token length takes precedence over structural-byte interpretation, so an `e3` byte inside a complete scalar does not close the row. The first row after `srf_array\0` can be a named-record row with the fields `geom_id`, `geom_type`, `feat_id`, `orient`, `boundary_type`, `next_geom_ptr`, `envlp`, `outline`, and `local_sys`.
+Named-record rows require one defined `orient` byte and one defined `boundary_type` byte from the row header value sets. An absent or undefined discriminator does not define a surface row.
 `geom_id` is unique within one selected namespace. Multiple header-shaped byte
 sequences carrying the same identifier are ambiguous and are not surface rows.
 A nonzero `next_geom_ptr` may reference a rowless face use, so materialization of
@@ -326,7 +342,12 @@ count and the scalar tokens must consume the complete bounded field body.
 declared count and field boundary must select exactly one complete tokenization;
 zero or multiple complete tokenizations leave the field opaque.
 
-Named prototype fields describe the first surface instance. The first instance is the adjacent same-family positional surface row. The preceding adjacent row is the first instance when the prototype separates it from replay rows; otherwise the following adjacent row is the first instance. Positional row bodies carry the per-instance values for subsequent instances.
+Named prototype fields describe the first surface instance. Within a complete
+counted `srf_array` frame, the immediately preceding row is the first instance
+when it has the prototype's family. When the immediately preceding row has a
+different family, or when the prototype occurs before the first row header, the
+following same-family row is the first instance. Positional row bodies carry
+the per-instance values for subsequent instances.
 
 In the ND layout, a complete plane, cylinder, or torus prototype `local_sys` and family parameters define the first instance carrier. Slots 0 through 2 contain the first support direction. Slots 6 through 8 contain the second support direction. A torus prototype also admits slots 3 through 5 as a candidate second support direction. Exactly one admitted candidate has the same scale as the first direction and is orthogonal to it. Slots 9 through 11 contain the origin. The bounded scalar body encodes its declared slots sequentially; no byte may be skipped between slot encodings. Each positional plane origin slot uses its row-lane scalar form when the prefix defines one. Other slot-9 prefixes use the signed first-coordinate lane defined for tabulated-cylinder directrix points; other slot-10 and slot-11 prefixes use the corresponding second-coordinate lane. The first-coordinate lane's `4a` form stores a negative coordinate in seven bytes: `c0` is the implicit first IEEE-754 byte, the six bytes after `4a` are bytes one through six, and the low byte is zero. The normalized cross product of the two orthogonal, equal-scale support directions is the analytic axis. A bare terminal `18` in the bounded `local_sys` body occupies one zero slot. Terminal `00 0c 98` in a positional plane support frame also occupies one zero origin slot. The same byte triple separates the two bound pairs in a cylinder outline; its meaning is fixed by the enclosing record grammar. A plane passes through the local-system origin, uses the analytic axis as its normal, and uses the first support direction as its parameter-space reference direction. A cylinder uses that axis and reference direction and requires one positive finite `radius`. A zero torus `radius1` and positive `radius2` define a sphere centered at the local-system origin. Positive `radius1` and `radius2` define a torus with respective major and minor radii centered at that origin.
 Within a named prototype `local_sys`, `e7 <count>` advances over `count`
@@ -395,6 +416,8 @@ length and the first corner's three coordinates, then the second corner's first
 two coordinates in the positional surface-row scalar lane. An opaque third
 coordinate follows that prefix. The body then contains exactly one complete
 twelve-slot positional `local_sys` and ends with one positive scalar radius.
+The terminal radius has exactly one byte-valid positive scalar start that
+consumes the body remainder; zero or multiple starts leave the body unresolved.
 For an X- or Y-axis carrier, exactly one stored corner-coordinate difference
 equals the positive axial length and the other stored difference equals twice
 the radius. Slots 9 through 11 of the local system contain the model-space
@@ -628,6 +651,10 @@ unbounded, its axis is the positive omitted model coordinate, and it has no
 stored axial length. A finite body occupying a repeated-diameter frame and
 control shell remains a repeated-diameter body and is not a square-radial form.
 
+An exactly eight-slot terminal frame is a single-diameter form only when the
+square-radial invariants do not also hold. If both the single-diameter and
+square-radial forms satisfy their invariants, neither form defines the carrier.
+
 Cylinder and cone prototype local systems are parameter templates. Their terminal
 triples do not establish model-space origins. Cylinder and cone carriers require
 their positional construction or a feature placement.
@@ -688,6 +715,16 @@ Within their bounded body, `f9 00` between coordinate tuples is a continuation
 marker and occupies no coordinate slot. When that form leaves the final tuple
 one coordinate short at the field boundary, the omitted terminal coordinate is
 zero. A terminal `18` occupies one explicit zero slot.
+
+The `tab_cyl` prototype's `local_sys f9 04 03` supplies a chart-origin vector.
+In the complete form, all twelve slots are finite and slots 9 through 11 are
+the vector. In the compact chart form, slots 0 through 6 are finite zero,
+slots 7 through 9 are finite vector components, and slots 10 and 11 are
+omitted or inherited; slots 7 through 9 are the vector. A replay joins its
+prototype only when both records are in the same section and the prototype's
+`c_pnts f8 04 f7 <start> fb` expands to the replay's four control-point IDs in
+the same order. A missing or non-unique join leaves the prototype chart origin
+undefined.
 
 The direction/directrix form of a `geom_type = 2c` positional body begins with
 a three-scalar model-space sweep-direction frame followed by the bytes
@@ -753,10 +790,18 @@ and four store the sweep bounds. In a first-coordinate frame slot,
 `4a <tail6>` reconstructs as the positive `40 <tail6> 00` exception. When exactly two
 frame-axis spans equal the first-to-last control-point spans of the two
 directrix coordinates, those axes define the directrix chart. Interior control
-points do not widen these spans. Each directrix axis is a
-signed unit-slope affine map selected by the frame bounds and the layout's
-required intercept magnitude. A missing or non-unique map leaves the frame
-opaque. The remaining axis defines the extrusion vector. The four placed
+points do not widen these spans. Each directrix axis is a signed unit-slope
+affine map. A layout whose second and fifth scalar prefixes are `46` uses the
+magnitude of the joined prototype chart-origin component on the first
+directrix axis and zero on the second axis. The `_ 42 _ _ 18 _` layout uses zero
+intercepts on both axes. Every other complete frame selects exactly one of a
+zero-intercept chart, which retains the stored sweep-axis sign, and a
+prototype-origin chart, which reflects the sweep-axis sign; the latter exists
+only when a joined prototype supplies a nonzero first-axis component. The
+prototype-origin intercept magnitude is finite and can have any model-unit
+value; frame sign and reversal select its signed affine map.
+The selected map and frame-axis assignment must be unique; otherwise the frame
+is opaque. The remaining axis defines the extrusion vector. The four placed
 points form a non-rational clamped cubic B-spline with knot vector
 `[0,0,0,0,1,1,1,1]`.
 For a replay-bound row, this unique ordered frame-axis construction defines the
@@ -788,20 +833,13 @@ the two surfaces, and neither surface is periodic transverse to the edge. The
 shared curve retains one boundary's degree, knots, control points, weights, and
 periodicity.
 
-Layouts whose second and fifth scalar prefixes are `46` require a first-axis
-intercept magnitude of 30, a zero second-axis intercept, and retain the stored
-sweep-axis sign. The
-`_ 42 _ _ 18 _` layout requires zero intercepts and retains the stored
-sweep-axis sign. The fifth-slot `18` is a one-byte zero bound and does not
-consume bytes from the sixth slot. Its first and fourth slots accept the
-complete first-coordinate scalar lane; its third and sixth slots accept the second-coordinate
-scalar lane. In the `_ 2d _ _ 2d _` layout, slots one and
-four also use the first-coordinate lane. Every remaining complete replay-bound
-frame selects its directrix chart from exactly two forms: a zero-offset form
-retaining the sweep-axis sign, or a first-axis intercept magnitude of 30 with a
-zero second-axis intercept and a reflected sweep-axis sign. Scalar prefixes
-select the encoding of each coordinate; they do not otherwise constrain chart
-selection. A missing or non-unique form leaves the frame opaque.
+The fifth-slot `18` is a one-byte zero bound and does not consume bytes from the
+sixth slot. Its first and fourth slots accept the complete first-coordinate
+scalar lane; its third and sixth slots accept the second-coordinate scalar
+lane. In the `_ 2d _ _ 2d _` layout, slots one and four also use the
+first-coordinate lane. Scalar prefixes select the encoding of each coordinate;
+they do not otherwise constrain chart selection. A missing or non-unique form
+leaves the frame opaque.
 Each endpoint bound carries its own stored sign; resolving a chart may negate
 the two bounds independently. The resulting unit-slope affine map remains
 unique.
@@ -1229,6 +1267,14 @@ the same feature namespace. A nonzero generator identifier establishes that
 feature identity even when no operation-state or feature-definition row is
 stored for it.
 
+The `crv_id` is a source reference and is not an occurrence identity. Within
+one curve namespace, a native parameter, topology, or cross-section curve-row
+record uses its family key with `<crv_id>` when that identifier occurs once.
+When it occurs more than once, the native key is `<crv_id>-<source_offset>`
+with the source offset rendered as a 20-digit zero-padded decimal value. The
+repeated-row key does not alter any geometry or topology join: a semantic join
+still requires one uniquely identified row.
+
 When the byte following either row terminator begins a valid positional prefix,
 that boundary prefix is authoritative; prefix-like byte sequences inside its
 bounded parameter body do not introduce competing row starts. A segment that
@@ -1267,10 +1313,13 @@ carrier incidence is not limited to the stored side of each edge.
 The raw `type_byte` does not by itself identify a curve family.
 
 The parameter body is the byte range after the two direction flags and before
-the selected four-reference suffix. Its scalar walk retains each decoded token
-with body-relative offset, length, and exact bytes. Canonical `f7` entity
-references retain the same span data. Maximal bytes claimed by neither class
-form opaque spans, so the three span sets partition the complete body.
+the unique four-reference suffix. The suffix is valid only when exactly one
+canonical four-reference parse reaches `00 00 e3`; zero or multiple parses
+withhold the complete row from typed parameter records. Its scalar walk
+retains each decoded token with body-relative offset, length, and exact bytes.
+Canonical `f7` entity references retain the same span data. Maximal bytes
+claimed by neither class form opaque spans, so the three span sets partition
+the complete body.
 
 ### 4.1 Pcurve endpoints
 
@@ -1368,7 +1417,7 @@ neither carrier equation and does not assign native parameter semantics.
 
 ## 5. Topology and section records
 
-Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer boundary by topology. Multi-loop faces require parameter-space containment to distinguish outer from inner loops. Shells follow connected components of face references.
+Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer boundary by topology. Multi-loop faces require parameter-space containment to distinguish outer from inner loops. When no placed surface chart is available, complete solved boundary vertices must prove one common plane before the same containment rule is applied. Shells follow connected components of face references.
 
 Use the following order to select a body count:
 
@@ -1392,9 +1441,19 @@ absent and own no bytes.
 | `order_table` | Generated-entity ordering table.                                                                                                                                                                                                                                                                                                                                                          |
 | `ent_tab`     | Trimmed profile entity chain.                                                                                                                                                                                                                                                                                                                                                             |
 | `vert_tab`    | Trim vertices and their two incident `segtab` entities.                                                                                                                                                                                                                                                                                                                                   |
+| `eqtn_arr`    | Solver-equation table. The header is an optional `f2`, `f8 <declared_count>`, optional `f7 <entity_ref>`, `fb e2`; a named prototype follows and closes with `f1 f7 <class> e2`. Positional rows store solver `equation_id` and `function_id`, followed by either an explicit `f8 <argument_count>` or an uncounted argument body, then `f6` auxiliary data and an `e2` row terminator.                                                                                                                                 |
 | `relat_ptr`   | Counted sketch-constraint relations. An `f8` allocation count of one is the empty table form. Larger counts include two structural entries; exactly `count - 2` positional rows follow the schema close. Zero is invalid. Each row ends at `e2` and stores `id`, `used`, three four-slot operand vectors `a`, `b`, `c`, then `sign`, dimension selector, and relation-type discriminator. |
 | `skamp_ptr`   | Counted solver-incidence rows. Each row stores `id`, `type`, `flags`, `status`, and a counted ordered array of section-entity `ent_id`/`sense` pairs.                                                                                                                                                                                                                                     |
 | `triples_ptr` | Counted joins from relation and equation identifiers to `skamp_ptr` incidence identifiers. Each of the three fields independently admits the `f6` null sentinel.                                                                                                                                                                                                                          |
+
+Within an `eqtn_arr` argument body, `e4` occupies one slot with value one,
+`e5` occupies two slots with value zero, and `e6` occupies three slots with
+value zero. In the explicit-count form, `f6` occupies one null argument slot
+when it occurs before the counted slot total; the following `f6` is the
+auxiliary field. In the uncounted form, the first `f6` terminates the argument
+body and is the auxiliary field. The equation table ends before the following
+`scale`, `scales`, or `guesses` named record. The declared count and decoded row
+count are independent native values.
 
 Within each `var_arr` row, `value` and `guess` are independent scalar lanes.
 The nine-byte `ed <tail8>` form is a dimension-driven sentinel in either lane;
@@ -1415,6 +1474,95 @@ whose bodies decode.
 The `ent_tab` and `vert_tab` headers likewise retain their declared counts,
 table-class references, and row-class references independently of validated
 trim rows.
+
+For a complete `eqtn_arr`, the declared count is one greater than the number of
+replayed positional rows because the count includes the named prototype. A
+non-null equation argument is a zero-based ordinal into the containing
+`var_arr` row table. It is not a `uvar_id`, point key, relation identifier, or
+dimension identifier. Function `2` has exactly two argument slots and asserts
+equality of the two referenced scalar rows. When both rows have type `1` or
+both rows have type `2`, the assertion equates the corresponding coordinate of
+their point keys. Function `3` has exactly three argument slots. Its first two
+rows have the same type, either `1` or `2`; its third row has type `0`. The
+third row key is a zero-based ordinal into a complete `dimtab_ptr` row table.
+For dimension types `1` through `5`, the type-0 scalar and selected dimension
+value are equal non-negative millimetre values, and the equation asserts that
+the absolute difference of the first two coordinates equals that value. An
+inline type-0 scalar must equal the selected dimension value. A type-0 row
+with the nine-byte dimension-driven sentinel receives its resolved value from
+the selected complete dimension row. When a function-2 row pairs one type-3
+row with one type-0 row, the type-0 key is a zero-based ordinal into a complete
+`dimtab_ptr` row table of dimension type `3`. The type-0 scalar, selected
+dimension value, and type-3 radius scalar are equal positive millimetre values;
+the type-3 row key is the radius identity. The same dimension-driven sentinel
+rule applies to the type-0 scalar in this function-2 form.
+Function `0` has exactly six argument slots. The first two rows are the type-1 and
+type-2 coordinates of a first point. The next two rows are the type-1 and type-2
+coordinates of a second point. The fifth row has type `0` or `3` and is the
+non-negative radial distance. The sixth row has type `4` or `6` and is an angle
+in radians. The second point equals the first point plus the radial distance
+multiplied by `[cos(angle), sin(angle)]`. A zero radial distance produces a zero
+coordinate difference and does not constrain the angle. A missing radial
+distance or angle is resolved only when the complete point coordinates determine
+a unique value, and a stored value must agree with those coordinates before the
+equation is transferred.
+Function `6` has five argument slots. The first two rows are the type-1 and
+type-2 coordinates of a first point. The next two rows are the type-1 and
+type-2 coordinates of a distinct second point. The final row has type `3` and
+is their positive Euclidean distance. A missing type-3 scalar is derived when
+both points are complete; a stored scalar must agree with that distance. An
+incomplete point pair or a non-positive or conflicting scalar leaves the
+equation native.
+Function `35` has nine argument slots. The first two rows are the type-1 and
+type-2 coordinates of a target point. The next four rows are the type-1 and
+type-2 coordinates of two distinct reference points. The seventh row has type
+`4`; the final two rows have type `5` and scalar value zero. The target point
+lies on the infinite line through the two reference points. A complete line
+equation is required before a missing target coordinate is solved.
+Function `13` has three argument slots. The first two rows have the same
+coordinate type `2` and identify distinct point keys. The final row has type
+`7` and scalar value zero. The equation asserts equality of the selected
+ordinates. An incomplete auxiliary row, a nonzero auxiliary value, a mixed
+coordinate type, or an ambiguous point key leaves the equation native.
+Function `33` has nine argument slots. The first eight slots are four type-1 and
+type-2 coordinate pairs. The first two pairs identify one endpoint pair and the
+next two pairs identify the other. The final row has type `7` and scalar value
+zero. The equation asserts equality of the squared Euclidean lengths of
+the two endpoint pairs. A missing coordinate is solved only when the resulting
+quadratic has one finite root that satisfies the complete equation system; two
+roots, no root, an incomplete auxiliary row, or an ambiguous point key leaves
+the equation native.
+
+Function `42` has three argument slots. The first two rows have the same
+coordinate type, either `1` or `2`, and identify two point coordinates. The
+third row has type `6`. The type-6 scalar equals the arithmetic mean of the two
+selected coordinates. A missing coordinate is solved from a finite type-6
+scalar and the other coordinate; a missing type-6 scalar is derived from two
+finite coordinates. A stored scalar or coordinate that conflicts with the
+equation leaves that row native.
+Function `31` has four argument slots. The first two rows are the type-1 and
+type-2 coordinates of one point key. The final two rows are distinct type-6
+scalars and bind the point's `u` and `v` coordinates, respectively. A missing
+coordinate is solved from its finite type-6 scalar, and a missing type-6 scalar
+is derived from its finite bound coordinate. A conflicting stored value leaves
+the equation native.
+Function `43` has eight argument slots. The first four rows are the type-1 and
+type-2 coordinates of two distinct point keys. The fifth and sixth rows have
+type `4` or `5`; the seventh row has type `0`; and the final row has type `5`.
+The type-0 row is a non-negative axis distance between the two points. Its
+value equals the absolute difference of exactly one selected coordinate. A
+missing type-0 scalar is derived only when exactly one coordinate difference is
+non-zero. A stored scalar must agree with exactly one coordinate difference.
+Non-zero type-5 auxiliary values, ambiguous coordinate matches, and incomplete
+point pairs leave the equation native.
+Function `16` has a direct four-slot form with two type-4 angle rows, a type-0
+result row, and a type-5 selector row. When the selector value is zero and the
+first angle is not less than the second, the type-0 result is the non-negative
+first-minus-second angle difference in radians, bounded by π. A missing result
+is derived from the two finite angles; a stored result must be finite,
+non-negative, and equal to that difference. A missing selector, a reversed or
+over-π difference, or a conflicting result leaves the equation native.
+
 Complete native `ent_tab` rows are retained independently of whether `segtab`
 is present, complete, or contains the same external identifiers. Cross-table
 agreement is required only when deriving solved section topology.
@@ -1502,6 +1650,9 @@ complete native incidence row. Defined incidence type, flag, and locus-sense
 patterns retain their neutral constraint kind when disabled; saved coordinates
 and unresolved carrier geometry are not required to satisfy an inactive
 equation.
+Every neutral definition, active or inactive, requires each selected locus to
+match the emitted entity family. An incompatible candidate remains a native
+incidence record.
 
 For a two-item type-zero incidence, sense `2` selects the native first endpoint
 and sense `3` selects the native second endpoint. Sense `4` selects an arc or
@@ -1572,8 +1723,18 @@ start and end loci horizontally aligned. The corresponding type-thirteen
 incidence makes those loci vertically aligned. These map to neutral
 horizontal- and vertical-loci constraints. Solver activity controls whether
 the alignment participates in the solved section; it does not change the
-stored endpoint roles. A nonzero sense or a non-arc entity does not satisfy
-either form.
+stored endpoint roles. In the affine section solver, an active type-twelve
+form equates the two endpoint `v` ordinates and an active type-thirteen form
+equates their `u` ordinates. A nonzero sense or a non-arc entity does not
+satisfy either form.
+A one-item type-thirty-three incidence with sense `10` fixes the uniquely
+emitted sketch entity with that external identity in sketch coordinates. The
+entity may have typed or native geometry, and the source `segtab` need not be
+complete once the emitted entity identity is unique. The `flags` value does not
+change this interpretation. It maps to the neutral fixed-entity constraint.
+The constraint activity is the low bit of the stored status; the entity
+identity remains the constraint entity for either activity state. An ambiguous
+or non-emitted entity identity, or any other sense, remains a native incidence.
 A one-item type-one incidence with sense zero makes the referenced line
 horizontal. A one-item type-two incidence with sense zero makes the referenced
 line vertical. The unary incidence establishes the referenced entity's line
@@ -1647,12 +1808,17 @@ by sense `2`, `3`, or `4`. Exactly one operand pairing must supply a bounded
 target and a point locus; zero or two pairings retain the native incidence.
 Operand order does not change these roles. A circle is not a bounded midpoint
 target.
+An unresolved centered type-47 construction line remains a native line carrier,
+but its sense-four center is a valid midpoint locus. This center role does not
+establish line coordinates or any other line geometry.
 A two-item type-37 incidence with two sense-zero operands binds a projected
 reference entity to the regular profile entity copied from it. The reference
 entity identifier immediately precedes the profile entity identifier. The
 profile entity occurs exactly once in the trim table. The relation retains the
 ordered source and result identities independently of solver activity. Other
-type-37 operand shapes remain native.
+type-37 operand shapes remain native. A neutral projected-copy constraint is
+valid only when both materialized source and result geometries are identical;
+when both are materialized and differ, retain the native incidence.
 An incidence item may reference a complete saved-section entity through its
 `order_table.ext_id`. When its type/sense pattern has no neutral constraint
 mapping, retain the incidence type, ordered entity identifiers, and sense values
@@ -1745,14 +1911,18 @@ For a type-zero linear-distance relation with operand-vector forms
 `a = [point0, point1, null, 1]`, `b = [0, 0, 0, 0]` or
 `b = [1, 1, 0, 1]`, and
 `c = [15, 16, 15, 1]`, the referenced dimension supplies the distance between
-the two points along the measured horizontal or vertical segment only when the
-sign is explicit. Sign `1` adds the dimension and sign `f6` subtracts it.
-Sign zero supplies no signed coordinate equation; the segment direction fields
-do not assign the missing sign. The equation requires a complete `dimtab_ptr`;
-rows from a table missing any declared dimension do not supply coordinates.
-Equivalent rows define one coordinate equation. Rows that assign different
-signed differences to the same unordered point pair and coordinate define no
-solved coordinate for that equation.
+the two points along the measured horizontal or vertical segment. Sign `1`
+adds the dimension and sign `f6` subtracts it. Sign zero stores only the
+unsigned magnitude: it supplies the invariant
+`abs(second-first)=value`, but does not select an orientation. A coordinate
+solver may test both orientations only after the dimension table is complete
+and the measured coordinate is established. It admits a derived coordinate
+only when every consistent orientation gives the same value; an unresolved
+orientation supplies no coordinate. Rows from a dimension table missing any
+declared dimension do not supply coordinates. Equivalent rows define one
+coordinate invariant. Rows that assign different signed differences to the
+same unordered point pair and coordinate define no solved coordinate for that
+equation.
 
 A type-zero relation with vectors `a=[first_point,second_point,null,1]`,
 `b=[0,0,0,0]` or `b=[1,1,0,1]`, and `c=[15,16,15,1]` is a
@@ -1760,7 +1930,8 @@ segment-aligned linear dimension.
 Its dimension selector is a zero-based index into `dimtab_ptr`. `verhor=1`
 selects the section `u` difference and `verhor=0` selects the section `v`
 difference. Sign `1` defines `second-first=+value`; sign `f6` defines
-`second-first=-value`; sign zero stores only the unsigned magnitude.
+`second-first=-value`; sign zero defines only the unsigned magnitude invariant
+above and leaves its orientation to the complete section solve.
 Only a linear selected dimension contributes this section-coordinate equation;
 an angular or schema-defined dimension does not supply a length ordinate.
 The two point identifiers denote endpoint loci shared by every incident
@@ -1842,6 +2013,15 @@ dimension whose `value` is in radians. Types `0x01`, `0x02`, `0x03`, `0x04`,
 and `0x05` are linear dimensions whose values use model millimeters. `ext_id` is the dimension identity
 within the owning feature definition. A neutral parameter and any constraint
 that selects it require exactly one `dimtab_ptr` row with that `ext_id`.
+The named dimension prototype may carry a nested `dim_ref` table. Its header is
+`f8 <count> f7 <entity-ref> fb e2`; the count includes the named prototype.
+The named row stores `item_id`, `sense`, and a two-slot `point` array. A
+positional replay row stores those fields in the same order. `item_id` and
+`sense` are nullable compact integers. Each point slot is nullable; `e4`
+encodes one and `e5` and `e6` expand to two and three zero slots respectively.
+The first replay row follows `f1 f7 <entity-ref> e2`; later replay rows use
+`f3 f7 <entity-ref> e2` separators. The nested table returns to its enclosing
+dimension row at `f3 f7 <dimtab-entity-ref> e2`.
 `value` and `aux_value` are independently bounded scalar bodies. The encoding
 and decoded numeric value of either field do not constrain the other field.
 Every row is a neutral parameter. An undecoded value leaves its expression and
@@ -1992,6 +2172,15 @@ An analytic carrier pair transfers its sole intersection-curve candidate when ed
 
 Every uniquely identified transferred analytic surface is available to the native topology solver as its model-space carrier. This includes planes derived from feature geometry even when the plane has no independently complete row-local placement frame.
 
+A transferred NURBS boundary curve supplies a face plane when its complete knot
+and control-point record has no weight lane or a finite positive weight lane
+and the control net contains three non-collinear coplanar points. A non-periodic degree-one NURBS
+boundary supplies a boundary line when every control point is collinear with
+its first and last points and it has no weight lane or a finite positive weight
+lane. Invalid,
+degenerate, non-coplanar, or non-collinear control nets do not supply a plane
+or line.
+
 A plane with any two cylinder, cone, or sphere carriers restricts both carrier
 quadrics to conics in an orthonormal plane chart. The determinant of their
 quadratic Sylvester matrix is a polynomial of degree at most four in one chart
@@ -2053,6 +2242,10 @@ The `qlts_affected` array is the ordered roster of every quilt participating in
 the merge, including the base input. Each quilt identifier occupies the
 feature-generated entity namespace and joins to its generating feature through
 the equal identifier of a class-`200` entry.
+For each joined quilt, the generating feature's unique class-`100` entry with
+the same entity identifier supplies the corresponding table surface identifier.
+That surface identifier must resolve to exactly one surface row owned by the
+generating feature; otherwise the quilt remains a native selection.
 In a compact class-`946` replay row, an `f7 150` anchor precedes the counted
 removed-entity array and its `01 e3` close. The affected-geometry and
 affected-edge arrays follow, then `f0 f7 153`, the affected-quilt array, and a
@@ -2075,6 +2268,18 @@ The German operation-family names `Bezugsebene`, `Rundung`,
 and `Schräge` denote the same datum-plane, round, and draft families as
 `Datum Plane`, `Round`, and `Draft`, respectively. `Annotation Feature` is a
 non-modeling annotation container.
+
+For a root schema class `927` Draft feature, the sole class-`209` entry across
+the feature-owned generated-entity tables supplies the neutral plane when its
+entity identifier is in that table's materialized-surface roster, resolves to
+exactly one `srf_array` row, that row is a plane, and its `feat_id` equals the
+Draft feature identifier. The enclosing table class is not part of this rule.
+The neutral-plane selection uses the native
+`creo:visibgeom:surface#<surface-id>` identity. Missing, duplicate,
+unmaterialized, foreign-owned, non-plane, or otherwise ambiguous class-`209`
+carriers leave the neutral plane unresolved. Class-`224` and class-`230`
+entries do not by themselves define the drafted-face selection.
+
 `Cross Section` and its German operation-family name `Querschnitt` are
 non-modeling cross-section definitions. A current-state `Body` or `Körper`
 record with no recipe, root feature-definition class, or feature reference name
@@ -2161,21 +2366,25 @@ such section. This join assigns the canonical feature owner and preserves the
 stored `feat_defs_<id>` schema identifier. A partial, competing, or reused set
 does not assign an owner.
 
-DEPDB also stores an internal sketch-datum chain. A procedural recipe feature
+`DEPDB_DATA` and each complete bounded `AllFeatur` feature row store an
+internal sketch-datum chain. A procedural recipe feature
 `F` immediately followed in feature-state order by a non-recipe feature
 `F + 1` owns the unique section definition whose `gsec3d_ptr.sketch_plane`
 entity is `F + 2`. The intermediate feature is the section datum. When more
 than one definition selects the same sketch-plane entity, the chain does not
 select a regeneration snapshot and none of those definitions acquires the
-owner. When the definition is contained by a class-926 row, `F` depends on
-that saved-section history feature.
+owner. A definition is eligible for this join only while its byte offset lies
+inside the complete source range that contains it. When the definition is
+contained by an `AllFeatur` row, `F` depends on that row's saved-section
+history feature; the row context does not replace the section-definition
+identifier or select the modeling operation.
 
 In `DEPDB_DATA`, `gsec2d_ptr 00 e0 0a name 00 S2D<digits> 00` begins a
 labelled section definition. Its labelled table records define the positional
 table classes used by following unlabeled `S2D` definitions. The next labelled
 `gsec2d_ptr`, unlabeled `S2D`, or feature-definition record ends its body.
 
-The same labelled section-definition form may occur inside a class-926
+The same labelled section-definition form may occur inside a complete bounded
 `AllFeatur` feature row. The containing row identifies the saved-section
 history node. It does not replace the section-definition identifier or identify
 the modeling operation that consumes the section. The definition body is
@@ -2230,7 +2439,10 @@ surfaces with zero apex radius and a half-angle of pi/4. Each cone axis points
 from its apex toward the affected support plane. The chamfer setback is the
 smallest positive axial distance from each apex to an affected plane whose
 normal is parallel to the cone axis. Every generated cone yields the same
-setback.
+setback. Only affected identifiers that resolve to model surface-plane
+carriers participate in the support-plane set; other affected geometry
+identifiers do not select support planes. Every recognized affected model
+plane must have one unambiguous placement.
 An agreed `edgs_affected` identifier selects the B-rep edge with the same
 `crv_array` curve identifier when that edge is present in the transferred body.
 When that global edge is absent, the unique `crv_array` topology row with the
@@ -2288,12 +2500,25 @@ construction transfers a carrier only when the feature has exactly one
 unplaced materialized cylinder row and every support plane satisfies these
 constraints.
 
-The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The
-compact integer is the root `FeatDefs` schema class for that feature. This
-class dispatches the row to its operation-definition grammar. Class 916 is a
-subtractive section-sweep definition and class 917 is an additive
-section-sweep definition; their recipes discriminate linear extrusion from
-rotation. Class 911 is a hole definition, class 913 is a round definition,
+An `AllFeatur` feature row starts at section-body offset zero, immediately
+after the section's `#<name>\n` header, or immediately after an `e3` compound
+close. Its leading canonical compact feature identifier is followed by a
+two-byte row header. The row-header bytes are retained but are not a fixed
+allowlist for row discovery. Within the first 16 bytes after the feature
+identifier, after that row header, the fixed prefix contains
+`e3 f6 <compact-class> e1`. The compact integer is the root `FeatDefs`
+schema class for that feature. A candidate without this complete prefix is
+not a row. A row ends immediately before the next candidate satisfying the
+same boundary and prefix rules with a different feature-identifier/schema-
+class pair, or at the section end. Within one stream, a feature identifier
+and root schema class pair identifies one row; a later candidate with the
+same pair does not create a separate boundary. A feature identifier and
+row-shaped bytes inside an existing row do not create a boundary.
+
+The root schema class dispatches the row to its operation-definition grammar.
+Class 916 is a subtractive section-sweep definition and class 917 is an
+additive section-sweep definition; their recipes discriminate linear
+extrusion from rotation. Class 911 is a hole definition, class 913 is a round definition,
 class 914 is a chamfer definition, class 923 is a datum-plane definition, and
 class 926 is a saved section. In a DEPDB recipe prefix, the root schema class
 performs the same dispatch. Class 979 with the exact model-reference name
@@ -2476,6 +2701,12 @@ midpoint lies on the cylinder axis and half either span is the radius. When both
 cap outlines are complete, their radial midpoints and radii agree. One complete
 cap outline is sufficient because the second placed cap plane fixes the sweep
 direction and axial span independently. Both cylinder uses share this carrier.
+The two-cap table has entry classes `204, 203, 200, 200`; the two cap entries
+and the source-less cylinder entry are materialized table surfaces, while the
+source-bearing profile entry is non-surface. Each cap plane has one
+unambiguous placed equation from its outline or positional frame; conflicting
+equations do not establish the cap. The materialized cylinder entry is the
+single neutral carrier for both generated cylinder uses.
 The owning feature definition selects the emitted section sketch when that
 sketch has a resolved profile chain and otherwise retains the native circular
 profile reference. When the feature definition is absent or does not match the
@@ -2533,7 +2764,7 @@ axis is its in-plane reference direction, and the stored origin is the datum
 origin. Incomplete sibling `local_sys` fields do not compete with the complete
 frame.
 
-For a linear section sweep, generated plane carriers parallel to the section normal bound the sweep axially. Their signed offsets are measured from the section origin along the section normal. The extreme nonzero offset on one side defines a blind extrusion from offset zero to that offset; its sign determines the sweep direction. Extreme offsets on opposite sides define a two-sided extrusion. Equal magnitudes select the symmetric form with total length equal to the sum of the magnitudes. Interior axis-normal planes do not shorten the sweep. The section-definition identifier is the profile reference; it denotes a neutral sketch profile only when the sketch contains a resolved profile chain. The first resolved section sweep in feature-definition order forms the base body. A later sweep requires its Boolean operation before it can be committed as an independent body. A section-sweep definition is solid when its evaluated closed-profile topology produces a solid body. An absent evaluated body does not define a nonsolid sweep.
+For a linear section sweep, generated plane carriers parallel to the section normal bound the sweep axially. Their signed offsets are measured from the section origin along the section normal. The extreme nonzero offset on one side defines a blind extrusion from offset zero to that offset; its sign determines the sweep direction. Extreme offsets on opposite sides define a two-sided extrusion. Equal magnitudes select the symmetric form with total length equal to the sum of the magnitudes. Interior axis-normal planes do not shorten the sweep. When no complete section transform or ordered cap equations are available, a rectilinear plane-family carrier chart uses the uniquely owned `gsec3d_ptr` record with a resolved sketch-plane identifier. Its start-cap `orient` reversal is the parity of set `plane_flip` and set section `flip`; each field independently negates the sketch normal. `flip_flag` and the feature Boolean operation do not select cap polarity. Without that section flag witness, the direction and extent remain unresolved. The section-definition identifier is the profile reference; it denotes a neutral sketch profile only when the sketch contains a resolved profile chain. The first resolved section sweep in feature-definition order forms the base body. Feature-definition order is increasing absolute byte offset of the bounded definition record, not current operation-state order. A material feature enters this resolved sweep order only when exactly one section transform joins exactly one bounded definition; a duplicate or missing join cannot select the base body. A later sweep requires its Boolean operation before it can be committed as an independent body. A section-sweep definition is solid when its evaluated closed-profile topology produces a solid body. An absent evaluated body does not define a nonsolid sweep.
 One or more uniquely decoded positional cylinder frames joined from section arcs
 to same-feature generated cylinder rows independently define a blind extent when
 their axes, positive lengths, and section-plane origins agree. Generated arc
@@ -2550,7 +2781,8 @@ entity. Both cap identifiers must be materialized by the table and resolve to
 unique same-feature plane rows. Parallel placed cap equations define a blind
 extent: their absolute normal separation is the length, and their ordered
 signed separation is the direction.
-Without complete placement or cap equations, the same non-rotational class
+Without complete placement, ordered cap equations, or the rectilinear section
+flag witness, the same non-rotational class
 remains a linear extrusion with unresolved direction and extent. Its uniquely
 owned section definition still supplies the native profile reference. That
 reference resolves to the neutral sketch when the sketch contains a resolved
@@ -2568,8 +2800,9 @@ positions, weights alternating `1` and `sqrt(2)/2`, four quarter-turn spans,
 and doubled internal quarter-turn knots. Its directrix direction retains the
 directrix degree, knots, poles, and weights.
 
-Evaluating one closed line/arc profile through a full turn produces one face
-per oriented profile entity. A profile vertex off the revolution axis produces
+Evaluating one closed line/arc/interpolation-spline profile through a full turn
+produces one face per oriented profile entity. A profile vertex off the
+revolution axis produces
 one closed circular edge with one seam vertex; the preceding and following
 faces form its two radial uses. A profile vertex on the axis collapses and
 produces no edge. Each face has one singleton loop for each off-axis endpoint.
@@ -2579,7 +2812,13 @@ axial, polar, or tube parameter; a planar boundary is an exact rational
 quadratic circle. A spindle-torus boundary retains the signed ring branch, so
 a negative ring shifts azimuth by π instead of reflecting the trim. Face sense
 is the analytic carrier normal aligned to the outward side of the oriented
-section profile.
+section profile. An interpolation-spline profile entity produces a NURBS side
+face. Its directrix direction retains the oriented spline degree, intrinsic
+knot domain, poles, weights, and periodic flag; its angular direction is the
+exact full-turn quadratic construction defined above. Each spline endpoint
+boundary is a constant-`u` pcurve from `v = 0` through `v = 2π`, with `u`
+equal to that endpoint's intrinsic spline parameter. Its face sense uses the
+evaluated directrix tangent and the oriented profile area.
 
 A complete positional pcurve row stores endpoint A and endpoint B in each of
 the two adjacent face parameter frames. A uniquely identified labeled
@@ -2626,6 +2865,12 @@ A carrier-derived point for the same orbit must agree with that point. An
 empty endpoint domain withholds every dependent point in the component.
 An edge transfers independently when both endpoint vertex orbits are solved;
 face and loop transfer still requires every edge of the complete boundary.
+
+An exact non-periodic NURBS curve produced by a complete tabulated-extrusion
+boundary or shared-generator join supplies an unordered endpoint pair by
+evaluating its intrinsic parameter-domain limits. Those points constrain the
+two endpoint orbits of its topology edge. Periodic NURBS and NURBS carriers
+from other constructions supply no endpoint pair through this rule.
 
 When a native edge has no pcurve candidate on a solved planar face, an exact
 line, circle, ellipse, parabola, hyperbola, or NURBS carrier lying in that plane
@@ -2698,7 +2943,7 @@ evaluate to the seam vertex and no native pcurve candidate is present. Other
 periodic carriers and nonmatching endpoint pairs do not establish an edge
 interval by these rules.
 
-Evaluating one closed linear-sweep profile produces one side face per oriented profile entity. A line produces a planar side face and an arc produces a cylindrical side face. Each profile vertex produces an edge parallel to the sweep direction. The exact signed area is the sum of line chord terms and circular-arc sector terms. Its sign selects the cap and side face senses. The two cap loops use the profile edges in opposite directions, and every cap or longitudinal edge has exactly two face uses. Cap-face pcurves are the section entities in the cap plane's `(u,v)` frame: lines remain lines and arcs become exact rational quadratic arcs. A planar side face uses profile distance and sweep offset as its parameters. A cylindrical side face uses profile angle and sweep offset. Its cap-edge pcurves hold the sweep offset constant and its longitudinal-edge pcurves hold the profile parameter constant. A multi-profile solid sweep has one outer profile that strictly contains every hole profile. Hole profiles are pairwise disjoint, unnested, and oriented opposite the outer profile.
+Evaluating one closed linear-sweep profile produces one side face per oriented profile entity. A line produces a planar side face, an arc produces a cylindrical side face, and an interpolation spline produces a ruled NURBS side face. Each profile vertex produces an edge parallel to the sweep direction. The exact signed area is the sum of line chord terms and circular-arc sector terms; a NURBS profile contribution is the signed line integral of its evaluated carrier over every nonzero knot span. Its sign selects the cap and side face senses. The two cap loops use the profile edges in opposite directions, and every cap or longitudinal edge has exactly two face uses. Cap-face pcurves are the section entities in the cap plane's `(u,v)` frame: lines remain lines, arcs become exact rational quadratic arcs, and interpolation splines retain their degree, intrinsic knot vector, control points, weights, and orientation. A planar side face uses profile distance and sweep offset as its parameters. A cylindrical side face uses profile angle and sweep offset. A ruled NURBS side face uses the profile's intrinsic parameter as `u` and normalized translation fraction `[0,1]` as `v`; its `u` degree, knot vector, control points, weights, and periodic flag are the profile's, its `v` degree is one with knot vector `[0,0,1,1]`, and each directrix pole is duplicated at the lower and upper cap translations with its weight duplicated. Its cap-edge pcurves hold the sweep offset constant and its longitudinal-edge pcurves hold the profile parameter constant. A multi-profile solid sweep has one outer profile that strictly contains every hole profile. Hole profiles are pairwise disjoint, unnested, and oriented opposite the outer profile.
 
 The cap loops produced from the outer profile are outer boundaries, cap loops
 produced from hole profiles are inner boundaries, and every single-loop side
@@ -2742,6 +2987,24 @@ feature owns a class-200 entry for that entity identifier, the referencing
 feature depends on that generating feature. A self-reference does not add a
 history dependency. Competing generating owners leave the dependency
 unresolved.
+
+For each feature, a regenerated-result face identity is declared only when an
+owned class-200 entry is a materialized surface, that identifier has exactly
+one surface row, and the row's `feat_id` is the owning feature. The result
+state names that face as `surface#<geom_id>`. Duplicate entries, missing rows,
+and rows owned by another feature do not declare a result state. A generated
+face selection is valid only when its producer feature and `surface#<geom_id>`
+identity occur in that producer's result state.
+
+A regenerated-result edge identity is declared for each unique `crv_array`
+topology row whose `feat_id` is the producing feature. The topology row is
+already a complete materialized edge record: its two face-side identifiers and
+two successor-edge identifiers are bounded by the row grammar. If the same
+curve identifier occurs more than once in the complete curve namespace, that
+feature's edge roster is unresolved. The result state names a declared edge as
+`curve#<crv_id>`. An affected edge that is absent from the current B-rep binds
+to this result identity only when its unique topology row and producing
+feature result state both declare `curve#<crv_id>`.
 
 `edg_id_tab_ptr`, `lo_id_tab_ptr`, `bnd_type`, `used_bodies`, `geom_lists`,
 and `dtm_id_tab` declare feature-owned geometry tables. Each table retains its
@@ -2807,11 +3070,26 @@ the nested reference-plane geometry identifies one datum parent by
 `ActDatums.srf_array.feat_id`; the other unique datum parent is the sketch
 plane.
 
-`ActDatums` stores datum-plane geometry as `act_datum_geoms → srf_array` records. Each section includes one named datum row and can include positional `<gid> 22 ...` rows. For datum planes, `outline` stores two diagonal corners. Let `k = argmin_i |p0[i] - p1[i]|`; the plane equation is `x_k = p0[k]`. Datum names do not define their geometric orientation.
+`ActDatums` stores datum-plane geometry as `act_datum_geoms → srf_array` records. Each section includes one named datum row and can include positional `<gid> 22 ...` rows. For positional datum rows, `outline` stores two diagonal corners. Exactly one corresponding coordinate pair must compare equal; that pair supplies the positive plane normal and equation `x_k = p0[k]`. Zero or multiple equal pairs leave the positional plane unresolved. Datum names do not define their geometric orientation.
+
+Within the counted `ActDatums` `srf_array` frame, a positional datum row uses
+the complete compact-integer `geom_id` and `feat_id` fields, `geom_type = 22`,
+an orientation byte, `boundary_type = 01`, and `next_geom_ptr = 0`. The frame
+count bounds the rows; bytes outside the frame do not start datum rows. The
+row body contains four environment scalar slots followed by the six outline
+corner slots and ends before the next validated row or the containing frame
+boundary.
 
 The datum surface row's `feat_id` is the owning modeling feature identifier.
 The row's `geom_id` remains the separate datum-geometry identifier used by
 `gsec3d` plane references.
+
+Plane lookup keeps the datum-geometry and model-surface namespaces separate. A
+reference is eligible only when one namespace supplies one complete plane
+equation. If one numeric identifier has both a unique complete `ActDatums`
+datum plane and a unique complete model-space plane carrier, the reference is
+ambiguous; neither namespace takes precedence and the section placement remains
+unresolved. A unique complete candidate in one namespace remains eligible.
 
 `FeatDefsDtm` `matrix` records are display or saved-view matrices under `View`, `viewattr`, `world_matrix`, and `model2world` records. They do not define datum-plane placement.
 
@@ -2918,14 +3196,26 @@ contiguous and consume the bounded field body. A complete outline with
 exactly one equal coordinate pair defines the corresponding axis-aligned plane
 and offset.
 
-In the positional datum scalar lane, `a5` and `9f` each occupy seven bytes.
-Their numeric values are not required by the held-coordinate rule: identical
-raw tokens compare equal and distinct raw tokens compare unequal.
+The positional datum scalar lane treats `a5` and `9f` as seven-byte opaque
+tokens. Their numeric values are not required by the held-coordinate rule:
+identical raw tokens compare equal and distinct raw tokens compare unequal.
 
-In a named datum outline, paired standalone-zero slots at positions `k` and
-`k+3` identify coordinate axis `k` and plane offset zero.
-The `41` scalar form in this named outline lane occupies eight bytes: the
-prefix followed by seven payload bytes.
+In a named datum outline, exactly one pair of standalone-zero slots at
+positions `k` and `k+3` identifies coordinate axis `k` and plane offset zero.
+Zero pairs or multiple pairs do not define a plane equation.
+Named-outline coordinates use the bounded model-coordinate DICT lane. `5c`
+and `5e..a3` set the two-byte IEEE prefix to `0x3f75 + prefix`; `a4..a6`,
+`a7..b1`, `b2..cf`, `d0..dc`, `dd`, and `de..df` set it to
+`0xbf2b + prefix`, `0xbf2c + prefix`, `0xbf2d + prefix`, `0xbf2e + prefix`,
+`0xbf2f + prefix`, and `0xbf32 + prefix`, respectively. Each prefix is
+followed by `tail6`.
+`45` reconstructs `[bf, tail6, 00]`. The `28` and `41` forms reconstruct
+`[3f, tail7]`; the fixed `2c`, `4c..4d`, `50`, and `54` forms reconstruct
+`[3f, tail6, 00]`. The `46` and `2d` forms retain their eight-byte
+`[40, tail7]` and `[c0, tail7]` forms. Each complete token consumes one
+coordinate slot; a missing or incomplete token leaves the outline unresolved.
+The `41` scalar form therefore occupies eight bytes: the prefix followed by
+seven payload bytes.
 
 `ref_planes` stores an outer reference followed by a nested `plane_id`. The nested identifier is the geometric datum identifier and joins `ActDatums.srf_array.geom_id`. A referenced datum normal orients a sketch in-plane axis only when it is perpendicular to the sketch-plane normal.
 
@@ -2937,6 +3227,13 @@ identifier. When the namespace contains one section and one procedural-recipe
 record, the recipe record's feature identifier owns the section. The section
 retains the same `segtab_ptr`, `dimtab_ptr`, `relat_ptr`, `var_arr`,
 `gsec3d_ptr`, and `p_saved_result` grammars as a nested feature definition.
+
+A named `gsec3d_ptr` placement span begins at its record header and ends at the
+first following `p_saved_result` record. If that close is absent, the span ends
+at the next `gsec3d_ptr` header or at the enclosing definition boundary. Named
+fields outside this span do not belong to the record. The placement's plain
+`plane_id` field supplies the sketch-plane entity; an `e0 01 plane_id` field
+inside `ref_planes` supplies the nested datum-geometry identifier.
 
 Positional `segtab_ptr` replay ends at the first following section-table label,
 including `dimtab_ptr`, `relat_ptr`, `var_arr`, `gsec3d_ptr`, `order_ptr`, or
@@ -3024,7 +3321,8 @@ The in-plane orientation is the unique referenced plane not parallel to the
 resolved sketch plane. Its normal projected into the sketch plane defines the
 section `u` axis, and the intersection of the two plane equations defines the
 section origin. Parallel support planes and non-plane references do not define
-the section axis.
+the section axis. The selected reference row supplies its own `ref_type`,
+`seg_id`, and `flip_flag`; fields from another row do not orient the section.
 
 A linear section frame is also complete when at least two distinct solved arc
 centers bind through same-feature class-200 entries to complete positional
@@ -3367,15 +3665,27 @@ auxiliary relation retains ordinary assignment-target semantics, participates
 in the program identifier namespace, and evaluates when its dependencies have
 values. An equation does not declare a parameter. A complete block retains its
 ordered equations, auxiliary relations, unknowns, and aligned solution values.
-When every unknown has a preceding numeric value, every equation reduces to a
-dimensionally valid affine equality after evaluating known dependencies and
-block-local auxiliary relations, and the complete system has one finite
+At the terminating `FOR` line, a declared unknown takes the physical dimension
+of its preceding value when that value is defined. An unknown without a
+preceding value receives dimensions from unit-qualified operands, dimensioned
+reserved constants, known quantities, and dimension-equality constraints imposed
+by the equation expressions. Free dimension exponents are zero. A dimension
+constraint is inconsistent when it has no integral solution in the five
+canonical axes: length, mass, time, angle, and temperature. A dimensionally
+valid affine equality is then evaluated after known dependencies and block-local
+auxiliary relations are applied. When the complete affine system has one finite
 consistent solution, the solution in canonical relation units replaces the
-preceding unknown values at the terminating `FOR` line and supplies following
-assignments. Unknowns may have different physical dimensions; multiplication or
-division by a known dimensioned value supplies the corresponding affine
-coefficient. Nonlinear, dimensionally inconsistent, dependency-unresolved,
-underdetermined, or inconsistent systems retain absent solution values.
+unknown values at `FOR` and supplies following assignments. Unknowns may have
+different physical dimensions; multiplication or division by a known
+dimensioned value supplies the corresponding affine coefficient. A nonlinear
+system uses the same dimension checks and replaces the unknown values only when
+its numeric residual equations have one finite root with a full-rank local
+Jacobian. A root is not a solution when any residual is nonnumeric,
+dimensionally inconsistent, outside a function domain, or non-finite. Multiple
+roots, a rank-deficient root, an underdetermined system, an inconsistent system,
+or an unresolved dependency retains absent solution values. Non-smooth,
+piecewise, and discrete function forms retain absent solution values unless the
+affine reduction above resolves them without a numeric nonlinear solve.
 An equality or ordering comparison between two affine forms is independent of
 the unknowns when subtraction cancels every unknown coefficient. Such a
 comparison has its constant Boolean value during the solve. `if` selects an
@@ -3609,8 +3919,10 @@ row ends at the following named entity record. The row prefix and display
 attributes precede this six-slot suffix. The suffix uses the section-local
 scalar cache and the signed coordinate DICT lane. `18` immediately before a
 complete coordinate token is a standalone zero slot. A positional row defines
-a line only when exactly six finite scalars consume the complete suffix. The two
-endpoint positions are model coordinates in the active principal length unit.
+a line only when exactly six finite scalars consume the complete suffix and
+exactly one byte offset starts that suffix. Zero or multiple qualifying starts
+leave the row unresolved. The two endpoint positions are model coordinates in
+the active principal length unit.
 
 An `ent_list(line3d)` positional row repeats its canonical entity identifier
 on both sides of `e3`, followed by its compact type and `e2` body opener. The
@@ -3618,12 +3930,17 @@ body fields include `end1.xyz`, `end2.xyz`, and `orig_len` as seven consecutive
 scalars. A complete spatial line has a nonzero endpoint distance equal to the
 absolute stored `orig_len`. The scalar run precedes the remaining positional
 fields. Entity references and display fields before or after that run do not
-contribute coordinates. Exactly one seven-scalar run may satisfy the endpoint
-distance and stored-length invariant.
+contribute coordinates. The row body ends at the next validated row header or
+the `ent_list(line3d)` block end. Exactly one seven-scalar run within that body
+may satisfy the endpoint distance and stored-length invariant.
 
 An `ent_list(arc_z)` positional row uses the same repeated-identifier and
 `e2` body framing. Its explicit scalar form stores `center.xyz`, positive
 `radius`, `end1.xyz`, and `end2.xyz` consecutively after the fixed row prefix.
+Its coordinate suffix uses the tabulated-cylinder first-coordinate scalar
+lane. That lane has precedence when a prefix has a different model-reference
+mapping; a token without a first-coordinate form falls back to the
+model-reference lane.
 Both endpoints lie at the stored radius. For non-antipodal endpoints, their
 ordered radial vectors define the circle-plane normal by their cross product.
 A compressed diameter form omits the explicit center; its endpoint distance is
@@ -3631,7 +3948,8 @@ twice the radius, their midpoint is the center, and their shared model Z value
 selects the model-Z plane. The first endpoint defines the reference direction.
 The later parameter fields do not alter this carrier equation. Exactly one
 explicit or compressed scalar run may satisfy the corresponding circle
-invariant.
+invariant. The row body ends at the next validated row header or the
+`ent_list(arc_z)` block end.
 
 The named entity in `ent_list(conic)` declares compact `id`, `type`, and
 `flip` fields; model-coordinate arrays `end1 f8 03` and `end2 f8 03`; scalar
@@ -3661,8 +3979,9 @@ of the preceding `e3`, then stores `<id> <type> e2`. Its body begins
 `t0`, `t1`, `c1`, `c2`, and the twelve local-system slots in that order. The
 compact `11` `t1` form stores `t0 + pi` while leaving the following coefficient
 and local-system positions aligned. Decoded endpoints, parameters, and
-coefficients are finite. A complete row consumes all twelve local-system slots
-before its trailing compound record.
+coefficients are finite. Exactly one complete twelve-slot local-system prefix
+must be immediately followed by the trailing compound record. Zero or multiple
+qualifying prefixes leave the positional conic unresolved.
 
 A type-30 conic record defines a complete ellipse carrier without interpreting
 its parameter tokens when the first two local-system triples are finite

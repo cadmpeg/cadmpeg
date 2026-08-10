@@ -74,6 +74,10 @@ fn pattern_is_valid(pattern: &PatternKind, nested: bool) -> bool {
                 && plane_origin.z.is_finite()
                 && valid_feature_direction(*plane_normal)
         }
+        PatternKind::MirrorReference { plane } => match plane {
+            FaceSelection::Native(reference) => !reference.is_empty(),
+            _ => true,
+        },
         PatternKind::Scale {
             center,
             final_factor,
@@ -146,7 +150,7 @@ fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
         | PatternKind::Scale { count, .. } => usize::try_from(*count).ok(),
         PatternKind::LinearOffsets { offsets, .. } => Some(offsets.len()),
         PatternKind::CircularAngles { angles, .. } => Some(angles.len()),
-        PatternKind::Mirror { .. } => Some(2),
+        PatternKind::Mirror { .. } | PatternKind::MirrorReference { .. } => Some(2),
         PatternKind::Unresolved { .. } | PatternKind::Composite { .. } => None,
     }
 }
@@ -627,7 +631,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralSurfaceDefinition::SubSurface { support, .. } => {
+            ProceduralSurfaceDefinition::SubSurface { support, .. }
+            | ProceduralSurfaceDefinition::Replica {
+                source: support, ..
+            } => {
                 if ids.surfaces(&support.0).is_none() {
                     ref_error(findings, &procedural.id.0, "surface", &support.0);
                 }
@@ -1178,6 +1185,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             ProceduralSurfaceDefinition::CurveBounded {
                 support,
                 boundaries,
+                boundary_pcurves,
                 ..
             } => {
                 if ids.surfaces(&support.0).is_none() {
@@ -1186,6 +1194,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 for boundary in boundaries {
                     if ids.curves(&boundary.0).is_none() {
                         ref_error(findings, &procedural.id.0, "curve", &boundary.0);
+                    }
+                }
+                for pcurve in boundary_pcurves {
+                    if ids.pcurves(&pcurve.0).is_none() {
+                        ref_error(findings, &procedural.id.0, "pcurve boundary", &pcurve.0);
                     }
                 }
             }
@@ -1409,7 +1422,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     ref_error(findings, &procedural.id.0, "curve", &source.0);
                 }
             }
-            ProceduralCurveDefinition::Subset { source, .. } => {
+            ProceduralCurveDefinition::Replica { source, .. }
+            | ProceduralCurveDefinition::Subset { source, .. } => {
                 if ids.curves(&source.0).is_none() {
                     ref_error(findings, &procedural.id.0, "curve", &source.0);
                 }
@@ -4019,7 +4033,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     construction.height.0,
                     construction.radial_growth.0,
                     construction.cone_angle.0,
-                    construction.tolerance,
                 ]
                 .into_iter()
                 .all(f64::is_finite)
@@ -4027,7 +4040,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     && construction.pitch.0 >= 0.0
                     && construction.turns.is_finite()
                     && construction.turns > 0.0
-                    && construction.tolerance > 0.0
+                    && construction
+                        .tolerance
+                        .is_none_or(|tolerance| tolerance.is_finite() && tolerance > 0.0)
                     && (construction.height.0 != 0.0 || construction.radial_growth.0 != 0.0);
                 if !valid {
                     feature_geometry_error(findings, feature, "helical sweep is invalid");
@@ -5976,6 +5991,13 @@ pub(super) fn check_loops(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<F
     }
 }
 
+#[derive(Clone, Copy)]
+enum RadialStatus {
+    Closed(usize),
+    DoesNotClose,
+    CrossesEdge,
+}
+
 pub(super) fn check_coedge_pairing(ir: &CadIr, findings: &mut Vec<Finding>) {
     let by_id: HashMap<&str, &Coedge> = ir
         .model
@@ -5983,48 +6005,97 @@ pub(super) fn check_coedge_pairing(ir: &CadIr, findings: &mut Vec<Finding>) {
         .iter()
         .map(|c| (c.id.0.as_str(), c))
         .collect();
+    let mut statuses = HashMap::<&str, RadialStatus>::new();
     for coedge in &ir.model.coedges {
-        let mut current = coedge;
-        let mut closed = false;
-        let mut members = 1usize;
-        for _ in 0..=ir.model.coedges.len() {
-            let Some(next) = by_id.get(current.radial_next.0.as_str()) else {
+        let start = coedge.id.0.as_str();
+        if statuses.contains_key(start) {
+            continue;
+        }
+        let expected_edge = &coedge.edge;
+        let mut path = Vec::<&str>::new();
+        let mut positions = HashMap::<&str, usize>::new();
+        let mut current = start;
+        loop {
+            if let Some(status) = statuses.get(current).copied() {
+                let status = match status {
+                    RadialStatus::Closed(_) => RadialStatus::DoesNotClose,
+                    status => status,
+                };
+                for member in path {
+                    statuses.insert(member, status);
+                }
+                break;
+            }
+            if let Some(&cycle_start) = positions.get(current) {
+                let cycle_len = path.len() - cycle_start;
+                for &member in &path[cycle_start..] {
+                    statuses.insert(member, RadialStatus::Closed(cycle_len));
+                }
+                for &member in &path[..cycle_start] {
+                    statuses.insert(member, RadialStatus::DoesNotClose);
+                }
+                break;
+            }
+            positions.insert(current, path.len());
+            path.push(current);
+            let Some(current_coedge) = by_id.get(current) else {
+                for member in path {
+                    statuses.insert(member, RadialStatus::DoesNotClose);
+                }
                 break;
             };
-            if next.edge != coedge.edge {
+            let Some(next) = by_id.get(current_coedge.radial_next.0.as_str()) else {
+                for member in path {
+                    statuses.insert(member, RadialStatus::DoesNotClose);
+                }
+                break;
+            };
+            if next.edge != *expected_edge {
+                for member in path {
+                    statuses.insert(member, RadialStatus::CrossesEdge);
+                }
+                break;
+            }
+            current = next.id.0.as_str();
+        }
+    }
+    for coedge in &ir.model.coedges {
+        match statuses[coedge.id.0.as_str()] {
+            RadialStatus::CrossesEdge => {
                 findings.push(Finding {
                     check: Check::CoedgePairing,
                     severity: Severity::Error,
                     message: "radial ring crosses edges".into(),
                     entity: Some(coedge.id.0.clone()),
                 });
-                break;
+                findings.push(Finding {
+                    check: Check::CoedgePairing,
+                    severity: Severity::Error,
+                    message: "radial ring does not close".into(),
+                    entity: Some(coedge.id.0.clone()),
+                });
             }
-            if next.id == coedge.id {
-                closed = true;
-                break;
+            RadialStatus::DoesNotClose => {
+                findings.push(Finding {
+                    check: Check::CoedgePairing,
+                    severity: Severity::Error,
+                    message: "radial ring does not close".into(),
+                    entity: Some(coedge.id.0.clone()),
+                });
             }
-            members += 1;
-            current = next;
-        }
-        if !closed {
-            findings.push(Finding {
-                check: Check::CoedgePairing,
-                severity: Severity::Error,
-                message: "radial ring does not close".into(),
-                entity: Some(coedge.id.0.clone()),
-            });
-        } else if members == 2 {
-            if let Some(other) = by_id.get(coedge.radial_next.0.as_str()) {
-                if other.sense == coedge.sense {
-                    findings.push(Finding {
-                        check: Check::CoedgePairing,
-                        severity: Severity::Warning,
-                        message: "two-member radial ring has equal coedge senses".into(),
-                        entity: Some(coedge.id.0.clone()),
-                    });
+            RadialStatus::Closed(2) => {
+                if let Some(other) = by_id.get(coedge.radial_next.0.as_str()) {
+                    if other.sense == coedge.sense {
+                        findings.push(Finding {
+                            check: Check::CoedgePairing,
+                            severity: Severity::Warning,
+                            message: "two-member radial ring has equal coedge senses".into(),
+                            entity: Some(coedge.id.0.clone()),
+                        });
+                    }
                 }
             }
+            RadialStatus::Closed(_) => {}
         }
     }
 }

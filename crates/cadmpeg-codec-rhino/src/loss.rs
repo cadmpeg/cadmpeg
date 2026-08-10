@@ -29,6 +29,18 @@ use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 pub enum RhinoLossCode {
     /// Container or table scan surfaced a structural diagnostic.
     ContainerScanDiagnostic,
+    /// A stored checksum does not match the protected bytes.
+    IntegrityFailure,
+    /// A framed presentation record could not be transferred.
+    PresentationRecordDropped,
+    /// Mesh n-gon grouping is not represented in neutral tessellation.
+    MeshNgonGroupingDropped,
+    /// Embedded history geometry could not be decoded.
+    HistoryEmbeddedGeometryDropped,
+    /// A dimension-style override object was not applied.
+    DimensionOverrideDropped,
+    /// A history dependency points to a later producer and cannot enter ordered IR.
+    HistoryDependencyDropped,
     /// Instance-definition records were malformed, ambiguous, or checksum-degraded.
     ContainerInstanceDefinitionDegraded,
     /// Census of object records framed against object records transferred.
@@ -41,6 +53,10 @@ pub enum RhinoLossCode {
     ObjectFramingUndecodable,
     /// A decode phase surfaced a per-record diagnostic.
     ObjectDecodeDiagnostic,
+    /// A discontinuous polycurve join moved both source endpoints to their midpoint.
+    PolycurveJoinGap,
+    /// One B-rep trim lost its parameter-space curve while its topology remained.
+    TrimPcurveDropped,
     /// B-rep topology fell back to a carrier-only transfer.
     TopologyBrepFallback,
     /// Hatch fill pattern is retained as a native pattern index, not a filled region.
@@ -75,12 +91,20 @@ impl RhinoLossCode {
     /// Every code, in declaration order. Used by tests to assert stability.
     pub const ALL: &'static [RhinoLossCode] = &[
         Self::ContainerScanDiagnostic,
+        Self::IntegrityFailure,
+        Self::PresentationRecordDropped,
+        Self::MeshNgonGroupingDropped,
+        Self::HistoryEmbeddedGeometryDropped,
+        Self::DimensionOverrideDropped,
+        Self::HistoryDependencyDropped,
         Self::ContainerInstanceDefinitionDegraded,
         Self::ObjectRecordCensus,
         Self::ObjectFamilyNotTransferred,
         Self::ObjectAttributesDegraded,
         Self::ObjectFramingUndecodable,
         Self::ObjectDecodeDiagnostic,
+        Self::PolycurveJoinGap,
+        Self::TrimPcurveDropped,
         Self::TopologyBrepFallback,
         Self::HatchFillNotTransferred,
         Self::PolyedgeReferencesNotResolved,
@@ -102,12 +126,20 @@ impl RhinoLossCode {
     pub const fn code(self) -> &'static str {
         match self {
             Self::ContainerScanDiagnostic => "container.scan-diagnostic",
+            Self::IntegrityFailure => "container.integrity-failure",
+            Self::PresentationRecordDropped => "presentation.record-dropped",
+            Self::MeshNgonGroupingDropped => "mesh.ngon-grouping-dropped",
+            Self::HistoryEmbeddedGeometryDropped => "history.embedded-geometry-dropped",
+            Self::DimensionOverrideDropped => "dimension.override-dropped",
+            Self::HistoryDependencyDropped => "history.dependency-dropped",
             Self::ContainerInstanceDefinitionDegraded => "container.instance-definition-degraded",
             Self::ObjectRecordCensus => "object.record-census",
             Self::ObjectFamilyNotTransferred => "object.family-not-transferred",
             Self::ObjectAttributesDegraded => "object.attributes-degraded",
             Self::ObjectFramingUndecodable => "object.framing-undecodable",
             Self::ObjectDecodeDiagnostic => "object.decode-diagnostic",
+            Self::PolycurveJoinGap => "curve.polycurve-join-gap",
+            Self::TrimPcurveDropped => "brep.trim-pcurve-dropped",
             Self::TopologyBrepFallback => "topology.brep-fallback",
             Self::HatchFillNotTransferred => "hatch.fill-not-transferred",
             Self::PolyedgeReferencesNotResolved => "polyedge.references-not-resolved",
@@ -130,7 +162,7 @@ impl RhinoLossCode {
     pub const fn severity(self) -> Severity {
         match self {
             Self::ObjectRecordCensus => Severity::Info,
-            Self::ObjectFramingUndecodable => Severity::Error,
+            Self::ObjectFramingUndecodable | Self::IntegrityFailure => Severity::Error,
             _ => Severity::Warning,
         }
     }
@@ -148,8 +180,16 @@ impl RhinoLossCode {
             | Self::ContainerInstanceDefinitionDegraded
             | Self::ObjectFramingUndecodable
             | Self::ObjectDecodeDiagnostic
+            | Self::PolycurveJoinGap
             | Self::ReferenceMemberUnresolved
             | Self::ReferenceMemberAmbiguous => LossKind::DecodeDiagnostic,
+            Self::TrimPcurveDropped => LossKind::PcurveOmitted,
+            Self::IntegrityFailure => LossKind::IntegrityFailure,
+            Self::PresentationRecordDropped => LossKind::AssetNotTransferred,
+            Self::MeshNgonGroupingDropped => LossKind::RecordNotTyped,
+            Self::HistoryEmbeddedGeometryDropped => LossKind::GeometryNotTransferred,
+            Self::DimensionOverrideDropped => LossKind::PmiOmitted,
+            Self::HistoryDependencyDropped => LossKind::ReferenceGraphNotClosed,
             Self::ObjectRecordCensus => LossKind::ObjectRecordsUntransferred,
             Self::ObjectFamilyNotTransferred => LossKind::UnsupportedObjectFamily,
             Self::ObjectAttributesDegraded => LossKind::AttributesNotTransferred,
@@ -201,12 +241,20 @@ mod tests {
             codes,
             [
                 "container.scan-diagnostic",
+                "container.integrity-failure",
+                "presentation.record-dropped",
+                "mesh.ngon-grouping-dropped",
+                "history.embedded-geometry-dropped",
+                "dimension.override-dropped",
+                "history.dependency-dropped",
                 "container.instance-definition-degraded",
                 "object.record-census",
                 "object.family-not-transferred",
                 "object.attributes-degraded",
                 "object.framing-undecodable",
                 "object.decode-diagnostic",
+                "curve.polycurve-join-gap",
+                "brep.trim-pcurve-dropped",
                 "topology.brep-fallback",
                 "hatch.fill-not-transferred",
                 "polyedge.references-not-resolved",

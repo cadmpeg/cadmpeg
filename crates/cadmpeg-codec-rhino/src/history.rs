@@ -96,7 +96,7 @@ pub(crate) struct EvaluationParameter {
     pub(crate) parameter_type: i32,
     pub(crate) component: [i32; 2],
     pub(crate) parameters: [f64; 4],
-    pub(crate) intervals: [[f64; 2]; 3],
+    pub(crate) intervals: [Option<[f64; 2]>; 3],
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -211,9 +211,9 @@ fn evaluation(
     let parameter_type = reader.i32()?;
     let component = component(reader)?;
     let parameters = [reader.f64()?, reader.f64()?, reader.f64()?, reader.f64()?];
-    let mut intervals = [[0.0; 2]; 3];
+    let mut intervals = [None; 3];
     for value in intervals.iter_mut().take(interval_count) {
-        *value = interval(reader)?;
+        *value = Some(interval(reader)?);
     }
     Ok(EvaluationParameter {
         parameter_type,
@@ -308,11 +308,11 @@ fn object_reference(
         instance_path.push(value);
     }
     if minor >= 1 {
-        evaluation.intervals[0] = interval(&mut reader)?;
-        evaluation.intervals[1] = interval(&mut reader)?;
+        evaluation.intervals[0] = Some(interval(&mut reader)?);
+        evaluation.intervals[1] = Some(interval(&mut reader)?);
     }
     if minor >= 2 {
-        evaluation.intervals[2] = interval(&mut reader)?;
+        evaluation.intervals[2] = Some(interval(&mut reader)?);
     }
     let osnap_mode = if minor >= 3 { reader.i32()? } else { 0 };
     if reader.remaining() != 0 {
@@ -523,7 +523,7 @@ fn subd_edge_chain(
     archive: ArchiveVersion,
 ) -> Result<(SubdEdgeChain, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
-    if minor != 0 {
+    if minor < 1 {
         return Err(structural(
             reader.position(),
             "unsupported SubD edge-chain version",
@@ -531,19 +531,14 @@ fn subd_edge_chain(
     }
     let subd_id = uuid(&mut reader)?;
     let count = count(&mut reader, 1)?;
-    let edge_ids = array(&mut reader, 4, read_u32)?;
-    let orientations = array(&mut reader, 1, read_u8)?;
+    let mut edge_ids = array(&mut reader, 4, read_u32)?;
+    let mut orientations = array(&mut reader, 1, read_u8)?;
     if edge_ids.len() != count || orientations.len() != count {
-        return Err(structural(
-            reader.position(),
-            "SubD edge-chain array counts disagree",
-        ));
+        edge_ids.clear();
+        orientations.clear();
     }
-    if orientations.iter().any(|orientation| *orientation > 1) {
-        return Err(structural(
-            reader.position(),
-            "invalid SubD edge orientation",
-        ));
+    for orientation in &mut orientations {
+        *orientation = u8::from(*orientation == 1);
     }
     if reader.remaining() != 0 {
         return Err(structural(
@@ -571,7 +566,7 @@ fn subd_edge_chains(
         reader.end(),
         archive,
     )?;
-    if minor != 0 {
+    if minor < 1 {
         return Err(structural(
             nested.position(),
             "unsupported SubD edge-chain list version",
@@ -740,12 +735,7 @@ fn parse_record(
         match reader.i32()? {
             0 => RecordType::HistoryParameters,
             1 => RecordType::FeatureParameters,
-            value => {
-                return Err(structural(
-                    reader.position() - 4,
-                    format!("invalid history record type {value}"),
-                ))
-            }
+            _ => RecordType::HistoryParameters,
         }
     } else {
         RecordType::HistoryParameters
@@ -865,7 +855,9 @@ fn evaluation_properties(
     properties.insert(format!("{prefix}.component"), list(&value.component));
     properties.insert(format!("{prefix}.parameters"), list(&value.parameters));
     for (index, interval) in value.intervals.iter().enumerate() {
-        properties.insert(format!("{prefix}.interval_{index}"), list(interval));
+        if let Some(interval) = interval {
+            properties.insert(format!("{prefix}.interval_{index}"), list(interval));
+        }
     }
 }
 
@@ -1144,7 +1136,8 @@ fn extended_geometry_json(
         )
         .ok()?;
         let mut dimension = dimension;
-        crate::dimensions::apply_userdata(data, &value.userdata, archive, &mut dimension).ok()?;
+        crate::dimensions::apply_userdata(data, &value.userdata, archive, scale, &mut dimension)
+            .ok()?;
         return crate::dimensions::semantic_json(&dimension);
     } else if value.class_id == crate::polyedge::CURVE_CLASS {
         let polyedge =
@@ -1167,6 +1160,7 @@ fn extended_geometry_json(
 /// instead of reporting a clean transfer.
 struct GeometrySink {
     untyped: usize,
+    failed: usize,
 }
 
 fn structured_value_properties(
@@ -1232,6 +1226,8 @@ fn structured_value_properties(
                     {
                         sink.untyped += 1;
                         properties.insert(format!("{key}.{index}.geometry"), semantic);
+                    } else {
+                        sink.failed += 1;
                     }
                 }
             }
@@ -1311,7 +1307,7 @@ pub(crate) fn project(
         f64,
     )>,
     ir: &mut cadmpeg_ir::document::CadIr,
-) -> usize {
+) -> (usize, usize, usize) {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 
     #[derive(serde::Serialize)]
@@ -1328,7 +1324,10 @@ pub(crate) fn project(
         value_count: usize,
     }
 
-    let mut sink = GeometrySink { untyped: 0 };
+    let mut sink = GeometrySink {
+        untyped: 0,
+        failed: 0,
+    };
     let mut ids = Vec::with_capacity(records.len());
     let mut native_ids = Vec::with_capacity(records.len());
     let mut seen_record_ids = HashSet::new();
@@ -1359,7 +1358,14 @@ pub(crate) fn project(
                 .or_insert_with(|| Some((index, ids[index].clone())));
         }
     }
+    let mut later_dependencies = 0;
     for (index, record) in records.iter().enumerate() {
+        later_dependencies += record
+            .antecedents
+            .iter()
+            .filter_map(|antecedent| producers.get(antecedent).and_then(Option::as_ref))
+            .filter(|(producer_index, _)| *producer_index >= index)
+            .count();
         let mut dependency_seen = HashSet::new();
         let dependencies = record
             .antecedents
@@ -1455,7 +1461,7 @@ pub(crate) fn project(
         .namespace_mut("rhino")
         .set_arena("history_records", &native)
         .expect("Rhino history records serialize");
-    sink.untyped
+    (sink.untyped, sink.failed, later_dependencies)
 }
 
 #[cfg(test)]
@@ -1503,7 +1509,7 @@ mod tests {
     fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
         let records = [record(1, 11, &[], &[40]), record(2, 12, &[40], &[41])];
         let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
-        assert_eq!(project(&records, None, &mut ir), 0);
+        assert_eq!(project(&records, None, &mut ir), (0, 0, 0));
 
         assert_eq!(ir.model.features.len(), 2);
         assert_eq!(
@@ -1528,6 +1534,32 @@ mod tests {
     }
 
     #[test]
+    fn projection_counts_dependency_on_later_producer() {
+        let records = [record(1, 11, &[40], &[41]), record(2, 12, &[], &[40])];
+        let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+        assert_eq!(project(&records, None, &mut ir), (0, 0, 1));
+        assert!(ir.model.features[0].dependencies.is_empty());
+    }
+
+    #[test]
+    fn unstored_evaluation_intervals_remain_absent() {
+        let mut bytes = 7_i32.to_le_bytes().to_vec();
+        bytes.extend(1_i32.to_le_bytes());
+        bytes.extend(2_i32.to_le_bytes());
+        bytes.extend(
+            [0.0_f64, 1.0, 2.0, 3.0]
+                .into_iter()
+                .flat_map(f64::to_le_bytes),
+        );
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+        let value = evaluation(&mut reader, 0).expect("evaluation");
+        assert_eq!(value.intervals, [None, None, None]);
+        let mut properties = BTreeMap::new();
+        evaluation_properties("evaluation", &value, &mut properties);
+        assert!(!properties.contains_key("evaluation.interval_0"));
+    }
+
+    #[test]
     fn projection_preserves_duplicate_values_and_same_record_descendants() {
         let mut producer = record(1, 11, &[], &[40, 40]);
         producer.values.push(HistoryValue {
@@ -1536,7 +1568,7 @@ mod tests {
         });
         let records = [producer, record(2, 12, &[40], &[41])];
         let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
-        assert_eq!(project(&records, None, &mut ir), 0);
+        assert_eq!(project(&records, None, &mut ir), (0, 0, 0));
 
         assert_eq!(
             ir.model.features[1].dependencies,
@@ -1574,7 +1606,10 @@ mod tests {
                 parse_value(&geometry_value, 0, geometry_value.len(), ArchiveVersion::V8)
                     .expect("embedded geometry");
             let mut properties = BTreeMap::new();
-            let mut sink = GeometrySink { untyped: 0 };
+            let mut sink = GeometrySink {
+                untyped: 0,
+                failed: 0,
+            };
             crate::decode::with_expand_bytes(&geometry_value, |expand| {
                 structured_value_properties(
                     "value_7",
@@ -1606,7 +1641,10 @@ mod tests {
             if values.len() == 1
                 && values[0].class_id == Uuid::from_wire(crate::archive_test_support::POINT_CLASS)));
         let mut properties = BTreeMap::new();
-        let mut sink = GeometrySink { untyped: 0 };
+        let mut sink = GeometrySink {
+            untyped: 0,
+            failed: 0,
+        };
         crate::decode::with_expand_bytes(&geometry_value, |expand| {
             structured_value_properties(
                 "value_7",
@@ -1650,8 +1688,8 @@ mod tests {
         chain.extend(2_i32.to_le_bytes());
         chain.extend([0, 1]);
         let mut chains = 1_i32.to_le_bytes().to_vec();
-        chains.extend(anonymous_value(0, &chain));
-        let chain_value = value(14, &anonymous_value(0, &chains));
+        chains.extend(anonymous_value(1, &chain));
+        let chain_value = value(14, &anonymous_value(1, &chains));
         let (parsed, _) = parse_value(&chain_value, 0, chain_value.len(), ArchiveVersion::V8)
             .expect("SubD edge chain");
         assert!(matches!(parsed.value, Value::SubdEdgeChains(values)

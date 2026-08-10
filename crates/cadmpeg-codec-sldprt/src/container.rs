@@ -7,7 +7,7 @@
 //! invariants, validates block CRC-32 values, inflates payloads, decodes stored
 //! section names, and extracts embedded Parasolid streams.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -145,6 +145,10 @@ pub struct DirectoryEntry {
     pub size: u32,
     /// Decoded section name.
     pub name: String,
+    /// Per-entry descriptor bytes at frame offset +26.
+    pub descriptor: [u8; 14],
+    /// File-level directory trailer following the encoded name.
+    pub trailer: [u8; 6],
 }
 
 /// One cache-cell section-index entry.
@@ -554,11 +558,18 @@ fn try_directory_entry(bytes: &[u8], off: usize) -> Option<DirectoryEntry> {
     let name_start = off + 40; // 26 + 14-byte descriptor
     let raw = bytes.get(name_start..name_start + name_len as usize)?;
     let name = nibble_swap_name(raw)?;
+    let descriptor = bytes.get(off + 26..off + 40)?.try_into().ok()?;
+    let trailer = bytes
+        .get(name_start + name_len as usize..name_start + name_len as usize + 6)?
+        .try_into()
+        .ok()?;
     Some(DirectoryEntry {
         offset: off,
         type_id,
         size,
         name,
+        descriptor,
+        trailer,
     })
 }
 
@@ -653,7 +664,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             name, size, sch.schema
         )),
         None => notes.push(
-            "no Parasolid partition/deltas stream located; B-rep decode will be container-only"
+            "no unique active Parasolid partition located; available B-rep sites remain decodable"
                 .to_string(),
         ),
     }
@@ -675,7 +686,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     }
 }
 
-fn active_parasolid_summary(
+pub(crate) fn active_parasolid_summary(
     scan: &ContainerScan,
 ) -> Option<(String, usize, crate::parasolid::StreamHeader)> {
     if let Some((block, header)) = select_active_parasolid(scan) {
@@ -688,67 +699,94 @@ fn active_parasolid_summary(
             header,
         ));
     }
-    scan.compound_streams
+    let candidates = scan
+        .compound_streams
         .iter()
         .flat_map(|stream| {
             stream.ps_streams.iter().filter_map(move |payload| {
                 let header = crate::parasolid::stream_header(payload)?;
-                crate::parasolid::is_body_stream(&header).then_some((
-                    stream.path.clone(),
-                    payload.len(),
-                    header,
-                ))
+                let path = stream.path.to_ascii_lowercase();
+                let description = header.description.to_ascii_lowercase();
+                (crate::parasolid::is_body_stream(&header)
+                    && !path.contains("ghost")
+                    && !description.contains("ghost")
+                    && (path.contains("partition") || description.contains("partition"))
+                    && !path.contains("deltas")
+                    && !description.contains("deltas"))
+                .then_some((stream.path.clone(), payload.len(), header))
             })
         })
-        .max_by_key(|(_, size, _)| *size)
+        .collect::<Vec<_>>();
+    (candidates.len() == 1)
+        .then(|| candidates.into_iter().next())
+        .flatten()
 }
 
 /// Test whether either outer envelope carries a framed Parasolid body stream.
 pub fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
-    active_parasolid_summary(scan).is_some()
+    scan.blocks
+        .iter()
+        .flat_map(|block| &block.ps_streams)
+        .chain(
+            scan.compound_streams
+                .iter()
+                .flat_map(|stream| &stream.ps_streams),
+        )
+        .filter_map(|payload| crate::parasolid::stream_header(payload))
+        .any(|header| crate::parasolid::is_body_stream(&header))
 }
 
-/// Select the highest-ranked Parasolid B-rep block.
+/// Select the unique Parasolid partition block for the active configuration.
 ///
-/// Ranking favors larger partition streams, then deltas streams. Ghost and
-/// `ResolvedFeatures` sections receive a penalty. The return value includes the
-/// parsed stream header.
+/// An explicit active configuration index is authoritative. Without one, the
+/// block envelope must contain exactly one non-ghost partition candidate.
 pub fn select_active_parasolid<'a>(
     scan: &'a ContainerScan<'_>,
 ) -> Option<(&'a Block, crate::parasolid::StreamHeader)> {
     let active_configuration = active_configuration_index(scan);
-    let mut best: Option<(i64, &Block, crate::parasolid::StreamHeader)> = None;
-    for b in &scan.blocks {
-        let Some(ps) = &b.ps_stream else { continue };
-        let Some(sch) = crate::parasolid::stream_header(ps) else {
-            continue;
-        };
-        let name = b.section.as_deref().unwrap_or("").to_ascii_lowercase();
-        let desc = sch.description.to_ascii_lowercase();
-
-        // Larger real streams score higher; the ghost stub and feature lane are
-        // demoted below any genuine partition/deltas body.
-        let mut score = (ps.len() / 64) as i64;
-        if name.contains("ghost") || desc.contains("ghost") {
-            score -= 1_000_000;
-        }
-        if name.contains("resolvedfeatures") {
-            score -= 1_000_000;
-        }
-        if name.contains("partition") {
-            score += 100_000;
-            if active_configuration.is_some_and(|index| configuration_index(&name) == Some(index)) {
-                score += 1_000_000;
-            }
-        } else if name.contains("deltas") || desc.contains("deltas") {
-            score += 50_000;
-        }
-
-        if best.as_ref().is_none_or(|(s, _, _)| score > *s) {
-            best = Some((score, b, sch));
-        }
-    }
-    best.map(|(_, b, sch)| (b, sch))
+    let candidates = scan
+        .blocks
+        .iter()
+        .flat_map(|block| {
+            let section = block.section.as_deref().unwrap_or("").to_ascii_lowercase();
+            let section_is_partition = section.contains("partition")
+                && !section.contains("ghost")
+                && !section.contains("deltas")
+                && !section.contains("resolvedfeatures");
+            let section_is_admissible = !section.contains("ghost")
+                && !section.contains("deltas")
+                && !section.contains("resolvedfeatures");
+            let body_streams = block
+                .ps_streams
+                .iter()
+                .filter_map(|payload| {
+                    let header = crate::parasolid::stream_header(payload)?;
+                    crate::parasolid::is_body_stream(&header).then_some(header)
+                })
+                .collect::<Vec<_>>();
+            let sole_body_stream = body_streams.len() == 1;
+            body_streams
+                .into_iter()
+                .filter(move |header| {
+                    let description = header.description.to_ascii_lowercase();
+                    section_is_admissible
+                        && !description.contains("ghost")
+                        && !description.contains("deltas")
+                        && (description.contains("partition")
+                            || sole_body_stream && section_is_partition)
+                })
+                .map(move |header| (block, header))
+                .collect::<Vec<_>>()
+        })
+        .filter(|(block, _)| {
+            active_configuration.is_none_or(|active| {
+                block.section.as_deref().and_then(configuration_index) == Some(active)
+            })
+        })
+        .collect::<Vec<_>>();
+    (candidates.len() == 1)
+        .then(|| candidates.into_iter().next())
+        .flatten()
 }
 
 pub(crate) fn configuration_index(section: &str) -> Option<usize> {
@@ -761,56 +799,49 @@ pub(crate) fn configuration_index(section: &str) -> Option<usize> {
 }
 
 pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> {
-    let active = scan.blocks.iter().find_map(|block| {
-        let text = std::str::from_utf8(&block.payload).ok()?;
-        let document = roxmltree::Document::parse(text).ok()?;
-        let root = document.root_element();
-        (root.tag_name().name() == "swSolidWorks")
-            .then(|| {
-                root.descendants()
-                    .find(|node| node.has_tag_name("swModel"))?
-                    .attribute("swConfigurationName")
-            })
-            .flatten()
-            .map(str::to_string)
-    })?;
-    let (position, explicit_index, configuration_count) = scan.blocks.iter().find_map(|block| {
-        let text = std::str::from_utf8(&block.payload).ok()?;
-        let document = roxmltree::Document::parse(text).ok()?;
-        let root = document.root_element();
-        root.tag_name().name().contains("Keywords").then_some(())?;
-        let configurations = root
-            .children()
-            .filter(|node| node.has_tag_name("Configuration"))
-            .collect::<Vec<_>>();
-        let position = configurations
-            .iter()
-            .position(|node| node.attribute("Name") == Some(active.as_str()))?;
-        let explicit_index = configurations[position]
-            .attribute("SourceIndex")
-            .and_then(|value| value.parse().ok());
-        Some((position, explicit_index, configurations.len()))
-    })?;
-    if explicit_index.is_some() {
-        return explicit_index;
-    }
-    let mut partitions = scan
+    let active_names = scan
         .blocks
         .iter()
-        .filter(|block| {
-            block
-                .section
-                .as_deref()
-                .is_some_and(|section| section.to_ascii_lowercase().ends_with("-partition"))
+        .filter_map(|block| std::str::from_utf8(&block.payload).ok())
+        .filter_map(|text| roxmltree::Document::parse(text).ok())
+        .filter(|document| document.root_element().has_tag_name("swSolidWorks"))
+        .flat_map(|document| {
+            document
+                .descendants()
+                .filter(|node| node.has_tag_name("swModel"))
+                .filter_map(|node| node.attribute("swConfigurationName").map(str::to_string))
+                .collect::<Vec<_>>()
         })
-        .filter_map(|block| configuration_index(block.section.as_deref()?))
+        .collect::<BTreeSet<_>>();
+    let active = (active_names.len() == 1).then(|| active_names.first().cloned())??;
+    let indices = scan
+        .blocks
+        .iter()
+        .filter_map(|block| std::str::from_utf8(&block.payload).ok())
+        .filter_map(|text| roxmltree::Document::parse(text).ok())
+        .filter(|document| {
+            document
+                .root_element()
+                .tag_name()
+                .name()
+                .contains("Keywords")
+        })
+        .flat_map(|document| {
+            document
+                .root_element()
+                .children()
+                .filter(|node| {
+                    node.has_tag_name("Configuration")
+                        && node.attribute("Name") == Some(active.as_str())
+                })
+                .map(|node| {
+                    node.attribute("SourceIndex")
+                        .and_then(|value| value.parse::<usize>().ok())
+                })
+                .collect::<Vec<_>>()
+        })
         .collect::<Vec<_>>();
-    partitions.sort_unstable();
-    partitions.dedup();
-    if partitions.len() == configuration_count {
-        return partitions.get(position).copied();
-    }
-    partitions.contains(&position).then_some(position)
+    (indices.len() == 1).then(|| indices[0]).flatten()
 }
 
 #[cfg(test)]

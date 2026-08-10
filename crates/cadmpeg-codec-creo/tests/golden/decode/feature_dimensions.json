@@ -23,14 +23,14 @@
               "entity_id": "7"
             }
           },
-          "id": "creo:depdb:curve_expression_feature#7-257",
+          "id": "creo:depdb:curve_expression_feature#7-269",
           "name": "Curve Equation 7",
-          "native_ref": "creo:depdb:curve_expression#active-7-257",
+          "native_ref": "creo:depdb:curve_expression#active-7-269",
           "ordinal": 2,
           "source_content": [
             {
               "kind": "parameter",
-              "value": "creo:depdb:curve_expression_parameter#7-257-0"
+              "value": "creo:depdb:curve_expression_parameter#7-269-0"
             }
           ],
           "source_tag": "crv_fr_eqn",
@@ -95,11 +95,11 @@
       "parameters": [
         {
           "expression": "d42+1[deg]",
-          "id": "creo:depdb:curve_expression_parameter#7-257-0",
+          "id": "creo:depdb:curve_expression_parameter#7-269-0",
           "name": "result",
-          "native_ref": "creo:depdb:curve_expression#active-7-257",
+          "native_ref": "creo:depdb:curve_expression#active-7-269",
           "ordinal": 0,
-          "owner": "creo:depdb:curve_expression_feature#7-257",
+          "owner": "creo:depdb:curve_expression_feature#7-269",
           "properties": {
             "activation": "active",
             "external_dependencies": "d42",
@@ -194,7 +194,7 @@
                     "d42"
                   ],
                   "expression": "d42+1[deg]",
-                  "offset": 298,
+                  "offset": 310,
                   "target": {
                     "declared_unit": null,
                     "kind": "parameter",
@@ -205,10 +205,10 @@
               ],
               "backup": false,
               "entity_id": 7,
-              "id": "creo:depdb:curve_expression#active-7-257",
+              "id": "creo:depdb:curve_expression#active-7-269",
               "lines": [
                 {
-                  "offset": 298,
+                  "offset": 310,
                   "text": "result=d42+1[deg]"
                 }
               ],
@@ -411,6 +411,7 @@
                   "direction_byte": 1,
                   "external_id": 42,
                   "offset": 144,
+                  "references": null,
                   "unit": "radians",
                   "value": 1.0,
                   "value_body": [
@@ -426,6 +427,7 @@
                   "direction_byte": 1,
                   "external_id": 42,
                   "offset": 197,
+                  "references": null,
                   "unit": "radians",
                   "value": 1.0,
                   "value_body": [
@@ -433,6 +435,7 @@
                   ]
                 }
               ],
+              "equations": [],
               "id": "creo:featdefs:sketch#917",
               "offset": 86,
               "opaque_segments": [],
@@ -474,7 +477,7 @@
       "attributes": {
         "expanded_section_byte_count": "0",
         "expanded_section_count": "0",
-        "file_size": "316",
+        "file_size": "328",
         "layout": "DEPDB",
         "section.0.length": "140",
         "section.0.name": "FeatDefs",
@@ -486,7 +489,7 @@
         "section.1.offset": "216",
         "section.1.raw_name": "MdlStatus",
         "section.1.role": "metadata",
-        "section.2.length": "73",
+        "section.2.length": "85",
         "section.2.name": "DEPDB_DATA",
         "section.2.offset": "243",
         "section.2.raw_name": "DEPDB_DATA",
@@ -562,6 +565,8 @@
       "decoded_feature_entity_count": 0,
       "decoded_feature_entity_reference_count": 0,
       "decoded_feature_entity_table_count": 0,
+      "decoded_feature_equation_count": 0,
+      "decoded_feature_equation_table_count": 0,
       "decoded_feature_geometry_table_count": 0,
       "decoded_feature_loop_history_entry_count": 0,
       "decoded_feature_loop_restore_direction_count": 0,
@@ -666,6 +671,8 @@
       "transferred_feature_extrusion_surface_count": 0,
       "transferred_feature_extrusion_vertex_orbit_curve_count": 0,
       "transferred_feature_relation_constraint_count": 0,
+      "transferred_feature_result_edge_count": 0,
+      "transferred_feature_result_topology_count": 0,
       "transferred_feature_revolution_brep_count": 0,
       "transferred_feature_revolution_surface_count": 0,
       "transferred_feature_revolution_vertex_orbit_curve_count": 0,
@@ -829,7 +836,7 @@
       },
       {
         "code": "topology_not_transferred",
-        "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates.",
+        "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; multi-loop faces use strict containment in a placed or boundary-proven plane. Remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates.",
         "severity": "blocking"
       },
       {
@@ -858,10 +865,10 @@
   "source_fidelity": {
     "annotations": {
       "exactness": {
-        "creo:depdb:curve_expression_feature#7-257": {
+        "creo:depdb:curve_expression_feature#7-269": {
           "entity": "derived"
         },
-        "creo:depdb:curve_expression_parameter#7-257-0": {
+        "creo:depdb:curve_expression_parameter#7-269-0": {
           "entity": "derived"
         },
         "creo:featdefs:parameter#917:42:1": {
@@ -881,18 +888,18 @@
         }
       },
       "provenance": {
-        "creo:depdb:curve_expression#active-7-257": {
-          "offset": 283,
+        "creo:depdb:curve_expression#active-7-269": {
+          "offset": 295,
           "stream": 2,
           "tag": "curve_expression_program"
         },
-        "creo:depdb:curve_expression_feature#7-257": {
-          "offset": 283,
+        "creo:depdb:curve_expression_feature#7-269": {
+          "offset": 295,
           "stream": 2,
           "tag": "curve_expression_feature"
         },
-        "creo:depdb:curve_expression_parameter#7-257-0": {
-          "offset": 298,
+        "creo:depdb:curve_expression_parameter#7-269-0": {
+          "offset": 310,
           "stream": 2,
           "tag": "curve_expression_assignment"
         },

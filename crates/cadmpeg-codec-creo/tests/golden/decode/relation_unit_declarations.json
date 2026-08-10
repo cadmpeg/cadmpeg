@@ -23,30 +23,30 @@
               "entity_id": "7"
             }
           },
-          "id": "creo:depdb:curve_expression_feature#7-90",
+          "id": "creo:depdb:curve_expression_feature#7-102",
           "name": "Curve Equation 7",
-          "native_ref": "creo:depdb:curve_expression#active-7-90",
+          "native_ref": "creo:depdb:curve_expression#active-7-102",
           "ordinal": 0,
           "source_content": [
             {
               "kind": "parameter",
-              "value": "creo:depdb:curve_expression_parameter#7-90-0"
+              "value": "creo:depdb:curve_expression_parameter#7-102-0"
             },
             {
               "kind": "parameter",
-              "value": "creo:depdb:curve_expression_parameter#7-90-1"
+              "value": "creo:depdb:curve_expression_parameter#7-102-1"
             },
             {
               "kind": "parameter",
-              "value": "creo:depdb:curve_expression_parameter#7-90-2"
+              "value": "creo:depdb:curve_expression_parameter#7-102-2"
             },
             {
               "kind": "parameter",
-              "value": "creo:depdb:curve_expression_parameter#7-90-3"
+              "value": "creo:depdb:curve_expression_parameter#7-102-3"
             },
             {
               "kind": "parameter",
-              "value": "creo:depdb:curve_expression_parameter#7-90-4"
+              "value": "creo:depdb:curve_expression_parameter#7-102-4"
             }
           ],
           "source_tag": "crv_fr_eqn",
@@ -59,11 +59,11 @@
       "parameters": [
         {
           "expression": "2",
-          "id": "creo:depdb:curve_expression_parameter#7-90-0",
+          "id": "creo:depdb:curve_expression_parameter#7-102-0",
           "name": "span",
-          "native_ref": "creo:depdb:curve_expression#active-7-90",
+          "native_ref": "creo:depdb:curve_expression#active-7-102",
           "ordinal": 0,
-          "owner": "creo:depdb:curve_expression_feature#7-90",
+          "owner": "creo:depdb:curve_expression_feature#7-102",
           "properties": {
             "activation": "active",
             "declared_unit": "inch",
@@ -76,14 +76,14 @@
         },
         {
           "dependencies": [
-            "creo:depdb:curve_expression_parameter#7-90-0"
+            "creo:depdb:curve_expression_parameter#7-102-0"
           ],
           "expression": "span+25.4[mm]",
-          "id": "creo:depdb:curve_expression_parameter#7-90-1",
+          "id": "creo:depdb:curve_expression_parameter#7-102-1",
           "name": "copy",
-          "native_ref": "creo:depdb:curve_expression#active-7-90",
+          "native_ref": "creo:depdb:curve_expression#active-7-102",
           "ordinal": 1,
-          "owner": "creo:depdb:curve_expression_feature#7-90",
+          "owner": "creo:depdb:curve_expression_feature#7-102",
           "properties": {
             "activation": "active",
             "source_assignment_ordinal": "1"
@@ -95,11 +95,11 @@
         },
         {
           "expression": "2",
-          "id": "creo:depdb:curve_expression_parameter#7-90-2",
+          "id": "creo:depdb:curve_expression_parameter#7-102-2",
           "name": "stress",
-          "native_ref": "creo:depdb:curve_expression#active-7-90",
+          "native_ref": "creo:depdb:curve_expression#active-7-102",
           "ordinal": 2,
-          "owner": "creo:depdb:curve_expression_feature#7-90",
+          "owner": "creo:depdb:curve_expression_feature#7-102",
           "properties": {
             "activation": "active",
             "declared_unit": "N/mm^2",
@@ -110,14 +110,14 @@
         },
         {
           "dependencies": [
-            "creo:depdb:curve_expression_parameter#7-90-0"
+            "creo:depdb:curve_expression_parameter#7-102-0"
           ],
           "expression": "atan2(span,25.4[mm])",
-          "id": "creo:depdb:curve_expression_parameter#7-90-3",
+          "id": "creo:depdb:curve_expression_parameter#7-102-3",
           "name": "angle",
-          "native_ref": "creo:depdb:curve_expression#active-7-90",
+          "native_ref": "creo:depdb:curve_expression#active-7-102",
           "ordinal": 3,
-          "owner": "creo:depdb:curve_expression_feature#7-90",
+          "owner": "creo:depdb:curve_expression_feature#7-102",
           "properties": {
             "activation": "active",
             "source_assignment_ordinal": "3"
@@ -129,11 +129,11 @@
         },
         {
           "expression": "0",
-          "id": "creo:depdb:curve_expression_parameter#7-90-4",
+          "id": "creo:depdb:curve_expression_parameter#7-102-4",
           "name": "freezing",
-          "native_ref": "creo:depdb:curve_expression#active-7-90",
+          "native_ref": "creo:depdb:curve_expression#active-7-102",
           "ordinal": 4,
-          "owner": "creo:depdb:curve_expression_feature#7-90",
+          "owner": "creo:depdb:curve_expression_feature#7-102",
           "properties": {
             "activation": "active",
             "declared_unit": "C",
@@ -176,7 +176,7 @@
                   "activation": "active",
                   "dependencies": [],
                   "expression": "2",
-                  "offset": 131,
+                  "offset": 143,
                   "target": {
                     "declared_unit": "inch",
                     "kind": "parameter",
@@ -190,7 +190,7 @@
                     "span"
                   ],
                   "expression": "span+25.4[mm]",
-                  "offset": 144,
+                  "offset": 156,
                   "target": {
                     "declared_unit": null,
                     "kind": "parameter",
@@ -202,7 +202,7 @@
                   "activation": "active",
                   "dependencies": [],
                   "expression": "2",
-                  "offset": 163,
+                  "offset": 175,
                   "target": {
                     "declared_unit": "N/mm^2",
                     "kind": "parameter",
@@ -223,7 +223,7 @@
                     "span"
                   ],
                   "expression": "atan2(span,25.4[mm])",
-                  "offset": 180,
+                  "offset": 192,
                   "target": {
                     "declared_unit": null,
                     "kind": "parameter",
@@ -235,7 +235,7 @@
                   "activation": "active",
                   "dependencies": [],
                   "expression": "0",
-                  "offset": 207,
+                  "offset": 219,
                   "target": {
                     "declared_unit": "C",
                     "kind": "parameter",
@@ -253,26 +253,26 @@
               ],
               "backup": false,
               "entity_id": 7,
-              "id": "creo:depdb:curve_expression#active-7-90",
+              "id": "creo:depdb:curve_expression#active-7-102",
               "lines": [
                 {
-                  "offset": 131,
+                  "offset": 143,
                   "text": "span[inch]=2"
                 },
                 {
-                  "offset": 144,
+                  "offset": 156,
                   "text": "copy=span+25.4[mm]"
                 },
                 {
-                  "offset": 163,
+                  "offset": 175,
                   "text": "stress[N/mm^2]=2"
                 },
                 {
-                  "offset": 180,
+                  "offset": 192,
                   "text": "angle=atan2(span,25.4[mm])"
                 },
                 {
-                  "offset": 207,
+                  "offset": 219,
                   "text": "freezing[C]=0"
                 }
               ],
@@ -291,9 +291,9 @@
       "attributes": {
         "expanded_section_byte_count": "0",
         "expanded_section_count": "0",
-        "file_size": "221",
+        "file_size": "233",
         "layout": "DEPDB",
-        "section.0.length": "145",
+        "section.0.length": "157",
         "section.0.name": "DEPDB_DATA",
         "section.0.offset": "76",
         "section.0.raw_name": "DEPDB_DATA",
@@ -369,6 +369,8 @@
       "decoded_feature_entity_count": 0,
       "decoded_feature_entity_reference_count": 0,
       "decoded_feature_entity_table_count": 0,
+      "decoded_feature_equation_count": 0,
+      "decoded_feature_equation_table_count": 0,
       "decoded_feature_geometry_table_count": 0,
       "decoded_feature_loop_history_entry_count": 0,
       "decoded_feature_loop_restore_direction_count": 0,
@@ -466,6 +468,8 @@
       "transferred_feature_extrusion_surface_count": 0,
       "transferred_feature_extrusion_vertex_orbit_curve_count": 0,
       "transferred_feature_relation_constraint_count": 0,
+      "transferred_feature_result_edge_count": 0,
+      "transferred_feature_result_topology_count": 0,
       "transferred_feature_revolution_brep_count": 0,
       "transferred_feature_revolution_surface_count": 0,
       "transferred_feature_revolution_vertex_orbit_curve_count": 0,
@@ -622,7 +626,7 @@
       },
       {
         "code": "topology_not_transferred",
-        "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates.",
+        "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; multi-loop faces use strict containment in a placed or boundary-proven plane. Remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates.",
         "severity": "blocking"
       },
       {
@@ -646,58 +650,58 @@
   "source_fidelity": {
     "annotations": {
       "exactness": {
-        "creo:depdb:curve_expression_feature#7-90": {
+        "creo:depdb:curve_expression_feature#7-102": {
           "entity": "derived"
         },
-        "creo:depdb:curve_expression_parameter#7-90-0": {
+        "creo:depdb:curve_expression_parameter#7-102-0": {
           "entity": "derived"
         },
-        "creo:depdb:curve_expression_parameter#7-90-1": {
+        "creo:depdb:curve_expression_parameter#7-102-1": {
           "entity": "derived"
         },
-        "creo:depdb:curve_expression_parameter#7-90-2": {
+        "creo:depdb:curve_expression_parameter#7-102-2": {
           "entity": "derived"
         },
-        "creo:depdb:curve_expression_parameter#7-90-3": {
+        "creo:depdb:curve_expression_parameter#7-102-3": {
           "entity": "derived"
         },
-        "creo:depdb:curve_expression_parameter#7-90-4": {
+        "creo:depdb:curve_expression_parameter#7-102-4": {
           "entity": "derived"
         }
       },
       "provenance": {
-        "creo:depdb:curve_expression#active-7-90": {
-          "offset": 116,
+        "creo:depdb:curve_expression#active-7-102": {
+          "offset": 128,
           "stream": 0,
           "tag": "curve_expression_program"
         },
-        "creo:depdb:curve_expression_feature#7-90": {
-          "offset": 116,
+        "creo:depdb:curve_expression_feature#7-102": {
+          "offset": 128,
           "stream": 0,
           "tag": "curve_expression_feature"
         },
-        "creo:depdb:curve_expression_parameter#7-90-0": {
-          "offset": 131,
+        "creo:depdb:curve_expression_parameter#7-102-0": {
+          "offset": 143,
           "stream": 0,
           "tag": "curve_expression_assignment"
         },
-        "creo:depdb:curve_expression_parameter#7-90-1": {
-          "offset": 144,
+        "creo:depdb:curve_expression_parameter#7-102-1": {
+          "offset": 156,
           "stream": 0,
           "tag": "curve_expression_assignment"
         },
-        "creo:depdb:curve_expression_parameter#7-90-2": {
-          "offset": 163,
+        "creo:depdb:curve_expression_parameter#7-102-2": {
+          "offset": 175,
           "stream": 0,
           "tag": "curve_expression_assignment"
         },
-        "creo:depdb:curve_expression_parameter#7-90-3": {
-          "offset": 180,
+        "creo:depdb:curve_expression_parameter#7-102-3": {
+          "offset": 192,
           "stream": 0,
           "tag": "curve_expression_assignment"
         },
-        "creo:depdb:curve_expression_parameter#7-90-4": {
-          "offset": 207,
+        "creo:depdb:curve_expression_parameter#7-102-4": {
+          "offset": 219,
           "stream": 0,
           "tag": "curve_expression_assignment"
         }

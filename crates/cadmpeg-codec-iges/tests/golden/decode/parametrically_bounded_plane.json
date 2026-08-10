@@ -149,23 +149,25 @@
       "edges": [
         {
           "curve": "iges:model:curve#D3",
-          "end": "iges:model:vertex#D3-end",
+          "end": "iges:model:vertex#D3-start",
           "id": "iges:model:edge#D3",
           "param_range": [
             0.0,
             4.0
           ],
-          "start": "iges:model:vertex#D3-start"
+          "start": "iges:model:vertex#D3-start",
+          "tolerance": 0.001
         },
         {
           "curve": "iges:model:curve#D5",
-          "end": "iges:model:vertex#D5-end",
+          "end": "iges:model:vertex#D5-start",
           "id": "iges:model:edge#D5",
           "param_range": [
             0.0,
             4.0
           ],
-          "start": "iges:model:vertex#D5-start"
+          "start": "iges:model:vertex#D5-start",
+          "tolerance": 0.001
         },
         {
           "curve": "iges:model:curve#D3",
@@ -175,7 +177,8 @@
             0.0,
             4.0
           ],
-          "start": "iges:model:vertex#D9:0:0"
+          "start": "iges:model:vertex#D9:0:0",
+          "tolerance": 0.001
         }
       ],
       "faces": [
@@ -186,7 +189,8 @@
           ],
           "sense": "forward",
           "shell": "iges:model:shell#D9",
-          "surface": "iges:model:surface#D1"
+          "surface": "iges:model:surface#D1",
+          "tolerance": 0.001
         }
       ],
       "features": [],
@@ -250,23 +254,7 @@
       "pmi": [],
       "points": [
         {
-          "id": "iges:model:point#D3-end",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
           "id": "iges:model:point#D3-start",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D5-end",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -370,24 +358,19 @@
       "tessellations": [],
       "vertices": [
         {
-          "id": "iges:model:vertex#D3-end",
-          "point": "iges:model:point#D3-end"
-        },
-        {
           "id": "iges:model:vertex#D3-start",
-          "point": "iges:model:point#D3-start"
-        },
-        {
-          "id": "iges:model:vertex#D5-end",
-          "point": "iges:model:point#D5-end"
+          "point": "iges:model:point#D3-start",
+          "tolerance": 0.001
         },
         {
           "id": "iges:model:vertex#D5-start",
-          "point": "iges:model:point#D5-start"
+          "point": "iges:model:point#D5-start",
+          "tolerance": 0.001
         },
         {
           "id": "iges:model:vertex#D9:0:0",
-          "point": "iges:model:point#D9:0:0"
+          "point": "iges:model:point#D9:0:0",
+          "tolerance": 0.001
         }
       ],
       "view_presentations": []
@@ -3549,9 +3532,11 @@
           "procedural_solids": [],
           "product_occurrence_expansion": [
             {
+              "depth_limit": 64,
               "emitted": 0,
               "id": "iges:product:occurrence-expansion#state",
-              "limit": 100,
+              "issues": [],
+              "output_limit": 100000,
               "truncated": false
             }
           ],
@@ -3577,6 +3562,7 @@
     },
     "source": {
       "attributes": {
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",
@@ -3610,10 +3596,54 @@
       "parameter_records=5",
       "parameter_tokens=52",
       "external_references=0"
-    ]
+    ],
+    "transfer_ledger": {
+      "entries": [
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D1",
+          "target": "iges:entity:directory#1"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D3",
+          "target": "iges:entity:directory#3"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D5",
+          "target": "iges:entity:directory#5"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D7",
+          "target": "iges:entity:directory#7"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D9",
+          "target": "iges:entity:directory#9"
+        }
+      ]
+    }
   },
   "source_fidelity": {
     "annotations": {},
+    "retained_records": [
+      {
+        "byte_len": 1539,
+        "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAxMDggICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDEKICAgICAxMDggICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBQTEFORSAgICAgICAwRCAgICAgIDIKICAgICAxMDYgICAgICAgMiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDMKICAgICAxMDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICA2MyAgICAgICAgICAgICAgICAgICBNT0RFTCAgICAgICAwRCAgICAgIDQKICAgICAxMDYgICAgICAgMyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwNTAwRCAgICAgIDUKICAgICAxMDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICA2MyAgICAgICAgICAgICAgICAgIFBDVVJWRSAgICAgICAwRCAgICAgIDYKICAgICAxNDEgICAgICAgNCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDcKICAgICAxNDEgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICBCT1VOREFSWSAgICAgICAwRCAgICAgIDgKICAgICAxNDMgICAgICAgNSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgIDkKICAgICAxNDMgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgQk9VTkRFRCAgICAgICAwRCAgICAgMTAKMTA4LDAsMCwxLDAsMCwwLDAsMCwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKMTA2LDEsNSwwLDAsMCwxLDAsMSwxLDAsMSwwLDA7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAzUCAgICAgIDIKMTA2LDEsNSwwLDAsMCwxLDAsMSwxLDAsMSwwLDA7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA1UCAgICAgIDMKMTQxLDEsMywxLDEsMywxLDEsNTsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA3UCAgICAgIDQKMTQzLDEsMSwxLDc7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA5UCAgICAgIDUKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDEwUDAwMDAwMDUgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
+        "id": "iges:file:source-image#0",
+        "offset": 0,
+        "sha256": "62b4bb04c301829f462552941ed87b815bc576b911b34eb8c8b9eda9d4fa87bc",
+        "stream": "iges"
+      }
+    ],
     "version": "3"
   }
 }

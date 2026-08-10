@@ -35,22 +35,7 @@
         },
         {
           "definition": {
-            "definition": "datum_plane",
-            "normal": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
+            "definition": "datum_plane_unresolved"
           },
           "id": "creo:model:feature#4",
           "name": "Datum Plane id 4",
@@ -79,33 +64,7 @@
       "spatial_sketches": [],
       "spreadsheets": [],
       "subds": [],
-      "surfaces": [
-        {
-          "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
-          },
-          "id": "creo:actdatums:surface#4",
-          "source_object": {
-            "format": "creo",
-            "object_id": "ActDatums:4"
-          }
-        }
-      ],
+      "surfaces": [],
       "tessellations": [],
       "vertices": [],
       "view_presentations": []
@@ -113,33 +72,6 @@
     "native": {
       "creo": {
         "arenas": {
-          "datum_planes": [
-            {
-              "corners": [
-                [
-                  2.0,
-                  0.0,
-                  3.0
-                ],
-                [
-                  -2.0,
-                  0.0,
-                  -3.0
-                ]
-              ],
-              "datum_id": 4,
-              "id": "creo:datum:plane#87:4",
-              "normal": [
-                0.0,
-                1.0,
-                0.0
-              ],
-              "offset": 87,
-              "owner_feature_id": 4,
-              "plane_offset": 0.0,
-              "source_section": "ActDatums"
-            }
-          ],
           "feature_operation_states": [
             {
               "current": true,
@@ -278,7 +210,7 @@
       "decoded_curve_prototype_count": 0,
       "decoded_curve_prototype_topology_count": 0,
       "decoded_curve_topology_row_count": 0,
-      "decoded_datum_plane_count": 1,
+      "decoded_datum_plane_count": 0,
       "decoded_face_component_count": 0,
       "decoded_fc05_circle_count": 0,
       "decoded_fc05_cylinder_cap_pair_count": 0,
@@ -300,6 +232,8 @@
       "decoded_feature_entity_count": 0,
       "decoded_feature_entity_reference_count": 0,
       "decoded_feature_entity_table_count": 0,
+      "decoded_feature_equation_count": 0,
+      "decoded_feature_equation_table_count": 0,
       "decoded_feature_geometry_table_count": 0,
       "decoded_feature_loop_history_entry_count": 0,
       "decoded_feature_loop_restore_direction_count": 0,
@@ -386,7 +320,7 @@
       "transferred_curve_expression_parameter_count": 0,
       "transferred_draft_feature_count": 0,
       "transferred_explicitly_unresolved_draft_feature_count": 0,
-      "transferred_explicitly_unresolved_feature_count": 0,
+      "transferred_explicitly_unresolved_feature_count": 1,
       "transferred_extrude_feature_count": 0,
       "transferred_extrusion_plane_boundary_curve_count": 0,
       "transferred_extrusion_plane_section_generator_curve_count": 0,
@@ -397,6 +331,8 @@
       "transferred_feature_extrusion_surface_count": 0,
       "transferred_feature_extrusion_vertex_orbit_curve_count": 0,
       "transferred_feature_relation_constraint_count": 0,
+      "transferred_feature_result_edge_count": 0,
+      "transferred_feature_result_topology_count": 0,
       "transferred_feature_revolution_brep_count": 0,
       "transferred_feature_revolution_surface_count": 0,
       "transferred_feature_revolution_vertex_orbit_curve_count": 0,
@@ -464,7 +400,7 @@
       "transferred_unresolved_chamfer_edge_selection_feature_count": 0,
       "transferred_unresolved_chamfer_spec_feature_count": 0,
       "transferred_unresolved_datum_coordinate_system_feature_count": 0,
-      "transferred_unresolved_datum_plane_feature_count": 0,
+      "transferred_unresolved_datum_plane_feature_count": 1,
       "transferred_unresolved_draft_angle_feature_count": 0,
       "transferred_unresolved_draft_direction_feature_count": 0,
       "transferred_unresolved_draft_face_selection_feature_count": 0,
@@ -534,7 +470,7 @@
       "visible_torus_or_sphere_surface_row_count": 0
     },
     "format": "creo",
-    "geometry_transferred": true,
+    "geometry_transferred": false,
     "losses": [
       {
         "code": "carrier_summary",
@@ -547,18 +483,13 @@
         "severity": "blocking"
       },
       {
-        "code": "carrier_summary",
-        "message": "Transferred 1 exact model-space construction datum plane carrier(s) from ActDatums; these are unbounded reference planes, not model B-rep faces.",
-        "severity": "info"
-      },
-      {
         "code": "geometry_not_transferred",
         "message": "Additional model-space carriers are gated by unresolved lane-specific scalar prefixes, feature-local transform bindings, placement-incomplete or untagged `0x26` torus/sphere variants, and the round/fillet feature evaluator. These gaps prevent transfer of the remaining non-plane per-instance surfaces, curves, and vertices.",
         "severity": "blocking"
       },
       {
         "code": "topology_not_transferred",
-        "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates.",
+        "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; multi-loop faces use strict containment in a placed or boundary-proven plane. Remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates.",
         "severity": "blocking"
       },
       {
@@ -569,6 +500,11 @@
       {
         "code": "feature_history_retained",
         "message": "1 recognized non-sweep history feature(s) retain incomplete required construction operands (fillet=1).",
+        "severity": "warning"
+      },
+      {
+        "code": "feature_history_retained",
+        "message": "1 typed history feature definition(s) retain an explicitly unresolved model-space construction.",
         "severity": "warning"
       }
     ],
@@ -584,9 +520,6 @@
       "exactness": {
         "creo:ActDatums:section#76": {
           "entity": "unknown"
-        },
-        "creo:actdatums:surface#4": {
-          "entity": "derived"
         }
       },
       "provenance": {
@@ -594,11 +527,6 @@
           "offset": 76,
           "stream": 0,
           "tag": "psb_geometry_section"
-        },
-        "creo:actdatums:surface#4": {
-          "offset": 87,
-          "stream": 0,
-          "tag": "datum_plane_outline"
         },
         "creo:mdlstatus:feature_state#3:0": {
           "offset": 144,

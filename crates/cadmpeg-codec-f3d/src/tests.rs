@@ -21342,6 +21342,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     let ProceduralCurveDefinition::Subset {
         source,
         parameter_range,
+        ..
     } = &result.ir.model.procedural_curves[0].definition
     else {
         panic!("expected subset construction")
@@ -21414,6 +21415,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     let ProceduralCurveDefinition::Subset {
         source,
         parameter_range,
+        ..
     } = &round_trip.ir.model.procedural_curves[0].definition
     else {
         panic!("expected round-trip subset")

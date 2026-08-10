@@ -8,6 +8,96 @@ use crate::psb;
 use crate::scalar;
 
 #[test]
+fn rows_retain_distinct_root_schema_classes_for_one_feature_id() {
+    let payload = [
+        7, 0xeb, 0x04, 0, 0, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 0xaa, 0xe3, 7, 0x90, 0x01, 0xe3, 0xf6,
+        0x83, 0x91, 0xe1, 0xbb,
+    ];
+    let feature_ids = BTreeSet::from([7]);
+
+    let decoded = rows(&payload, &feature_ids);
+
+    assert_eq!(decoded.len(), 2);
+    assert_eq!(
+        decoded
+            .iter()
+            .map(|row| (row.header, row.root_schema_class))
+            .collect::<Vec<_>>(),
+        [([0xeb, 0x04], Some(917)), ([0x90, 0x01], Some(913))]
+    );
+}
+
+#[test]
+fn rows_suppress_repeated_same_class_candidates() {
+    let payload = [
+        7, 0xeb, 0x04, 0, 0, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 0xaa, 0xe3, 7, 0x90, 0x01, 0xe3, 0xf6,
+        0x83, 0x95, 0xe1, 0xbb,
+    ];
+    let feature_ids = BTreeSet::from([7]);
+
+    let decoded = rows(&payload, &feature_ids);
+
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].root_schema_class, Some(917));
+}
+
+#[test]
+fn rows_accept_an_unlisted_header_with_the_fixed_root_prefix() {
+    let payload = [
+        7, 0x88, 0x01, 0x00, 0x88, 0x00, 0x00, 0xe3, 0xf6, 0x83, 0xb5, 0xe1, 0xbb,
+    ];
+    let feature_ids = BTreeSet::from([7]);
+
+    let decoded = rows(&payload, &feature_ids);
+
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].header, [0x88, 0x01]);
+    assert_eq!(decoded[0].root_schema_class, Some(949));
+}
+
+#[test]
+fn rows_require_the_root_marker_after_the_row_header() {
+    let payload = [7, 0x88, 0x01, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff];
+    let feature_ids = BTreeSet::from([7]);
+
+    assert!(rows(&payload, &feature_ids).is_empty());
+}
+
+#[test]
+fn rows_accept_a_root_marker_immediately_after_the_header() {
+    let payload = [40, 0xeb, 0x04, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 0xaa];
+    let feature_ids = BTreeSet::from([40]);
+
+    assert_eq!(rows(&payload, &feature_ids).len(), 1);
+}
+
+#[test]
+fn rows_accept_a_row_after_the_raw_section_header() {
+    let mut payload = b"#AllFeatur\n".to_vec();
+    payload.extend_from_slice(&[7, 0x88, 0x01, 0xe3, 0xf6, 0x83, 0xb5, 0xe1, 0xbb]);
+    let feature_ids = BTreeSet::from([7]);
+
+    let decoded = rows(&payload, &feature_ids);
+
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].offset, b"#AllFeatur\n".len());
+}
+
+#[test]
+fn rows_ignore_a_valid_prefix_inside_an_existing_row() {
+    let payload = [
+        7, 0xeb, 0x04, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 0x11, 7, 0x88, 0x01, 0xe3, 0xf6, 0x83, 0xb5,
+        0xe1, 0xbb,
+    ];
+    let feature_ids = BTreeSet::from([7]);
+
+    let decoded = rows(&payload, &feature_ids);
+
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].header, [0xeb, 0x04]);
+}
+
+#[test]
 fn final_generated_entry_may_terminate_at_the_table_separator() {
     let payload = [10, 0x80, 200, 4, 0, 0xe3, 11, 0x80, 200, 7, 1, 0xf2, 0xf7];
     let entries = read_entries(&payload, 0, 2).expect("complete generated table");
@@ -539,6 +629,13 @@ fn positional_round_replay_uses_final_explicit_arrays_before_row_suffix() {
 }
 
 #[test]
+fn positional_round_replay_rejects_explicit_arrays_without_compound_close_start() {
+    let row = unanchored_replay_row(1, 40, None, &[0x00, 0xf8, 2, 10, 11, 0xf8, 2, 20, 21]);
+
+    assert!(replay_affected_ids(&[row]).is_empty());
+}
+
+#[test]
 fn positional_round_replay_accepts_null_row_tail() {
     let mut row = unanchored_replay_row(
         1,
@@ -577,6 +674,7 @@ fn binds_missing_definition_owner_from_unique_generated_datum_table() {
             sketch_plane_entity_id: Some(12),
             sketch_plane_flip: None,
             reference_plane_entity_ids: Vec::new(),
+            reference_plane_rows: Vec::new(),
             reference_plane_datum_geometry_id: None,
             orientation: FeatureSectionOrientation::default(),
             dimension_ids: Vec::new(),
@@ -785,6 +883,26 @@ fn withholds_saved_section_owner_for_partial_reused_or_duplicate_entity_sets() {
 }
 
 #[test]
+fn saved_section_owner_uses_only_class_200_source_ids() {
+    let mut table = generated_entity_table(667, &[9]);
+    table.entries.push(FeatureEntityTableEntry {
+        entity_id: 2,
+        class_id: 201,
+        source_entity_id: Some(10),
+        related_entity_id: None,
+        related_entity_state: None,
+        prefixed: true,
+        offset: 1,
+        end_offset: 2,
+    });
+    let mut definitions = [pending_trimmed_definition(&[9, 10])];
+
+    bind_trimmed_definition_owners(&mut definitions, &[table]);
+
+    assert_eq!(definitions[0].owner_feature_id, None);
+}
+
+#[test]
 fn withholds_replay_owner_for_empty_or_ambiguous_source_joins() {
     let mut empty = [pending_replay(&[10])];
     bind_replay_definition_owners(
@@ -862,6 +980,7 @@ fn binds_unique_depdb_section_from_recipe_datum_plane_chain() {
         sketch_plane_entity_id: Some(249),
         sketch_plane_flip: None,
         reference_plane_entity_ids: Vec::new(),
+        reference_plane_rows: Vec::new(),
         reference_plane_datum_geometry_id: None,
         orientation: FeatureSectionOrientation::default(),
         dimension_ids: Vec::new(),
@@ -872,7 +991,7 @@ fn binds_unique_depdb_section_from_recipe_datum_plane_chain() {
         operation(248, None, 20),
     ];
 
-    bind_depdb_section_owners(
+    bind_section_owners(
         std::slice::from_mut(&mut definition),
         &operations,
         &[(0, usize::MAX)],
@@ -890,6 +1009,7 @@ fn depdb_owner_binding_preserves_stored_definition_identifier() {
         sketch_plane_entity_id: Some(249),
         sketch_plane_flip: None,
         reference_plane_entity_ids: Vec::new(),
+        reference_plane_rows: Vec::new(),
         reference_plane_datum_geometry_id: None,
         orientation: FeatureSectionOrientation::default(),
         dimension_ids: Vec::new(),
@@ -900,7 +1020,7 @@ fn depdb_owner_binding_preserves_stored_definition_identifier() {
         operation(248, None, 20),
     ];
 
-    bind_depdb_section_owners(
+    bind_section_owners(
         std::slice::from_mut(&mut definition),
         &operations,
         &[(0, usize::MAX)],
@@ -964,6 +1084,7 @@ fn withholds_depdb_owner_for_repeated_plane_or_nonconsecutive_datum() {
         sketch_plane_entity_id: Some(249),
         sketch_plane_flip: None,
         reference_plane_entity_ids: Vec::new(),
+        reference_plane_rows: Vec::new(),
         reference_plane_datum_geometry_id: None,
         orientation: FeatureSectionOrientation::default(),
         dimension_ids: Vec::new(),
@@ -977,7 +1098,7 @@ fn withholds_depdb_owner_for_repeated_plane_or_nonconsecutive_datum() {
         operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10),
         operation(248, None, 20),
     ];
-    bind_depdb_section_owners(&mut repeated, &consecutive, &[(0, usize::MAX)]);
+    bind_section_owners(&mut repeated, &consecutive, &[(0, usize::MAX)]);
     assert!(repeated
         .iter()
         .all(|definition| definition.owner_feature_id.is_none()));
@@ -989,7 +1110,7 @@ fn withholds_depdb_owner_for_repeated_plane_or_nonconsecutive_datum() {
         operation(900, None, 15),
         operation(248, None, 20),
     ];
-    bind_depdb_section_owners(
+    bind_section_owners(
         std::slice::from_mut(&mut separated),
         &operations,
         &[(0, usize::MAX)],
@@ -1004,13 +1125,42 @@ fn withholds_depdb_owner_for_repeated_plane_or_nonconsecutive_datum() {
         sketch_plane_entity_id: Some(249),
         sketch_plane_flip: None,
         reference_plane_entity_ids: Vec::new(),
+        reference_plane_rows: Vec::new(),
         reference_plane_datum_geometry_id: None,
         orientation: FeatureSectionOrientation::default(),
         dimension_ids: Vec::new(),
         offset: 0,
     });
     let mut definitions = [claimed, candidate];
-    bind_depdb_section_owners(&mut definitions, &consecutive, &[(0, usize::MAX)]);
+    bind_section_owners(&mut definitions, &consecutive, &[(0, usize::MAX)]);
+    assert_eq!(definitions[1].owner_feature_id, None);
+}
+
+#[test]
+fn section_owner_binding_does_not_cross_source_range_boundaries() {
+    let mut in_range = pending_replay(&[]);
+    in_range.offset = 100;
+    in_range.section_3d = Some(FeatureSection3d {
+        sketch_plane_entity_id: Some(249),
+        sketch_plane_flip: None,
+        reference_plane_entity_ids: Vec::new(),
+        reference_plane_rows: Vec::new(),
+        reference_plane_datum_geometry_id: None,
+        orientation: FeatureSectionOrientation::default(),
+        dimension_ids: Vec::new(),
+        offset: 0,
+    });
+    let mut outside = in_range.clone();
+    outside.offset = 200;
+    let mut definitions = [in_range, outside];
+    let operations = [
+        operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10),
+        operation(248, None, 20),
+    ];
+
+    bind_section_owners(&mut definitions, &operations, &[(100, 150)]);
+
+    assert_eq!(definitions[0].owner_feature_id, Some(247));
     assert_eq!(definitions[1].owner_feature_id, None);
 }
 
@@ -1432,6 +1582,44 @@ fn positional_dimension_table_uses_the_inherited_table_class() {
 }
 
 #[test]
+fn named_dimension_retains_nested_dimension_references() {
+    let payload = b"dimtab_ptr\0\xf3\xf8\x01\xf7\x58\xfb\xe2\
+            \xe0\x01type\0\x02\xe0\x02value\0\x18\xe0\x01direct\0\x00\
+            \xe0\x02aux_value\0\x18\xe0\x01ext_id\0\x02\
+            dim_ref\0\xf1\xf8\x02\xf7\x60\xfb\xe2\
+            \xe0\x01item_id\0\x0d\xe0\x01sense\0\x00\
+            \xe0\x01point\0\xf8\x02\x03\xe4\
+            \xf1\xf7\x60\xe2\x02\x02\x14\xe4\xf3\xf7\x58\xe2";
+    let cache = scalar::ScalarCache::from_section(payload);
+
+    let dimensions =
+        dimension_table(payload, 0, payload.len(), &cache).expect("named dimension table");
+    let references = dimensions.rows[0]
+        .references
+        .as_ref()
+        .expect("nested dimension references");
+
+    assert_eq!(references.declared_count, 2);
+    assert_eq!(references.entity_ref, Some(0x60));
+    assert_eq!(references.rows.len(), 2);
+    assert_eq!(
+        references.rows[0],
+        FeatureDimensionReference {
+            item_id: Some(13),
+            sense: Some(0),
+            point: [Some(3), Some(1)],
+            offset: payload
+                .windows(b"item_id\0".len())
+                .position(|window| window == b"item_id\0")
+                .expect("item_id offset"),
+        }
+    );
+    assert_eq!(references.rows[1].item_id, Some(2));
+    assert_eq!(references.rows[1].sense, Some(2));
+    assert_eq!(references.rows[1].point, [Some(20), Some(1)]);
+}
+
+#[test]
 fn positional_dimension_table_is_self_describing_when_multiple_rows_close() {
     let mut payload = b"prefix\xf8\x04\xf7\x58\xfb\xe2\xf7\x59".to_vec();
     for (index, row) in [
@@ -1649,6 +1837,19 @@ fn positional_variable_table_joins_coordinate_rows() {
 }
 
 #[test]
+fn positional_variable_table_rejects_duplicate_table_headers() {
+    let payload = b"\xf8\x02\xf7\x77\xfb\xe2\xf7\x78
+            \x01\x07\x18\x18\x01\x00\x09\xf1\xf7\x77\xe2
+            \x02\x07\x18\x18\x01\x00\x0a
+            \xf8\x02\xf7\x77\xfb\xe2\xf7\x78
+            \x01\x08\x18\x18\x01\x00\x0b\xf1\xf7\x77\xe2
+            \x02\x08\x18\x18\x01\x00\x0c";
+    let cache = scalar::ScalarCache::from_section(payload);
+
+    assert!(positional_variable_table(payload, 0, payload.len(), 119, &cache).is_none());
+}
+
+#[test]
 fn positional_variable_guess_zero_preserves_compact_trailing_fields_at_table_boundary() {
     let payload = b"prefix\xf8\x02\xf7\x77\xfb\xe2\xf7\x78\
             \x07\x00\x18\x18\x01\x01\x0f\xf1\xf7\x77\xe2\
@@ -1793,11 +1994,30 @@ fn positional_gsec3d_decodes_placement_and_reference_rows() {
     assert_eq!(section.sketch_plane_entity_id, Some(513));
     assert_eq!(section.sketch_plane_flip, None);
     assert_eq!(section.reference_plane_entity_ids, vec![6, 7]);
+    assert_eq!(section.reference_plane_rows.len(), 2);
+    assert_eq!(section.reference_plane_rows[0].plane_entity_id, 6);
+    assert_eq!(section.reference_plane_rows[0].reference_type, Some(5));
+    assert_eq!(section.reference_plane_rows[0].external_reference_id, None);
+    assert_eq!(section.reference_plane_rows[0].segment_id, Some(3));
+    assert_eq!(section.reference_plane_rows[0].sub_index, None);
+    assert_eq!(
+        section.reference_plane_rows[0].reference_flip,
+        Some(BinaryFlag::Clear)
+    );
+    assert_eq!(section.reference_plane_rows[1].plane_entity_id, 7);
+    assert_eq!(section.reference_plane_rows[1].reference_type, Some(5));
+    assert_eq!(section.reference_plane_rows[1].external_reference_id, None);
+    assert_eq!(section.reference_plane_rows[1].segment_id, Some(4));
+    assert_eq!(section.reference_plane_rows[1].sub_index, None);
+    assert_eq!(
+        section.reference_plane_rows[1].reference_flip,
+        Some(BinaryFlag::Set)
+    );
     assert_eq!(section.reference_plane_datum_geometry_id, None);
     assert_eq!(section.orientation.section_flip, Some(BinaryFlag::Set));
-    assert_eq!(section.orientation.reference_type, Some(5));
-    assert_eq!(section.orientation.segment_id, Some(3));
-    assert_eq!(section.orientation.reference_flip, Some(BinaryFlag::Clear));
+    assert_eq!(section.orientation.reference_type, None);
+    assert_eq!(section.orientation.segment_id, None);
+    assert_eq!(section.orientation.reference_flip, None);
 }
 
 #[test]
@@ -1823,9 +2043,81 @@ fn positional_gsec3d_retains_placement_and_complete_reference_prefix() {
     assert_eq!(section.sketch_plane_entity_id, Some(513));
     assert_eq!(section.reference_plane_entity_ids, [6]);
     assert_eq!(section.orientation.section_flip, Some(BinaryFlag::Set));
-    assert_eq!(section.orientation.reference_type, Some(5));
-    assert_eq!(section.orientation.segment_id, Some(3));
-    assert_eq!(section.orientation.reference_flip, Some(BinaryFlag::Clear));
+    assert_eq!(section.orientation.reference_type, None);
+    assert_eq!(section.orientation.segment_id, None);
+    assert_eq!(section.orientation.reference_flip, None);
+}
+
+#[test]
+fn named_gsec3d_uses_the_outer_plane_id_before_reference_rows() {
+    let payload = b"\xe0\x00gsec3d_ptr\0\
+            \xe0\x01plane_id\0\x2a\
+            \xe0\x01plane_flip\0\xf6\
+            \xe0\x00ref_planes\0\xf8\x01\xf7\x80\x8c\xfb\xe2\
+            \xe0\x01plane_id\0\x06\
+            \xe0\x01ref_type\0\x05\
+            \xe0\x01ext_ref_id\0\xf6\
+            \xe0\x01seg_id\0\x02\
+            \xe0\x01sub_index\0\xf6\
+            \xe0\x01flip_flag\0\x00\
+            \xe0\x00p_saved_result\0";
+
+    let definitions = definitions_in_ranges(&payload[..], &[(0, 1, None, false)]);
+    let section = definitions[0].section_3d.as_ref().expect("named gsec3d");
+
+    assert_eq!(section.sketch_plane_entity_id, Some(42));
+    assert_eq!(section.reference_plane_datum_geometry_id, Some(6));
+    assert_eq!(section.sketch_plane_flip, None);
+}
+
+#[test]
+fn equation_table_replays_direct_and_counted_rows() {
+    let payload = b"eqtn_arr\0\xf2\xf8\x04\xf7\x80\x9f\xfb\xe2\
+            \xe0\x01id\0\x00\
+            \xe0\x05fcn_id\0\x02\
+            \xe0\x08arg_arr\0\xf8\x02\x2f\x08\
+            \xe0\x01aux_data\0\xf6\
+            \xf1\xf7\x80\x9f\xe2\
+            \x01\x04\x11\x12\xf6\xe2\
+            \x02\x05\xf8\x04\x13\xe4\xe5\xf6\xe2\
+            \x03\x06\xf8\x02\xf6\x14\xf6\xe2\
+            \xe0\x02scale\0\x99\x88"
+        .to_vec();
+
+    let table = equation_table(&payload, 0, payload.len()).expect("eqtn_arr table");
+
+    assert_eq!(table.declared_count, 4);
+    assert_eq!(table.entity_ref, Some(159));
+    assert_eq!(table.offset, 0);
+    assert_eq!(table.rows.len(), 3);
+    assert!(table.prototype_body.starts_with(b"\xe0\x01id\0"));
+    assert!(table.prototype_body.ends_with(b"\xf1\xf7\x80\x9f\xe2"));
+
+    assert_eq!(table.rows[0].equation_id, 1);
+    assert_eq!(table.rows[0].function_id, 4);
+    assert_eq!(table.rows[0].explicit_argument_count, None);
+    assert_eq!(table.rows[0].arguments, [Some(17), Some(18)]);
+    assert_eq!(table.rows[0].arguments_body, [0x11, 0x12]);
+    assert_eq!(table.rows[0].auxiliary_body, [0xf6]);
+    assert_eq!(table.rows[0].body, [1, 4, 0x11, 0x12, 0xf6, 0xe2]);
+
+    assert_eq!(table.rows[1].equation_id, 2);
+    assert_eq!(table.rows[1].function_id, 5);
+    assert_eq!(table.rows[1].explicit_argument_count, Some(4));
+    assert_eq!(
+        table.rows[1].arguments,
+        [Some(19), Some(1), Some(0), Some(0)]
+    );
+    assert_eq!(table.rows[1].arguments_body, [0x13, 0xe4, 0xe5]);
+    assert_eq!(table.rows[1].auxiliary_body, [0xf6]);
+    assert!(table.rows[1].body.ends_with(&[0xf6, 0xe2]));
+
+    assert_eq!(table.rows[2].equation_id, 3);
+    assert_eq!(table.rows[2].function_id, 6);
+    assert_eq!(table.rows[2].explicit_argument_count, Some(2));
+    assert_eq!(table.rows[2].arguments, [None, Some(20)]);
+    assert_eq!(table.rows[2].arguments_body, [0xf6, 0x14]);
+    assert_eq!(table.rows[2].auxiliary_body, [0xf6]);
 }
 
 #[test]
@@ -3234,6 +3526,34 @@ fn decodes_mdlstatus_recipe_discriminators_within_their_records() {
     assert_eq!(operations[4].recipe, None);
     assert_eq!(operations[5].kind, "Körper");
     assert_eq!(operations[5].feature_id, 45);
+}
+
+#[test]
+fn preserves_mdlstatus_name_prefixes_without_using_them_as_state_selectors() {
+    let payload = b"\xe3oExtrude id 7\0\xe3xExtrude id 7\0\xe3yExtrude id 7\0\xe3zExtrude ID 7\0";
+
+    let states = operation_states(payload);
+    assert_eq!(states.len(), 4);
+    for (state, (prefix, expected_name)) in states.iter().zip([
+        (b'o', "oExtrude id 7"),
+        (b'x', "xExtrude id 7"),
+        (b'y', "yExtrude id 7"),
+        (b'z', "zExtrude ID 7"),
+    ]) {
+        assert_eq!(state.feature_id, 7);
+        assert_eq!(state.kind, "Extrude");
+        assert_eq!(state.stored_name_prefix, Some(prefix));
+        assert_eq!(state.state_offset + 1, state.offset);
+        assert_eq!(state.stored_name.as_deref(), Some(expected_name));
+    }
+    assert_eq!(states[3].identifier_keyword.as_deref(), Some("ID"));
+
+    let current_operations = operations(payload);
+    let [current] = current_operations.as_slice() else {
+        panic!("one current operation");
+    };
+    assert_eq!(current, &states[3]);
+    assert_eq!(current.stored_name_prefix, Some(b'z'));
 }
 
 #[test]

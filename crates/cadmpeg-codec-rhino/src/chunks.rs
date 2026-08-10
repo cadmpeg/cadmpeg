@@ -10,19 +10,12 @@ pub(crate) const TCODE_ENDOFFILE: u32 = 0x0000_7fff;
 /// The short table terminator typecode.
 pub(crate) const TCODE_ENDOFTABLE: u32 = 0xffff_ffff;
 /// The legacy summary chunk typecode.
-pub(crate) const TCODE_SUMMARY: u32 = 0x0000_0002;
-/// The V1 class UUID chunk typecode.
-pub(crate) const TCODE_CLASS_UUID: u32 = 0x0002_fffb;
+pub(crate) const TCODE_SUMMARY: u32 = 0x0200_0013;
+const TCODE_V1_OPENNURBS_CLASS_UUID: u32 = 0x0002_fffd;
 /// The bit marking a short chunk.
 pub(crate) const TCODE_SHORT: u32 = 0x8000_0000;
 /// The bit marking a CRC-bearing chunk.
 pub(crate) const TCODE_CRC: u32 = 0x0000_8000;
-
-const TCODE_CLASS_WRAPPER: u32 = 0x0002_7ffa;
-const TCODE_CLASS_USERDATA: u32 = 0x0002_7ffd;
-const TCODE_CLASS_USERDATA_HEADER: u32 = 0x0002_fff9;
-const TCODE_CLASS_DATA: u32 = 0x0002_fffc;
-const TCODE_CLASS_END: u32 = 0x8002_7fff;
 
 /// Archive versions understood by the chunk layer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,6 +88,8 @@ impl ArchiveVersion {
 /// A validated 32-byte 3DM header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Header {
+    /// Byte offset of the 32-byte start section.
+    pub(crate) start_offset: usize,
     /// Decimal archive version.
     pub(crate) archive_version: ArchiveVersion,
 }
@@ -120,10 +115,6 @@ pub(crate) enum FramingError {
     },
     /// A required EOF marker was missing.
     MissingEof,
-    /// The EOF file-size field disagreed with the input.
-    FileSizeMismatch { declared: u64, actual: usize },
-    /// The chunk typecode violates a framing invariant.
-    InvalidTypecode(u32),
 }
 
 impl fmt::Display for FramingError {
@@ -144,10 +135,6 @@ impl fmt::Display for FramingError {
                 write!(f, "range {offset}..{end} exceeds bound {bound}")
             }
             Self::MissingEof => f.write_str("missing end-of-file chunk"),
-            Self::FileSizeMismatch { declared, actual } => {
-                write!(f, "EOF declares {declared} bytes, input has {actual}")
-            }
-            Self::InvalidTypecode(typecode) => write!(f, "invalid typecode {typecode:#x}"),
         }
     }
 }
@@ -156,16 +143,21 @@ impl std::error::Error for FramingError {}
 
 /// Parses the exact 32-byte file header.
 pub(crate) fn parse_header(bytes: &[u8]) -> Result<Header, FramingError> {
-    if bytes.len() < 32 {
+    let search_end = bytes
+        .len()
+        .min(33_554_432_usize.saturating_add(MAGIC.len()));
+    let start_offset = bytes[..search_end]
+        .windows(MAGIC.len())
+        .position(|window| window == MAGIC)
+        .ok_or(FramingError::InvalidHeader)?;
+    let header_end = start_offset.saturating_add(32);
+    if bytes.len() < header_end {
         return Err(FramingError::Truncated {
             offset: bytes.len(),
-            needed: 32 - bytes.len(),
+            needed: header_end - bytes.len(),
         });
     }
-    if &bytes[..24] != MAGIC {
-        return Err(FramingError::InvalidHeader);
-    }
-    let version = &bytes[24..32];
+    let version = &bytes[start_offset + 24..header_end];
     let first_digit = version
         .iter()
         .position(u8::is_ascii_digit)
@@ -185,6 +177,7 @@ pub(crate) fn parse_header(bytes: &[u8]) -> Result<Header, FramingError> {
         return Err(FramingError::InvalidHeader);
     }
     Ok(Header {
+        start_offset,
         archive_version: ArchiveVersion::classify(value),
     })
 }
@@ -310,14 +303,7 @@ impl<'a> BoundedReader<'a> {
 
     /// Reads an archive boolean encoded as one byte.
     pub(crate) fn bool(&mut self) -> Result<bool, FramingError> {
-        match self.u8()? {
-            0 => Ok(false),
-            1 => Ok(true),
-            value => Err(FramingError::Structural {
-                offset: self.position - 1,
-                message: format!("boolean value {value} is not 0 or 1"),
-            }),
-        }
+        Ok(self.u8()? != 0)
     }
 
     /// Reads a little-endian IEEE-754 binary32 value.
@@ -415,7 +401,7 @@ pub(crate) fn checksum_kind(
         && (typecode & 0x0001_0000 != 0
             || typecode == TCODE_SUMMARY
             || class_uuid
-            || typecode == TCODE_CLASS_UUID)
+            || typecode == TCODE_V1_OPENNURBS_CLASS_UUID)
     {
         ChecksumKind::Crc16
     } else if archive.value() >= 2 && (typecode & TCODE_CRC != 0 || class_uuid) {
@@ -467,21 +453,6 @@ pub(crate) fn chunk_at(
 ) -> Result<Chunk, FramingError> {
     let mut reader = BoundedReader::new(bytes, offset, parent_end)?;
     let typecode = reader.u32()?;
-    if typecode & 0x0000_4000 != 0
-        && typecode != TCODE_ENDOFFILE
-        && typecode != TCODE_ENDOFTABLE
-        && !matches!(
-            typecode,
-            TCODE_CLASS_WRAPPER
-                | TCODE_CLASS_USERDATA
-                | TCODE_CLASS_USERDATA_HEADER
-                | TCODE_CLASS_UUID
-                | TCODE_CLASS_DATA
-                | TCODE_CLASS_END
-        )
-    {
-        return Err(FramingError::InvalidTypecode(typecode));
-    }
     let short = typecode & TCODE_SHORT != 0;
     let width = if archive.uses_eight_byte_values() {
         8
@@ -490,8 +461,15 @@ pub(crate) fn chunk_at(
     };
     let value = if width == 8 {
         reader.i64()?
+    } else if !short
+        || matches!(
+            typecode,
+            0x8000_0001 | 0x8000_0002 | 0xa000_0026 | 0x8200_0071
+        )
+    {
+        i64::from(reader.u32()?)
     } else {
-        reader.i32()? as i64
+        i64::from(reader.i32()?)
     };
     let body_start = reader.position();
     if short {
@@ -509,9 +487,17 @@ pub(crate) fn chunk_at(
         });
     }
     if value < 0 {
-        return Err(FramingError::InvalidLength {
-            offset,
-            value: value as i128,
+        return Ok(Chunk {
+            header_start: offset,
+            typecode,
+            short: true,
+            value,
+            body_start,
+            declared_end: body_start,
+            body: body_start..body_start,
+            checksum: None,
+            next_offset: body_start,
+            checksum_kind: ChecksumKind::None,
         });
     }
     let declared_length = usize::try_from(value).map_err(|_| FramingError::Overflow { offset })?;
@@ -525,7 +511,7 @@ pub(crate) fn chunk_at(
             bound: parent_end,
         });
     }
-    if typecode == TCODE_ENDOFFILE && declared_length != width {
+    if typecode == TCODE_ENDOFFILE && declared_length < width {
         return Err(FramingError::InvalidLength {
             offset,
             value: value as i128,
@@ -569,18 +555,19 @@ pub(crate) enum ChecksumStatus {
     Mismatch { expected: u32, actual: u32 },
 }
 
-/// Computes the non-reflected V1 CRC-CCITT variant.
+/// Computes the augmented non-reflected V1 CRC-CCITT variant.
 pub(crate) fn crc16(seed: u16, bytes: &[u8]) -> u16 {
     let mut crc = seed;
     for byte in bytes {
-        crc ^= u16::from(*byte) << 8;
+        let mut table = crc & 0xff00;
         for _ in 0..8 {
-            crc = if crc & 0x8000 != 0 {
-                (crc << 1) ^ 0x1021
+            table = if table & 0x8000 != 0 {
+                (table << 1) ^ 0x1021
             } else {
-                crc << 1
+                table << 1
             };
         }
+        crc = (crc << 8) ^ u16::from(*byte) ^ table;
     }
     crc
 }
@@ -652,6 +639,33 @@ pub(crate) fn verify_checksum_ranges(
     }
 }
 
+/// Returns the parent-level byte ranges after complete child chunks are removed.
+pub(crate) fn direct_checksum_ranges(
+    body: &std::ops::Range<usize>,
+    children: &[std::ops::Range<usize>],
+) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
+    let mut children = children.to_vec();
+    children.sort_by_key(|range| range.start);
+    let mut cursor = body.start;
+    let mut direct = Vec::with_capacity(children.len() + 1);
+    for child in children {
+        if child.start < cursor || child.end < child.start || child.end > body.end {
+            return Err(FramingError::Structural {
+                offset: child.start,
+                message: "nested checksum range overlaps or escapes its parent".to_string(),
+            });
+        }
+        if cursor < child.start {
+            direct.push(cursor..child.start);
+        }
+        cursor = child.end;
+    }
+    if cursor < body.end {
+        direct.push(cursor..body.end);
+    }
+    Ok(direct)
+}
+
 /// Decodes a packed one-byte payload version.
 #[cfg(test)]
 pub(crate) fn packed_version(value: u8) -> (i32, i32) {
@@ -691,33 +705,44 @@ pub(crate) fn parse_eof(
     if chunk.typecode != TCODE_ENDOFFILE
         || chunk.short
         || chunk.body.len()
-            != if archive.uses_eight_byte_values() {
+            < if archive.uses_eight_byte_values() {
                 8
             } else {
                 4
             }
-        || chunk.next_offset != bytes.len()
     {
         return Err(FramingError::MissingEof);
     }
     let file_size = if archive.uses_eight_byte_values() {
         u64::from_le_bytes(
-            bytes[chunk.body.clone()]
+            bytes[chunk.body.start..chunk.body.start + 8]
                 .try_into()
                 .expect("EOF width checked"),
         )
     } else {
         u64::from(u32::from_le_bytes(
-            bytes[chunk.body.clone()]
+            bytes[chunk.body.start..chunk.body.start + 4]
                 .try_into()
                 .expect("EOF width checked"),
         ))
     };
-    if file_size != bytes.len() as u64 {
-        return Err(FramingError::FileSizeMismatch {
-            declared: file_size,
-            actual: bytes.len(),
-        });
-    }
     Ok(Some(Eof { offset, file_size }))
+}
+
+#[cfg(test)]
+mod direct_range_tests {
+    use super::*;
+
+    #[test]
+    fn direct_checksum_ranges_exclude_complete_sorted_children() {
+        assert_eq!(
+            direct_checksum_ranges(&(10..50), &[30..40, 15..20]).expect("valid nesting"),
+            vec![10..15, 20..30, 40..50]
+        );
+    }
+
+    #[test]
+    fn direct_checksum_ranges_reject_overlap() {
+        assert!(direct_checksum_ranges(&(10..50), &[15..30, 20..40]).is_err());
+    }
 }

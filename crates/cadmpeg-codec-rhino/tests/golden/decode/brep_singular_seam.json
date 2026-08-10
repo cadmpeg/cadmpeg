@@ -480,8 +480,38 @@
         "severity": "info"
       },
       {
+        "code": "integrity_failure",
+        "message": "container.integrity-failure: CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0xa63178ca",
+        "severity": "error"
+      },
+      {
         "code": "decode_diagnostic",
         "message": "container.scan-diagnostic: object at 177 has nil object UUID",
+        "severity": "warning"
+      },
+      {
+        "code": "integrity_failure",
+        "message": "container.integrity-failure: 60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep anonymous CRC mismatch at offset 2245",
+        "severity": "error"
+      },
+      {
+        "code": "integrity_failure",
+        "message": "container.integrity-failure: 60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep anonymous CRC mismatch at offset 2353",
+        "severity": "error"
+      },
+      {
+        "code": "integrity_failure",
+        "message": "container.integrity-failure: 60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep anonymous CRC mismatch at offset 2225",
+        "severity": "error"
+      },
+      {
+        "code": "integrity_failure",
+        "message": "container.integrity-failure: 60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep region wrapper checksum mismatch",
+        "severity": "error"
+      },
+      {
+        "code": "decode_diagnostic",
+        "message": "object.decode-diagnostic: 60b5dbc5-e660-11d3-bfe4-0010830122f0: 2 decode warnings; first: Brep anonymous chunk skipped 1 trailing bytes",
         "severity": "warning"
       }
     ],

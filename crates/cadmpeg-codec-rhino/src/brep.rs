@@ -365,7 +365,7 @@ pub(crate) fn parse(
         };
     let is_solid = if minor >= 2 {
         let value = reader.i32()?;
-        if (0..=3).contains(&value) {
+        if (0..=2).contains(&value) {
             Some(value)
         } else {
             warnings.push(format!(
@@ -453,7 +453,7 @@ fn read_children(
     let mut child_reader = body_reader(bytes, &chunk)?;
     let version_offset = child_reader.position();
     let version = child_reader.u8()?;
-    if version != 0x10 {
+    if version >> 4 != 1 {
         return Err(unsupported(
             version_offset,
             "unsupported Brep polymorphic-array version",
@@ -739,19 +739,15 @@ fn read_mesh_sides(
 ) -> Result<(Vec<RawBrepMeshSlot>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
-    let parsed = (|| {
-        if child.u8()? != 0 {
-            return Err(unsupported(
-                child.position() - 1,
-                "unsupported Brep mesh-side version",
-            ));
-        }
+    let parsed: Result<(Vec<RawBrepMeshSlot>, Range<usize>), GeometryError> = (|| {
         let mut result = Vec::with_capacity(face_count);
+        let mut children = Vec::new();
         for _ in 0..face_count {
             let present = child.bool()?;
             let mesh = if present {
                 let start = child.position();
                 let object = chunk_at(bytes, start, child.end(), archive, false)?;
+                children.push(object.range());
                 let class = parse_class_wrapper(
                     bytes,
                     chunk_start_range(&object),
@@ -780,7 +776,7 @@ fn read_mesh_sides(
             };
             result.push(RawBrepMeshSlot { mesh, present });
         }
-        finish_anonymous(bytes, reader, &chunk, child, warnings)?;
+        finish_anonymous_children(bytes, reader, &chunk, child, &children, warnings)?;
         Ok((result, chunk.range()))
     })();
     match parsed {
@@ -812,7 +808,7 @@ fn read_regions(
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut outer = body_reader(bytes, &chunk)?;
     let parsed = (|| {
-        if outer.i32()? != 1 || outer.i32()? != 0 {
+        if outer.i32()? != 1 || outer.i32()? < 0 {
             return Err(unsupported(
                 outer.position() - 8,
                 "unsupported Brep region wrapper",
@@ -822,7 +818,7 @@ fn read_regions(
             if outer.remaining() != 0 {
                 return Err(error(outer.position(), "region wrapper has trailing bytes"));
             }
-            return Ok((Vec::new(), Vec::new()));
+            return Ok((Vec::new(), Vec::new(), None));
         }
         let nested_chunk = anonymous_chunk(bytes, &mut outer, archive)?;
         let mut topology = body_reader(bytes, &nested_chunk)?;
@@ -832,22 +828,34 @@ fn read_regions(
                 "unsupported Brep region-topology version",
             ));
         }
+        let sides_start = topology.position();
         let sides = read_region_sides(bytes, &mut topology, archive, warnings)?;
+        let sides_range = sides_start..topology.position();
+        let regions_start = topology.position();
         let regions = read_region_records(bytes, &mut topology, archive, warnings)?;
-        finish_anonymous(bytes, &mut outer, &nested_chunk, topology, warnings)?;
+        let regions_range = regions_start..topology.position();
+        finish_anonymous_children(
+            bytes,
+            &mut outer,
+            &nested_chunk,
+            topology,
+            &[sides_range, regions_range],
+            warnings,
+        )?;
         if sides.len() != face_count.saturating_mul(2) {
             return Err(error(outer.position(), "region face-side count mismatch"));
         }
         if outer.remaining() != 0 {
             return Err(error(outer.position(), "region wrapper has trailing bytes"));
         }
-        Ok((sides, regions))
+        Ok((sides, regions, Some(nested_chunk.range())))
     })();
     reader.skip(chunk.next_offset - reader.position())?;
     match parsed {
-        Ok((sides, regions)) => {
+        Ok((sides, regions, nested)) => {
+            let direct = crate::chunks::direct_checksum_ranges(&chunk.body, nested.as_slice())?;
             if matches!(
-                verify_checksum(bytes, &chunk)?,
+                verify_checksum_ranges(bytes, &chunk, &direct)?,
                 ChecksumStatus::Mismatch { .. }
             ) {
                 warnings.push("Brep region wrapper checksum mismatch".to_string());
@@ -871,8 +879,10 @@ fn read_region_sides<'a>(
 ) -> Result<Vec<RawBrepFaceSide>, GeometryError> {
     let (chunk, mut child, count) = region_array(bytes, reader, archive)?;
     let mut result = Vec::with_capacity(count);
+    let mut children = Vec::with_capacity(count);
     for _ in 0..count {
         let (body, source) = region_element(bytes, &mut child, archive)?;
+        children.push(source.clone());
         let mut child = BoundedReader::new(bytes, body.start, body.end)?;
         result.push(RawBrepFaceSide {
             index: child.i32()?,
@@ -888,7 +898,7 @@ fn read_region_sides<'a>(
             ));
         }
     }
-    finish_anonymous(bytes, reader, &chunk, child, warnings)?;
+    finish_anonymous_children(bytes, reader, &chunk, child, &children, warnings)?;
     Ok(result)
 }
 
@@ -900,8 +910,10 @@ fn read_region_records<'a>(
 ) -> Result<Vec<RawBrepRegion>, GeometryError> {
     let (chunk, mut child, count) = region_array(bytes, reader, archive)?;
     let mut result = Vec::with_capacity(count);
+    let mut children = Vec::with_capacity(count);
     for _ in 0..count {
         let (body, source) = region_element(bytes, &mut child, archive)?;
+        children.push(source.clone());
         let mut child = BoundedReader::new(bytes, body.start, body.end)?;
         let index = child.i32()?;
         let region_type = child.i32()?;
@@ -918,7 +930,7 @@ fn read_region_records<'a>(
             source_range: source,
         });
     }
-    finish_anonymous(bytes, reader, &chunk, child, warnings)?;
+    finish_anonymous_children(bytes, reader, &chunk, child, &children, warnings)?;
     Ok(result)
 }
 
@@ -959,11 +971,6 @@ fn region_element(
 }
 
 fn validate(mut raw: RawBrep) -> Result<ValidatedRawBrep, GeometryError> {
-    positional(&raw.vertices, |v| v.index)?;
-    positional(&raw.edges, |v| v.index)?;
-    positional(&raw.trims, |v| v.index)?;
-    positional(&raw.loops, |v| v.index)?;
-    positional(&raw.faces, |v| v.index)?;
     for vertex in &raw.vertices {
         refs(&vertex.edges, raw.edges.len(), "vertex edge")?;
         finite_tolerance(vertex.tolerance, "vertex tolerance")?;
@@ -1255,7 +1262,7 @@ fn raw_array_start(
     minimum_record_bytes: usize,
 ) -> Result<usize, GeometryError> {
     let version = reader.u8()?;
-    if version != 0x10 {
+    if version >> 4 != 1 {
         return Err(unsupported(
             reader.position() - 1,
             &format!("unsupported {label} array version"),
@@ -1312,15 +1319,6 @@ fn count(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryEr
         return Err(error(reader.position(), "Brep count exhausts payload"));
     }
     Ok(count)
-}
-
-fn positional<T>(values: &[T], index: impl Fn(&T) -> i32) -> Result<(), GeometryError> {
-    for (position, value) in values.iter().enumerate() {
-        if index(value) != position as i32 {
-            return Err(error(position, "Brep positional index mismatch"));
-        }
-    }
-    Ok(())
 }
 
 fn refs(values: &[i32], len: usize, label: &str) -> Result<(), GeometryError> {
@@ -1464,9 +1462,9 @@ fn finish_anonymous(
     warnings: &mut Vec<String>,
 ) -> Result<(), GeometryError> {
     if child.remaining() != 0 {
-        return Err(error(
-            child.position(),
-            "anonymous Brep chunk has trailing bytes",
+        warnings.push(format!(
+            "Brep anonymous chunk skipped {} trailing bytes",
+            child.remaining()
         ));
     }
     if matches!(
@@ -1482,6 +1480,18 @@ fn finish_anonymous(
     Ok(())
 }
 
+fn finish_anonymous_children(
+    bytes: &[u8],
+    parent: &mut BoundedReader<'_>,
+    chunk: &Chunk,
+    child: BoundedReader<'_>,
+    children: &[Range<usize>],
+    warnings: &mut Vec<String>,
+) -> Result<(), GeometryError> {
+    let direct = crate::chunks::direct_checksum_ranges(&chunk.body, children)?;
+    finish_anonymous_ranges(bytes, parent, chunk, child, &direct, warnings)
+}
+
 fn finish_anonymous_ranges(
     bytes: &[u8],
     parent: &mut BoundedReader<'_>,
@@ -1491,9 +1501,9 @@ fn finish_anonymous_ranges(
     warnings: &mut Vec<String>,
 ) -> Result<(), GeometryError> {
     if child.remaining() != 0 {
-        return Err(error(
-            child.position(),
-            "anonymous Brep chunk has trailing bytes",
+        warnings.push(format!(
+            "Brep anonymous chunk skipped {} trailing bytes",
+            child.remaining()
         ));
     }
     if matches!(
@@ -1536,6 +1546,24 @@ mod tests {
         bytes.extend_from_slice(&i64::try_from(body.len() + 4).expect("length").to_le_bytes());
         bytes.extend_from_slice(body);
         bytes.extend_from_slice(&crc32fast::hash(body).to_le_bytes());
+        bytes
+    }
+
+    fn anonymous_mixed(parts: &[(&[u8], bool)]) -> Vec<u8> {
+        let body = parts
+            .iter()
+            .flat_map(|(bytes, _)| bytes.iter().copied())
+            .collect::<Vec<_>>();
+        let mut checksum = crc32fast::Hasher::new();
+        for (bytes, nested) in parts {
+            if !nested {
+                checksum.update(bytes);
+            }
+        }
+        let mut bytes = 0x4000_8000_u32.to_le_bytes().to_vec();
+        bytes.extend_from_slice(&i64::try_from(body.len() + 4).expect("length").to_le_bytes());
+        bytes.extend_from_slice(&body);
+        bytes.extend_from_slice(&checksum.finalize().to_le_bytes());
         bytes
     }
 
@@ -1929,28 +1957,22 @@ mod tests {
             body.extend(region_record);
             body
         });
-        let region_array = anonymous(&{
-            let mut body = 1_i32.to_le_bytes().to_vec();
-            body.extend_from_slice(&0_i32.to_le_bytes());
-            body.extend_from_slice(&1_i32.to_le_bytes());
-            body.extend(raw_element);
-            body
-        });
+        let mut region_prefix = 1_i32.to_le_bytes().to_vec();
+        region_prefix.extend_from_slice(&0_i32.to_le_bytes());
+        region_prefix.extend_from_slice(&1_i32.to_le_bytes());
+        let region_array = anonymous_mixed(&[(&region_prefix, false), (&raw_element, true)]);
         let side_array = anonymous(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-        let nested = anonymous(&{
-            let mut body = 1_i32.to_le_bytes().to_vec();
-            body.extend_from_slice(&0_i32.to_le_bytes());
-            body.extend(side_array);
-            body.extend(region_array);
-            body
-        });
-        let outer = anonymous(&{
-            let mut body = 1_i32.to_le_bytes().to_vec();
-            body.extend_from_slice(&0_i32.to_le_bytes());
-            body.push(1);
-            body.extend(nested);
-            body
-        });
+        let mut topology_prefix = 1_i32.to_le_bytes().to_vec();
+        topology_prefix.extend_from_slice(&0_i32.to_le_bytes());
+        let nested = anonymous_mixed(&[
+            (&topology_prefix, false),
+            (&side_array, true),
+            (&region_array, true),
+        ]);
+        let mut outer_prefix = 1_i32.to_le_bytes().to_vec();
+        outer_prefix.extend_from_slice(&1_i32.to_le_bytes());
+        outer_prefix.push(1);
+        let outer = anonymous_mixed(&[(&outer_prefix, false), (&nested, true)]);
         let mut reader = BoundedReader::new(&outer, 0, outer.len()).expect("reader");
         let mut warnings = Vec::new();
         let (_, regions, _) =
