@@ -5,9 +5,12 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, Severity, TransferLedger};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::SourceFidelity;
@@ -15,12 +18,14 @@ use cadmpeg_ir::SourceFidelity;
 use crate::container::{ContainerPurpose, InventorContainer};
 use crate::database::{RevisionPayload, VersionTuple};
 use crate::native::{
-    DatabaseIssueRecord, DatabaseRecord, RevisionRecord, SegmentBulkIssueRecord, SegmentBulkRecord,
-    SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord,
-    StorageBandRecord, StructuralIssueRecord, UnpairedSegmentRecord, VersionTupleRecord,
-    INVENTOR_NATIVE_VERSION,
+    DatabaseIssueRecord, DatabaseRecord, PropertyRecord, PropertySectionRecord,
+    PropertySetIssueRecord, PropertySetRecord, RevisionRecord, SegmentBulkIssueRecord,
+    SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
+    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UnpairedSegmentRecord,
+    VersionTupleRecord, INVENTOR_NATIVE_VERSION,
 };
-use crate::rse::{ParsedState, SegmentBulkState, SegmentMetaState};
+use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
+use crate::rse::{DocumentKind, ParsedState, SegmentBulkState, SegmentMetaState};
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
     let container = InventorContainer::open(ctx, root, ContainerPurpose::Decode)?;
@@ -38,10 +43,147 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         "rse_segment_pairs".into(),
         container.rse.segments.len().to_string(),
     );
+    let mut document_kind = container.rse.document_kind();
+    let mut metadata = MetadataProjection::default();
+    let mut property_sets = Vec::new();
+    let mut property_sections = Vec::new();
+    let mut properties = Vec::new();
+    let mut property_set_issues = Vec::new();
+    for descriptor in &container.property_sets {
+        match &descriptor.state {
+            PropertySetState::Malformed(detail) => {
+                property_set_issues.push(PropertySetIssueRecord {
+                    id: format!(
+                        "inventor:property-set-issue:{}",
+                        descriptor.stream.directory_id()
+                    ),
+                    path: descriptor.path.clone(),
+                    directory_id: descriptor.stream.directory_id(),
+                    detail: detail.clone(),
+                });
+            }
+            PropertySetState::Parsed(property_set) => {
+                property_sets.push(PropertySetRecord {
+                    id: format!("inventor:property-set:{}", descriptor.stream.directory_id()),
+                    path: descriptor.path.clone(),
+                    directory_id: descriptor.stream.directory_id(),
+                    version: property_set.version,
+                    system_identifier: property_set.system_identifier,
+                    clsid: hex(&property_set.clsid),
+                    section_count: property_set.sections.len() as u64,
+                });
+                for (section_ordinal, section) in property_set.sections.iter().enumerate() {
+                    let set_name = property_set_name(section);
+                    let identity_matches = set_name
+                        .as_deref()
+                        .and_then(known_property_set_fmtid)
+                        .is_none_or(|expected| expected == section.fmtid);
+                    if !identity_matches {
+                        property_set_issues.push(PropertySetIssueRecord {
+                            id: format!(
+                                "inventor:property-set-identity:{}:{section_ordinal}",
+                                descriptor.stream.directory_id()
+                            ),
+                            path: descriptor.path.clone(),
+                            directory_id: descriptor.stream.directory_id(),
+                            detail: "embedded property-set name does not match its FMTID".into(),
+                        });
+                    }
+                    property_sections.push(PropertySectionRecord {
+                        id: format!(
+                            "inventor:property-section:{}:{section_ordinal}",
+                            descriptor.stream.directory_id()
+                        ),
+                        set_path: descriptor.path.clone(),
+                        ordinal: section_ordinal as u32,
+                        fmtid: hex(&section.fmtid),
+                        code_page: section.code_page,
+                        offsets_ordered: section.offsets_ordered,
+                        dictionary_entries: section.names.len() as u64,
+                        property_count: section.properties.len() as u64,
+                    });
+                    for property in &section.properties {
+                        let property_name = property.name.clone().or_else(|| {
+                            identity_matches
+                                .then_some(set_name.as_deref())
+                                .flatten()
+                                .and_then(|set_name| built_in_property_name(set_name, property.id))
+                                .map(str::to_owned)
+                        });
+                        let native_id = format!(
+                            "inventor:property:{}:{section_ordinal}:{}",
+                            descriptor.stream.directory_id(),
+                            property.id
+                        );
+                        let scalar_value = property.value.scalar_text();
+                        metadata.consider(
+                            &section.fmtid,
+                            property.id,
+                            property_name.as_deref(),
+                            scalar_value.as_deref(),
+                            &native_id,
+                        );
+                        if is_preview(&section.fmtid, property.id, property_name.as_deref()) {
+                            if let Some((bytes, media_type)) = preview_bytes(&property.value) {
+                                let data = ctx.copy_retained(
+                                    bytes,
+                                    "retain Inventor preview asset",
+                                    Some(property.raw.location()),
+                                )?;
+                                ir.model.assets.push(Asset {
+                                    id: AssetId(format!(
+                                        "inventor:asset:preview:{}",
+                                        ir.model.assets.len()
+                                    )),
+                                    name: Some("document preview".into()),
+                                    media_type: Some(media_type.into()),
+                                    content: AssetContent::Embedded { data },
+                                    native_ref: Some(native_id.clone()),
+                                });
+                            }
+                        }
+                        properties.push(PropertyRecord {
+                            id: native_id,
+                            set_path: descriptor.path.clone(),
+                            section_ordinal: section_ordinal as u32,
+                            fmtid: hex(&section.fmtid),
+                            property_id: property.id,
+                            name: property_name,
+                            type_code: property.type_code,
+                            value_kind: property_value_kind(&property.value),
+                            scalar_value,
+                            raw_len: property.raw.window().len() as u64,
+                            raw_sha256: sha256_hex(property.raw.window()),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    if let DocumentKind::Unknown(_) = document_kind {
+        if let Some(property_kind) = metadata.document_kind.take() {
+            document_kind = property_kind;
+        }
+    }
+    attributes.insert("document_kind".into(), document_kind.label().into());
+    metadata.apply_attributes(&mut attributes);
     ir.source = Some(SourceMeta {
         format: "inventor".into(),
         attributes,
     });
+    if matches!(document_kind, DocumentKind::Part | DocumentKind::Assembly) {
+        ir.model.product_definitions.push(ProductDefinition {
+            id: ProductDefinitionId("inventor:product:root".into()),
+            kind: ProductDefinitionKind::Part,
+            source_name: metadata.title.clone(),
+            label: metadata.title.clone(),
+            description: metadata.description.clone(),
+            part_number: metadata.part_number.clone(),
+            bom_properties: metadata.bom_properties.clone(),
+            bodies: Vec::new(),
+            native_ref: Some("inventor:rse:document".into()),
+        });
+    }
     let storage_bands = container
         .rse
         .databases
@@ -283,6 +425,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .saturating_add(segment_meta_issues.len())
             .saturating_add(segment_bulk.len())
             .saturating_add(segment_bulk_issues.len())
+            .saturating_add(property_sets.len())
+            .saturating_add(property_sections.len())
+            .saturating_add(properties.len())
+            .saturating_add(property_set_issues.len())
             .saturating_add(unpaired_segments.len()) as u64,
         "retain Inventor native structural records",
     )?;
@@ -294,6 +440,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     namespace.set_arena("segment_registry", &segment_registry)?;
     namespace.set_arena("revisions", &revisions)?;
     namespace.set_arena("structural_issues", &structural_issues)?;
+    namespace.set_arena("property_sets", &property_sets)?;
+    namespace.set_arena("property_sections", &property_sections)?;
+    namespace.set_arena("properties", &properties)?;
+    namespace.set_arena("property_set_issues", &property_set_issues)?;
     namespace.set_arena("segment_pairs", &segment_pairs)?;
     namespace.set_arena("segment_meta", &segment_meta)?;
     namespace.set_arena("segment_meta_issues", &segment_meta_issues)?;
@@ -352,7 +502,26 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             ),
         ));
     }
+    if !property_set_issues.is_empty() {
+        losses.push(LossNote::new(
+            LossKind::DecodeDiagnostic,
+            format!(
+                "{} OLE property-set stream(s) are malformed.",
+                property_set_issues.len()
+            ),
+        ));
+    }
+    if metadata.unmapped != 0 {
+        losses.push(LossNote::new(
+            LossKind::MetadataNotTransferred,
+            format!(
+                "Retained {} property value(s) without neutral metadata mapping.",
+                metadata.unmapped
+            ),
+        ));
+    }
     ctx.charge_entities(ir.model.entity_count() as u64, "admit Inventor entities")?;
+    let preview_asset_count = ir.model.assets.len();
     Ok(DecodeResult::new(
         ir,
         DecodeReport {
@@ -369,6 +538,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 ("rse_segment_meta_issues".into(), segment_meta_issues.len()),
                 ("rse_segment_bulk".into(), segment_bulk.len()),
                 ("rse_segment_bulk_issues".into(), segment_bulk_issues.len()),
+                ("property_sets".into(), property_sets.len()),
+                ("properties".into(), properties.len()),
+                ("preview_assets".into(), preview_asset_count),
             ]),
             losses,
             notes: Vec::new(),
@@ -395,6 +567,300 @@ fn structural_issue(scope: &str, detail: &str) -> StructuralIssueRecord {
     }
 }
 
+const FMTID_SUMMARY_INFORMATION: [u8; 16] = [
+    0xe0, 0x85, 0x9f, 0xf2, 0xf9, 0x4f, 0x68, 0x10, 0xab, 0x91, 0x08, 0x00, 0x2b, 0x27, 0xb3, 0xd9,
+];
+
+#[derive(Default)]
+struct MetadataProjection {
+    title: Option<String>,
+    author: Option<String>,
+    description: Option<String>,
+    part_number: Option<String>,
+    document_kind: Option<DocumentKind>,
+    bom_properties: BTreeMap<String, String>,
+    unmapped: usize,
+}
+
+impl MetadataProjection {
+    fn consider(
+        &mut self,
+        fmtid: &[u8; 16],
+        property_id: u32,
+        name: Option<&str>,
+        value: Option<&str>,
+        native_id: &str,
+    ) {
+        let Some(value) = value.filter(|value| !value.is_empty()) else {
+            return;
+        };
+        let normalized = name.map(normalize_property_name);
+        if matches!(normalized.as_deref(), Some("documentkind" | "documenttype")) {
+            self.document_kind = DocumentKind::parse_property(value);
+            if self.document_kind.is_some() {
+                return;
+            }
+        }
+        let target = if fmtid == &FMTID_SUMMARY_INFORMATION && property_id == 2
+            || normalized.as_deref() == Some("title")
+        {
+            Some(&mut self.title)
+        } else if fmtid == &FMTID_SUMMARY_INFORMATION && property_id == 4
+            || matches!(normalized.as_deref(), Some("author" | "designer"))
+        {
+            Some(&mut self.author)
+        } else if fmtid == &FMTID_SUMMARY_INFORMATION && property_id == 6
+            || matches!(normalized.as_deref(), Some("description" | "comments"))
+        {
+            Some(&mut self.description)
+        } else if normalized.as_deref() == Some("partnumber") {
+            Some(&mut self.part_number)
+        } else {
+            None
+        };
+        if let Some(target) = target {
+            if target.is_none() {
+                *target = Some(value.into());
+            } else if target.as_deref() != Some(value) {
+                self.bom_properties.insert(native_id.into(), value.into());
+            }
+            return;
+        }
+        if let Some(name) = name {
+            self.bom_properties.insert(name.into(), value.into());
+        } else {
+            self.unmapped += 1;
+        }
+    }
+
+    fn apply_attributes(&self, attributes: &mut BTreeMap<String, String>) {
+        for (name, value) in [
+            ("title", &self.title),
+            ("author", &self.author),
+            ("description", &self.description),
+            ("part_number", &self.part_number),
+        ] {
+            if let Some(value) = value {
+                attributes.insert(name.into(), value.clone());
+            }
+        }
+    }
+}
+
+fn normalize_property_name(name: &str) -> String {
+    name.chars()
+        .filter(|character| character.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn property_set_name(section: &PropertySection<'_>) -> Option<String> {
+    section
+        .properties
+        .iter()
+        .find(|property| property.id == 255)
+        .and_then(|property| property.value.scalar_text())
+}
+
+fn known_property_set_fmtid(set_name: &str) -> Option<[u8; 16]> {
+    match set_name {
+        "Design Tracking Control" => Some([
+            0x30, 0xfb, 0x61, 0xd8, 0x36, 0x31, 0xd1, 0x11, 0x9e, 0x92, 0x00, 0x60, 0xb0, 0x3c,
+            0x1c, 0xa6,
+        ]),
+        "Inventor User Defined Properties" => Some([
+            0xb8, 0xad, 0x29, 0x99, 0x07, 0x64, 0x3e, 0x41, 0xb3, 0xdc, 0xcb, 0x9a, 0xd2, 0xf5,
+            0x64, 0xb7,
+        ]),
+        "Inventor Summary Information" => Some([
+            0x39, 0xde, 0x38, 0x3d, 0x88, 0x05, 0x14, 0x4c, 0xbb, 0x37, 0x18, 0xf4, 0xd5, 0xdd,
+            0x31, 0xc7,
+        ]),
+        "Inventor Document Summary Information" => Some([
+            0x00, 0x80, 0xf5, 0x8c, 0x66, 0xda, 0xe6, 0x4a, 0x8f, 0xf0, 0x7b, 0x58, 0x40, 0x6f,
+            0xb0, 0x49,
+        ]),
+        "Design Tracking Properties" => Some([
+            0x0f, 0x3f, 0x85, 0x32, 0x44, 0x34, 0xd1, 0x11, 0x9e, 0x93, 0x00, 0x60, 0xb0, 0x3c,
+            0x1c, 0xa6,
+        ]),
+        "_Private Model Information" => Some([
+            0x90, 0x69, 0x58, 0xbb, 0x3e, 0xaf, 0xd3, 0x11, 0x95, 0xa9, 0x00, 0xa0, 0xc9, 0xb6,
+            0xe3, 0x7a,
+        ]),
+        _ => None,
+    }
+}
+
+fn built_in_property_name(set_name: &str, id: u32) -> Option<&'static str> {
+    match (set_name, id) {
+        (_, 1) => Some("Code Page"),
+        (_, 255) => Some("Property Set Name"),
+        ("Inventor Summary Information", 2) => Some("Title"),
+        ("Inventor Summary Information", 3) => Some("Subject"),
+        ("Inventor Summary Information", 4) => Some("Author"),
+        ("Inventor Summary Information", 5) => Some("Keywords"),
+        ("Inventor Summary Information", 6) => Some("Comments"),
+        ("Inventor Summary Information", 8) => Some("Last Saved By"),
+        ("Inventor Summary Information", 9) => Some("Revision"),
+        ("Inventor Summary Information", 12) => Some("Creation Time"),
+        ("Inventor Summary Information", 17) => Some("Thumbnail"),
+        ("Inventor Document Summary Information", 2) => Some("Category"),
+        ("Inventor Document Summary Information", 14) => Some("Manager"),
+        ("Inventor Document Summary Information", 15) => Some("Company"),
+        ("Design Tracking Control", 5) => Some("Checked Out By"),
+        ("Design Tracking Control", 6) => Some("Checked Out Date"),
+        ("Design Tracking Control", 7) => Some("Checked In By"),
+        ("Design Tracking Control", 8) => Some("Checked In Date"),
+        ("Design Tracking Control", 9) => Some("Check Out Workgroup"),
+        ("Design Tracking Control", 11) => Some("Check Out Workspace"),
+        ("Design Tracking Control", 12) => Some("Check Out Version"),
+        ("Design Tracking Control", 13) => Some("Next Version"),
+        ("Design Tracking Control", 14) => Some("Current Version"),
+        ("Design Tracking Control", 15) => Some("Previous Version"),
+        ("Design Tracking Control", 16) => Some("Last Saved By"),
+        ("Design Tracking Control", 17) => Some("Last Saved Date"),
+        ("Design Tracking Control", 19) => Some("Drawing Defer Update"),
+        ("Design Tracking Control", 22) => Some("Build Version"),
+        ("Design Tracking Properties", 4) => Some("Creation Date"),
+        ("Design Tracking Properties", 5) => Some("Part Number"),
+        ("Design Tracking Properties", 7) => Some("Project"),
+        ("Design Tracking Properties", 9) => Some("Cost Center"),
+        ("Design Tracking Properties", 10) => Some("Checked By"),
+        ("Design Tracking Properties", 11) => Some("Date Checked"),
+        ("Design Tracking Properties", 12) => Some("Engineering Approved By"),
+        ("Design Tracking Properties", 13) => Some("Date Engineering Approved"),
+        ("Design Tracking Properties", 17) => Some("User Status"),
+        ("Design Tracking Properties", 20) => Some("Material"),
+        ("Design Tracking Properties", 21) => Some("Part Property Revision Id"),
+        ("Design Tracking Properties", 23) => Some("Catalog Web Link"),
+        ("Design Tracking Properties", 28) => Some("Part Icon"),
+        ("Design Tracking Properties", 29) => Some("Description"),
+        ("Design Tracking Properties", 30) => Some("Vendor"),
+        ("Design Tracking Properties", 31) => Some("Document Subtype"),
+        ("Design Tracking Properties", 32) => Some("Document Type"),
+        ("Design Tracking Properties", 33) => Some("Proxy Refresh Date"),
+        ("Design Tracking Properties", 34) => Some("Manufacturing Approved By"),
+        ("Design Tracking Properties", 35) => Some("Date Manufacturing Approved"),
+        ("Design Tracking Properties", 36) => Some("Cost"),
+        ("Design Tracking Properties", 37) => Some("Standard"),
+        ("Design Tracking Properties", 40) => Some("Design Status"),
+        ("Design Tracking Properties", 41) => Some("Designer"),
+        ("Design Tracking Properties", 42) => Some("Engineer"),
+        ("Design Tracking Properties", 43) => Some("Authority"),
+        ("Design Tracking Properties", 44) => Some("Parameterized Template"),
+        ("Design Tracking Properties", 45) => Some("Template Row"),
+        ("Design Tracking Properties", 46) => Some("External Property Revision Id"),
+        ("Design Tracking Properties", 47) => Some("Standard Revision"),
+        ("Design Tracking Properties", 48) => Some("Manufacturer"),
+        ("Design Tracking Properties", 49) => Some("Standards Organization"),
+        ("Design Tracking Properties", 50) => Some("Language"),
+        ("Design Tracking Properties", 51) => Some("Drawing Defer Update"),
+        ("Design Tracking Properties", 52) => Some("Designation Size"),
+        ("Design Tracking Properties", 55) => Some("Stock Number"),
+        ("Design Tracking Properties", 56) => Some("Categories"),
+        ("Design Tracking Properties", 57) => Some("Weld Material"),
+        ("Design Tracking Properties", 58) => Some("Mass"),
+        ("Design Tracking Properties", 59) => Some("Surface Area"),
+        ("Design Tracking Properties", 60) => Some("Volume"),
+        ("Design Tracking Properties", 61) => Some("Density"),
+        ("Design Tracking Properties", 62) => Some("Valid Mass Properties"),
+        ("Design Tracking Properties", 63) => Some("Flat Pattern Extents Width"),
+        ("Design Tracking Properties", 64) => Some("Flat Pattern Extents Length"),
+        ("Design Tracking Properties", 65) => Some("Flat Pattern Extents Area"),
+        ("Design Tracking Properties", 66) => Some("Sheet Metal Rule"),
+        ("Design Tracking Properties", 67) => Some("Last Updated With"),
+        ("Design Tracking Properties", 71) => Some("Material Identifier"),
+        ("Design Tracking Properties", 72) => Some("Appearance"),
+        ("Design Tracking Properties", 73) => Some("Flat Pattern Defer Update"),
+        ("_Private Model Information", 8) => Some("Length Units"),
+        ("_Private Model Information", 9) => Some("Angle Units"),
+        ("_Private Model Information", 10) => Some("Time Units"),
+        ("_Private Model Information", 11) => Some("Mass Units"),
+        ("_Private Model Information", 12) => Some("Length Display Precision"),
+        ("_Private Model Information", 13) => Some("Angle Display Precision"),
+        ("_Private Model Information", 14) => Some("Compacted"),
+        ("_Private Model Information", 15) => Some("Assembly Available PVS"),
+        ("_Private Model Information", 16) => Some("Part Active Color Style"),
+        _ => None,
+    }
+}
+
+fn property_value_kind(value: &PropertyValue<'_>) -> String {
+    match value {
+        PropertyValue::Empty => "empty".into(),
+        PropertyValue::Signed(_) => "signed".into(),
+        PropertyValue::Unsigned(_) => "unsigned".into(),
+        PropertyValue::Float(_) => "float".into(),
+        PropertyValue::Bool(_) => "bool".into(),
+        PropertyValue::Filetime(_) => "filetime".into(),
+        PropertyValue::String(_) => "string".into(),
+        PropertyValue::Guid(_) => "guid".into(),
+        PropertyValue::Binary(data) => format!("binary:{}", data.window().len()),
+        PropertyValue::Clipboard { format, data } => {
+            format!("clipboard:{format}:{}", data.window().len())
+        }
+        PropertyValue::Vector(values) => format!("vector:{}", values.len()),
+        PropertyValue::Dictionary => "dictionary".into(),
+        PropertyValue::Unknown => "unknown".into(),
+    }
+}
+
+fn is_preview(fmtid: &[u8; 16], property_id: u32, name: Option<&str>) -> bool {
+    fmtid == &FMTID_SUMMARY_INFORMATION && property_id == 17
+        || name.is_some_and(|name| {
+            matches!(
+                normalize_property_name(name).as_str(),
+                "thumbnail" | "preview" | "previewimage"
+            )
+        })
+}
+
+fn preview_bytes<'a>(value: &'a PropertyValue<'a>) -> Option<(&'a [u8], &'static str)> {
+    let bytes = match value {
+        PropertyValue::Binary(view) => view.window(),
+        PropertyValue::Clipboard { format, data } if *format == u32::MAX => {
+            let bytes = data.window();
+            let header = bytes.get(..12)?;
+            let image_kind = u32::from_le_bytes(header[..4].try_into().ok()?);
+            let header_size = u16::from_le_bytes(header[4..6].try_into().ok()?);
+            let width = u16::from_le_bytes(header[6..8].try_into().ok()?) as u32;
+            let height = u16::from_le_bytes(header[8..10].try_into().ok()?) as u32;
+            let reserved = u16::from_le_bytes(header[10..12].try_into().ok()?);
+            let png = &bytes[12..];
+            let png_header = png.get(..24)?;
+            if image_kind != 3
+                || header_size != 8
+                || width == 0
+                || height == 0
+                || reserved != 0
+                || !png_header.starts_with(b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR")
+                || u32::from_be_bytes(png_header[16..20].try_into().ok()?) != width
+                || u32::from_be_bytes(png_header[20..24].try_into().ok()?) != height
+            {
+                return None;
+            }
+            return Some((png, "image/png"));
+        }
+        PropertyValue::Clipboard { .. } => return None,
+        _ => return None,
+    };
+    let media_type = if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        "image/png"
+    } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+        "image/jpeg"
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        "image/gif"
+    } else if bytes.starts_with(b"BM") {
+        "image/bmp"
+    } else if bytes.starts_with(b"II*\0") || bytes.starts_with(b"MM\0*") {
+        "image/tiff"
+    } else {
+        return None;
+    };
+    Some((bytes, media_type))
+}
+
 fn hex(bytes: &[u8]) -> String {
     use std::fmt::Write as _;
     let mut output = String::with_capacity(bytes.len() * 2);
@@ -402,4 +868,73 @@ fn hex(bytes: &[u8]) -> String {
         let _ = write!(output, "{byte:02x}");
     }
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+
+    use super::*;
+
+    #[test]
+    fn built_in_properties_are_selected_by_embedded_set_identity() {
+        assert_eq!(
+            built_in_property_name("Design Tracking Properties", 5),
+            Some("Part Number")
+        );
+        assert_eq!(
+            built_in_property_name("Inventor Summary Information", 17),
+            Some("Thumbnail")
+        );
+        assert!(known_property_set_fmtid("Design Tracking Properties").is_some());
+        assert!(built_in_property_name("Unknown Set", 5).is_none());
+    }
+
+    #[test]
+    fn metadata_projection_maps_stable_fields_without_overwriting_conflicts() {
+        let mut projection = MetadataProjection::default();
+        projection.consider(&[0; 16], 5, Some("Part Number"), Some("P-1"), "first");
+        projection.consider(&[0; 16], 5, Some("Part Number"), Some("P-2"), "second");
+        projection.consider(&[0; 16], 29, Some("Description"), Some("Bracket"), "desc");
+        assert_eq!(projection.part_number.as_deref(), Some("P-1"));
+        assert_eq!(projection.description.as_deref(), Some("Bracket"));
+        assert_eq!(
+            projection.bom_properties.get("second").map(String::as_str),
+            Some("P-2")
+        );
+    }
+
+    #[test]
+    fn inventor_clipboard_preview_requires_matching_png_dimensions() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        bytes.extend_from_slice(&8_u16.to_le_bytes());
+        bytes.extend_from_slice(&4_u16.to_le_bytes());
+        bytes.extend_from_slice(&5_u16.to_le_bytes());
+        bytes.extend_from_slice(&0_u16.to_le_bytes());
+        bytes.extend_from_slice(b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR");
+        bytes.extend_from_slice(&4_u32.to_be_bytes());
+        bytes.extend_from_slice(&5_u32.to_be_bytes());
+        let arena = DecodeArena::new();
+        let (_, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic preview fits policy");
+        let value = PropertyValue::Clipboard {
+            format: u32::MAX,
+            data: root,
+        };
+        assert_eq!(
+            preview_bytes(&value).map(|(_, media)| media),
+            Some("image/png")
+        );
+
+        bytes[8..10].copy_from_slice(&6_u16.to_le_bytes());
+        let arena = DecodeArena::new();
+        let (_, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic preview fits policy");
+        let value = PropertyValue::Clipboard {
+            format: u32::MAX,
+            data: root,
+        };
+        assert!(preview_bytes(&value).is_none());
+    }
 }

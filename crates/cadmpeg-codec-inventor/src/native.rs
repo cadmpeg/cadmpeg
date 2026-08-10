@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Current Inventor native namespace version.
-pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 2;
+pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct VersionTupleRecord {
@@ -60,6 +60,52 @@ pub(crate) struct RevisionRecord {
 pub(crate) struct StructuralIssueRecord {
     pub(crate) id: String,
     pub(crate) scope: String,
+    pub(crate) detail: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct PropertySetRecord {
+    pub(crate) id: String,
+    pub(crate) path: String,
+    pub(crate) directory_id: u32,
+    pub(crate) version: u16,
+    pub(crate) system_identifier: u32,
+    pub(crate) clsid: String,
+    pub(crate) section_count: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct PropertyRecord {
+    pub(crate) id: String,
+    pub(crate) set_path: String,
+    pub(crate) section_ordinal: u32,
+    pub(crate) fmtid: String,
+    pub(crate) property_id: u32,
+    pub(crate) name: Option<String>,
+    pub(crate) type_code: Option<u16>,
+    pub(crate) value_kind: String,
+    pub(crate) scalar_value: Option<String>,
+    pub(crate) raw_len: u64,
+    pub(crate) raw_sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct PropertySectionRecord {
+    pub(crate) id: String,
+    pub(crate) set_path: String,
+    pub(crate) ordinal: u32,
+    pub(crate) fmtid: String,
+    pub(crate) code_page: Option<u16>,
+    pub(crate) offsets_ordered: bool,
+    pub(crate) dictionary_entries: u64,
+    pub(crate) property_count: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct PropertySetIssueRecord {
+    pub(crate) id: String,
+    pub(crate) path: String,
+    pub(crate) directory_id: u32,
     pub(crate) detail: String,
 }
 

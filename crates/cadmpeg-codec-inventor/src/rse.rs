@@ -90,6 +90,41 @@ pub(crate) enum SegmentKind {
     Unknown(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum DocumentKind {
+    Part,
+    Assembly,
+    Drawing,
+    Presentation,
+    Unknown(String),
+}
+
+impl DocumentKind {
+    pub(crate) fn parse_property(value: &str) -> Option<Self> {
+        if value.eq_ignore_ascii_case("part") {
+            Some(Self::Part)
+        } else if value.eq_ignore_ascii_case("assembly") {
+            Some(Self::Assembly)
+        } else if value.eq_ignore_ascii_case("drawing") {
+            Some(Self::Drawing)
+        } else if value.eq_ignore_ascii_case("presentation") {
+            Some(Self::Presentation)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn label(&self) -> &str {
+        match self {
+            Self::Part => "part",
+            Self::Assembly => "assembly",
+            Self::Drawing => "drawing",
+            Self::Presentation => "presentation",
+            Self::Unknown(detail) => detail,
+        }
+    }
+}
+
 impl SegmentKind {
     fn classify(display_name: &str, type_name: Option<&str>) -> Self {
         match type_name {
@@ -367,6 +402,37 @@ impl<'a> RseInventory<'a> {
             segments,
             unpaired_metadata,
             unpaired_bulk,
+        }
+    }
+
+    pub(crate) fn document_kind(&self) -> DocumentKind {
+        let has_part = self.segments.iter().any(|segment| {
+            matches!(
+                segment.kind,
+                SegmentKind::PmBRep
+                    | SegmentKind::PmDc
+                    | SegmentKind::PmGraphics
+                    | SegmentKind::PmApp
+                    | SegmentKind::PmBrowser
+                    | SegmentKind::PmResult
+            )
+        });
+        let has_assembly = self.segments.iter().any(|segment| {
+            matches!(
+                segment.kind,
+                SegmentKind::AmDc
+                    | SegmentKind::AmBRep
+                    | SegmentKind::AmGraphics
+                    | SegmentKind::AmApp
+                    | SegmentKind::AmBrowser
+                    | SegmentKind::AmRx
+            )
+        });
+        match (has_part, has_assembly) {
+            (true, false) => DocumentKind::Part,
+            (false, true) => DocumentKind::Assembly,
+            (true, true) => DocumentKind::Unknown("mixed_part_assembly".into()),
+            (false, false) => DocumentKind::Unknown("unknown".into()),
         }
     }
 }

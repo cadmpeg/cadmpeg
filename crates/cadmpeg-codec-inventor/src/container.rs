@@ -5,6 +5,7 @@ use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
 
+use crate::property_set::{inventory as property_set_inventory, PropertySetDescriptor};
 use crate::rse::{database_band, direct_rse_child, RseInventory, SegmentMetaState};
 use crate::rse::{BulkReadMode, SegmentBulkState};
 
@@ -27,6 +28,7 @@ impl ContainerPurpose {
 pub(crate) struct InventorContainer<'a> {
     pub(crate) snapshot: CompoundSnapshot<'a>,
     pub(crate) rse: RseInventory<'a>,
+    pub(crate) property_sets: Vec<PropertySetDescriptor<'a>>,
 }
 
 impl<'a> InventorContainer<'a> {
@@ -45,7 +47,12 @@ impl<'a> InventorContainer<'a> {
             ));
         }
         let rse = RseInventory::build(ctx, &snapshot, purpose.bulk_mode());
-        Ok(Self { snapshot, rse })
+        let property_sets = property_set_inventory(ctx, &snapshot)?;
+        Ok(Self {
+            snapshot,
+            rse,
+            property_sets,
+        })
     }
 
     pub(crate) fn summary(&self) -> ContainerSummary {

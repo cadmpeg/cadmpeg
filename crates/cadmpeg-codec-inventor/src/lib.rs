@@ -8,6 +8,7 @@ mod container;
 mod database;
 mod decode;
 mod native;
+mod property_set;
 mod rse;
 mod validate;
 

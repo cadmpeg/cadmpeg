@@ -58,7 +58,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
             .namespace("inventor")
             .expect("Inventor native namespace exists")
             .version,
-        2
+        3
     );
 
     let options = DecodeOptions {
