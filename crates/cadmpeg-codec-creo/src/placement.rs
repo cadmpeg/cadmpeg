@@ -42,6 +42,15 @@ pub(crate) struct PlacementSources<'a> {
     pub affected_ids: &'a [FeatureAffectedIds],
 }
 
+type PlaneEquation = ([f64; 3], f64);
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SectionFrameCandidate {
+    reference_id: u32,
+    sketch: PlaneEquation,
+    reference: PlaneEquation,
+}
+
 fn generated_cylinder_section_transform(
     definition: &FeatureDefinition,
     sources: &PlacementSources<'_>,
@@ -52,10 +61,13 @@ fn generated_cylinder_section_transform(
     let points = definition.variables.as_ref()?.reconciled_points();
     points.1.is_empty().then_some(())?;
     let mut correspondences = Vec::<([f64; 2], [f64; 3], [f64; 3], usize)>::new();
-    for entry in entity_tables
+    for (_, entry) in entity_tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id))
-        .flat_map(|table| &table.entries)
+        .flat_map(|table| table.entries.iter().map(move |entry| (table, entry)))
+        .filter(|(table, entry)| {
+            entry.class_id == 200 && table.surface_ids.contains(&entry.entity_id)
+        })
     {
         let Some(external_id) = entry.source_entity_id else {
             continue;
@@ -190,6 +202,10 @@ fn generated_planar_section_transform(
             table.entries.len() >= 4
                 && table.entries[0].class_id == 204
                 && table.entries[1].class_id == 203
+                && table
+                    .entries
+                    .iter()
+                    .all(|entry| table.surface_ids.contains(&entry.entity_id))
                 && table.entries[2..]
                     .iter()
                     .all(|entry| entry.class_id == 200 && entry.source_entity_id.is_some())
@@ -394,32 +410,43 @@ fn plane_equation(
         .iter()
         .filter(|datum| datum.id == id)
         .collect::<Vec<_>>();
+    let model_planes = model_planes
+        .iter()
+        .filter(|plane| plane.surface_id == id)
+        .collect::<Vec<_>>();
+    let model_equation = match model_planes.as_slice() {
+        [plane] => plane
+            .normal
+            .zip(plane.origin)
+            .map(|(normal, origin)| (normal, dot(normal, origin))),
+        _ => None,
+    };
+    let outline_planes = outline_planes
+        .iter()
+        .filter(|plane| plane.surface_id == id)
+        .collect::<Vec<_>>();
+    let outline_equation = match outline_planes.as_slice() {
+        [plane] => Some((plane.normal, dot(plane.normal, plane.origin))),
+        _ => None,
+    };
+    // The datum-geometry and model-surface identifiers are separate namespaces;
+    // a numeric collision supplies no rule for choosing between their equations.
+    if datums.len() == 1 && (model_equation.is_some() || outline_equation.is_some()) {
+        return None;
+    }
     if let [datum] = datums.as_slice() {
         return Some((datum.normal, datum.offset));
     }
     if !datums.is_empty() {
         return None;
     }
-    let model_planes = model_planes
-        .iter()
-        .filter(|plane| plane.surface_id == id)
-        .collect::<Vec<_>>();
-    if let [plane] = model_planes.as_slice() {
-        if let (Some(normal), Some(origin)) = (plane.normal, plane.origin) {
-            return Some((normal, dot(normal, origin)));
-        }
+    if let Some(equation) = model_equation {
+        return Some(equation);
     }
     if model_planes.len() > 1 {
         return None;
     }
-    let outline_planes = outline_planes
-        .iter()
-        .filter(|plane| plane.surface_id == id)
-        .collect::<Vec<_>>();
-    let [plane] = outline_planes.as_slice() else {
-        return None;
-    };
-    Some((plane.normal, dot(plane.normal, plane.origin)))
+    outline_equation
 }
 
 fn definition_local_plane_equation(definition: &FeatureDefinition) -> Option<([f64; 3], f64)> {
@@ -441,6 +468,21 @@ pub(crate) fn unique_complete_local_system(definition: &FeatureDefinition) -> Op
     frames.next().is_none().then_some(values)
 }
 
+fn reference_flip_for_reference(
+    section: &crate::feature::FeatureSection3d,
+    reference_id: Option<u32>,
+) -> Option<BinaryFlag> {
+    if section.reference_plane_rows.is_empty() {
+        return section.orientation.reference_flip;
+    }
+    let reference_id = reference_id?;
+    section
+        .reference_plane_rows
+        .iter()
+        .find(|row| row.plane_entity_id == reference_id)
+        .and_then(|row| row.reference_flip)
+}
+
 fn definition_local_frame_transform(
     definition: &FeatureDefinition,
     section: &crate::feature::FeatureSection3d,
@@ -457,7 +499,7 @@ fn definition_local_frame_transform(
     if section.orientation.section_flip == Some(BinaryFlag::Set) {
         normal = scale(normal, -1.0);
     }
-    if section.orientation.reference_flip == Some(BinaryFlag::Set) {
+    if reference_flip_for_reference(section, None) == Some(BinaryFlag::Set) {
         reference_axis = scale(reference_axis, -1.0);
     }
     let u_axis = cross(reference_axis, normal);
@@ -920,7 +962,7 @@ pub(crate) fn resolve(
                 entity_tables,
             )
         });
-        let mut candidates = Vec::new();
+        let mut candidates = Vec::<SectionFrameCandidate>::new();
         for reference_id in reference_ids {
             let direct_reference = plane_equation(
                 reference_id,
@@ -943,9 +985,15 @@ pub(crate) fn resolve(
                     });
                 if let Some(reference) = reference {
                     if dot(sketch.0, reference.0).abs() < 1.0 - 1e-12
-                        && !candidates.contains(&(sketch, reference))
+                        && !candidates.iter().any(|candidate| {
+                            candidate.sketch == sketch && candidate.reference == reference
+                        })
                     {
-                        candidates.push((sketch, reference));
+                        candidates.push(SectionFrameCandidate {
+                            reference_id,
+                            sketch,
+                            reference,
+                        });
                     }
                 }
             } else if let Some(reference) = direct_reference {
@@ -963,9 +1011,15 @@ pub(crate) fn resolve(
                         })
                 {
                     if dot(sketch.0, reference.0).abs() < 1.0 - 1e-12
-                        && !candidates.contains(&(sketch, reference))
+                        && !candidates.iter().any(|candidate| {
+                            candidate.sketch == sketch && candidate.reference == reference
+                        })
                     {
-                        candidates.push((sketch, reference));
+                        candidates.push(SectionFrameCandidate {
+                            reference_id,
+                            sketch,
+                            reference,
+                        });
                     }
                 }
             }
@@ -976,11 +1030,11 @@ pub(crate) fn resolve(
             }
             continue;
         }
-        let [(sketch, reference)] = candidates.as_slice() else {
+        let [candidate] = candidates.as_slice() else {
             continue;
         };
-        let (mut sketch_normal, mut sketch_offset) = *sketch;
-        let (mut reference_normal, mut reference_offset) = *reference;
+        let (mut sketch_normal, mut sketch_offset) = candidate.sketch;
+        let (mut reference_normal, mut reference_offset) = candidate.reference;
         if section.sketch_plane_flip == Some(BinaryFlag::Set) {
             sketch_normal = scale(sketch_normal, -1.0);
             sketch_offset = -sketch_offset;
@@ -989,7 +1043,9 @@ pub(crate) fn resolve(
             sketch_normal = scale(sketch_normal, -1.0);
             sketch_offset = -sketch_offset;
         }
-        if section.orientation.reference_flip == Some(BinaryFlag::Set) {
+        if reference_flip_for_reference(section, Some(candidate.reference_id))
+            == Some(BinaryFlag::Set)
+        {
             reference_normal = scale(reference_normal, -1.0);
             reference_offset = -reference_offset;
         }
@@ -1060,8 +1116,8 @@ mod tests {
     use super::*;
     use crate::feature::{
         FeatureEntityTableEntry, FeatureParameterFrame, FeatureSection3d,
-        FeatureSectionOrientation, FeatureSectionPoint, FeatureSegment, FeatureSegmentTable,
-        FeatureVariableTable,
+        FeatureSectionOrientation, FeatureSectionPoint, FeatureSectionReferencePlane,
+        FeatureSegment, FeatureSegmentTable, FeatureVariableTable,
     };
     use crate::surface::{PositionalCylinderFrame, SurfaceBodyBoundary, SurfaceParameterRecord};
 
@@ -1170,6 +1226,37 @@ mod tests {
     }
 
     #[test]
+    fn plane_namespace_collision_withholds_equation() {
+        let model = PlaneLocalSystem {
+            surface_id: 7,
+            body: Vec::new(),
+            slots: vec![None; 12],
+            origin: Some([0.0, 2.0, 0.0]),
+            u_axis: Some([1.0, 0.0, 0.0]),
+            normal: Some([0.0, 1.0, 0.0]),
+            classification: crate::surface::LocalSystemClassification::Unclassified,
+            row_offset: 10,
+            offset: 11,
+        };
+        assert_eq!(
+            plane_equation(7, &[datum(7, [0.0, 1.0, 0.0], 2.0)], &[model], &[]),
+            None
+        );
+
+        let outline = OutlinePlane {
+            surface_id: 7,
+            origin: [0.0, 2.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            offset: 12,
+        };
+        assert_eq!(
+            plane_equation(7, &[datum(7, [0.0, 1.0, 0.0], 2.0)], &[], &[outline]),
+            None
+        );
+    }
+
+    #[test]
     fn resolves_perpendicular_datum_frame() {
         let definition = FeatureDefinition {
             id: 42,
@@ -1186,6 +1273,7 @@ mod tests {
                 sketch_plane_entity_id: Some(2),
                 sketch_plane_flip: Some(BinaryFlag::Clear),
                 reference_plane_entity_ids: vec![3, 4],
+                reference_plane_rows: Vec::new(),
                 reference_plane_datum_geometry_id: Some(4),
                 orientation: FeatureSectionOrientation::default(),
                 dimension_ids: Vec::new(),
@@ -1228,6 +1316,63 @@ mod tests {
     }
 
     #[test]
+    fn resolves_reference_flip_from_selected_positional_row() {
+        let mut definition = blank_definition();
+        definition.section_3d = Some(FeatureSection3d {
+            sketch_plane_entity_id: Some(2),
+            sketch_plane_flip: Some(BinaryFlag::Clear),
+            reference_plane_entity_ids: vec![3, 4],
+            reference_plane_rows: vec![
+                FeatureSectionReferencePlane {
+                    plane_entity_id: 3,
+                    reference_type: Some(5),
+                    external_reference_id: None,
+                    segment_id: Some(3),
+                    sub_index: None,
+                    reference_flip: Some(BinaryFlag::Clear),
+                },
+                FeatureSectionReferencePlane {
+                    plane_entity_id: 4,
+                    reference_type: Some(5),
+                    external_reference_id: None,
+                    segment_id: Some(4),
+                    sub_index: None,
+                    reference_flip: Some(BinaryFlag::Set),
+                },
+            ],
+            reference_plane_datum_geometry_id: None,
+            orientation: FeatureSectionOrientation::default(),
+            dimension_ids: Vec::new(),
+            offset: 100,
+        });
+
+        let transforms = resolve(
+            &[definition],
+            &PlacementSources {
+                datums: &[
+                    datum(2, [1.0, 0.0, 0.0], 2.0),
+                    datum(3, [1.0, 0.0, 0.0], 1.0),
+                    datum(4, [0.0, 0.0, 1.0], 3.0),
+                ],
+                surface_rows: &[],
+                model_planes: &[],
+                outline_planes: &[],
+                plane_envelopes: &[],
+                surface_parameters: &[],
+                geometry_tables: &[],
+                affected_ids: &[],
+            },
+            &[],
+        );
+
+        assert_eq!(transforms.len(), 1);
+        assert_eq!(transforms[0].origin, [2.0, 0.0, 3.0]);
+        assert_eq!(transforms[0].u_axis, [0.0, -1.0, 0.0]);
+        assert_eq!(transforms[0].v_axis, [0.0, 0.0, -1.0]);
+        assert_eq!(transforms[0].normal, [1.0, 0.0, 0.0]);
+    }
+
+    #[test]
     fn resolves_section_from_complete_local_frame_when_references_are_unresolved() {
         let mut definition = blank_definition();
         definition.parameter_frames = vec![FeatureParameterFrame {
@@ -1242,6 +1387,7 @@ mod tests {
             sketch_plane_entity_id: Some(348),
             sketch_plane_flip: Some(BinaryFlag::Clear),
             reference_plane_entity_ids: vec![2, 274],
+            reference_plane_rows: Vec::new(),
             reference_plane_datum_geometry_id: None,
             orientation: FeatureSectionOrientation::default(),
             dimension_ids: Vec::new(),
@@ -1292,6 +1438,7 @@ mod tests {
                 sketch_plane_entity_id: Some(42),
                 sketch_plane_flip: None,
                 reference_plane_entity_ids: vec![191],
+                reference_plane_rows: Vec::new(),
                 reference_plane_datum_geometry_id: Some(2),
                 orientation: FeatureSectionOrientation::default(),
                 dimension_ids: Vec::new(),
@@ -1467,6 +1614,7 @@ mod tests {
                 sketch_plane_entity_id: Some(2),
                 sketch_plane_flip: None,
                 reference_plane_entity_ids: vec![4],
+                reference_plane_rows: Vec::new(),
                 reference_plane_datum_geometry_id: Some(4),
                 orientation: FeatureSectionOrientation::default(),
                 dimension_ids: Vec::new(),
@@ -1492,6 +1640,7 @@ mod tests {
                 sketch_plane_entity_id: Some(799),
                 sketch_plane_flip: None,
                 reference_plane_entity_ids: vec![43],
+                reference_plane_rows: Vec::new(),
                 reference_plane_datum_geometry_id: None,
                 orientation: FeatureSectionOrientation::default(),
                 dimension_ids: Vec::new(),
@@ -1583,6 +1732,7 @@ mod tests {
                 sketch_plane_entity_id: Some(2),
                 sketch_plane_flip: Some(BinaryFlag::Clear),
                 reference_plane_entity_ids: vec![4],
+                reference_plane_rows: Vec::new(),
                 reference_plane_datum_geometry_id: Some(4),
                 orientation: FeatureSectionOrientation::default(),
                 dimension_ids: Vec::new(),
@@ -1638,6 +1788,7 @@ mod tests {
                 sketch_plane_entity_id: Some(42),
                 sketch_plane_flip: None,
                 reference_plane_entity_ids: vec![90],
+                reference_plane_rows: Vec::new(),
                 reference_plane_datum_geometry_id: Some(2),
                 orientation: FeatureSectionOrientation {
                     section_flip: Some(BinaryFlag::Set),
@@ -1707,6 +1858,7 @@ mod tests {
                 sketch_plane_entity_id: Some(42),
                 sketch_plane_flip: None,
                 reference_plane_entity_ids: vec![90],
+                reference_plane_rows: Vec::new(),
                 reference_plane_datum_geometry_id: Some(2),
                 orientation: FeatureSectionOrientation::default(),
                 dimension_ids: Vec::new(),
@@ -1950,6 +2102,16 @@ mod tests {
         assert!(
             generated_cylinder_section_transform(&definition, &divergent_sources, &tables)
                 .is_none()
+        );
+        let mut wrong_class = tables.clone();
+        wrong_class[0].entries[0].class_id = 201;
+        assert!(
+            generated_cylinder_section_transform(&definition, &sources, &wrong_class).is_none()
+        );
+        let mut non_surface = tables;
+        non_surface[0].surface_ids.pop();
+        assert!(
+            generated_cylinder_section_transform(&definition, &sources, &non_surface).is_none()
         );
     }
 
