@@ -2403,10 +2403,6 @@
           "owner_loop": "fcstd:model:loop#Hole:AddSubShape:Hole.AddSubShape.brp:19%408893b334789793ee%3A1",
           "pcurves": [
             {
-              "parameter_range": [
-                0.0,
-                6.283185307179586
-              ],
               "pcurve": "fcstd:model:pcurve#Hole:AddSubShape:Hole.AddSubShape.brp:16%3A1%3A1"
             }
           ],
@@ -3132,10 +3128,6 @@
           "owner_loop": "fcstd:model:loop#Hole:Shape:Hole.Shape.brp:50%408893b334789793ee%3A1",
           "pcurves": [
             {
-              "parameter_range": [
-                0.0,
-                6.283185307179586
-              ],
               "pcurve": "fcstd:model:pcurve#Hole:Shape:Hole.Shape.brp:47%3A1%3A1"
             }
           ],
@@ -4005,10 +3997,6 @@
           "owner_loop": "fcstd:model:loop#HoleBody:Shape:HoleBody.Shape.brp:50%408893b334789793ee%3A1",
           "pcurves": [
             {
-              "parameter_range": [
-                0.0,
-                6.283185307179586
-              ],
               "pcurve": "fcstd:model:pcurve#HoleBody:Shape:HoleBody.Shape.brp:47%3A2%3A1"
             }
           ],

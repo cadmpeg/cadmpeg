@@ -452,10 +452,10 @@ impl<'a> Builder<'a> {
                 .iter()
                 .filter(|child| self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Shell)
             {
-                shells.push(self.append_shell(ir, &region_id, child, transform, reversed)?);
+                shells.extend(self.append_shell(ir, &region_id, child, transform, reversed)?);
             }
         } else {
-            shells.push(self.append_shell_shape(
+            shells.extend(self.append_shell_shape(
                 ir,
                 &region_id,
                 shape_index,
@@ -489,7 +489,7 @@ impl<'a> Builder<'a> {
         shell_use: &TextShapeUse,
         parent: Transform,
         reversed: bool,
-    ) -> Result<ShellId, CodecError> {
+    ) -> Result<Vec<ShellId>, CodecError> {
         let transform = parent.compose(self.tables.location(shell_use.location));
         self.append_shell_shape(
             ir,
@@ -507,24 +507,60 @@ impl<'a> Builder<'a> {
         shape_index: usize,
         transform: Transform,
         reversed: bool,
-    ) -> Result<ShellId, CodecError> {
+    ) -> Result<Vec<ShellId>, CodecError> {
         let shape = self.shape(shape_index)?.clone();
         let key = self.topology_label(shape_index, transform);
         let shell_id = ShellId(crate::native::model_id("shell", &self.payload.id, &key));
+        if shape.kind == TextShapeKind::Shell {
+            let face_uses = shape
+                .children
+                .iter()
+                .filter(|child| self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Face)
+                .collect::<Vec<_>>();
+            let components = self.face_components(&face_uses, transform)?;
+            let mut shell_ids = Vec::with_capacity(components.len());
+            for (component_index, component) in components.iter().enumerate() {
+                let component_id = if component_index == 0 {
+                    shell_id.clone()
+                } else {
+                    ShellId(crate::native::model_id(
+                        "shell",
+                        &self.payload.id,
+                        format!("{key}:component:{}", component_index + 1),
+                    ))
+                };
+                let mut faces = Vec::with_capacity(component.len());
+                for &face_index in component {
+                    if let Some(face) = self.append_face(
+                        ir,
+                        &component_id,
+                        face_uses[face_index],
+                        transform,
+                        reversed,
+                    )? {
+                        faces.push(face);
+                    }
+                }
+                ir.model.shells.push(Shell {
+                    id: component_id.clone(),
+                    region: region.clone(),
+                    faces,
+                    wire_edges: Vec::new(),
+                    free_vertices: Vec::new(),
+                });
+                self.bind_topology(
+                    TextShapeKind::Shell,
+                    shape_index,
+                    transform,
+                    component_id.0.clone(),
+                );
+                shell_ids.push(component_id);
+            }
+            return Ok(shell_ids);
+        }
         let mut faces = Vec::new();
         let mut wire_edges = Vec::new();
         match shape.kind {
-            TextShapeKind::Shell => {
-                for child in &shape.children {
-                    if self.shape(child.shape)?.kind == TextShapeKind::Face {
-                        if let Some(face) =
-                            self.append_face(ir, &shell_id, child, transform, reversed)?
-                        {
-                            faces.push(face);
-                        }
-                    }
-                }
-            }
             TextShapeKind::Face => {
                 let shape_use = TextShapeUse {
                     shape: shape_index,
@@ -570,7 +606,7 @@ impl<'a> Builder<'a> {
                     wire_edges,
                     free_vertices: vec![vertex],
                 });
-                return Ok(shell_id);
+                return Ok(vec![shell_id]);
             }
             _ => {}
         }
@@ -581,10 +617,59 @@ impl<'a> Builder<'a> {
             wire_edges,
             free_vertices: Vec::new(),
         });
-        if matches!(shape.kind, TextShapeKind::Shell | TextShapeKind::Wire) {
+        if shape.kind == TextShapeKind::Wire {
             self.bind_topology(shape.kind, shape_index, transform, shell_id.0.clone());
         }
-        Ok(shell_id)
+        Ok(vec![shell_id])
+    }
+
+    fn face_components(
+        &self,
+        face_uses: &[&TextShapeUse],
+        parent: Transform,
+    ) -> Result<Vec<Vec<usize>>, CodecError> {
+        if face_uses.is_empty() {
+            return Ok(vec![Vec::new()]);
+        }
+        let mut connectivity = Vec::with_capacity(face_uses.len());
+        for face_use in face_uses {
+            let face_transform = parent.compose(self.tables.location(face_use.location));
+            let face = self.shape(face_use.shape)?;
+            let mut keys = HashSet::new();
+            for wire_use in face
+                .children
+                .iter()
+                .filter(|child| self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Wire)
+            {
+                let wire_transform =
+                    face_transform.compose(self.tables.location(wire_use.location));
+                let wire = self.shape(wire_use.shape)?;
+                for edge_use in wire.children.iter().filter(|child| {
+                    self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Edge
+                }) {
+                    let edge_transform =
+                        wire_transform.compose(self.tables.location(edge_use.location));
+                    let edge_key =
+                        OccurrenceKey::new(edge_use.shape, self.body_scope.compose(edge_transform));
+                    keys.insert(format!("edge:{}", edge_key.0));
+                    let edge = self.shape(edge_use.shape)?;
+                    for vertex_use in edge.children.iter().filter(|child| {
+                        self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Vertex
+                    }) {
+                        let vertex_transform =
+                            edge_transform.compose(self.tables.location(vertex_use.location));
+                        let vertex_key = OccurrenceKey::new(
+                            vertex_use.shape,
+                            self.body_scope.compose(vertex_transform),
+                        );
+                        keys.insert(format!("vertex:{}", vertex_key.0));
+                    }
+                }
+            }
+            connectivity.push(keys);
+        }
+
+        Ok(connected_components(&connectivity))
     }
 
     fn append_face(
@@ -1120,7 +1205,9 @@ impl<'a> Builder<'a> {
         surface_transform: Transform,
     ) -> Option<(PcurveId, Option<[f64; 2]>)> {
         let TextTShapeGeometry::Edge {
-            representations, ..
+            degenerated,
+            representations,
+            ..
         } = &self.tables.tshapes[edge_use.shape - 1].geometry
         else {
             return None;
@@ -1144,7 +1231,9 @@ impl<'a> Builder<'a> {
                         index,
                         representation.secondary.is_some() && reversed,
                     ),
-                    representation.parameter_range,
+                    (!degenerated)
+                        .then_some(representation.parameter_range)
+                        .flatten(),
                 )
             })
     }
@@ -1161,6 +1250,33 @@ impl<'a> Builder<'a> {
         self.root_discriminator
             .map_or(label.clone(), |ordinal| format!("{label}~root{ordinal}"))
     }
+}
+
+fn connected_components(connectivity: &[HashSet<String>]) -> Vec<Vec<usize>> {
+    let mut assigned = vec![false; connectivity.len()];
+    let mut components = Vec::new();
+    for seed in 0..connectivity.len() {
+        if assigned[seed] {
+            continue;
+        }
+        assigned[seed] = true;
+        let mut component = Vec::new();
+        let mut stack = vec![seed];
+        while let Some(current) = stack.pop() {
+            component.push(current);
+            for candidate in 0..connectivity.len() {
+                if !assigned[candidate]
+                    && !connectivity[current].is_disjoint(&connectivity[candidate])
+                {
+                    assigned[candidate] = true;
+                    stack.push(candidate);
+                }
+            }
+        }
+        component.sort_unstable();
+        components.push(component);
+    }
+    components
 }
 
 fn transformed_pcurve_geometry(
@@ -1529,6 +1645,11 @@ pub(crate) fn normalize_occt_curve_range(
                 return Some([start, end]);
             }
             let canonical_start = start.rem_euclid(tau);
+            let canonical_start = if (tau - canonical_start).abs() <= 1.0e-12 {
+                0.0
+            } else {
+                canonical_start
+            };
             Some([canonical_start, canonical_start + sweep])
         }
         CurveGeometry::Parabola { focal_distance, .. } => {
@@ -1679,8 +1800,25 @@ mod tests {
         let [start, end] =
             normalize_occt_curve_range(&geometry, Some([-1.0e-15, std::f64::consts::FRAC_PI_2]))
                 .expect("periodic range");
-        assert!((0.0..std::f64::consts::TAU).contains(&start));
+        assert_eq!(start, 0.0);
         assert!((end - start - (std::f64::consts::FRAC_PI_2 + 1.0e-15)).abs() < 1.0e-15);
+    }
+
+    #[test]
+    fn face_connectivity_partitions_transitively_without_reordering() {
+        let sets = [
+            HashSet::from(["edge-a".to_owned()]),
+            HashSet::from(["edge-b".to_owned()]),
+            HashSet::from(["edge-a".to_owned(), "edge-c".to_owned()]),
+            HashSet::from(["edge-c".to_owned()]),
+            HashSet::new(),
+        ];
+
+        assert_eq!(
+            connected_components(&sets),
+            vec![vec![0, 2, 3], vec![1], vec![4]]
+        );
+        assert!(connected_components(&[]).is_empty());
     }
 
     #[test]

@@ -77,10 +77,6 @@
           "owner_loop": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1",
           "pcurves": [
             {
-              "parameter_range": [
-                0.0,
-                6.283185307179586
-              ],
               "pcurve": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:10%3A1%3A1"
             }
           ],

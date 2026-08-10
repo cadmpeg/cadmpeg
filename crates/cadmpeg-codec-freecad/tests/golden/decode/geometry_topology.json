@@ -178,10 +178,6 @@
           "owner_loop": "fcstd:model:loop#Compound:Shape:Compound.Shape.brp:7%3A1",
           "pcurves": [
             {
-              "parameter_range": [
-                0.0,
-                6.283185307179586
-              ],
               "pcurve": "fcstd:model:pcurve#Compound:Shape:Compound.Shape.brp:2%3A1%3A1"
             }
           ],
@@ -214,10 +210,6 @@
           "owner_loop": "fcstd:model:loop#Compound:Shape:Compound.Shape.brp:7%3A1",
           "pcurves": [
             {
-              "parameter_range": [
-                0.0,
-                6.283185307179586
-              ],
               "pcurve": "fcstd:model:pcurve#Compound:Shape:Compound.Shape.brp:5%3A1%3A1"
             }
           ],
@@ -250,10 +242,6 @@
           "owner_loop": "fcstd:model:loop#Degenerate:Shape:Degenerate.Shape.brp:7%3A1",
           "pcurves": [
             {
-              "parameter_range": [
-                0.0,
-                6.283185307179586
-              ],
               "pcurve": "fcstd:model:pcurve#Degenerate:Shape:Degenerate.Shape.brp:2%3A1%3A1"
             }
           ],
