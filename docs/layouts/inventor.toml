@@ -6,6 +6,147 @@ endianness = "little"
 note = "Fixed prefixes and descriptors in the supported RSe schema-31, Meta Stream v8, Protein, UFRxDoc, and kernel-carrier envelope."
 
 [[record]]
+name = "pm_dc_parameter_prefix"
+kind = "byte"
+section = "11"
+anchor = "stores one numeric design parameter"
+size = 26
+note = "The counted UTF-16LE parameter name starts at byte 22."
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id u16"
+
+[[record.field]]
+name = "next_reference"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "next_reference u32"
+
+[[record.field]]
+name = "flags"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "flags u32"
+
+[[record.field]]
+name = "context_reference"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "context_reference u32"
+
+[[record.field]]
+name = "source_index"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "source_index u32"
+
+[[record.field]]
+name = "name_code_units"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "name counted UTF-16LE"
+
+[[record]]
+name = "pm_dc_expression_header"
+kind = "byte"
+section = "11"
+anchor = "A numeric expression record starts with"
+size = 10
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value:u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id:u16"
+
+[[record.field]]
+name = "unit_reference"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "unit_reference:u32"
+
+[[record]]
+name = "pm_dc_unit_array_prefix"
+kind = "byte"
+section = "11"
+anchor = "Each reference array starts with"
+size = 8
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u16[2]"
+source = "spec"
+anchor = "u16 values `3, 0x3000`"
+
+[[record.field]]
+name = "item_count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "a u32 count"
+
+[[record]]
+name = "pm_dc_base_unit"
+kind = "byte"
+section = "11"
+anchor = "Base-unit records contain"
+size = 22
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value:u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id:u16"
+
+[[record.field]]
+name = "magnitude"
+offset = 6
+type = "f64"
+source = "spec"
+anchor = "magnitude:f64"
+
+[[record.field]]
+name = "factor"
+offset = 14
+type = "f64"
+source = "spec"
+anchor = "factor:f64"
+
+[[record]]
 name = "rse_database_prefix"
 kind = "byte"
 section = "2"

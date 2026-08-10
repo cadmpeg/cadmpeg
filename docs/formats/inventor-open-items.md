@@ -76,13 +76,21 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 
 **Need.** Each additional style family requires an exact owner path, channel semantics, and precedence before transfer.
 
-### DE-01. Design record graph
+### DE-01. Sketch and feature record graph
 
-**Question.** Which typed records define parameter identity, sketches, constraints, history order, feature operands, suppression, and result-body transitions?
+**Question.** Which typed records define sketches, constraints, history order, feature operands, suppression, and result-body transitions?
 
-**Known.** Exact RSe frames provide type identifiers, record ranges, and carrier-qualified identities.
+**Known.** Numeric PmDc parameters have stable carrier-qualified identities, exact unit and expression graphs, evaluated values, and ordered parameter dependencies. Exact RSe frames provide type identifiers and record ranges for the remaining design records.
 
 **Need.** Each neutral feature requires complete operation semantics and ordered operands.
+
+### DE-02. Compound parameter units and function expressions
+
+**Question.** Which PmDc unit graphs and function records define compound dimensions, derived units, offsets, and function-call expression text?
+
+**Known.** A scalar parameter unit with one supported numerator, no denominator, and no derived-unit reference transfers with exact length, angle, or dimensionless semantics. Literal, parameter-reference, unary, and binary arithmetic expression records form a closed ordered graph.
+
+**Need.** Compound or derived units and function calls require exact dimensional and textual semantics before neutral transfer.
 
 ## 5. Adjacent envelopes
 

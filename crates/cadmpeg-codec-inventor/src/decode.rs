@@ -48,7 +48,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let container = InventorContainer::open(ctx, root, purpose)?;
     let assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
     let presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
+    let design_inventory = crate::design::inventory(ctx, &container.rse)?;
     let mut ir = CadIr::empty(Units::default());
+    let (design_parameters, unresolved_design_parameters) =
+        crate::design::project_parameters(&design_inventory);
+    ir.model.parameters = design_parameters;
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "cfb_major_version".into(),
@@ -1184,6 +1188,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .saturating_add(pm_graphics_style_collections.len())
             .saturating_add(pm_graphics_primary_color_styles.len())
             .saturating_add(presentation_record_issues.len())
+            .saturating_add(design_inventory.parameters.len())
+            .saturating_add(design_inventory.expressions.len())
+            .saturating_add(design_inventory.units.len())
+            .saturating_add(design_inventory.issues.len())
             .saturating_add(unpaired_segments.len())
             .saturating_add(1) as u64,
         "retain Inventor native structural records",
@@ -1224,6 +1232,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         &pm_graphics_primary_color_styles,
     )?;
     namespace.set_arena("presentation_record_issues", &presentation_record_issues)?;
+    namespace.set_arena("pm_dc_parameters", &design_inventory.parameters)?;
+    namespace.set_arena("pm_dc_expressions", &design_inventory.expressions)?;
+    namespace.set_arena("pm_dc_units", &design_inventory.units)?;
+    namespace.set_arena("design_record_issues", &design_inventory.issues)?;
     namespace.set_arena("segment_pairs", &segment_pairs)?;
     namespace.set_arena("segment_meta", &segment_meta)?;
     namespace.set_arena("meta_sections", &meta_sections)?;
@@ -1414,6 +1426,23 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 ),
             ));
         }
+        if !design_inventory.issues.is_empty() {
+            losses.push(LossNote::new(
+                LossKind::DecodeDiagnostic,
+                format!(
+                    "{} typed Inventor design record(s) are malformed or outside the implemented branch.",
+                    design_inventory.issues.len()
+                ),
+            ));
+        }
+        if unresolved_design_parameters != 0 {
+            losses.push(LossNote::new(
+                LossKind::ParametricRecordOmitted,
+                format!(
+                    "Retained {unresolved_design_parameters} Inventor parameter record(s) whose unit or expression graph is not closed."
+                ),
+            ));
+        }
         if !container.rse.unpaired_metadata.is_empty() || !container.rse.unpaired_bulk.is_empty() {
             losses.push(LossNote::new(
                 LossKind::DecodeDiagnostic,
@@ -1588,6 +1617,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let asm_unknown_record_count = ir.native_unknowns("inventor")?.len();
     let appearance_binding_count = ir.model.appearance_bindings.len();
     let transferred_occurrence_count = ir.model.occurrences.len();
+    let design_parameter_count = ir.model.parameters.len();
     Ok(DecodeResult::new(
         ir,
         DecodeReport {
@@ -1636,6 +1666,17 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                     "presentation_record_issues".into(),
                     presentation_record_issues.len(),
                 ),
+                ("pm_dc_parameters".into(), design_inventory.parameters.len()),
+                (
+                    "pm_dc_expressions".into(),
+                    design_inventory.expressions.len(),
+                ),
+                ("pm_dc_units".into(), design_inventory.units.len()),
+                (
+                    "design_parameters_transferred".into(),
+                    design_parameter_count,
+                ),
+                ("design_record_issues".into(), design_inventory.issues.len()),
                 ("external_references".into(), external_references.len()),
                 ("embedded_references".into(), embedded_references.len()),
                 ("ufrx_model_states".into(), ufrx_model_states.len()),

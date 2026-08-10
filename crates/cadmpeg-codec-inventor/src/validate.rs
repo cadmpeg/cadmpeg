@@ -6,6 +6,10 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_asm::brep::records::FaceNativeKey;
 use cadmpeg_ir::{CadIr, Check, Finding, NativeUnknownRecord, Severity};
 
+use crate::design::{
+    DesignRecordIssue, PmDcExpression, PmDcExpressionKind, PmDcParameter, PmDcUnit, PmDcUnitKind,
+};
+
 use crate::native::{
     ActiveCarrierRecord, ActiveCarrierRecordState, AssemblyOccurrenceRecord,
     AssemblyPlacementRecord, AssemblyRecordIssueRecord, DatabaseIssueRecord, DatabaseRecord,
@@ -29,6 +33,7 @@ const ARENAS: &[&str] = &[
     "body_native_keys",
     "database_issues",
     "databases",
+    "design_record_issues",
     "embedded_references",
     "external_references",
     "edge_continuities",
@@ -41,6 +46,9 @@ const ARENAS: &[&str] = &[
     "properties",
     "pm_app_default_styles",
     "pm_app_rendering_styles",
+    "pm_dc_expressions",
+    "pm_dc_parameters",
+    "pm_dc_units",
     "pm_graphics_faces",
     "pm_graphics_style_collections",
     "pm_graphics_primary_color_styles",
@@ -131,6 +139,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_databases(&data, &mut findings);
     validate_segments(&data, &mut findings);
     validate_active_carrier(&data, &mut findings);
+    validate_design(&data, ir, &mut findings);
     unique(
         &mut findings,
         data.unknowns.iter().map(|record| record.id.0.as_str()),
@@ -164,6 +173,157 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         ));
     }
     findings
+}
+
+fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
+    let raw = data
+        .records
+        .iter()
+        .map(|record| {
+            (
+                (record.token.as_str(), record.ordinal),
+                record.type_id.as_str(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let resolves = |token: &str, reference: u32| {
+        reference == 0 || raw.contains_key(&(token, reference.saturating_sub(1)))
+    };
+    unique(
+        findings,
+        data.pm_dc_parameters
+            .iter()
+            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        "Inventor PmDc parameter",
+    );
+    unique(
+        findings,
+        data.pm_dc_expressions
+            .iter()
+            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        "Inventor PmDc expression",
+    );
+    unique(
+        findings,
+        data.pm_dc_units
+            .iter()
+            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        "Inventor PmDc unit",
+    );
+    for parameter in &data.pm_dc_parameters {
+        let references = [
+            parameter.next.index,
+            parameter.context.index,
+            parameter.unit.index,
+            parameter.formula.index,
+        ];
+        if raw.get(&(parameter.segment_token.as_str(), parameter.record_ordinal))
+            != Some(&parameter.type_id.as_str())
+            || references
+                .into_iter()
+                .any(|reference| !resolves(&parameter.segment_token, reference))
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc parameter record or reference does not resolve".into(),
+                Some(format!(
+                    "inventor:pmdc:parameter#{}-{}",
+                    parameter.segment_token, parameter.record_ordinal
+                )),
+            ));
+        }
+    }
+    for expression in &data.pm_dc_expressions {
+        let mut references = vec![expression.unit.index];
+        match &expression.kind {
+            PmDcExpressionKind::Value { .. } => {}
+            PmDcExpressionKind::ParameterReference { operand, .. }
+            | PmDcExpressionKind::Unary { operand, .. } => references.push(operand.index),
+            PmDcExpressionKind::Binary { left, right, .. } => {
+                references.push(left.index);
+                references.push(right.index);
+            }
+        }
+        if raw.get(&(expression.segment_token.as_str(), expression.record_ordinal))
+            != Some(&expression.type_id.as_str())
+            || references
+                .into_iter()
+                .any(|reference| !resolves(&expression.segment_token, reference))
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc expression record or reference does not resolve".into(),
+                Some(format!(
+                    "inventor:pmdc:expression#{}-{}",
+                    expression.segment_token, expression.record_ordinal
+                )),
+            ));
+        }
+    }
+    for unit in &data.pm_dc_units {
+        let references = match &unit.kind {
+            PmDcUnitKind::Definition {
+                numerators,
+                denominators,
+                derived,
+                ..
+            } => numerators
+                .iter()
+                .chain(denominators)
+                .map(|reference| reference.index)
+                .chain(std::iter::once(derived.index))
+                .collect::<Vec<_>>(),
+            PmDcUnitKind::Base { .. } => Vec::new(),
+        };
+        if raw.get(&(unit.segment_token.as_str(), unit.record_ordinal))
+            != Some(&unit.type_id.as_str())
+            || references
+                .into_iter()
+                .any(|reference| !resolves(&unit.segment_token, reference))
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc unit record or reference does not resolve".into(),
+                Some(format!(
+                    "inventor:pmdc:unit#{}-{}",
+                    unit.segment_token, unit.record_ordinal
+                )),
+            ));
+        }
+    }
+    let native_parameter_ids = data
+        .pm_dc_parameters
+        .iter()
+        .map(|record| {
+            format!(
+                "inventor:pmdc:parameter#{}-{}",
+                record.segment_token, record.record_ordinal
+            )
+        })
+        .collect::<HashSet<_>>();
+    for parameter in &ir.model.parameters {
+        if parameter
+            .native_ref
+            .as_ref()
+            .is_none_or(|reference| !native_parameter_ids.contains(reference))
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral parameter does not resolve to its PmDc source record".into(),
+                Some(parameter.id.0.clone()),
+            ));
+        }
+    }
+    for issue in &data.design_record_issues {
+        findings.push(finding(
+            Check::NativeLinks,
+            format!("Inventor design record: {}", issue.detail),
+            Some(format!(
+                "inventor:pmdc:record#{}-{}",
+                issue.segment_token, issue.record_ordinal
+            )),
+        ));
+    }
 }
 
 fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
@@ -522,6 +682,10 @@ struct NativeData {
     pm_graphics_primary_color_styles: Vec<PmGraphicsPrimaryColorStyleRecord>,
     face_native_keys: Vec<FaceNativeKey>,
     presentation_record_issues: Vec<PresentationRecordIssueRecord>,
+    pm_dc_parameters: Vec<PmDcParameter>,
+    pm_dc_expressions: Vec<PmDcExpression>,
+    pm_dc_units: Vec<PmDcUnit>,
+    design_record_issues: Vec<DesignRecordIssue>,
     active_carrier: Vec<ActiveCarrierRecord>,
     unknowns: Vec<NativeUnknownRecord>,
 }
@@ -570,6 +734,10 @@ impl NativeData {
                 .arena_as("pm_graphics_primary_color_styles")?,
             face_native_keys: namespace.arena_as("face_native_keys")?,
             presentation_record_issues: namespace.arena_as("presentation_record_issues")?,
+            pm_dc_parameters: namespace.arena_as("pm_dc_parameters")?,
+            pm_dc_expressions: namespace.arena_as("pm_dc_expressions")?,
+            pm_dc_units: namespace.arena_as("pm_dc_units")?,
+            design_record_issues: namespace.arena_as("design_record_issues")?,
             active_carrier: namespace.arena_as("active_carrier")?,
             unknowns: namespace.arena_as("unknowns")?,
         })

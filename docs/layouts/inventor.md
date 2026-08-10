@@ -9,6 +9,52 @@ Table source: `docs/layouts/inventor.toml`.
 
 Fixed prefixes and descriptors in the supported RSe schema-31, Meta Stream v8, Protein, UFRxDoc, and kernel-carrier envelope.
 
+## `pm_dc_parameter_prefix`
+
+Spec §11 · layout: byte offsets · size: 26 B
+
+The counted UTF-16LE parameter name starts at byte 22.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | header_value u32 |
+| 4 | 2 | `header_id` | `u16` | little | spec | header_id u16 |
+| 6 | 4 | `next_reference` | `u32` | little | spec | next_reference u32 |
+| 10 | 4 | `flags` | `u32` | little | spec | flags u32 |
+| 14 | 4 | `context_reference` | `u32` | little | spec | context_reference u32 |
+| 18 | 4 | `source_index` | `u32` | little | spec | source_index u32 |
+| 22 | 4 | `name_code_units` | `u32` | little | spec | name counted UTF-16LE |
+
+## `pm_dc_expression_header`
+
+Spec §11 · layout: byte offsets · size: 10 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | header_value:u32 |
+| 4 | 2 | `header_id` | `u16` | little | spec | header_id:u16 |
+| 6 | 4 | `unit_reference` | `u32` | little | spec | unit_reference:u32 |
+
+## `pm_dc_unit_array_prefix`
+
+Spec §11 · layout: byte offsets · size: 8 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `marker` | `u16[2]` | little | spec | u16 values `3, 0x3000` |
+| 4 | 4 | `item_count` | `u32` | little | spec | a u32 count |
+
+## `pm_dc_base_unit`
+
+Spec §11 · layout: byte offsets · size: 22 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | header_value:u32 |
+| 4 | 2 | `header_id` | `u16` | little | spec | header_id:u16 |
+| 6 | 8 | `magnitude` | `f64` | little | spec | magnitude:f64 |
+| 14 | 8 | `factor` | `f64` | little | spec | factor:f64 |
+
 ## `rse_database_prefix`
 
 Spec §2 · layout: byte offsets · size: 56 B

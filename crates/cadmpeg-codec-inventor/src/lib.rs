@@ -8,6 +8,7 @@ mod assembly;
 mod container;
 mod database;
 mod decode;
+mod design;
 mod external_reference;
 mod kernel;
 mod materials;
