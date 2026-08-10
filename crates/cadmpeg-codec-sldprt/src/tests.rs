@@ -8948,6 +8948,43 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
 }
 
 #[test]
+fn bounded_planar_line_pcurve_keeps_the_curve_parameterization() {
+    let mut body = triangle_body();
+    let edge = body
+        .windows(2)
+        .position(|window| window == [0x00, 0x10])
+        .unwrap();
+    body[edge + 24..edge + 26].copy_from_slice(&192u16.to_be_bytes());
+    body.extend(line_carrier(190, [0.5, 0.0, 0.0], [1.0, 0.0, 0.0]));
+    body.extend(bounded_curve_wrapper(
+        192,
+        190,
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        -0.5,
+        0.5,
+    ));
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(
+        result
+            .ir
+            .model
+            .edges
+            .iter()
+            .find(|edge| edge.curve.as_ref().is_some_and(|id| id.0.ends_with("#192")))
+            .and_then(|edge| edge.param_range),
+        Some([-500.0, 500.0])
+    );
+    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
+}
+
+#[test]
 fn rational_nurbs_surface_row_gets_isoparametric_pcurve() {
     let mut body = triangle_body();
     let bridge = body.windows(2).position(|w| w == [0x00, 0x0e]).unwrap();

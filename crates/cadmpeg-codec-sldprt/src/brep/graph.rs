@@ -2130,12 +2130,6 @@ fn derive_planar_pcurves(
         .collect();
     let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
     let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
-    let points: HashMap<_, _> = out.points.iter().map(|point| (&point.id, point)).collect();
-    let vertex_points: HashMap<_, _> = out
-        .vertices
-        .iter()
-        .filter_map(|vertex| points.get(&vertex.point).map(|point| (&vertex.id, *point)))
-        .collect();
     let mut derived = Vec::new();
     for coedge in &out.coedges {
         let Some(face_id) = loop_faces.get(&coedge.owner_loop) else {
@@ -2169,8 +2163,6 @@ fn derive_planar_pcurves(
         let Some(curve) = edge.curve.as_ref().and_then(|id| curves.get(id).copied()) else {
             continue;
         };
-        let position =
-            |vertex_id: &VertexId| vertex_points.get(vertex_id).map(|point| point.position);
         let uv = |point: cadmpeg_ir::math::Point3| {
             let d = [point.x - origin.x, point.y - origin.y, point.z - origin.z];
             cadmpeg_ir::math::Point2::new(
@@ -2197,20 +2189,23 @@ fn derive_planar_pcurves(
                 + (point.z - origin.z) * normal.z
         };
         let geometry = match &curve.geometry {
-            CurveGeometry::Line { .. } => {
-                let (Some(start), Some(end)) = (position(&edge.start), position(&edge.end)) else {
-                    continue;
-                };
-                let start = uv(start);
-                let end = uv(end);
-                let (du, dv) = (end.u - start.u, end.v - start.v);
-                let norm = (du * du + dv * dv).sqrt();
-                if norm == 0.0 {
+            CurveGeometry::Line {
+                origin: curve_origin,
+                direction,
+            } => {
+                if plane_distance(*curve_origin).abs() > 1e-6
+                    || (direction.x * normal.x + direction.y * normal.y + direction.z * normal.z)
+                        .abs()
+                        > 1e-9
+                {
                     continue;
                 }
+                let Some(direction) = project_direction(*direction) else {
+                    continue;
+                };
                 PcurveGeometry::Line {
-                    origin: start,
-                    direction: cadmpeg_ir::math::Point2::new(du / norm, dv / norm),
+                    origin: uv(*curve_origin),
+                    direction,
                 }
             }
             CurveGeometry::Circle {
