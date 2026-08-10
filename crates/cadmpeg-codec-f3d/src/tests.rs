@@ -10628,7 +10628,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         byte_offset: 0,
         entity_suffix: 277,
         entity_id: "0_277".into(),
-        class_tag: "269".into(),
+        class_tag: "256".into(),
         optional_slot_present: true,
         module: Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: Some(584),
@@ -13062,7 +13062,7 @@ fn generated_design_metastream(records: &[(u64, u64)]) -> Vec<u8> {
                 base,
                 1,
                 "MSketch",
-                &[],
+                &[33, 44],
             ),
             (
                 crate::design::presentation::BROWSER_NODE_TYPE_GUID,
@@ -13097,14 +13097,28 @@ fn generated_design_metastream(records: &[(u64, u64)]) -> Vec<u8> {
                 base,
                 0,
                 "Geometry",
-                &[],
+                &[600],
             ),
             (
                 "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B",
                 base,
                 3,
                 crate::records::DESIGN_MODULE_SKETCH,
-                &[],
+                &[800],
+            ),
+            (
+                "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB",
+                base,
+                11,
+                "Geometry",
+                &[100, 200, 300, 400],
+            ),
+            (
+                "44444444-5555-4666-8777-888888888888",
+                base,
+                1,
+                "Geometry",
+                &[700],
             ),
         ],
         records,
@@ -13369,7 +13383,7 @@ fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
         u64::try_from(out.len()).expect("synthetic Design record offset"),
     ));
     out.extend_from_slice(&3u32.to_le_bytes());
-    out.extend_from_slice(b"269");
+    out.extend_from_slice(b"257");
     out.extend_from_slice(&277u64.to_le_bytes());
     out.extend_from_slice(&[0u8; 5]);
     out.push(1);
@@ -13387,6 +13401,10 @@ fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     for (class_tag, record_index, members) in
         [("259", 33u32, [100u32, 200u32]), ("259", 44, [300, 400])]
     {
+        records.push((
+            u64::from(record_index),
+            u64::try_from(out.len()).expect("synthetic Design record offset"),
+        ));
         // A relation is `u8 1`, the counted `(reference, relation ordinal)`
         // pairs, the property-block presence byte, `ParentNode`, the u64
         // mask, the counted return run, and one zero byte.
@@ -13412,9 +13430,13 @@ fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
         (300, 502, [-1.0, 0.5]),
         (400, 503, [2.0, 1.0]),
     ] {
+        records.push((
+            u64::from(record_index),
+            u64::try_from(out.len()).expect("synthetic Design record offset"),
+        ));
         let mut point = vec![0u8; 112];
         point[0..4].copy_from_slice(&3u32.to_le_bytes());
-        point[4..7].copy_from_slice(b"360");
+        point[4..7].copy_from_slice(b"266");
         point[7..11].copy_from_slice(&record_index.to_le_bytes());
         point[20] = 1;
         point[21..25].copy_from_slice(&1u32.to_le_bytes());
@@ -13429,6 +13451,10 @@ fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
         point[97..105].copy_from_slice(&coordinates[1].to_le_bytes());
         out.extend_from_slice(&point);
     }
+    records.push((
+        600,
+        u64::try_from(out.len()).expect("synthetic Design record offset"),
+    ));
     let mut curve = vec![0u8; 229];
     curve[0..4].copy_from_slice(&3u32.to_le_bytes());
     curve[4..7].copy_from_slice(b"264");
@@ -13466,9 +13492,13 @@ fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
         curve[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
     out.extend_from_slice(&curve);
+    records.push((
+        700,
+        u64::try_from(out.len()).expect("synthetic Design record offset"),
+    ));
     let mut alternate_point = vec![0u8; 164];
     alternate_point[0..4].copy_from_slice(&3u32.to_le_bytes());
-    alternate_point[4..7].copy_from_slice(b"362");
+    alternate_point[4..7].copy_from_slice(b"267");
     alternate_point[7..11].copy_from_slice(&700u32.to_le_bytes());
     alternate_point[20] = 1;
     alternate_point[21..25].copy_from_slice(&2u32.to_le_bytes());
@@ -13488,6 +13518,10 @@ fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     alternate_point[149..157].copy_from_slice(&5.0f64.to_le_bytes());
     out.extend_from_slice(&alternate_point);
 
+    records.push((
+        800,
+        u64::try_from(out.len()).expect("synthetic Design record offset"),
+    ));
     let mut alternate_curve = vec![0u8; 443];
     alternate_curve[0..4].copy_from_slice(&3u32.to_le_bytes());
     alternate_curve[4..7].copy_from_slice(b"265");
@@ -25474,7 +25508,7 @@ fn decode_transfers_generated_protein_appearance() {
     assert!(result.report.losses.iter().any(|loss| loss
         .message
         .contains("source parametric edge reference(s) were marked")));
-    assert_eq!(f3d_native(&result.ir).design_types.len(), 10);
+    assert_eq!(f3d_native(&result.ir).design_types.len(), 12);
     let sketch = f3d_native(&result.ir)
         .design_types
         .iter()
@@ -25491,7 +25525,7 @@ fn decode_transfers_generated_protein_appearance() {
         .cloned()
         .expect("generated sketch entity header");
     assert_eq!(sketch_header.entity_id, "0_277");
-    assert_eq!(sketch_header.class_tag, "269");
+    assert_eq!(sketch_header.class_tag, "257");
     assert!(sketch_header.optional_slot_present);
     assert_eq!(
         sketch_header.module.as_deref(),

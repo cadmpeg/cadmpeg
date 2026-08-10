@@ -248,6 +248,7 @@ pub(crate) fn encode_design_bulkstream(
     }
     for header in &native.design_entity_headers {
         validate_dynamic_class_tag(&header.class_tag, "Design entity header")?;
+        primary_records.push(primary_record_u64(header.entity_suffix, out.len())?);
         out.extend_from_slice(&3u32.to_le_bytes());
         out.extend_from_slice(header.class_tag.as_bytes());
         out.extend_from_slice(&header.entity_suffix.to_le_bytes());
@@ -284,15 +285,19 @@ pub(crate) fn encode_design_bulkstream(
         out.extend_from_slice(&header.record_index.to_le_bytes());
     }
     for point in &native.sketch_points {
+        primary_records.push(primary_record(point.record_index, out.len())?);
         encode_sketch_point(&mut out, point)?;
     }
     for curve in &native.sketch_curve_identities {
+        primary_records.push(primary_record(curve.record_index, out.len())?);
         encode_sketch_curve_identity(&mut out, curve)?;
     }
     for text in &native.sketch_texts {
+        primary_records.push(primary_record(text.record_index, out.len())?);
         encode_sketch_text(&mut out, text)?;
     }
     for relation in &native.sketch_relations {
+        primary_records.push(primary_record(relation.record_index, out.len())?);
         encode_sketch_relation(&mut out, relation)?;
     }
     for reference in &native.persistent_references {
@@ -339,8 +344,15 @@ fn primary_record(
     entity_id: u32,
     bulk_offset: usize,
 ) -> Result<crate::metastream::RecordIndexEntry, CodecError> {
+    primary_record_u64(u64::from(entity_id), bulk_offset)
+}
+
+fn primary_record_u64(
+    entity_id: u64,
+    bulk_offset: usize,
+) -> Result<crate::metastream::RecordIndexEntry, CodecError> {
     Ok(crate::metastream::RecordIndexEntry {
-        entity_id: u64::from(entity_id),
+        entity_id,
         bulk_offset: u64::try_from(bulk_offset).map_err(|_| {
             CodecError::Malformed("generated Design record offset exceeds u64".into())
         })?,

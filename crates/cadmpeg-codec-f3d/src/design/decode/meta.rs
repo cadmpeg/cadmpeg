@@ -48,6 +48,114 @@ pub(crate) fn metadata_for_bulk_stream(
     crate::metastream::parse(scan.entry_bytes(&meta_name)?, &meta_name).map(Some)
 }
 
+/// One live Design record selected by the primary index and resolved through
+/// its segment-local class tag.
+#[derive(Clone, Copy)]
+pub(crate) struct DesignPrimaryFrame<'a> {
+    pub(crate) entity_id: u64,
+    pub(crate) class_tag: u32,
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    pub(crate) design_type: &'a SegmentType,
+}
+
+fn dynamic_type(
+    meta: &crate::metastream::MetaStream,
+    class_tag: u32,
+) -> Option<(usize, &SegmentType)> {
+    let ordinal = usize::try_from(class_tag.checked_sub(256)?).ok()?;
+    Some((ordinal, meta.types.get(ordinal)?))
+}
+
+fn record_header_class_tag(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+    expected_entity_id: u64,
+) -> Option<u32> {
+    let (class_tag, after_tag) = lp_ascii_filtered(bytes, at, 3..=3, u8::is_ascii_digit)?;
+    let indexed_matches = after_tag
+        .checked_add(4)
+        .filter(|entity_end| *entity_end <= end)
+        .and_then(|_| u32_at(bytes, after_tag))
+        .is_some_and(|entity_id| u64::from(entity_id) == expected_entity_id);
+    let named_matches = after_tag
+        .checked_add(8)
+        .filter(|entity_end| *entity_end <= end)
+        .and_then(|_| u64_at(bytes, after_tag))
+        == Some(expected_entity_id);
+    if !indexed_matches && !named_matches {
+        return None;
+    }
+    class_tag.parse().ok()
+}
+
+/// Resolve every live sibling record from the primary index. The primary
+/// header must repeat the indexed entity ID and select a type-table row that
+/// registers that entity. A secondary entry supplies the exact end of the
+/// primary class-member sequence and must point to a nested header for the same
+/// entity.
+pub(crate) fn design_primary_frames<'a>(
+    bytes: &[u8],
+    meta: &'a crate::metastream::MetaStream,
+) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
+    let indexed = crate::metastream::primary_record_frames(meta, bytes.len())?;
+    let registered_entities = meta
+        .types
+        .iter()
+        .enumerate()
+        .flat_map(|(ordinal, design_type)| {
+            design_type
+                .entity_ids
+                .iter()
+                .copied()
+                .map(move |entity_id| (ordinal, entity_id))
+        })
+        .collect::<HashSet<_>>();
+    let mut frames = Vec::with_capacity(indexed.len());
+    for frame in indexed {
+        let entity_id = frame.entity_id;
+        let Some(class_tag) = record_header_class_tag(bytes, frame.start, frame.end, entity_id)
+        else {
+            return Err(CodecError::Malformed(
+                "F3D primary record index points to an invalid record header".into(),
+            ));
+        };
+        let Some((type_ordinal, design_type)) = dynamic_type(meta, class_tag) else {
+            return Err(CodecError::Malformed(
+                "F3D primary record class tag is outside its type table".into(),
+            ));
+        };
+        if !registered_entities.contains(&(type_ordinal, entity_id)) {
+            return Err(CodecError::Malformed(
+                "F3D primary record type does not register its indexed entity ID".into(),
+            ));
+        }
+        if frame.member_end < frame.end {
+            let Some(nested_class_tag) =
+                record_header_class_tag(bytes, frame.member_end, frame.end, entity_id)
+            else {
+                return Err(CodecError::Malformed(
+                    "F3D secondary record index points to an invalid nested header".into(),
+                ));
+            };
+            if dynamic_type(meta, nested_class_tag).is_none() {
+                return Err(CodecError::Malformed(
+                    "F3D secondary record header is incompatible with its primary record".into(),
+                ));
+            }
+        }
+        frames.push(DesignPrimaryFrame {
+            entity_id,
+            class_tag,
+            start: frame.start,
+            end: frame.end,
+            design_type,
+        });
+    }
+    Ok(frames)
+}
+
 /// One primary `BulkStream` frame selected through a registered Design type.
 #[derive(Clone, Copy)]
 pub(crate) struct TypedPrimaryFrame<'a> {
@@ -65,67 +173,43 @@ pub(crate) fn typed_primary_frames<'a>(
     type_guid: &str,
     record_kind: &str,
 ) -> Result<Vec<TypedPrimaryFrame<'a>>, CodecError> {
-    let primary_frames = crate::metastream::primary_record_frames(meta, bytes.len())?;
-
-    let mut primary_by_entity = HashMap::<u64, Option<usize>>::new();
-    for (ordinal, record) in primary_frames.iter().enumerate() {
-        primary_by_entity
-            .entry(record.entity_id)
-            .and_modify(|candidate| *candidate = None)
-            .or_insert(Some(ordinal));
-    }
-
     let mut typed_entities = HashSet::new();
-    let mut frames = Vec::new();
-    for (type_ordinal, design_type) in meta.types.iter().enumerate() {
+    for design_type in &meta.types {
         if !design_type.type_guid.eq_ignore_ascii_case(type_guid) {
             continue;
         }
-        let class_tag = u32::try_from(type_ordinal)
-            .ok()
-            .and_then(|ordinal| ordinal.checked_add(256))
-            .filter(|tag| *tag <= 999)
-            .ok_or_else(|| {
-                CodecError::Malformed(format!(
-                    "F3D Design {record_kind} class tag is not three digits"
-                ))
-            })?
-            .to_string();
         for &entity_id in &design_type.entity_ids {
             if !typed_entities.insert(entity_id) {
                 return Err(CodecError::Malformed(format!(
                     "F3D Design {record_kind} entity {entity_id} is registered more than once"
                 )));
             }
-            let record_ordinal = match primary_by_entity.get(&entity_id) {
-                Some(Some(ordinal)) => *ordinal,
-                Some(None) => {
-                    return Err(CodecError::Malformed(format!(
-                        "F3D Design {record_kind} entity {entity_id} has multiple primary records"
-                    )))
-                }
-                None => {
-                    return Err(CodecError::Malformed(format!(
-                        "F3D Design {record_kind} entity {entity_id} has no primary record"
-                    )))
-                }
-            };
-            let primary_frame = primary_frames[record_ordinal];
-            let record = &bytes[primary_frame.start..primary_frame.end];
-            if u32_at(record, 0) != Some(3) || record.get(4..7) != Some(class_tag.as_bytes()) {
-                return Err(CodecError::Malformed(format!(
-                    "F3D Design {record_kind} entity {entity_id} has an invalid primary frame"
-                )));
-            }
-            frames.push(TypedPrimaryFrame {
-                entity_id,
-                start: primary_frame.start,
-                end: primary_frame.end,
-                design_type,
-            });
         }
     }
-    frames.sort_by_key(|frame| frame.start);
+
+    let mut resolved_entities = HashSet::new();
+    let mut frames = Vec::new();
+    for primary_frame in design_primary_frames(bytes, meta)? {
+        if !primary_frame
+            .design_type
+            .type_guid
+            .eq_ignore_ascii_case(type_guid)
+        {
+            continue;
+        }
+        resolved_entities.insert(primary_frame.entity_id);
+        frames.push(TypedPrimaryFrame {
+            entity_id: primary_frame.entity_id,
+            start: primary_frame.start,
+            end: primary_frame.end,
+            design_type: primary_frame.design_type,
+        });
+    }
+    if let Some(entity_id) = typed_entities.difference(&resolved_entities).min() {
+        return Err(CodecError::Malformed(format!(
+            "F3D Design {record_kind} entity {entity_id} has no primary record of its registered class"
+        )));
+    }
     Ok(frames)
 }
 

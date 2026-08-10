@@ -7,7 +7,7 @@ use cadmpeg_core::CodecError;
 use crate::bytes::{is_guid_hyphenated, is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded};
 use crate::records::SegmentType;
 
-/// One primary record-index entry locating a sibling `BulkStream` record.
+/// One record-index entry locating a header in the sibling `BulkStream`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RecordIndexEntry {
     pub(crate) entity_id: u64,
@@ -17,7 +17,10 @@ pub(crate) struct RecordIndexEntry {
 /// One completely framed `MetaStream` segment.
 pub(crate) struct MetaStream {
     pub(crate) types: Vec<SegmentType>,
+    /// Live sibling records, in strictly increasing `BulkStream` order.
     pub(crate) records: Vec<RecordIndexEntry>,
+    /// Nested class-record headers, in strictly increasing `BulkStream` order.
+    pub(crate) secondary_records: Vec<RecordIndexEntry>,
 }
 
 /// One exact sibling-BulkStream extent from the primary record index.
@@ -25,6 +28,9 @@ pub(crate) struct MetaStream {
 pub(crate) struct PrimaryRecordFrame {
     pub(crate) entity_id: u64,
     pub(crate) start: usize,
+    /// End of the class-member sequence, before a secondary indexed header.
+    pub(crate) member_end: usize,
+    /// End of the complete top-level primary record.
     pub(crate) end: usize,
 }
 
@@ -35,7 +41,16 @@ pub(crate) fn primary_record_frames(
     bulk_len: usize,
 ) -> Result<Vec<PrimaryRecordFrame>, CodecError> {
     let mut frames = Vec::with_capacity(meta.records.len());
+    let mut primary_by_entity = std::collections::HashMap::with_capacity(meta.records.len());
     for (ordinal, record) in meta.records.iter().enumerate() {
+        if primary_by_entity
+            .insert(record.entity_id, ordinal)
+            .is_some()
+        {
+            return Err(CodecError::Malformed(
+                "F3D primary record index repeats an entity ID".into(),
+            ));
+        }
         let start = usize::try_from(record.bulk_offset)
             .map_err(|_| CodecError::Malformed("F3D primary record offset exceeds usize".into()))?;
         let end = meta.records.get(ordinal + 1).map_or_else(
@@ -55,8 +70,40 @@ pub(crate) fn primary_record_frames(
         frames.push(PrimaryRecordFrame {
             entity_id: record.entity_id,
             start,
+            member_end: end,
             end,
         });
+    }
+
+    let mut previous_secondary_offset = None;
+    let mut secondary_entities = std::collections::HashSet::new();
+    for record in &meta.secondary_records {
+        let secondary = usize::try_from(record.bulk_offset).map_err(|_| {
+            CodecError::Malformed("F3D secondary record offset exceeds usize".into())
+        })?;
+        if previous_secondary_offset.is_some_and(|previous| secondary <= previous) {
+            return Err(CodecError::Malformed(
+                "F3D secondary record offsets are not strictly increasing".into(),
+            ));
+        }
+        previous_secondary_offset = Some(secondary);
+        if !secondary_entities.insert(record.entity_id) {
+            return Err(CodecError::Malformed(
+                "F3D secondary record index repeats an entity ID".into(),
+            ));
+        }
+        let Some(&ordinal) = primary_by_entity.get(&record.entity_id) else {
+            return Err(CodecError::Malformed(
+                "F3D secondary record index names an entity absent from the primary index".into(),
+            ));
+        };
+        let frame = &mut frames[ordinal];
+        if secondary <= frame.start || secondary >= frame.end {
+            return Err(CodecError::Malformed(
+                "F3D secondary record offset is not strictly inside its primary record".into(),
+            ));
+        }
+        frame.member_end = secondary;
     }
     Ok(frames)
 }
@@ -275,8 +322,8 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
         primary_index_at,
     )?;
     let secondary_index_at = at;
-    require(
-        take_counted_run(bytes, &mut at, 16),
+    let secondary_records = require(
+        take_record_index(bytes, &mut at),
         "secondary record index",
         secondary_index_at,
     )?;
@@ -308,7 +355,11 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
             offset: at,
         });
     }
-    Ok(MetaStream { types, records })
+    Ok(MetaStream {
+        types,
+        records,
+        secondary_records,
+    })
 }
 
 /// Parse one complete `MetaStream` segment and reject any unframed remainder.
@@ -399,7 +450,35 @@ mod tests {
     }
 
     #[test]
-    fn primary_index_frames_end_at_the_next_primary_offset() {
+    fn retains_both_record_indexes() {
+        let mut bytes = stream_prefix();
+        bytes.truncate(bytes.len() - 8);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&11u64.to_le_bytes());
+        bytes.extend_from_slice(&3u64.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&11u64.to_le_bytes());
+        bytes.extend_from_slice(&5u64.to_le_bytes());
+
+        let parsed = parse(&bytes, "indexed").expect("both indexes are framed");
+        assert_eq!(
+            parsed.records,
+            [RecordIndexEntry {
+                entity_id: 11,
+                bulk_offset: 3,
+            }]
+        );
+        assert_eq!(
+            parsed.secondary_records,
+            [RecordIndexEntry {
+                entity_id: 11,
+                bulk_offset: 5,
+            }]
+        );
+    }
+
+    #[test]
+    fn primary_index_frames_use_the_secondary_header_as_the_member_boundary() {
         let meta = MetaStream {
             types: Vec::new(),
             records: vec![
@@ -412,17 +491,24 @@ mod tests {
                     bulk_offset: 9,
                 },
             ],
+            secondary_records: vec![RecordIndexEntry {
+                entity_id: 11,
+                bulk_offset: 7,
+            }],
         };
 
         let frames = primary_record_frames(&meta, 14).expect("ordered primary extents");
         assert_eq!(frames[0].start, 3);
+        assert_eq!(frames[0].member_end, 7);
         assert_eq!(frames[0].end, 9);
         assert_eq!(frames[1].start, 9);
+        assert_eq!(frames[1].member_end, 14);
         assert_eq!(frames[1].end, 14);
 
         let empty = MetaStream {
             types: Vec::new(),
             records: Vec::new(),
+            secondary_records: Vec::new(),
         };
         assert!(primary_record_frames(&empty, 0)
             .expect("an empty primary index has no frames")
@@ -434,6 +520,7 @@ mod tests {
                 entity_id: 11,
                 bulk_offset: 14,
             }],
+            secondary_records: Vec::new(),
         };
         assert!(primary_record_frames(&empty_last, 14).is_err());
 
@@ -449,7 +536,24 @@ mod tests {
                     bulk_offset: 3,
                 },
             ],
+            secondary_records: Vec::new(),
         };
         assert!(primary_record_frames(&repeated_offset, 14).is_err());
+
+        let secondary_outside_primary = MetaStream {
+            types: Vec::new(),
+            records: vec![RecordIndexEntry {
+                entity_id: 11,
+                bulk_offset: 3,
+            }],
+            secondary_records: vec![RecordIndexEntry {
+                entity_id: 11,
+                bulk_offset: 14,
+            }],
+        };
+        assert!(matches!(
+            primary_record_frames(&secondary_outside_primary, 14),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }

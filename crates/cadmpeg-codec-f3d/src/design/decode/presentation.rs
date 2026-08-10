@@ -713,6 +713,7 @@ mod tests {
                 ),
             ],
             records: vec![primary_record(entity, 0), primary_record(43, node_start)],
+            secondary_records: Vec::new(),
         };
         let presentations = body_presentations(&bytes, &meta).expect("typed primary frames");
         assert_eq!(presentations.len(), 1);
@@ -786,6 +787,7 @@ mod tests {
                 ),
             ],
             records: vec![primary_record(entity, 0)],
+            secondary_records: Vec::new(),
         };
         let presentations = body_presentations(&bytes, &meta).expect("typed body owner");
         assert_eq!(presentations.len(), 1);
@@ -859,6 +861,7 @@ mod tests {
                 ),
             ],
             records: vec![primary_record(entity, 0), primary_record(99, next_start)],
+            secondary_records: Vec::new(),
         };
 
         let presentations = body_presentations(&bytes, &meta).expect("exact body frame");
@@ -887,6 +890,7 @@ mod tests {
                 vec![u64::from(record_index)],
             )],
             records: vec![primary_record(u64::from(record_index), 0)],
+            secondary_records: Vec::new(),
         };
 
         assert!(browser_node_records(&bytes, &meta)
@@ -973,6 +977,7 @@ mod tests {
                 primary_record(entity, 0),
                 primary_record(u64::from(node_record), node_start),
             ],
+            secondary_records: Vec::new(),
         };
         let presentations = body_presentations(&bytes, &meta).expect("exact primary owner frame");
         let [presentation] = presentations.as_slice() else {

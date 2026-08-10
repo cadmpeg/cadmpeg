@@ -909,6 +909,7 @@ mod tests {
                 entity_id: 900,
                 bulk_offset: 0,
             }],
+            secondary_records: Vec::new(),
         }
     }
 
@@ -1049,6 +1050,7 @@ mod tests {
                 primary_record(100, selected_start),
                 primary_record(101, competing_start),
             ],
+            secondary_records: Vec::new(),
         };
         let visibility =
             typed_browser_node_hidden_flags(&bytes, &meta).expect("typed presentation graph");
@@ -1082,6 +1084,7 @@ mod tests {
                 primary_record(100, selected_start),
                 primary_record(101, competing_start),
             ],
+            secondary_records: Vec::new(),
         };
         let visibility =
             typed_browser_node_hidden_flags(&nodes_only, &meta).expect("typed browser nodes");

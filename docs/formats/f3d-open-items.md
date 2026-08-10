@@ -242,14 +242,6 @@ Documents exist with two unplaced ordinal-one carriers whose component GUIDs are
 
 **Need.** The reading decides whether the component GUID or the component-record reference is the component definition's identity. If several records may describe one definition, the validator claim is too strong and the neutral component identity must come from the GUID alone. If not, one of the two carriers belongs to a second definition and the GUID is not an identity. Nothing yet separates the two readings, so the validator keeps the stronger claim and reports the second carrier.
 
-### DR-35. Live copy of a repeated record index
-
-**Question.** Which copy of a record index is the live copy when a Design stream holds more than one copy that parses?
-
-**Known.** `decode_sketch_texts`, `decode_sketch_points`, and `decode_sketch_curve_identities` in `design/decode/sketch.rs` each hold a set of emitted record indices and keep the copy that occurs first in byte order. The comment in `decode_sketch_texts` states the condition: "A stream can retain a superseded copy of a record beside the copy its index names, and both parse." `f3d.md` gives no rule that separates a superseded copy from the live copy.
-
-**Need.** A stream that appends the current copy after the superseded copy makes every one of these records decode to the pre-edit content: a sketch text keeps its earlier string, height, and anchor, and a sketch point keeps its earlier coordinates. The decoder emits one record and records no loss, so no consumer can detect the substitution. The rule that marks the live copy settles the item. Until then the two copies must decode to equal content, or the record must be withheld with a loss.
-
 ### DR-61. u64 values in a cross-document `Combine` selector tail
 
 **Question.** What do the two u64 values around the fixed `u32 48` in a cross-document `Combine` body-selector tail mean?

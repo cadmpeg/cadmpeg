@@ -2234,7 +2234,11 @@ mod tests {
         );
         SyntheticMeshGraph {
             bytes,
-            meta: crate::metastream::MetaStream { types, records },
+            meta: crate::metastream::MetaStream {
+                types,
+                records,
+                secondary_records: Vec::new(),
+            },
         }
     }
 
@@ -2294,7 +2298,7 @@ mod tests {
     #[test]
     fn mesh_registrations_without_a_collection_do_not_form_a_graph() {
         let mut graph = synthetic_mesh_graph(false);
-        graph
+        let collection_type = graph
             .meta
             .types
             .iter_mut()
@@ -2303,9 +2307,16 @@ mod tests {
                     .type_guid
                     .eq_ignore_ascii_case(MESH_COLLECTION_TYPE_GUID)
             })
-            .expect("mesh-collection type")
-            .entity_ids
-            .clear();
+            .expect("mesh-collection type");
+        let [collection_entity] = collection_type.entity_ids.as_slice() else {
+            panic!("one mesh-collection entity");
+        };
+        let collection_entity = *collection_entity;
+        collection_type.entity_ids.clear();
+        graph
+            .meta
+            .records
+            .retain(|record| record.entity_id != collection_entity);
         let mut no_asset = no_texture_asset;
 
         let design = parse_mesh_design_records(

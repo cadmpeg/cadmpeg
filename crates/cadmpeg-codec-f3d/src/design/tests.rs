@@ -14273,16 +14273,32 @@ fn text_frame_line_decodes_after_point_references() {
 
 #[test]
 fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
+    fn ascii(bytes: &mut Vec<u8>, value: &str) {
+        bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(value.as_bytes());
+    }
+
     fn marked_reference(bytes: &mut Vec<u8>, record_index: u32) {
         bytes.push(1);
         bytes.extend_from_slice(&record_index.to_le_bytes());
         bytes.extend_from_slice(&[0; 6]);
     }
 
-    let mut bytes = vec![0u8; 133];
+    let mut bytes = Vec::new();
+    ascii(&mut bytes, "256");
+    bytes.extend_from_slice(&1200u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 9]);
+    bytes.push(1);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    for (name, value) in [("crv_primary_id", 700u64), ("crv_secondary_id", 0)] {
+        ascii(&mut bytes, name);
+        ascii(&mut bytes, "IntrinsicMetaTypeuint64");
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    assert_eq!(bytes.len(), 133);
     bytes.extend_from_slice(&[0xff; 8]);
     bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(b"285");
+    bytes.extend_from_slice(b"257");
     bytes.extend_from_slice(&1200u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 8]);
     bytes.push(1);
@@ -14335,6 +14351,61 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
     assert_eq!(weights, [1.0; 3]);
     assert_eq!(control_points[1], Point3::new(5.0, 7.5, 0.0));
     assert!((fit_tolerance - 0.000_1).abs() <= f64::EPSILON);
+
+    marked_reference(&mut bytes, 201);
+    let segment_type = |type_guid: &str, version, module: &str, entity_ids: Vec<u64>| {
+        crate::records::SegmentType {
+            id: String::new(),
+            byte_offset: 0,
+            type_guid: type_guid.into(),
+            type_guid_offset: 0,
+            base_type_guid: None,
+            base_type_guid_offset: None,
+            version,
+            version_offset: 0,
+            module: module.into(),
+            entity_id_offsets: vec![0; entity_ids.len()],
+            entity_ids,
+        }
+    };
+    let meta = crate::metastream::MetaStream {
+        types: vec![
+            segment_type(
+                "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B",
+                3,
+                "MSketch",
+                vec![1200],
+            ),
+            segment_type(
+                "00000000-0000-0000-0000-000000000001",
+                0,
+                "MSketch",
+                Vec::new(),
+            ),
+        ],
+        records: vec![crate::metastream::RecordIndexEntry {
+            entity_id: 1200,
+            bulk_offset: 0,
+        }],
+        secondary_records: vec![crate::metastream::RecordIndexEntry {
+            entity_id: 1200,
+            bulk_offset: 141,
+        }],
+    };
+    let curves = crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
+        &bytes,
+        &meta,
+        "Design/BulkStream.dat",
+    )
+    .expect("primary NURBS frame with a nested subtype header");
+    let [curve] = curves.as_slice() else {
+        panic!("one indexed NURBS curve");
+    };
+    assert!(matches!(
+        curve.geometry,
+        Some(SketchCurveGeometry::Nurbs { .. })
+    ));
+    assert_eq!(curve.owner_reference, Some(201));
 }
 
 #[test]
@@ -14347,13 +14418,13 @@ fn sketch_geometry_tail_names_its_owner_container() {
     bytes.extend_from_slice(b"301");
     bytes.extend_from_slice(&400u32.to_le_bytes());
     assert_eq!(
-        crate::design::decode::sketch::trailing_sketch_owner_reference(&bytes, 112),
+        crate::design::decode::sketch::trailing_sketch_owner_reference(&bytes[..123]),
         Some(201)
     );
 
     bytes[117] = 1;
     assert_eq!(
-        crate::design::decode::sketch::trailing_sketch_owner_reference(&bytes, 112),
+        crate::design::decode::sketch::trailing_sketch_owner_reference(&bytes[..123]),
         None
     );
 
@@ -14368,7 +14439,7 @@ fn sketch_geometry_tail_names_its_owner_container() {
     nested.extend_from_slice(b"303");
     nested.extend_from_slice(&501u32.to_le_bytes());
     assert_eq!(
-        crate::design::decode::sketch::trailing_sketch_owner_reference(&nested, 131),
+        crate::design::decode::sketch::trailing_sketch_owner_reference(&nested[..151]),
         Some(201)
     );
 }
@@ -22667,6 +22738,238 @@ fn decode_sketch_text_at(bytes: &[u8], class_version: u32) -> Option<crate::reco
 /// key and the wider anchor run.
 fn decode_sketch_text(bytes: &[u8]) -> Option<crate::records::SketchText> {
     decode_sketch_text_at(bytes, 4)
+}
+
+#[test]
+fn sketch_records_use_the_primary_index_live_copy() {
+    use crate::metastream::{MetaStream, RecordIndexEntry};
+    use crate::records::{SegmentType, SketchCurveGeometry};
+    use cadmpeg_ir::math::{Point2, Point3};
+
+    const PARENT: u64 = 900;
+    const POINT: u64 = 50;
+    const CURVE: u64 = 51;
+    const TEXT: u64 = 52;
+
+    let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
+        bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(value.as_bytes());
+    };
+    let record_prefix = |class_tag: u32, entity_id: u64| {
+        let mut bytes = Vec::new();
+        push_ascii(&mut bytes, &class_tag.to_string());
+        bytes.extend_from_slice(
+            &u32::try_from(entity_id)
+                .expect("synthetic indexed-record identity")
+                .to_le_bytes(),
+        );
+        bytes.extend_from_slice(&[0; 9]);
+        bytes
+    };
+    let owner_reference = |bytes: &mut Vec<u8>| {
+        bytes.push(1);
+        bytes.extend_from_slice(&201u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    };
+    let point_record = |x: f64, y: f64| {
+        let mut bytes = record_prefix(257, POINT);
+        bytes.push(1);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        push_ascii(&mut bytes, "pt_tag");
+        push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
+        bytes.extend_from_slice(&500u64.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&60u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 14]);
+        bytes.extend_from_slice(&x.to_le_bytes());
+        bytes.extend_from_slice(&y.to_le_bytes());
+        bytes.extend_from_slice(&0.0f64.to_le_bytes());
+        owner_reference(&mut bytes);
+        bytes
+    };
+    let curve_record = |start_x: f64| {
+        let mut bytes = record_prefix(258, CURVE);
+        bytes.push(1);
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        push_ascii(&mut bytes, "crv_primary_id");
+        push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
+        bytes.extend_from_slice(&700u64.to_le_bytes());
+        push_ascii(&mut bytes, "crv_secondary_id");
+        push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
+        bytes.extend_from_slice(&0u64.to_le_bytes());
+        for value in [
+            start_x, 0.0, 0.0, 2.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        owner_reference(&mut bytes);
+        bytes
+    };
+    let text_record = |text: &str| {
+        let mut bytes = sketch_text_record(&[("textex_tag", 800)], [None, None], None);
+        bytes[4..7].copy_from_slice(b"259");
+        bytes[7..11].copy_from_slice(
+            &u32::try_from(TEXT)
+                .expect("synthetic text record index")
+                .to_le_bytes(),
+        );
+        bytes[11..20].fill(0);
+        let old = "path text"
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>();
+        let new = text
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>();
+        assert_eq!(new.len(), old.len());
+        let at = bytes
+            .windows(old.len())
+            .position(|window| window == old)
+            .expect("synthetic text payload");
+        bytes[at..at + old.len()].copy_from_slice(&new);
+        bytes
+    };
+    let design_type =
+        |type_guid: &str, version: u32, module: &str, entity_ids: Vec<u64>| SegmentType {
+            id: String::new(),
+            byte_offset: 0,
+            type_guid: type_guid.into(),
+            type_guid_offset: 0,
+            base_type_guid: None,
+            base_type_guid_offset: None,
+            version,
+            version_offset: 0,
+            module: module.into(),
+            entity_id_offsets: vec![0; entity_ids.len()],
+            entity_ids,
+        };
+
+    let mut bytes = record_prefix(256, PARENT);
+    bytes.extend_from_slice(&point_record(1.0, 2.0));
+    bytes.extend_from_slice(&curve_record(1.0));
+    bytes.extend_from_slice(&text_record("stale txt"));
+    let nested_at = bytes.len();
+    bytes.extend_from_slice(&record_prefix(260, PARENT));
+    let live_point_at = bytes.len();
+    bytes.extend_from_slice(&point_record(7.0, -3.0));
+    let live_curve_at = bytes.len();
+    bytes.extend_from_slice(&curve_record(5.0));
+    let live_text_at = bytes.len();
+    bytes.extend_from_slice(&text_record("live text"));
+
+    let meta = MetaStream {
+        types: vec![
+            design_type(
+                "00000000-0000-0000-0000-000000000001",
+                0,
+                "Fusion",
+                vec![PARENT],
+            ),
+            design_type(
+                "00000000-0000-0000-0000-000000000002",
+                0,
+                "MSketch",
+                vec![POINT],
+            ),
+            design_type(
+                "DCA267ED-D615-4934-B64F-AD805E8003E2",
+                2,
+                "Geometry",
+                vec![CURVE],
+            ),
+            design_type(
+                "E0618268-3A06-450E-9E94-7CF4C2E66802",
+                4,
+                "Geometry",
+                vec![TEXT],
+            ),
+            design_type(
+                "00000000-0000-0000-0000-000000000004",
+                0,
+                "Fusion",
+                Vec::new(),
+            ),
+        ],
+        records: vec![
+            RecordIndexEntry {
+                entity_id: PARENT,
+                bulk_offset: 0,
+            },
+            RecordIndexEntry {
+                entity_id: POINT,
+                bulk_offset: live_point_at as u64,
+            },
+            RecordIndexEntry {
+                entity_id: CURVE,
+                bulk_offset: live_curve_at as u64,
+            },
+            RecordIndexEntry {
+                entity_id: TEXT,
+                bulk_offset: live_text_at as u64,
+            },
+        ],
+        secondary_records: vec![RecordIndexEntry {
+            entity_id: PARENT,
+            bulk_offset: nested_at as u64,
+        }],
+    };
+
+    let points = crate::design::decode::sketch::decode_sketch_points_from_stream(
+        &bytes,
+        &meta,
+        "Design/BulkStream.dat",
+    )
+    .expect("indexed sketch points");
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0].byte_offset, live_point_at as u64);
+    assert_eq!(points[0].coordinates, Point2::new(70.0, -30.0));
+
+    let curves = crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
+        &bytes,
+        &meta,
+        "Design/BulkStream.dat",
+    )
+    .expect("indexed sketch curves");
+    assert_eq!(curves.len(), 1);
+    assert_eq!(curves[0].byte_offset, live_curve_at as u64);
+    assert!(matches!(
+        curves[0].geometry,
+        Some(SketchCurveGeometry::Line { start, .. }) if start == Point3::new(50.0, 0.0, 0.0)
+    ));
+
+    let texts = crate::design::decode::sketch::decode_sketch_texts_from_stream(
+        &bytes,
+        &meta,
+        "Design/BulkStream.dat",
+    )
+    .expect("indexed sketch texts");
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].byte_offset, live_text_at as u64);
+    assert_eq!(texts[0].text, "live text");
+
+    let mut mismatched_primary = bytes.clone();
+    mismatched_primary[live_point_at + 7..live_point_at + 11]
+        .copy_from_slice(&999u32.to_le_bytes());
+    assert!(matches!(
+        crate::design::decode::sketch::decode_sketch_points_from_stream(
+            &mismatched_primary,
+            &meta,
+            "Design/BulkStream.dat",
+        ),
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
+
+    let mut mismatched_secondary = bytes;
+    mismatched_secondary[nested_at + 7..nested_at + 11].copy_from_slice(&999u32.to_le_bytes());
+    assert!(matches!(
+        crate::design::decode::sketch::decode_sketch_points_from_stream(
+            &mismatched_secondary,
+            &meta,
+            "Design/BulkStream.dat",
+        ),
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]

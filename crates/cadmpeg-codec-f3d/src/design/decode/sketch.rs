@@ -17,7 +17,9 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::Color;
 use std::collections::HashMap;
 
-use super::meta::{decode_types, stream_types_by_class_tag};
+use super::meta::{
+    decode_types, design_primary_frames, metadata_for_bulk_stream, stream_types_by_class_tag,
+};
 
 /// Byte offsets of every indexed-record header in one `BulkStream`, grouped by
 /// the record index carried at header offset seven.
@@ -1300,13 +1302,50 @@ pub(crate) fn decode_constraint_kinds(state: u64) -> (Vec<SketchConstraintKind>,
     (kinds, state & !SKETCH_CONSTRAINT_MASK)
 }
 
-pub(crate) fn trailing_sketch_owner_reference(bytes: &[u8], from: usize) -> Option<u32> {
-    let record_end = next_indexed_record_offset(bytes, from).unwrap_or(bytes.len());
-    let tail = record_end.checked_sub(11)?;
-    if bytes.get(tail) != Some(&1) || bytes.get(tail + 5..tail + 11) != Some(&[0u8; 6][..]) {
+pub(crate) fn trailing_sketch_owner_reference(record: &[u8]) -> Option<u32> {
+    let tail = record.len().checked_sub(11)?;
+    if record.get(tail) != Some(&1) || record.get(tail + 5..tail + 11) != Some(&[0u8; 6][..]) {
         return None;
     }
-    u32_at(bytes, tail + 1)
+    u32_at(record, tail + 1)
+}
+
+pub(crate) fn decode_sketch_points_from_stream(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    stream: &str,
+) -> Result<Vec<SketchPoint>, CodecError> {
+    let mut out = Vec::new();
+    for frame in design_primary_frames(bytes, meta)? {
+        let payload = &bytes[frame.start..frame.end];
+        let Some((persistent_id, paired_reference, x, y, shift, entity_genesis)) =
+            decode_sketch_point(payload)
+        else {
+            continue;
+        };
+        let record_index = u32::try_from(frame.entity_id)
+            .map_err(|_| CodecError::Malformed("F3D sketch-point entity ID exceeds u32".into()))?;
+        let (u, v) = (x * 10.0, y * 10.0);
+        let depth = f64_at(payload, 105 + shift).map(|value| value * 10.0);
+        if !u.is_finite() || !v.is_finite() || depth.is_some_and(|value| !value.is_finite()) {
+            continue;
+        }
+        let raw_end = payload.len().min(113 + shift);
+        out.push(SketchPoint {
+            id: ids::native_sketch_point_id(stream, frame.start),
+            record_index,
+            owner_reference: trailing_sketch_owner_reference(payload),
+            class_tag: frame.class_tag.to_string(),
+            byte_offset: frame.start as u64,
+            coordinate_offset: (89 + shift) as u32,
+            entity_genesis,
+            persistent_id,
+            paired_reference,
+            coordinates: Point2::new(u, v),
+            raw_bytes: payload[..raw_end].to_vec(),
+        });
+    }
+    Ok(out)
 }
 
 /// Decode every sketch-point record ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata), `pt_tag`) from each design
@@ -1320,54 +1359,11 @@ pub fn decode_sketch_points(scan: &ContainerScan) -> Result<Vec<SketchPoint>, Co
         .iter()
         .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
-        let mut emitted = std::collections::HashSet::new();
         let bytes = scan.entry_bytes(&entry.name)?;
-        let mut at = 0usize;
-        while at + 113 <= bytes.len() {
-            let Some((class_tag, after_tag)) =
-                lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)
-            else {
-                at += 1;
-                continue;
-            };
-            if class_tag.len() != 3 || !class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
-                at += 1;
-                continue;
-            }
-            let Some(record_index) = u32_at(bytes, after_tag) else {
-                break;
-            };
-            let payload = &bytes[at..];
-            let Some((persistent_id, paired_reference, x, y, shift, entity_genesis)) =
-                decode_sketch_point(payload)
-            else {
-                at += 1;
-                continue;
-            };
-            let (u, v) = (x * 10.0, y * 10.0);
-            let depth = f64_at(payload, 105 + shift).map(|value| value * 10.0);
-            if !u.is_finite() || !v.is_finite() || depth.is_none_or(|value| !value.is_finite()) {
-                at += 1;
-                continue;
-            }
-            let owner_reference = trailing_sketch_owner_reference(bytes, at + 112 + shift);
-            if emitted.insert(record_index) {
-                out.push(SketchPoint {
-                    id: ids::native_sketch_point_id(&entry.name, at),
-                    record_index,
-                    owner_reference,
-                    class_tag,
-                    byte_offset: at as u64,
-                    coordinate_offset: (89 + shift) as u32,
-                    entity_genesis,
-                    persistent_id,
-                    paired_reference,
-                    coordinates: Point2::new(u, v),
-                    raw_bytes: payload[..113 + shift].to_vec(),
-                });
-            }
-            at += 112;
-        }
+        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        out.extend(decode_sketch_points_from_stream(bytes, &meta, &entry.name)?);
     }
     Ok(out)
 }
@@ -1409,69 +1405,58 @@ pub(crate) fn read_property_block(
     Some(properties)
 }
 
+const SKETCH_TEXT_TYPE_GUIDS: [&str; 2] = [
+    "E0618268-3A06-450E-9E94-7CF4C2E66802",
+    "F0B1AFA3-3BAF-42D0-B2F3-94B95662F2A9",
+];
+
+/// Decode sketch-text records carrying persistent identities, font metrics,
+/// UTF-16 content, and an owning-sketch reference.
+pub(crate) fn decode_sketch_texts_from_stream(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    stream: &str,
+) -> Result<Vec<SketchText>, CodecError> {
+    let mut out = Vec::new();
+    for frame in design_primary_frames(bytes, meta)? {
+        if !SKETCH_TEXT_TYPE_GUIDS
+            .iter()
+            .any(|type_guid| frame.design_type.type_guid.eq_ignore_ascii_case(type_guid))
+        {
+            continue;
+        }
+        let record_index = u32::try_from(frame.entity_id)
+            .map_err(|_| CodecError::Malformed("F3D sketch-text entity ID exceeds u32".into()))?;
+        let class_tag = frame.class_tag.to_string();
+        let payload = &bytes[frame.start..frame.end];
+        if let Some(text) = decode_sketch_text_record(
+            payload,
+            stream,
+            class_tag,
+            frame.design_type.version,
+            record_index,
+            frame.start,
+        ) {
+            out.push(text);
+        }
+    }
+    Ok(out)
+}
+
 /// Decode sketch-text records carrying persistent identities, font metrics,
 /// UTF-16 content, and an owning-sketch reference.
 pub fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, CodecError> {
     let mut out = Vec::new();
-    // A record carries no version of its own: its class tag selects an entry in
-    // its segment's own type table, and that entry's version fixes the member
-    // sequence the record was written under.
-    let types = decode_types(scan)?;
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
-        let stream_types = stream_types_by_class_tag(&types, &entry.name);
         let bytes = scan.entry_bytes(&entry.name)?;
-        // A stream can retain a superseded copy of a record beside the copy its
-        // index names, and both parse. The record index is the entity, so the
-        // first copy is kept and the rest dropped.
-        let mut emitted = std::collections::HashSet::new();
-        let mut at = 0usize;
-        while at + 230 <= bytes.len() {
-            let Some((class_tag, after_tag)) =
-                lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)
-            else {
-                at += 1;
-                continue;
-            };
-            if class_tag.len() != 3 || !class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
-                at += 1;
-                continue;
-            }
-            let Some(record_index) = u32_at(bytes, after_tag) else {
-                break;
-            };
-            let Some(class_version) = class_tag
-                .parse::<u32>()
-                .ok()
-                .and_then(|class_tag| stream_types.get(&class_tag))
-                .map(|design_type| design_type.version)
-            else {
-                at += 1;
-                continue;
-            };
-            let record_end = next_indexed_record_offset(bytes, at + 7).unwrap_or(bytes.len());
-            let Some(payload) = bytes.get(at..record_end) else {
-                break;
-            };
-            if let Some(text) = decode_sketch_text_record(
-                payload,
-                &entry.name,
-                class_tag,
-                class_version,
-                record_index,
-                at,
-            ) {
-                if emitted.insert(record_index) {
-                    out.push(text);
-                }
-                at = record_end;
-            } else {
-                at += 1;
-            }
-        }
+        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        out.extend(decode_sketch_texts_from_stream(bytes, &meta, &entry.name)?);
     }
     Ok(out)
 }
@@ -2195,81 +2180,71 @@ impl SketchCurveClass {
 /// `crv_secondary_id`) from each design `BulkStream` entry in `scan`: the
 /// curve's persistent primary and secondary identities plus its NURBS, circular
 /// arc, line, or referenced analytic geometry.
+pub(crate) fn decode_sketch_curve_identities_from_stream(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    stream: &str,
+) -> Result<Vec<SketchCurveIdentity>, CodecError> {
+    let mut out = Vec::new();
+    for frame in design_primary_frames(bytes, meta)? {
+        let payload = &bytes[frame.start..frame.end];
+        let Some((primary_id, secondary_id, geometry_shift, entity_genesis)) =
+            decode_sketch_curve_identity(payload)
+        else {
+            continue;
+        };
+        let record_index = u32::try_from(frame.entity_id)
+            .map_err(|_| CodecError::Malformed("F3D sketch-curve entity ID exceeds u32".into()))?;
+        let curve_class = SketchCurveClass::of(
+            &frame.design_type.type_guid,
+            frame.design_type.version,
+            &frame.design_type.module,
+        );
+        let parsed_geometry = curve_class.and_then(|curve_class| {
+            decode_sketch_curve_geometry(payload, geometry_shift, record_index, curve_class)
+        });
+        let (geometry, geometry_offset) = parsed_geometry
+            .map_or((None, geometry_shift + 133), |parsed| {
+                (Some(parsed.geometry), parsed.geometry_offset)
+            });
+        out.push(SketchCurveIdentity {
+            id: ids::native_sketch_curve_identity_id(stream, frame.start),
+            record_index,
+            owner_reference: trailing_sketch_owner_reference(payload),
+            class_tag: frame.class_tag.to_string(),
+            byte_offset: frame.start as u64,
+            geometry_offset: geometry_offset as u32,
+            entity_genesis,
+            primary_id,
+            secondary_id,
+            geometry,
+        });
+    }
+    Ok(out)
+}
+
+/// Decode every sketch-curve record ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata), `crv_primary_id`/
+/// `crv_secondary_id`) from each design `BulkStream` entry in `scan`: the
+/// curve's persistent primary and secondary identities plus its NURBS, circular
+/// arc, line, or referenced analytic geometry.
 pub fn decode_sketch_curve_identities(
     scan: &ContainerScan,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
     let mut out = Vec::new();
-    let types = decode_types(scan)?;
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
-        let stream_types = stream_types_by_class_tag(&types, &entry.name);
-        let mut emitted = std::collections::HashSet::new();
         let bytes = scan.entry_bytes(&entry.name)?;
-        let mut at = 0usize;
-        while at + 133 <= bytes.len() {
-            let Some((class_tag, after_tag)) =
-                lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)
-            else {
-                at += 1;
-                continue;
-            };
-            if class_tag.len() != 3 || !class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
-                at += 1;
-                continue;
-            }
-            let Some(record_index) = u32_at(bytes, after_tag) else {
-                break;
-            };
-            let payload = &bytes[at..];
-            let Some((primary_id, secondary_id, geometry_shift, entity_genesis)) =
-                decode_sketch_curve_identity(payload)
-            else {
-                at += 1;
-                continue;
-            };
-            if emitted.insert(record_index) {
-                let curve_class = class_tag
-                    .parse::<u32>()
-                    .ok()
-                    .and_then(|class_tag| stream_types.get(&class_tag))
-                    .and_then(|design_type| {
-                        SketchCurveClass::of(
-                            &design_type.type_guid,
-                            design_type.version,
-                            &design_type.module,
-                        )
-                    });
-                let parsed_geometry = curve_class.and_then(|curve_class| {
-                    decode_sketch_curve_geometry(payload, geometry_shift, record_index, curve_class)
-                });
-                let (geometry, geometry_offset, owner_scan_from) = parsed_geometry.map_or(
-                    (None, geometry_shift + 133, geometry_shift + 133),
-                    |parsed| {
-                        (
-                            Some(parsed.geometry),
-                            parsed.geometry_offset,
-                            parsed.owner_scan_from,
-                        )
-                    },
-                );
-                out.push(SketchCurveIdentity {
-                    id: ids::native_sketch_curve_identity_id(&entry.name, at),
-                    record_index,
-                    owner_reference: trailing_sketch_owner_reference(bytes, at + owner_scan_from),
-                    class_tag,
-                    byte_offset: at as u64,
-                    geometry_offset: geometry_offset as u32,
-                    entity_genesis,
-                    primary_id,
-                    secondary_id,
-                    geometry,
-                });
-            }
-            at += 133;
-        }
+        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        out.extend(decode_sketch_curve_identities_from_stream(
+            bytes,
+            &meta,
+            &entry.name,
+        )?);
     }
     Ok(out)
 }
@@ -2629,7 +2604,6 @@ fn decode_sketch_curve_identity_variant(
 struct DecodedSketchCurveGeometry {
     geometry: SketchCurveGeometry,
     geometry_offset: usize,
-    owner_scan_from: usize,
 }
 
 fn decode_sketch_curve_geometry(
@@ -2641,42 +2615,33 @@ fn decode_sketch_curve_geometry(
     let geometry_payload = payload.get(geometry_shift..)?;
     let decoded = match class {
         SketchCurveClass::Line => {
-            if let Some((geometry, scalar_count)) = decode_line_family(geometry_payload) {
-                Some((geometry, 133, 133 + scalar_count * 8))
+            if let Some((geometry, _)) = decode_line_family(geometry_payload) {
+                Some((geometry, 133))
             } else {
                 let referenced = referenced_analytic_payload(geometry_payload)?;
-                let (geometry, scalar_count) = decode_line_family(referenced)?;
-                Some((geometry, 11 + 133, 11 + 133 + scalar_count * 8))
+                let (geometry, _) = decode_line_family(referenced)?;
+                Some((geometry, 11 + 133))
             }
         }
         SketchCurveClass::Circular => {
             if let Some(geometry) = decode_circular_arc(geometry_payload) {
-                Some((geometry, 133, 133 + 12 * 8))
+                Some((geometry, 133))
             } else {
                 let referenced = referenced_analytic_payload(geometry_payload)?;
-                Some((
-                    decode_circular_arc(referenced)?,
-                    11 + 133,
-                    11 + 133 + 12 * 8,
-                ))
+                Some((decode_circular_arc(referenced)?, 11 + 133))
             }
         }
         SketchCurveClass::Nurbs => decode_legacy_sketch_nurbs(geometry_payload)
             .or_else(|| decode_sketch_nurbs(geometry_payload))
-            .map(|(geometry, end)| (geometry, 133, end)),
+            .map(|(geometry, _)| (geometry, 133)),
         SketchCurveClass::TextFrameLine => {
             let (geometry, end) = decode_text_frame_line(payload, geometry_shift, record_index)?;
-            Some((
-                geometry,
-                end.checked_sub(geometry_shift + 12 * 8)?,
-                end.checked_sub(geometry_shift)?,
-            ))
+            Some((geometry, end.checked_sub(geometry_shift + 12 * 8)?))
         }
     }?;
     Some(DecodedSketchCurveGeometry {
         geometry: decoded.0,
         geometry_offset: geometry_shift + decoded.1,
-        owner_scan_from: geometry_shift + decoded.2,
     })
 }
 
@@ -3632,7 +3597,6 @@ mod curve_class_tests {
         let line = decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Line)
             .expect("typed line payload");
         assert_eq!(line.geometry_offset, 133);
-        assert_eq!(line.owner_scan_from, 229);
         assert_eq!(
             line.geometry,
             SketchCurveGeometry::Line {
@@ -3664,7 +3628,6 @@ mod curve_class_tests {
         let parsed = decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Line)
             .expect("typed referenced compact line");
         assert_eq!(parsed.geometry_offset, 144);
-        assert_eq!(parsed.owner_scan_from, 216);
         assert!(matches!(parsed.geometry, SketchCurveGeometry::Line { .. }));
     }
 
