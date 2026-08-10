@@ -296,3 +296,467 @@ fn query_projects_a_real_validate_report_end_to_end() {
                 .and(predicate::str::contains("model\t")),
         );
 }
+
+// --- query item -------------------------------------------------------------
+
+const ITEM_DOC: &str = r#"{
+  "ir_version": "4",
+  "model": {
+    "sketch_entities": [
+      {
+        "id": "ns:sketch_entity#offset:1299062:skamp:2",
+        "kind": "point",
+        "meta": {"tag": "a", "note": "x\ty"},
+        "links": [1, 2],
+        "optional": "present"
+      },
+      {
+        "id": "ns:sketch_entity#offset:1299062:skamp:3",
+        "kind": "line",
+        "meta": {"tag": "b"}
+      },
+      {
+        "id": "other:face#802",
+        "kind": "face",
+        "meta": {"tag": "c"}
+      },
+      {
+        "id": "other:coedge#802",
+        "kind": "coedge",
+        "meta": {"tag": "d"}
+      }
+    ],
+    "empty_arena": [],
+    "null_arena": null,
+    "object_arena": {"not": "array"}
+  },
+  "native": {
+    "creo": {
+      "arenas": {
+        "curve_parameters": [
+          {"id": "creo:curve#818", "type_byte": 8, "feature_id": 11372},
+          {"id": "creo:curve#825", "type_byte": 1, "feature_id": 11831}
+        ]
+      }
+    }
+  }
+}"#;
+
+// serde_json::Value pretty-print sorts object keys.
+const FIRST_SKETCH: &str = r#"{
+  "id": "ns:sketch_entity#offset:1299062:skamp:2",
+  "kind": "point",
+  "links": [
+    1,
+    2
+  ],
+  "meta": {
+    "note": "x\ty",
+    "tag": "a"
+  },
+  "optional": "present"
+}"#;
+
+#[test]
+fn item_hits_by_full_id_and_aliases_match_byte_for_byte() {
+    let dir = tempdir().unwrap();
+    let doc = write(dir.path(), "doc.json", ITEM_DOC);
+    let path = doc.to_str().unwrap();
+    let expected = format!("{FIRST_SKETCH}\n");
+
+    let full = cadmpeg()
+        .args([
+            "query",
+            "item",
+            path,
+            "model.sketch_entities",
+            "ns:sketch_entity#offset:1299062:skamp:2",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        full.status.success(),
+        "{}",
+        String::from_utf8_lossy(&full.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&full.stdout), expected);
+
+    let alias = cadmpeg()
+        .args([
+            "query",
+            "record",
+            path,
+            "model.sketch_entities",
+            "ns:sketch_entity#offset:1299062:skamp:2",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(alias.stdout, full.stdout);
+
+    let shorthand = cadmpeg()
+        .args([
+            "query",
+            "item",
+            path,
+            "sketch_entities",
+            "ns:sketch_entity#offset:1299062:skamp:2",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(shorthand.stdout, full.stdout);
+}
+
+#[test]
+fn item_suffix_hit_and_ambiguous_suffix_error() {
+    let dir = tempdir().unwrap();
+    let doc = write(dir.path(), "doc.json", ITEM_DOC);
+    let path = doc.to_str().unwrap();
+
+    cadmpeg()
+        .args([
+            "query",
+            "item",
+            path,
+            "model.sketch_entities",
+            "#offset:1299062:skamp:2",
+        ])
+        .assert()
+        .success()
+        .stdout(format!("{FIRST_SKETCH}\n"));
+
+    cadmpeg()
+        .args(["query", "item", path, "model.sketch_entities", "#802"])
+        .assert()
+        .code(2)
+        .stderr(
+            predicate::str::contains("ambiguous id suffix")
+                .and(predicate::str::contains("other:face#802"))
+                .and(predicate::str::contains("other:coedge#802")),
+        );
+}
+
+#[test]
+fn item_multi_id_preserves_request_order_and_partial_failure() {
+    let dir = tempdir().unwrap();
+    let doc = write(dir.path(), "doc.json", ITEM_DOC);
+    let path = doc.to_str().unwrap();
+
+    let out = cadmpeg()
+        .args([
+            "query",
+            "item",
+            path,
+            "model.sketch_entities",
+            "#offset:1299062:skamp:2",
+            "other:face#802",
+            "#offset:1299062:skamp:3",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let first = stdout.find("skamp:2").unwrap();
+    let second = stdout.find("face#802").unwrap();
+    let third = stdout.find("skamp:3").unwrap();
+    assert!(first < second && second < third);
+
+    let partial = cadmpeg()
+        .args([
+            "query",
+            "item",
+            path,
+            "model.sketch_entities",
+            "#offset:1299062:skamp:2",
+            "missing-id",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(partial.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&partial.stdout).contains("skamp:2"));
+    assert!(String::from_utf8_lossy(&partial.stderr).contains("missing-id"));
+}
+
+#[test]
+fn item_native_arena_hits_string_id() {
+    let dir = tempdir().unwrap();
+    let doc = write(dir.path(), "doc.json", ITEM_DOC);
+    cadmpeg()
+        .args([
+            "query",
+            "item",
+            doc.to_str().unwrap(),
+            "native.creo.curve_parameters",
+            "curve#818",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"id\": \"creo:curve#818\""));
+}
+
+#[test]
+fn item_json_envelope_uses_item_payload_key() {
+    let dir = tempdir().unwrap();
+    let doc = write(dir.path(), "doc.json", ITEM_DOC);
+    let output = cadmpeg()
+        .args([
+            "query",
+            "item",
+            "--json",
+            doc.to_str().unwrap(),
+            "model.sketch_entities",
+            "#offset:1299062:skamp:2",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["schema_version"], 5);
+    assert_eq!(value["command"], "query item");
+    assert_eq!(value["item"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        value["item"][0]["id"],
+        "ns:sketch_entity#offset:1299062:skamp:2"
+    );
+}
+
+#[test]
+fn item_miss_arena_rejects_absent_and_null() {
+    let dir = tempdir().unwrap();
+    let doc = write(dir.path(), "doc.json", ITEM_DOC);
+    let path = doc.to_str().unwrap();
+
+    for arena in ["model.no_such", "model.null_arena", "model.object_arena"] {
+        cadmpeg()
+            .args(["query", "item", path, arena])
+            .assert()
+            .code(2)
+            .stderr(
+                predicate::str::contains("unknown arena")
+                    .and(predicate::str::contains("model.sketch_entities"))
+                    .and(predicate::str::contains("native.creo.curve_parameters"))
+                    .and(predicate::str::contains("query counts")),
+            );
+    }
+}
+
+#[test]
+fn item_miss_id_lists_close_candidates() {
+    let dir = tempdir().unwrap();
+    let doc = write(dir.path(), "doc.json", ITEM_DOC);
+    cadmpeg()
+        .args([
+            "query",
+            "item",
+            doc.to_str().unwrap(),
+            "model.sketch_entities",
+            "skamp:99",
+        ])
+        .assert()
+        .code(2)
+        .stderr(
+            predicate::str::contains("no record in model.sketch_entities")
+                .and(predicate::str::contains("4 entries"))
+                .and(predicate::str::contains("skamp")),
+        );
+}
+
+#[test]
+fn item_rejects_report_and_sidecar() {
+    let dir = tempdir().unwrap();
+    let report = write(dir.path(), "report.json", VALIDATE_REPORT);
+    cadmpeg()
+        .args([
+            "query",
+            "item",
+            report.to_str().unwrap(),
+            "model.faces",
+            "f1",
+        ])
+        .assert()
+        .code(2)
+        .stderr(
+            predicate::str::contains("command report")
+                .and(predicate::str::contains("query findings"))
+                .and(predicate::str::contains("decode SOURCE")),
+        );
+
+    let sidecar = write(dir.path(), "model.fidelity.json", SIDECAR);
+    cadmpeg()
+        .args([
+            "query",
+            "item",
+            sidecar.to_str().unwrap(),
+            "model.faces",
+            "f1",
+        ])
+        .assert()
+        .code(2)
+        .stderr(
+            predicate::str::contains("fidelity.json")
+                .and(predicate::str::contains("decode SOURCE")),
+        );
+}
+
+#[test]
+fn item_no_id_and_head_modes() {
+    let dir = tempdir().unwrap();
+    let doc = write(dir.path(), "doc.json", ITEM_DOC);
+    let path = doc.to_str().unwrap();
+
+    cadmpeg()
+        .args(["query", "item", path, "model.sketch_entities"])
+        .assert()
+        .success()
+        .stdout(format!("{FIRST_SKETCH}\n"));
+
+    let head = cadmpeg()
+        .args([
+            "query",
+            "item",
+            path,
+            "model.sketch_entities",
+            "--head",
+            "2",
+        ])
+        .output()
+        .unwrap();
+    assert!(head.status.success());
+    let text = String::from_utf8_lossy(&head.stdout);
+    assert!(text.contains("skamp:2"));
+    assert!(text.contains("skamp:3"));
+    assert!(!text.contains("face#802"));
+    assert!(text.contains("\n\n"));
+
+    cadmpeg()
+        .args([
+            "query",
+            "item",
+            path,
+            "model.sketch_entities",
+            "--head",
+            "99",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("coedge#802"));
+
+    cadmpeg()
+        .args(["query", "item", path, "model.empty_arena"])
+        .assert()
+        .success()
+        .stdout("");
+}
+
+#[test]
+fn item_fields_projects_tsv_with_escapes_and_empty_path_teaching() {
+    let dir = tempdir().unwrap();
+    let doc = write(dir.path(), "doc.json", ITEM_DOC);
+    let path = doc.to_str().unwrap();
+
+    cadmpeg()
+        .args([
+            "query",
+            "item",
+            path,
+            "model.sketch_entities",
+            "--head",
+            "2",
+            "--fields",
+            "id,meta.tag,optional,links,meta.note",
+        ])
+        .assert()
+        .success()
+        .stdout(
+            "id\tmeta.tag\toptional\tlinks\tmeta.note\n\
+             ns:sketch_entity#offset:1299062:skamp:2\ta\tpresent\t[1,2]\tx\\ty\n\
+             ns:sketch_entity#offset:1299062:skamp:3\tb\t\t\t\n",
+        );
+
+    cadmpeg()
+        .args([
+            "query",
+            "item",
+            path,
+            "model.sketch_entities",
+            "--head",
+            "2",
+            "--fields",
+            "id,missing.path",
+        ])
+        .assert()
+        .code(2)
+        .stdout(predicate::str::starts_with("id\tmissing.path\n"))
+        .stderr(
+            predicate::str::contains("missing.path")
+                .and(predicate::str::contains("empty in every projected row")),
+        );
+
+    cadmpeg()
+        .args([
+            "query",
+            "item",
+            path,
+            "native.creo.curve_parameters",
+            "curve#818",
+            "--fields",
+            "id,type_byte",
+        ])
+        .assert()
+        .success()
+        .stdout("id\ttype_byte\ncreo:curve#818\t8\n");
+
+    cadmpeg()
+        .args([
+            "query",
+            "item",
+            path,
+            "model.sketch_entities",
+            "--json",
+            "--fields",
+            "id",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
+fn item_reads_stdin_with_dash() {
+    cadmpeg()
+        .args(["query", "item", "-", "model.sketch_entities", "face#802"])
+        .write_stdin(ITEM_DOC)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("other:face#802"));
+}
+
+#[test]
+fn item_round_trips_counts_dotted_name_on_unit_cube() {
+    let dir = tempdir().unwrap();
+    let ir = unit_cube();
+    let model = dir.path().join("cube.cadir.json");
+    fs::write(&model, ir.to_canonical_json().unwrap()).unwrap();
+
+    let counts = cadmpeg()
+        .args(["query", "counts", "--json", model.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(counts.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&counts.stdout).unwrap();
+    let counts_map = value["counts"].as_object().unwrap();
+    assert!(counts_map.contains_key("model.faces"));
+    assert!(counts_map["model.faces"].as_u64().unwrap() > 0);
+
+    let face_id = ir.model.faces[0].id.to_string();
+    cadmpeg()
+        .args([
+            "query",
+            "item",
+            model.to_str().unwrap(),
+            "model.faces",
+            &face_id,
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(&face_id));
+}

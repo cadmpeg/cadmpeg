@@ -53,7 +53,7 @@ cadmpeg-codec-step = { path = "crates/cadmpeg-codec-step", version = "0.4.0" }
 cadmpeg-codec-sat = { path = "crates/cadmpeg-codec-sat", version = "0.4.0" }
 
 serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["float_roundtrip"] }
+serde_json = { version = "1", features = ["float_roundtrip", "raw_value"] }
 serde-value = "0.7"
 schemars = "1.2"
 thiserror = "2"

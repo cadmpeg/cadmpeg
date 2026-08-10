@@ -232,7 +232,8 @@ exit status 1 count the same `error` and `blocking` findings.
 
 `query` projects one named view from a JSON artifact without `jq`: it reads a
 command report, a decoded CADIR document, or a `.decode.json` sidecar, detects
-which one it was given, and prints tab-separated rows with a header.
+which one it was given, and prints the view. Aggregate views print
+tab-separated rows with a header; `item` prints pretty-printed JSON records.
 
 ```sh
 cadmpeg validate bracket.f3d -o report.json
@@ -240,16 +241,23 @@ cadmpeg query findings report.json     # severity  check  entity  message
 cadmpeg query losses report.json       # severity  code   message
 cadmpeg query coverage report.json     # decode coverage counts
 cadmpeg query counts bracket.cadir.json  # per-arena entity counts; alias: arenas
+cadmpeg query item bracket.cadir.json model.faces FACE_ID  # one record; alias: record
 cadmpeg query summary report.json      # artifact kind and section counts
 ```
 
 `counts` on a CADIR document lists arena lengths for `model` and every
 `native.<codec>` namespace; on a validate report it lists `entity_counts`.
-An empty or not-run section is not an error: the header prints, a note goes
-to standard error, and the exit status stays `0`. A view the artifact kind
-can never carry exits `2` and names the command that produces the right
-artifact. `--json` wraps the projection in the versioned envelope, and `-`
-reads standard input.
+`item` uses the same dotted arena names as `query counts --json`
+(`model.<arena>` or `native.<codec>.<arena>`; a bare name means
+`model.<arena>`). It matches the JSON-string `id` field exactly or as a unique
+suffix, accepts several IDs in one call, and with no ID prints the first
+record (`--head N` for the first N). Follow `links` and run `item` again to
+join. `--fields a,b.c` projects those paths as TSV (projection only — no
+`--where`). An empty or not-run section is not an error: the header prints, a
+note goes to standard error, and the exit status stays `0`. A view the
+artifact kind can never carry exits `2` and names the command that produces
+the right artifact. `--json` wraps the projection in the versioned envelope,
+and `-` reads standard input.
 
 ## Exit status
 

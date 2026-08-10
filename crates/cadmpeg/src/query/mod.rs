@@ -4,9 +4,12 @@
 //! `cadmpeg query` reads one of the three JSON artifact kinds the CLI
 //! produces — a decoded CADIR document, a versioned command report, or a
 //! `.decode.json` sidecar — detects which one it was given, and prints one
-//! named view as tab-separated rows. It replaces ad-hoc `jq` path
-//! exploration: the view names are stable and each view's help states which
-//! artifact kinds it accepts.
+//! named view. Aggregate views print tab-separated rows; `item` prints
+//! pretty-printed JSON records (or a TSV projection with `--fields`). It
+//! replaces ad-hoc `jq` path exploration: the view names are stable and each
+//! view's help states which artifact kinds it accepts.
+
+mod item;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -19,6 +22,8 @@ use serde::de::{IgnoredAny, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 
 use crate::commands::CLI_SCHEMA_VERSION;
+
+pub use item::ItemArgs;
 
 /// One named projection over a cadmpeg JSON artifact.
 #[derive(Debug, Subcommand)]
@@ -39,6 +44,19 @@ pub enum QueryView {
     /// (`entity_counts`).
     #[command(visible_alias = "arenas")]
     Counts(QueryArgs),
+    /// One or more arena records by ID (CADIR documents only).
+    ///
+    /// Arena names are the dotted keys from `query counts --json`
+    /// (`model.<arena>` or `native.<codec>.<arena>`; a bare name means
+    /// `model.<arena>`). IDs match exactly, or as a unique suffix of the
+    /// JSON-string `id` field. With no IDs, prints the first record;
+    /// `--head N` prints the first N. Default output is pretty-printed JSON
+    /// (blank-line separated), not TSV — nested records do not fit the other
+    /// views' table convention. `--fields a,b.c` projects those paths as TSV
+    /// (null/absent → empty cell; arrays/objects → compact JSON; tab/newline
+    /// in strings → `\t`/`\n`). Alias: `record` (also `get`).
+    #[command(visible_alias = "record", alias = "get")]
+    Item(ItemArgs),
 }
 
 /// Input selection and output format for one query view.
@@ -59,6 +77,7 @@ impl QueryView {
             | Self::Findings(args)
             | Self::Losses(args)
             | Self::Counts(args) => args,
+            Self::Item(_) => unreachable!("item uses ItemArgs"),
         }
     }
 }
@@ -242,6 +261,9 @@ impl<'de> Deserialize<'de> for ArenaLen {
 
 /// Runs one query view against one artifact file.
 pub fn run(view: &QueryView) -> Result<()> {
+    if let QueryView::Item(args) = view {
+        return item::run(args);
+    }
     let args = view.args();
     let bytes = read_input(&args.file)?;
     let artifact = detect(&bytes, &args.file)?;
@@ -254,6 +276,7 @@ pub fn run(view: &QueryView) -> Result<()> {
         QueryView::Findings(args) => findings(&artifact, args),
         QueryView::Losses(args) => losses(&artifact, args),
         QueryView::Counts(args) => counts(&artifact, args),
+        QueryView::Item(_) => unreachable!("handled above"),
     }
 }
 
