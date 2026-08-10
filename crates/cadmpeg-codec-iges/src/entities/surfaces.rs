@@ -7,7 +7,7 @@ use crate::global::Global;
 use crate::parameter::ParameterRecord;
 use cadmpeg_ir::geometry::{
     derive_reference_direction, Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralSurface,
-    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    ProceduralSurfaceDefinition, SplineSurfaceParameters, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -485,9 +485,14 @@ pub(super) fn project(
                 second: CurveId(format!("iges:model:curve#D{second_sequence}")),
             },
             cache_fit_tolerance: None,
-            record_bounds: None,
+            record_bounds: Some([
+                Some(first_interval[0]),
+                Some(first_interval[1]),
+                Some(second_interval[0]),
+                Some(second_interval[1]),
+            ]),
         });
-        let _ = (first_interval, second_interval, developable_flag);
+        let _ = developable_flag;
         decoded.insert(entry.sequence);
     }
 
@@ -595,7 +600,7 @@ pub(super) fn project(
                 revision_form: None,
             },
             cache_fit_tolerance: None,
-            record_bounds: None,
+            record_bounds: Some([Some(interval[0]), Some(interval[1]), None, None]),
         });
         decoded.insert(entry.sequence);
     }
@@ -803,7 +808,12 @@ pub(super) fn project(
                     revision_form: None,
                 },
                 cache_fit_tolerance: None,
-                record_bounds: None,
+                record_bounds: Some([
+                    Some(parameter_interval[0]),
+                    Some(parameter_interval[1]),
+                    None,
+                    None,
+                ]),
             });
         }
         decoded.insert(entry.sequence);
@@ -969,24 +979,50 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "surface parameter ranges are missing"));
             continue;
         };
-        let range_is_bounded = |[u_start, u_end, v_start, v_end]: [f64; 4]| {
-            u_start <= u_end
-                && v_start <= v_end
-                && u_start >= u_knots[u_degree_usize]
-                && u_end <= u_knots[u_count]
-                && v_start >= v_knots[v_degree_usize]
-                && v_end <= v_knots[v_count]
-        };
-        let standard_ranges = [ranges[0], ranges[1], ranges[2], ranges[3]];
-        // Keep a bounded compatibility path for producers that place V0 before U1.
-        let alternate_ranges = [ranges[0], ranges[2], ranges[1], ranges[3]];
-        if !range_is_bounded(standard_ranges) && !range_is_bounded(alternate_ranges) {
+        let precision = global.real_precision();
+        let clamp_range =
+            |start_index: usize, values: [f64; 2], domain: [f64; 2]| -> Option<[f64; 2]> {
+                let mut clamped = values;
+                for (offset, bound) in clamped.iter_mut().enumerate() {
+                    let uncertainty =
+                        record.number_uncertainty(start_index + offset, *bound, precision);
+                    if *bound < domain[0]
+                        && super::geometry::DeclaredInterval::around(*bound, uncertainty)
+                            .contains(domain[0])
+                    {
+                        *bound = domain[0];
+                    } else if *bound > domain[1]
+                        && super::geometry::DeclaredInterval::around(*bound, uncertainty)
+                            .contains(domain[1])
+                    {
+                        *bound = domain[1];
+                    }
+                }
+                (clamped[0] < clamped[1] && clamped[0] >= domain[0] && clamped[1] <= domain[1])
+                    .then_some(clamped)
+            };
+        let Some(u_range) = clamp_range(
+            range_start,
+            [ranges[0], ranges[1]],
+            [u_knots[u_degree_usize], u_knots[u_count]],
+        ) else {
             losses.push(entity_loss(
                 entry,
-                "surface parameter ranges lie outside their knot domains",
+                "u parameter range is empty or lies outside its knot domain",
             ));
             continue;
-        }
+        };
+        let Some(v_range) = clamp_range(
+            range_start + 2,
+            [ranges[2], ranges[3]],
+            [v_knots[v_degree_usize], v_knots[v_count]],
+        ) else {
+            losses.push(entity_loss(
+                entry,
+                "v parameter range is empty or lies outside its knot domain",
+            ));
+            continue;
+        };
         let transform = match resolve_transform(
             entry.transform,
             &entries,
@@ -1016,8 +1052,9 @@ pub(super) fn project(
                 }
             }
         }
+        let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
         ir.model.surfaces.push(Surface {
-            id: SurfaceId(format!("iges:model:surface#D{}", entry.sequence)),
+            id: surface_id.clone(),
             geometry: SurfaceGeometry::Nurbs(NurbsSurface {
                 u_degree,
                 v_degree,
@@ -1031,6 +1068,24 @@ pub(super) fn project(
                 v_periodic: flags[4] == Some(1),
             }),
             source_object: Some(source_object(entry)),
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
+            surface: surface_id,
+            definition: ProceduralSurfaceDefinition::Exact {
+                parameters: SplineSurfaceParameters::OrderedRanges {
+                    ranges: [u_range, v_range],
+                },
+                extension: 0,
+                revision_form: None,
+            },
+            cache_fit_tolerance: None,
+            record_bounds: Some([
+                Some(u_range[0]),
+                Some(u_range[1]),
+                Some(v_range[0]),
+                Some(v_range[1]),
+            ]),
         });
         decoded.insert(entry.sequence);
     }

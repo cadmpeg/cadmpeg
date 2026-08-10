@@ -105,6 +105,12 @@
             ]
           },
           "id": "iges:model:procedural-surface#D3",
+          "record_bounds": [
+            0.0,
+            1.0,
+            null,
+            null
+          ],
           "surface": "iges:model:surface#D3"
         }
       ],

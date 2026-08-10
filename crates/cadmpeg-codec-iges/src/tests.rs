@@ -5849,6 +5849,18 @@ fn alternate_asymmetric_parameter_domain_surface_file() -> Vec<u8> {
     }])
 }
 
+fn subrange_nurbs_surface_file() -> Vec<u8> {
+    owned_test_file(&[OwnedTestEntity {
+        entity_type: 128,
+        form: 0,
+        label: "SURFACE".into(),
+        status: "00010000",
+        parameters:
+            "128,1,1,1,1,0,0,1,0,0,0,0,1,1,-2,-2,2,2,1,1,1,1,0,0,0,0,1,0,0,1,0,1,0,1,0.2,0.8,-1,1;"
+                .into(),
+    }])
+}
+
 #[test]
 fn decode_classifies_explicit_outer_and_inner_trimmed_surface_loops() {
     let result = IgesCodec
@@ -5937,19 +5949,56 @@ fn decode_accepts_asymmetric_nurbs_surface_parameter_domains() {
 }
 
 #[test]
-fn decode_accepts_bounded_alternate_nurbs_surface_parameter_domains() {
+fn decode_rejects_permuted_nurbs_surface_parameter_domains() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(alternate_asymmetric_parameter_domain_surface_file()),
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(result.ir.model.surfaces.len(), 1);
+    assert!(result.ir.model.surfaces.is_empty());
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("u parameter range")));
+}
+
+#[test]
+fn decode_retains_nurbs_surface_parameter_subranges() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(subrange_nurbs_surface_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let procedural = result
+        .ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|surface| surface.surface.0 == "iges:model:surface#D1")
+        .expect("Type 128 parameter-domain record");
+    assert_eq!(
+        procedural.record_bounds,
+        Some([Some(0.2), Some(0.8), Some(-1.0), Some(1.0)])
+    );
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Exact {
+        parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges { ranges },
+        ..
+    } = &procedural.definition
+    else {
+        panic!("expected exact Type 128 construction")
+    };
+    assert_eq!(*ranges, [[0.2, 0.8], [-1.0, 1.0]]);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
         result.report.losses
     );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]

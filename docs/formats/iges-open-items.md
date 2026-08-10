@@ -120,18 +120,6 @@ from a conformant file.
 
 ## 5. Surfaces and topology
 
-### TP-03. Declared surface parameter subranges are discarded with no loss
-
-**Question.** What does a declared parameter subrange on a surface entity mean?
-
-**Known.** `surfaces.rs:492` discards the Type 118 rail intervals with `let _ = (first_interval, second_interval, developable_flag);`. `surfaces.rs:979-996` validates the Type 128 `U(0), U(1), V(0), V(1)` and then never uses them. The Type 122 directrix interval survives only in the procedural record (`:598`) while the surface at `:576-591` spans the full basis, and the Type 120 generatrix interval is dropped at `:749`. The emitted `NurbsSurface` carries knot vectors only and the IR type has no domain field.
-
-**Note.** The Type 126 projector explicitly admits a proper subrange (`geometry.rs:725-733`), so the codec is not consistent about whether a declared subrange is data.
-
-**Note.** `surfaces.rs:983` holds an undocumented producer-compatibility path that accepts a permuted range order (`alternate_ranges`). Because the values are then discarded, the guard can only refuse: a Type 128 whose `U(0)` sits one ulp below `u_knots[u_degree]` loses the complete surface.
-
-**Need.** A Type 122 whose directrix declares `V(0)=0.2, V(1)=0.8` inside a `[0,1]` domain gives a sheet 66 percent longer than the file declares, silently. We need the retention rule for a declared subrange, and a loss when it is dropped.
-
 ### TP-04. The Type 140 offset sign uses a per-kind representative normal
 
 **Question.** At which location is the Type 140 offset indicator compared with the surface normal?

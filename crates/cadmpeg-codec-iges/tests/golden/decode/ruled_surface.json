@@ -141,6 +141,12 @@
             "second": "iges:model:curve#D3"
           },
           "id": "iges:model:procedural-surface#D5",
+          "record_bounds": [
+            0.0,
+            1.0,
+            0.0,
+            1.0
+          ],
           "surface": "iges:model:surface#D5"
         }
       ],

@@ -40,7 +40,35 @@
       "presentation_documents": [],
       "presentation_layers": [],
       "procedural_curves": [],
-      "procedural_surfaces": [],
+      "procedural_surfaces": [
+        {
+          "definition": {
+            "extension": 0,
+            "kind": "exact",
+            "parameters": {
+              "kind": "ordered_ranges",
+              "ranges": [
+                [
+                  0.0,
+                  1.0
+                ],
+                [
+                  0.0,
+                  1.0
+                ]
+              ]
+            }
+          },
+          "id": "iges:model:procedural-surface#D1",
+          "record_bounds": [
+            0.0,
+            1.0,
+            0.0,
+            1.0
+          ],
+          "surface": "iges:model:surface#D1"
+        }
+      ],
       "product_definitions": [],
       "regions": [
         {
