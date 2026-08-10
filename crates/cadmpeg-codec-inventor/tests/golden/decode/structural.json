@@ -85,7 +85,10 @@
           "pm_app_default_styles": [],
           "pm_app_rendering_styles": [],
           "pm_dc_directions": [],
+          "pm_dc_entity_style_links": [],
           "pm_dc_expressions": [],
+          "pm_dc_feature_labels": [],
+          "pm_dc_feature_properties": [],
           "pm_dc_feature_terminators": [],
           "pm_dc_features": [],
           "pm_dc_parameters": [],
@@ -162,7 +165,7 @@
           "vertex_ownerships": [],
           "wire_topologies": []
         },
-        "version": 21
+        "version": 22
       }
     },
     "source": {
@@ -202,7 +205,10 @@
       "pm_app_default_styles": 0,
       "pm_app_rendering_styles": 0,
       "pm_dc_directions": 0,
+      "pm_dc_entity_style_links": 0,
       "pm_dc_expressions": 0,
+      "pm_dc_feature_labels": 0,
+      "pm_dc_feature_properties": 0,
       "pm_dc_feature_terminators": 0,
       "pm_dc_features": 0,
       "pm_dc_parameters": 0,

@@ -251,6 +251,83 @@ source = "spec"
 anchor = "followed by `state:i32`"
 
 [[record]]
+name = "pm_dc_feature_enumeration"
+kind = "byte"
+section = "13"
+anchor = "enumeration records add"
+size = 26
+
+[[record.field]]
+name = "content_header"
+offset = 0
+type = "bytes[22]"
+source = "spec"
+anchor = "same 22-byte content header"
+
+[[record.field]]
+name = "type_value"
+offset = 22
+type = "i16"
+source = "spec"
+anchor = "type_value:i16"
+
+[[record.field]]
+name = "value"
+offset = 24
+type = "u16"
+source = "spec"
+anchor = "value:u16"
+
+[[record]]
+name = "pm_dc_linked_element_header"
+kind = "byte"
+section = "13"
+anchor = "starts with this 26-byte linked-element header"
+size = 26
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id u16"
+
+[[record.field]]
+name = "values"
+offset = 6
+type = "u32[2]"
+source = "spec"
+anchor = "values u32[2]"
+
+[[record.field]]
+name = "owner_reference"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "owner_reference u32"
+
+[[record.field]]
+name = "parent_reference"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "parent_reference u32"
+
+[[record.field]]
+name = "next_reference"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "next_reference u32"
+
+[[record]]
 name = "pm_dc_parameter_prefix"
 kind = "byte"
 section = "11"

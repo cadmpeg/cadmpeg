@@ -1262,6 +1262,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     namespace.set_arena("sketch_record_issues", &sketch_inventory.issues)?;
     namespace.set_arena("pm_dc_features", &feature_inventory.features)?;
     namespace.set_arena("pm_dc_feature_terminators", &feature_inventory.terminators)?;
+    namespace.set_arena("pm_dc_feature_properties", &feature_inventory.properties)?;
+    namespace.set_arena("pm_dc_feature_labels", &feature_inventory.labels)?;
+    namespace.set_arena(
+        "pm_dc_entity_style_links",
+        &feature_inventory.entity_style_links,
+    )?;
     namespace.set_arena("feature_record_issues", &feature_inventory.issues)?;
     namespace.set_arena("segment_pairs", &segment_pairs)?;
     namespace.set_arena("segment_meta", &segment_meta)?;
@@ -1761,6 +1767,18 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 (
                     "pm_dc_feature_terminators".into(),
                     feature_inventory.terminators.len(),
+                ),
+                (
+                    "pm_dc_feature_properties".into(),
+                    feature_inventory.properties.len(),
+                ),
+                (
+                    "pm_dc_feature_labels".into(),
+                    feature_inventory.labels.len(),
+                ),
+                (
+                    "pm_dc_entity_style_links".into(),
+                    feature_inventory.entity_style_links.len(),
                 ),
                 (
                     "feature_record_issues".into(),

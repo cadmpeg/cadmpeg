@@ -277,6 +277,33 @@ For segment major versions 15 through 22, PmDc type `914d8790d011f8d10008cabc066
 
 PmDc type `24fd418fd211ac6e00082aab32a3dc09` stores an end-of-features record. Its 26-byte payload contains the 22-byte content header followed by `state:i32`.
 
+Feature property records use the same 22-byte content header. The following enumeration records add `type_value:i16` and `value:u16` and then end:
+
+- `28be9a72d111440900084eba32a3dc09`: part operation;
+- `297d6392d1113cb9000831bd0663dc09`: extent;
+- `117ccd43d2119658a00021803603c8c9`: hole form;
+- `2788f278c54dd7be4313b3986039b52e`: fillet form;
+- `7339fdce7a4e4011bee343897908ba92`: auxiliary feature enumeration.
+
+Type `284d8790d011f8d10008cabc0663dc09` adds a counted UTF-16LE name, `name_value:u32`, and a Boolean byte. The Boolean byte is 0 or 1. Types `91739422d11107cf000835bd0663dc09`, `71f23ed8d2115094a00049803603c8c9`, `ae70680ed14a1e86d76248b03c2a96e1`, and `dae9481bd211dc2c00083eab1b14dc09` add one type-2 reference list. They identify a boundary patch, feature dimensions, an object collection, and constant-radius fillet edge sets respectively.
+
+Type `dfd51dbbd1116e72000817bd0663dc09` adds a counted UTF-16LE name and three u32 values: the name value, nominal value, and model value. Type `474d8790d011f8d10008cabc0663dc09` adds one body reference. Type `3b2477a4d1118f96000826bd0663dc09` adds an entity-link reference and one u8 value. Type `2c9256724d4d6d709427fd964d84df16` adds transform, point, and value references.
+
+A feature label record with type `2ba4482bd2115864600074b79b49ebb0` starts with this 26-byte linked-element header:
+
+```text
+header_value u32
+header_id u16
+values u32[2]
+owner_reference u32
+parent_reference u32
+next_reference u32
+```
+
+The header is followed by `index:u32`, a type-2 participant-reference list, a counted UTF-16LE label, and a 16-byte class identifier. The owner reference identifies the labeled record. Each participant is a one-based record reference in the same PmDc segment. Other records with the same type identifier use different payload forms and do not satisfy the label grammar.
+
+Type `154d8790d011f8d10008cabc0663dc09` is an entity-style link and also starts with the linked-element header. It then stores `value:u32`, `associative_id:u32`, and `entity_type:u32`. A profile-selection record selects an entity-style link through its entity-link reference.
+
 ## 14. Document kind
 
 `Pm*` segment families identify a part document. `Am*` segment families identify an assembly document. A document that contains both families has the distinct `mixed_part_assembly` kind. Property metadata can identify a part, assembly, drawing, or presentation only when segment-family evidence does not already identify the kind.

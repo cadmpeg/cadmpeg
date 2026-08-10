@@ -9,7 +9,10 @@ use cadmpeg_ir::{CadIr, Check, Finding, NativeUnknownRecord, Severity};
 use crate::design::{
     DesignRecordIssue, PmDcExpression, PmDcExpressionKind, PmDcParameter, PmDcUnit, PmDcUnitKind,
 };
-use crate::feature::{FeatureRecordIssue, PmDcFeature, PmDcFeatureTerminator};
+use crate::feature::{
+    FeatureRecordIssue, PmDcEntityStyleLink, PmDcFeature, PmDcFeatureLabel, PmDcFeatureProperty,
+    PmDcFeaturePropertyKind, PmDcFeatureTerminator,
+};
 use crate::sketch::{
     PmDcDirection, PmDcSketch, PmDcSketchConstraint, PmDcSketchConstraintKind, PmDcSketchEntity,
     PmDcSketchEntityKind, PmDcTransform, SketchRecordIssue,
@@ -54,8 +57,11 @@ const ARENAS: &[&str] = &[
     "pm_app_default_styles",
     "pm_app_rendering_styles",
     "pm_dc_expressions",
+    "pm_dc_feature_labels",
+    "pm_dc_feature_properties",
     "pm_dc_feature_terminators",
     "pm_dc_features",
+    "pm_dc_entity_style_links",
     "pm_dc_parameters",
     "pm_dc_directions",
     "pm_dc_sketch_entities",
@@ -686,6 +692,20 @@ fn validate_features(data: &NativeData, findings: &mut Vec<Finding>) {
             .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
         "Inventor PmDc feature terminator",
     );
+    unique(
+        findings,
+        data.pm_dc_feature_properties
+            .iter()
+            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        "Inventor PmDc feature property",
+    );
+    unique(
+        findings,
+        data.pm_dc_feature_labels
+            .iter()
+            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        "Inventor PmDc feature label",
+    );
     for feature in &data.pm_dc_features {
         let references = [feature.header.next.index, feature.header.context.index]
             .into_iter()
@@ -706,6 +726,86 @@ fn validate_features(data: &NativeData, findings: &mut Vec<Finding>) {
                 Check::NativeLinks,
                 "Inventor PmDc feature record or reference does not resolve".into(),
                 Some(feature.id.clone()),
+            ));
+        }
+    }
+    for property in &data.pm_dc_feature_properties {
+        let mut references = vec![property.header.next.index, property.header.context.index];
+        match &property.kind {
+            PmDcFeaturePropertyKind::References { items, .. } => {
+                references.extend(items.references.iter().map(|reference| reference.index));
+            }
+            PmDcFeaturePropertyKind::SurfaceBody { body } => references.push(body.index),
+            PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } => {
+                references.push(entity_link.index);
+            }
+            PmDcFeaturePropertyKind::Placement {
+                transform,
+                point,
+                value,
+            } => references.extend([transform.index, point.index, value.index]),
+            PmDcFeaturePropertyKind::Enumeration { .. }
+            | PmDcFeaturePropertyKind::Boolean { .. }
+            | PmDcFeaturePropertyKind::RdxVariable { .. } => {}
+        }
+        if raw.get(&(property.segment_token.as_str(), property.record_ordinal))
+            != Some(&property.type_id.as_str())
+            || references
+                .into_iter()
+                .any(|reference| !resolves(&property.segment_token, reference))
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc feature-property record or reference does not resolve".into(),
+                Some(property.id.clone()),
+            ));
+        }
+    }
+    for link in &data.pm_dc_entity_style_links {
+        let references = [
+            link.header.owner.index,
+            link.header.parent.index,
+            link.header.next.index,
+        ];
+        if raw.get(&(link.segment_token.as_str(), link.record_ordinal))
+            != Some(&link.type_id.as_str())
+            || references
+                .into_iter()
+                .any(|reference| !resolves(&link.segment_token, reference))
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc entity-style-link record or reference does not resolve".into(),
+                Some(link.id.clone()),
+            ));
+        }
+    }
+    for label in &data.pm_dc_feature_labels {
+        let references = [
+            label.header.owner.index,
+            label.header.parent.index,
+            label.header.next.index,
+        ]
+        .into_iter()
+        .chain(
+            label
+                .participants
+                .references
+                .iter()
+                .map(|reference| reference.index),
+        );
+        if raw.get(&(label.segment_token.as_str(), label.record_ordinal))
+            != Some(&label.type_id.as_str())
+            || label.name.is_empty()
+            || label.class_id.len() != 32
+            || references
+                .into_iter()
+                .any(|reference| !resolves(&label.segment_token, reference))
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc feature-label record or reference does not resolve".into(),
+                Some(label.id.clone()),
             ));
         }
     }
@@ -1104,6 +1204,9 @@ struct NativeData {
     sketch_record_issues: Vec<SketchRecordIssue>,
     pm_dc_features: Vec<PmDcFeature>,
     pm_dc_feature_terminators: Vec<PmDcFeatureTerminator>,
+    pm_dc_feature_properties: Vec<PmDcFeatureProperty>,
+    pm_dc_feature_labels: Vec<PmDcFeatureLabel>,
+    pm_dc_entity_style_links: Vec<PmDcEntityStyleLink>,
     feature_record_issues: Vec<FeatureRecordIssue>,
     active_carrier: Vec<ActiveCarrierRecord>,
     unknowns: Vec<NativeUnknownRecord>,
@@ -1165,6 +1268,9 @@ impl NativeData {
             sketch_record_issues: namespace.arena_as("sketch_record_issues")?,
             pm_dc_features: namespace.arena_as("pm_dc_features")?,
             pm_dc_feature_terminators: namespace.arena_as("pm_dc_feature_terminators")?,
+            pm_dc_feature_properties: namespace.arena_as("pm_dc_feature_properties")?,
+            pm_dc_feature_labels: namespace.arena_as("pm_dc_feature_labels")?,
+            pm_dc_entity_style_links: namespace.arena_as("pm_dc_entity_style_links")?,
             feature_record_issues: namespace.arena_as("feature_record_issues")?,
             active_carrier: namespace.arena_as("active_carrier")?,
             unknowns: namespace.arena_as("unknowns")?,

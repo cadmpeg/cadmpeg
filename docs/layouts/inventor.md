@@ -98,6 +98,29 @@ Spec §13 · layout: byte offsets · size: 26 B
 | 0 | 22 | `content_header` | `bytes[22]` | little | spec | the 22-byte content header |
 | 22 | 4 | `state` | `i32` | little | spec | followed by `state:i32` |
 
+## `pm_dc_feature_enumeration`
+
+Spec §13 · layout: byte offsets · size: 26 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 22 | `content_header` | `bytes[22]` | little | spec | same 22-byte content header |
+| 22 | 2 | `type_value` | `i16` | little | spec | type_value:i16 |
+| 24 | 2 | `value` | `u16` | little | spec | value:u16 |
+
+## `pm_dc_linked_element_header`
+
+Spec §13 · layout: byte offsets · size: 26 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | header_value u32 |
+| 4 | 2 | `header_id` | `u16` | little | spec | header_id u16 |
+| 6 | 8 | `values` | `u32[2]` | little | spec | values u32[2] |
+| 14 | 4 | `owner_reference` | `u32` | little | spec | owner_reference u32 |
+| 18 | 4 | `parent_reference` | `u32` | little | spec | parent_reference u32 |
+| 22 | 4 | `next_reference` | `u32` | little | spec | next_reference u32 |
+
 ## `pm_dc_parameter_prefix`
 
 Spec §11 · layout: byte offsets · size: 26 B

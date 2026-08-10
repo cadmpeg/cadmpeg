@@ -850,25 +850,6 @@ struct ReferenceArray {
 }
 
 impl Cursor<'_> {
-    fn utf16(&mut self, ctx: &DecodeContext<'_>, field: &str) -> Result<String, CodecError> {
-        let units = self.u32(&format!("{field} length"))? as usize;
-        if units > 1_048_576 {
-            return Err(CodecError::Malformed(format!(
-                "Inventor PmDc {field} exceeds 1048576 code units"
-            )));
-        }
-        let len = units.checked_mul(2).ok_or_else(|| {
-            CodecError::Malformed(format!("Inventor PmDc {field} length overflows"))
-        })?;
-        ctx.charge_retained(len as u64, "retain Inventor PmDc string", None)?;
-        let value = self
-            .take(len, field)?
-            .chunks_exact(2)
-            .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-            .collect::<Vec<_>>();
-        String::from_utf16(&value)
-            .map_err(|_| CodecError::Malformed(format!("Inventor PmDc {field} is not UTF-16")))
-    }
     fn reference_array(
         &mut self,
         ctx: &DecodeContext<'_>,
