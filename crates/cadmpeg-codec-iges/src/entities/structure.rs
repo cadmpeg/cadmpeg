@@ -206,22 +206,6 @@ fn unit_value_valid(unit_type: &[u8], value: &[u8]) -> bool {
     }
 }
 
-fn number_or(record: &ParameterRecord, index: usize, default: f64) -> Option<f64> {
-    match record.tokens.get(index).map(|token| &token.value) {
-        None | Some(TokenValue::Omitted) => Some(default),
-        Some(TokenValue::Integer(_) | TokenValue::Real(_)) => record.number(index),
-        Some(TokenValue::String(_)) => None,
-    }
-}
-
-fn integer_or(record: &ParameterRecord, index: usize, default: i64) -> Option<i64> {
-    match record.tokens.get(index).map(|token| &token.value) {
-        None | Some(TokenValue::Omitted) => Some(default),
-        Some(TokenValue::Integer(value)) => Some(*value),
-        Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
-    }
-}
-
 fn entity_parameter_end(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
@@ -496,11 +480,14 @@ fn property_fields_valid(
                 exact(i64::try_from(12 + count * 3).unwrap_or_default())
                     && integer_range(2, 0..=2)
                     && integer_range(3, 0..=4)
-                    && integer_or(record, 4, 1)
+                    && record
+                        .integer_or(4, 1)
                         .is_some_and(|value| matches!(value, 1 | 1001..=1003))
                     && record.string(5).is_some()
                     && integer_range(6, 0..=1)
-                    && number_or(record, 7, std::f64::consts::FRAC_PI_2).is_some_and(f64::is_finite)
+                    && record
+                        .number_or(7, std::f64::consts::FRAC_PI_2)
+                        .is_some_and(f64::is_finite)
                     && integer_range(8, 0..=1)
                     && integer_range(9, 0..=2)
                     && integer_range(10, 0..=2)
@@ -1150,7 +1137,7 @@ pub(super) fn project(
                     });
                     cursor += 1;
                     if entry.form == 2 {
-                        attributes_valid &= integer_or(record, cursor, 0).is_some_and(|value| {
+                        attributes_valid &= record.integer_or(cursor, 0).is_some_and(|value| {
                             value == 0
                                 || u32::try_from(value).ok().is_some_and(|sequence| {
                                     entries
@@ -1480,8 +1467,9 @@ pub(super) fn project(
         )
         .is_ok();
         let fields_valid = if entry.entity_type == 412 {
-            let scale_valid =
-                number_or(record, 2, 1.0).is_some_and(|value| value.is_finite() && value > 0.0);
+            let scale_valid = record
+                .number_or(2, 1.0)
+                .is_some_and(|value| value.is_finite() && value > 0.0);
             let coordinates_valid =
                 (3..=5).all(|index| record.number(index).is_some_and(f64::is_finite));
             let columns = record
@@ -1532,7 +1520,7 @@ pub(super) fn project(
         };
         let position_valid = (1..=3).all(|index| record.number(index).is_some_and(f64::is_finite));
         let optional_pointer_valid = |index: usize, entity_type: Option<i64>| {
-            integer_or(record, index, 0).is_some_and(|value| {
+            record.integer_or(index, 0).is_some_and(|value| {
                 value == 0
                     || u32::try_from(value).ok().is_some_and(|sequence| {
                         sequence % 2 == 1
@@ -1542,16 +1530,21 @@ pub(super) fn project(
                     })
             })
         };
-        let type_flag_valid = integer_or(record, 5, 0)
+        let type_flag_valid = record
+            .integer_or(5, 0)
             .is_some_and(|value| matches!(value, 0..=2 | 101..=104 | 201..=203 | 5001..=9999));
-        let function_flag_valid =
-            integer_or(record, 6, 0).is_some_and(|value| matches!(value, 0..=2));
+        let function_flag_valid = record
+            .integer_or(6, 0)
+            .is_some_and(|value| matches!(value, 0..=2));
         let strings_valid = record.string(7).is_some() && record.string(9).is_some();
         let identifier_valid = record.integer(11).is_some();
-        let function_code_valid = integer_or(record, 12, 0)
+        let function_code_valid = record
+            .integer_or(12, 0)
             .is_some_and(|value| matches!(value, 0..=49 | 98..=99 | 5001..=9999));
-        let swap_valid = integer_or(record, 13, 0).is_some_and(|value| matches!(value, 0..=1));
-        let owner_valid = integer_or(record, 14, 0).is_some_and(|value| {
+        let swap_valid = record
+            .integer_or(13, 0)
+            .is_some_and(|value| matches!(value, 0..=1));
+        let owner_valid = record.integer_or(14, 0).is_some_and(|value| {
             value == 0
                 || u32::try_from(value).ok().is_some_and(|sequence| {
                     sequence % 2 == 1
@@ -1806,9 +1799,10 @@ pub(super) fn project(
             (sequence % 2 == 1 && definitions.contains_key(&sequence)).then_some(sequence)
         });
         let translation_valid =
-            (2..=4).all(|index| number_or(record, index, 0.0).is_some_and(f64::is_finite));
-        let scale_valid =
-            number_or(record, 5, 1.0).is_some_and(|value| value.is_finite() && value > 0.0);
+            (2..=4).all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite));
+        let scale_valid = record
+            .number_or(5, 1.0)
+            .is_some_and(|value| value.is_finite() && value > 0.0);
         let transform_valid = resolve_transform(
             entry.transform,
             &entries,
@@ -1942,14 +1936,16 @@ pub(super) fn project(
                 .then_some(sequence)
         });
         let translation_valid =
-            (2..=4).all(|index| number_or(record, index, 0.0).is_some_and(f64::is_finite));
-        let x_scale = number_or(record, 5, 1.0);
+            (2..=4).all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite));
+        let x_scale = record.number_or(5, 1.0);
         let scales_valid = x_scale.is_some_and(|x_scale| {
             x_scale.is_finite()
                 && x_scale > 0.0
-                && number_or(record, 6, x_scale)
+                && record
+                    .number_or(6, x_scale)
                     .is_some_and(|value| value.is_finite() && value > 0.0)
-                && number_or(record, 7, x_scale)
+                && record
+                    .number_or(7, x_scale)
                     .is_some_and(|value| value.is_finite() && value > 0.0)
         });
         let type_flag_valid = record.integer(8).is_none_or(|value| matches!(value, 0..=2));

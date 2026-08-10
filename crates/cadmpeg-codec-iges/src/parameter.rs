@@ -58,11 +58,28 @@ impl ParameterRecord {
         }
     }
 
+    pub(crate) fn integer_or(&self, index: usize, default: i64) -> Option<i64> {
+        match self.tokens.get(index).map(|token| &token.value) {
+            None | Some(TokenValue::Omitted) => Some(default),
+            Some(TokenValue::Integer(value)) => Some(*value),
+            Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
+        }
+    }
+
     pub(crate) fn number(&self, index: usize) -> Option<f64> {
         match self.tokens.get(index).map(|token| &token.value)? {
             TokenValue::Integer(value) => Some(*value as f64),
             TokenValue::Real(value) => Some(*value),
             TokenValue::Omitted | TokenValue::String(_) => None,
+        }
+    }
+
+    pub(crate) fn number_or(&self, index: usize, default: f64) -> Option<f64> {
+        match self.tokens.get(index).map(|token| &token.value) {
+            None | Some(TokenValue::Omitted) => Some(default),
+            Some(TokenValue::Integer(value)) => Some(*value as f64),
+            Some(TokenValue::Real(value)) => Some(*value),
+            Some(TokenValue::String(_)) => None,
         }
     }
 
@@ -102,6 +119,14 @@ impl ParameterRecord {
         match self.tokens.get(index).map(|token| &token.value)? {
             TokenValue::String(value) => Some(value),
             TokenValue::Omitted | TokenValue::Integer(_) | TokenValue::Real(_) => None,
+        }
+    }
+
+    pub(crate) fn string_or_empty(&self, index: usize) -> Option<&[u8]> {
+        match self.tokens.get(index).map(|token| &token.value) {
+            None | Some(TokenValue::Omitted) => Some(&[]),
+            Some(TokenValue::String(value)) => Some(value),
+            Some(TokenValue::Integer(_) | TokenValue::Real(_)) => None,
         }
     }
 

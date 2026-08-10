@@ -35,10 +35,13 @@ fn general_note_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &Directo
     let Some(count) = record.count(1).filter(|count| *count > 0) else {
         return false;
     };
-    exact_parameter_count(record, 2 + count * 12, entries)
+    let parameter_end = trailing_pointer_groups(record, entries)
+        .map_or(record.tokens.len(), |groups| groups.token_start);
+    let last_string_start = 2 + (count - 1) * 12;
+    (last_string_start < parameter_end && parameter_end <= 2 + count * 12)
         && (0..count).all(|index| {
             let start = 2 + index * 12;
-            let text = record.string(start + 11);
+            let text = record.string_or_empty(start + 11);
             record
                 .integer(start)
                 .and_then(|value| usize::try_from(value).ok())
@@ -46,20 +49,24 @@ fn general_note_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &Directo
                 .is_some_and(|(declared, text)| declared == text.len())
                 && (start + 1..=start + 2).all(|field| {
                     record
-                        .number(field)
+                        .number_or(field, 0.0)
                         .is_some_and(|value| value.is_finite() && value >= 0.0)
                 })
                 && record
-                    .integer(start + 3)
+                    .integer_or(start + 3, 1)
                     .is_some_and(|value| font_valid(value, entries))
-                && (start + 4..=start + 5).all(|field| finite(record, field))
                 && record
-                    .integer(start + 6)
+                    .number_or(start + 4, std::f64::consts::FRAC_PI_2)
+                    .is_some_and(f64::is_finite)
+                && record.number_or(start + 5, 0.0).is_some_and(f64::is_finite)
+                && record
+                    .integer_or(start + 6, 0)
                     .is_some_and(|value| matches!(value, 0..=2))
                 && record
-                    .integer(start + 7)
+                    .integer_or(start + 7, 0)
                     .is_some_and(|value| matches!(value, 0..=1))
-                && (start + 8..=start + 10).all(|field| finite(record, field))
+                && (start + 8..=start + 10)
+                    .all(|field| record.number_or(field, 0.0).is_some_and(f64::is_finite))
         })
 }
 

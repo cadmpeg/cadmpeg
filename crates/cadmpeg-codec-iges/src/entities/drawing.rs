@@ -10,9 +10,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 fn finite_vector(record: &ParameterRecord, start: usize) -> Option<[f64; 3]> {
     let values = [
-        record.number(start)?,
-        record.number(start + 1)?,
-        record.number(start + 2)?,
+        record.number_or(start, 0.0)?,
+        record.number_or(start + 1, 0.0)?,
+        record.number_or(start + 2, 0.0)?,
     ];
     values
         .iter()
@@ -138,13 +138,10 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let view_number_valid = record.integer(1).is_some();
-        let scale_valid = match record.tokens.get(2).map(|token| &token.value) {
-            None | Some(crate::parameter::TokenValue::Omitted) => entry.form == 0,
-            _ => record
-                .number(2)
-                .is_some_and(|value| value.is_finite() && value > 0.0),
-        };
+        let view_number_valid = record.integer_or(1, 0).is_some();
+        let scale_valid = record
+            .number_or(2, if entry.form == 0 { 1.0 } else { 0.0 })
+            .is_some_and(|value| value.is_finite() && value > 0.0);
         let form_valid = if entry.form == 0 {
             let transform_valid = if entry.transform == 0 {
                 true
@@ -166,7 +163,7 @@ pub(super) fn project(
                 })
             };
             let clipping_valid = (3..=8).all(|index| {
-                record.integer(index).is_some_and(|value| {
+                record.integer_or(index, 0).is_some_and(|value| {
                     value == 0
                         || u32::try_from(value).ok().is_some_and(|sequence| {
                             entries
@@ -188,22 +185,24 @@ pub(super) fn project(
                 normal_norm > 0.0 && up_norm > 0.0 && up_norm - dot * dot / normal_norm > 1.0e-20
             });
             let window_valid = (15..=19)
-                .all(|index| record.number(index).is_some_and(f64::is_finite))
+                .all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite))
                 && record
-                    .number(16)
-                    .zip(record.number(17))
+                    .number_or(16, 0.0)
+                    .zip(record.number_or(17, 0.0))
                     .is_some_and(|(min, max)| min < max)
                 && record
-                    .number(18)
-                    .zip(record.number(19))
+                    .number_or(18, 0.0)
+                    .zip(record.number_or(19, 0.0))
                     .is_some_and(|(min, max)| min < max);
-            let depth = record.integer(20).filter(|value| matches!(value, 0..=3));
+            let depth = record
+                .integer_or(20, 0)
+                .filter(|value| matches!(value, 0..=3));
             let depth_values_valid = (21..=22)
-                .all(|index| record.number(index).is_some_and(f64::is_finite))
+                .all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite))
                 && (depth != Some(3)
                     || record
-                        .number(21)
-                        .zip(record.number(22))
+                        .number_or(21, 0.0)
+                        .zip(record.number_or(22, 0.0))
                         .is_some_and(|(min, max)| min < max));
             entry.transform == 0
                 && reference.is_some()

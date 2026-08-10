@@ -4719,6 +4719,44 @@ fn view_forms_file() -> Vec<u8> {
     ])
 }
 
+fn defaulted_text_and_view_fields_file() -> Vec<u8> {
+    let note_parameters = [
+        "212", "1", "1", "1", "1", "", "", "", "", "", "", "", "", "1HA",
+    ]
+    .join(",")
+        + ";";
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "NOTE".into(),
+            status: "00000100",
+            parameters: note_parameters,
+        },
+        OwnedTestEntity {
+            entity_type: 312,
+            form: 0,
+            label: "TEMPLATE".into(),
+            status: "00000200",
+            parameters: "312,1,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "EMPTY".into(),
+            status: "00000100",
+            parameters: "212,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 410,
+            form: 0,
+            label: "VIEW".into(),
+            status: "00000000",
+            parameters: "410,1,1.,,,,,,;".into(),
+        },
+    ])
+}
+
 fn view_visibility_forms_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -7993,6 +8031,21 @@ fn decode_types_orthographic_and_perspective_views() {
     assert_eq!(views[1].fields()["center_of_projection"][2], 10.0);
     assert_eq!(views[1].fields()["clipping_window"][0], -2.0);
     assert_eq!(views[1].fields()["depth_clipping"], 3);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_applies_field_defaults_to_text_and_view_records() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(defaulted_text_and_view_fields_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

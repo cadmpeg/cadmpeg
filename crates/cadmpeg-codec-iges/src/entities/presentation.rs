@@ -75,22 +75,6 @@ fn appearance(ir: &mut CadIr, id: AppearanceId, name: Option<String>, color: Col
     }
 }
 
-fn number_or(record: &ParameterRecord, index: usize, default: f64) -> Option<f64> {
-    match record.tokens.get(index).map(|token| &token.value) {
-        None | Some(TokenValue::Omitted) => Some(default),
-        Some(TokenValue::Integer(_) | TokenValue::Real(_)) => record.number(index),
-        Some(TokenValue::String(_)) => None,
-    }
-}
-
-fn integer_or(record: &ParameterRecord, index: usize, default: i64) -> Option<i64> {
-    match record.tokens.get(index).map(|token| &token.value) {
-        None | Some(TokenValue::Omitted) => Some(default),
-        Some(TokenValue::Integer(value)) => Some(*value),
-        Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
-    }
-}
-
 fn text_font_definition(
     entry: &DirectoryEntry,
     record: &ParameterRecord,
@@ -146,7 +130,9 @@ fn text_font_definition(
         let motion_count = record.count(cursor + 3)?;
         cursor += 4;
         for _ in 0..motion_count {
-            integer_or(record, cursor, 0).filter(|value| matches!(value, 0..=1))?;
+            record
+                .integer_or(cursor, 0)
+                .filter(|value| matches!(value, 0..=1))?;
             record.integer(cursor + 1)?;
             record.integer(cursor + 2)?;
             cursor += 3;
@@ -221,7 +207,7 @@ pub(super) fn project(
         };
         let parameter_end = trailing_pointer_groups(record, &entries)
             .map_or(record.tokens.len(), |groups| groups.token_start);
-        let font = integer_or(record, 3, 1);
+        let font = record.integer_or(3, 1);
         let font_valid = font.is_some_and(|font| {
             font >= 0
                 || font
@@ -237,22 +223,24 @@ pub(super) fn project(
             && entry.transform == 0
             && entry.label_display == 0
             && entry.line_weight == 0;
-        let fields_valid = parameter_end == 11
+        let fields_valid = parameter_end <= 11
             && (1..=2).all(|index| {
                 record
-                    .number(index)
+                    .number_or(index, 0.0)
                     .is_some_and(|value| value.is_finite() && value > 0.0)
             })
             && font_valid
-            && number_or(record, 4, std::f64::consts::FRAC_PI_2).is_some_and(f64::is_finite)
-            && record.number(5).is_some_and(f64::is_finite)
             && record
-                .integer(6)
+                .number_or(4, std::f64::consts::FRAC_PI_2)
+                .is_some_and(f64::is_finite)
+            && record.number_or(5, 0.0).is_some_and(f64::is_finite)
+            && record
+                .integer_or(6, 0)
                 .is_some_and(|value| matches!(value, 0..=2))
             && record
-                .integer(7)
+                .integer_or(7, 0)
                 .is_some_and(|value| matches!(value, 0..=1))
-            && (8..=10).all(|index| record.number(index).is_some_and(f64::is_finite));
+            && (8..=10).all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite));
         if directory_valid && fields_valid {
             decoded.insert(entry.sequence);
         } else {

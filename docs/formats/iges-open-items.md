@@ -122,18 +122,6 @@ from a conformant file.
 
 ## 6. Product structure, annotation, and presentation
 
-### PS-01. Parameter defaults are honored at selected token indices only
-
-**Question.** Which parameter fields admit an omitted value that takes the field default?
-
-**Known.** IGES gives a uniform rule: an empty field takes its default, and defaulted trailing parameters may be omitted. The codec applies it at about fifteen hand-picked indices through `integer_or` and `number_or` (`structure.rs:209-223`, `drawing.rs:100-103`, `:139-144`, `presentation.rs:149`, `:224`, `:247`, `annotation.rs:584-596`) and requires an explicit token everywhere else.
-
-**Conflict.** Type 212 and Type 312 carry the identical field sequence `WT, HT, FC, SL, A, M, VH, X, Y, Z` (compare `annotation.rs:47-62` with `presentation.rs:240-255`). Type 312 defaults the font code to 1 and the slant to `π/2`; Type 212 requires both to be present. Both behaviors cannot be right, and `iges.md` "Views and drawings" record neither.
-
-**Note.** A view written `410,1,1.,,,,,,;` — six explicitly defaulted null clipping planes, which is how a producer writes "no clipping" — is refused at `drawing.rs:167`. A note written with an empty font code costs the complete owning dimension, because `annotation.rs:244` requires the child to be valid.
-
-**Need.** We need the default column for each admitted entity, and one uniform treatment of an omitted field.
-
 ### PS-02. The same text-box metric has two different bounds
 
 **Question.** May a character-box width or height be zero?

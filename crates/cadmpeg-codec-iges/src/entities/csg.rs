@@ -6,25 +6,17 @@ use super::geometry::{
 };
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
-use crate::parameter::{ParameterRecord, TokenValue};
+use crate::parameter::ParameterRecord;
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
-fn number_or(record: &ParameterRecord, index: usize, default: f64) -> Option<f64> {
-    match record.tokens.get(index).map(|token| &token.value) {
-        None | Some(TokenValue::Omitted) => Some(default),
-        Some(TokenValue::Integer(_) | TokenValue::Real(_)) => record.number(index),
-        Some(TokenValue::String(_)) => None,
-    }
-}
-
 fn vector_or(record: &ParameterRecord, start: usize, default: Vector3) -> Option<Vector3> {
     Some(Vector3::new(
-        number_or(record, start, default.x)?,
-        number_or(record, start + 1, default.y)?,
-        number_or(record, start + 2, default.z)?,
+        record.number_or(start, default.x)?,
+        record.number_or(start + 1, default.y)?,
+        record.number_or(start + 2, default.z)?,
     ))
 }
 
@@ -168,13 +160,9 @@ pub(super) fn project(
             154 => (1..=2)
                 .map(|index| record.number(index))
                 .collect::<Option<Vec<_>>>(),
-            156 => [
-                record.number(1),
-                record.number(2),
-                number_or(record, 3, 0.0),
-            ]
-            .into_iter()
-            .collect::<Option<Vec<_>>>(),
+            156 => [record.number(1), record.number(2), record.number_or(3, 0.0)]
+                .into_iter()
+                .collect::<Option<Vec<_>>>(),
             158 => record.number(1).map(|value| vec![value]),
             160 => (1..=2)
                 .map(|index| record.number(index))
@@ -294,8 +282,9 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "solid profile curve pointer is invalid"));
             continue;
         };
-        let Some(amount) =
-            number_or(record, 2, 1.0).filter(|value| value.is_finite() && *value > 0.0)
+        let Some(amount) = record
+            .number_or(2, 1.0)
+            .filter(|value| value.is_finite() && *value > 0.0)
         else {
             losses.push(entity_loss(entry, "solid sweep amount is invalid"));
             continue;
