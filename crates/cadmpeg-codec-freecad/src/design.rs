@@ -197,13 +197,13 @@ pub(crate) fn transfer(
                 }
             })
         } else if is_loft(&object.type_name) {
-            loft_definition(&object.type_name, &owned, &sketch_ids).unwrap_or_else(|| {
-                FeatureDefinition::Native {
+            loft_definition(&object.type_name, &owned, &sketch_ids)
+                .or_else(|| cached_shape_definition(&owned))
+                .unwrap_or_else(|| FeatureDefinition::Native {
                     kind: object.type_name.clone(),
                     parameters: native_parameters(&owned),
                     properties: BTreeMap::new(),
-                }
-            })
+                })
         } else if is_sweep(&object.type_name) {
             sweep_definition(&object.type_name, &owned, &sketch_ids).unwrap_or_else(|| {
                 FeatureDefinition::Native {
@@ -270,7 +270,16 @@ pub(crate) fn transfer(
                 properties: BTreeMap::new(),
             })
         } else if is_extrusion(&object.type_name) {
-            let profile = profile_ref(&object.id, &owned, &sketch_ids);
+            let profile = match profile_ref(&object.id, &owned, &sketch_ids) {
+                ProfileRef::Unresolved(_) => ["Profile", "Sketch", "Base", "Source"]
+                    .iter()
+                    .find_map(|name| property(&owned, name))
+                    .map_or_else(
+                        || ProfileRef::Unresolved(object.id.clone()),
+                        |property| ProfileRef::Native(property.id.clone()),
+                    ),
+                profile => profile,
+            };
             let profile_normal = profile_target(&owned)
                 .and_then(|(_, target)| objects.iter().find(|object| object.id == target))
                 .map(|profile_object| {
@@ -370,13 +379,13 @@ pub(crate) fn transfer(
                 }
             })
         } else if object.type_name.contains("Chamfer") {
-            chamfer_definition(&object.type_name, &owned, entries).unwrap_or_else(|| {
-                FeatureDefinition::Native {
+            chamfer_definition(&object.type_name, &owned, entries)
+                .or_else(|| cached_shape_definition(&owned))
+                .unwrap_or_else(|| FeatureDefinition::Native {
                     kind: object.type_name.clone(),
                     parameters: native_parameters(&owned),
                     properties: BTreeMap::new(),
-                }
-            })
+                })
         } else {
             FeatureDefinition::Native {
                 kind: object.type_name.clone(),
@@ -2146,6 +2155,9 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
                 center: Point2::new(x, y),
                 radius: Length(radius),
             },
+            (Some(x), Some(y), Some(0.0)) => SketchGeometry::Point {
+                position: Point2::new(x, y),
+            },
             _ => native(),
         }
     } else if kind.contains("Point") {
@@ -2993,12 +3005,18 @@ fn extrusion_definition(
     }
     let (mut direction, direction_source) = if use_custom {
         (
-            unit_vector(vector_property(properties, "Direction")?)?,
+            cadmpeg_ir::features::ExtrudeDirection::Explicit(unit_vector(vector_property(
+                properties,
+                "Direction",
+            )?)?),
             ExtrusionDirectionSource::Custom,
         )
     } else if let Some(reference_axis) = reference_axis {
         (
-            unit_vector(vector_property(properties, "Direction")?)?,
+            cadmpeg_ir::features::ExtrudeDirection::Explicit(unit_vector(vector_property(
+                properties,
+                "Direction",
+            )?)?),
             ExtrusionDirectionSource::Edge {
                 reference: PathRef::Native(reference_axis.id.clone()),
             },
@@ -3010,15 +3028,28 @@ fn extrusion_definition(
                 .find(|sketch| sketch.id == *sketch_id)
                 .and_then(Sketch::resolved_placement)
                 .map(|(_, normal, _)| normal)
-                .or(profile_normal)?,
-            ProfileRef::Native(_) => profile_normal?,
+                .or(profile_normal)
+                .and_then(unit_vector)
+                .map_or(
+                    cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+                    cadmpeg_ir::features::ExtrudeDirection::Explicit,
+                ),
+            ProfileRef::Native(_) => profile_normal.and_then(unit_vector).map_or(
+                cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+                cadmpeg_ir::features::ExtrudeDirection::Explicit,
+            ),
             ProfileRef::Unresolved(_) => return None,
             _ => return None,
         };
         (direction, ExtrusionDirectionSource::ProfileNormal)
     };
     if bool_property(properties, "Reversed").unwrap_or(false) {
-        direction = Vector3::new(-direction.x, -direction.y, -direction.z);
+        let cadmpeg_ir::features::ExtrudeDirection::Explicit(vector) = direction else {
+            return None;
+        };
+        direction = cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3::new(
+            -vector.x, -vector.y, -vector.z,
+        ));
     }
     let length_along_profile_normal = if property(properties, "AlongSketchNormal").is_some() {
         Some(bool_property(properties, "AlongSketchNormal")?)
@@ -3032,7 +3063,7 @@ fn extrusion_definition(
     };
     Some(FeatureDefinition::Extrude {
         profile,
-        direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+        direction,
         start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
         extent,
         op: if kind.contains("Pocket") {
@@ -3292,6 +3323,12 @@ fn derived_shape_definition(
     }
 }
 
+fn cached_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
+    property(properties, "Shape")
+        .filter(|shape| !shape.side_entries.is_empty())
+        .map(|_| FeatureDefinition::StoredGeometry)
+}
+
 fn ruled_surface_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
     let curve = |name| {
         let property = property(properties, name)?;
@@ -3386,7 +3423,8 @@ fn draft_definition(
     let pull_direction = if property(properties, "PullDirection")
         .is_some_and(|property| property.links.iter().any(nonempty_link))
     {
-        Some(axis_reference(properties, "PullDirection", objects, properties_by_owner)?.1)
+        axis_reference(properties, "PullDirection", objects, properties_by_owner)
+            .map(|(_, direction)| direction)
     } else {
         plane_normal
     };
@@ -3679,10 +3717,10 @@ fn loft_definition(
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
 ) -> Option<FeatureDefinition> {
-    let sections = property(properties, "Sections").or_else(|| property(properties, "Profile"))?;
-    let profiles = sections
-        .links
-        .iter()
+    let profiles = property(properties, "Profile")
+        .into_iter()
+        .chain(property(properties, "Sections"))
+        .flat_map(|property| &property.links)
         .filter_map(|link| link.object.as_deref())
         .map(|object| {
             sketches
@@ -4412,22 +4450,24 @@ fn linear_pattern_axis(
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
 ) -> Option<PatternKind> {
     let name = |base: &str| format!("{base}{suffix}");
-    let (_, mut direction) =
-        axis_reference(properties, &name("Direction"), objects, properties_by_owner)?;
+    let mut direction =
+        axis_reference(properties, &name("Direction"), objects, properties_by_owner)
+            .map(|(_, direction)| direction);
     if bool_property(properties, &name("Reversed")).unwrap_or(false) {
-        direction = Vector3::new(-direction.x, -direction.y, -direction.z);
+        direction =
+            direction.map(|direction| Vector3::new(-direction.x, -direction.y, -direction.z));
     }
     let offsets = pattern_locations(properties, suffix, count, mode, "Length", "Offset")?;
     if let Some(spacing) = uniform_step(&offsets) {
         Some(PatternKind::Linear {
-            direction: Some(direction),
+            direction,
             spacing: Length(spacing),
             count,
             second: None,
         })
     } else {
         Some(PatternKind::LinearOffsets {
-            direction: Some(direction),
+            direction,
             offsets: offsets.into_iter().map(Length).collect(),
         })
     }

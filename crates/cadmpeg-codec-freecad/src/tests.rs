@@ -510,11 +510,12 @@ fn transfers_point_and_elliptical_sketch_geometry_without_fabricated_defaults() 
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Sketch"><Properties Count="1">
-<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="4">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="5">
  <Geometry type="Part::GeomPoint"><Point X="1" Y="2"/></Geometry>
  <Geometry type="Part::GeomEllipse"><Ellipse CenterX="3" CenterY="4" MajorRadius="6" MinorRadius="2" MajorAxisX="0" MajorAxisY="1"/></Geometry>
  <Geometry type="Part::GeomArcOfEllipse"><ArcOfEllipse CenterX="0" CenterY="0" MajorRadius="5" MinorRadius="3" MajorAngle="0.25" FirstParameter="0.5" LastParameter="1.5"/></Geometry>
  <Geometry type="Part::GeomCircle"><Circle CenterX="9" CenterY="9"/></Geometry>
+ <Geometry type="Part::GeomCircle"><Circle CenterX="7" CenterY="8" Radius="0"/></Geometry>
 </GeometryList></Property>
 </Properties></Object></ObjectData></Document>"#;
     let result = FcstdCodec
@@ -549,6 +550,11 @@ fn transfers_point_and_elliptical_sketch_geometry_without_fabricated_defaults() 
     assert!(matches!(
         entities[3].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Native { .. }
+    ));
+    assert!(matches!(
+        entities[4].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Point { position }
+            if position == cadmpeg_ir::math::Point2::new(7.0, 8.0)
     ));
 }
 
@@ -1866,8 +1872,9 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
  <Object name="Section1"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
  <Object name="Section2"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
  <Object name="Path"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
- <Object name="Loft"><Properties Count="4">
-  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Section1"/><Link value="Section2"/></LinkList></Property>
+ <Object name="Loft"><Properties Count="5">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Section1"/></Property>
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="1"><Link value="Section2"/></LinkList></Property>
   <Property name="Closed" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Ruled" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="false"/></Property>
@@ -2091,16 +2098,61 @@ fn transfers_remaining_pipe_orientation_and_transformation_modes() {
 }
 
 #[test]
+fn preserves_cached_loft_and_chamfer_without_construction_inputs() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Loft" name="Loft" id="1"/>
+ <Object type="Part::Chamfer" name="Chamfer" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Loft"><Properties Count="2">
+  <Property name="Shape" type="Part::PropertyPartShape"><Part file="Loft.Shape.brp"/></Property>
+  <Property name="Solid" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+ <Object name="Chamfer"><Properties Count="2">
+  <Property name="Shape" type="Part::PropertyPartShape"><Part file="Chamfer.Shape.brp"/></Property>
+  <Property name="Base" type="App::PropertyLink"><Link value="Loft"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 0
+Curves 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 0
+Triangulations 0
+TShapes 0
+*";
+    let bytes = archive_entries(&[
+        ("Document.xml", document.as_bytes()),
+        ("Loft.Shape.brp", brep),
+        ("Chamfer.Shape.brp", brep),
+    ]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("cached operations");
+    assert!(result
+        .ir
+        .model
+        .features
+        .iter()
+        .all(|feature| matches!(feature.definition, FeatureDefinition::StoredGeometry)));
+    assert!(result.report.losses.is_empty());
+}
+
+#[test]
 fn transfers_uniform_irregular_and_two_axis_patterns() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="5">
+<Objects Count="6">
  <Object type="PartDesign::LinearPattern" name="Uniform" id="2"/>
  <Object type="PartDesign::LinearPattern" name="Custom" id="3"/>
  <Object type="PartDesign::LinearPattern" name="TwoAxis" id="4"/>
  <Object type="PartDesign::PolarPattern" name="PolarCustom" id="5"/>
+ <Object type="PartDesign::LinearPattern" name="NativeDirection" id="6"/>
  <Object type="PartDesign::Feature" name="Seed" id="1"/>
 </Objects>
-<ObjectData Count="5">
+<ObjectData Count="6">
  <Object name="Seed"><Properties Count="0"/></Object>
  <Object name="Uniform"><Properties Count="7">
   <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
@@ -2140,6 +2192,12 @@ fn transfers_uniform_irregular_and_two_axis_patterns() {
   <Property name="Occurrences" type="App::PropertyInteger"><Integer value="4"/></Property>
   <Property name="Spacings" type="App::PropertyFloatList"><FloatList count="3"><Float value="-1"/><Float value="-1"/><Float value="-1"/></FloatList></Property>
   <Property name="SpacingPattern" type="App::PropertyFloatList"><FloatList count="2"><Float value="10"/><Float value="20"/></FloatList></Property>
+ </Properties></Object>
+ <Object name="NativeDirection"><Properties Count="4">
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="Direction" type="App::PropertyLinkSub"><LinkSub value="Seed" count="1"><Sub value="Edge1"/></LinkSub></Property>
+  <Property name="Length" type="App::PropertyLength"><Float value="8"/></Property>
+  <Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -2209,6 +2267,18 @@ fn transfers_uniform_irregular_and_two_axis_patterns() {
         } if angles.iter().zip([0.0, 10.0, 30.0, 40.0]).all(|(angle, expected)|
             (angle.0.to_degrees() - expected).abs() < 1e-12)
     ));
+    assert!(matches!(
+        &feature("NativeDirection").definition,
+        cadmpeg_ir::features::FeatureDefinition::Pattern {
+            pattern: cadmpeg_ir::features::PatternKind::Linear {
+                direction: None,
+                spacing: cadmpeg_ir::features::Length(4.0),
+                count: 3,
+                ..
+            },
+            ..
+        }
+    ));
     assert_eq!(feature("Uniform").dependencies.len(), 1);
     assert!(result.report.losses.is_empty());
     assert_valid_document(&result.ir);
@@ -2219,7 +2289,7 @@ fn transfers_uniform_irregular_and_two_axis_patterns() {
         .expect("native namespace")
         .arena_as::<crate::native::DesignCensusRecord>("design_census")
         .expect("design census");
-    assert_eq!(census.len(), 5);
+    assert_eq!(census.len(), 6);
     assert!(census.iter().any(|record| {
         record.object == "fcstd:native:object#Seed"
             && record.semantic_kind == "stored_geometry"
@@ -3049,7 +3119,7 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
  <Object name="FaceDraft"><Properties Count="4">
   <Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Face2"/></LinkSub></Property>
   <Property name="NeutralPlane" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Face1"/></LinkSub></Property>
-  <Property name="PullDirection" type="App::PropertyLinkSub"><LinkSub value="" count="0"/></Property>
+  <Property name="PullDirection" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Face2"/></LinkSub></Property>
   <Property name="Angle" type="App::PropertyAngle"><Float value="3"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
@@ -5190,6 +5260,36 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
         } if length.0 == 12.0 && (*draft - 3_f64.to_radians()).abs() < 1e-12
     ));
     assert!(result.report.losses.is_empty());
+}
+
+#[test]
+fn preserves_linkless_partdesign_extrusion_profile_and_direction() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="PartDesign::Pad" name="Pad" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Pad"><Properties Count="4">
+ <Property name="Sketch" type="App::PropertyLink"><Link value=""/></Property>
+ <Property name="Length" type="App::PropertyLength"><Float value="5"/></Property>
+ <Property name="Midplane" type="App::PropertyBool"><Bool value="false"/></Property>
+ <Property name="Reversed" type="App::PropertyBool"><Bool value="false"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("linkless pad");
+    let definition = &result.ir.model.features[0].definition;
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Native(profile),
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+            extent: ExtrudeExtent::OneSided { .. },
+            ..
+        } if profile.ends_with(":Sketch")
+    ));
+    assert!(result.report.losses.is_empty());
+    assert_valid_document(&result.ir);
 }
 
 #[test]
