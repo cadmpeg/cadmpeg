@@ -1391,6 +1391,7 @@ fn finish_model_decode<'a>(
         build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
     let AsmTransferRemainder {
         body_keys: _,
+        face_keys: _,
         unknowns,
         stats: _,
         annotation_records,

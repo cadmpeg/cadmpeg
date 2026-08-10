@@ -223,6 +223,7 @@ that exact edge list or free vertex and defaults to out when no match exists.
 **Face (81 B; +1 chunk if double-sided):**
 
 ```
++16 chunk[1] history / face flags
 +34 chunk[3] next_face
 +43 chunk[4] first_loop
 +52 chunk[5] owner_shell
@@ -231,6 +232,8 @@ that exact edge list or free vertex and defaults to out when no match exists.
 +80 chunk[9] sides  (0x0b=single)
 +81 chunk[10] containment       ← PRESENT ONLY IF chunk[9]=double
 ```
+
+A nonnegative `chunk[1]` value is the face's `asm_face_key`, used by embedding formats for Design-side joins. `-1` is a null key. The field is retained independently for every emitted face.
 
 `sides` and `containment` are separate enum chunks. Single-sided faces end after `sides`; double-sided faces carry `containment`.
 The sense token is relative to the native surface carrier. Decoding a reversed spline carrier or an inward-normal cone carrier reverses the sense in the normalized B-rep while retaining the native token; writing applies the same reversal back to the token.

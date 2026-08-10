@@ -158,6 +158,46 @@ The prefix is followed by a u32-counted UTF-16LE name and a u32-counted UTF-16LE
 
 The document-default rendering style is the rendering-style record selected by the default-style record's one-based reference in the same `PmApp` segment. Its Protein asset GUID and asset-library identifier resolve one unique appearance catalog entry. That appearance is the document default for every transferred part body. A missing, null, cross-carrier, or ambiguous reference does not produce an appearance binding.
 
+A `PmGraphics` record reference stores a one-based record index in bits 0 through 30. Bit 31 is retained as the reference qualifier. Qualified and unqualified references use the same index arithmetic. Every non-null reference resolves within the same `PmGraphics` segment.
+
+A current `PmGraphics` list starts with u16 values `2, 0x3000` and a u32 item count. A nonempty list then contains two u32 metadata values followed by the counted items. A node-reference list stores one u32 record reference per item. An empty list ends after the count and has no metadata values.
+
+A `PmGraphics` record with type identifier `a3e99451d2119b2860006ab72c39cdb0` stores one graphics face. For segment major versions above 14, its payload contains:
+
+```text
+header_value u32
+header_id u16
+flags u32
+styles_reference u32
+surface_reference u32
+parent_reference u32
+state u32
+edge_references node-reference-list
+visibility_state u8
+bounds f64[6]
+key u32
+values u32[2]
+```
+
+The `key` is the graphics face's Design-join key. It joins the face to the unique transferred ASM face whose `face.chunk[1]` has the same nonnegative value. Graphics face records with keys absent from the transferred B-rep do not bind active topology.
+
+A `PmGraphics` record with type identifier `0786eb48d2110c076000f99ac5361ab0` stores an object-style collection as one node-reference list. A graphics face's non-null `styles_reference` selects this record by its one-based reference in the same segment.
+
+A `PmGraphics` record with type identifier `0f5648afd411c78d1000d58dc04a0ab5` stores a primary-color style. For segment major versions above 14, its 94-byte payload contains:
+
+```text
+header_value u32
+controls u16[7]
+color_header u8[2]
+colors f32[4][4]
+color_tail u16[2]
+state u8
+values u16[2]
+terminal_state u8
+```
+
+The four colors are RGBA vectors. The second vector is the diffuse color. A style collection supplies a face override when it contains exactly one reference to a primary-color style. The direct-color appearance binds the joined neutral face. A face binding has precedence over the document-default body binding for that face. A missing or ambiguous face, style collection, or primary-color reference does not produce a face binding.
+
 ## 11. Document kind
 
 `Pm*` segment families identify a part document. `Am*` segment families identify an assembly document. A document that contains both families has the distinct `mixed_part_assembly` kind. Property metadata can identify a part, assembly, drawing, or presentation only when segment-family evidence does not already identify the kind.

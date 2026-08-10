@@ -3,15 +3,17 @@
 
 use std::collections::{HashMap, HashSet};
 
+use cadmpeg_asm::brep::records::FaceNativeKey;
 use cadmpeg_ir::{CadIr, Check, Finding, NativeUnknownRecord, Severity};
 
 use crate::native::{
     ActiveCarrierRecord, ActiveCarrierRecordState, AssemblyOccurrenceRecord,
     AssemblyPlacementRecord, AssemblyRecordIssueRecord, DatabaseIssueRecord, DatabaseRecord,
     EmbeddedReferenceRecord, ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord,
-    PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PresentationRecordIssueRecord,
-    PropertyRecord, PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord,
-    ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRecordState,
+    PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PmGraphicsFaceRecord,
+    PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord,
+    PresentationRecordIssueRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
+    PropertySetRecord, ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRecordState,
     ProteinRejectionRecord, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
     SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
     SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UfrxModelStateRecord,
@@ -32,12 +34,16 @@ const ARENAS: &[&str] = &[
     "edge_continuities",
     "edge_ownerships",
     "face_sidedness",
+    "face_native_keys",
     "meta_sections",
     "meta_types",
     "mesh_surface_sentinels",
     "properties",
     "pm_app_default_styles",
     "pm_app_rendering_styles",
+    "pm_graphics_faces",
+    "pm_graphics_style_collections",
+    "pm_graphics_primary_color_styles",
     "presentation_record_issues",
     "property_sections",
     "property_set_issues",
@@ -142,7 +148,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_protein_record_coverage(&data, &mut findings);
     validate_ufrx(ir, &data, &mut findings);
     validate_assembly(ir, &data, &mut findings);
-    validate_presentation(&data, &mut findings);
+    validate_presentation(ir, &data, &mut findings);
     for issue in &data.structural_issues {
         findings.push(finding(
             Check::NativeLinks,
@@ -160,7 +166,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     findings
 }
 
-fn validate_presentation(data: &NativeData, findings: &mut Vec<Finding>) {
+fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
     unique(
         findings,
         data.pm_app_default_styles
@@ -189,6 +195,77 @@ fn validate_presentation(data: &NativeData, findings: &mut Vec<Finding>) {
             .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
         "PmApp rendering-style record key",
     );
+    unique(
+        findings,
+        data.pm_graphics_faces
+            .iter()
+            .map(|record| record.id.as_str()),
+        "PmGraphics face id",
+    );
+    unique(
+        findings,
+        data.pm_graphics_faces
+            .iter()
+            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        "PmGraphics face record key",
+    );
+    unique(
+        findings,
+        data.pm_graphics_style_collections
+            .iter()
+            .map(|record| record.id.as_str()),
+        "PmGraphics style-collection id",
+    );
+    unique(
+        findings,
+        data.pm_graphics_style_collections
+            .iter()
+            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        "PmGraphics style-collection record key",
+    );
+    unique(
+        findings,
+        data.pm_graphics_primary_color_styles
+            .iter()
+            .map(|record| record.id.as_str()),
+        "PmGraphics primary-color style id",
+    );
+    unique(
+        findings,
+        data.pm_graphics_primary_color_styles
+            .iter()
+            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        "PmGraphics primary-color style record key",
+    );
+    unique(
+        findings,
+        data.face_native_keys
+            .iter()
+            .map(|record| record.id.as_str()),
+        "ASM face-native-key id",
+    );
+    unique(
+        findings,
+        data.face_native_keys
+            .iter()
+            .filter_map(|record| record.asm_face_key),
+        "ASM non-null face Design key",
+    );
+    let neutral_faces = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| &face.id)
+        .collect::<HashSet<_>>();
+    for record in &data.face_native_keys {
+        if !neutral_faces.contains(&record.face) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor ASM face-native-key record does not resolve to a neutral face".into(),
+                Some(record.id.clone()),
+            ));
+        }
+    }
 
     let raw_records = data
         .records
@@ -200,6 +277,7 @@ fn validate_presentation(data: &NativeData, findings: &mut Vec<Finding>) {
             )
         })
         .collect::<HashMap<_, _>>();
+    let raw_keys = raw_records.keys().copied().collect::<HashSet<_>>();
     let rendering_keys = data
         .pm_app_rendering_styles
         .iter()
@@ -236,10 +314,97 @@ fn validate_presentation(data: &NativeData, findings: &mut Vec<Finding>) {
             ));
         }
     }
+    for record in &data.pm_graphics_faces {
+        let key = (record.segment_token.as_str(), record.record_ordinal);
+        if raw_records.get(&key) != Some(&"a3e99451d2119b2860006ab72c39cdb0") {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmGraphics face does not resolve to its RSe record".into(),
+                Some(record.id.clone()),
+            ));
+        }
+        if record.edge_references.len() != record.edge_reference_qualifiers.len() {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmGraphics face edge-reference qualifier count differs from its reference count".into(),
+                Some(record.id.clone()),
+            ));
+        }
+        for reference in std::iter::once(record.surface_reference)
+            .chain(std::iter::once(record.parent_reference))
+            .chain(record.edge_references.iter().copied())
+            .filter(|reference| *reference != 0)
+        {
+            let Some(ordinal) = reference.checked_sub(1) else {
+                continue;
+            };
+            if !raw_keys.contains(&(record.segment_token.as_str(), ordinal)) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    format!("Inventor PmGraphics face reference {reference} does not resolve"),
+                    Some(record.id.clone()),
+                ));
+            }
+        }
+        if record.styles_reference != 0 {
+            let target = record.styles_reference - 1;
+            if raw_records.get(&(record.segment_token.as_str(), target))
+                != Some(&"0786eb48d2110c076000f99ac5361ab0")
+            {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor PmGraphics face style reference does not resolve to a style collection"
+                        .into(),
+                    Some(record.id.clone()),
+                ));
+            }
+        }
+    }
+    for record in &data.pm_graphics_style_collections {
+        let key = (record.segment_token.as_str(), record.record_ordinal);
+        if raw_records.get(&key) != Some(&"0786eb48d2110c076000f99ac5361ab0") {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmGraphics style collection does not resolve to its RSe record".into(),
+                Some(record.id.clone()),
+            ));
+        }
+        if record.style_references.len() != record.style_reference_qualifiers.len() {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmGraphics style-reference qualifier count differs from its reference count"
+                    .into(),
+                Some(record.id.clone()),
+            ));
+        }
+        for reference in &record.style_references {
+            if *reference == 0
+                || !raw_keys.contains(&(record.segment_token.as_str(), reference.saturating_sub(1)))
+            {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    format!(
+                        "Inventor PmGraphics style-collection reference {reference} does not resolve"
+                    ),
+                    Some(record.id.clone()),
+                ));
+            }
+        }
+    }
+    for record in &data.pm_graphics_primary_color_styles {
+        let key = (record.segment_token.as_str(), record.record_ordinal);
+        if raw_records.get(&key) != Some(&"0f5648afd411c78d1000d58dc04a0ab5") {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmGraphics primary-color style does not resolve to its RSe record".into(),
+                Some(record.id.clone()),
+            ));
+        }
+    }
     for issue in &data.presentation_record_issues {
         findings.push(finding(
             Check::NativeLinks,
-            format!("Inventor PmApp record: {}", issue.detail),
+            format!("Inventor presentation record: {}", issue.detail),
             Some(issue.id.clone()),
         ));
     }
@@ -352,6 +517,10 @@ struct NativeData {
     assembly_record_issues: Vec<AssemblyRecordIssueRecord>,
     pm_app_default_styles: Vec<PmAppDefaultStyleRecord>,
     pm_app_rendering_styles: Vec<PmAppRenderingStyleRecord>,
+    pm_graphics_faces: Vec<PmGraphicsFaceRecord>,
+    pm_graphics_style_collections: Vec<PmGraphicsStyleCollectionRecord>,
+    pm_graphics_primary_color_styles: Vec<PmGraphicsPrimaryColorStyleRecord>,
+    face_native_keys: Vec<FaceNativeKey>,
     presentation_record_issues: Vec<PresentationRecordIssueRecord>,
     active_carrier: Vec<ActiveCarrierRecord>,
     unknowns: Vec<NativeUnknownRecord>,
@@ -395,6 +564,11 @@ impl NativeData {
             assembly_record_issues: namespace.arena_as("assembly_record_issues")?,
             pm_app_default_styles: namespace.arena_as("pm_app_default_styles")?,
             pm_app_rendering_styles: namespace.arena_as("pm_app_rendering_styles")?,
+            pm_graphics_faces: namespace.arena_as("pm_graphics_faces")?,
+            pm_graphics_style_collections: namespace.arena_as("pm_graphics_style_collections")?,
+            pm_graphics_primary_color_styles: namespace
+                .arena_as("pm_graphics_primary_color_styles")?,
+            face_native_keys: namespace.arena_as("face_native_keys")?,
             presentation_record_issues: namespace.arena_as("presentation_record_issues")?,
             active_carrier: namespace.arena_as("active_carrier")?,
             unknowns: namespace.arena_as("unknowns")?,

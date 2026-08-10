@@ -25,9 +25,10 @@ use crate::native::{
     ActiveCarrierRecord, ActiveCarrierRecordState, AssemblyOccurrenceRecord,
     AssemblyPlacementRecord, AssemblyRecordIssueRecord, DatabaseIssueRecord, DatabaseRecord,
     EmbeddedReferenceRecord, ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord,
-    PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PresentationRecordIssueRecord,
-    PropertyRecord, PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord,
-    ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRecordState,
+    PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PmGraphicsFaceRecord,
+    PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord,
+    PresentationRecordIssueRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
+    PropertySetRecord, ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRecordState,
     ProteinRejectionRecord, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
     SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
     SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UfrxModelStateParameterRecord,
@@ -285,6 +286,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         })
         .collect::<Vec<_>>();
     ir.model.appearances = material_catalog.appearances;
+    let protein_appearance_count = ir.model.appearances.len();
     let ufrx_projection = match &container.ufrx {
         UfrxState::Absent => (
             UfrxRecord {
@@ -1057,6 +1059,73 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             }
         })
         .collect::<Vec<_>>();
+    let pm_graphics_faces = presentation_inventory
+        .graphics_faces
+        .iter()
+        .map(|face| PmGraphicsFaceRecord {
+            id: format!(
+                "inventor:presentation:graphics-face#{}-{}",
+                face.segment_token, face.record_ordinal
+            ),
+            segment_token: face.segment_token.clone(),
+            record_ordinal: face.record_ordinal,
+            segment_version_major: face.segment_version_major,
+            header_value: face.header_value,
+            header_id: face.header_id,
+            flags: face.flags,
+            styles_reference: face.styles_reference,
+            styles_reference_qualified: face.styles_reference_qualified,
+            surface_reference: face.surface_reference,
+            surface_reference_qualified: face.surface_reference_qualified,
+            parent_reference: face.parent_reference,
+            parent_reference_qualified: face.parent_reference_qualified,
+            state: face.state,
+            edge_references: face.edge_references.clone(),
+            edge_reference_qualifiers: face.edge_reference_qualifiers.clone(),
+            edge_list_metadata: face.edge_list_metadata,
+            visibility_state: face.visibility_state,
+            bounds: face.bounds,
+            key: face.key,
+            values: face.values,
+        })
+        .collect::<Vec<_>>();
+    let pm_graphics_style_collections = presentation_inventory
+        .graphics_style_collections
+        .iter()
+        .map(|collection| PmGraphicsStyleCollectionRecord {
+            id: format!(
+                "inventor:presentation:graphics-style-collection#{}-{}",
+                collection.segment_token, collection.record_ordinal
+            ),
+            segment_token: collection.segment_token.clone(),
+            record_ordinal: collection.record_ordinal,
+            segment_version_major: collection.segment_version_major,
+            style_references: collection.style_references.clone(),
+            style_reference_qualifiers: collection.style_reference_qualifiers.clone(),
+            list_metadata: collection.list_metadata,
+        })
+        .collect::<Vec<_>>();
+    let pm_graphics_primary_color_styles = presentation_inventory
+        .graphics_primary_color_styles
+        .iter()
+        .map(|style| PmGraphicsPrimaryColorStyleRecord {
+            id: format!(
+                "inventor:presentation:graphics-primary-color#{}-{}",
+                style.segment_token, style.record_ordinal
+            ),
+            segment_token: style.segment_token.clone(),
+            record_ordinal: style.record_ordinal,
+            segment_version_major: style.segment_version_major,
+            header_value: style.header_value,
+            controls: style.controls,
+            color_header: style.color_header,
+            colors: style.colors,
+            color_tail: style.color_tail,
+            state: style.state,
+            values: style.values,
+            terminal_state: style.terminal_state,
+        })
+        .collect::<Vec<_>>();
     let presentation_record_issues = presentation_inventory
         .issues
         .iter()
@@ -1111,6 +1180,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .saturating_add(assembly_record_issues.len())
             .saturating_add(pm_app_default_styles.len())
             .saturating_add(pm_app_rendering_styles.len())
+            .saturating_add(pm_graphics_faces.len())
+            .saturating_add(pm_graphics_style_collections.len())
+            .saturating_add(pm_graphics_primary_color_styles.len())
             .saturating_add(presentation_record_issues.len())
             .saturating_add(unpaired_segments.len())
             .saturating_add(1) as u64,
@@ -1142,6 +1214,15 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     namespace.set_arena("assembly_record_issues", &assembly_record_issues)?;
     namespace.set_arena("pm_app_default_styles", &pm_app_default_styles)?;
     namespace.set_arena("pm_app_rendering_styles", &pm_app_rendering_styles)?;
+    namespace.set_arena("pm_graphics_faces", &pm_graphics_faces)?;
+    namespace.set_arena(
+        "pm_graphics_style_collections",
+        &pm_graphics_style_collections,
+    )?;
+    namespace.set_arena(
+        "pm_graphics_primary_color_styles",
+        &pm_graphics_primary_color_styles,
+    )?;
     namespace.set_arena("presentation_record_issues", &presentation_record_issues)?;
     namespace.set_arena("segment_pairs", &segment_pairs)?;
     namespace.set_arena("segment_meta", &segment_meta)?;
@@ -1175,6 +1256,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     };
     let AsmTransferRemainder {
         body_keys: _,
+        face_keys,
         unknowns: asm_unknowns,
         stats: asm_stats,
         annotation_records: asm_annotations,
@@ -1213,12 +1295,38 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         .iter()
         .map(|body| body.id.clone())
         .collect::<Vec<_>>();
-    let presentation_projection = crate::presentation::project_default_bindings(
+    let presentation_projection = crate::presentation::project_bindings(
         &presentation_inventory,
         &ir.model.appearances,
         &body_ids,
+        &face_keys,
     );
+    ir.model
+        .appearances
+        .extend(presentation_projection.appearances.clone());
     ir.model.appearance_bindings = presentation_projection.bindings;
+    let projected_colors = presentation_projection
+        .appearances
+        .iter()
+        .filter_map(|appearance| Some((appearance.id.clone(), appearance.base_color?)))
+        .collect::<std::collections::HashMap<_, _>>();
+    let face_colors = ir
+        .model
+        .appearance_bindings
+        .iter()
+        .filter_map(|binding| match &binding.target {
+            cadmpeg_ir::appearance::AppearanceTarget::Face(face) => projected_colors
+                .get(&binding.appearance)
+                .copied()
+                .map(|color| (face.clone(), color)),
+            _ => None,
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    for face in &mut ir.model.faces {
+        if face.color.is_none() {
+            face.color = face_colors.get(&face.id).copied();
+        }
+    }
     let mut losses = Vec::new();
     if ctx.container_only() {
         losses.push(LossNote::new(
@@ -1382,6 +1490,15 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             )),
             ProteinState::Absent | ProteinState::Empty { .. } => {}
         }
+        if presentation_projection.unresolved_face_overrides != 0 {
+            losses.push(LossNote::new(
+                LossKind::MaterialNotTransferred,
+                format!(
+                    "Could not resolve {} PmGraphics face appearance override(s).",
+                    presentation_projection.unresolved_face_overrides
+                ),
+            ));
+        }
         match &container.ufrx {
             UfrxState::Malformed { .. } => losses.push(LossNote::new(
                 LossKind::DecodeDiagnostic,
@@ -1424,6 +1541,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         }
     }
     let preview_asset_count = ir.model.assets.len();
+    let face_color_appearance_count = presentation_projection.appearances.len();
     let mut source_fidelity = SourceFidelity::default();
     let mut annotations = AnnotationBuilder::new();
     for record in asm_annotations {
@@ -1468,7 +1586,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     }
     source_fidelity.finalize();
     let asm_unknown_record_count = ir.native_unknowns("inventor")?.len();
-    let protein_appearance_count = ir.model.appearances.len();
     let appearance_binding_count = ir.model.appearance_bindings.len();
     let transferred_occurrence_count = ir.model.occurrences.len();
     Ok(DecodeResult::new(
@@ -1505,6 +1622,16 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                     "pm_app_rendering_styles".into(),
                     pm_app_rendering_styles.len(),
                 ),
+                ("pm_graphics_faces".into(), pm_graphics_faces.len()),
+                (
+                    "pm_graphics_style_collections".into(),
+                    pm_graphics_style_collections.len(),
+                ),
+                (
+                    "pm_graphics_primary_color_styles".into(),
+                    pm_graphics_primary_color_styles.len(),
+                ),
+                ("face_color_appearances".into(), face_color_appearance_count),
                 (
                     "presentation_record_issues".into(),
                     presentation_record_issues.len(),

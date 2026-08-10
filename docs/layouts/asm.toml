@@ -409,6 +409,13 @@ size = 81
 note = "Single-sided faces end after `sides`. A double-sided face carries one further chunk, `+81 chunk[10] containment`, which is outside this fixed 81-byte extent."
 
 [[record.field]]
+name = "chunk1_history_face_flags"
+offset = 16
+type = "sab_ref8"
+source = "spec"
+anchor = "+16 chunk[1] history / face flags"
+
+[[record.field]]
 name = "chunk3_next_face"
 offset = 34
 type = "sab_ref8"
@@ -452,8 +459,13 @@ anchor = "+80 chunk[9] sides (0x0b=single)"
 
 [[record.gap]]
 offset = 0
-size = 34
-note = "Record head and `chunk[0..=2]`; the spec states no offsets for them."
+size = 16
+note = "Record head and `chunk[0]`; the spec states no offsets for them."
+
+[[record.gap]]
+offset = 25
+size = 9
+note = "`chunk[2]`. Unnamed in the spec; the extent follows from the 9-byte chunk stride between the stated `chunk[1]` and `chunk[3]` offsets."
 
 [[record.gap]]
 offset = 61

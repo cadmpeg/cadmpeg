@@ -347,6 +347,149 @@ source = "spec"
 anchor = "name_reference u32"
 
 [[record]]
+name = "pm_graphics_face_current_prefix"
+kind = "byte"
+section = "10"
+anchor = "For segment major versions above 14, its payload contains"
+size = 26
+note = "The variable edge-reference list starts at byte 26. Its exact end selects the fixed visibility, bounds, key, and values tail."
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id u16"
+
+[[record.field]]
+name = "flags"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "flags u32"
+
+[[record.field]]
+name = "styles_reference"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "styles_reference u32"
+
+[[record.field]]
+name = "surface_reference"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "surface_reference u32"
+
+[[record.field]]
+name = "parent_reference"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "parent_reference u32"
+
+[[record.field]]
+name = "state"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "state u32"
+
+[[record]]
+name = "pm_graphics_list_prefix"
+kind = "byte"
+section = "10"
+anchor = "A current `PmGraphics` list starts with"
+size = 8
+note = "A nonempty list continues with two u32 metadata values and its counted items."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u16[2]"
+source = "spec"
+anchor = "u16 values `2, 0x3000`"
+
+[[record.field]]
+name = "item_count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "a u32 item count"
+
+[[record]]
+name = "pm_graphics_primary_color_style_current"
+kind = "byte"
+section = "10"
+anchor = "For segment major versions above 14, its 94-byte payload contains"
+size = 94
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "controls"
+offset = 4
+type = "u16[7]"
+source = "spec"
+anchor = "controls u16[7]"
+
+[[record.field]]
+name = "color_header"
+offset = 18
+type = "u8[2]"
+source = "spec"
+anchor = "color_header u8[2]"
+
+[[record.field]]
+name = "colors"
+offset = 20
+type = "f32[16]"
+source = "spec"
+anchor = "colors f32[4][4]"
+note = "Four consecutive RGBA vectors."
+
+[[record.field]]
+name = "color_tail"
+offset = 84
+type = "u16[2]"
+source = "spec"
+anchor = "color_tail u16[2]"
+
+[[record.field]]
+name = "state"
+offset = 88
+type = "u8"
+source = "spec"
+anchor = "state u8"
+
+[[record.field]]
+name = "values"
+offset = 89
+type = "u16[2]"
+source = "spec"
+anchor = "values u16[2]"
+
+[[record.field]]
+name = "terminal_state"
+offset = 93
+type = "u8"
+source = "spec"
+anchor = "terminal_state u8"
+
+[[record]]
 name = "ufrx_occurrence_prefix"
 kind = "byte"
 section = "8"

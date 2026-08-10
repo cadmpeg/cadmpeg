@@ -136,6 +136,7 @@ Single-sided faces end after `sides`. A double-sided face carries one further ch
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 16 | 9 | `chunk1_history_face_flags` | `sab_ref8` | little | spec | +16 chunk[1] history / face flags |
 | 34 | 9 | `chunk3_next_face` | `sab_ref8` | little | spec | +34 chunk[3] next_face |
 | 43 | 9 | `chunk4_first_loop` | `sab_ref8` | little | spec | +43 chunk[4] first_loop |
 | 52 | 9 | `chunk5_owner_shell` | `sab_ref8` | little | spec | +52 chunk[5] owner_shell |
@@ -145,7 +146,8 @@ Single-sided faces end after `sides`. A double-sided face carries one further ch
 
 Unstated regions:
 
-- `0..34` (34 B): Record head and `chunk[0..=2]`; the spec states no offsets for them.
+- `0..16` (16 B): Record head and `chunk[0]`; the spec states no offsets for them.
+- `25..34` (9 B): `chunk[2]`. Unnamed in the spec; the extent follows from the 9-byte chunk stride between the stated `chunk[1]` and `chunk[3]` offsets.
 - `61..70` (9 B): `chunk[6]`. Unnamed in the spec; the extent follows from the stated `chunk[5]` @+52 and `chunk[7]` @+70 offsets.
 
 ## `coedge`

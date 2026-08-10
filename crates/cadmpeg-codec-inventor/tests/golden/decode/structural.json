@@ -75,12 +75,16 @@
           "edge_ownerships": [],
           "embedded_references": [],
           "external_references": [],
+          "face_native_keys": [],
           "face_sidedness": [],
           "mesh_surface_sentinels": [],
           "meta_sections": [],
           "meta_types": [],
           "pm_app_default_styles": [],
           "pm_app_rendering_styles": [],
+          "pm_graphics_faces": [],
+          "pm_graphics_primary_color_styles": [],
+          "pm_graphics_style_collections": [],
           "presentation_record_issues": [],
           "properties": [],
           "property_sections": [],
@@ -145,7 +149,7 @@
           "vertex_ownerships": [],
           "wire_topologies": []
         },
-        "version": 17
+        "version": 18
       }
     },
     "source": {
@@ -178,8 +182,12 @@
       "assembly_record_issues": 0,
       "embedded_references": 0,
       "external_references": 0,
+      "face_color_appearances": 0,
       "pm_app_default_styles": 0,
       "pm_app_rendering_styles": 0,
+      "pm_graphics_faces": 0,
+      "pm_graphics_primary_color_styles": 0,
+      "pm_graphics_style_collections": 0,
       "presentation_record_issues": 0,
       "preview_assets": 0,
       "properties": 0,

@@ -286,6 +286,7 @@ fn build_result(
 
     let AsmTransferRemainder {
         body_keys: _,
+        face_keys: _,
         unknowns,
         stats,
         annotation_records: _,

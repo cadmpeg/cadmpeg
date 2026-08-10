@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Current Inventor native namespace version.
-pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 17;
+pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 18;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct VersionTupleRecord {
@@ -357,6 +357,58 @@ pub(crate) struct PmAppRenderingStyleRecord {
     pub(crate) guid: Option<String>,
     pub(crate) suffix_len: u64,
     pub(crate) suffix_sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct PmGraphicsFaceRecord {
+    pub(crate) id: String,
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
+    pub(crate) segment_version_major: u8,
+    pub(crate) header_value: u32,
+    pub(crate) header_id: u16,
+    pub(crate) flags: u32,
+    pub(crate) styles_reference: u32,
+    pub(crate) styles_reference_qualified: bool,
+    pub(crate) surface_reference: u32,
+    pub(crate) surface_reference_qualified: bool,
+    pub(crate) parent_reference: u32,
+    pub(crate) parent_reference_qualified: bool,
+    pub(crate) state: u32,
+    pub(crate) edge_references: Vec<u32>,
+    pub(crate) edge_reference_qualifiers: Vec<bool>,
+    pub(crate) edge_list_metadata: Option<[u32; 2]>,
+    pub(crate) visibility_state: u8,
+    pub(crate) bounds: [f64; 6],
+    pub(crate) key: u32,
+    pub(crate) values: [u32; 2],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct PmGraphicsStyleCollectionRecord {
+    pub(crate) id: String,
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
+    pub(crate) segment_version_major: u8,
+    pub(crate) style_references: Vec<u32>,
+    pub(crate) style_reference_qualifiers: Vec<bool>,
+    pub(crate) list_metadata: Option<[u32; 2]>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct PmGraphicsPrimaryColorStyleRecord {
+    pub(crate) id: String,
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
+    pub(crate) segment_version_major: u8,
+    pub(crate) header_value: u32,
+    pub(crate) controls: [u16; 7],
+    pub(crate) color_header: [u8; 2],
+    pub(crate) colors: [[f32; 4]; 4],
+    pub(crate) color_tail: [u16; 2],
+    pub(crate) state: u8,
+    pub(crate) values: [u16; 2],
+    pub(crate) terminal_state: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

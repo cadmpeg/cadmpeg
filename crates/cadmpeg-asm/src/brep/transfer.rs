@@ -6,16 +6,17 @@ use std::collections::HashMap;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::ids::{BodyId, FaceId};
 use cadmpeg_ir::unknown::UnknownRecord;
 
 use super::{AnnotationRecord, AsmBrep, Stats};
 
-const ASM_NATIVE_ARENAS: [&str; 11] = [
+const ASM_NATIVE_ARENAS: [&str; 12] = [
     "edge_continuities",
     "edge_ownerships",
     "vertex_ownerships",
     "face_sidedness",
+    "face_native_keys",
     "tolerant_vertex_tails",
     "tolerant_edge_tails",
     "tolerant_coedge_parameters",
@@ -29,6 +30,8 @@ const ASM_NATIVE_ARENAS: [&str; 11] = [
 pub struct AsmTransferRemainder {
     /// Native body join keys used by an embedding format's semantic tables.
     pub body_keys: HashMap<BodyId, u64>,
+    /// Native face join keys used by an embedding format's semantic tables.
+    pub face_keys: HashMap<FaceId, u64>,
     /// Undecoded ASM records for source-fidelity retention.
     pub unknowns: Vec<UnknownRecord>,
     /// ASM loss statistics used to build the embedding format's report.
@@ -80,6 +83,8 @@ pub fn transfer_into_ir(
         edge_ownerships,
         vertex_ownerships,
         face_sidedness,
+        face_keys,
+        face_native_keys,
         tolerant_coedge_parameters,
         tolerant_edge_tails,
         tolerant_vertex_tails,
@@ -121,6 +126,7 @@ pub fn transfer_into_ir(
     namespace.set_arena("edge_ownerships", &edge_ownerships)?;
     namespace.set_arena("vertex_ownerships", &vertex_ownerships)?;
     namespace.set_arena("face_sidedness", &face_sidedness)?;
+    namespace.set_arena("face_native_keys", &face_native_keys)?;
     namespace.set_arena("tolerant_vertex_tails", &tolerant_vertex_tails)?;
     namespace.set_arena("tolerant_edge_tails", &tolerant_edge_tails)?;
     namespace.set_arena("tolerant_coedge_parameters", &tolerant_coedge_parameters)?;
@@ -131,6 +137,7 @@ pub fn transfer_into_ir(
 
     Ok(AsmTransferRemainder {
         body_keys,
+        face_keys,
         unknowns,
         stats,
         annotation_records,
@@ -154,11 +161,12 @@ mod tests {
         let remainder = transfer_into_ir(&ctx, &mut ir, "test", 7, AsmBrep::default())
             .expect("empty ASM transfer succeeds");
         assert!(remainder.body_keys.is_empty());
+        assert!(remainder.face_keys.is_empty());
         assert!(remainder.unknowns.is_empty());
         assert!(remainder.annotation_records.is_empty());
         let namespace = ir.native.namespace("test").expect("namespace exists");
         assert_eq!(namespace.version, 7);
-        assert_eq!(namespace.arenas.len(), 11);
+        assert_eq!(namespace.arenas.len(), 12);
     }
 
     #[test]

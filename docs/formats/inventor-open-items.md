@@ -68,13 +68,13 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 
 ## 4. Materials and design intent
 
-### MA-01. Face appearance assignment records
+### MA-01. Additional face appearance styles
 
-**Question.** Which `PmGraphics`, `FBAttribute`, or B-rep fields bind a Protein asset GUID or direct color to a face, and what precedence applies against the `PmApp` document default?
+**Question.** Which `PmGraphics` or `FBAttribute` style families bind a Protein appearance asset, texture, or non-diffuse presentation channel to a face?
 
-**Known.** The `PmApp` document-default record selects one rendering-style record by a carrier-local one-based record reference. The rendering style stores the Protein asset GUID and asset-library identifier. Their unique catalog join supplies the default appearance for every part body. A catalog entry alone is not an assignment.
+**Known.** The `PmApp` document-default record selects one rendering-style record by a carrier-local one-based record reference. The rendering style stores the Protein asset GUID and asset-library identifier. Their unique catalog join supplies the default appearance for every part body. A PmGraphics face joins a transferred ASM face through the shared nonnegative Design key. Its object-style collection can select one primary-color style whose second RGBA vector is a direct diffuse face override. The face override has precedence over the body default.
 
-**Need.** We must establish the face owner join and precedence before emitting face overrides.
+**Need.** Each additional style family requires an exact owner path, channel semantics, and precedence before transfer.
 
 ### DE-01. Design record graph
 

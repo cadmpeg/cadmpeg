@@ -115,6 +115,48 @@ Spec §10 · layout: byte offsets · size: 27 B
 | 19 | 4 | `value` | `u32` | little | spec | value u32 |
 | 23 | 4 | `name_reference` | `u32` | little | spec | name_reference u32 |
 
+## `pm_graphics_face_current_prefix`
+
+Spec §10 · layout: byte offsets · size: 26 B
+
+The variable edge-reference list starts at byte 26. Its exact end selects the fixed visibility, bounds, key, and values tail.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | header_value u32 |
+| 4 | 2 | `header_id` | `u16` | little | spec | header_id u16 |
+| 6 | 4 | `flags` | `u32` | little | spec | flags u32 |
+| 10 | 4 | `styles_reference` | `u32` | little | spec | styles_reference u32 |
+| 14 | 4 | `surface_reference` | `u32` | little | spec | surface_reference u32 |
+| 18 | 4 | `parent_reference` | `u32` | little | spec | parent_reference u32 |
+| 22 | 4 | `state` | `u32` | little | spec | state u32 |
+
+## `pm_graphics_list_prefix`
+
+Spec §10 · layout: byte offsets · size: 8 B
+
+A nonempty list continues with two u32 metadata values and its counted items.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `marker` | `u16[2]` | little | spec | u16 values `2, 0x3000` |
+| 4 | 4 | `item_count` | `u32` | little | spec | a u32 item count |
+
+## `pm_graphics_primary_color_style_current`
+
+Spec §10 · layout: byte offsets · size: 94 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | header_value u32 |
+| 4 | 14 | `controls` | `u16[7]` | little | spec | controls u16[7] |
+| 18 | 2 | `color_header` | `u8[2]` | little | spec | color_header u8[2] |
+| 20 | 64 | `colors` | `f32[16]` | little | spec | Four consecutive RGBA vectors. |
+| 84 | 4 | `color_tail` | `u16[2]` | little | spec | color_tail u16[2] |
+| 88 | 1 | `state` | `u8` | little | spec | state u8 |
+| 89 | 4 | `values` | `u16[2]` | little | spec | values u16[2] |
+| 93 | 1 | `terminal_state` | `u8` | little | spec | terminal_state u8 |
+
 ## `ufrx_occurrence_prefix`
 
 Spec §8 · layout: byte offsets · size: 20 B
