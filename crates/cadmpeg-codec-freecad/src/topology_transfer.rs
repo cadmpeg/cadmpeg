@@ -244,12 +244,16 @@ impl<'a> Builder<'a> {
                     pcurve_geometry(&self.tables.curve2ds[representation.primary - 1]),
                     parameter_affine,
                 );
+                let primary_range = normalize_pcurve_parameter_range(
+                    &primary_geometry,
+                    representation.parameter_range,
+                );
                 ir.model.pcurves.push(Pcurve {
                     id: self.pcurve_id(shape.index, representation_index, false),
                     geometry: primary_geometry,
                     wrapper_reversed: None,
                     native_tail_flags: None,
-                    parameter_range: representation.parameter_range,
+                    parameter_range: primary_range,
                     fit_tolerance: None,
                 });
                 if let Some(secondary) = representation.secondary {
@@ -257,12 +261,16 @@ impl<'a> Builder<'a> {
                         pcurve_geometry(&self.tables.curve2ds[secondary - 1]),
                         parameter_affine,
                     );
+                    let secondary_range = normalize_pcurve_parameter_range(
+                        &secondary_geometry,
+                        representation.parameter_range,
+                    );
                     ir.model.pcurves.push(Pcurve {
                         id: self.pcurve_id(shape.index, representation_index, true),
                         geometry: secondary_geometry,
                         wrapper_reversed: None,
                         native_tail_flags: None,
-                        parameter_range: representation.parameter_range,
+                        parameter_range: secondary_range,
                         fit_tolerance: None,
                     });
                 }
@@ -1225,13 +1233,20 @@ impl<'a> Builder<'a> {
             })
             .map(|(index, representation)| {
                 let reversed = is_reversed(edge_use.orientation);
+                let secondary = representation.secondary.is_some() && reversed;
+                let curve_index = if secondary {
+                    representation
+                        .secondary
+                        .expect("secondary representation exists")
+                } else {
+                    representation.primary
+                };
+                let geometry = pcurve_geometry(&self.tables.curve2ds[curve_index - 1]);
+                let parameter_range =
+                    normalize_pcurve_parameter_range(&geometry, representation.parameter_range);
                 (
-                    self.pcurve_id(
-                        edge_use.shape,
-                        index,
-                        representation.secondary.is_some() && reversed,
-                    ),
-                    bounded_pcurve_range(*degenerated, representation.parameter_range),
+                    self.pcurve_id(edge_use.shape, index, secondary),
+                    bounded_pcurve_range(*degenerated, parameter_range),
                 )
             })
     }
@@ -1255,6 +1270,42 @@ fn bounded_pcurve_range(degenerated: bool, range: Option<[f64; 2]>) -> Option<[f
         .then_some(range)
         .flatten()
         .filter(|range| range[0] < range[1])
+}
+
+fn normalize_pcurve_parameter_range(
+    geometry: &PcurveGeometry,
+    range: Option<[f64; 2]>,
+) -> Option<[f64; 2]> {
+    let mut range = range?;
+    let domain = match geometry {
+        PcurveGeometry::Nurbs { degree, knots, .. } => {
+            let degree = usize::try_from(*degree).ok()?;
+            [
+                *knots.get(degree)?,
+                *knots.get(knots.len().checked_sub(degree + 1)?)?,
+            ]
+        }
+        PcurveGeometry::Trimmed {
+            parameter_range, ..
+        } => *parameter_range,
+        PcurveGeometry::Offset { basis, .. } | PcurveGeometry::Transformed { basis, .. } => {
+            return normalize_pcurve_parameter_range(basis, Some(range));
+        }
+        _ => return Some(range),
+    };
+    let scale = range
+        .into_iter()
+        .chain(domain)
+        .fold(1.0_f64, |scale, value| scale.max(value.abs()));
+    let tolerance = scale * 1.0e-9;
+    for value in &mut range {
+        if (*value - domain[0]).abs() <= tolerance {
+            *value = domain[0];
+        } else if (*value - domain[1]).abs() <= tolerance {
+            *value = domain[1];
+        }
+    }
+    Some(range)
 }
 
 fn connected_components(connectivity: &[HashSet<String>]) -> Vec<Vec<usize>> {
@@ -1816,6 +1867,29 @@ mod tests {
         assert_eq!(
             bounded_pcurve_range(false, Some([1.0, 3.0])),
             Some([1.0, 3.0])
+        );
+    }
+
+    #[test]
+    fn adjacent_pcurve_domain_rounding_is_canonicalized() {
+        let geometry = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![2.0, 2.0, 4.0, 4.0],
+            control_points: vec![
+                cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            ],
+            weights: None,
+            periodic: false,
+        };
+
+        assert_eq!(
+            normalize_pcurve_parameter_range(&geometry, Some([2.0 - 1.0e-11, 4.0 + 1.0e-11])),
+            Some([2.0, 4.0])
+        );
+        assert_eq!(
+            normalize_pcurve_parameter_range(&geometry, Some([1.0, 5.0])),
+            Some([1.0, 5.0])
         );
     }
 
