@@ -13,6 +13,7 @@ use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
 };
+use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{
@@ -72,18 +73,9 @@ fn topology_sewing_tolerance(global: &Global, points: impl Iterator<Item = Point
     global.minimum_resolution_mm().max(coordinate_quantum)
 }
 
-fn point_position(ir: &CadIr, id: &VertexId) -> Option<Point3> {
-    let point_id = &ir
-        .model
-        .vertices
-        .iter()
-        .find(|vertex| vertex.id == *id)?
-        .point;
-    ir.model
-        .points
-        .iter()
-        .find(|point| point.id == *point_id)
-        .map(|point| point.position)
+fn point_position(index: &ModelIndex<'_>, id: &VertexId) -> Option<Point3> {
+    let point_id = &index.vertices(&id.0)?.point;
+    index.points(&point_id.0).map(|point| point.position)
 }
 
 fn face_vertex(
@@ -154,22 +146,21 @@ pub(super) fn pcurve_geometry(
 }
 
 fn pcurves_agree(
-    ir: &CadIr,
+    index: &ModelIndex<'_>,
     surface_id: &SurfaceId,
     pcurves: &[(PcurveGeometry, [f64; 2])],
     expected_start: Point3,
     expected_end: Point3,
     tolerance: f64,
 ) -> bool {
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
     let mapped = pcurves
         .iter()
         .map(|(geometry, range)| {
             let start = evaluation::pcurve(geometry, range[0]).and_then(|uv| {
-                cadmpeg_ir::eval::model_surface_point_by_id(&index, surface_id, uv.u, uv.v)
+                cadmpeg_ir::eval::model_surface_point_by_id(index, surface_id, uv.u, uv.v)
             })?;
             let end = evaluation::pcurve(geometry, range[1]).and_then(|uv| {
-                cadmpeg_ir::eval::model_surface_point_by_id(&index, surface_id, uv.u, uv.v)
+                cadmpeg_ir::eval::model_surface_point_by_id(index, surface_id, uv.u, uv.v)
             })?;
             Some((start, end))
         })
@@ -213,6 +204,14 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut boundaries = BTreeMap::new();
 
+    let carrier_index = ModelIndex::new(ir);
+    let mut edges_by_curve = BTreeMap::new();
+    for edge in &ir.model.edges {
+        if let Some(curve) = &edge.curve {
+            edges_by_curve.entry(curve.clone()).or_insert(edge);
+        }
+    }
+    let mut staged = Vec::new();
     for entry in directory
         .iter()
         .filter(|entry| entry.entity_type == 142 && entry.form == 0)
@@ -525,11 +524,8 @@ pub(super) fn project(
             continue;
         }
         let surface_id = SurfaceId(format!("iges:model:surface#D{surface_sequence}"));
-        let Some(support_geometry) = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == surface_id)
+        let Some(support_geometry) = carrier_index
+            .surfaces(&surface_id.0)
             .map(|surface| surface.geometry.clone())
         else {
             losses.push(entity_loss(
@@ -566,12 +562,7 @@ pub(super) fn project(
             let mut items = Vec::with_capacity(boundary.segments.len());
             for segment in &boundary.segments {
                 let model_curve_id = CurveId(format!("iges:model:curve#D{}", segment.model_curve));
-                let Some(source_edge) = ir
-                    .model
-                    .edges
-                    .iter()
-                    .find(|edge| edge.curve.as_ref() == Some(&model_curve_id))
-                    .cloned()
+                let Some(source_edge) = edges_by_curve.get(&model_curve_id).copied().cloned()
                 else {
                     losses.push(entity_loss(
                         entry,
@@ -581,8 +572,8 @@ pub(super) fn project(
                     break;
                 };
                 let (Some(start), Some(end)) = (
-                    point_position(ir, &source_edge.start),
-                    point_position(ir, &source_edge.end),
+                    point_position(&carrier_index, &source_edge.start),
+                    point_position(&carrier_index, &source_edge.end),
                 ) else {
                     losses.push(entity_loss(
                         entry,
@@ -623,7 +614,7 @@ pub(super) fn project(
                         (end, start)
                     };
                     let agrees = pcurves_agree(
-                        ir,
+                        &carrier_index,
                         &surface_id,
                         &pcurves,
                         expected_start,
@@ -801,14 +792,22 @@ pub(super) fn project(
             visible: None,
         });
         candidate.model_mut().finalize();
+        staged.push((entry.sequence, candidate));
+    }
+    drop(carrier_index);
+    for (sequence, candidate) in staged {
         if candidate.commit_model(ir).is_err() {
+            let entry = entries
+                .get(&sequence)
+                .copied()
+                .expect("staged trimming entry came from the directory");
             losses.push(entity_loss(
                 entry,
                 "trimmed sheet candidate failed neutral validation",
             ));
             continue;
         }
-        decoded.insert(entry.sequence);
+        decoded.insert(sequence);
     }
 
     TrimmingProjection {
