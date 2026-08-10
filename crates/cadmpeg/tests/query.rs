@@ -902,3 +902,167 @@ fn schema_sidecar_and_json_envelope() {
         .unwrap()
         .contains_key("FaceId"));
 }
+
+const FIDELITY_SIDECAR: &str = r#"{
+  "version": "1",
+  "ir_sha256": "abc",
+  "report": {"format": "f3d", "container_only": false, "geometry_transferred": true,
+             "coverage": {}, "losses": []},
+  "fidelity": {
+    "version": "3",
+    "annotations": {"streams": ["Contents/Config-0"],
+                    "provenance": {"a:b:c#1": {"stream": 0, "offset": 0}},
+                    "exactness": {}},
+    "retained_records": [
+      {"id": "r1", "stream": "Contents/Config-0", "offset": 0, "byte_len": 4,
+       "sha256": "x", "data": "QUJDRA=="},
+      {"id": "r2", "stream": "Contents/Config-0", "offset": 4, "byte_len": 2,
+       "sha256": "y", "data": "RUY="},
+      {"id": "r3", "stream": "Other", "offset": 0, "byte_len": 3, "sha256": "z"}
+    ]
+  }
+}"#;
+
+#[test]
+fn fidelity_lists_retained_records_with_annotation_counts() {
+    let dir = tempdir().unwrap();
+    let sidecar = write(dir.path(), "m.fidelity.json", FIDELITY_SIDECAR);
+    cadmpeg()
+        .args(["query", "fidelity", sidecar.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(
+            "stream\toffset\tbytes\tdata\tid\n\
+             Contents/Config-0\t0\t4\tyes\tr1\n\
+             Contents/Config-0\t4\t2\tyes\tr2\n\
+             Other\t0\t3\tno\tr3\n",
+        )
+        .stderr(predicate::str::contains(
+            "annotations: 1 streams, 1 provenance entries, 0 exactness notes",
+        ));
+}
+
+#[test]
+fn fidelity_extracts_a_contiguous_stream_byte_exactly() {
+    let dir = tempdir().unwrap();
+    let sidecar = write(dir.path(), "m.fidelity.json", FIDELITY_SIDECAR);
+    let out = dir.path().join("out.bin");
+
+    cadmpeg()
+        .args([
+            "query",
+            "fidelity",
+            sidecar.to_str().unwrap(),
+            "--stream",
+            "Contents/Config-0",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("wrote 6 bytes from 2 record(s)"));
+    assert_eq!(fs::read(&out).unwrap(), b"ABCDEF");
+
+    let stdout = cadmpeg()
+        .args([
+            "query",
+            "fidelity",
+            sidecar.to_str().unwrap(),
+            "--stream",
+            "Contents/Config-0",
+            "--binary-stdout",
+        ])
+        .output()
+        .unwrap();
+    assert!(stdout.status.success());
+    assert_eq!(stdout.stdout, b"ABCDEF");
+}
+
+#[test]
+fn fidelity_extraction_teaches_on_every_failure_shape() {
+    let dir = tempdir().unwrap();
+    let sidecar = write(dir.path(), "m.fidelity.json", FIDELITY_SIDECAR);
+    let path = sidecar.to_str().unwrap();
+
+    // No -o and no --binary-stdout: the house binary-stdout guard.
+    let guard = cadmpeg()
+        .args(["query", "fidelity", path, "--stream", "Contents/Config-0"])
+        .output()
+        .unwrap();
+    assert_eq!(guard.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&guard.stderr).contains("--binary-stdout"));
+
+    // Unknown stream lists the real ones.
+    let miss = cadmpeg()
+        .args([
+            "query",
+            "fidelity",
+            path,
+            "--stream",
+            "Nope",
+            "--binary-stdout",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(miss.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&miss.stderr);
+    assert!(stderr.contains("Contents/Config-0"), "{stderr}");
+
+    // Extent-only retention is a named refusal, not a silent empty file.
+    let nodata = cadmpeg()
+        .args([
+            "query",
+            "fidelity",
+            path,
+            "--stream",
+            "Other",
+            "--binary-stdout",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(nodata.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&nodata.stderr).contains("without bytes"));
+
+    // A gap between extents refuses the concat instead of splicing bytes.
+    let gapped = FIDELITY_SIDECAR.replace("\"offset\": 4", "\"offset\": 8");
+    let gap_file = write(dir.path(), "gap.fidelity.json", &gapped);
+    let gap = cadmpeg()
+        .args([
+            "query",
+            "fidelity",
+            gap_file.to_str().unwrap(),
+            "--stream",
+            "Contents/Config-0",
+            "--binary-stdout",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(gap.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&gap.stderr).contains("not contiguous"));
+}
+
+#[test]
+fn fidelity_rejects_non_sidecar_kinds_and_wraps_json() {
+    let dir = tempdir().unwrap();
+    let doc = write(dir.path(), "doc.cadir.json", CADIR_DOC);
+    let cadir = cadmpeg()
+        .args(["query", "fidelity", doc.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert_eq!(cadir.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&cadir.stderr).contains(".fidelity.json"));
+
+    let sidecar = write(dir.path(), "m.fidelity.json", FIDELITY_SIDECAR);
+    let json = cadmpeg()
+        .args(["query", "fidelity", "--json", sidecar.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(json.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(value["command"], "query fidelity");
+    assert_eq!(value["fidelity"]["annotations"]["provenance"], 1);
+    assert_eq!(
+        value["fidelity"]["retained_records"][2]["data_retained"],
+        false
+    );
+}

@@ -9,6 +9,7 @@
 //! replaces ad-hoc `jq` path exploration: the view names are stable and each
 //! view's help states which artifact kinds it accepts.
 
+mod fidelity;
 mod item;
 mod schema;
 
@@ -24,6 +25,7 @@ use serde::{Deserialize, Deserializer};
 
 use crate::commands::CLI_SCHEMA_VERSION;
 
+pub use fidelity::FidelityArgs;
 pub use item::ItemArgs;
 pub use schema::SchemaArgs;
 
@@ -72,6 +74,15 @@ pub enum QueryView {
     /// document actually has still comes from `query counts FILE`; native
     /// arena records are codec-owned — fetch one with `query item` instead.
     Schema(SchemaArgs),
+    /// Retained source records and annotations of a decode sidecar.
+    ///
+    /// The bare view lists `retained_records` as a table (stream, offset,
+    /// bytes, whether the bytes are retained, id) with annotation counts
+    /// on standard error. `--stream NAME` reassembles that stream's
+    /// retained bytes byte-exactly into `-o FILE` (or stdout with
+    /// `--binary-stdout`) — replacing the
+    /// `jq '.fidelity.retained_records[].data' | base64 -d` pipeline.
+    Fidelity(FidelityArgs),
 }
 
 /// Input selection and output format for one query view.
@@ -94,6 +105,7 @@ impl QueryView {
             | Self::Counts(args) => args,
             Self::Item(_) => unreachable!("item uses ItemArgs"),
             Self::Schema(_) => unreachable!("schema uses SchemaArgs"),
+            Self::Fidelity(_) => unreachable!("fidelity uses FidelityArgs"),
         }
     }
 }
@@ -283,6 +295,9 @@ pub fn run(view: &QueryView) -> Result<()> {
     if let QueryView::Schema(args) = view {
         return schema::run(args);
     }
+    if let QueryView::Fidelity(args) = view {
+        return fidelity::run(args);
+    }
     let args = view.args();
     let bytes = read_input(&args.file)?;
     let artifact = detect(&bytes, &args.file)?;
@@ -295,7 +310,9 @@ pub fn run(view: &QueryView) -> Result<()> {
         QueryView::Findings(args) => findings(&artifact, args),
         QueryView::Losses(args) => losses(&artifact, args),
         QueryView::Counts(args) => counts(&artifact, args),
-        QueryView::Item(_) | QueryView::Schema(_) => unreachable!("handled above"),
+        QueryView::Item(_) | QueryView::Schema(_) | QueryView::Fidelity(_) => {
+            unreachable!("handled above")
+        }
     }
 }
 

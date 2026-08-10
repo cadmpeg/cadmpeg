@@ -245,6 +245,8 @@ cadmpeg query counts bracket.cadir.json  # per-arena entity counts; alias: arena
 cadmpeg query item bracket.cadir.json model.faces FACE_ID  # one record; alias: record
 cadmpeg query summary report.json      # artifact kind and section counts
 cadmpeg query schema model.features    # the arena's record type (no FILE)
+cadmpeg query fidelity part.cadir.fidelity.json  # retained source records
+cadmpeg query fidelity part.cadir.fidelity.json --stream S -o s.bin  # extract
 ```
 
 `counts` on a CADIR document lists arena lengths for `model` and every
@@ -261,6 +263,10 @@ required, and every variant of a tagged union — or, bare, every model arena
 and its element type (`sidecar` prints the decode-sidecar shape). Which
 arenas a document actually has still comes from `counts`; native arena
 records are codec-owned, so `schema` refuses them and names `item` instead.
+`fidelity` lists a decode sidecar's retained source records (the extraction
+address space) and, with `--stream NAME`, reassembles that stream's retained
+bytes byte-exactly into `-o FILE` — refusing gapped extents and extent-only
+retention loudly rather than splicing or writing empty output.
 An empty or not-run section is not an error: the header prints, a
 note goes to standard error, and the exit status stays `0`. A view the
 artifact kind can never carry exits `2` and names the command that produces
