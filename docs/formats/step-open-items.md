@@ -314,6 +314,32 @@ non-seam oriented edge uses endpoint continuity only when one same-surface
 pcurve is selected, or when tied candidates have the same model-space locus;
 distinct unresolved candidates remain detached and produce a topology loss.
 
+### TP-03. Non-planar pcurve units
+
+**Question.** Which scale does each pcurve axis use for elementary and swept
+support surfaces, including the directrix and extrusion-vector cases?
+
+**Known.** ISO 10303-42 defines a pcurve in its support surface's `(u,v)`
+parameter space. The analytic surface equations identify plane axes from the
+representation length context, cylinder and cone axes as `(plane angle,
+length)`, and sphere and torus axes as `(plane angle, plane angle)`. A linear
+extrusion is `lambda(u) + v V`; the referenced curve defines `u` and the
+extrusion vector magnitude defines the parameterization for `v`. A revolution
+uses plane angle for `u` and the referenced curve's parameter for `v`.
+
+**Note.** Commit `f41f2898c` promoted a scale table into `docs/formats/step.md`
+and removed this item. The implementation and `reader/geometry.rs` tests use
+synthetic IR variants. They do not establish the directrix unit mapping for
+every curve kind. In particular, the decoder scales the extrusion vector to
+document units and also applies a document length scale to the pcurve's
+second axis. The source equation does not by itself justify treating that
+axis as an independent length coordinate. This item is reopened.
+
+**Need.** We need a parameter-scale table that preserves the source
+parameterization and vector magnitudes for every supported directrix and
+surface wrapper, with source equations and independent producer files before
+this rule is settled.
+
 ### TP-05. Partial solid and tolerant point carriers
 
 **Resolved.** CADIR has no tolerant-point or partial-solid carrier. A
@@ -370,6 +396,54 @@ partial that carries the three boundary parameters. The shell reader and
 implicit-plane reader use this same dispatch. The synthesized complex-face
 fixture covers the inherited-attribute form.
 
+### TP-09. Pcurve endpoint and tied-locus verification
+
+**Question.** What evidence proves that a non-seam pcurve candidate is the
+correct edge carrier, and that tied candidates have the same model-space
+locus?
+
+**Known.** `select_associated_pcurve` scores candidate endpoint fits and
+accepts the lowest finite score within tolerance
+(`crates/cadmpeg-codec-step/src/reader/topology.rs:3623-3747`). A tie is
+declared from a relative score threshold, and `pcurve_loci_equivalent`
+compares 33 samples in each direction before the first tied candidate is
+selected. The search uses a finite seed set and a bounded iterative closest
+point calculation.
+
+**Note.** TP-02 records the semantic selection rule, but this implementation
+does not prove a global minimum or a global locus equivalence. A pcurve with
+an unsampled endpoint minimum, or two distinct curves that meet at the sample
+points and diverge between them, can pass the acceptance checks. The first
+tied candidate then depends on candidate order. This item records the
+verification gap rather than treating the numerical heuristic as STEP
+semantics.
+
+**Need.** We need independent multi-pcurve files and an exact inverse or
+interval/adaptive proof for endpoint fit and locus equivalence, including
+reordered, near-tied, and crossing candidates.
+
+### TP-10. Malformed duplicate outer-bound fallback
+
+**Question.** When malformed input gives one face more than one
+`FACE_OUTER_BOUND`, which loop role and implicit face carrier should the
+decoder retain?
+
+**Known.** ISO 10303-42 permits at most one `FACE_OUTER_BOUND` for a face.
+For malformed input, the decoder marks the first outer bound in source order
+as outer, marks later outer declarations unspecified, and uses the first outer
+bound when it derives an implicit face plane
+(`crates/cadmpeg-codec-step/src/reader/topology.rs:2671-2700,3126-3138`).
+
+**Note.** This is a salvage policy, not a STEP rule. A face with two
+valid-looking loops can therefore change its retained outer role and derived
+carrier when the loop order changes. TP-04 was closed because conforming STEP
+prohibits multiple outer bounds; that closure does not establish this
+malformed-input fallback.
+
+**Need.** We need an explicit conservative salvage policy, or producer and
+validator evidence that first-role retention is required, with reordered
+duplicate-outer fixtures and validation results.
+
 ## 7. Units and measures
 
 ### UM-01. Unit context selection
@@ -406,6 +480,28 @@ uses the same SI prefix factors as the length resolver, and multiplies the
 resulting factor into conversion-based-unit factors. The rule is covered by
 the parser-level `MILLI` and omitted-prefix regression cases in
 `reader/geometry.rs`.
+
+### UM-04. Document fallback unit identity
+
+**Question.** Which unit context and unit occurrence supply the document
+fallback when a representation has no usable `GLOBAL_UNIT_ASSIGNED_CONTEXT`?
+
+**Known.** Representation-local unit scopes are resolved from their reachable
+representation closure. The document fallback in
+`crates/cadmpeg-codec-step/src/reader/geometry.rs:2791-2844` scans the record
+map for the first global unit context, then the first matching length or
+plane-angle unit. The record map is ordered by numeric instance ID. Conflicting
+fallback contexts do not produce an ambiguity loss.
+
+**Note.** UM-01 settles scoped representation units but does not settle this
+fallback identity. If an exchange has multiple global unit contexts and a
+consumer is unscoped, the selected scale can change when instance numbers or
+context order change. This is source-order/record-order selection, not
+evidence of the document unit.
+
+**Need.** We need the STEP document-level unit ownership rule and independent
+files with multiple global contexts, including conflicting and equivalent
+contexts, before selecting a fallback scale.
 
 ## 8. Parameter charts and unit repair
 
@@ -657,6 +753,56 @@ surface color, so the reader selects `.BOTH.` before `.POSITIVE.` before
 `[v[i+1], v[i], v[i+2]]` for an odd `i`. Fans keep their first index and
 advance the other two. The reader applies this rule and the regression covers
 the first two triangles of one strip.
+
+### AP-08. Context-dependent style selection
+
+**Question.** How does a `STYLED_ITEM` select among valid
+`PRESENTATION_STYLE_BY_CONTEXT` assignments, and what neutral appearance is
+retained when the requested presentation context is unavailable?
+
+**Known.** ISO 10303-46 permits a `STYLED_ITEM` to carry multiple styles when
+the styles are presentation-style-by-context assignments. The decoder
+flattens the style references in
+`crates/cadmpeg-codec-step/src/reader/presentation.rs:191-240` and
+`find_color` recursively keeps the first candidate at the highest surface-side
+rank (`presentation.rs:819-987`). It does not evaluate a presentation
+context. Thus two valid context-dependent colors are reduced by reference
+order, even when both are otherwise valid.
+
+**Note.** A `STYLED_ITEM` with one context style for a shaded representation
+and another for a wireframe representation can transfer the first color to
+both consumers. AP-05 and AP-06 settle independent styled-item conflicts and
+surface-side precedence; they do not settle context-dependent styles. This
+item records the missing context identity and neutral-IR policy.
+
+**Need.** We need the context matching and precedence rule, a policy for
+preserving separate context bindings or reporting ambiguity, and an
+independent file with two valid context styles consumed by different
+presentation contexts.
+
+### DR-01. Drawing target identity selection
+
+**Question.** Which neutral identity represents a drawing reference when one
+STEP source record maps to more than one neutral model identity?
+
+**Known.** `record_targets` collects every neutral identity derived from a
+source record into a `BTreeSet`
+(`crates/cadmpeg-codec-step/src/reader/mod.rs:1038-1051`). The drawing target
+resolver returns `identities.iter().next()` and does not retain the remaining
+identities (`crates/cadmpeg-codec-step/src/reader/drawing.rs:406-444`). A
+source record with multiple product-definition views can therefore receive
+the lexicographically first identity.
+
+**Note.** This is an ownership inference from neutral identity ordering. If a
+drawing annotation or presentation reference targets a source record with two
+valid product-definition identities, changing identity spelling or insertion
+order can retarget the drawing without changing the STEP reference. The
+presentation layer expands all applicable product views, but the drawing
+target path does not. No existing STEP item settles this projection.
+
+**Need.** We need the drawing-reference target entity and product-definition
+scope rule, plus an independent multi-view file that shows whether all views
+are targets, one view is authoritative, or the reference is ambiguous.
 
 ## 12. Envelope, lexis, and schema selection
 
