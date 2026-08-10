@@ -1727,14 +1727,14 @@ stored endpoint roles. In the affine section solver, an active type-twelve
 form equates the two endpoint `v` ordinates and an active type-thirteen form
 equates their `u` ordinates. A nonzero sense or a non-arc entity does not
 satisfy either form.
-A one-item type-thirty-three incidence with sense `10` on an entity with one
-unique row in a complete `segtab` fixes that entity in sketch coordinates.
-The entity row may be any known typed segment-family row, including a bounded
-section curve. The `flags` value does not change this interpretation. It maps
-to the neutral fixed-entity constraint. The constraint activity is the low bit
-of the stored status; the entity identity remains the constraint entity for
-either activity state. An incomplete or ambiguous `segtab`, an opaque row, a
-solver-only entity, or any other sense remains a native incidence.
+A one-item type-thirty-three incidence with sense `10` fixes the uniquely
+emitted sketch entity with that external identity in sketch coordinates. The
+entity may have typed or native geometry, and the source `segtab` need not be
+complete once the emitted entity identity is unique. The `flags` value does not
+change this interpretation. It maps to the neutral fixed-entity constraint.
+The constraint activity is the low bit of the stored status; the entity
+identity remains the constraint entity for either activity state. An ambiguous
+or non-emitted entity identity, or any other sense, remains a native incidence.
 A one-item type-one incidence with sense zero makes the referenced line
 horizontal. A one-item type-two incidence with sense zero makes the referenced
 line vertical. The unary incidence establishes the referenced entity's line

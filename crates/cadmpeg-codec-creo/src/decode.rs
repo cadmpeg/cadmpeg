@@ -14401,13 +14401,16 @@ fn section_skamp_constraints_for_geometry(
                             SketchConstraintDefinition::VerticalLoci { first, second }
                         }
                     }
-                    (33, [item])
-                        if item.sense == 10
-                            && unique_decoded_section_entity(definition, item.entity_id)
-                                .is_some() =>
-                    {
-                        SketchConstraintDefinition::Fixed {
-                            entity: sketch_entity_id(sketch, item.entity_id),
+                    (33, [item]) if item.sense == 10 => {
+                        let entity = sketch_entity_id(sketch, item.entity_id);
+                        let emitted_entity_is_unique =
+                            geometry.is_some_and(|geometry| geometry.contains_key(&entity));
+                        if emitted_entity_is_unique
+                            || unique_decoded_section_entity(definition, item.entity_id).is_some()
+                        {
+                            SketchConstraintDefinition::Fixed { entity }
+                        } else {
+                            native_constraint()?
                         }
                     }
                     (37, [source, result])

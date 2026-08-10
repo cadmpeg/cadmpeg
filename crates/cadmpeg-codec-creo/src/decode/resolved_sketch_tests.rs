@@ -11293,6 +11293,23 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .definition,
         SketchConstraintDefinition::Native { .. }
     ));
+    let emitted_fixed_geometry = BTreeMap::from([(
+        SketchEntityId("creo:featdefs:sketch_entity#917:18".to_string()),
+        SketchGeometry::Native {
+            native_kind: "bounded_curve".to_string(),
+        },
+    )]);
+    let emitted_fixed_constraints = section_skamp_constraints_for_geometry(
+        &fixed_bounded_curve,
+        &SketchId("creo:model:sketch#917".into()),
+        Some(&emitted_fixed_geometry),
+    );
+    assert_eq!(
+        emitted_fixed_constraints[0].0.definition,
+        SketchConstraintDefinition::Fixed {
+            entity: SketchEntityId("creo:featdefs:sketch_entity#917:18".to_string()),
+        }
+    );
 
     let mut fixed_line = definition.clone();
     fixed_line.relations.as_mut().expect("relations").skamps = vec![crate::feature::FeatureSkamp {
