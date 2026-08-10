@@ -124,16 +124,6 @@ from a conformant file.
 
 ## 7. Write path
 
-### WR-02. The declared Global minimum resolution is tighter than the writer's own acceptance bound
-
-**Question.** What minimum resolution must a generated file declare?
-
-**Known.** `writer.rs:4738-4741` writes field 19 as the constant `0.001`. `writer.rs:2973-2996` accepts a pcurve chain within `self.tolerance.max(COINCIDENCE_TOLERANCE)`, where `COINCIDENCE_TOLERANCE` is 0.01 mm (`cadmpeg-ir/src/units.rs:42`) and `self.tolerance` is unbounded above (`writer.rs:3153-3166`).
-
-**Conflict.** The file declares a resolution ten times tighter than the gap the writer permits. `iges.md` "Topology" states that disagreement beyond the declared resolution prevents attachment, so this codec's own reader discards the topology of a file this codec wrote. There is no writer-to-reader round-trip test in the crate, so nothing detects it.
-
-**Need.** We need the declared resolution derived from the tolerances the writer actually accepted.
-
 ### WR-03. The Type 186 outer shell is the first shell by position
 
 **Question.** Which shell of a region is the exterior shell?

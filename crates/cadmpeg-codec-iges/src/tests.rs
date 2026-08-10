@@ -9818,6 +9818,8 @@ fn encode_regenerates_a_bounded_sheet_with_resolution_tolerances() {
         .unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
+    let global = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
+    assert_eq!(global.minimum_resolution_mm(), 0.01);
 
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
@@ -12348,6 +12350,37 @@ fn encode_promotes_an_unclassified_brep_loop_to_outer() {
         round_trip.ir.model.loops[0].boundary_role,
         LoopBoundaryRole::Outer
     );
+    assert!(
+        round_trip.report.losses.is_empty(),
+        "{:#?}",
+        round_trip.report.losses
+    );
+}
+
+#[test]
+fn encode_declares_the_largest_topology_tolerance_as_minimum_resolution() {
+    let mut decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_vertex_loop_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    decoded.ir.model.vertices[0].tolerance = Some(0.25);
+
+    let plan = IgesCodec
+        .plan(EncodeInput {
+            ir: &decoded.ir,
+            fidelity: None,
+        })
+        .unwrap();
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    let global = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
+    assert_eq!(global.minimum_resolution_mm(), 0.25);
+
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
     assert!(
         round_trip.report.losses.is_empty(),
         "{:#?}",

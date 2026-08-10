@@ -259,7 +259,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
 
     let counts = entity_counts(&entities);
     Ok(Synthesis {
-        bytes: encode_file(&entities, version)?,
+        bytes: encode_file(&entities, version, generated_minimum_resolution(ir))?,
         counts,
         losses,
     })
@@ -3172,6 +3172,21 @@ fn topology_edge_explicit_tolerance(ir: &CadIr, edge: &Edge) -> f64 {
     tolerance
 }
 
+fn generated_minimum_resolution(ir: &CadIr) -> f64 {
+    ir.model
+        .edges
+        .iter()
+        .filter_map(|edge| edge.tolerance)
+        .chain(
+            ir.model
+                .vertices
+                .iter()
+                .filter_map(|vertex| vertex.tolerance),
+        )
+        .filter(|tolerance| tolerance.is_finite() && *tolerance > 0.0)
+        .fold(cadmpeg_ir::units::COINCIDENCE_TOLERANCE, f64::max)
+}
+
 fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     for entity in entities {
@@ -4741,10 +4756,15 @@ struct Entity {
     transform: Option<Placement>,
 }
 
-fn encode_file(entities: &[Entity], version: crate::IgesVersion) -> Result<Vec<u8>, CodecError> {
+fn encode_file(
+    entities: &[Entity],
+    version: crate::IgesVersion,
+    minimum_resolution: f64,
+) -> Result<Vec<u8>, CodecError> {
     let global = format!(
-        "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260807.000000,0.001,1000.0,6Hauthor,7Hcadmpeg,{},0,0H,0H;",
-        version.global_flag()
+        "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260807.000000,{},1000.0,6Hauthor,7Hcadmpeg,{},0,0H,0H;",
+        number(minimum_resolution),
+        version.global_flag(),
     )
     .into_bytes();
     let global_count = global.len().div_ceil(72);
