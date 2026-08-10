@@ -39,6 +39,13 @@ pub(crate) struct PmDcReferenceList {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct PmDcU32List {
+    pub(crate) marker: u16,
+    pub(crate) metadata: Option<PmDcListMetadata>,
+    pub(crate) values: Vec<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "width", content = "values", rename_all = "snake_case")]
 pub(crate) enum PmDcListMetadata {
     U16([u16; 2]),
@@ -104,6 +111,12 @@ impl<'a> Cursor<'a> {
 
     pub(crate) fn u32(&mut self, field: &str) -> Result<u32, CodecError> {
         Ok(u32::from_le_bytes(
+            self.take(4, field)?.try_into().expect("four-byte field"),
+        ))
+    }
+
+    pub(crate) fn i32(&mut self, field: &str) -> Result<i32, CodecError> {
+        Ok(i32::from_le_bytes(
             self.take(4, field)?.try_into().expect("four-byte field"),
         ))
     }
@@ -179,6 +192,26 @@ pub(crate) fn reference_list(
     marker: u16,
     field: &str,
 ) -> Result<PmDcReferenceList, CodecError> {
+    let (count, metadata) =
+        list_preamble(ctx, cursor, marker, field, "admit Inventor PmDc references")?;
+    let mut references = Vec::with_capacity(count);
+    for index in 0..count {
+        references.push(cursor.reference(&format!("{field} reference {index}"))?);
+    }
+    Ok(PmDcReferenceList {
+        marker,
+        metadata,
+        references,
+    })
+}
+
+fn list_preamble(
+    ctx: &DecodeContext<'_>,
+    cursor: &mut Cursor<'_>,
+    marker: u16,
+    field: &str,
+    admission: &'static str,
+) -> Result<(usize, Option<PmDcListMetadata>), CodecError> {
     let actual = [
         cursor.u16(&format!("{field} marker kind"))?,
         cursor.u16(&format!("{field} marker form"))?,
@@ -189,7 +222,7 @@ pub(crate) fn reference_list(
         )));
     }
     let count = cursor.u32(&format!("{field} count"))? as usize;
-    ctx.charge_collection_items(count as u64, "admit Inventor PmDc references")?;
+    ctx.charge_collection_items(count as u64, admission)?;
     let metadata = if count == 0 {
         None
     } else if marker == 8 {
@@ -203,13 +236,24 @@ pub(crate) fn reference_list(
             cursor.u32(&format!("{field} metadata 1"))?,
         ]))
     };
-    let mut references = Vec::with_capacity(count);
+    Ok((count, metadata))
+}
+
+pub(crate) fn u32_list(
+    ctx: &DecodeContext<'_>,
+    cursor: &mut Cursor<'_>,
+    marker: u16,
+    field: &str,
+) -> Result<PmDcU32List, CodecError> {
+    let (count, metadata) =
+        list_preamble(ctx, cursor, marker, field, "admit Inventor PmDc integers")?;
+    let mut values = Vec::with_capacity(count);
     for index in 0..count {
-        references.push(cursor.reference(&format!("{field} reference {index}"))?);
+        values.push(cursor.u32(&format!("{field} value {index}"))?);
     }
-    Ok(PmDcReferenceList {
+    Ok(PmDcU32List {
         marker,
         metadata,
-        references,
+        values,
     })
 }

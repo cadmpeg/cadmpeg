@@ -744,9 +744,16 @@ fn validate_features(data: &NativeData, findings: &mut Vec<Finding>) {
                 point,
                 value,
             } => references.extend([transform.index, point.index, value.index]),
+            PmDcFeaturePropertyKind::FilletEdgeSet {
+                edges,
+                radius,
+                selection,
+                continuity,
+            } => references.extend([edges.index, radius.index, selection.index, continuity.index]),
             PmDcFeaturePropertyKind::Enumeration { .. }
             | PmDcFeaturePropertyKind::Boolean { .. }
-            | PmDcFeaturePropertyKind::RdxVariable { .. } => {}
+            | PmDcFeaturePropertyKind::RdxVariable { .. }
+            | PmDcFeaturePropertyKind::EdgeItem { .. } => {}
         }
         if raw.get(&(property.segment_token.as_str(), property.record_ordinal))
             != Some(&property.type_id.as_str())

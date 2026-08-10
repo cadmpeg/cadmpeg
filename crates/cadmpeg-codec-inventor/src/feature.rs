@@ -6,7 +6,8 @@ use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 use crate::pmdc::{
-    content_header, reference_list, type_id_string, Cursor, PmDcContentHeader, PmDcReferenceList,
+    content_header, reference_list, type_id_string, u32_list, Cursor, PmDcContentHeader,
+    PmDcReferenceList, PmDcU32List,
 };
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
@@ -48,6 +49,13 @@ const PLACEMENT_TYPE: [u8; 16] = [
 ];
 const FILLET_EDGE_SETS_TYPE: [u8; 16] = [
     0xda, 0xe9, 0x48, 0x1b, 0xd2, 0x11, 0xdc, 0x2c, 0x00, 0x08, 0x3e, 0xab, 0x1b, 0x14, 0xdc, 0x09,
+];
+const FILLET_EDGE_SET_TYPE: [u8; 16] = [
+    0x16, 0x41, 0xd6, 0xaa, 0xd2, 0x11, 0xdb, 0x2c, 0x00, 0x08, 0x3e, 0xab, 0x1b, 0x14, 0xdc, 0x09,
+];
+const EDGE_COLLECTION_TYPE: [u8; 16] = inventor_id(0x9087_4d51);
+const EDGE_ITEM_TYPE: [u8; 16] = [
+    0x82, 0x69, 0x5c, 0x37, 0xd1, 0x11, 0x51, 0x6b, 0x00, 0x08, 0xa1, 0xba, 0x32, 0xa3, 0xdc, 0x09,
 ];
 const FILLET_TYPE: [u8; 16] = [
     0x27, 0x88, 0xf2, 0x78, 0xc5, 0x4d, 0xd7, 0xbe, 0x43, 0x13, 0xb3, 0x98, 0x60, 0x39, 0xb5, 0x2e,
@@ -123,6 +131,17 @@ pub(crate) enum PmDcFeaturePropertyKind {
         point: crate::pmdc::PmDcReference,
         value: crate::pmdc::PmDcReference,
     },
+    FilletEdgeSet {
+        edges: crate::pmdc::PmDcReference,
+        radius: crate::pmdc::PmDcReference,
+        selection: crate::pmdc::PmDcReference,
+        continuity: crate::pmdc::PmDcReference,
+    },
+    EdgeItem {
+        index_references: PmDcU32List,
+        index_reference_value: i32,
+        value: u32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -142,6 +161,7 @@ pub(crate) enum PmDcFeatureReferenceFamily {
     FeatureDimensions,
     ObjectCollection,
     FilletEdgeSets,
+    EdgeCollection,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -412,6 +432,9 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         SURFACE_BODY_TYPE => Some(parse_surface_body),
         PROFILE_SELECTION_TYPE => Some(parse_profile_selection),
         PLACEMENT_TYPE => Some(parse_placement),
+        FILLET_EDGE_SET_TYPE => Some(parse_fillet_edge_set),
+        EDGE_COLLECTION_TYPE => Some(parse_edge_collection),
+        EDGE_ITEM_TYPE => Some(parse_edge_item),
         _ => None,
     }
 }
@@ -545,6 +568,7 @@ reference_parser!(parse_boundary_patch, BoundaryPatch);
 reference_parser!(parse_feature_dimensions, FeatureDimensions);
 reference_parser!(parse_object_collection, ObjectCollection);
 reference_parser!(parse_fillet_edge_sets, FilletEdgeSets);
+reference_parser!(parse_edge_collection, EdgeCollection);
 
 fn parse_rdx_variable(
     ctx: &DecodeContext<'_>,
@@ -643,6 +667,56 @@ fn parse_placement(
         PmDcFeaturePropertyKind::Placement {
             transform,
             point,
+            value,
+        },
+    ))
+}
+
+fn parse_fillet_edge_set(
+    _: &DecodeContext<'_>,
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcFeatureProperty, CodecError> {
+    let mut cursor = Cursor::new(source);
+    let header = content_header(&mut cursor)?;
+    let edges = cursor.reference("fillet edge-set collection")?;
+    let radius = cursor.reference("fillet edge-set radius")?;
+    let selection = cursor.reference("fillet edge-set selection")?;
+    let continuity = cursor.reference("fillet edge-set continuity")?;
+    cursor.finish("fillet edge set")?;
+    Ok(property(
+        version,
+        header,
+        PmDcFeaturePropertyKind::FilletEdgeSet {
+            edges,
+            radius,
+            selection,
+            continuity,
+        },
+    ))
+}
+
+fn parse_edge_item(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcFeatureProperty, CodecError> {
+    let mut cursor = Cursor::new(source);
+    let header = content_header(&mut cursor)?;
+    let index_references = u32_list(ctx, &mut cursor, 2, "edge-item index references")?;
+    let index_reference_value = if index_references.values.is_empty() {
+        -1
+    } else {
+        cursor.i32("edge-item selected index")?
+    };
+    let value = cursor.u32("edge-item value")?;
+    cursor.finish("edge item")?;
+    Ok(property(
+        version,
+        header,
+        PmDcFeaturePropertyKind::EdgeItem {
+            index_references,
+            index_reference_value,
             value,
         },
     ))
@@ -856,6 +930,39 @@ mod tests {
         parse(&placement, |ctx, source| {
             parse_placement(ctx, source, 16).expect("placement")
         });
+
+        let mut fillet_set = content(18);
+        fillet_set.extend_from_slice(&0x8000_0010u32.to_le_bytes());
+        fillet_set.extend_from_slice(&0x8000_0011u32.to_le_bytes());
+        fillet_set.extend_from_slice(&0x8000_0012u32.to_le_bytes());
+        fillet_set.extend_from_slice(&0x8000_0013u32.to_le_bytes());
+        let parsed = parse(&fillet_set, |ctx, source| {
+            parse_fillet_edge_set(ctx, source, 16).expect("fillet edge set")
+        });
+        assert!(matches!(
+            parsed.kind,
+            PmDcFeaturePropertyKind::FilletEdgeSet { radius, .. } if radius.index == 17
+        ));
+
+        let mut edge_item = content(18);
+        edge_item.extend_from_slice(&2u16.to_le_bytes());
+        edge_item.extend_from_slice(&0x3000u16.to_le_bytes());
+        edge_item.extend_from_slice(&1u32.to_le_bytes());
+        edge_item.extend_from_slice(&[1u32.to_le_bytes(), 0u32.to_le_bytes()].concat());
+        edge_item.extend_from_slice(&42u32.to_le_bytes());
+        edge_item.extend_from_slice(&0i32.to_le_bytes());
+        edge_item.extend_from_slice(&7u32.to_le_bytes());
+        let parsed = parse(&edge_item, |ctx, source| {
+            parse_edge_item(ctx, source, 16).expect("edge item")
+        });
+        assert!(matches!(
+            parsed.kind,
+            PmDcFeaturePropertyKind::EdgeItem {
+                index_reference_value: 0,
+                value: 7,
+                ..
+            }
+        ));
 
         let mut label = Vec::new();
         label.extend_from_slice(&0u32.to_le_bytes());
