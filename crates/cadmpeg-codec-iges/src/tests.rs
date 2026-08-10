@@ -3251,6 +3251,18 @@ fn bounded_plane_with_resolution_gap_file() -> Vec<u8> {
     bytes
 }
 
+fn centimetre_bounded_plane_with_resolution_gap_file() -> Vec<u8> {
+    let mut bytes = bounded_plane_with_resolution_gap_file();
+    let millimetres = b",2,2HM";
+    let centimetres = b",3,2HC";
+    let start = bytes
+        .windows(millimetres.len())
+        .position(|window| window == millimetres)
+        .expect("bounded-plane Global units fields");
+    bytes[start..start + millimetres.len()].copy_from_slice(centimetres);
+    bytes
+}
+
 fn bounded_plane_with_significance_gap_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -9999,6 +10011,44 @@ fn decode_accepts_a_bounded_sheet_join_within_global_resolution() {
         .edges
         .iter()
         .any(|edge| edge.tolerance == Some(0.001)));
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_converts_non_millimetre_resolution_before_sewing_a_bounded_sheet() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(centimetre_bounded_plane_with_resolution_gap_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let face = result
+        .ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.0 == "iges:model:face#D13")
+        .expect("bounded face within the unit-converted resolution");
+    assert_eq!(face.tolerance, Some(0.01));
+    assert!(result
+        .ir
+        .model
+        .vertices
+        .iter()
+        .any(|vertex| vertex.tolerance == Some(0.01)));
+    assert!(result
+        .ir
+        .model
+        .edges
+        .iter()
+        .any(|edge| edge.tolerance == Some(0.01)));
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

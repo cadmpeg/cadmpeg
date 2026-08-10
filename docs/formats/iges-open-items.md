@@ -181,13 +181,3 @@ from a conformant file.
 **Note.** `bounded_plane_with_resolution_gap_file` (`tests.rs:2464`) is the exception and shows the correct shape: a 0.0005 gap against a 0.001 tolerance. It has no reject-side twin.
 
 **Need.** GE-01 through GE-10 record tolerances that no test pins. We need each gate bracketed on both sides.
-
-### EV-08. The minimum resolution is never unit-converted in a test
-
-**Question.** Does `minimum_resolution_mm` apply the length factor?
-
-**Known.** `global.rs:241-245` multiplies the declared resolution by `length_factor_mm()`. Every fixture but one declares millimetres with model scale 1.0, so the factor is 1.0. The one fixture that declares centimetres and scale 0.5 (`tests.rs:8538`) holds one point and two transforms, so it reaches none of the ten call sites that consume the resolution.
-
-**Note.** Removing `* factor` from `global.rs:244` keeps every test green. On a centimetre file the true tolerance is 20 times the value the decoder would then use.
-
-**Need.** We need a resolution-gated fixture in a unit other than millimetres.
