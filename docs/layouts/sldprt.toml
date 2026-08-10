@@ -5141,6 +5141,186 @@ path = "crates/cadmpeg-codec-sldprt/src/tessellation.rs"
 contains = "fn descriptor_table_offset(payload: &[u8], at: usize) -> usize"
 note = "The decoder selects the descriptor-table offset from the complete extended-header grammar."
 
+[[record]]
+name = "draft_plane_reference_prefix"
+kind = "byte"
+section = "2"
+anchor = "Each plane-reference prefix has this fixed layout before its variable component path"
+size = 112
+endianness = "little"
+note = "The variable component-path entries follow this prefix. Offsets begin at the lane-scoped plane-reference token."
+
+[[record.field]]
+name = "token"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "+0 | u16 LE | lane-scoped plane-reference token"
+
+[[record.field]]
+name = "child_token"
+offset = 2
+type = "u16"
+source = "spec"
+anchor = "+2 | u16 LE | non-`ffff` tagged child token"
+
+[[record.field]]
+name = "form"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "+4 | u32 LE | value `2`"
+
+[[record.field]]
+name = "wrapper_flags"
+offset = 8
+type = "bytes[3]"
+source = "spec"
+anchor = "+8 | bytes[3] | `00 00 00` or `40 00 00` wrapper flags"
+
+[[record.field]]
+name = "identity"
+offset = 11
+type = "u32"
+source = "spec"
+anchor = "+11 | u32 LE | nonzero reference identity"
+
+[[record.field]]
+name = "identity_copy"
+offset = 15
+type = "u32"
+source = "spec"
+anchor = "+15 | u32 LE | repeated reference identity"
+
+[[record.gap]]
+offset = 19
+size = 28
+note = "Zero bytes."
+
+[[record.field]]
+name = "sentinel"
+offset = 47
+type = "bytes[16]"
+source = "spec"
+anchor = "+47 | bytes[16] | `ff`"
+
+[[record.gap]]
+offset = 63
+size = 9
+note = "Zero bytes."
+
+[[record.field]]
+name = "instance_token"
+offset = 72
+type = "u16"
+source = "spec"
+anchor = "+72 | u16 LE | tagged instance token"
+
+[[record.field]]
+name = "role"
+offset = 74
+type = "u32"
+source = "spec"
+anchor = "+74 | u32 LE | role word"
+
+[[record.field]]
+name = "zero_at_78"
+offset = 78
+type = "u32"
+source = "spec"
+anchor = "+78 | u32 LE | zero"
+
+[[record.field]]
+name = "cell_count"
+offset = 82
+type = "u32"
+source = "spec"
+anchor = "+82 | u32 LE | component-vector cell count in `2..65`"
+
+[[record.field]]
+name = "path_kind"
+offset = 86
+type = "bytes[4]"
+source = "spec"
+anchor = "+86 | bytes[4] | `00 02 00 00` or `00 03 00 00`"
+
+[[record.field]]
+name = "selector"
+offset = 90
+type = "u32"
+source = "spec"
+anchor = "+90 | u32 LE | component selector"
+
+[[record.field]]
+name = "component_marker"
+offset = 94
+type = "bytes[16]"
+source = "spec"
+anchor = "+94 | bytes[16] | duplicated component-vector marker"
+
+[[record.field]]
+name = "marker_tail"
+offset = 110
+type = "u16"
+source = "spec"
+anchor = "+110 | u16 LE | zero marker tail"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs"
+contains = "const PLANE_REFERENCE_HEADER_LEN: usize = 94;"
+note = "The parser locates the 16-byte component marker at prefix offset +94."
+
+[[record]]
+name = "draft_direction_frame"
+kind = "byte"
+section = "2"
+anchor = "A unique addressed direction frame between the first component vector and the next plane-reference record supplies the pull direction"
+size = 120
+endianness = "little"
+
+[[record.field]]
+name = "handles"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "The frame starts with `c7 cf ff ff c7 cf ff ff`"
+
+[[record.field]]
+name = "zero_at_8"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "u32 zero"
+
+[[record.field]]
+name = "address"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "a nonzero u32 address"
+
+[[record.gap]]
+offset = 16
+size = 8
+note = "Zero bytes."
+
+[[record.gap]]
+offset = 24
+size = 72
+note = "Nine finite f64 LE values precede the pull direction."
+
+[[record.field]]
+name = "pull_direction"
+offset = 96
+type = "f64[3]"
+source = "spec"
+anchor = "The xyz pull-direction unit vector occupies frame offsets +96, +104, and +112"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs"
+contains = "const DIRECTION_OFFSET: usize = 96;"
+note = "The parser reads and validates the unit pull-direction triple at +96."
+
 # --- Not tabulated ---------------------------------------------------------
 
 [[not_applicable]]

@@ -10850,6 +10850,7 @@ pub(crate) fn project_compact_and_generated(
     crate::resolved_features::projections::project_compact_surface_selections(
         features, projection, lanes,
     );
+    crate::resolved_features::projections::project_draft_operands(features, projection, lanes);
     crate::resolved_features::terminations::project_surface_sweep_profiles(
         features, projection, lanes,
     );

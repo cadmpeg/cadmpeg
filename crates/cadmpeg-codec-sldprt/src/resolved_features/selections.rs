@@ -1052,9 +1052,21 @@ pub(super) fn mirror_pattern_component_path_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
-    let header = marker.checked_sub(12)?;
     if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
         || payload.get(marker - 8..marker)? != [0; 8]
+        || payload.get(marker + 16..marker + 18)? != [0, 0]
+    {
+        return None;
+    }
+    component_vector_path_at(payload, marker)
+}
+
+pub(super) fn component_vector_path_at(
+    payload: &[u8],
+    marker: usize,
+) -> Option<Vec<FeatureInputComponentPathEntry>> {
+    let header = marker.checked_sub(12)?;
+    if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
         || payload.get(marker + 16..marker + 18)? != [0, 0]
     {
         return None;

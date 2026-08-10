@@ -51,6 +51,8 @@ pub(crate) mod dimensions;
 
 pub(crate) mod direct_edits;
 
+mod drafts;
+
 mod endpoints;
 
 pub(crate) mod hashes;

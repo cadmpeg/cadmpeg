@@ -607,6 +607,30 @@ A `moCombineBodies_c` object is a body-Boolean feature independently of whether 
 
 A Keywords `Draft` element is a face-draft operation. `Direction` is the pull direction, the `Angle` dimension is the draft angle, and `Outward` is the outward flag. An absent or non-angular `Angle` dimension and an absent or non-Boolean `Outward` value leave the corresponding operand unresolved. The `Faces` and `NeutralPlane` selections, the pull direction, and the retained angle and outward values remain independently meaningful.
 
+A Draft feature-input interval uses the lane-scoped `moPlaneRef_w` token for its neutral plane and drafted faces. Each plane-reference prefix has this fixed layout before its variable component path:
+
+| Offset | Type | Meaning |
+|---:|---|---|
+| +0 | u16 LE | lane-scoped plane-reference token |
+| +2 | u16 LE | non-`ffff` tagged child token |
+| +4 | u32 LE | value `2` |
+| +8 | bytes[3] | `00 00 00` or `40 00 00` wrapper flags |
+| +11 | u32 LE | nonzero reference identity |
+| +15 | u32 LE | repeated reference identity |
+| +19 | bytes[28] | zero |
+| +47 | bytes[16] | `ff` |
+| +63 | bytes[9] | zero |
+| +72 | u16 LE | tagged instance token |
+| +74 | u32 LE | role word |
+| +78 | u32 LE | zero |
+| +82 | u32 LE | component-vector cell count in `2..65` |
+| +86 | bytes[4] | `00 02 00 00` or `00 03 00 00` |
+| +90 | u32 LE | component selector |
+| +94 | bytes[16] | duplicated component-vector marker |
+| +110 | u16 LE | zero marker tail |
+
+The first complete plane-reference record in the interval identifies the neutral plane. Later complete records identify the drafted faces; semantically identical component paths denote one face. The component vector uses the count-minus-one, count-minus-two, or mixed-entry forms defined for duplicated component-vector records. A unique addressed direction frame between the first component vector and the next plane-reference record supplies the pull direction. The frame starts with `c7 cf ff ff c7 cf ff ff`, u32 zero, a nonzero u32 address, and eight zero bytes. Twelve f64 LE values follow. The xyz pull-direction unit vector occupies frame offsets +96, +104, and +112. Missing, repeated, non-unit, or lane-disagreeing direction frames leave the native pull direction unresolved. Explicit Keywords face selections and direction take precedence over these feature-input operands.
+
 A planar sketch history name ending in `<N>`, where `N` is one or more decimal digits, aliases the uniquely named unsuffixed sketch when both records have the same XML element tag, resolved feature-input class, ordered content, and complete parameter map. The unsuffixed history feature remains the sole owner of the solved sketch geometry, and the geometry-less alias feature depends on that owner. Feature operands naming the alias bind to the owner's sketch and depend on the unsuffixed owner. A missing base, multiple matching bases, or any record-content difference leaves the alias operand native.
 
 Keywords `Configuration` elements carry a non-empty, document-unique `Name`; `Material` carries the configuration material override. Decimal `SourceIndex=N` binds the configuration to `Config-N-Partition`. All other attributes are configuration-local named values. Source indices are document-unique and independent of element order and the resolved-features slot identity. A matching partition supplies the configuration body set. When no `Config-N-Partition` section exists, the body set is empty. A configuration without `SourceIndex` has no partition binding.

@@ -1392,6 +1392,59 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-sldprt/src/tessellation.rs` — The decoder selects the descriptor-table offset from the complete extended-header grammar.
 
+## `draft_plane_reference_prefix`
+
+Spec §2 · layout: byte offsets · size: 112 B
+
+The variable component-path entries follow this prefix. Offsets begin at the lane-scoped plane-reference token.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `token` | `u16` | little | spec | +0 \| u16 LE \| lane-scoped plane-reference token |
+| 2 | 2 | `child_token` | `u16` | little | spec | +2 \| u16 LE \| non-`ffff` tagged child token |
+| 4 | 4 | `form` | `u32` | little | spec | +4 \| u32 LE \| value `2` |
+| 8 | 3 | `wrapper_flags` | `bytes[3]` | little | spec | +8 \| bytes[3] \| `00 00 00` or `40 00 00` wrapper flags |
+| 11 | 4 | `identity` | `u32` | little | spec | +11 \| u32 LE \| nonzero reference identity |
+| 15 | 4 | `identity_copy` | `u32` | little | spec | +15 \| u32 LE \| repeated reference identity |
+| 47 | 16 | `sentinel` | `bytes[16]` | little | spec | +47 \| bytes[16] \| `ff` |
+| 72 | 2 | `instance_token` | `u16` | little | spec | +72 \| u16 LE \| tagged instance token |
+| 74 | 4 | `role` | `u32` | little | spec | +74 \| u32 LE \| role word |
+| 78 | 4 | `zero_at_78` | `u32` | little | spec | +78 \| u32 LE \| zero |
+| 82 | 4 | `cell_count` | `u32` | little | spec | +82 \| u32 LE \| component-vector cell count in `2..65` |
+| 86 | 4 | `path_kind` | `bytes[4]` | little | spec | +86 \| bytes[4] \| `00 02 00 00` or `00 03 00 00` |
+| 90 | 4 | `selector` | `u32` | little | spec | +90 \| u32 LE \| component selector |
+| 94 | 16 | `component_marker` | `bytes[16]` | little | spec | +94 \| bytes[16] \| duplicated component-vector marker |
+| 110 | 2 | `marker_tail` | `u16` | little | spec | +110 \| u16 LE \| zero marker tail |
+
+Unstated regions:
+
+- `19..47` (28 B): Zero bytes.
+- `63..72` (9 B): Zero bytes.
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs` — The parser locates the 16-byte component marker at prefix offset +94.
+
+## `draft_direction_frame`
+
+Spec §2 · layout: byte offsets · size: 120 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `handles` | `bytes[8]` | little | spec | The frame starts with `c7 cf ff ff c7 cf ff ff` |
+| 8 | 4 | `zero_at_8` | `u32` | little | spec | u32 zero |
+| 12 | 4 | `address` | `u32` | little | spec | a nonzero u32 address |
+| 96 | 24 | `pull_direction` | `f64[3]` | little | spec | The xyz pull-direction unit vector occupies frame offsets +96, +104, and +112 |
+
+Unstated regions:
+
+- `16..24` (8 B): Zero bytes.
+- `24..96` (72 B): Nine finite f64 LE values precede the pull direction.
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs` — The parser reads and validates the unit pull-direction triple at +96.
+
 ## Not tabulated
 
 | Area | Spec | Reason |
