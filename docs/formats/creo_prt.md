@@ -1816,7 +1816,9 @@ reference entity to the regular profile entity copied from it. The reference
 entity identifier immediately precedes the profile entity identifier. The
 profile entity occurs exactly once in the trim table. The relation retains the
 ordered source and result identities independently of solver activity. Other
-type-37 operand shapes remain native.
+type-37 operand shapes remain native. A neutral projected-copy constraint is
+valid only when both materialized source and result geometries are identical;
+when both are materialized and differ, retain the native incidence.
 An incidence item may reference a complete saved-section entity through its
 `order_table.ext_id`. When its type/sense pattern has no neutral constraint
 mapping, retain the incidence type, ordered entity identifiers, and sense values

@@ -11015,6 +11015,30 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             result: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
         }
     );
+    let mismatched_projected_geometry = BTreeMap::from([
+        (
+            SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
+            SketchGeometry::Native {
+                native_kind: "line".to_string(),
+            },
+        ),
+        (
+            SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+            SketchGeometry::Native {
+                native_kind: "arc".to_string(),
+            },
+        ),
+    ]);
+    assert!(matches!(
+        section_skamp_constraints_for_geometry(
+            &projected_copy,
+            &SketchId("creo:model:sketch#917".into()),
+            Some(&mismatched_projected_geometry),
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Native { .. }
+    ));
     projected_copy.relations.as_mut().expect("relations").skamps[0]
         .items
         .swap(0, 1);

@@ -14424,9 +14424,18 @@ fn section_skamp_constraints_for_geometry(
                                 .flat_map(|table| &table.rows)
                                 .any(|row| row.external_id == result.entity_id) =>
                     {
-                        SketchConstraintDefinition::ProjectedCopy {
-                            source: sketch_entity_id(sketch, source.entity_id),
-                            result: sketch_entity_id(sketch, result.entity_id),
+                        let source = sketch_entity_id(sketch, source.entity_id);
+                        let result = sketch_entity_id(sketch, result.entity_id);
+                        let geometry_agrees = geometry.is_none_or(|geometry| {
+                            geometry
+                                .get(&source)
+                                .zip(geometry.get(&result))
+                                .is_none_or(|(source, result)| source == result)
+                        });
+                        if geometry_agrees {
+                            SketchConstraintDefinition::ProjectedCopy { source, result }
+                        } else {
+                            native_constraint()?
                         }
                     }
                     (14, [axis, first, second])
