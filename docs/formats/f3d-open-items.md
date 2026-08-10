@@ -508,11 +508,3 @@ The `.f3z` merge writes the note `(identity placement)` for the first cause. The
 The projector leaves are tested. `crates/cadmpeg-codec-f3d/src/design/tests.rs` calls `project_remove_body` and `project_surface_stitch` and their siblings directly, with a scope value the test builds. The synthesized dispatcher test also checks the six typed definitions returned by the complete projector. `crates/cadmpeg-codec-f3d/src/tests.rs` supplies a minimal Design stream to the `Form` archive-scan gate and checks the resulting typed definition. No golden fixture under `crates/cadmpeg-codec-f3d/tests/golden/fixtures` carries `BaseFlange`, `RemoveBody`, `SurfaceStitch`, `CopyPaste`, `CopyPasteBodies`, `Base Feature`, or `Form`, so no decode golden pins those dispatcher paths.
 
 **Need.** A change to the scope-kind string, to the gate order, or to the record shape that carries the kind removes a typed definition with the suite green. We need one synthesized fixture per remaining promoted kind, with a decode golden that pins the typed definition it produces.
-
-### EV-02. Generate goldens that do not separate their inputs
-
-**Question.** Which generate-writer behaviour do the `attributes`, `sketch_link`, and `topology_base` goldens each pin?
-
-**Known.** `crates/cadmpeg-codec-f3d/tests/golden/generate` holds `attributes.bin`, `sketch_link.bin`, and `topology_base.bin`. The three are byte-identical and each is 2,055 bytes. Their source fixtures under `tests/golden/fixtures` differ from one another, and their decode goldens under `tests/golden/decode` differ from one another. The generate writer therefore maps three different inputs to one output, and two of the three names separate nothing.
-
-**Need.** A reader of the golden tree counts three generate cases where one exists. We must find whether the generate lane is meant to discard what separates these inputs. If it is, two names must go or must state that they are duplicates. If it is not, the writer drops content that the decode side keeps.

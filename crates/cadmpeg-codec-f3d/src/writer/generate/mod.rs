@@ -29,7 +29,7 @@ use preconditions::{
 };
 use presentation::GeneratedDesignRegistry;
 use records::{encode_design_bulkstream, encode_design_metastream};
-use smbh::encode_planar_triangle_smbh;
+use smbh::encode_smbh;
 
 /// Write a canonical source-less F3D archive for the currently supported
 /// native construction profile.
@@ -72,7 +72,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         validate_source_less_design_links(target, &native, &attributes)?;
     }
     let design_registry = GeneratedDesignRegistry::new(target, design_bindings, &attributes)?;
-    let smbh = encode_planar_triangle_smbh(target, &native, &attributes)?;
+    let smbh = encode_smbh(target, &native, &attributes)?;
     let mut staged = tempfile::tempfile()?;
     let mut archive = zip::ZipWriter::new(&mut staged);
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
