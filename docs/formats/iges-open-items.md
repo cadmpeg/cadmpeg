@@ -124,16 +124,6 @@ from a conformant file.
 
 ## 7. Write path
 
-### WR-04. Global fields are a fixed string
-
-**Question.** Which Global values must a generated file compute from the model?
-
-**Known.** `writer.rs:4738-4741` writes one format string. The maximum coordinate is always `1000.0`, the timestamp is always `20260807.000000`, the line-weight series is always one gradation of 1.0 mm, and the sender, receiver, author, and organization are literals. The maximum coordinate is computable from coordinates the writer already holds.
-
-**Note.** The reader preserves the source's declared unit as the `native_units` attribute (`reader.rs:30-31`) and the writer never reads it, so a file authored in inches re-exports declaring `2HMM` with no loss note. The units flag `2` and model scale `1.0` are correct, because the IR has one length unit.
-
-**Need.** We need the Global fields a generated file must compute, and a decision on the frozen timestamp.
-
 ### WR-05. The target version changes one digit only
 
 **Question.** What does `IgesWriteOptions::version` constrain?

@@ -11146,6 +11146,9 @@ fn encode_regenerates_an_edited_point_from_neutral_ir() {
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(report.losses.is_empty());
+    let global = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
+    assert!(global.maximum_coordinate_mm() >= 6.0);
+    assert_ne!(global.maximum_coordinate_mm(), 1000.0);
 
     let decoded = IgesCodec
         .decode(

@@ -25,6 +25,7 @@ use cadmpeg_ir::{CadIr, SourceFidelity};
 use std::collections::BTreeMap;
 use std::f64::consts::TAU;
 use std::fmt::Write as _;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const ALLOWED_NATIVE_ARENAS: &[&str] = &[
     "cards",
@@ -4771,9 +4772,13 @@ fn encode_file(
     version: crate::IgesVersion,
     minimum_resolution: f64,
 ) -> Result<Vec<u8>, CodecError> {
+    let generation_timestamp = generation_timestamp(SystemTime::now())?;
+    let maximum_coordinate = generated_maximum_coordinate(entities);
     let global = format!(
-        "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260807.000000,{},1000.0,6Hauthor,7Hcadmpeg,{},0,0H,0H;",
+        "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H{},{},{},6Hauthor,7Hcadmpeg,{},0,0H,0H;",
+        generation_timestamp,
         number(minimum_resolution),
+        number(maximum_coordinate),
         version.global_flag(),
     )
     .into_bytes();
@@ -4893,6 +4898,79 @@ fn encode_file(
     Ok(bytes)
 }
 
+fn generated_maximum_coordinate(entities: &[Entity]) -> f64 {
+    entities
+        .iter()
+        .try_fold(0.0_f64, |bound, entity| {
+            generated_entity_coordinate_bound(entity).map(|value| bound.max(value))
+        })
+        .unwrap_or(0.0)
+}
+
+fn generated_entity_coordinate_bound(entity: &Entity) -> Option<f64> {
+    if entity.transform.is_some() {
+        return None;
+    }
+    let values = entity
+        .parameters
+        .split(|byte| matches!(byte, b',' | b';'))
+        .filter(|token| !token.is_empty())
+        .map(|token| std::str::from_utf8(token).ok()?.parse::<f64>().ok())
+        .collect::<Option<Vec<_>>>()?;
+    let coordinates: &[f64] = match entity.type_code {
+        110 => values.get(1..=6)?,
+        116 => values.get(1..=3)?,
+        502 => values.get(2..)?,
+        123 | 141 | 142 | 143 | 144 | 186 | 190 | 192 | 194 | 196 | 198 | 504 | 508 | 510 | 514 => {
+            &[]
+        }
+        _ => return None,
+    };
+    coordinates
+        .iter()
+        .map(|value| value.abs())
+        .filter(|value| value.is_finite())
+        .max_by(f64::total_cmp)
+        .or(Some(0.0))
+}
+
+fn generation_timestamp(now: SystemTime) -> Result<String, CodecError> {
+    let seconds = now
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| CodecError::Malformed("IGES generation time precedes 1970".into()))?
+        .as_secs();
+    let days = i64::try_from(seconds / 86_400)
+        .map_err(|_| CodecError::Malformed("IGES generation time is out of range".into()))?;
+    let seconds_of_day = seconds % 86_400;
+    let (year, month, day) = civil_date_from_unix_days(days);
+    let hour = seconds_of_day / 3_600;
+    let minute = seconds_of_day % 3_600 / 60;
+    let second = seconds_of_day % 60;
+    if !(0..=9999).contains(&year) {
+        return Err(CodecError::Malformed(
+            "IGES generation year is outside the four-digit timestamp range".into(),
+        ));
+    }
+    Ok(format!(
+        "{year:04}{month:02}{day:02}.{hour:02}{minute:02}{second:02}"
+    ))
+}
+
+fn civil_date_from_unix_days(days: i64) -> (i64, i64, i64) {
+    let shifted = days + 719_468;
+    let era = shifted.div_euclid(146_097);
+    let day_of_era = shifted - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let mut year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
+    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
+    year += i64::from(month <= 2);
+    (year, month, day)
+}
+
 fn directory_card(fields: [String; 9], sequence: u32) -> Result<Vec<u8>, CodecError> {
     let mut payload = Vec::with_capacity(72);
     for field in fields {
@@ -4950,6 +5028,19 @@ fn number(value: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generation_timestamp_uses_utc_calendar_fields() {
+        assert_eq!(
+            generation_timestamp(UNIX_EPOCH).expect("Unix epoch is representable"),
+            "19700101.000000"
+        );
+        assert_eq!(
+            generation_timestamp(UNIX_EPOCH + std::time::Duration::from_secs(951_827_696))
+                .expect("leap-day timestamp is representable"),
+            "20000229.123456"
+        );
+    }
 
     #[test]
     fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {

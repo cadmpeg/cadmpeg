@@ -380,6 +380,13 @@ impl Global {
         resolution * self.length_factor_mm()
     }
 
+    #[cfg(test)]
+    pub(crate) fn maximum_coordinate_mm(&self) -> f64 {
+        self.real_field(19, "maximum coordinate", Some(0.0))
+            .expect("validated Global maximum coordinate")
+            * self.length_factor_mm()
+    }
+
     pub(crate) fn line_weight_mm(&self, number: i64) -> Option<f64> {
         let gradations = self
             .integer_field(15, "maximum line-weight gradations", Some(1))
