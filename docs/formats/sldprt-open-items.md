@@ -16,6 +16,46 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Body classification
 
+### BC-01. Other class-root layouts
+
+**Question.** Which class-root record layouts and ownership relations select bodies outside the supported class-root chain form?
+
+**Known.** `sldprt.md` §6 defines the supported class-root index prefix, chain heads, and the byte intervals used to associate entity records with a class-root body. Other class-root layouts remain unresolved.
+
+**Need.** We must know the class-root grammar and body ownership rule to decode every body without assigning entities from one body to another.
+
+**Note.** The closure evidence is limited to synthetic byte builders in `src/tests.rs:6889-6917` and `6921-6957`. `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:258-271` accepts one distinct class-root vector, and `:473-558` assigns records by head-offset intervals. If a file has two valid heads with an unrelated face record between them, interval membership can bind that face to the wrong body; no stored relation is checked. The specification now states this interval grammar, but the closure did not establish it from an independent specimen or a native ownership field. Confidence: high.
+
+### BC-02. Deltas faces outside partition intervals
+
+**Question.** Which class-root body owns a deltas face that is outside every selected partition head interval?
+
+**Known.** `sldprt.md` §6 defines class-root interval ownership for selected partition records. A deltas face outside all selected intervals remains unresolved.
+
+**Need.** We must know the ownership relation to retain faces that do not fall inside a partition interval.
+
+**Note.** `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:473-558` partitions entity records by class-root head offsets, and `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:1439-1468` emits only faces claimed by the selected body relation. The closure test at `src/tests.rs:6921-6957` contains one controlled class-root chain and one deltas face. It does not establish ownership for a face outside all intervals. A multi-chain file can therefore withhold a valid deltas face or leave it attached to an arbitrary fallback body while the specification presents the interval rule as settled. Confidence: high.
+
+### BC-03. Superseded partition faces
+
+**Question.** How does a deltas topology record replace a partition face when the replacement has a different bridge or owner identity?
+
+**Known.** `sldprt.md` §6 states that partition topology has precedence for shared identities and that a complete deltas record can supersede a partition face when the native record identifies the replacement.
+
+**Need.** We must know the replacement relation to avoid retaining a superseded partition face or emitting both faces.
+
+**Note.** `crates/cadmpeg-codec-sldprt/src/brep/topology.rs:359-383` retains an existing partition bridge and merges only missing selected deltas bridges. `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:775-809` orders partition streams before deltas. The test `partition_topology_wins_when_deltas_reuse_a_bridge_identity` covers only one reused identity; it does not prove replacement under a new attribute or owner. If a full deltas bridge is the replacement, the partition bridge remains because no replacement relation is decoded. The specification's supersession rule is therefore a promotion of an unverified precedence assumption. Confidence: high.
+
+### BC-04. Duplicate topology record identities
+
+**Question.** Which occurrence is authoritative when one stream contains multiple valid topology records with the same attribute but different references or coordinates?
+
+**Known.** Topology records are keyed by stream-local attribute. The specification does not define a duplicate-record rule or a native precedence field.
+
+**Need.** We must select the authoritative topology record to avoid silently changing body connectivity or vertex positions when a duplicate identity is present.
+
+**Note.** `crates/cadmpeg-codec-sldprt/src/brep/topology.rs:626-699` inserts bridges, vertex uses, and points by attribute, so a later valid occurrence replaces the earlier one. `:403-447` keeps the latest candidate occurrence for edge and coedge attributes. `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:477-484` and `:565-573` likewise keep the record with the greatest sequence for duplicate entity attributes. If two complete records share an attribute but point to different loops or coordinates, the later or highest-sequence record controls the emitted topology without a decoded native conflict rule. Candidate evidence rejects some ambiguous edge and coedge shapes, but the other tables have no uniqueness gate. Confidence: high.
+
 ## 2. Geometry carriers
 
 ### GC-01. Non-isoparametric B-spline trim UV
@@ -42,6 +82,26 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the grammar to construct the edge curve.
 
+### GC-04. Offset-surface carriers
+
+**Question.** Which carrier and field semantics identify an offset surface, including the discriminator and flag in its native record?
+
+**Known.** `sldprt.md` §7.4 defines the supported offset carrier and its signed normal-offset construction over an analytic, B-spline, or procedural support surface.
+
+**Need.** We must know the carrier grammar and field semantics to construct the exact offset surface and preserve its orientation.
+
+**Note.** `crates/cadmpeg-codec-sldprt/src/brep/offset.rs:22-85` accepts the `00 3c` shape, discriminator bytes `V`, `I`, or `U`, a flag, a support attribute, and a finite distance. `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:1507-1615` evaluates it as the same signed normal offset and uses it before blend and sweep fallbacks. The parser and nested-offset tests use synthetic records in `src/tests.rs:357-371`, `8549-8592`, and `8691-8715`; no independent specimen establishes that all discriminators and flags have identical offset semantics. A valid carrier with another meaning would be silently decoded as the same offset surface. Confidence: high.
+
+### GC-05. Variable-radius blend carriers
+
+**Question.** Which native carrier stores the result and radius law of a variable-radius blend, and how does it bind to the feature history?
+
+**Known.** `sldprt.md` §7.4 states that a variable-radius result uses a `00 7c` B-spline surface-use wrapper or NURBS carrier and that feature history carries its design intent.
+
+**Need.** We must know the carrier and relation to reconstruct variable-radius blend geometry and its radius law.
+
+**Note.** `crates/cadmpeg-codec-sldprt/src/brep/spline.rs:814-960` parses generic `00 7c` NURBS surface carriers, but does not identify a variable-radius blend. The variable-radius Keywords feature in `history.rs` carries history data only. The test `src/tests.rs:13308-13383` uses a synthetic Keywords feature and does not contain a native B-rep result carrier. If multiple generic `00 7c` surfaces exist, the decoder emits generic NURBS without a radius-law identity or a native history binding. The specification promotes an unverified association. Confidence: high.
+
 ### GC-06. Surface-intersection surface carriers
 
 **Question.** Which record carries surface-intersection surface geometry, and what is its payload grammar?
@@ -57,6 +117,26 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `sldprt.md` §7.1 "Stream-scope" defines B-spline surface and curve carriers. It does not define the relation that makes a spline a curve on a support surface.
 
 **Need.** We must know the carrier and relation to construct the exact surface geometry.
+
+### GC-08. Duplicate geometry carrier identities
+
+**Question.** Which occurrence is authoritative when one stream contains multiple valid geometry carriers with the same stream-local attribute?
+
+**Known.** Geometry carriers are indexed by stream-local attribute. The specification does not define a duplicate-identity rule or a precedence field.
+
+**Need.** We must select the authoritative carrier without silently changing geometry when a duplicate record is present.
+
+**Note.** `crates/cadmpeg-codec-sldprt/src/brep.rs:180-190` overwrites analytic carriers with `HashMap::insert`; `brep/blend.rs:135-155` keeps the first blend/support pair with `or_insert`; `brep/offset.rs:77-85` keeps the last offset carrier; and `brep/spline.rs:267-309`, `:732-747`, and `:814-960` keep the first descriptor or carrier. If two structurally valid records share an attribute but carry different geometry, the selected record depends on carrier family and byte order. The maps apply structural filters, but no native uniqueness or precedence relation is decoded. Confidence: high.
+
+### GC-09. Conflicting surface carrier families
+
+**Question.** Which surface carrier family owns a face when analytic, offset, blend, or sweep candidates are all structurally valid for the same surface attribute?
+
+**Known.** `sldprt.md` §7 defines analytic and procedural surface carriers, but does not define a conflict rule between valid carrier families.
+
+**Need.** We must know the native family discriminator or ownership relation to select the exact face support.
+
+**Note.** `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:1507-1635` accepts an analytic surface first, then evaluates an offset, blend, and later sweep fallback. It does not prove that the rejected families are invalid when the first candidate is valid. If a face has valid carriers from two families, the branch order selects one without a native ownership field. Offset support and cycle checks reject some malformed candidates, but they do not settle the conflict when multiple candidates pass. Confidence: high.
 
 ## 3. Container metadata
 
@@ -104,6 +184,26 @@ The decoder uses the schema revision and an explicit `(disc, flo) -> slot count`
 
 The attribute scanner accepts only the exact supported family names followed immediately by a `00 50` definition. It accepts only the list widths that the supported family grammars define: one, or five through seven. A name or list must fit in the remaining stream bytes. Name, definition, and list nodes must be nonsentinel. Duplicate definition and list identities must be byte-equivalent; the decoder withholds a conflicting identity. An instance becomes a relation only when its target survives as an emitted face or an explicit body.
 
+### CM-06. Partition and deltas precedence
+
+**Question.** Which topology record is authoritative when partition and deltas streams describe the same site with different valid records?
+
+**Known.** `sldprt.md` §6 states that partition topology has precedence for shared identities and that deltas records fill missing topology.
+
+**Need.** We must know the native precedence relation to merge partition and deltas topology without retaining stale or duplicate faces.
+
+**Note.** `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:775-809` sorts streams by whether their description contains `deltas`, and `brep/topology.rs:359-383` preserves the partition bridge while merging missing deltas records. The only closure test, `partition_topology_wins_when_deltas_reuse_a_bridge_identity`, uses the same bridge identity. It does not establish precedence for equal-site records with different valid topology. The stream description and iteration order are not evidence of a native precedence field. Confidence: high.
+
+### CM-07. `moTransRefPlaneData_c` gap
+
+**Question.** What does the byte run between the `moTransRefPlaneData_c` class token and the first of its nine f64 values encode, and what fixes its length?
+
+**Known.** The decoder requires an eight-byte `ff` prefix and reads nine little-endian f64 values after it. The values are the plane center, two in-plane directions, and their normal. A valid transformed reference plane record follows the plane center xyz.
+
+**Need.** We must know the gap to write the record back without moving or inventing undecoded bytes.
+
+**Note.** `crates/cadmpeg-codec-sldprt/src/metadata.rs:43-89` still validates the f64 block by finite-value and extent checks after the fixed prefix. Commit `058e16cbf` changed the scan from the first plausible offset to the `ff` prefix and added the synthetic rejection test `src/tests.rs:22953-22972`; the generated fixture supplies the observed bytes. No independent specimen or complete record framing establishes that the prefix and nine values are the full rule. Another token occurrence with the same prefix and bounded numbers can be emitted as a plane, while a valid revision with a different gap is skipped. Confidence: high.
+
 ### CM-09. Active body stream selection
 
 **Question.** Which field identifies the active B-rep stream when no configuration record selects one?
@@ -111,6 +211,8 @@ The attribute scanner accepts only the exact supported family names followed imm
 **Known.** The active configuration's `SourceIndex=N` selects `Config-N-Partition`. `Config-N-Deltas`, `Config-N-GhostPartition`, and `Config-N-ResolvedFeatures` do not substitute for that partition. Without an explicit active source index, a sole non-ghost partition is active. Multiple partitions leave active geometry identity unresolved. Stream size and container order do not select one.
 
 **Need.** We must know whether another stored field selects one partition when multiple partitions exist and no configuration record supplies `SourceIndex`.
+
+**Note.** `crates/cadmpeg-codec-sldprt/src/decode.rs:1918-1947` selects `max_by_key((faces, bodies, points, reverse(index)))` when `container::select_active_parasolid` returns no unique candidate. If a file has two non-ghost partition sites and no `SourceIndex`, the richer site is selected without a native identity field. The container selector itself requires an unambiguous candidate, but the decode fallback bypasses that unresolved state. Confidence: high.
 
 ### CM-10. Parasolid stream boundary
 
@@ -147,6 +249,16 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 **Known.** `sldprt.md` §8 defines the common triangle-count and strip-count cells and the exact descriptor-table position of the compact and extended `uoTempFaceTessData_c` forms. The common cells do not select the form. The fixed extension cells and its nonzero token select the extended form.
 
 **Need.** We must know the token semantics to regenerate the extended form without a retained source record.
+
+### AL-04. Mesh polyline candidate selection
+
+**Question.** Which native field identifies the mesh polyline used as a helix input when a stream contains more than one finite `00 22` point array?
+
+**Known.** `sldprt.md` §2 defines the supported helix input as a counted XYZ polyline. It does not define a native rule that ranks multiple candidate arrays by point count.
+
+**Need.** We must know the polyline identity to bind the helix to the correct input geometry.
+
+**Note.** `crates/cadmpeg-codec-sldprt/src/parasolid.rs:183-243` scans every `00 22` array, retains finite XYZ candidates, sorts by scalar count, and selects the largest; equal-size candidates are rejected. If a feature-input payload contains a mesh array and an unrelated finite point array, the largest array is selected even when no native field binds it to the helix. The finite/count shape gate and tie rejection are counter-evidence against arbitrary byte acceptance, but they do not establish the largest-array rule. Confidence: high.
 
 ## 5. Design intent
 
@@ -237,6 +349,16 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 **Known.** `sldprt.md` §2 "A Keywords configuration's decimal `id` attribute is the slot identity for" and `sldprt.md` §2 "Keywords length literals use the suffixes `uin`, `mil`, `mm`, `cm`, `in`, `ft`, `nm`, `um`, `µm`" define unique linked-handle and shared-entity resolution.
 
 **Need.** We must select one entity to bind the reference operand.
+
+### DI-12. Omitted dimensioned circles
+
+**Question.** Which native field marks dimensioned circular geometry as construction geometry when absent from the selected profile stream?
+
+**Known.** The exact compact legacy and extended radial layouts, their native code and role fields, and the `sgSlot` relation identify the supported dimensioned-circle roster. The selected profile stream can omit construction circles.
+
+**Need.** We must know the discriminator to prevent an omitted construction circle from becoming profile geometry.
+
+**Note.** `crates/cadmpeg-codec-sldprt/src/dimensions.rs:634-673` recognizes construction only in the exact radial marker layout, and `:1008-1303` propagates that flag. However, `:276-504` and `:515-629` fabricate omitted circles from dimension and point markers with `construction: false`; `:880-1006` also stamps false in the circle-only carrier path. The closure commit `f88f841fe` proves one-to-one roster matching with synthetic tests, but it does not prove the native construction marker for every omitted-geometry path. If the profile omits a construction circle while retaining its point/dimension relation, the relation path emits it as profile geometry. Confidence: high.
 
 ### DI-13. Marker-only profile placement
 
@@ -389,6 +511,16 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 **Known.** `sldprt.md` §2 "A Draft feature-input interval uses the lane-scoped `moPlaneRef_w` token" defines neutral-plane Draft operands. `sldprt.md` §2 "A compact parting-line Draft uses direct duplicated component-vector records" defines parting-line Draft operands and mode. Keywords independently retains an explicit `Outward` Boolean.
 
 **Need.** We must recover the native outward flag when Keywords omits it.
+
+### DI-32. Compact line-reference width
+
+**Question.** Which compact line-reference width and trailer layout are authoritative when more than one valid direction triple occurs in a record?
+
+**Known.** `sldprt.md` §2 defines the supported compact line-reference layouts and requires an exact trailer for each layout. A final ambiguous layout with distinct valid directions remains unresolved.
+
+**Need.** We must know the record width and direction field to decode each line reference without choosing a candidate by plausibility.
+
+**Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs:258-444` accepts finite direction triples whose norm is within tolerance, and several layout branches return the first matching direction. The final ambiguous branch rejects distinct vectors, but the test in `axes_tests.rs:26-46` covers only that branch. If one record satisfies two layout predicates with different valid unit triples, the first branch wins without proving the other candidate invalid. Commit `e0037cf23` added negative coverage but did not establish the native width or trailer semantics from an independent record. Confidence: high.
 
 ## 6. Write-path evidence
 
