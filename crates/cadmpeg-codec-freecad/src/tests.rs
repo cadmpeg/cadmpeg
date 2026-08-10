@@ -1384,7 +1384,7 @@ fn transfers_part_construction_geometry_features() {
 <ObjectData Count="8">
  <Object name="Vertex"><Properties Count="3"><Property name="X" type="App::PropertyDistance"><Float value="1"/></Property><Property name="Y" type="App::PropertyDistance"><Float value="2"/></Property><Property name="Z" type="App::PropertyDistance"><Float value="3"/></Property></Properties></Object>
  <Object name="Line"><Properties Count="6"><Property name="X1" type="App::PropertyDistance"><Float value="0"/></Property><Property name="Y1" type="App::PropertyDistance"><Float value="1"/></Property><Property name="Z1" type="App::PropertyDistance"><Float value="2"/></Property><Property name="X2" type="App::PropertyDistance"><Float value="3"/></Property><Property name="Y2" type="App::PropertyDistance"><Float value="4"/></Property><Property name="Z2" type="App::PropertyDistance"><Float value="5"/></Property></Properties></Object>
- <Object name="Circle"><Properties Count="3"><Property name="Radius" type="App::PropertyLength"><Float value="4"/></Property><Property name="Angle1" type="App::PropertyAngle"><Float value="30"/></Property><Property name="Angle2" type="App::PropertyAngle"><Float value="300"/></Property></Properties></Object>
+ <Object name="Circle"><Properties Count="3"><Property name="Radius" type="App::PropertyLength"><Float value="4"/></Property><Property name="Angle0" type="App::PropertyAngle"><Float value="30"/></Property><Property name="Angle1" type="App::PropertyAngle"><Float value="300"/></Property></Properties></Object>
  <Object name="Ellipse"><Properties Count="4"><Property name="MajorRadius" type="App::PropertyLength"><Float value="6"/></Property><Property name="MinorRadius" type="App::PropertyLength"><Float value="2"/></Property><Property name="Angle1" type="App::PropertyAngle"><Float value="15"/></Property><Property name="Angle2" type="App::PropertyAngle"><Float value="270"/></Property></Properties></Object>
  <Object name="Polyline"><Properties Count="2"><Property name="Nodes" type="App::PropertyVectorList"><VectorList count="3"><Vector x="0" y="0" z="0"/><Vector x="2" y="0" z="0"/><Vector x="1" y="1" z="0"/></VectorList></Property><Property name="Close" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
  <Object name="Regular"><Properties Count="2"><Property name="Polygon" type="App::PropertyInteger"><Integer value="7"/></Property><Property name="Circumradius" type="App::PropertyLength"><Float value="8"/></Property></Properties></Object>
@@ -1416,8 +1416,11 @@ fn transfers_part_construction_geometry_features() {
         feature("Circle").definition,
         FeatureDefinition::CircularArc {
             radius: cadmpeg_ir::features::Length(4.0),
+            start_angle: cadmpeg_ir::features::Angle(start),
+            end_angle: cadmpeg_ir::features::Angle(end),
             ..
-        }
+        } if (start - 30_f64.to_radians()).abs() < 1e-12
+            && (end - 300_f64.to_radians()).abs() < 1e-12
     ));
     assert!(matches!(
         feature("Ellipse").definition,
@@ -2100,11 +2103,13 @@ fn transfers_remaining_pipe_orientation_and_transformation_modes() {
 #[test]
 fn preserves_cached_loft_and_chamfer_without_construction_inputs() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="2">
+<Objects Count="4">
  <Object type="Part::Loft" name="Loft" id="1"/>
  <Object type="Part::Chamfer" name="Chamfer" id="2"/>
+ <Object type="Part::MultiFuse" name="Fusion" id="3"/>
+ <Object type="Part::Fillet" name="Fillet" id="4"/>
 </Objects>
-<ObjectData Count="2">
+<ObjectData Count="4">
  <Object name="Loft"><Properties Count="2">
   <Property name="Shape" type="Part::PropertyPartShape"><Part file="Loft.Shape.brp"/></Property>
   <Property name="Solid" type="App::PropertyBool"><Bool value="true"/></Property>
@@ -2112,6 +2117,13 @@ fn preserves_cached_loft_and_chamfer_without_construction_inputs() {
  <Object name="Chamfer"><Properties Count="2">
   <Property name="Shape" type="Part::PropertyPartShape"><Part file="Chamfer.Shape.brp"/></Property>
   <Property name="Base" type="App::PropertyLink"><Link value="Loft"/></Property>
+ </Properties></Object>
+ <Object name="Fusion"><Properties Count="1">
+  <Property name="Shape" type="Part::PropertyPartShape"><Part file="Fusion.Shape.brp"/></Property>
+ </Properties></Object>
+ <Object name="Fillet"><Properties Count="2">
+  <Property name="Shape" type="Part::PropertyPartShape"><Part file="Fillet.Shape.brp"/></Property>
+  <Property name="Base" type="App::PropertyLink"><Link value="Fusion"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let brep = b"CASCADE Topology V1, (c) Matra-Datavision
@@ -2128,6 +2140,8 @@ TShapes 0
         ("Document.xml", document.as_bytes()),
         ("Loft.Shape.brp", brep),
         ("Chamfer.Shape.brp", brep),
+        ("Fusion.Shape.brp", brep),
+        ("Fillet.Shape.brp", brep),
     ]);
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -2579,15 +2593,16 @@ fn transfers_stored_and_external_part_feature_families() {
 #[test]
 fn resolves_datum_references_for_polar_and_mirror_patterns() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="6">
+<Objects Count="7">
  <Object type="Part::Box" name="Seed" id="1"/>
  <Object type="App::Line" name="Axis" id="2"/>
  <Object type="App::Plane" name="Plane" id="3"/>
  <Object type="PartDesign::PolarPattern" name="Ring" id="4"/>
  <Object type="PartDesign::Mirrored" name="Mirror" id="5"/>
  <Object type="PartDesign::Body" name="Body" id="6"/>
+ <Object type="PartDesign::Mirrored" name="FaceMirror" id="7"/>
 </Objects>
-<ObjectData Count="6">
+<ObjectData Count="7">
  <Object name="Seed"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
  <Object name="Axis"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="2" Pz="3" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
  <Object name="Plane"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="4" Py="5" Pz="6" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
@@ -2602,8 +2617,12 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
   <Property name="Originals" type="App::PropertyLinkList"><LinkList count="0"/></Property>
   <Property name="MirrorPlane" type="App::PropertyLinkSub"><LinkSub value="Plane" count="1"><Sub value=""/></LinkSub></Property>
  </Properties></Object>
+ <Object name="FaceMirror"><Properties Count="2">
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="MirrorPlane" type="App::PropertyLinkSub"><LinkSub value="Seed" count="1"><Sub value="Face1"/></LinkSub></Property>
+ </Properties></Object>
  <Object name="Body"><Properties Count="1">
-  <Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="Seed"/><Link value="Mirror"/></LinkList></Property>
+  <Property name="Group" type="App::PropertyLinkList"><LinkList count="3"><Link value="Seed"/><Link value="Mirror"/><Link value="FaceMirror"/></LinkList></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -2646,6 +2665,15 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
             ..
         } if *plane_origin == cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)
             && *plane_normal == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+    ));
+    assert!(matches!(
+        definition("FaceMirror"),
+        cadmpeg_ir::features::FeatureDefinition::Pattern {
+            pattern: cadmpeg_ir::features::PatternKind::MirrorReference {
+                plane: cadmpeg_ir::features::FaceSelection::Native(plane),
+            },
+            ..
+        } if plane.ends_with(":MirrorPlane")
     ));
     assert!(result.report.losses.is_empty());
 }

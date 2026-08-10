@@ -157,6 +157,7 @@ fn incomplete_pattern(
             direction.is_none()
         }
         PatternKind::Circular { .. } | PatternKind::Mirror { .. } => false,
+        PatternKind::MirrorReference { .. } => true,
         PatternKind::CircularAngles { angles, .. } => angles.is_empty(),
         PatternKind::CurveDriven { path, .. } => path.as_ref().is_none_or(incomplete_path),
         PatternKind::Scale { center, .. } => matches!(center, PatternScaleCenter::Native(_)),

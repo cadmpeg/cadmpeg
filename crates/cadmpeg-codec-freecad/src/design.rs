@@ -189,13 +189,13 @@ pub(crate) fn transfer(
                 }
             })
         } else if is_boolean(&object.type_name) {
-            boolean_definition(&object.type_name, &owned).unwrap_or_else(|| {
-                FeatureDefinition::Native {
+            boolean_definition(&object.type_name, &owned)
+                .or_else(|| cached_shape_definition(&owned))
+                .unwrap_or_else(|| FeatureDefinition::Native {
                     kind: object.type_name.clone(),
                     parameters: native_parameters(&owned),
                     properties: BTreeMap::new(),
-                }
-            })
+                })
         } else if is_loft(&object.type_name) {
             loft_definition(&object.type_name, &owned, &sketch_ids)
                 .or_else(|| cached_shape_definition(&owned))
@@ -371,13 +371,13 @@ pub(crate) fn transfer(
                 }
             })
         } else if object.type_name.contains("Fillet") {
-            fillet_definition(&object.type_name, &owned, entries).unwrap_or_else(|| {
-                FeatureDefinition::Native {
+            fillet_definition(&object.type_name, &owned, entries)
+                .or_else(|| cached_shape_definition(&owned))
+                .unwrap_or_else(|| FeatureDefinition::Native {
                     kind: object.type_name.clone(),
                     parameters: native_parameters(&owned),
                     properties: BTreeMap::new(),
-                }
-            })
+                })
         } else if object.type_name.contains("Chamfer") {
             chamfer_definition(&object.type_name, &owned, entries)
                 .or_else(|| cached_shape_definition(&owned))
@@ -2592,13 +2592,16 @@ fn part_construction_geometry_definition(
             start: point("X1", "Y1", "Z1")?,
             end: point("X2", "Y2", "Z2")?,
         }),
-        "Part::Circle" => Some(FeatureDefinition::CircularArc {
-            center: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            radius: Length(scalar_named(properties, "Radius").filter(|value| *value > 0.0)?),
-            start_angle: angle("Angle1")?,
-            end_angle: angle("Angle2")?,
-        }),
+        "Part::Circle" => {
+            let legacy_angles = property(properties, "Angle0").is_some();
+            Some(FeatureDefinition::CircularArc {
+                center: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                radius: Length(scalar_named(properties, "Radius").filter(|value| *value > 0.0)?),
+                start_angle: angle(if legacy_angles { "Angle0" } else { "Angle1" })?,
+                end_angle: angle(if legacy_angles { "Angle1" } else { "Angle2" })?,
+            })
+        }
         "Part::Ellipse" => {
             let major = scalar_named(properties, "MajorRadius").filter(|value| *value > 0.0)?;
             let minor = scalar_named(properties, "MinorRadius")
@@ -4354,12 +4357,22 @@ fn pattern_kind(
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
 ) -> Option<PatternKind> {
     if kind.ends_with("Mirrored") {
-        let (plane_origin, plane_normal) =
-            plane_reference(properties, "MirrorPlane", objects, properties_by_owner)?;
-        return Some(PatternKind::Mirror {
-            plane_origin,
-            plane_normal,
-        });
+        return Some(
+            if let Some((plane_origin, plane_normal)) =
+                plane_reference(properties, "MirrorPlane", objects, properties_by_owner)
+            {
+                PatternKind::Mirror {
+                    plane_origin,
+                    plane_normal,
+                }
+            } else {
+                PatternKind::MirrorReference {
+                    plane: cadmpeg_ir::features::FaceSelection::Native(
+                        property(properties, "MirrorPlane")?.id.clone(),
+                    ),
+                }
+            },
+        );
     }
 
     let count = integer_property(properties, "Occurrences")?;

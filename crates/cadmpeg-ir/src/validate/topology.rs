@@ -74,6 +74,10 @@ fn pattern_is_valid(pattern: &PatternKind, nested: bool) -> bool {
                 && plane_origin.z.is_finite()
                 && valid_feature_direction(*plane_normal)
         }
+        PatternKind::MirrorReference { plane } => match plane {
+            FaceSelection::Native(reference) => !reference.is_empty(),
+            _ => true,
+        },
         PatternKind::Scale {
             center,
             final_factor,
@@ -146,7 +150,7 @@ fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
         | PatternKind::Scale { count, .. } => usize::try_from(*count).ok(),
         PatternKind::LinearOffsets { offsets, .. } => Some(offsets.len()),
         PatternKind::CircularAngles { angles, .. } => Some(angles.len()),
-        PatternKind::Mirror { .. } => Some(2),
+        PatternKind::Mirror { .. } | PatternKind::MirrorReference { .. } => Some(2),
         PatternKind::Unresolved { .. } | PatternKind::Composite { .. } => None,
     }
 }

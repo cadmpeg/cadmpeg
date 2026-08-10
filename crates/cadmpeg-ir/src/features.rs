@@ -3897,6 +3897,11 @@ pub enum PatternKind {
         /// Unit normal of the mirror plane.
         plane_normal: Vector3,
     },
+    /// Reflects seeds across a source-native plane selection whose frame is not resolved.
+    MirrorReference {
+        /// Plane or planar face that defines the reflection.
+        plane: FaceSelection,
+    },
     /// Repeats seeds using progressive uniform scales.
     Scale {
         /// Fixed locus used by every scale transform.
