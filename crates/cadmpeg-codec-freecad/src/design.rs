@@ -2384,10 +2384,10 @@ fn revolution_definition(
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
 ) -> Option<FeatureDefinition> {
-    let profile = profile_ref(owner, properties, sketches);
-    if matches!(&profile, ProfileRef::Unresolved(_)) {
-        return None;
-    }
+    let profile = match profile_ref(owner, properties, sketches) {
+        ProfileRef::Unresolved(_) => None,
+        profile => Some(profile),
+    };
     let mut axis = revolution_axis(properties)?;
     axis.direction = unit_vector(axis.direction)?;
     let angle = || {
@@ -2478,7 +2478,7 @@ fn revolution_definition(
         };
     Some(FeatureDefinition::Revolve {
         construction: RevolutionConstruction {
-            profile: Some(profile),
+            profile,
             axis: Some(axis),
             extent: Some(extent),
             axis_reference,

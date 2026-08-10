@@ -901,19 +901,21 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
 #[test]
 fn transfers_revolution_fillet_and_chamfer_semantics() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="5" Dependencies="1">
+<Objects Count="6" Dependencies="1">
  <ObjectDeps Name="Sketch" Count="0"/>
  <ObjectDeps Name="Revolution" Count="1"><Dep Name="Sketch"/></ObjectDeps>
  <ObjectDeps Name="Fillet" Count="1"><Dep Name="Revolution"/></ObjectDeps>
  <ObjectDeps Name="Chamfer" Count="1"><Dep Name="Fillet"/></ObjectDeps>
  <ObjectDeps Name="LegacyChamfer" Count="1"><Dep Name="Chamfer"/></ObjectDeps>
+ <ObjectDeps Name="Profileless" Count="0"/>
  <Object type="Sketcher::SketchObject" name="Sketch" id="1"/>
  <Object type="PartDesign::Revolution" name="Revolution" id="2"/>
  <Object type="PartDesign::Fillet" name="Fillet" id="3"/>
  <Object type="PartDesign::Chamfer" name="Chamfer" id="4"/>
  <Object type="PartDesign::Chamfer" name="LegacyChamfer" id="5"/>
+ <Object type="PartDesign::Revolution" name="Profileless" id="6"/>
 </Objects>
-<ObjectData Count="5">
+<ObjectData Count="6">
  <Object name="Sketch"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
  <Object name="Revolution"><Properties Count="5">
   <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
@@ -937,6 +939,12 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
  <Object name="LegacyChamfer"><Properties Count="2">
   <Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Chamfer" count="1"><Sub value="Edge3"/></LinkSub></Property>
   <Property name="Size" type="App::PropertyLength"><Float value="0.75"/></Property>
+ </Properties></Object>
+ <Object name="Profileless"><Properties Count="4">
+  <Property name="Sketch" type="App::PropertyLink"><Link value=""/></Property>
+  <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
+  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="0" z="1"/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="360"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -997,6 +1005,13 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
                 },
                 ..
             }])
+    ));
+    assert!(matches!(
+        definition("Profileless"),
+        FeatureDefinition::Revolve {
+            construction: cadmpeg_ir::features::RevolutionConstruction { profile: None, .. },
+            ..
+        }
     ));
 }
 
