@@ -2918,10 +2918,24 @@ fn attach_feature_operations(
                 outputs.push(body.clone());
             }
         }
-        let block_body_reference_count = body_reference_occurrences_by_operation
+        let sphere_projection = (label.value == "SPHERE")
+            .then(|| sphere_body_projection(ir, &outputs))
+            .flatten();
+        let inferred_sphere_outputs = outputs
+            .is_empty()
+            .then(|| {
+                sphere_projection
+                    .as_ref()
+                    .map(|(body, _, _)| vec![body.clone()])
+            })
+            .flatten();
+        let sphere_outputs = inferred_sphere_outputs
+            .as_deref()
+            .unwrap_or(outputs.as_slice());
+        let body_reference_count = body_reference_occurrences_by_operation
             .get(label.id.as_str())
             .map_or(0, Vec::len);
-        let block_op = block_boolean_op(&BlockBooleanEvidence {
+        let block_op = new_body_boolean_op(&NewBodyEvidence {
             has_complete_projection: block_projection.is_some(),
             has_complete_primitive_construction: block_constructions_by_operation
                 .get(label.id.as_str())
@@ -2934,13 +2948,33 @@ fn attach_feature_operations(
                 }),
             outputs: &outputs,
             outputs_are_proven: block_outputs_are_proven,
-            body_reference_count: block_body_reference_count,
+            body_reference_count,
             provisional_feature: initial_body_id.as_ref(),
             native_primary_body,
             offset_store_primary_body,
             history: &body_writer_history,
         });
-        if block_op == BooleanOp::NewBody {
+        let sphere_op = sphere_projection
+            .as_ref()
+            .map_or(BooleanOp::Unresolved, |_| {
+                new_body_boolean_op(&NewBodyEvidence {
+                    has_complete_projection: true,
+                    has_complete_primitive_construction: true,
+                    outputs: sphere_outputs,
+                    outputs_are_proven: true,
+                    body_reference_count,
+                    provisional_feature: initial_body_id.as_ref(),
+                    native_primary_body,
+                    offset_store_primary_body,
+                    history: &body_writer_history,
+                })
+            });
+        if sphere_op == BooleanOp::NewBody {
+            if let Some(inferred_outputs) = inferred_sphere_outputs {
+                outputs.extend(inferred_outputs);
+            }
+        }
+        if block_op == BooleanOp::NewBody || sphere_op == BooleanOp::NewBody {
             if let Some(initial_feature) = initial_body_id.as_ref().and_then(|id| {
                 ir.model
                     .features
@@ -2967,6 +3001,13 @@ fn attach_feature_operations(
             &mut dependencies,
         );
         let block_placement = block_projection.map(|(_, placement)| placement);
+        let sphere_definition = sphere_projection.as_ref().and_then(|(_, center, radius)| {
+            (sphere_op == BooleanOp::NewBody).then_some(FeatureDefinition::Sphere {
+                center: *center,
+                radius: *radius,
+                op: sphere_op,
+            })
+        });
         let sew_projection = (label.value == "SEW")
             .then(|| {
                 sew_body_feature_definition(
@@ -3128,6 +3169,7 @@ fn attach_feature_operations(
                 .or_else(|| blend_projection.map(|(definition, _)| definition))
                 .or_else(|| thicken_projection.map(|(definition, _)| definition))
                 .or_else(|| offset_projection.map(|(definition, _)| definition))
+                .or(sphere_definition)
                 .unwrap_or_else(|| {
                     if let Some(sketch) = sketch {
                         return FeatureDefinition::Sketch {
@@ -4972,7 +5014,61 @@ fn block_placement(
     ))
 }
 
-struct BlockBooleanEvidence<'a> {
+/// Return the complete primitive witness for an NX `SPHERE` operation.
+///
+/// A spherical surface inside a larger result is not enough: a Boolean or a
+/// later feature can leave the same carrier in the output. The primitive
+/// projection therefore accepts only one connected solid body with exactly
+/// one face whose surface is a finite positive-radius sphere. With no native
+/// output relation, the candidate must also be unique across the model.
+fn sphere_body_projection(ir: &CadIr, outputs: &[BodyId]) -> Option<(BodyId, Point3, Length)> {
+    let body = match outputs {
+        [body] => body.clone(),
+        [] => {
+            let candidates = ir
+                .model
+                .bodies
+                .iter()
+                .filter_map(|body| {
+                    let faces = connected_solid_body_faces(ir, &body.id)?;
+                    let [face] = faces.as_slice() else {
+                        return None;
+                    };
+                    let surface = ir.model.surfaces.iter().find(|surface| {
+                        surface.id == face.surface
+                            && matches!(&surface.geometry, SurfaceGeometry::Sphere { .. })
+                    })?;
+                    Some((body.id.clone(), surface.id.clone()))
+                })
+                .collect::<Vec<_>>();
+            let [(body, _)] = candidates.as_slice() else {
+                return None;
+            };
+            body.clone()
+        }
+        _ => return None,
+    };
+    let faces = connected_solid_body_faces(ir, &body)?;
+    let [face] = faces.as_slice() else {
+        return None;
+    };
+    let surface = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == face.surface)?;
+    let SurfaceGeometry::Sphere { center, radius, .. } = &surface.geometry else {
+        return None;
+    };
+    ((*radius).is_finite()
+        && *radius > ir.tolerances.linear
+        && [center.x, center.y, center.z]
+            .into_iter()
+            .all(f64::is_finite))
+    .then_some((body, *center, Length(*radius)))
+}
+
+struct NewBodyEvidence<'a> {
     has_complete_projection: bool,
     has_complete_primitive_construction: bool,
     outputs: &'a [BodyId],
@@ -4984,7 +5080,7 @@ struct BlockBooleanEvidence<'a> {
     history: &'a BodyWriterHistory,
 }
 
-fn block_boolean_op(evidence: &BlockBooleanEvidence<'_>) -> BooleanOp {
+fn new_body_boolean_op(evidence: &NewBodyEvidence<'_>) -> BooleanOp {
     // A unique offset-store body field proves the operation's local writer
     // namespace, but the fallback body selected for placement is not that
     // writer. Likewise, multiple body fields have no primary role until the
@@ -9882,6 +9978,64 @@ mod tests {
     }
 
     #[test]
+    fn nx_sphere_projection_requires_one_complete_spherical_body() {
+        let mut ir = cadmpeg_ir::examples::unit_cube();
+        let body = ir.model.bodies[0].id.clone();
+        let face = ir.model.faces[0].id.clone();
+        let surface = ir.model.faces[0].surface.clone();
+        ir.model.shells[0].faces = vec![face];
+        ir.model
+            .faces
+            .retain(|candidate| candidate.id == ir.model.shells[0].faces[0]);
+        ir.model
+            .surfaces
+            .retain(|candidate| candidate.id == surface);
+        ir.model.surfaces[0].geometry = SurfaceGeometry::Sphere {
+            center: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 12.0,
+        };
+
+        assert_eq!(
+            super::sphere_body_projection(&ir, &[]),
+            Some((body.clone(), Point3::new(1.0, 2.0, 3.0), Length(12.0)))
+        );
+        assert_eq!(
+            super::sphere_body_projection(&ir, std::slice::from_ref(&body)),
+            Some((body.clone(), Point3::new(1.0, 2.0, 3.0), Length(12.0)))
+        );
+
+        let mut second_body = ir.model.bodies[0].clone();
+        second_body.id = BodyId("second-body".into());
+        second_body.regions = vec![cadmpeg_ir::ids::RegionId("second-region".into())];
+        let mut second_region = ir.model.regions[0].clone();
+        second_region.id = cadmpeg_ir::ids::RegionId("second-region".into());
+        second_region.body = second_body.id.clone();
+        second_region.shells = vec![cadmpeg_ir::ids::ShellId("second-shell".into())];
+        let mut second_shell = ir.model.shells[0].clone();
+        second_shell.id = cadmpeg_ir::ids::ShellId("second-shell".into());
+        second_shell.region = second_region.id.clone();
+        second_shell.faces = vec![cadmpeg_ir::ids::FaceId("second-face".into())];
+        let mut second_face = ir.model.faces[0].clone();
+        second_face.id = cadmpeg_ir::ids::FaceId("second-face".into());
+        second_face.shell = second_shell.id.clone();
+        second_face.surface = cadmpeg_ir::ids::SurfaceId("second-surface".into());
+        let mut second_surface = ir.model.surfaces[0].clone();
+        second_surface.id = second_face.surface.clone();
+        ir.model.bodies.push(second_body);
+        ir.model.regions.push(second_region);
+        ir.model.shells.push(second_shell);
+        ir.model.faces.push(second_face);
+        ir.model.surfaces.push(second_surface);
+
+        assert!(super::sphere_body_projection(&ir, &[]).is_none());
+        assert!(
+            super::sphere_body_projection(&ir, &[body, BodyId("second-body".into())]).is_none()
+        );
+    }
+
+    #[test]
     fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
         let body = BodyId("body".into());
         let provisional = FeatureId("initial-bodies".into());
@@ -9889,7 +10043,7 @@ mod tests {
         history.record_writer(None, None, std::slice::from_ref(&body), &provisional);
 
         assert_eq!(
-            super::block_boolean_op(&super::BlockBooleanEvidence {
+            super::new_body_boolean_op(&super::NewBodyEvidence {
                 has_complete_projection: true,
                 has_complete_primitive_construction: false,
                 outputs: std::slice::from_ref(&body),
@@ -9906,7 +10060,7 @@ mod tests {
         let prior = FeatureId("prior-feature".into());
         history.record_writer(Some(7), None, std::slice::from_ref(&body), &prior);
         assert_eq!(
-            super::block_boolean_op(&super::BlockBooleanEvidence {
+            super::new_body_boolean_op(&super::NewBodyEvidence {
                 has_complete_projection: true,
                 has_complete_primitive_construction: false,
                 outputs: std::slice::from_ref(&body),
@@ -9920,7 +10074,7 @@ mod tests {
             BooleanOp::Unresolved
         );
         assert_eq!(
-            super::block_boolean_op(&super::BlockBooleanEvidence {
+            super::new_body_boolean_op(&super::NewBodyEvidence {
                 has_complete_projection: false,
                 has_complete_primitive_construction: false,
                 outputs: std::slice::from_ref(&body),
@@ -9938,7 +10092,7 @@ mod tests {
         let mut offset_history = BodyWriterHistory::default();
         offset_history.record_writer(None, Some("store:block#7"), &[], &offset_prior);
         assert_eq!(
-            super::block_boolean_op(&super::BlockBooleanEvidence {
+            super::new_body_boolean_op(&super::NewBodyEvidence {
                 has_complete_projection: true,
                 has_complete_primitive_construction: false,
                 outputs: std::slice::from_ref(&body),
@@ -9954,7 +10108,7 @@ mod tests {
 
         let offset_without_prior = BodyWriterHistory::default();
         assert_eq!(
-            super::block_boolean_op(&super::BlockBooleanEvidence {
+            super::new_body_boolean_op(&super::NewBodyEvidence {
                 has_complete_projection: true,
                 has_complete_primitive_construction: false,
                 outputs: std::slice::from_ref(&body),
@@ -9969,7 +10123,7 @@ mod tests {
         );
 
         assert_eq!(
-            super::block_boolean_op(&super::BlockBooleanEvidence {
+            super::new_body_boolean_op(&super::NewBodyEvidence {
                 has_complete_projection: true,
                 has_complete_primitive_construction: false,
                 outputs: std::slice::from_ref(&body),
@@ -9984,7 +10138,7 @@ mod tests {
         );
 
         assert_eq!(
-            super::block_boolean_op(&super::BlockBooleanEvidence {
+            super::new_body_boolean_op(&super::NewBodyEvidence {
                 has_complete_projection: true,
                 has_complete_primitive_construction: true,
                 outputs: std::slice::from_ref(&body),

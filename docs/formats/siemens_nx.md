@@ -1554,6 +1554,14 @@ The `Container` label identifies an object-model grouping record, not a modeling
 
 The `MASTER SNAPSHOT BODY` label identifies a captured-result base feature.
 
+The `SPHERE` operation label identifies a primitive spherical construction.
+Neutral projection requires exactly one connected solid result body with one
+face whose owned surface is a valid sphere with finite center and positive
+radius. When the operation has no result-body relation, that complete witness
+must be unique among the model bodies. A spherical surface in a larger result,
+an ambiguous body set, or a result body with an earlier writer remains a
+native operation.
+
 The `SIMPLE HOLE` and `CBORE_HOLE` payload template is the unique payload string beginning `Hole_` and is underscore-delimited. The admitted templates are `Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer`, `Hole_GeneralHole_Counterbored_Through`, and `Hole_GeneralHole_Simple_Blind`. The first identifies a general simple hole extending through all material, with chamfer treatments at its entry and exit. The second identifies a counterbored hole extending through all material. The third identifies a simple hole with a blind termination. The template tokens form one atomic construction; a missing or additional `Hole_` string or missing, reordered, or unknown token does not produce a typed hole template. Neutral projection retains through-all extent for the two through templates, the simple or counterbored entry form, and both chamfer tokens when present. Blind extent and counterbore dimensions remain unresolved until their numeric fields are identified.
 
 The operation labels `HOLE PACKAGE`, `RIB`, `CHAMFER`, and `THICKEN_SHEET` identify their corresponding construction families. Neutral projection preserves the family as a hole, rib, edge chamfer, or face-thickening operation. Undeclared operands, sidedness, draft, Boolean state, and dimensions outside the rules below remain unresolved.
