@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Current Inventor native namespace version.
-pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 13;
+pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 14;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct VersionTupleRecord {
@@ -167,6 +167,8 @@ pub(crate) struct UfrxRecord {
     pub(crate) representation: Option<UfrxRepresentationRecord>,
     pub(crate) model_state_count: u64,
     pub(crate) reference_count: u64,
+    pub(crate) embedded_reference_count: u64,
+    pub(crate) occurrence_count: u64,
     pub(crate) tail_len: u64,
     pub(crate) tail_sha256: Option<String>,
     pub(crate) detail: Option<String>,
@@ -230,6 +232,20 @@ pub(crate) struct ExternalReferenceRecord {
     pub(crate) occurrence_count: u32,
     pub(crate) version: u32,
     pub(crate) flags: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct UfrxOccurrenceRecord {
+    pub(crate) id: String,
+    pub(crate) ordinal: u32,
+    pub(crate) end_string_flag: u32,
+    pub(crate) file_reference_id: u32,
+    pub(crate) occurrence_id: u32,
+    pub(crate) header_value: u32,
+    pub(crate) title: Option<String>,
+    pub(crate) header_padding_words: u8,
+    pub(crate) record_len: u64,
+    pub(crate) record_sha256: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

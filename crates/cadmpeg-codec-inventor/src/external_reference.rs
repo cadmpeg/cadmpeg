@@ -32,7 +32,20 @@ pub(crate) struct UfrxDocument<'a> {
     pub(crate) representation: Option<UfrxRepresentationState>,
     pub(crate) model_states: Vec<UfrxModelState<'a>>,
     pub(crate) references: Vec<InventorExternalReference>,
+    pub(crate) embedded_reference_count: u32,
+    pub(crate) occurrences: Vec<UfrxOccurrence<'a>>,
     pub(crate) unparsed_tail: View<'a>,
+}
+
+#[derive(Debug)]
+pub(crate) struct UfrxOccurrence<'a> {
+    pub(crate) end_string_flag: u32,
+    pub(crate) file_reference_id: u32,
+    pub(crate) occurrence_id: u32,
+    pub(crate) header_value: u32,
+    pub(crate) title: Option<String>,
+    pub(crate) header_padding_words: u8,
+    pub(crate) source: View<'a>,
 }
 
 #[derive(Debug)]
@@ -99,6 +112,8 @@ pub(crate) fn parse<'a>(
             representation: document.representation,
             model_states: document.model_states,
             references: document.references,
+            embedded_reference_count: document.embedded_reference_count,
+            occurrences: document.occurrences,
             unparsed_tail: document.unparsed_tail,
         }),
         Err(CodecError::NotImplemented(detail)) => {
@@ -111,25 +126,10 @@ pub(crate) fn parse<'a>(
                 detail,
             }
         }
-        Err(error) => {
-            let (schema, section_versions) = parse_schema_table(ctx, source)?;
-            if schema == 15 {
-                UfrxState::Unsupported {
-                    stream: stream.id(),
-                    schema,
-                    section_versions,
-                    source,
-                    detail: format!(
-                        "UFRxDoc schema 15 header/model-state branch is not implemented: {error}"
-                    ),
-                }
-            } else {
-                UfrxState::Malformed {
-                    stream: stream.id(),
-                    detail: error.to_string(),
-                }
-            }
-        }
+        Err(error) => UfrxState::Malformed {
+            stream: stream.id(),
+            detail: error.to_string(),
+        },
     })
 }
 
@@ -141,6 +141,8 @@ struct ParsedUfrx<'a> {
     representation: Option<UfrxRepresentationState>,
     model_states: Vec<UfrxModelState<'a>>,
     references: Vec<InventorExternalReference>,
+    embedded_reference_count: u32,
+    occurrences: Vec<UfrxOccurrence<'a>>,
     unparsed_tail: View<'a>,
 }
 
@@ -169,7 +171,7 @@ fn parse_stream<'a>(
     for _ in 0..section_count {
         section_versions.push(cursor.u16("section version")?);
     }
-    cursor.take(8, "save version")?;
+    let save_version = cursor.array::<8>("save version")?;
     cursor.take(8, "save FILETIME")?;
     cursor.take(8, "secondary version")?;
     cursor.take(8, "secondary FILETIME")?;
@@ -306,6 +308,18 @@ fn parse_stream<'a>(
             "UFRxDoc external-reference terminator is nonzero".into(),
         ));
     }
+    let embedded_reference_count = parse_embedded_references(
+        ctx,
+        &mut cursor,
+        section_versions.get(15).copied().unwrap_or_default(),
+    )?;
+    let occurrences = parse_occurrences(
+        ctx,
+        source,
+        &mut cursor,
+        section_versions[3],
+        save_year(save_version[2]),
+    )?;
     let unparsed_tail = source
         .child(source.start() + cursor.position, source.end())
         .ok_or_else(|| CodecError::Malformed("UFRxDoc tail range is invalid".into()))?;
@@ -317,8 +331,304 @@ fn parse_stream<'a>(
         representation,
         model_states,
         references,
+        embedded_reference_count,
+        occurrences,
         unparsed_tail,
     })
+}
+
+fn save_year(major: u8) -> u16 {
+    if major > 11 {
+        u16::from(major) + 1996
+    } else {
+        u16::from(major)
+    }
+}
+
+fn parse_embedded_references(
+    ctx: &DecodeContext<'_>,
+    cursor: &mut Cursor<'_>,
+    section_version: u16,
+) -> Result<u32, CodecError> {
+    let count = cursor.count32("embedded-reference count", 1_000_000)?;
+    ctx.charge_collection_items(count as u64, "admit UFRxDoc embedded references")?;
+    for _ in 0..count {
+        cursor.u32("embedded-reference value")?;
+        cursor.take(8, "embedded-reference FILETIME")?;
+        cursor.u32("embedded-reference value")?;
+        if section_version >= 7 {
+            cursor.u32("embedded-reference padding")?;
+        }
+        cursor.u32("embedded-reference value")?;
+        cursor.utf16(ctx, "embedded-reference path", 65_536)?;
+        cursor.i32("embedded-reference library id")?;
+        cursor.utf16(ctx, "embedded-reference library name", 65_536)?;
+        cursor.u16("embedded-reference state")?;
+        cursor.utf16(ctx, "embedded-reference display name", 65_536)?;
+        cursor.take(8, "embedded-reference state values")?;
+    }
+    if section_version >= 6 && cursor.u8("embedded-reference terminator")? != 0 {
+        return Err(CodecError::Malformed(
+            "UFRxDoc embedded-reference terminator is nonzero".into(),
+        ));
+    }
+    Ok(count as u32)
+}
+
+fn parse_occurrences<'a>(
+    ctx: &DecodeContext<'a>,
+    source: View<'a>,
+    cursor: &mut Cursor<'_>,
+    section_version: u16,
+    save_year: u16,
+) -> Result<Vec<UfrxOccurrence<'a>>, CodecError> {
+    let count = cursor.count32("occurrence count", 1_000_000)?;
+    ctx.charge_collection_items(count as u64, "admit UFRxDoc occurrences")?;
+    let mut occurrences = Vec::with_capacity(count);
+    for _ in 0..count {
+        let start = cursor.position;
+        let end_string_flag = cursor.u32("occurrence end-string flag")?;
+        let file_reference_id = cursor.u32("occurrence file-reference id")?;
+        let occurrence_id = cursor.u32("occurrence id")?;
+        let header_value = cursor.u32("occurrence header value")?;
+        let title_count = cursor.count32("occurrence title marker", 65_536)?;
+        let title = if title_count == 0 {
+            None
+        } else if section_version >= 28 || title_count == 1 {
+            Some(cursor.utf16(ctx, "occurrence title", 65_536)?)
+        } else {
+            Some(cursor.utf16_counted(ctx, "occurrence title", title_count)?)
+        };
+        let header_padding_words = if section_version >= 28 {
+            let mut padding_words = 0_u8;
+            while cursor.peek_u16("occurrence extended-header padding")? == 0 {
+                if padding_words == 8 {
+                    return Err(CodecError::Malformed(
+                        "UFRxDoc occurrence extended-header padding exceeds eight words".into(),
+                    ));
+                }
+                cursor.u16("occurrence extended-header padding")?;
+                padding_words += 1;
+            }
+            let marker_offset = cursor.position;
+            let marker = cursor.u16("occurrence extended-header marker")?;
+            if marker != 0x2080 {
+                return Err(CodecError::Malformed(format!(
+                    "UFRxDoc occurrence extended-header marker at offset {marker_offset} is {marker:#06x}, expected 0x2080"
+                )));
+            }
+            require_u32(
+                cursor.u32("occurrence extended-header state")?,
+                0,
+                "occurrence extended-header state",
+            )?;
+            require_u32(
+                cursor.u32("occurrence extended-header state")?,
+                1,
+                "occurrence extended-header state",
+            )?;
+            require_u32(
+                cursor.u32("occurrence extended-header state")?,
+                0,
+                "occurrence extended-header state",
+            )?;
+            padding_words
+        } else {
+            cursor.take(5, "occurrence header state")?;
+            if section_version >= 20 {
+                cursor.u8("occurrence header state")?;
+            }
+            if section_version >= 21 {
+                cursor.u8("occurrence header state")?;
+            }
+            0
+        };
+        parse_occurrence_section(ctx, cursor)?;
+        parse_occurrence_section(ctx, cursor)?;
+        parse_occurrence_settings(ctx, cursor)?;
+        parse_occurrence_export(ctx, cursor, save_year)?;
+        let record = source
+            .child(source.start() + start, source.start() + cursor.position)
+            .ok_or_else(|| CodecError::Malformed("UFRxDoc occurrence range is invalid".into()))?;
+        occurrences.push(UfrxOccurrence {
+            end_string_flag,
+            file_reference_id,
+            occurrence_id,
+            header_value,
+            title,
+            header_padding_words,
+            source: record,
+        });
+    }
+    if count == 0 {
+        cursor.u32("empty occurrence padding")?;
+    }
+    Ok(occurrences)
+}
+
+fn parse_occurrence_section(
+    ctx: &DecodeContext<'_>,
+    cursor: &mut Cursor<'_>,
+) -> Result<(), CodecError> {
+    cursor.u32("occurrence section value")?;
+    let count = cursor.count32("occurrence section property count", 65_536)?;
+    ctx.charge_collection_items(count as u64, "admit UFRxDoc occurrence properties")?;
+    for _ in 0..count {
+        cursor.boolean("occurrence property presence")?;
+        let tag = cursor.u8("occurrence property tag")?;
+        cursor.u32("occurrence property value")?;
+        require_tag(cursor.u8("occurrence property repeated tag")?, tag)?;
+        parse_occurrence_value(ctx, cursor, tag)?;
+        cursor.u32("occurrence property trailer")?;
+    }
+    Ok(())
+}
+
+fn parse_occurrence_settings(
+    ctx: &DecodeContext<'_>,
+    cursor: &mut Cursor<'_>,
+) -> Result<(), CodecError> {
+    let count = cursor.count32("occurrence setting count", 65_536)?;
+    ctx.charge_collection_items(count as u64, "admit UFRxDoc occurrence settings")?;
+    for _ in 0..count {
+        cursor.utf16(ctx, "occurrence setting name", 65_536)?;
+        cursor.take(16, "occurrence setting id")?;
+        cursor.utf8(ctx, "occurrence setting value", 65_536)?;
+    }
+    Ok(())
+}
+
+fn parse_occurrence_export(
+    ctx: &DecodeContext<'_>,
+    cursor: &mut Cursor<'_>,
+    save_year: u16,
+) -> Result<(), CodecError> {
+    cursor.take(10, "occurrence export state")?;
+    if save_year >= 2015 {
+        cursor.u8("occurrence export padding")?;
+    }
+    let count = cursor.peek_u32("occurrence export count")?;
+    let next = cursor.peek_u32_at(4, "occurrence export discriminator")?;
+    if matches!(count, 0x00ff_ffff | u32::MAX) {
+        cursor.u32("occurrence export sentinel")?;
+        if cursor.u32("occurrence export sentinel trailer")? != 0 {
+            return Err(CodecError::Malformed(
+                "UFRxDoc occurrence export sentinel trailer is nonzero".into(),
+            ));
+        }
+    } else if count > 1 || (count == 1 && next > 1) {
+        if next > 0xffff {
+            cursor.utf16(ctx, "occurrence export name", 65_536)?;
+            cursor.take(16, "occurrence export id")?;
+            cursor.utf8(ctx, "occurrence export value", 65_536)?;
+        } else {
+            let count = cursor.count32("occurrence export count", 65_536)?;
+            ctx.charge_collection_items(count as u64, "admit UFRxDoc occurrence exports")?;
+            for _ in 0..count {
+                cursor.utf16(ctx, "occurrence export name", 65_536)?;
+                parse_occurrence_items(ctx, cursor)?;
+                cursor.take(12, "occurrence export trailer")?;
+                if save_year >= 2018 {
+                    cursor.u8("occurrence export padding")?;
+                }
+            }
+        }
+    } else {
+        cursor.u32("occurrence export count")?;
+    }
+    Ok(())
+}
+
+fn parse_occurrence_items(
+    ctx: &DecodeContext<'_>,
+    cursor: &mut Cursor<'_>,
+) -> Result<(), CodecError> {
+    let count = cursor.count32("occurrence export item count", 65_536)?;
+    let repeated = cursor.count32("occurrence export repeated item count", 65_536)?;
+    if repeated != count {
+        return Err(CodecError::Malformed(format!(
+            "UFRxDoc occurrence export item counts differ: {count} and {repeated}"
+        )));
+    }
+    ctx.charge_collection_items(count as u64, "admit UFRxDoc occurrence export items")?;
+    for _ in 0..count {
+        cursor.boolean("occurrence export item presence")?;
+        let tag = cursor.u8("occurrence export item tag")?;
+        let value_count = cursor.count32("occurrence export item value count", 65_536)?;
+        ctx.charge_collection_items(value_count as u64, "admit UFRxDoc occurrence export values")?;
+        for _ in 0..value_count {
+            require_tag(cursor.u8("occurrence export repeated tag")?, tag)?;
+            parse_occurrence_item_value(cursor, tag)?;
+        }
+        cursor.u32("occurrence export item trailer")?;
+    }
+    Ok(())
+}
+
+fn parse_occurrence_value(
+    ctx: &DecodeContext<'_>,
+    cursor: &mut Cursor<'_>,
+    tag: u8,
+) -> Result<(), CodecError> {
+    match tag {
+        0x05 | 0x1e => {
+            cursor.utf16(ctx, "occurrence property string", 65_536)?;
+        }
+        0x07 | 0x0d | 0x0f | 0x10 | 0x1d => {
+            cursor.u8("occurrence property byte")?;
+        }
+        0x19 => {
+            cursor.u32("occurrence property integer")?;
+        }
+        0x02 | 0x03 | 0x11 | 0x12 | 0x13 | 0x15 | 0x16 | 0x17 | 0x18 | 0x1c | 0x1f | 0x20
+        | 0x22 | 0x23 | 0x24 | 0x25 | 0x2a | 0x2b | 0x2c | 0x2d => {
+            cursor.take(16, "occurrence property id")?;
+        }
+        _ => {
+            return Err(CodecError::NotImplemented(format!(
+                "UFRxDoc occurrence property tag {tag:#04x} is not implemented"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn parse_occurrence_item_value(cursor: &mut Cursor<'_>, tag: u8) -> Result<(), CodecError> {
+    match tag {
+        0x07 => {
+            cursor.u8("occurrence export item byte")?;
+        }
+        0x19 => {
+            cursor.u32("occurrence export item integer")?;
+        }
+        0x12 | 0x16 | 0x17 | 0x18 | 0x23 | 0x24 | 0x25 | 0x2a => {
+            cursor.take(16, "occurrence export item id")?;
+        }
+        _ => {
+            return Err(CodecError::NotImplemented(format!(
+                "UFRxDoc occurrence export item tag {tag:#04x} is not implemented"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn require_tag(actual: u8, expected: u8) -> Result<(), CodecError> {
+    if actual != expected {
+        return Err(CodecError::Malformed(format!(
+            "UFRxDoc repeated occurrence tag is {actual:#04x}, expected {expected:#04x}"
+        )));
+    }
+    Ok(())
+}
+
+fn require_u32(actual: u32, expected: u32, field: &str) -> Result<(), CodecError> {
+    if actual != expected {
+        return Err(CodecError::Malformed(format!(
+            "UFRxDoc {field} is {actual:#010x}, expected {expected:#010x}"
+        )));
+    }
+    Ok(())
 }
 
 fn parse_model_states<'a>(
@@ -440,9 +750,25 @@ impl<'a> Cursor<'a> {
     }
 
     fn peek_u32(&self, field: &str) -> Result<u32, CodecError> {
+        self.peek_u32_at(0, field)
+    }
+
+    fn peek_u16(&self, field: &str) -> Result<u16, CodecError> {
         let bytes = self
             .bytes
-            .get(self.position..self.position.saturating_add(4))
+            .get(self.position..self.position.saturating_add(2))
+            .ok_or_else(|| CodecError::Malformed(format!("truncated UFRxDoc {field}")))?;
+        Ok(u16::from_le_bytes(bytes.try_into().expect("two-byte peek")))
+    }
+
+    fn peek_u32_at(&self, relative: usize, field: &str) -> Result<u32, CodecError> {
+        let start = self
+            .position
+            .checked_add(relative)
+            .ok_or_else(|| CodecError::Malformed(format!("UFRxDoc {field} range overflows")))?;
+        let bytes = self
+            .bytes
+            .get(start..start.saturating_add(4))
             .ok_or_else(|| CodecError::Malformed(format!("truncated UFRxDoc {field}")))?;
         Ok(u32::from_le_bytes(
             bytes.try_into().expect("four-byte peek"),
@@ -478,6 +804,15 @@ impl<'a> Cursor<'a> {
         maximum: usize,
     ) -> Result<String, CodecError> {
         let count = self.count32(field, maximum)?;
+        self.utf16_counted(ctx, field, count)
+    }
+
+    fn utf16_counted(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        field: &str,
+        count: usize,
+    ) -> Result<String, CodecError> {
         let len = count
             .checked_mul(2)
             .ok_or_else(|| CodecError::Malformed(format!("UFRxDoc {field} length overflows")))?;
@@ -489,6 +824,30 @@ impl<'a> Cursor<'a> {
             .collect::<Vec<_>>();
         String::from_utf16(&units)
             .map_err(|_| CodecError::Malformed(format!("UFRxDoc {field} is not UTF-16")))
+    }
+
+    fn utf8(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        field: &str,
+        maximum: usize,
+    ) -> Result<String, CodecError> {
+        let count = self.count32(field, maximum)?;
+        ctx.charge_retained(count as u64, "retain UFRxDoc string", None)?;
+        let value = self.take(count, field)?;
+        std::str::from_utf8(value)
+            .map(str::to_owned)
+            .map_err(|_| CodecError::Malformed(format!("UFRxDoc {field} is not UTF-8")))
+    }
+
+    fn boolean(&mut self, field: &str) -> Result<bool, CodecError> {
+        match self.u8(field)? {
+            0 => Ok(false),
+            1 => Ok(true),
+            value => Err(CodecError::Malformed(format!(
+                "UFRxDoc {field} is {value}, expected 0 or 1"
+            ))),
+        }
     }
 }
 
@@ -512,7 +871,11 @@ mod tests {
             assert_eq!(document.original_file_name, "synthetic.ipt");
             assert_eq!(document.references.len(), 1);
             assert_eq!(document.references[0].path, "relative/component.ipt");
-            assert_eq!(document.references[0].occurrence_count, 2);
+            assert_eq!(document.references[0].occurrence_count, 1);
+            assert_eq!(document.occurrences.len(), 1);
+            assert_eq!(document.occurrences[0].file_reference_id, 7);
+            assert_eq!(document.occurrences[0].occurrence_id, 42);
+            assert_eq!(document.occurrences[0].title.as_deref(), Some("placed"));
             if schema == 15 {
                 let representation = document
                     .representation
@@ -555,6 +918,27 @@ mod tests {
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic UFRxDoc fits policy");
         assert!(parse_stream(&ctx, root).is_err());
+    }
+
+    #[test]
+    fn frames_extended_occurrence_header() {
+        let mut bytes = Vec::new();
+        push_u32(&mut bytes, 1);
+        push_occurrence(&mut bytes, 28, 2020, 9, 17, "extended");
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic occurrence fits policy");
+        let mut cursor = Cursor::new(root.window());
+
+        let occurrences = parse_occurrences(&ctx, root, &mut cursor, 28, 2020)
+            .expect("extended occurrence parses");
+
+        assert_eq!(occurrences.len(), 1);
+        assert_eq!(occurrences[0].file_reference_id, 9);
+        assert_eq!(occurrences[0].occurrence_id, 17);
+        assert_eq!(occurrences[0].title.as_deref(), Some("extended"));
+        assert_eq!(occurrences[0].header_padding_words, 2);
+        assert_eq!(cursor.position, bytes.len());
     }
 
     fn fixture(schema: u16) -> (Vec<u8>, usize) {
@@ -658,11 +1042,57 @@ mod tests {
         bytes.extend_from_slice(&[0x31; 16]);
         bytes.extend_from_slice(&[0x32; 16]);
         push_u32(&mut bytes, 7);
-        push_u32(&mut bytes, 2);
+        push_u32(&mut bytes, 1);
         push_u32(&mut bytes, 12);
         push_u32(&mut bytes, 4);
+        push_u32(&mut bytes, 0);
+        push_u32(&mut bytes, 1);
+        push_occurrence(&mut bytes, 18, 0, 7, 42, "placed");
         bytes.extend_from_slice(b"tail");
         (bytes, invariant_offset)
+    }
+
+    fn push_occurrence(
+        bytes: &mut Vec<u8>,
+        section_version: u16,
+        save_year: u16,
+        file_reference_id: u32,
+        occurrence_id: u32,
+        title: &str,
+    ) {
+        push_u32(bytes, 0);
+        push_u32(bytes, file_reference_id);
+        push_u32(bytes, occurrence_id);
+        push_u32(bytes, 0);
+        push_u32(bytes, 1);
+        push_utf16(bytes, title);
+        if section_version >= 28 {
+            push_u16(bytes, 0);
+            push_u16(bytes, 0);
+            push_u16(bytes, 0x2080);
+            push_u32(bytes, 0);
+            push_u32(bytes, 1);
+            push_u32(bytes, 0);
+        } else {
+            bytes.extend_from_slice(&[0; 5]);
+            if section_version >= 20 {
+                bytes.push(0);
+            }
+            if section_version >= 21 {
+                bytes.push(0);
+            }
+        }
+        for _ in 0..2 {
+            push_u32(bytes, 0);
+            push_u32(bytes, 0);
+        }
+        push_u32(bytes, 0);
+        bytes.extend_from_slice(&[0; 10]);
+        if save_year >= 2015 {
+            bytes.push(0);
+        }
+        push_u32(bytes, 0x00ff_ffff);
+        push_u32(bytes, 0);
     }
 
     fn push_utf16(bytes: &mut Vec<u8>, value: &str) {

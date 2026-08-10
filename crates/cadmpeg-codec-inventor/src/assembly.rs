@@ -1,10 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed assembly occurrence and placement records.
 
+use std::collections::{HashMap, HashSet};
+
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::ids::OccurrenceId;
+use cadmpeg_ir::products::{
+    ExternalDocumentReference, ExternalResolution, Occurrence, OccurrenceParent, PrototypeReference,
+};
+use cadmpeg_ir::transform::Transform;
 
+use crate::native::{
+    AssemblyOccurrenceRecord, AssemblyPlacementRecord, ExternalReferenceRecord,
+    UfrxOccurrenceRecord,
+};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
+
+const SUPPRESSED_REFERENCE_STATE: u16 = 0x2000;
+const INVENTOR_LENGTH_TO_MILLIMETRES: f64 = 10.0;
 
 const OCCURRENCE_TYPE: [u8; 16] = [
     0x60, 0x4d, 0x87, 0x90, 0xd0, 0x11, 0xf8, 0xd1, 0x00, 0x08, 0xca, 0xbc, 0x06, 0x63, 0xdc, 0x09,
@@ -70,6 +84,134 @@ pub(crate) struct AssemblyRecordIssue {
     pub(crate) segment_token: String,
     pub(crate) record_ordinal: u32,
     pub(crate) detail: String,
+}
+
+#[derive(Debug)]
+pub(crate) struct AssemblyProjection {
+    pub(crate) occurrences: Vec<Occurrence>,
+    pub(crate) unresolved_placements: usize,
+}
+
+/// Projects the current document's occurrence table without loading prototypes.
+///
+/// `UFRx` supplies document order and the external prototype join. `AmDc` proves
+/// the occurrence identity, while `AmGraphics` supplies the placement. Referenced
+/// assemblies remain one unresolved external prototype, so their internal trees
+/// are not invented as children of this document.
+pub(crate) fn project_occurrences(
+    ufrx_occurrences: &[UfrxOccurrenceRecord],
+    external_references: &[ExternalReferenceRecord],
+    assembly_occurrences: &[AssemblyOccurrenceRecord],
+    assembly_placements: &[AssemblyPlacementRecord],
+) -> AssemblyProjection {
+    let references = unique_by(external_references, |record| record.reference_id);
+    let occurrence_records = unique_by(assembly_occurrences, |record| record.occurrence_id);
+    let placements = unique_by(assembly_placements, |record| record.occurrence_id);
+    let mut emitted_ids = HashSet::new();
+    let mut occurrences = Vec::new();
+    let mut unresolved_placements = 0;
+
+    for source in ufrx_occurrences {
+        let Some(reference) = references.get(&source.file_reference_id) else {
+            unresolved_placements += 1;
+            continue;
+        };
+        if !occurrence_records.contains_key(&source.occurrence_id)
+            || !emitted_ids.insert(source.occurrence_id)
+        {
+            unresolved_placements += 1;
+            continue;
+        }
+
+        let suppressed = reference.state[0] & SUPPRESSED_REFERENCE_STATE != 0;
+        let (transform, visible) = match placements.get(&source.occurrence_id) {
+            Some(placement) => {
+                let mut rows = placement.transform;
+                for row in rows.iter_mut().take(3) {
+                    row[3] *= INVENTOR_LENGTH_TO_MILLIMETRES;
+                }
+                let transform = Transform { rows };
+                if !transform.is_affine() {
+                    unresolved_placements += 1;
+                    continue;
+                }
+                (transform, suppressed.then_some(false))
+            }
+            None if suppressed => (Transform::identity(), Some(false)),
+            None => {
+                unresolved_placements += 1;
+                continue;
+            }
+        };
+
+        occurrences.push(Occurrence {
+            id: OccurrenceId(format!(
+                "inventor:assembly:instance#{}",
+                source.occurrence_id
+            )),
+            prototype: external_prototype(reference),
+            parent: OccurrenceParent::Root,
+            ordinal: source.ordinal,
+            transform,
+            prototype_transform: Transform::identity(),
+            scale: [1.0; 3],
+            name: source.title.clone().filter(|title| !title.is_empty()),
+            linked_subelements: Vec::new(),
+            visible,
+            element_component: None,
+            claim_child: None,
+            copy_on_change: None,
+            copy_on_change_source: None,
+            copy_on_change_group: None,
+            copy_on_change_touched: None,
+            link_transform: None,
+            native_ref: Some(source.id.clone()),
+        });
+    }
+
+    AssemblyProjection {
+        occurrences,
+        unresolved_placements,
+    }
+}
+
+fn unique_by<T, K>(records: &[T], key: impl Fn(&T) -> K) -> HashMap<K, &T>
+where
+    K: Eq + std::hash::Hash + Copy,
+{
+    let mut unique = HashMap::new();
+    let mut duplicates = HashSet::new();
+    for record in records {
+        let key = key(record);
+        if unique.insert(key, record).is_some() {
+            duplicates.insert(key);
+        }
+    }
+    for duplicate in duplicates {
+        unique.remove(&duplicate);
+    }
+    unique
+}
+
+fn external_prototype(reference: &ExternalReferenceRecord) -> PrototypeReference {
+    let path = (!reference.path.is_empty()).then(|| reference.path.clone());
+    let document_id = (path.is_none()
+        && reference
+            .document_id
+            .chars()
+            .any(|character| character != '0'))
+    .then(|| reference.document_id.clone());
+    if path.is_none() && document_id.is_none() {
+        return PrototypeReference::Unresolved;
+    }
+    PrototypeReference::External {
+        document: ExternalDocumentReference {
+            path,
+            document_id,
+            resolution: ExternalResolution::Unresolved,
+        },
+        object: None,
+    }
 }
 
 pub(crate) fn inventory<'a>(
@@ -409,6 +551,7 @@ impl<'a> Cursor<'a> {
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_ir::products::{ExternalResolution, PrototypeReference};
 
     use super::*;
 
@@ -455,6 +598,155 @@ mod tests {
         let placement = parse_placement(&ctx, root).expect("synthetic rotation parses");
         assert_eq!(placement.transform[0][1], -1.0);
         assert_eq!(placement.transform[1][0], 1.0);
+    }
+
+    #[test]
+    fn projects_external_occurrence_and_converts_translation_to_millimetres() {
+        let ufrx = ufrx_occurrence(4, 7, 2);
+        let reference = external_reference(4, "components/part.ipt", [0, 0]);
+        let occurrence = assembly_occurrence(7);
+        let mut placement = assembly_placement(7);
+        placement.transform[0][3] = 1.25;
+        placement.transform[1][3] = -2.0;
+
+        let projection = project_occurrences(&[ufrx], &[reference], &[occurrence], &[placement]);
+
+        assert_eq!(projection.unresolved_placements, 0);
+        let [projected] = projection.occurrences.as_slice() else {
+            panic!("one occurrence must be projected");
+        };
+        assert_eq!(projected.ordinal, 2);
+        assert_eq!(projected.transform.rows[0][3], 12.5);
+        assert_eq!(projected.transform.rows[1][3], -20.0);
+        let PrototypeReference::External { document, object } = &projected.prototype else {
+            panic!("the persisted file reference must remain external");
+        };
+        assert_eq!(document.path.as_deref(), Some("components/part.ipt"));
+        assert_eq!(document.document_id, None);
+        assert_eq!(document.resolution, ExternalResolution::Unresolved);
+        assert_eq!(object, &None);
+    }
+
+    #[test]
+    fn projects_suppressed_occurrence_without_graphics_placement() {
+        let ufrx = ufrx_occurrence(4, 7, 0);
+        let mut reference = external_reference(4, "", [SUPPRESSED_REFERENCE_STATE, 0]);
+        reference.document_id = "00112233445566778899aabbccddeeff".into();
+        let expected_document_id = reference.document_id.clone();
+        let occurrence = assembly_occurrence(7);
+
+        let projection = project_occurrences(&[ufrx], &[reference], &[occurrence], &[]);
+
+        assert_eq!(projection.unresolved_placements, 0);
+        let [projected] = projection.occurrences.as_slice() else {
+            panic!("one suppressed occurrence must be projected");
+        };
+        assert_eq!(projected.transform, Transform::identity());
+        assert_eq!(projected.visible, Some(false));
+        let PrototypeReference::External { document, .. } = &projected.prototype else {
+            panic!("the persisted document identity must remain external");
+        };
+        assert_eq!(document.path, None);
+        assert_eq!(
+            document.document_id.as_deref(),
+            Some(expected_document_id.as_str())
+        );
+    }
+
+    #[test]
+    fn reports_active_occurrence_without_placement() {
+        let projection = project_occurrences(
+            &[ufrx_occurrence(4, 7, 0)],
+            &[external_reference(4, "part.ipt", [0, 0])],
+            &[assembly_occurrence(7)],
+            &[],
+        );
+
+        assert!(projection.occurrences.is_empty());
+        assert_eq!(projection.unresolved_placements, 1);
+    }
+
+    fn ufrx_occurrence(
+        file_reference_id: u32,
+        occurrence_id: u32,
+        ordinal: u32,
+    ) -> UfrxOccurrenceRecord {
+        UfrxOccurrenceRecord {
+            id: format!("inventor:ufrx:occurrence#{ordinal}"),
+            ordinal,
+            end_string_flag: 0,
+            file_reference_id,
+            occurrence_id,
+            header_value: 0,
+            title: Some("placed part".into()),
+            header_padding_words: 0,
+            record_len: 1,
+            record_sha256: "0".repeat(64),
+        }
+    }
+
+    fn external_reference(
+        reference_id: u32,
+        path: &str,
+        state: [u16; 2],
+    ) -> ExternalReferenceRecord {
+        ExternalReferenceRecord {
+            id: format!("inventor:ufrx:external-reference#{reference_id}"),
+            ordinal: reference_id,
+            path: path.into(),
+            library_id: 0,
+            library_name: String::new(),
+            display_name: String::new(),
+            state_groups: Vec::new(),
+            state,
+            document_id: "0".repeat(32),
+            database_id: "0".repeat(32),
+            reference_id,
+            occurrence_count: 1,
+            version: 0,
+            flags: 0,
+        }
+    }
+
+    fn assembly_occurrence(occurrence_id: u32) -> AssemblyOccurrenceRecord {
+        AssemblyOccurrenceRecord {
+            id: format!("inventor:assembly:occurrence#{occurrence_id}"),
+            segment_token: "synthetic".into(),
+            record_ordinal: occurrence_id,
+            header_value: 0,
+            header_id: 0,
+            next_reference: 0,
+            flags: 0,
+            owner_reference: 0,
+            node_index: 0,
+            state: [0, 0],
+            ordinal_key: occurrence_id,
+            related_references: Vec::new(),
+            child_reference: 0,
+            occurrence_id,
+        }
+    }
+
+    fn assembly_placement(occurrence_id: u32) -> AssemblyPlacementRecord {
+        AssemblyPlacementRecord {
+            id: format!("inventor:assembly:placement#{occurrence_id}"),
+            segment_token: "synthetic".into(),
+            record_ordinal: occurrence_id,
+            header_id: 0,
+            owner_reference: 0,
+            attribute_reference: 0,
+            state: 0,
+            transform_prefix: false,
+            transform_encoding: [0, 0],
+            transform: Transform::identity().rows,
+            branch: 0,
+            graphics_state: 0,
+            occurrence_id,
+            graphics_index: 0,
+            object_reference: 0,
+            suffix_len: 0,
+            suffix_sha256: "0".repeat(64),
+        }
     }
 
     fn occurrence_fixture(occurrence_id: u32, related: &[u32]) -> Vec<u8> {

@@ -67,7 +67,25 @@ The root `Protein` stream starts with a u32 payload length. Zero length is the c
 
 ## 8. External references
 
-`UFRxDoc` schemas 11 through 15 start with a u16 schema and a u16 section-version count. The section-version table governs optional header fields. The schema-15 representation/model-state branch adds a u16 representation prefix, two counted UTF-16LE representation strings, and a counted UTF-16LE active model-state name with a two-u16 state pair; it omits the older header-version-flags field. Its model-state table precedes the external-reference table. Each model-state record contains a u8 prefix, counted UTF-16LE name, two-u16 state pair, u32 prefix count, u32 parameter count, the counted parameter records, and a 77-byte suffix. Each parameter record contains a counted UTF-16LE name, u8 tag, u16 kind, u16 state, counted UTF-16LE value, and u16 trailer. The external-reference table contains counted UTF-16LE paths and names, state groups, 16-byte document and database identifiers, a u32 reference identifier, u32 occurrence count, u32 version, and u32 flags. Persisted paths remain unresolved. The codec does not open them.
+`UFRxDoc` schemas 11 through 15 start with a u16 schema and a u16 section-version count. The section-version table governs optional header fields. The schema-15 representation/model-state branch adds a u16 representation prefix, two counted UTF-16LE representation strings, and a counted UTF-16LE active model-state name with a two-u16 state pair; it omits the older header-version-flags field. Its model-state table precedes the external-reference table. Each model-state record contains a u8 prefix, counted UTF-16LE name, two-u16 state pair, u32 prefix count, u32 parameter count, the counted parameter records, and a 77-byte suffix. Each parameter record contains a counted UTF-16LE name, u8 tag, u16 kind, u16 state, counted UTF-16LE value, and u16 trailer.
+
+The external-reference table contains counted UTF-16LE paths and names, state groups, 16-byte document and database identifiers, a u32 reference identifier, u32 occurrence count, u32 version, and u32 flags. Section-version entry 4 values of 2 or later add a zero-byte table terminator. Persisted paths remain unresolved. The codec does not open them.
+
+The embedded-reference table follows the external-reference table. It starts with a u32 record count. Each record contains a u32 value, u64 FILETIME, u32 value, an additional u32 value when section-version entry 15 is 7 or later, another u32 value, counted UTF-16LE path, i32 library identifier, counted UTF-16LE library name, u16 state, counted UTF-16LE display name, and eight state bytes. Section-version entry 15 values of 6 or later add a zero-byte table terminator.
+
+The occurrence table follows the embedded-reference table. It starts with a u32 count. A zero count is followed by one zero u32. Each nonempty record starts with:
+
+```text
+end_string_flag u32
+file_reference_id u32
+occurrence_id u32
+header_value u32
+title_form_or_count u32
+```
+
+For occurrence section versions before 28, title form 0 has no title, form 1 is followed by a separately counted UTF-16LE title, and other nonzero values are the title code-unit count. The header then contains five state bytes, one additional byte at version 20 or later, and another byte at version 21 or later. At version 28 or later, every nonzero title form is followed by a separately counted UTF-16LE title. The header then contains at most eight zero u16 values, u16 marker `0x2080`, and the u32 sequence 0, 1, 0.
+
+Two property sections follow the header. Each starts with a u32 section value and u32 property count. A property contains a Boolean presence byte, u8 type tag, u32 value, the repeated type tag, the tag-selected value, and a u32 trailer. Settings follow as counted UTF-16LE name, 16-byte identifier, and counted UTF-8 value records. The export section contains ten state bytes, version-selected padding, and either an empty count, a `0x00ffffff` or `0xffffffff` sentinel followed by zero u32, or a bounded typed export table. Each occurrence record is bounded by exhaustion of these nested counts.
 
 ## 9. Assembly records
 
@@ -100,6 +118,10 @@ The record ends after the trailer. Occurrence identifiers are document-local val
 An `AmGraphics` record with type identifier `a26371cad011b2d30008bfbb21eddc09` or `07d0d0b9d4112d5f6000f8830e73fcb0` stores an assembly placement. Its common payload prefix contains u32 zero, u16 header identifier, u32 owner reference, u32 attribute reference, u8 state, and a compact 4-by-4 transform. The transform can start with optional u32 `0x00000203`, followed by a u16 set mask and a u16 zero mask. The 16 matrix elements use row-major bit positions. A clear zero-mask bit stores an f64 when the set-mask bit is clear and represents `1` when the set-mask bit is set. A set zero-mask bit represents `0` when the set-mask bit is clear and `-1` when the set-mask bit is set. Stored f64 values are finite.
 
 The active placement branch continues with u8 branch, u8 graphics state, u32 occurrence identifier, counted UTF-16LE label `"GRx"`, u16 invariant 1, u32 graphics index, u32 object reference, and the occurrence identifier again. Both occurrence-identifier fields are equal. The remaining branch-specific suffix is retained. A placement joins an occurrence through the exact occurrence identifier.
+
+A `UFRxDoc` occurrence joins its external prototype through `file_reference_id` and joins the `AmDc` and `AmGraphics` records through `occurrence_id`. The external-reference occurrence count equals the number of joined `UFRxDoc` occurrences. Each occurrence in the current document is a root placement. A referenced assembly remains an unresolved external prototype; its internal occurrences are not inserted into the current document.
+
+Inventor placement translations use centimetres. Neutral occurrence translations use millimetres, so the first three elements in matrix column 3 are multiplied by 10. The remaining matrix coefficients are unchanged. External-reference state bit `0x2000` marks its occurrence as suppressed. A suppressed occurrence has `visible = false`; when it has no graphics placement, its neutral transform is identity. An active occurrence without a finite affine graphics placement is not transferred and produces an assembly-placement loss.
 
 ## 10. Document kind
 

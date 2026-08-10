@@ -214,6 +214,48 @@ source = "spec"
 anchor = "a u16 section-version count"
 
 [[record]]
+name = "ufrx_occurrence_prefix"
+kind = "byte"
+section = "8"
+anchor = "Each nonempty record starts with"
+size = 20
+
+[[record.field]]
+name = "end_string_flag"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "end_string_flag u32"
+
+[[record.field]]
+name = "file_reference_id"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "file_reference_id u32"
+
+[[record.field]]
+name = "occurrence_id"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "occurrence_id u32"
+
+[[record.field]]
+name = "header_value"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "title_form_or_count"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "title_form_or_count u32"
+
+[[record]]
 name = "assembly_occurrence_prefix"
 kind = "byte"
 section = "9"

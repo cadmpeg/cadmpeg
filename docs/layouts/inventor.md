@@ -84,6 +84,18 @@ Spec §8 · layout: byte offsets · size: 4 B
 | 0 | 2 | `schema` | `u16` | little | spec | a u16 schema |
 | 2 | 2 | `section_version_count` | `u16` | little | spec | a u16 section-version count |
 
+## `ufrx_occurrence_prefix`
+
+Spec §8 · layout: byte offsets · size: 20 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `end_string_flag` | `u32` | little | spec | end_string_flag u32 |
+| 4 | 4 | `file_reference_id` | `u32` | little | spec | file_reference_id u32 |
+| 8 | 4 | `occurrence_id` | `u32` | little | spec | occurrence_id u32 |
+| 12 | 4 | `header_value` | `u32` | little | spec | header_value u32 |
+| 16 | 4 | `title_form_or_count` | `u32` | little | spec | title_form_or_count u32 |
+
 ## `assembly_occurrence_prefix`
 
 Spec §9 · layout: byte offsets · size: 50 B

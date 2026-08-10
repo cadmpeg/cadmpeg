@@ -13,7 +13,7 @@ use crate::native::{
     ProteinEntryRecord, ProteinRecord, ProteinRecordState, ProteinRejectionRecord, RevisionRecord,
     RseRecordRecord, SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord,
     SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord,
-    StructuralIssueRecord, UfrxModelStateRecord, UfrxRecord, UfrxRecordState,
+    StructuralIssueRecord, UfrxModelStateRecord, UfrxOccurrenceRecord, UfrxRecord, UfrxRecordState,
     UnpairedSegmentRecord, INVENTOR_NATIVE_VERSION,
 };
 
@@ -56,6 +56,7 @@ const ARENAS: &[&str] = &[
     "transform_hints",
     "ufrx",
     "ufrx_model_states",
+    "ufrx_occurrences",
     "unknowns",
     "unpaired_segments",
     "vertex_ownerships",
@@ -134,7 +135,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_protein_rejections(&data, &mut findings);
     validate_protein_record_coverage(&data, &mut findings);
     validate_ufrx(&data, &mut findings);
-    validate_assembly(&data, &mut findings);
+    validate_assembly(ir, &data, &mut findings);
     for issue in &data.structural_issues {
         findings.push(finding(
             Check::NativeLinks,
@@ -251,6 +252,7 @@ struct NativeData {
     protein_rejections: Vec<ProteinRejectionRecord>,
     ufrx: Vec<UfrxRecord>,
     ufrx_model_states: Vec<UfrxModelStateRecord>,
+    ufrx_occurrences: Vec<UfrxOccurrenceRecord>,
     external_references: Vec<ExternalReferenceRecord>,
     assembly_occurrences: Vec<AssemblyOccurrenceRecord>,
     assembly_placements: Vec<AssemblyPlacementRecord>,
@@ -289,6 +291,7 @@ impl NativeData {
             protein_rejections: namespace.arena_as("protein_rejections")?,
             ufrx: namespace.arena_as("ufrx")?,
             ufrx_model_states: namespace.arena_as("ufrx_model_states")?,
+            ufrx_occurrences: namespace.arena_as("ufrx_occurrences")?,
             external_references: namespace.arena_as("external_references")?,
             assembly_occurrences: namespace.arena_as("assembly_occurrences")?,
             assembly_placements: namespace.arena_as("assembly_placements")?,
@@ -867,8 +870,11 @@ fn validate_ufrx(data: &NativeData, findings: &mut Vec<Finding>) {
                 && record.representation.is_none()
                 && record.model_state_count == 0
                 && record.reference_count == 0
+                && record.embedded_reference_count == 0
+                && record.occurrence_count == 0
                 && record.detail.is_none()
                 && data.ufrx_model_states.is_empty()
+                && data.ufrx_occurrences.is_empty()
                 && data.external_references.is_empty()
         }
         UfrxRecordState::ParsedPrefix => {
@@ -882,6 +888,7 @@ fn validate_ufrx(data: &NativeData, findings: &mut Vec<Finding>) {
                 && record.model_state_count == data.ufrx_model_states.len() as u64
                 && (record.schema == Some(15)) == record.representation.is_some()
                 && record.reference_count == data.external_references.len() as u64
+                && record.occurrence_count == data.ufrx_occurrences.len() as u64
                 && record.tail_sha256.is_some()
                 && record.detail.is_none()
         }
@@ -894,9 +901,12 @@ fn validate_ufrx(data: &NativeData, findings: &mut Vec<Finding>) {
                 && record.representation.is_none()
                 && record.model_state_count == 0
                 && record.reference_count == 0
+                && record.embedded_reference_count == 0
+                && record.occurrence_count == 0
                 && record.tail_sha256.is_some()
                 && record.detail.is_some()
                 && data.ufrx_model_states.is_empty()
+                && data.ufrx_occurrences.is_empty()
                 && data.external_references.is_empty()
         }
         UfrxRecordState::Malformed => {
@@ -905,8 +915,11 @@ fn validate_ufrx(data: &NativeData, findings: &mut Vec<Finding>) {
                 && record.representation.is_none()
                 && record.model_state_count == 0
                 && record.reference_count == 0
+                && record.embedded_reference_count == 0
+                && record.occurrence_count == 0
                 && record.detail.is_some()
                 && data.ufrx_model_states.is_empty()
+                && data.ufrx_occurrences.is_empty()
                 && data.external_references.is_empty()
         }
     };
@@ -927,18 +940,28 @@ fn validate_ufrx(data: &NativeData, findings: &mut Vec<Finding>) {
             Some(record.id.clone()),
         ));
     }
-    for (expected, state) in data.ufrx_model_states.iter().enumerate() {
-        if state.ordinal as usize != expected
-            || state.name.is_empty()
-            || state.suffix_len != 77
-            || state.suffix_sha256.len() != 64
-        {
+    let model_state_ordinals = data
+        .ufrx_model_states
+        .iter()
+        .map(|state| state.ordinal)
+        .collect::<HashSet<_>>();
+    for state in &data.ufrx_model_states {
+        if state.name.is_empty() || state.suffix_len != 77 || state.suffix_sha256.len() != 64 {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor UFRxDoc model-state framing is inconsistent".into(),
                 Some(state.id.clone()),
             ));
         }
+    }
+    if model_state_ordinals.len() != data.ufrx_model_states.len()
+        || model_state_ordinals != (0..data.ufrx_model_states.len() as u32).collect::<HashSet<_>>()
+    {
+        findings.push(finding(
+            Check::NativeLinks,
+            "Inventor UFRxDoc model-state ordinals are not contiguous".into(),
+            None,
+        ));
     }
     if let Some(representation) = &record.representation {
         if representation.active_representation.is_empty()
@@ -966,9 +989,60 @@ fn validate_ufrx(data: &NativeData, findings: &mut Vec<Finding>) {
             ));
         }
     }
+    unique(
+        findings,
+        data.ufrx_occurrences
+            .iter()
+            .map(|occurrence| occurrence.occurrence_id),
+        "UFRxDoc occurrence id",
+    );
+    let reference_ids = data
+        .external_references
+        .iter()
+        .map(|reference| reference.reference_id)
+        .collect::<HashSet<_>>();
+    let assembly_ids = data
+        .assembly_occurrences
+        .iter()
+        .map(|occurrence| occurrence.occurrence_id)
+        .collect::<HashSet<_>>();
+    let mut actual_counts = HashMap::<u32, u64>::new();
+    for occurrence in &data.ufrx_occurrences {
+        *actual_counts
+            .entry(occurrence.file_reference_id)
+            .or_default() += 1;
+        if occurrence.record_len == 0
+            || occurrence.record_sha256.len() != 64
+            || occurrence.header_padding_words > 8
+            || !reference_ids.contains(&occurrence.file_reference_id)
+            || !assembly_ids.contains(&occurrence.occurrence_id)
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor UFRxDoc occurrence does not resolve to its file and assembly records"
+                    .into(),
+                Some(occurrence.id.clone()),
+            ));
+        }
+    }
+    for reference in &data.external_references {
+        if actual_counts
+            .get(&reference.reference_id)
+            .copied()
+            .unwrap_or_default()
+            != u64::from(reference.occurrence_count)
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor external-reference occurrence count does not match its typed records"
+                    .into(),
+                Some(reference.id.clone()),
+            ));
+        }
+    }
 }
 
-fn validate_assembly(data: &NativeData, findings: &mut Vec<Finding>) {
+fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
     unique(
         findings,
         data.assembly_occurrences
@@ -1029,6 +1103,22 @@ fn validate_assembly(data: &NativeData, findings: &mut Vec<Finding>) {
                 issue.segment_token, issue.record_ordinal, issue.detail
             ),
             Some(issue.id.clone()),
+        ));
+    }
+    let mut projected = crate::assembly::project_occurrences(
+        &data.ufrx_occurrences,
+        &data.external_references,
+        &data.assembly_occurrences,
+        &data.assembly_placements,
+    );
+    projected
+        .occurrences
+        .sort_by(|left, right| left.id.0.cmp(&right.id.0));
+    if ir.model.occurrences != projected.occurrences {
+        findings.push(finding(
+            Check::NativeLinks,
+            "Inventor neutral occurrences do not match the typed assembly records".into(),
+            None,
         ));
     }
 }

@@ -29,9 +29,9 @@ use crate::native::{
     ProteinEntryRecord, ProteinRecord, ProteinRecordState, ProteinRejectionRecord, RevisionRecord,
     RseRecordRecord, SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord,
     SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord,
-    StructuralIssueRecord, UfrxModelStateParameterRecord, UfrxModelStateRecord, UfrxRecord,
-    UfrxRecordState, UfrxRepresentationRecord, UnpairedSegmentRecord, VersionTupleRecord,
-    INVENTOR_NATIVE_VERSION,
+    StructuralIssueRecord, UfrxModelStateParameterRecord, UfrxModelStateRecord,
+    UfrxOccurrenceRecord, UfrxRecord, UfrxRecordState, UfrxRepresentationRecord,
+    UnpairedSegmentRecord, VersionTupleRecord, INVENTOR_NATIVE_VERSION,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
@@ -283,7 +283,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         })
         .collect::<Vec<_>>();
     ir.model.appearances = material_catalog.appearances;
-    let (ufrx, ufrx_model_states, external_references) = match &container.ufrx {
+    let (ufrx, ufrx_model_states, external_references, ufrx_occurrences) = match &container.ufrx {
         UfrxState::Absent => (
             UfrxRecord {
                 id: "inventor:ufrx:state#root".into(),
@@ -296,10 +296,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 representation: None,
                 model_state_count: 0,
                 reference_count: 0,
+                embedded_reference_count: 0,
+                occurrence_count: 0,
                 tail_len: 0,
                 tail_sha256: None,
                 detail: None,
             },
+            Vec::new(),
             Vec::new(),
             Vec::new(),
         ),
@@ -315,10 +318,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 representation: None,
                 model_state_count: 0,
                 reference_count: 0,
+                embedded_reference_count: 0,
+                occurrence_count: 0,
                 tail_len: 0,
                 tail_sha256: None,
                 detail: Some(detail.clone()),
             },
+            Vec::new(),
             Vec::new(),
             Vec::new(),
         ),
@@ -340,10 +346,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 representation: None,
                 model_state_count: 0,
                 reference_count: 0,
+                embedded_reference_count: 0,
+                occurrence_count: 0,
                 tail_len: source.window().len() as u64,
                 tail_sha256: Some(sha256_hex(source.window())),
                 detail: Some(detail.clone()),
             },
+            Vec::new(),
             Vec::new(),
             Vec::new(),
         ),
@@ -396,6 +405,23 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                     flags: reference.flags,
                 })
                 .collect::<Vec<_>>();
+            let occurrences = document
+                .occurrences
+                .iter()
+                .enumerate()
+                .map(|(ordinal, occurrence)| UfrxOccurrenceRecord {
+                    id: format!("inventor:ufrx:occurrence#{ordinal}"),
+                    ordinal: ordinal as u32,
+                    end_string_flag: occurrence.end_string_flag,
+                    file_reference_id: occurrence.file_reference_id,
+                    occurrence_id: occurrence.occurrence_id,
+                    header_value: occurrence.header_value,
+                    title: occurrence.title.clone(),
+                    header_padding_words: occurrence.header_padding_words,
+                    record_len: occurrence.source.window().len() as u64,
+                    record_sha256: sha256_hex(occurrence.source.window()),
+                })
+                .collect::<Vec<_>>();
             (
                 UfrxRecord {
                     id: "inventor:ufrx:state#root".into(),
@@ -417,12 +443,15 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                     }),
                     model_state_count: model_states.len() as u64,
                     reference_count: references.len() as u64,
+                    embedded_reference_count: u64::from(document.embedded_reference_count),
+                    occurrence_count: occurrences.len() as u64,
                     tail_len: document.unparsed_tail.window().len() as u64,
                     tail_sha256: Some(sha256_hex(document.unparsed_tail.window())),
                     detail: None,
                 },
                 model_states,
                 references,
+                occurrences,
             )
         }
     };
@@ -937,6 +966,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             detail: issue.detail.clone(),
         })
         .collect::<Vec<_>>();
+    let assembly_projection = crate::assembly::project_occurrences(
+        &ufrx_occurrences,
+        &external_references,
+        &assembly_occurrences,
+        &assembly_placements,
+    );
+    ir.model.occurrences = assembly_projection.occurrences;
     ctx.charge_collection_items(
         storage_bands
             .len()
@@ -963,6 +999,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .saturating_add(protein_rejections.len())
             .saturating_add(1)
             .saturating_add(ufrx_model_states.len())
+            .saturating_add(ufrx_occurrences.len())
             .saturating_add(external_references.len())
             .saturating_add(assembly_occurrences.len())
             .saturating_add(assembly_placements.len())
@@ -989,6 +1026,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     namespace.set_arena("protein_rejections", &protein_rejections)?;
     namespace.set_arena("ufrx", std::slice::from_ref(&ufrx))?;
     namespace.set_arena("ufrx_model_states", &ufrx_model_states)?;
+    namespace.set_arena("ufrx_occurrences", &ufrx_occurrences)?;
     namespace.set_arena("external_references", &external_references)?;
     namespace.set_arena("assembly_occurrences", &assembly_occurrences)?;
     namespace.set_arena("assembly_placements", &assembly_placements)?;
@@ -1222,7 +1260,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 losses.push(LossNote::new(
                     kind,
                     format!(
-                        "Retained unsupported UFRxDoc schema {schema} header branch without semantic transfer."
+                        "Retained unsupported UFRxDoc schema {schema} semantic branch without transfer."
                     ),
                 ));
             }
@@ -1236,17 +1274,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                         ),
                     ));
                 }
-                let declared_occurrences = external_references
-                    .iter()
-                    .map(|reference| u64::from(reference.occurrence_count))
-                    .sum::<u64>();
-                if declared_occurrences != 0 {
+                if assembly_projection.unresolved_placements != 0 {
                     losses.push(LossNote::new(
                         LossKind::AssemblyPlacementsNotTransferred,
                         format!(
-                            "Retained {} typed assembly occurrence(s) and {} placement transform(s), but prototype and hierarchy joins are unresolved.",
-                            assembly_occurrences.len(),
-                            assembly_placements.len()
+                            "Could not transfer {} assembly occurrence placement(s).",
+                            assembly_projection.unresolved_placements
                         ),
                     ));
                 }
@@ -1300,6 +1333,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     source_fidelity.finalize();
     let asm_unknown_record_count = ir.native_unknowns("inventor")?.len();
     let protein_appearance_count = ir.model.appearances.len();
+    let transferred_occurrence_count = ir.model.occurrences.len();
     Ok(DecodeResult::new(
         ir,
         DecodeReport {
@@ -1327,8 +1361,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 ("protein_appearances".into(), protein_appearance_count),
                 ("external_references".into(), external_references.len()),
                 ("ufrx_model_states".into(), ufrx_model_states.len()),
+                ("ufrx_occurrences".into(), ufrx_occurrences.len()),
                 ("assembly_occurrences".into(), assembly_occurrences.len()),
                 ("assembly_placements".into(), assembly_placements.len()),
+                (
+                    "assembly_occurrences_transferred".into(),
+                    transferred_occurrence_count,
+                ),
                 (
                     "assembly_record_issues".into(),
                     assembly_record_issues.len(),
