@@ -195,8 +195,10 @@ fn is_native_sketch_geometry_class(class_name: &str) -> bool {
 ///
 /// A range is an opaque constraint at this layer. Its exact selectors,
 /// framing, and evaluation are retained as native properties. The unique
-/// source record is retained as an unresolved native operand; no geometry,
-/// dimensional, or driving-parameter role is inferred from the range alone.
+/// source record is retained as a native operand. If that exact source record
+/// is already represented by one entity in the same sketch, the entity is
+/// bound by identity; no geometry, dimensional, or driving-parameter role is
+/// inferred from the range alone.
 /// The returned object-record identities are the exact range and source
 /// operand records represented by the emitted neutral constraints. The source
 /// operand's semantic role remains unresolved by design.
@@ -238,7 +240,7 @@ pub(crate) fn transfer_constraint_ranges(
                 native_state: None,
                 native_flags: None,
                 native_properties: constraint_properties(range),
-                entities: Vec::new(),
+                entities: binding.entity.into_iter().collect(),
                 parameter: None,
                 operands: vec![binding.operand],
             },
@@ -264,6 +266,7 @@ struct ConstraintBinding {
     sketch: SketchId,
     source_object_record: String,
     operand: SketchNativeOperand,
+    entity: Option<SketchEntityId>,
 }
 
 struct ConstraintIndexes<'a> {
@@ -275,6 +278,8 @@ struct ConstraintIndexes<'a> {
     ambiguous_design_objects: HashSet<&'a str>,
     sketch_ids: HashMap<String, SketchId>,
     ambiguous_sketch_ids: HashSet<String>,
+    sketch_entities: HashMap<String, (SketchEntityId, SketchId)>,
+    ambiguous_sketch_entities: HashSet<String>,
 }
 
 impl<'a> ConstraintIndexes<'a> {
@@ -283,6 +288,7 @@ impl<'a> ConstraintIndexes<'a> {
         let (object_records, ambiguous_object_records) = unique_object_records(native);
         let (design_objects, ambiguous_design_objects) = unique_design_objects(native);
         let (sketch_ids, ambiguous_sketch_ids) = sketch_ids_by_native_ref(ir);
+        let (sketch_entities, ambiguous_sketch_entities) = sketch_entities_by_native_ref(ir);
         Self {
             entity_records,
             ambiguous_entity_records,
@@ -292,8 +298,36 @@ impl<'a> ConstraintIndexes<'a> {
             ambiguous_design_objects,
             sketch_ids,
             ambiguous_sketch_ids,
+            sketch_entities,
+            ambiguous_sketch_entities,
         }
     }
+}
+
+fn sketch_entities_by_native_ref(
+    ir: &CadIr,
+) -> (HashMap<String, (SketchEntityId, SketchId)>, HashSet<String>) {
+    let mut entities = HashMap::new();
+    let mut ambiguous = HashSet::new();
+    for entity in &ir.model.sketch_entities {
+        let Some(native_ref) = entity.native_ref.as_deref() else {
+            continue;
+        };
+        if ambiguous.contains(native_ref) {
+            continue;
+        }
+        if entities
+            .insert(
+                native_ref.to_string(),
+                (entity.id.clone(), entity.sketch.clone()),
+            )
+            .is_some()
+        {
+            entities.remove(native_ref);
+            ambiguous.insert(native_ref.to_string());
+        }
+    }
+    (entities, ambiguous)
 }
 
 fn constraint_binding(
@@ -362,6 +396,15 @@ fn constraint_binding(
         &indexes.ambiguous_sketch_ids,
         feature_transfer,
     )?;
+    let entity = if indexes.ambiguous_sketch_entities.contains(source_record_id) {
+        None
+    } else {
+        indexes
+            .sketch_entities
+            .get(source_record_id)
+            .filter(|(_, entity_sketch)| entity_sketch == &sketch)
+            .map(|(entity, _)| entity.clone())
+    };
     let object_index = u32::try_from(source_record.ordinal).ok()?;
     let native_kind = source_record
         .class_name
@@ -378,6 +421,7 @@ fn constraint_binding(
             object_index,
             native_ref: Some(source_entity_record.id.clone()),
         },
+        entity,
     })
 }
 
@@ -961,6 +1005,81 @@ mod tests {
             operands[0].native_ref.as_deref(),
             Some("catia:outer:entity-record#source")
         );
+    }
+
+    #[test]
+    fn binds_a_constraint_to_an_exact_native_sketch_entity() {
+        let (mut ir, native, transfer, graph_scope) = fixture(false);
+        let entity_id = SketchEntityId("synthetic:test:sketch-entity#source".to_string());
+        ir.model.sketch_entities.push(SketchEntity {
+            id: entity_id.clone(),
+            sketch: SketchId("synthetic:test:sketch#0".to_string()),
+            construction: false,
+            native_ref: Some("source-record".to_string()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Native {
+                native_kind: "2DPoint".to_string(),
+            },
+        });
+
+        transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope));
+
+        let constraint = &ir.model.sketch_constraints[0];
+        let SketchConstraintDefinition::Native { entities, .. } = &constraint.definition else {
+            panic!("expected opaque native constraint");
+        };
+        assert_eq!(entities, &vec![entity_id]);
+    }
+
+    #[test]
+    fn refuses_a_constraint_entity_binding_when_native_identity_is_ambiguous() {
+        let (mut ir, native, transfer, graph_scope) = fixture(false);
+        for suffix in ["first", "second"] {
+            ir.model.sketch_entities.push(SketchEntity {
+                id: SketchEntityId(format!("synthetic:test:sketch-entity#{suffix}")),
+                sketch: SketchId("synthetic:test:sketch#0".to_string()),
+                construction: false,
+                native_ref: Some("source-record".to_string()),
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Native {
+                    native_kind: "2DPoint".to_string(),
+                },
+            });
+        }
+
+        transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope));
+
+        let constraint = &ir.model.sketch_constraints[0];
+        let SketchConstraintDefinition::Native { entities, .. } = &constraint.definition else {
+            panic!("expected opaque native constraint");
+        };
+        assert!(entities.is_empty());
+    }
+
+    #[test]
+    fn refuses_a_constraint_entity_binding_from_another_sketch() {
+        let (mut ir, native, transfer, graph_scope) = fixture(false);
+        ir.model.sketch_entities.push(SketchEntity {
+            id: SketchEntityId("synthetic:test:other-sketch-entity#source".to_string()),
+            sketch: SketchId("synthetic:test:other-sketch#0".to_string()),
+            construction: false,
+            native_ref: Some("source-record".to_string()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Native {
+                native_kind: "2DPoint".to_string(),
+            },
+        });
+
+        transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope));
+
+        let constraint = &ir.model.sketch_constraints[0];
+        let SketchConstraintDefinition::Native { entities, .. } = &constraint.definition else {
+            panic!("expected opaque native constraint");
+        };
+        assert!(entities.is_empty());
     }
 
     #[test]
