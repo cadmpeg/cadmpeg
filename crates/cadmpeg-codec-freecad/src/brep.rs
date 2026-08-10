@@ -1944,21 +1944,9 @@ fn parse_binary_curve2d(
                     weights.push(cursor.f64("binary B-spline weight")?);
                 }
             }
-            let mut knots = Vec::new();
-            for _ in 0..knot_count {
-                let knot = cursor.f64("binary B-spline knot")?;
-                let multiplicity = cursor.count("binary B-spline multiplicity")?;
-                if knots
-                    .len()
-                    .checked_add(multiplicity)
-                    .is_none_or(|len| len > 1_000_000)
-                {
-                    return Err(CodecError::Malformed(
-                        "binary B-spline expanded knot-count limit exceeded".into(),
-                    ));
-                }
-                knots.extend(std::iter::repeat_n(knot, multiplicity));
-            }
+            let knots = cursor.expanded_knots(knot_count, "binary B-spline")?;
+            let (knots, padding) = normalize_periodic_knots(knots, degree, periodic)?;
+            append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
             TextCurve2d::Nurbs(NurbsCurve2d {
                 degree,
                 knots,
@@ -2371,9 +2359,12 @@ fn parse_nurbs_curve2d(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve2d, Cod
             weights.push(cursor.real("2D B-spline weight")?);
         }
     }
+    let knots = parse_knots(cursor, knot_count, degree, "2D B-spline")?;
+    let (knots, padding) = normalize_periodic_knots(knots, degree as u32, periodic)?;
+    append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
     Ok(NurbsCurve2d {
         degree: degree as u32,
-        knots: parse_knots(cursor, knot_count, degree, "2D B-spline")?,
+        knots,
         control_points,
         weights,
         periodic,
@@ -3402,8 +3393,8 @@ fn normalize_periodic_knots(
     Ok((normalized, padding))
 }
 
-fn append_periodic_curve_poles(
-    control_points: &mut Vec<Point3>,
+fn append_periodic_curve_poles<T: Clone>(
+    control_points: &mut Vec<T>,
     weights: Option<&mut Vec<f64>>,
     padding: usize,
 ) -> Result<(), CodecError> {
@@ -4135,6 +4126,22 @@ mod tests {
         };
         assert_eq!(*parameter_range, [0.0, 314.0 / 50.0]);
         assert!(matches!(basis.as_ref(), TextCurve2d::Offset { .. }));
+    }
+
+    #[test]
+    fn expands_periodic_parameter_curve_knots_and_poles() {
+        let input = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 1\n7 1 1 6 6 2 0 0 1 1 0 1 1 1 1 0 1 1 -1 0 1 -1 -1 1 0 6 6.283185307179586 6\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
+        let facts = parse_text(input.as_bytes()).expect("periodic parameter curve");
+        let TextCurve2d::Nurbs(nurbs) = &facts.curve2ds[0] else {
+            panic!("expected periodic NURBS")
+        };
+
+        assert_eq!(nurbs.control_points.len(), 7);
+        assert_eq!(nurbs.weights.as_ref().map(Vec::len), Some(7));
+        assert_eq!(nurbs.knots.len(), 14);
+        assert_eq!(nurbs.control_points.first(), nurbs.control_points.last());
+        assert_eq!(nurbs.weights.as_ref().map(|weights| weights[0]), Some(1.0));
+        assert_eq!(nurbs.weights.as_ref().map(|weights| weights[6]), Some(1.0));
     }
 
     #[test]
