@@ -122,16 +122,6 @@ from a conformant file.
 
 ## 6. Product structure, annotation, and presentation
 
-### PS-07. Type 406 Form 33 requires a file-global unique identity
-
-**Question.** Must a sheet identifier be unique across the file?
-
-**Known.** `structure.rs:1033-1045` refuses a Form 33 property whose (number, name) pair occurs more than one time in the file. `iges.md` "Product structure" records "at most one sheet identifier per drawing", which is a per-owner rule and is separately enforced at `structure.rs:1046-1068`.
-
-**Note.** The rule refuses both members of a duplicate pair, so two drawings that legitimately carry the same sheet number lose their sheet identity. The comparison uses raw Hollerith bytes, so `1HA` and `2HA ` are distinct.
-
-**Need.** We need the uniqueness rule, if one exists.
-
 ### PS-08. Type 406 Form 6 requires an ordered layer pair
 
 **Question.** Must the drilled-hole layer numbers be in ascending order?

@@ -4655,6 +4655,53 @@ fn drawing_metadata_property_forms_file() -> Vec<u8> {
     ])
 }
 
+fn duplicate_drawing_sheet_ids_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 410,
+            form: 0,
+            label: "VIEW1".into(),
+            status: "00020000",
+            parameters: "410,1,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 33,
+            label: "SHEET1".into(),
+            status: "00000000",
+            parameters: "406,2,2,1HC;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 404,
+            form: 1,
+            label: "DRAWING1".into(),
+            status: "00000000",
+            parameters: "404,1,1,0,0,0,0,0,1,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 410,
+            form: 0,
+            label: "VIEW2".into(),
+            status: "00020000",
+            parameters: "410,2,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 33,
+            label: "SHEET2".into(),
+            status: "00000000",
+            parameters: "406,2,2,1HC;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 404,
+            form: 1,
+            label: "DRAWING2".into(),
+            status: "00000000",
+            parameters: "404,1,7,0,0,0,0,0,1,9;".into(),
+        },
+    ])
+}
+
 fn text_score_property_forms_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -7975,6 +8022,29 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
             result.report.losses
         );
     }
+}
+
+#[test]
+fn decode_rejects_file_duplicate_drawing_sheet_ids() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(duplicate_drawing_sheet_ids_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        result
+            .report
+            .losses
+            .iter()
+            .filter(|loss| loss
+                .message
+                .contains("property value layout, attachment, or owner kind is invalid"))
+            .count(),
+        2,
+        "{:#?}",
+        result.report.losses
+    );
 }
 
 #[test]
