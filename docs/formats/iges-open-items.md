@@ -120,16 +120,6 @@ from a conformant file.
 
 ## 5. Surfaces and topology
 
-### TP-04. The Type 140 offset sign uses a per-kind representative normal
-
-**Question.** At which location is the Type 140 offset indicator compared with the surface normal?
-
-**Known.** `surfaces.rs:154-167` uses the surface `ref_direction` as the representative normal for a cylinder, sphere, torus, and cone, and `surfaces.rs:230-234` selects `radius + distance` or `radius - distance` from the sign of the dot product. For a Form 0 analytic surface, or a Form 1 whose reference-direction pointer does not resolve, that frame was invented by the codec (`analytic_surfaces.rs:75`, `derive_reference_direction`).
-
-**Note.** For a full cylinder any fixed indicator agrees with the true normal on one half of the surface only.
-
-**Need.** A Type 140 offsetting a Type 192 Form 0 cylinder of radius 10 mm outward by 2 mm can decode as radius 8 mm, with no loss. We need the location the format designates for the comparison.
-
 ### TP-05. A Form 1 reference direction that fails to resolve is treated as absent
 
 **Question.** What does a Form 1 analytic surface whose declared reference direction does not resolve mean?

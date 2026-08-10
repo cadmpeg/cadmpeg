@@ -133,68 +133,52 @@ fn angular_basis(start: f64, end: f64) -> Option<AngularBasis> {
     Some(AngularBasis { knots, controls })
 }
 
-fn offset_analytic(
-    geometry: &SurfaceGeometry,
-    indicator: Vector3,
-    distance: f64,
-) -> Option<(SurfaceGeometry, f64)> {
-    let (normal, solved) = match geometry {
+fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceGeometry> {
+    match geometry {
         SurfaceGeometry::Plane {
             origin,
             normal,
             u_axis,
-        } => (
-            *normal,
-            SurfaceGeometry::Plane {
-                origin: add_point_vector(*origin, scale(*normal, distance)),
-                normal: *normal,
-                u_axis: *u_axis,
-            },
-        ),
+        } => Some(SurfaceGeometry::Plane {
+            origin: add_point_vector(*origin, scale(*normal, distance)),
+            normal: *normal,
+            u_axis: *u_axis,
+        }),
         SurfaceGeometry::Cylinder {
             origin,
             axis,
             ref_direction,
             radius,
-        } => (
-            *ref_direction,
-            SurfaceGeometry::Cylinder {
-                origin: *origin,
-                axis: *axis,
-                ref_direction: *ref_direction,
-                radius: radius + distance,
-            },
-        ),
+        } => Some(SurfaceGeometry::Cylinder {
+            origin: *origin,
+            axis: *axis,
+            ref_direction: *ref_direction,
+            radius: radius + distance,
+        }),
         SurfaceGeometry::Sphere {
             center,
             axis,
             ref_direction,
             radius,
-        } => (
-            *ref_direction,
-            SurfaceGeometry::Sphere {
-                center: *center,
-                axis: *axis,
-                ref_direction: *ref_direction,
-                radius: radius + distance,
-            },
-        ),
+        } => Some(SurfaceGeometry::Sphere {
+            center: *center,
+            axis: *axis,
+            ref_direction: *ref_direction,
+            radius: radius + distance,
+        }),
         SurfaceGeometry::Torus {
             center,
             axis,
             ref_direction,
             major_radius,
             minor_radius,
-        } => (
-            *ref_direction,
-            SurfaceGeometry::Torus {
-                center: *center,
-                axis: *axis,
-                ref_direction: *ref_direction,
-                major_radius: *major_radius,
-                minor_radius: minor_radius + distance,
-            },
-        ),
+        } => Some(SurfaceGeometry::Torus {
+            center: *center,
+            axis: *axis,
+            ref_direction: *ref_direction,
+            major_radius: *major_radius,
+            minor_radius: minor_radius + distance,
+        }),
         SurfaceGeometry::Cone {
             origin,
             axis,
@@ -202,35 +186,71 @@ fn offset_analytic(
             radius,
             ratio,
             half_angle,
-        } if *ratio == 1.0 => {
-            let normal = Vector3::new(
-                half_angle.cos() * ref_direction.x - half_angle.sin() * axis.x,
-                half_angle.cos() * ref_direction.y - half_angle.sin() * axis.y,
-                half_angle.cos() * ref_direction.z - half_angle.sin() * axis.z,
-            );
-            (
-                normal,
-                SurfaceGeometry::Cone {
-                    origin: add_point_vector(*origin, scale(*axis, -distance * half_angle.sin())),
-                    axis: *axis,
-                    ref_direction: *ref_direction,
-                    radius: radius + distance * half_angle.cos(),
-                    ratio: *ratio,
-                    half_angle: *half_angle,
-                },
-            )
-        }
+        } if *ratio == 1.0 => Some(SurfaceGeometry::Cone {
+            origin: add_point_vector(*origin, scale(*axis, -distance * half_angle.sin())),
+            axis: *axis,
+            ref_direction: *ref_direction,
+            radius: radius + distance * half_angle.cos(),
+            ratio: *ratio,
+            half_angle: *half_angle,
+        }),
         SurfaceGeometry::Cone { .. }
         | SurfaceGeometry::Nurbs(_)
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Polygonal { .. }
         | SurfaceGeometry::Transformed { .. }
-        | SurfaceGeometry::Unknown { .. } => return None,
+        | SurfaceGeometry::Unknown { .. } => None,
+    }
+}
+
+fn indicator_normal(ir: &CadIr, surface: &SurfaceId) -> Option<Vector3> {
+    let parameters = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.surface == *surface)
+        .and_then(|procedural| procedural.record_bounds)
+        .and_then(|bounds| match bounds {
+            [Some(u0), Some(u1), Some(v0), Some(v1)] => Some([u0.midpoint(u1), v0.midpoint(v1)]),
+            _ => None,
+        })
+        .unwrap_or([0.0, 0.0]);
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let partials = cadmpeg_ir::eval::model_surface_partials_by_id(
+        &index,
+        surface,
+        parameters[0],
+        parameters[1],
+    )?;
+    normalized(cross(partials.du, partials.dv))
+}
+
+fn indicator_orientation(
+    record: &ParameterRecord,
+    indicator: Vector3,
+    normal: Vector3,
+    global: &Global,
+) -> Option<f64> {
+    let precision = global.real_precision();
+    let values = [indicator.x, indicator.y, indicator.z];
+    let contains = |candidate: Vector3| {
+        [candidate.x, candidate.y, candidate.z]
+            .into_iter()
+            .enumerate()
+            .all(|(offset, component)| {
+                super::geometry::DeclaredInterval::around(
+                    values[offset],
+                    record.number_uncertainty(offset + 1, values[offset], precision),
+                )
+                .contains(component)
+            })
     };
-    if dot(normal, indicator) >= 0.0 {
-        Some((solved, distance))
+    if contains(normal) {
+        Some(1.0)
+    } else if contains(scale(normal, -1.0)) {
+        Some(-1.0)
     } else {
-        offset_analytic(geometry, scale(indicator, -1.0), -distance)
+        None
     }
 }
 
@@ -1143,9 +1163,22 @@ pub(super) fn project(
             continue;
         };
         let distance = distance * factor;
-        let Some((geometry, signed_distance)) =
-            offset_analytic(&support.geometry, indicator, distance)
-        else {
+        let Some(normal) = indicator_normal(ir, &support_id) else {
+            losses.push(entity_loss(
+                entry,
+                "support normal cannot be evaluated at the offset-indicator parameters",
+            ));
+            continue;
+        };
+        let Some(orientation) = indicator_orientation(record, indicator, normal, global) else {
+            losses.push(entity_loss(
+                entry,
+                "offset indicator is not the support normal at the designated parameters",
+            ));
+            continue;
+        };
+        let signed_distance = distance * orientation;
+        let Some(geometry) = offset_analytic(&support.geometry, signed_distance) else {
             losses.push(entity_loss(
                 entry,
                 "support surface has no exact analytic offset carrier",

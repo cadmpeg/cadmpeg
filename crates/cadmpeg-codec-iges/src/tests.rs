@@ -2801,6 +2801,39 @@ fn offset_plane_file_with_indicator(
     bytes
 }
 
+fn offset_cylinder_file(indicator_x: f64) -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "ORIGIN".into(),
+            status: "00010000",
+            parameters: "116,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 123,
+            form: 0,
+            label: "AXIS".into(),
+            status: "00010000",
+            parameters: "123,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 192,
+            form: 0,
+            label: "CYLINDER".into(),
+            status: "00010000",
+            parameters: "192,1,3,10;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 140,
+            form: 0,
+            label: "OFFSET".into(),
+            status: "00000000",
+            parameters: format!("140,{indicator_x},0,0,2,5;"),
+        },
+    ])
+}
+
 fn pointer_defined_surface_file(entity_type: i64, form: i64) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
@@ -9582,11 +9615,42 @@ fn decode_solves_signed_analytic_offset_surfaces() {
 }
 
 #[test]
+fn decode_uses_the_cylinder_normal_at_the_designated_parameters() {
+    for (indicator_x, expected_radius) in [(1.0, 12.0), (-1.0, 8.0)] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(offset_cylinder_file(indicator_x)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let surface = result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id.0 == "iges:model:surface#D7")
+            .expect("offset cylinder");
+        let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder { radius, .. } = surface.geometry
+        else {
+            panic!("expected cylindrical offset carrier")
+        };
+        assert_eq!(radius, expected_radius);
+        assert!(
+            result.report.losses.is_empty(),
+            "{:#?}",
+            result.report.losses
+        );
+        let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
 fn decode_applies_declared_real_significance_to_offset_surface_indicators() {
     for (components, decoded) in [
-        ((".5773503", ".5773503", ".5773503"), true),
-        ((".57", ".57", ".57"), false),
-        ((".5773503D0", ".5773503D0", ".5773503D0"), false),
+        (("0", "0", ".9999999"), true),
+        (("0", "0", ".99"), false),
+        (("0", "0", ".9999999D0"), false),
     ] {
         let result = IgesCodec
             .decode(
@@ -9608,11 +9672,35 @@ fn decode_applies_declared_real_significance_to_offset_surface_indicators() {
             .any(|surface| surface.id.0 == "iges:model:surface#D3");
         assert_eq!(offset, decoded, "{components:?}");
         if !decoded {
-            assert!(result.report.losses.iter().any(|loss| loss
-                .message
-                .contains("offset indicator is not a unit vector")));
+            assert!(result.report.losses.iter().any(|loss| {
+                loss.message
+                    .contains("offset indicator is not a unit vector")
+                    || loss.message.contains("not the support normal")
+            }));
         }
     }
+}
+
+#[test]
+fn decode_rejects_a_unit_offset_indicator_that_is_not_the_designated_normal() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(offset_plane_file_with_indicator(".6", ".8", "0", 2.0)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .all(|surface| surface.id.0 != "iges:model:surface#D3"));
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("not the support normal")));
 }
 
 #[test]
