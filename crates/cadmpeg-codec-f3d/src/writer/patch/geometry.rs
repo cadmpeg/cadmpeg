@@ -14,6 +14,7 @@ use super::edits::{
 };
 use crate::writer::primitives::{finite_vector, native_bool, unique_knot_count};
 use cadmpeg_asm::asm_header::stream_ref_width;
+use cadmpeg_asm::brep::attributes::{attribute_chain_color_carrier, DirectColorCarrier};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 use cadmpeg_asm::{asm_header, sab};
 
@@ -170,23 +171,25 @@ pub(crate) fn patch_framed_geometry(
         let Some(color) = entity_colors.get(&id) else {
             continue;
         };
-        let mut next = entity.ref_at(0);
-        let mut found = false;
-        while let Some(index) = next.and_then(|index| usize::try_from(index).ok()) {
-            let Some(attribute) = records_by_index.get(&index) else {
-                break;
-            };
-            if attribute.head.contains("rgb_color") {
-                color_records.insert(index, *color);
-                found = true;
-                break;
-            }
-            next = attribute.ref_at(0);
-        }
-        if !found {
+        let carrier = attribute_chain_color_carrier(entity, |index| {
+            usize::try_from(index)
+                .ok()
+                .and_then(|index| records_by_index.get(&index).copied())
+        });
+        let Some((attribute, decoded)) = carrier else {
             return Err(CodecError::NotImplemented(format!(
-                "F3D entity color {id} has no writable rgb_color attribute"
+                "F3D entity color {id} has no writable exact direct-color attribute"
             )));
+        };
+        if let Some((existing, existing_carrier)) =
+            color_records.insert(attribute.index, (*color, decoded.carrier))
+        {
+            if existing != *color || existing_carrier != decoded.carrier {
+                return Err(CodecError::Malformed(format!(
+                    "F3D entities share conflicting color attribute {}",
+                    attribute.index
+                )));
+            }
         }
     }
     for record in records {
@@ -287,15 +290,29 @@ pub(crate) fn patch_framed_geometry(
             let offset = required_payload_field(bytes, record, stream_ref_width(bytes), 11, 0x06)?;
             bytes[offset + 1..offset + 9].copy_from_slice(&tolerance.to_le_bytes());
         }
-        if let Some(color) = color_records.get(&record.index) {
+        if let Some((color, carrier)) = color_records.get(&record.index) {
             let ref_width = stream_ref_width(bytes);
-            for (index, value) in [
-                (1usize, f64::from(color.r)),
-                (2, f64::from(color.g)),
-                (3, f64::from(color.b)),
-            ] {
-                let offset = required_payload_field(bytes, record, ref_width, index, 0x06)?;
-                bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
+            match carrier {
+                DirectColorCarrier::NormalizedRgb { fields } => {
+                    for (index, value) in fields.iter().copied().zip([
+                        f64::from(color.r),
+                        f64::from(color.g),
+                        f64::from(color.b),
+                    ]) {
+                        let offset = required_payload_field(bytes, record, ref_width, index, 0x06)?;
+                        bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
+                    }
+                }
+                DirectColorCarrier::AutodeskTrueColor { field } => {
+                    let [red, green, blue] = exact_8_bit_rgb(*color, record)?;
+                    let packed = u32::from_be_bytes([0xc2, red, green, blue]);
+                    patch_truecolor_field(bytes, record, ref_width, *field, packed)?;
+                }
+                DirectColorCarrier::DecimalRgb { field } => {
+                    let [red, green, blue] = exact_8_bit_rgb(*color, record)?;
+                    let packed = u32::from_be_bytes([0, red, green, blue]);
+                    patch_decimal_rgb_field(bytes, record, ref_width, *field, packed)?;
+                }
             }
             continue;
         }
@@ -780,6 +797,111 @@ pub(crate) fn required_payload_field(
         )));
     }
     Ok(offset)
+}
+
+fn exact_8_bit_rgb(color: Color, record: &sab::Record) -> Result<[u8; 3], CodecError> {
+    let channels = [color.r, color.g, color.b];
+    if channels
+        .iter()
+        .any(|channel| !channel.is_finite() || !(0.0..=1.0).contains(channel))
+    {
+        return Err(CodecError::Malformed(format!(
+            "{} record {} has an invalid edited color",
+            record.head, record.index
+        )));
+    }
+    let encoded = channels.map(|channel| (channel * 255.0).round() as u8);
+    let decoded = encoded.map(|channel| f32::from(channel) / 255.0);
+    if decoded != channels {
+        return Err(CodecError::NotImplemented(format!(
+            "{} record {} requires exactly representable 8-bit RGB channels",
+            record.head, record.index
+        )));
+    }
+    Ok(encoded)
+}
+
+fn patch_truecolor_field(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    ref_width: usize,
+    field: usize,
+    packed: u32,
+) -> Result<(), CodecError> {
+    let offset = sab::payload_token_offset(bytes, record, ref_width, field).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "{} record {} lacks packed truecolor field {field}",
+            record.head, record.index
+        ))
+    })?;
+    match bytes.get(offset).copied() {
+        Some(0x17) => {
+            bytes[offset + 1..offset + 9].copy_from_slice(&i64::from(packed).to_le_bytes());
+        }
+        Some(0x04) if ref_width == 4 => {
+            bytes[offset + 1..offset + 5].copy_from_slice(&packed.to_le_bytes());
+        }
+        Some(0x04) if ref_width == 8 => {
+            bytes[offset + 1..offset + 9].copy_from_slice(&i64::from(packed).to_le_bytes());
+        }
+        _ => {
+            return Err(CodecError::Malformed(format!(
+                "{} record {} truecolor field {field} is not an integer",
+                record.head, record.index
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn patch_decimal_rgb_field(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    ref_width: usize,
+    field: usize,
+    packed: u32,
+) -> Result<(), CodecError> {
+    let Some(sab::Token::Str(current)) = record.chunk(field) else {
+        return Err(CodecError::Malformed(format!(
+            "{} record {} decimal-color field {field} is not text",
+            record.head, record.index
+        )));
+    };
+    let offset = sab::payload_token_offset(bytes, record, ref_width, field).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "{} record {} lacks decimal-color field {field}",
+            record.head, record.index
+        ))
+    })?;
+    let length_width = match bytes.get(offset).copied() {
+        Some(0x07) => 1,
+        Some(0x08) => 2,
+        Some(0x09 | 0x12) => ref_width,
+        _ => {
+            return Err(CodecError::Malformed(format!(
+                "{} record {} decimal-color field {field} has an invalid text tag",
+                record.head, record.index
+            )));
+        }
+    };
+    let width = current.len();
+    let value = packed.to_string();
+    if value.len() > width {
+        return Err(CodecError::NotImplemented(format!(
+            "{} record {} decimal-color edit exceeds its encoded text width",
+            record.head, record.index
+        )));
+    }
+    let encoded = format!("{packed:0width$}");
+    let start = offset + 1 + length_width;
+    let output = bytes.get_mut(start..start + width).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "{} record {} decimal-color text is truncated",
+            record.head, record.index
+        ))
+    })?;
+    output.copy_from_slice(encoded.as_bytes());
+    Ok(())
 }
 
 /// Borrow a framed record's byte span, rejecting extent overflow and truncation

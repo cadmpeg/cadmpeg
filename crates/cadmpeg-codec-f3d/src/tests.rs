@@ -195,6 +195,14 @@ fn t_end(b: &mut Vec<u8>) {
     b.push(0x11);
 }
 
+fn t_attribute_base(b: &mut Vec<u8>, next: i64, previous: i64, owner: i64) {
+    t_ref(b, -1);
+    t_long(b, -1);
+    t_ref(b, next);
+    t_ref(b, previous);
+    t_ref(b, owner);
+}
+
 fn assert_f3d_native_parity(ir: &cadmpeg_ir::document::CadIr) {
     let native = ir.native.namespace("f3d").expect("F3D native namespace");
     assert_eq!(native.version, crate::native::F3D_NATIVE_VERSION);
@@ -961,13 +969,68 @@ fn synthetic_geometry_with_body_color_smbh() -> Vec<u8> {
     t_subident(&mut attribute, "rgb_color");
     t_subident(&mut attribute, "st");
     t_ident(&mut attribute, "attrib");
-    t_ref(&mut attribute, -1);
+    t_attribute_base(&mut attribute, -1, -1, 1);
     t_dbl(&mut attribute, 0.1);
     t_dbl(&mut attribute, 0.2);
     t_dbl(&mut attribute, 0.3);
+    t_dbl(&mut attribute, 1.0);
     t_end(&mut attribute);
     bytes.splice(limit..limit, attribute);
     bytes
+}
+
+fn synthetic_geometry_with_body_attribute_chain_smbh(attribute_chain: Vec<u8>) -> Vec<u8> {
+    let mut bytes = synthetic_geometry_smbh();
+    let limit = cadmpeg_asm::asm_header::solved_record_limit(&bytes).expect("history boundary");
+    let start = cadmpeg_asm::asm_header::record_stream_start(&bytes).expect("record stream");
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
+    let body = &records[1];
+    let attribute_ref = cadmpeg_asm::sab::payload_token_offsets(&bytes, body, 8, 0x0c)
+        .expect("body reference tokens")[0];
+    bytes[attribute_ref + 1..attribute_ref + 9].copy_from_slice(&19i64.to_le_bytes());
+    bytes.splice(limit..limit, attribute_chain);
+    bytes
+}
+
+fn synthetic_geometry_with_body_truecolor_chain_smbh() -> Vec<u8> {
+    let mut attributes = Vec::new();
+    t_subident(&mut attributes, "truecolor");
+    t_subident(&mut attributes, "adesk");
+    t_ident(&mut attributes, "attrib");
+    t_attribute_base(&mut attributes, 20, -1, 1);
+    attributes.push(0x17);
+    attributes.extend_from_slice(&i64::from(0xc2_20_40_60_u32).to_le_bytes());
+    t_end(&mut attributes);
+
+    t_subident(&mut attributes, "rgb_color");
+    t_subident(&mut attributes, "st");
+    t_ident(&mut attributes, "attrib");
+    t_attribute_base(&mut attributes, -1, 19, 1);
+    for channel in [0.8, 0.7, 0.6, 1.0] {
+        t_dbl(&mut attributes, channel);
+    }
+    t_end(&mut attributes);
+    synthetic_geometry_with_body_attribute_chain_smbh(attributes)
+}
+
+fn synthetic_geometry_with_body_decimal_color_chain_smbh(decimal: &str) -> Vec<u8> {
+    let mut attributes = Vec::new();
+    t_subident(&mut attributes, "entatt_color");
+    t_subident(&mut attributes, "bt");
+    t_ident(&mut attributes, "attrib");
+    t_attribute_base(&mut attributes, 20, -1, 1);
+    push_u8_string(&mut attributes, decimal);
+    t_end(&mut attributes);
+
+    t_subident(&mut attributes, "rgb_color");
+    t_subident(&mut attributes, "st");
+    t_ident(&mut attributes, "attrib");
+    t_attribute_base(&mut attributes, -1, 19, 1);
+    for channel in [0.8, 0.7, 0.6, 1.0] {
+        t_dbl(&mut attributes, channel);
+    }
+    t_end(&mut attributes);
+    synthetic_geometry_with_body_attribute_chain_smbh(attributes)
 }
 
 fn synthetic_geometry_with_face_color_smbh() -> Vec<u8> {
@@ -984,10 +1047,11 @@ fn synthetic_geometry_with_face_color_smbh() -> Vec<u8> {
     t_subident(&mut attribute, "rgb_color");
     t_subident(&mut attribute, "st");
     t_ident(&mut attribute, "attrib");
-    t_ref(&mut attribute, -1);
+    t_attribute_base(&mut attribute, -1, -1, 4);
     t_dbl(&mut attribute, 0.15);
     t_dbl(&mut attribute, 0.25);
     t_dbl(&mut attribute, 0.35);
+    t_dbl(&mut attribute, 1.0);
     t_end(&mut attribute);
     bytes.splice(limit..limit, attribute);
     bytes
@@ -9252,6 +9316,26 @@ fn generated_source_less_unit_cube_writes_body_and_face_colors() {
 }
 
 #[test]
+fn generated_source_less_rejects_translucent_direct_color() {
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    source_less.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
+        r: 0.1,
+        g: 0.2,
+        b: 0.3,
+        a: 0.5,
+    });
+
+    let error = F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+}
+
+#[test]
 fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes() {
     use crate::records::{
         CreationTimestamp, PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
@@ -9362,6 +9446,89 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less provenance attribute round trip");
+    {
+        use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+
+        fn suffix_index(value: &str) -> i64 {
+            value
+                .rsplit_once('#')
+                .and_then(|(_, suffix)| suffix.parse().ok())
+                .expect("generated native id has a numeric record suffix")
+        }
+
+        fn attribute_index(attribute: &SourceAttribute) -> i64 {
+            suffix_index(&attribute.id.0)
+        }
+
+        fn reference_index(value: &AttributeValue) -> i64 {
+            let AttributeValue::Reference(value) = value else {
+                panic!("generated attribute link is not a reference");
+            };
+            suffix_index(value)
+        }
+
+        fn target_index(target: &AttributeTarget) -> i64 {
+            let id = match target {
+                AttributeTarget::Body(id) => id.as_str(),
+                AttributeTarget::Face(id) => id.as_str(),
+                AttributeTarget::Coedge(id) => id.as_str(),
+                AttributeTarget::Edge(id) => id.as_str(),
+                AttributeTarget::Vertex(id) => id.as_str(),
+                _ => panic!("source-less attribute has an unsupported topology owner"),
+            };
+            suffix_index(id)
+        }
+
+        let attributes = &round_trip.ir.model.attributes;
+        assert!(!attributes.is_empty());
+        for attribute in attributes {
+            assert!(attribute.values.len() >= 5);
+            assert_eq!(reference_index(&attribute.values[0]), -1);
+            assert_eq!(attribute.values[1], AttributeValue::Integer(-1));
+            assert_eq!(
+                reference_index(&attribute.values[4]),
+                target_index(&attribute.target)
+            );
+
+            let index = attribute_index(attribute);
+            for (field, reciprocal) in [(2usize, 3usize), (3, 2)] {
+                let linked = reference_index(&attribute.values[field]);
+                if linked < 0 {
+                    continue;
+                }
+                let linked_attribute = attributes
+                    .iter()
+                    .find(|candidate| attribute_index(candidate) == linked)
+                    .expect("generated attribute link resolves");
+                assert_eq!(linked_attribute.target, attribute.target);
+                assert_eq!(reference_index(&linked_attribute.values[reciprocal]), index);
+            }
+        }
+        for (ordinal, attribute) in attributes.iter().enumerate() {
+            if attributes[..ordinal]
+                .iter()
+                .any(|before| before.target == attribute.target)
+            {
+                continue;
+            }
+            let owned = attributes
+                .iter()
+                .filter(|candidate| candidate.target == attribute.target);
+            assert_eq!(
+                owned
+                    .clone()
+                    .filter(|candidate| reference_index(&candidate.values[3]) == -1)
+                    .count(),
+                1
+            );
+            assert_eq!(
+                owned
+                    .filter(|candidate| reference_index(&candidate.values[2]) == -1)
+                    .count(),
+                1
+            );
+        }
+    }
     let native = f3d_native(&round_trip.ir);
     assert_eq!(native.persistent_design_links.len(), 2);
     assert_eq!(native.persistent_design_links[0].design_id, "311");
@@ -12313,6 +12480,109 @@ fn generated_f3d_rewrites_body_rgb_color() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated F3D decode");
     assert_eq!(round_trip.ir.model.bodies[0].color, Some(expected));
+}
+
+#[test]
+fn generated_f3d_rewrites_the_winning_truecolor_attribute() {
+    let source = f3d_with_smbh(&synthetic_geometry_with_body_truecolor_chain_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated truecolor F3D decode");
+    assert_eq!(
+        decoded.ir.model.bodies[0].color,
+        Some(cadmpeg_ir::topology::Color {
+            r: 32.0 / 255.0,
+            g: 64.0 / 255.0,
+            b: 96.0 / 255.0,
+            a: 1.0,
+        })
+    );
+    let mut edited = decoded.ir;
+    let expected = cadmpeg_ir::topology::Color {
+        r: 64.0 / 255.0,
+        g: 128.0 / 255.0,
+        b: 192.0 / 255.0,
+        a: 1.0,
+    };
+    edited.model.bodies[0].color = Some(expected);
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .expect("truecolor regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated truecolor decode");
+    assert_eq!(round_trip.ir.model.bodies[0].color, Some(expected));
+}
+
+#[test]
+fn generated_f3d_rewrites_fixed_width_decimal_color_text() {
+    let source = f3d_with_smbh(&synthetic_geometry_with_body_decimal_color_chain_smbh(
+        "04227264",
+    ));
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated decimal-color F3D decode");
+    let mut edited = decoded.ir;
+    let expected = cadmpeg_ir::topology::Color {
+        r: 1.0 / 255.0,
+        g: 2.0 / 255.0,
+        b: 3.0 / 255.0,
+        a: 1.0,
+    };
+    edited.model.bodies[0].color = Some(expected);
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .expect("decimal-color regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated decimal-color decode");
+    assert_eq!(round_trip.ir.model.bodies[0].color, Some(expected));
+}
+
+#[test]
+fn generated_f3d_rejects_lossy_truecolor_edit() {
+    let source = f3d_with_smbh(&synthetic_geometry_with_body_truecolor_chain_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated truecolor F3D decode");
+    let mut edited = decoded.ir;
+    edited.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
+        r: 0.5,
+        g: 64.0 / 255.0,
+        b: 96.0 / 255.0,
+        a: 1.0,
+    });
+
+    let error = F3dCodec
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
+        .expect_err("nonrepresentable truecolor edit must be rejected");
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+}
+
+#[test]
+fn generated_f3d_rejects_decimal_color_text_growth() {
+    let source = f3d_with_smbh(&synthetic_geometry_with_body_decimal_color_chain_smbh(
+        "255",
+    ));
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated decimal-color F3D decode");
+    let mut edited = decoded.ir;
+    edited.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
+        r: 1.0,
+        g: 0.0,
+        b: 0.0,
+        a: 1.0,
+    });
+
+    let error = F3dCodec
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
+        .expect_err("wider decimal-color text must be rejected");
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
 
 #[test]
@@ -21593,7 +21863,7 @@ fn rgb_attribute_chain_decodes_body_color() {
 }
 
 #[test]
-fn truecolor_attribute_chain_decodes_argb() {
+fn truecolor_attribute_chain_decodes_by_color_as_opaque_rgb() {
     use std::collections::HashMap;
 
     let mut bytes = Vec::new();
@@ -21605,7 +21875,7 @@ fn truecolor_attribute_chain_decodes_argb() {
     t_ident(&mut bytes, "attrib");
     t_ref(&mut bytes, -1);
     bytes.push(0x17);
-    bytes.extend_from_slice(&(0x8040_80c0i64).to_le_bytes());
+    bytes.extend_from_slice(&(0xc240_80c0i64).to_le_bytes());
     t_end(&mut bytes);
 
     let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
@@ -21614,7 +21884,7 @@ fn truecolor_attribute_chain_decodes_argb() {
         cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!(
         (color.r, color.g, color.b, color.a),
-        (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 128.0 / 255.0)
+        (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 1.0)
     );
 }
 
@@ -21647,7 +21917,7 @@ fn bt_text_color_attribute_chain_decodes_rgb() {
 fn bt_text_color_rejects_non_decimal_and_overwide_values() {
     use std::collections::HashMap;
 
-    for value in ["0x4080c0", "16777216"] {
+    for value in ["", "+4227264", "0x4080c0", "16777216"] {
         let mut bytes = Vec::new();
         t_ident(&mut bytes, "face");
         t_ref(&mut bytes, 1);

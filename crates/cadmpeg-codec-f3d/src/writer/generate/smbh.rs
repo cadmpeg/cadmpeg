@@ -14,7 +14,7 @@ use cadmpeg_ir::topology::Sense;
 use super::attributes::{
     edge_persistent_attribute_ref, encode_source_less_attributes, owner_color_or_body_tag_ref,
     owner_color_or_face_tag_ref, sketch_link_attribute_ref, source_less_body_key,
-    timestamp_attribute_ref, AttributeIndex,
+    timestamp_attribute_ref, AttributeIndex, AttributeOwnerStarts,
 };
 use super::index::NativeGenerationIndex;
 use super::native_bytes::{
@@ -1167,7 +1167,19 @@ fn encode_wire_body_smbh(
             records.push(0x11);
         }
     }
-    encode_source_less_attributes(&mut records, target, attributes, attribute_start)?;
+    encode_source_less_attributes(
+        &mut records,
+        target,
+        attributes,
+        attribute_start,
+        AttributeOwnerStarts {
+            body: body_start,
+            face: None,
+            coedge: None,
+            edge: edge_start,
+            vertex: vertex_start,
+        },
+    )?;
     native_history_tail(&mut records, native)?;
     let mut bytes = native_smbh_header(target)?;
     bytes.extend_from_slice(&records);
@@ -2113,7 +2125,19 @@ fn encode_multi_face_shell_smbh(
             records.push(0x11);
         }
     }
-    encode_source_less_attributes(&mut records, target, attributes, attribute_start)?;
+    encode_source_less_attributes(
+        &mut records,
+        target,
+        attributes,
+        attribute_start,
+        AttributeOwnerStarts {
+            body: body_start,
+            face: Some(face_start),
+            coedge: Some(coedge_start),
+            edge: edge_start,
+            vertex: vertex_start,
+        },
+    )?;
     native_history_tail(&mut records, native)?;
     let mut bytes = native_smbh_header(target)?;
     bytes.extend_from_slice(&records);

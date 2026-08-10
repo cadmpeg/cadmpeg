@@ -244,19 +244,7 @@ A closed double-sided sheet body has every edge used twice and is emitted as a s
 
 **Need.** The directrix normal's sign is the traversal orientation of its circle. A clockwise directrix gives a carrier whose normal opposes the record, and every face on it is emitted with an inverted normal. The rule that fixes the recognized carrier's normal settles the item.
 
-## 3. Attributes
-
-### AT-01. Precedence of the colour attributes of one chain
-
-**Question.** Which colour attribute gives an entity's colour when one attribute chain holds more than one?
-
-**Known.** `asm.md` §5.6 states that colour and feature-tag attributes can coexist on one chain. It gives no precedence among `rgb_color`, `truecolor`, and `entatt_color-bt-attrib`. `attribute_chain_color` in `brep/attributes.rs` walks the chain and returns the first record of any of the three classes, so chain order decides the colour. The same function skips an `rgb_color` record whose channels are outside `0.0..=1.0` and continues to a later attribute, with no record of the skip.
-
-`patch_framed_geometry` in the f3d writer walks the same chain and patches the first `rgb_color` record only. A chain that holds a `truecolor` record before an `rgb_color` record therefore decodes from the first and is written to the second, and the edit is lost on the next read.
-
-**Need.** The precedence is unstated, the reader and the writer follow different rules, and the range test on `rgb_color` is a plausibility filter rather than a validity gate.
-
-## 4. Text encoding
+## 3. Text encoding
 
 ### TE-01. Migration-flag words of a `gen-attrib` record in the text encoding
 

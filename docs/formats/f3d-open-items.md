@@ -408,14 +408,6 @@ The `.f3z` merge writes the note `(identity placement)` for the first cause. The
 
 **Need.** A neutral canvas needs these three states to show the image correctly.
 
-### MA-07. Precedence of library colour records
-
-**Question.** What is the precedence of the `color-adesk-attrib` record and the `material-adesk-attrib` record against direct colours and appearance assignments?
-
-**Known.** `f3d.md` §3.2 "Color attribute records include" gives the content of both records. `color-adesk-attrib` holds a palette index. `material-adesk-attrib` holds a library lookup pair. `f3d.md` §3.2 "Legacy per-face appearance assignments live" gives the complete variable-width assignment-entry grammar. The twelve-byte carrier selects the preset-token or shader-family selector-name form. The final eight bytes are f32 `0` and f32 `1`. `f3d.md` §3.2 "An explicit `rgb_color-st-attrib`, `truecolor-adesk-attrib`, or" gives the precedence of direct colours, the assignment-entry RGBA colour, and the bound appearance base colour.
-
-**Need.** A target can carry a palette or material-library attribute in addition to an exact direct colour, an assignment-entry colour, or an appearance binding. We must define whether either library record independently selects a neutral colour and, if it does, where that colour enters the order.
-
 ## 4. T-splines
 
 ### TS-01. `0m cg` wedge partition

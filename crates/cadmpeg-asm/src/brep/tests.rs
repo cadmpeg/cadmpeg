@@ -437,7 +437,7 @@ fn nested_attributes_inherit_their_topology_owner() {
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::ids::EdgeId;
 
-    let attribute = |index, owner| Record {
+    let current_attribute = |index, owner| Record {
         index,
         name: "ATTRIB_CUSTOM-attrib".into(),
         head: "ATTRIB_CUSTOM".into(),
@@ -452,8 +452,22 @@ fn nested_attributes_inherit_their_topology_owner() {
         offset: 0,
         len: 0,
     };
-    let parent = attribute(7, 3);
-    let child = attribute(8, 7);
+    let legacy_attribute = |index, owner| Record {
+        index,
+        name: "ATTRIB_CUSTOM-attrib".into(),
+        head: "ATTRIB_CUSTOM".into(),
+        tokens: vec![
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(owner),
+        ]
+        .into(),
+        offset: 0,
+        len: 0,
+    };
+    let parent = current_attribute(7, 3);
+    let child = legacy_attribute(8, 7);
     let records = HashMap::from([(7, &parent), (8, &child)]);
     let expected = AttributeTarget::Edge(EdgeId("edge".into()));
     let targets = HashMap::from([(3, expected.clone())]);
@@ -467,10 +481,214 @@ fn nested_attributes_inherit_their_topology_owner() {
         Some(expected)
     );
 
-    let cycle_left = attribute(9, 10);
-    let cycle_right = attribute(10, 9);
+    let cycle_left = current_attribute(9, 10);
+    let cycle_right = legacy_attribute(10, 9);
     let cycle = HashMap::from([(9, &cycle_left), (10, &cycle_right)]);
     assert_eq!(inherited_attribute_target(9, &cycle, &targets), None);
+}
+
+#[test]
+fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
+    use super::attributes::{
+        attribute_chain_color_carrier, collect_attributes, DirectColorCarrier,
+    };
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    let record = |index, name: &str, next, payload: Vec<Token>| {
+        let mut tokens = vec![
+            Token::Ref(-1),
+            Token::Long(-1),
+            Token::Ref(next),
+            Token::Ref(-1),
+            Token::Ref(0),
+        ];
+        tokens.extend(payload);
+        Record {
+            index,
+            name: name.into(),
+            head: name.split('-').next().unwrap().into(),
+            tokens: tokens.into(),
+            offset: 0,
+            len: 0,
+        }
+    };
+    let entity = Record {
+        index: 0,
+        name: "face".into(),
+        head: "face".into(),
+        tokens: vec![Token::Ref(1)].into(),
+        offset: 0,
+        len: 0,
+    };
+    let attributes = [
+        record(1, "color-adesk-attrib", 2, vec![Token::Long(5)]),
+        record(
+            2,
+            "material-adesk-attrib",
+            3,
+            vec![Token::Long(7), Token::Long(11)],
+        ),
+        record(
+            3,
+            "truecolor-adesk-attrib",
+            4,
+            vec![Token::Int64(i64::from(0xc3_40_80_c0_u32))],
+        ),
+        record(
+            4,
+            "rgb_color-st-attrib",
+            5,
+            // A four-channel binary record must carry terminal f64 1.
+            vec![
+                Token::Double(0.25),
+                Token::Double(0.5),
+                Token::Double(0.75),
+                Token::Double(0.5),
+            ],
+        ),
+        record(
+            5,
+            "truecolor-adesk-attrib",
+            6,
+            vec![Token::Int64(i64::from(0xc2_40_80_c0_u32))],
+        ),
+        record(
+            6,
+            "entatt_color-bt-attrib",
+            -1,
+            vec![Token::Str("16711680".into())],
+        ),
+    ];
+    let by_index = attributes
+        .iter()
+        .map(|attribute| (attribute.index as i64, attribute))
+        .collect::<HashMap<_, _>>();
+
+    let (carrier, decoded) =
+        attribute_chain_color_carrier(&entity, |index| by_index.get(&index).copied()).unwrap();
+    assert_eq!(carrier.index, 5);
+    assert_eq!(
+        decoded.carrier,
+        DirectColorCarrier::AutodeskTrueColor { field: 5 }
+    );
+    assert_eq!(
+        (
+            decoded.color.r,
+            decoded.color.g,
+            decoded.color.b,
+            decoded.color.a,
+        ),
+        (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 1.0)
+    );
+
+    let mut emitted = HashSet::new();
+    let mut source = Vec::new();
+    collect_attributes(
+        &entity,
+        &AttributeTarget::Face(FaceId("face".into())),
+        &by_index,
+        &mut emitted,
+        &mut source,
+        FORMAT,
+    );
+    assert_eq!(
+        source
+            .iter()
+            .map(|attribute| attribute.name.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "color-adesk-attrib",
+            "material-adesk-attrib",
+            "truecolor-adesk-attrib",
+            "rgb_color-st-attrib",
+            "truecolor-adesk-attrib",
+            "entatt_color-bt-attrib",
+        ]
+    );
+}
+
+#[test]
+fn legacy_attribute_chain_uses_second_field_forward_link() {
+    use super::attributes::{
+        attribute_chain_color_carrier, attribute_chain_name, collect_attributes,
+    };
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    let entity = Record {
+        index: 0,
+        name: "face".into(),
+        head: "face".into(),
+        tokens: vec![Token::Ref(1)].into(),
+        offset: 0,
+        len: 0,
+    };
+    let color = Record {
+        index: 1,
+        name: "rgb_color-st-attrib".into(),
+        head: "rgb_color".into(),
+        tokens: vec![
+            Token::Ref(-1),
+            Token::Ref(2),
+            Token::Ref(-1),
+            Token::Ref(0),
+            Token::Double(0.25),
+            Token::Double(0.5),
+            Token::Double(0.75),
+        ]
+        .into(),
+        offset: 0,
+        len: 0,
+    };
+    let name = Record {
+        index: 2,
+        name: "string_attrib-name_attrib-gen-attrib".into(),
+        head: "string_attrib".into(),
+        tokens: vec![
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(1),
+            Token::Ref(0),
+            Token::Str("name".into()),
+            Token::Str("legacy face".into()),
+        ]
+        .into(),
+        offset: 0,
+        len: 0,
+    };
+    let by_index = HashMap::from([(1, &color), (2, &name)]);
+
+    let (carrier, decoded) =
+        attribute_chain_color_carrier(&entity, |index| by_index.get(&index).copied()).unwrap();
+    assert_eq!(carrier.index, 1);
+    assert_eq!(
+        decoded.carrier,
+        super::attributes::DirectColorCarrier::NormalizedRgb { fields: [4, 5, 6] }
+    );
+    assert_eq!(
+        attribute_chain_name(&entity, &by_index).as_deref(),
+        Some("legacy face")
+    );
+
+    let mut emitted = HashSet::new();
+    let mut source = Vec::new();
+    collect_attributes(
+        &entity,
+        &AttributeTarget::Face(FaceId("face".into())),
+        &by_index,
+        &mut emitted,
+        &mut source,
+        FORMAT,
+    );
+    assert_eq!(
+        source
+            .iter()
+            .map(|attribute| attribute.name.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "rgb_color-st-attrib",
+            "string_attrib-name_attrib-gen-attrib"
+        ]
+    );
 }
 
 #[test]

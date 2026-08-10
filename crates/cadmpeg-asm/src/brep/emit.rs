@@ -45,8 +45,8 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use std::collections::{HashMap, HashSet};
 
 use super::attributes::{
-    attribute_chain_color, attribute_chain_name, collect_attributes, decode_transform,
-    source_attribute, unknown_record_id,
+    attribute_chain_color, attribute_chain_name, attribute_owner, collect_attributes,
+    decode_transform, source_attribute, unknown_record_id,
 };
 use super::geometry::{
     coedge_pcurve_ref, collect_carrier, double_at, is_asm_stream_delimiter, is_coedge_record,
@@ -4117,8 +4117,7 @@ pub(crate) fn emit_attributes(
         if !record.name.ends_with("-attrib") || emitted_attributes.contains(&index) {
             continue;
         }
-        if let Some(target) = record
-            .ref_at(4)
+        if let Some(target) = attribute_owner(record)
             .and_then(|owner| inherited_attribute_target(owner, by_index, &attribute_targets))
         {
             emitted_attributes.insert(index);

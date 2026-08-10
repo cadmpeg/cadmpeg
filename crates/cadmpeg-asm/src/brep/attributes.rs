@@ -33,8 +33,87 @@ pub fn collect_attributes(
         if emitted.insert(index) {
             out.push(source_attribute(record, target.clone(), format));
         }
-        current = record.ref_at(0);
+        current = attribute_next(record);
     }
+}
+
+fn is_integer(token: Option<&Token>) -> bool {
+    matches!(
+        token,
+        Some(Token::Char(_) | Token::Short(_) | Token::Long(_) | Token::Enum(_) | Token::Int64(_))
+    )
+}
+
+#[derive(Clone, Copy)]
+struct AttributeBase {
+    next: usize,
+    owner: Option<usize>,
+    payload: usize,
+}
+
+fn attribute_base(record: &Record) -> Option<AttributeBase> {
+    let current = matches!(
+        (
+            record.chunk(0),
+            record.chunk(2),
+            record.chunk(3),
+            record.chunk(4),
+        ),
+        (
+            Some(Token::Ref(_)),
+            Some(Token::Ref(_)),
+            Some(Token::Ref(_)),
+            Some(Token::Ref(_)),
+        )
+    ) && is_integer(record.chunk(1));
+    if current {
+        return Some(AttributeBase {
+            next: 2,
+            owner: Some(4),
+            payload: 5,
+        });
+    }
+    let legacy = matches!(
+        (
+            record.chunk(0),
+            record.chunk(1),
+            record.chunk(2),
+            record.chunk(3),
+        ),
+        (
+            Some(Token::Ref(_)),
+            Some(Token::Ref(_)),
+            Some(Token::Ref(_)),
+            Some(Token::Ref(_)),
+        )
+    );
+    if legacy {
+        return Some(AttributeBase {
+            next: 1,
+            owner: Some(3),
+            payload: 4,
+        });
+    }
+    matches!(record.chunk(0), Some(Token::Ref(_))).then_some(AttributeBase {
+        next: 0,
+        owner: None,
+        payload: 1,
+    })
+}
+
+/// The next record in an attribute chain.
+///
+/// A current ASM attribute starts with `reserved, marker, next, previous,
+/// owner`; a legacy attribute omits `marker`. Source-less streams written by
+/// older cadmpeg versions used a compact record whose first field was `next`;
+/// retain read compatibility with all three forms.
+pub(crate) fn attribute_next(record: &Record) -> Option<i64> {
+    record.ref_at(attribute_base(record)?.next)
+}
+
+/// The topology or parent-attribute owner of a current or legacy attribute.
+pub(crate) fn attribute_owner(record: &Record) -> Option<i64> {
+    record.ref_at(attribute_base(record)?.owner?)
 }
 
 /// The numeric record-index key of an attribute id
@@ -129,68 +208,166 @@ pub fn decode_transform(
     })
 }
 
-/// The first decodable color record on `entity`'s attribute chain.
+/// Storage form and payload-field location of an exact direct-color attribute.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DirectColorCarrier {
+    /// Three normalized f64 channel fields.
+    NormalizedRgb {
+        /// Payload-field indices of red, green, and blue.
+        fields: [usize; 3],
+    },
+    /// One Autodesk method-and-color packed integer field.
+    AutodeskTrueColor {
+        /// Payload-field index of the packed integer.
+        field: usize,
+    },
+    /// One decimal-text packed RGB field.
+    DecimalRgb {
+        /// Payload-field index of the decimal text.
+        field: usize,
+    },
+}
+
+/// A decoded exact direct-color attribute and the carrier that supplied it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DirectAttributeColor {
+    /// Opaque neutral RGB color.
+    pub color: Color,
+    /// Native payload form and field location.
+    pub carrier: DirectColorCarrier,
+}
+
+fn packed_u32(value: i64) -> Option<u32> {
+    u32::try_from(value)
+        .ok()
+        .or_else(|| i32::try_from(value).ok().map(|value| value as u32))
+}
+
+fn packed_rgb(packed: u32) -> Color {
+    Color {
+        r: ((packed >> 16) & 0xff) as f32 / 255.0,
+        g: ((packed >> 8) & 0xff) as f32 / 255.0,
+        b: (packed & 0xff) as f32 / 255.0,
+        a: 1.0,
+    }
+}
+
+fn direct_payload_start(record: &Record) -> Option<usize> {
+    attribute_base(record).map(|base| base.payload)
+}
+
+/// Decode one well-formed exact direct-color attribute.
+///
+/// Palette, material-library, inherited truecolor, and malformed records do
+/// not define a neutral RGB color.
+pub(crate) fn direct_attribute_color(record: &Record) -> Option<DirectAttributeColor> {
+    let payload = direct_payload_start(record)?;
+    match record.name.as_str() {
+        "rgb_color-st-attrib" => {
+            let channels = record
+                .chunks()
+                .enumerate()
+                .skip(payload)
+                .filter_map(|(field, token)| match token {
+                    Token::Double(value) => Some((field, *value)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            let [(r_field, r), (g_field, g), (b_field, b)] = match channels.as_slice() {
+                [red, green, blue] => [*red, *green, *blue],
+                [red, green, blue, (_, 1.0)] => [*red, *green, *blue],
+                _ => return None,
+            };
+            if ![r, g, b]
+                .into_iter()
+                .all(|value| (0.0..=1.0).contains(&value))
+            {
+                return None;
+            }
+            Some(DirectAttributeColor {
+                color: Color {
+                    r: r as f32,
+                    g: g as f32,
+                    b: b as f32,
+                    a: 1.0,
+                },
+                carrier: DirectColorCarrier::NormalizedRgb {
+                    fields: [r_field, g_field, b_field],
+                },
+            })
+        }
+        "truecolor-adesk-attrib" => {
+            let (field, packed) = record
+                .chunks()
+                .enumerate()
+                .skip(payload)
+                .filter_map(|(field, token)| match token {
+                    Token::Int64(value) | Token::Long(value) => Some((field, *value)),
+                    _ => None,
+                })
+                .last()?;
+            let packed = packed_u32(packed)?;
+            // AcCmColor stores its color method in the high byte. Only
+            // kByColor carries self-contained RGB channels.
+            if packed >> 24 != 0xc2 {
+                return None;
+            }
+            Some(DirectAttributeColor {
+                color: packed_rgb(packed),
+                carrier: DirectColorCarrier::AutodeskTrueColor { field },
+            })
+        }
+        "entatt_color-bt-attrib" => {
+            let (field, text) = record
+                .chunks()
+                .enumerate()
+                .skip(payload)
+                .filter_map(|(field, token)| match token {
+                    Token::Str(value) => Some((field, value.as_str())),
+                    _ => None,
+                })
+                .last()?;
+            if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+                return None;
+            }
+            let packed = text
+                .parse::<u32>()
+                .ok()
+                .filter(|value| *value <= 0xff_ffff)?;
+            Some(DirectAttributeColor {
+                color: packed_rgb(packed),
+                carrier: DirectColorCarrier::DecimalRgb { field },
+            })
+        }
+        _ => None,
+    }
+}
+
+/// The first well-formed exact direct-color carrier on an attribute chain.
+pub fn attribute_chain_color_carrier<'a>(
+    entity: &Record,
+    mut by_index: impl FnMut(i64) -> Option<&'a Record>,
+) -> Option<(&'a Record, DirectAttributeColor)> {
+    let mut current = entity.ref_at(0)?;
+    let mut seen = HashSet::new();
+    while seen.insert(current) {
+        let record = by_index(current)?;
+        if let Some(color) = direct_attribute_color(record) {
+            return Some((record, color));
+        }
+        current = attribute_next(record)?;
+    }
+    None
+}
+
+/// The first well-formed exact direct color on `entity`'s attribute chain.
 #[allow(
     clippy::implicit_hasher,
     reason = "Callers pass default-hasher collections; a hasher parameter adds generic noise for one call shape."
 )]
 pub fn attribute_chain_color(entity: &Record, by_index: &HashMap<i64, &Record>) -> Option<Color> {
-    let mut current = entity.ref_at(0)?;
-    let mut seen = HashSet::new();
-    while seen.insert(current) {
-        let record = by_index.get(&current)?;
-        if record.name.contains("rgb_color") {
-            let values: Vec<f64> = record
-                .tokens
-                .iter()
-                .filter_map(|t| match t {
-                    Token::Double(value) => Some(*value),
-                    _ => None,
-                })
-                .collect();
-            if let [r, g, b, ..] = values.as_slice() {
-                if [*r, *g, *b].iter().all(|value| (0.0..=1.0).contains(value)) {
-                    return Some(Color {
-                        r: *r as f32,
-                        g: *g as f32,
-                        b: *b as f32,
-                        a: 1.0,
-                    });
-                }
-            }
-        } else if record.name.contains("truecolor") {
-            let packed = record.tokens.iter().find_map(|token| match token {
-                Token::Int64(value) | Token::Long(value) => Some(*value as u32),
-                _ => None,
-            });
-            if let Some(packed) = packed {
-                return Some(Color {
-                    r: ((packed >> 16) & 0xff) as f32 / 255.0,
-                    g: ((packed >> 8) & 0xff) as f32 / 255.0,
-                    b: (packed & 0xff) as f32 / 255.0,
-                    a: ((packed >> 24) & 0xff) as f32 / 255.0,
-                });
-            }
-        } else if record.name == "entatt_color-bt-attrib" {
-            let packed = record.tokens.iter().find_map(|token| match token {
-                Token::Str(value) => value
-                    .parse::<u32>()
-                    .ok()
-                    .filter(|value| *value <= 0xff_ffff),
-                _ => None,
-            });
-            if let Some(packed) = packed {
-                return Some(Color {
-                    r: ((packed >> 16) & 0xff) as f32 / 255.0,
-                    g: ((packed >> 8) & 0xff) as f32 / 255.0,
-                    b: (packed & 0xff) as f32 / 255.0,
-                    a: 1.0,
-                });
-            }
-        }
-        current = record.ref_at(0)?;
-    }
-    None
+    attribute_chain_color_carrier(entity, |index| by_index.get(&index).copied())
+        .map(|(_, decoded)| decoded.color)
 }
 
 /// The first non-empty name attribute on `entity`'s attribute chain.
@@ -218,7 +395,7 @@ pub fn attribute_chain_name(entity: &Record, by_index: &HashMap<i64, &Record>) -
                 }
             }
         }
-        current = record.ref_at(0)?;
+        current = attribute_next(record)?;
     }
     None
 }

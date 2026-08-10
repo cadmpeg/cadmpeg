@@ -32,28 +32,28 @@
         "asm_flags": "3",
         "asm_magic": "ASM BinaryFile8",
         "asm_width": "8",
-        "history_partition_offset": "8375",
+        "history_partition_offset": "8627",
         "product_family": "Autodesk Neutron",
         "product_version": "ASM 231.6.3.65535 OSX",
         "resabs": "0.000001",
         "resnor": "0.0000000001",
         "save_date": "Thu Jan  1 00:00:00 1970",
         "scale": "60",
-        "sha256": "d7faf5998c3c2288cde0c726824aea7d806ac193df98f72dec9a583f2aab9211",
-        "solved_record_len": "8375"
+        "sha256": "70ccb866093e5428ae50b3a3190f07d411ea2afdb463ed53b19193b8d730c5a1",
+        "solved_record_len": "8627"
       },
-      "compressed_size": 8388,
+      "compressed_size": 8640,
       "compression": "stored",
       "name": "FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
       "role": "brep-smbh",
-      "uncompressed_size": 8388
+      "uncompressed_size": 8640
     }
   ],
   "format": "f3d",
   "notes": [
     "Design asset folder (from manifests): FusionAssetName[Active]",
     "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
-    "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh (8388 bytes uncompressed)",
+    "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh (8640 bytes uncompressed)",
     "container-level inspection only; run `decode` to resolve Design body bindings and build each referenced BREP graph"
   ]
 }
