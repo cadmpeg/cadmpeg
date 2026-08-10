@@ -13,7 +13,7 @@
 //! none may be added, so every fixture is hand-built here to exercise a real
 //! decode path that can fail if the code regresses.
 
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Read, Seek, Write};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
@@ -51,6 +51,25 @@ fn with_scan<T>(bytes: &[u8], f: impl FnOnce(&container::ContainerScan<'_>) -> T
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
     let scan = container::scan(&ctx, root).unwrap();
     f(&scan)
+}
+
+fn write_synthetic_manifests<W: Write + Seek>(
+    zip: &mut zip::ZipWriter<W>,
+    options: zip::write::SimpleFileOptions,
+) {
+    zip.start_file("Manifest.dat", options).unwrap();
+    zip.write_all(&crate::manifest::generated_top_level().unwrap())
+        .unwrap();
+    zip.start_file(
+        format!(
+            "{}/Manifest.dat",
+            crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
+        ),
+        options,
+    )
+    .unwrap();
+    zip.write_all(&crate::manifest::generated_design_asset().unwrap())
+        .unwrap();
 }
 
 /// Build a synthetic ASM `BinaryFile8` BREP stream: a spec-shaped header
@@ -176,6 +195,14 @@ fn t_end(b: &mut Vec<u8>) {
     b.push(0x11);
 }
 
+fn t_attribute_base(b: &mut Vec<u8>, next: i64, previous: i64, owner: i64) {
+    t_ref(b, -1);
+    t_long(b, -1);
+    t_ref(b, next);
+    t_ref(b, previous);
+    t_ref(b, owner);
+}
+
 fn assert_f3d_native_parity(ir: &cadmpeg_ir::document::CadIr) {
     let native = ir.native.namespace("f3d").expect("F3D native namespace");
     assert_eq!(native.version, crate::native::F3D_NATIVE_VERSION);
@@ -230,7 +257,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .iter()
         .map(|row| row.arena)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(crate::native::F3D_FAMILIES.len(), 65);
+    assert_eq!(crate::native::F3D_FAMILIES.len(), 69);
     assert_eq!(
         catalogue_names,
         crate::native::F3D_ARENA_NAMES
@@ -942,13 +969,68 @@ fn synthetic_geometry_with_body_color_smbh() -> Vec<u8> {
     t_subident(&mut attribute, "rgb_color");
     t_subident(&mut attribute, "st");
     t_ident(&mut attribute, "attrib");
-    t_ref(&mut attribute, -1);
+    t_attribute_base(&mut attribute, -1, -1, 1);
     t_dbl(&mut attribute, 0.1);
     t_dbl(&mut attribute, 0.2);
     t_dbl(&mut attribute, 0.3);
+    t_dbl(&mut attribute, 1.0);
     t_end(&mut attribute);
     bytes.splice(limit..limit, attribute);
     bytes
+}
+
+fn synthetic_geometry_with_body_attribute_chain_smbh(attribute_chain: Vec<u8>) -> Vec<u8> {
+    let mut bytes = synthetic_geometry_smbh();
+    let limit = cadmpeg_asm::asm_header::solved_record_limit(&bytes).expect("history boundary");
+    let start = cadmpeg_asm::asm_header::record_stream_start(&bytes).expect("record stream");
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).expect("generated SAB");
+    let body = &records[1];
+    let attribute_ref = cadmpeg_asm::sab::payload_token_offsets(&bytes, body, 8, 0x0c)
+        .expect("body reference tokens")[0];
+    bytes[attribute_ref + 1..attribute_ref + 9].copy_from_slice(&19i64.to_le_bytes());
+    bytes.splice(limit..limit, attribute_chain);
+    bytes
+}
+
+fn synthetic_geometry_with_body_truecolor_chain_smbh() -> Vec<u8> {
+    let mut attributes = Vec::new();
+    t_subident(&mut attributes, "truecolor");
+    t_subident(&mut attributes, "adesk");
+    t_ident(&mut attributes, "attrib");
+    t_attribute_base(&mut attributes, 20, -1, 1);
+    attributes.push(0x17);
+    attributes.extend_from_slice(&i64::from(0xc2_20_40_60_u32).to_le_bytes());
+    t_end(&mut attributes);
+
+    t_subident(&mut attributes, "rgb_color");
+    t_subident(&mut attributes, "st");
+    t_ident(&mut attributes, "attrib");
+    t_attribute_base(&mut attributes, -1, 19, 1);
+    for channel in [0.8, 0.7, 0.6, 1.0] {
+        t_dbl(&mut attributes, channel);
+    }
+    t_end(&mut attributes);
+    synthetic_geometry_with_body_attribute_chain_smbh(attributes)
+}
+
+fn synthetic_geometry_with_body_decimal_color_chain_smbh(decimal: &str) -> Vec<u8> {
+    let mut attributes = Vec::new();
+    t_subident(&mut attributes, "entatt_color");
+    t_subident(&mut attributes, "bt");
+    t_ident(&mut attributes, "attrib");
+    t_attribute_base(&mut attributes, 20, -1, 1);
+    push_u8_string(&mut attributes, decimal);
+    t_end(&mut attributes);
+
+    t_subident(&mut attributes, "rgb_color");
+    t_subident(&mut attributes, "st");
+    t_ident(&mut attributes, "attrib");
+    t_attribute_base(&mut attributes, -1, 19, 1);
+    for channel in [0.8, 0.7, 0.6, 1.0] {
+        t_dbl(&mut attributes, channel);
+    }
+    t_end(&mut attributes);
+    synthetic_geometry_with_body_attribute_chain_smbh(attributes)
 }
 
 fn synthetic_geometry_with_face_color_smbh() -> Vec<u8> {
@@ -965,10 +1047,11 @@ fn synthetic_geometry_with_face_color_smbh() -> Vec<u8> {
     t_subident(&mut attribute, "rgb_color");
     t_subident(&mut attribute, "st");
     t_ident(&mut attribute, "attrib");
-    t_ref(&mut attribute, -1);
+    t_attribute_base(&mut attribute, -1, -1, 4);
     t_dbl(&mut attribute, 0.15);
     t_dbl(&mut attribute, 0.25);
     t_dbl(&mut attribute, 0.35);
+    t_dbl(&mut attribute, 1.0);
     t_end(&mut attribute);
     bytes.splice(limit..limit, attribute);
     bytes
@@ -3468,11 +3551,9 @@ fn synthetic_geometry_with_degenerate_curve_smbh() -> Vec<u8> {
 fn generated_pcurve_block() -> Vec<u8> {
     generated_pcurve_block_with_points([[0.25, 0.5], [0.75, 1.5]])
 }
-
 fn generated_planar_pcurve_block() -> Vec<u8> {
     generated_pcurve_block_with_points([[0.025, -0.05], [0.075, -0.15]])
 }
-
 fn generated_pcurve_block_with_points(points: [[f64; 2]; 2]) -> Vec<u8> {
     let mut b = Vec::new();
     b.extend_from_slice(b"\x0d\x04nubs");
@@ -3489,15 +3570,12 @@ fn generated_pcurve_block_with_points(points: [[f64; 2]; 2]) -> Vec<u8> {
     }
     b
 }
-
 fn generated_rational_pcurve_block() -> Vec<u8> {
     generated_rational_pcurve_block_with_points([[0.25, 0.5], [0.75, 1.5]])
 }
-
 fn generated_planar_rational_pcurve_block() -> Vec<u8> {
     generated_rational_pcurve_block_with_points([[0.025, -0.05], [0.075, -0.15]])
 }
-
 fn generated_rational_pcurve_block_with_points(points: [[f64; 2]; 2]) -> Vec<u8> {
     let mut b = Vec::new();
     b.extend_from_slice(b"\x0d\x05nurbs");
@@ -5824,8 +5902,7 @@ fn synthetic_mixed_smbh() -> Vec<u8> {
 fn f3d_with_smbh(smbh: &[u8]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
         .unwrap();
     zip.write_all(smbh).unwrap();
@@ -5836,8 +5913,7 @@ fn f3d_with_smbh(smbh: &[u8]) -> Vec<u8> {
 fn malformed_tspline_cage_degrades_to_a_loss_note() {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
         .unwrap();
     zip.write_all(&synthetic_geometry_smbh()).unwrap();
@@ -5867,8 +5943,7 @@ fn malformed_tspline_cage_degrades_to_a_loss_note() {
 fn malformed_paramesh_reports_its_entry_and_parser_failure() {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     let entry = "FusionAssetName[Active]/ParaMeshGeometry.BlobParts/broken.paramesh";
     zip.start_file(entry, stored).unwrap();
     zip.write_all(b"not a paramesh container").unwrap();
@@ -5889,8 +5964,7 @@ fn f3d_with_deflated_smbh(smbh: &[u8]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     let deflated = crate::zip_write::file_options(CompressionMethod::Deflated);
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     zip.start_file(
         "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
         deflated,
@@ -5963,8 +6037,7 @@ fn oversized_nested_protein_entry_is_rejected_before_allocation() {
 fn f3d_with_configuration(smbh: &[u8], name: &str, payload: &[u8]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
         .unwrap();
     zip.write_all(smbh).unwrap();
@@ -5974,9 +6047,174 @@ fn f3d_with_configuration(smbh: &[u8], name: &str, payload: &[u8]) -> Vec<u8> {
 }
 
 #[test]
+fn form_dispatcher_binds_the_legacy_single_cage_gate() {
+    let stream = "FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
+    let mut bulk = Vec::new();
+    let mut cage_list = vec![0; 100];
+    cage_list[..4].copy_from_slice(&3u32.to_le_bytes());
+    cage_list[4..7].copy_from_slice(b"355");
+    cage_list[7..11].copy_from_slice(&205u32.to_le_bytes());
+    cage_list[21] = 1;
+    cage_list[22..30].copy_from_slice(&201u64.to_le_bytes());
+    cage_list[32..36].copy_from_slice(&1u32.to_le_bytes());
+    cage_list[36] = 1;
+    cage_list[37..45].copy_from_slice(&971u64.to_le_bytes());
+    cage_list[47..49].copy_from_slice(&[0xfc, 0]);
+    bulk.extend_from_slice(&cage_list);
+
+    let mut paired = vec![0; 15];
+    paired[..4].copy_from_slice(&3u32.to_le_bytes());
+    paired[4..7].copy_from_slice(b"262");
+    paired[7..11].copy_from_slice(&205u32.to_le_bytes());
+    bulk.extend_from_slice(&paired);
+
+    let mut object = vec![0; 15];
+    object[..4].copy_from_slice(&3u32.to_le_bytes());
+    object[4..7].copy_from_slice(b"325");
+    object[7..11].copy_from_slice(&971u32.to_le_bytes());
+    bulk.extend_from_slice(&object);
+
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    write_synthetic_manifests(&mut archive, stored);
+    archive.start_file(stream, stored).unwrap();
+    archive.write_all(&bulk).unwrap();
+    let archive = archive.finish().unwrap().into_inner();
+
+    let mut scope = crate::records::DesignParameterScope::empty(
+        &format!("f3d:{stream}:scope#201"),
+        "Form",
+        201,
+    );
+    scope.reference_members = vec![205];
+    let feature_id = crate::ids::neutral_feature_id(&scope);
+    let mut features = vec![cadmpeg_ir::features::Feature {
+        id: feature_id,
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: Some("Form".into()),
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: cadmpeg_ir::features::FeatureDefinition::Native {
+            kind: "Form".into(),
+            parameters: Default::default(),
+            properties: Default::default(),
+        },
+        native_ref: Some(scope.id.clone()),
+    }];
+    let cages = [cadmpeg_ir::SubdSurface {
+        id: cadmpeg_ir::ids::SubdId("f3d:model:subd#1".into()),
+        scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
+        vertices: Vec::new(),
+        edges: Vec::new(),
+        faces: Vec::new(),
+        source_object: None,
+    }];
+
+    crate::tests::with_scan(&archive, |scan| {
+        crate::design::feature_project::bind_form_cages(
+            scan,
+            std::slice::from_ref(&scope),
+            &mut features,
+            &cages,
+        )
+    })
+    .expect("legacy Form cage binding");
+    assert_eq!(
+        features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::Form {
+            cages: vec![cages[0].id.clone()],
+        }
+    );
+}
+
+#[test]
+fn form_dispatcher_binds_a_unique_long_cage_list() {
+    let stream = "FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
+    let mut cage_list = vec![0; 99];
+    cage_list[..4].copy_from_slice(&3u32.to_le_bytes());
+    cage_list[4..7].copy_from_slice(b"415");
+    cage_list[7..11].copy_from_slice(&205u32.to_le_bytes());
+    cage_list[21] = 1;
+    cage_list[22..30].copy_from_slice(&201u64.to_le_bytes());
+    cage_list[32..36].copy_from_slice(&1u32.to_le_bytes());
+    cage_list[36] = 1;
+    cage_list[37..45].copy_from_slice(&971u64.to_le_bytes());
+    let mut paired = vec![0; 15];
+    paired[..4].copy_from_slice(&3u32.to_le_bytes());
+    paired[4..7].copy_from_slice(b"258");
+    paired[7..11].copy_from_slice(&205u32.to_le_bytes());
+    let mut bulk = cage_list;
+    bulk.extend_from_slice(&paired);
+
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    write_synthetic_manifests(&mut archive, stored);
+    archive.start_file(stream, stored).unwrap();
+    archive.write_all(&bulk).unwrap();
+    let archive = archive.finish().unwrap().into_inner();
+
+    let mut scope = crate::records::DesignParameterScope::empty(
+        &format!("f3d:{stream}:scope#201"),
+        "Form",
+        201,
+    );
+    scope.reference_members = vec![205];
+    let feature_id = crate::ids::neutral_feature_id(&scope);
+    let mut features = vec![cadmpeg_ir::features::Feature {
+        id: feature_id,
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: Some("Form".into()),
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: cadmpeg_ir::features::FeatureDefinition::Native {
+            kind: "Form".into(),
+            parameters: Default::default(),
+            properties: Default::default(),
+        },
+        native_ref: Some(scope.id.clone()),
+    }];
+    let cages = [cadmpeg_ir::SubdSurface {
+        id: cadmpeg_ir::ids::SubdId("f3d:model:subd#1".into()),
+        scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
+        vertices: Vec::new(),
+        edges: Vec::new(),
+        faces: Vec::new(),
+        source_object: None,
+    }];
+
+    crate::tests::with_scan(&archive, |scan| {
+        crate::design::feature_project::bind_form_cages(
+            scan,
+            std::slice::from_ref(&scope),
+            &mut features,
+            &cages,
+        )
+    })
+    .expect("long Form cage binding");
+    assert_eq!(
+        features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::Form {
+            cages: vec![cages[0].id.clone()],
+        }
+    );
+}
+
+#[test]
 fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let name = "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg";
-    let payload = br#"{"configurations":{"wide":{"parameters":{"width":"25 mm"},"suppressed":["slot"]}},"active":"wide","extension":{"future":7}}"#;
+    let payload = br#"{"configurations":{"Small":{},"Medium":{"parameters":{"width":"25 mm"},"suppressed":["slot"]},"Large":{}},"active":"Medium","extension":{"future":7}}"#;
     let decoded = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_configuration(
@@ -5998,31 +6236,62 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         native.design_configurations[0].kind,
         crate::records::DesignConfigurationKind::Table
     );
-    assert_eq!(native.design_configurations[0].payload["active"], "wide");
+    assert_eq!(
+        native.design_configurations[0].variant_order,
+        ["Small", "Medium", "Large"]
+    );
+    assert_eq!(native.design_configurations[0].payload["active"], "Medium");
     assert_eq!(
         native.design_configurations[0].payload["extension"]["future"],
         7
     );
-    assert_eq!(decoded.ir.model.configurations.len(), 1);
-    let wide = &decoded.ir.model.configurations[0];
-    assert_eq!(wide.name, "wide");
-    assert!(wide.active);
-    assert_eq!(wide.properties["parameter:width"], "25 mm");
-    assert_eq!(wide.properties["suppressed:slot"], "true");
+    assert_eq!(decoded.ir.model.configurations.len(), 3);
+    let mut authored = decoded
+        .ir
+        .model
+        .configurations
+        .iter()
+        .map(|configuration| (configuration.name.as_str(), configuration.ordinal))
+        .collect::<Vec<_>>();
+    authored.sort_by_key(|(_, ordinal)| *ordinal);
+    assert_eq!(authored, [("Small", 0), ("Medium", 1), ("Large", 2)]);
+    let medium = decoded
+        .ir
+        .model
+        .configurations
+        .iter()
+        .find(|configuration| configuration.name == "Medium")
+        .expect("active medium configuration");
+    assert!(medium.active);
+    assert_eq!(medium.properties["parameter:width"], "25 mm");
+    assert_eq!(medium.properties["suppressed:slot"], "true");
     assert_eq!(
-        wide.native_ref.as_deref(),
+        medium.native_ref.as_deref(),
         Some(native.design_configurations[0].id.as_str())
     );
+    let mut invalid_order = decoded.ir.clone();
+    update_f3d_native(&mut invalid_order, |native| {
+        native.design_configurations[0].variant_order.pop();
+    });
+    assert!(crate::validate::validate_native(&invalid_order)
+        .iter()
+        .any(|finding| finding
+            .message
+            .contains("invalid identity, payload, or variant order")));
 
     let mut retained = decoded.ir.clone();
     update_f3d_native(&mut retained, |native| {
-        native.design_configurations[0].payload["active"] = "narrow".into();
-        native.design_configurations[0].payload["configurations"]["narrow"] =
+        native.design_configurations[0].payload["active"] = "Narrow".into();
+        native.design_configurations[0].payload["configurations"]["Narrow"] =
             serde_json::json!({"parameters":{"width":"12 mm"},"suppressed":[]});
+        native.design_configurations[0]
+            .variant_order
+            .push("Narrow".into());
     });
     retained.model.configurations = crate::design::configurations::project_configurations(
         &f3d_native(&retained).design_configurations,
-    );
+    )
+    .expect("edited configuration order");
     let expected_retained = f3d_native(&retained).design_configurations;
     let mut retained_bytes = Vec::new();
     F3dCodec
@@ -6053,7 +6322,13 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less configuration encode");
     let mut inconsistent = source_less.clone();
-    inconsistent.model.configurations[0].active = false;
+    inconsistent
+        .model
+        .configurations
+        .iter_mut()
+        .find(|configuration| configuration.name == "Medium")
+        .expect("active medium configuration")
+        .active = false;
     let error = F3dCodec
         .plan(cadmpeg_ir::codec::EncodeInput {
             ir: &inconsistent,
@@ -6922,8 +7197,12 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
             Point3::new(0.0, 1.0, 0.0),
         ],
         triangles: vec![[0, 1, 2]],
+        feature_edges: Vec::new(),
         strip_lengths: Vec::new(),
         normals: Vec::new(),
+        corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
         channels: Vec::new(),
     });
     let error = F3dCodec
@@ -9061,6 +9340,26 @@ fn generated_source_less_unit_cube_writes_body_and_face_colors() {
 }
 
 #[test]
+fn generated_source_less_rejects_translucent_direct_color() {
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    source_less.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
+        r: 0.1,
+        g: 0.2,
+        b: 0.3,
+        a: 0.5,
+    });
+
+    let error = F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+}
+
+#[test]
 fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes() {
     use crate::records::{
         CreationTimestamp, PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
@@ -9124,6 +9423,14 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             design_references: vec![511],
             ordinal: 0,
         },
+        PersistentSubentityTag {
+            id: "generated:persistent-subentity-tag#2".into(),
+            target: AttributeTarget::Face(face_id.clone()),
+            selector: 3,
+            token: "42".into(),
+            design_references: Vec::new(),
+            ordinal: 1,
+        },
     ];
     native.sketch_curve_links = vec![SketchCurveLink {
         id: "generated:sketch-curve-link#0".into(),
@@ -9163,6 +9470,89 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less provenance attribute round trip");
+    {
+        use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+
+        fn suffix_index(value: &str) -> i64 {
+            value
+                .rsplit_once('#')
+                .and_then(|(_, suffix)| suffix.parse().ok())
+                .expect("generated native id has a numeric record suffix")
+        }
+
+        fn attribute_index(attribute: &SourceAttribute) -> i64 {
+            suffix_index(&attribute.id.0)
+        }
+
+        fn reference_index(value: &AttributeValue) -> i64 {
+            let AttributeValue::Reference(value) = value else {
+                panic!("generated attribute link is not a reference");
+            };
+            suffix_index(value)
+        }
+
+        fn target_index(target: &AttributeTarget) -> i64 {
+            let id = match target {
+                AttributeTarget::Body(id) => id.as_str(),
+                AttributeTarget::Face(id) => id.as_str(),
+                AttributeTarget::Coedge(id) => id.as_str(),
+                AttributeTarget::Edge(id) => id.as_str(),
+                AttributeTarget::Vertex(id) => id.as_str(),
+                _ => panic!("source-less attribute has an unsupported topology owner"),
+            };
+            suffix_index(id)
+        }
+
+        let attributes = &round_trip.ir.model.attributes;
+        assert!(!attributes.is_empty());
+        for attribute in attributes {
+            assert!(attribute.values.len() >= 5);
+            assert_eq!(reference_index(&attribute.values[0]), -1);
+            assert_eq!(attribute.values[1], AttributeValue::Integer(-1));
+            assert_eq!(
+                reference_index(&attribute.values[4]),
+                target_index(&attribute.target)
+            );
+
+            let index = attribute_index(attribute);
+            for (field, reciprocal) in [(2usize, 3usize), (3, 2)] {
+                let linked = reference_index(&attribute.values[field]);
+                if linked < 0 {
+                    continue;
+                }
+                let linked_attribute = attributes
+                    .iter()
+                    .find(|candidate| attribute_index(candidate) == linked)
+                    .expect("generated attribute link resolves");
+                assert_eq!(linked_attribute.target, attribute.target);
+                assert_eq!(reference_index(&linked_attribute.values[reciprocal]), index);
+            }
+        }
+        for (ordinal, attribute) in attributes.iter().enumerate() {
+            if attributes[..ordinal]
+                .iter()
+                .any(|before| before.target == attribute.target)
+            {
+                continue;
+            }
+            let owned = attributes
+                .iter()
+                .filter(|candidate| candidate.target == attribute.target);
+            assert_eq!(
+                owned
+                    .clone()
+                    .filter(|candidate| reference_index(&candidate.values[3]) == -1)
+                    .count(),
+                1
+            );
+            assert_eq!(
+                owned
+                    .filter(|candidate| reference_index(&candidate.values[2]) == -1)
+                    .count(),
+                1
+            );
+        }
+    }
     let native = f3d_native(&round_trip.ir);
     assert_eq!(native.persistent_design_links.len(), 2);
     assert_eq!(native.persistent_design_links[0].design_id, "311");
@@ -9171,7 +9561,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     assert_eq!(native.persistent_design_links[1].design_id, "322");
     assert_eq!(native.persistent_design_links[1].design_reference, 8);
     assert!(native.persistent_design_links[1].is_current);
-    assert_eq!(native.persistent_subentity_tags.len(), 2);
+    assert_eq!(native.persistent_subentity_tags.len(), 3);
     assert!(native.persistent_subentity_tags.iter().any(|tag| {
         tag.design_references == [301, -314, 411] && matches!(tag.target, AttributeTarget::Face(_))
     }));
@@ -9180,6 +9570,11 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         tag.token == "-1"
             && tag.design_references == [511]
             && matches!(tag.target, AttributeTarget::Edge(_))
+    }));
+    assert!(native.persistent_subentity_tags.iter().any(|tag| {
+        tag.token == "42"
+            && tag.design_references.is_empty()
+            && matches!(tag.target, AttributeTarget::Face(_))
     }));
     assert_eq!(native.sketch_curve_links.len(), 1);
     assert_eq!(native.sketch_curve_links[0].sketch_curve_id, 113);
@@ -9545,7 +9940,7 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
 
 #[test]
 fn design_type_table_attributes_each_entry_to_its_own_type() {
-    use crate::design::decode::sketch::parse_design_type_table;
+    use crate::metastream::parse;
 
     let first = "11111111-1111-1111-1111-111111111111";
     let second = "22222222-2222-2222-2222-222222222222";
@@ -9558,7 +9953,9 @@ fn design_type_table_attributes_each_entry_to_its_own_type() {
         (second, "", 7, "MSketch", &[20]),
         (third, second, 11, "Body", &[30, 31, 32]),
     ]);
-    let types = parse_design_type_table(&bytes).expect("a segment closing on its own end parses");
+    let types = parse(&bytes, "synthetic MetaStream")
+        .expect("a segment closing on its own end parses")
+        .types;
     assert_eq!(types.len(), 3);
 
     // Every field of an entry belongs to that entry, not to its successor.
@@ -9626,18 +10023,360 @@ fn design_type_table_attributes_each_entry_to_its_own_type() {
     // A stream that does not close on its own end is rejected whole.
     let mut trailing = bytes.clone();
     trailing.push(0);
-    assert!(parse_design_type_table(&trailing).is_none());
-    assert!(parse_design_type_table(&bytes[..bytes.len() - 1]).is_none());
+    assert!(parse(&trailing, "trailing MetaStream").is_err());
+    assert!(parse(&bytes[..bytes.len() - 1], "truncated MetaStream").is_err());
+    assert!(parse(&bytes[..bytes.len() - 4], "flag-only MetaStream").is_err());
+}
+
+#[test]
+fn design_feature_timeline_versions_share_variable_width_local_references() {
+    const INLINE_TYPE_GUID: &str = "11111111-2222-3333-4444-555555555555";
+
+    fn lp_ascii(out: &mut Vec<u8>, value: &str) {
+        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        out.extend_from_slice(value.as_bytes());
+    }
+    fn local_reference(out: &mut Vec<u8>, target: u64, inline_type: bool) {
+        out.push(1);
+        out.extend_from_slice(&target.to_le_bytes());
+        if inline_type {
+            lp_ascii(out, INLINE_TYPE_GUID);
+        }
+        out.extend_from_slice(&[0, 0]);
+    }
+    fn archive(meta: &[u8], bulk: &[u8]) -> Vec<u8> {
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+            .unwrap();
+        zip.write_all(bulk).unwrap();
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(meta).unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+
+    let mut bulk = Vec::new();
+    lp_ascii(&mut bulk, "256");
+    bulk.extend_from_slice(&35_u64.to_le_bytes());
+    lp_ascii(&mut bulk, "Timeline");
+    bulk.extend_from_slice(&[0, 0]);
+    local_reference(&mut bulk, 17, false);
+    bulk.extend_from_slice(&2_u32.to_le_bytes());
+    local_reference(&mut bulk, 101, false);
+    local_reference(&mut bulk, 102, true);
+    for version in crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSIONS {
+        let meta = design_metastream_with_records(
+            &[
+                (
+                    crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID,
+                    crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID,
+                    version,
+                    "Fusion",
+                    &[35],
+                ),
+                (INLINE_TYPE_GUID, "", 0, "Fusion", &[17, 101, 102]),
+            ],
+            &[(35, 0)],
+        );
+        let decoded = with_scan(&archive(&meta, &bulk), |scan| {
+            crate::design::decode::meta::decode_feature_timelines(scan)
+        })
+        .expect("exact feature timeline");
+        let [timeline] = decoded.as_slice() else {
+            panic!("expected one timeline record");
+        };
+        assert_eq!(timeline.record_index, 35);
+        assert_eq!(timeline.context_record_index, 17);
+        assert_eq!(timeline.item_record_indices, [101, 102]);
+        assert_eq!(timeline.frame_length, bulk.len() as u64);
+        assert_eq!(
+            timeline.item_record_index_offsets.len(),
+            timeline.item_record_indices.len()
+        );
+        for (record_index, offset) in timeline
+            .item_record_indices
+            .iter()
+            .zip(&timeline.item_record_index_offsets)
+        {
+            assert_eq!(
+                u64::from_le_bytes(
+                    bulk[*offset as usize..*offset as usize + 8]
+                        .try_into()
+                        .expect("timeline target")
+                ),
+                *record_index
+            );
+        }
+
+        let mut duplicate = bulk.clone();
+        let second_offset = timeline.item_record_index_offsets[1] as usize;
+        duplicate[second_offset..second_offset + 8].copy_from_slice(&101_u64.to_le_bytes());
+        let error = with_scan(&archive(&meta, &duplicate), |scan| {
+            crate::design::decode::meta::decode_feature_timelines(scan)
+        })
+        .expect_err("duplicate timeline items must be rejected");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+
+        let mut mismatched_inline_type = bulk.clone();
+        let inline_type_at = mismatched_inline_type
+            .windows(INLINE_TYPE_GUID.len())
+            .position(|window| window == INLINE_TYPE_GUID.as_bytes())
+            .expect("inline type GUID");
+        mismatched_inline_type[inline_type_at] = b'2';
+        let error = with_scan(&archive(&meta, &mismatched_inline_type), |scan| {
+            crate::design::decode::meta::decode_feature_timelines(scan)
+        })
+        .expect_err("an inline type GUID must match the target registration");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+
+    let unsupported_meta = design_metastream_with_records(
+        &[(
+            crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID,
+            crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID,
+            4,
+            "Fusion",
+            &[35],
+        )],
+        &[(35, 0)],
+    );
+    let error = with_scan(&archive(&unsupported_meta, &bulk), |scan| {
+        crate::design::decode::meta::decode_feature_timelines(scan)
+    })
+    .expect_err("an unsupported timeline version must not use a known frame speculatively");
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+
+    for (base_type_guid, module) in [
+        ("22222222-3333-4444-5555-666666666666", "Fusion"),
+        (
+            crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID,
+            "Other",
+        ),
+    ] {
+        let incompatible_meta = design_metastream_with_records(
+            &[(
+                crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID,
+                base_type_guid,
+                crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSIONS[1],
+                module,
+                &[35],
+            )],
+            &[(35, 0)],
+        );
+        let error = with_scan(&archive(&incompatible_meta, &bulk), |scan| {
+            crate::design::decode::meta::decode_feature_timelines(scan)
+        })
+        .expect_err("incompatible timeline registration metadata must be rejected");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
+fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
+    fn owner_frame() -> Vec<u8> {
+        let mut frame = vec![0; 104];
+        frame[0..4].copy_from_slice(&3u32.to_le_bytes());
+        frame[4..7].copy_from_slice(b"292");
+        frame[7..11].copy_from_slice(&44u32.to_le_bytes());
+        frame[19] = 1;
+        frame[20..24].copy_from_slice(&1u32.to_le_bytes());
+        frame[24] = 1;
+        frame[25..29].copy_from_slice(&12u32.to_le_bytes());
+        frame[35..39].copy_from_slice(&2u32.to_le_bytes());
+        frame[40..48].copy_from_slice(&6.0f64.to_le_bytes());
+        frame[48] = 1;
+        frame[49..53].copy_from_slice(&45u32.to_le_bytes());
+        frame[59..63].copy_from_slice(&9u32.to_le_bytes());
+        frame[67] = 1;
+        frame[68..72].copy_from_slice(&12u32.to_le_bytes());
+        frame[78] = 1;
+        frame[79] = 1;
+        frame[81] = 1;
+        frame[82..86].copy_from_slice(&46u32.to_le_bytes());
+        frame[93] = 1;
+        frame[94..98].copy_from_slice(&12u32.to_le_bytes());
+        frame
+    }
+    fn paired_header() -> [u8; 11] {
+        let mut header = [0; 11];
+        header[0..4].copy_from_slice(&3u32.to_le_bytes());
+        header[4..7].copy_from_slice(b"293");
+        header[7..11].copy_from_slice(&44u32.to_le_bytes());
+        header
+    }
+    fn archive(stream: &str, bulk: &[u8]) -> Vec<u8> {
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(stream, stored).unwrap();
+        zip.write_all(bulk).unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let parameter = crate::records::DesignParameter {
+        id: crate::ids::native_design_parameter_id(stream, 200),
+        byte_offset: 200,
+        class_tag: "305".into(),
+        record_index: 45,
+        family_discriminator: Some(0),
+        family_discriminator_offset: Some(222),
+        source_ordinal: 0,
+        owner_record_index: Some(44),
+        expression: "6 cm".into(),
+        expression_offset: 240,
+        source_kind: "Distance".into(),
+        source_kind_offset: 260,
+        kind: crate::records::DesignParameterKind::Feature,
+        unit: Some("cm".into()),
+        unit_offset: Some(280),
+        name: "distance".into(),
+        name_offset: 300,
+        evaluated_value: 6.0,
+        evaluated_value_offset: 320,
+    };
+    let header = crate::records::DesignRecordHeader {
+        id: crate::ids::native_design_record_header_id(stream, 0),
+        record_index: 44,
+        class_tag: "292".into(),
+        byte_offset: 0,
+    };
+
+    let mut exact = owner_frame();
+    exact.extend_from_slice(&paired_header());
+    let owners = with_scan(&archive(stream, &exact), |scan| {
+        crate::design::decode::parameters::decode_parameter_owners(
+            scan,
+            std::slice::from_ref(&parameter),
+            std::slice::from_ref(&header),
+        )
+    })
+    .expect("exact owner frame");
+    let [owner] = owners.as_slice() else {
+        panic!("expected one parameter owner");
+    };
+    assert_eq!(owner.frame_length, 104);
+    assert_eq!(owner.evaluated_value_offset, 40);
+
+    let mut extended = owner_frame();
+    extended.push(0);
+    extended.extend_from_slice(&paired_header());
+    let error = with_scan(&archive(stream, &extended), |scan| {
+        crate::design::decode::parameters::decode_parameter_owners(
+            scan,
+            std::slice::from_ref(&parameter),
+            std::slice::from_ref(&header),
+        )
+    })
+    .expect_err("an owner-shaped prefix must not shorten the exact frame");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
+    let meta_stream = "f3d:FusionAssetName[Active]/Design1/MetaStream.dat";
+    let bulk_entry = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let design_type = |id: &str, type_guid: &str, entities: Vec<u64>| crate::records::SegmentType {
+        id: id.into(),
+        byte_offset: 0,
+        type_guid: type_guid.into(),
+        type_guid_offset: 4,
+        base_type_guid: (type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID)
+            .then(|| crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID.into()),
+        base_type_guid_offset: (type_guid
+            == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID)
+            .then_some(8),
+        version: if type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID {
+            crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSIONS[1]
+        } else {
+            1
+        },
+        version_offset: 44,
+        module: crate::records::DESIGN_MODULE_FUSION.into(),
+        entity_id_offsets: vec![100; entities.len()],
+        entity_ids: entities,
+    };
+    let mut native = crate::native::F3dNative {
+        design_types: vec![
+            design_type(
+                &format!("{meta_stream}:design-type#0"),
+                crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID,
+                vec![35],
+            ),
+            design_type(
+                &format!("{meta_stream}:design-type#1"),
+                "11111111-2222-3333-4444-555555555555",
+                vec![17, 101],
+            ),
+        ],
+        design_feature_timelines: vec![crate::records::DesignFeatureTimeline {
+            id: crate::ids::native_design_feature_timeline_id(bulk_entry, 200),
+            byte_offset: 200,
+            class_tag: "256".into(),
+            record_index: 35,
+            source_ordinal: 0,
+            frame_length: 60,
+            context_record_index: 17,
+            context_record_index_offset: 220,
+            item_count_offset: 240,
+            item_record_indices: vec![101],
+            item_record_index_offsets: vec![245],
+        }],
+        ..crate::native::F3dNative::default()
+    };
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    native.store(ir.native.namespace_mut("f3d")).unwrap();
+    let findings = crate::validate::validate_native(&ir);
+    assert!(
+        !findings.iter().any(|finding| {
+            finding.message.contains("feature timeline")
+                || finding.message.contains("feature-timeline")
+        }),
+        "{findings:#?}"
+    );
+
+    let mut duplicate_type_owner = native.clone();
+    duplicate_type_owner.design_types[1].entity_ids.push(35);
+    duplicate_type_owner.design_types[1]
+        .entity_id_offsets
+        .push(108);
+    duplicate_type_owner
+        .store(ir.native.namespace_mut("f3d"))
+        .unwrap();
+    assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
+        finding.entity.as_deref()
+            == Some(duplicate_type_owner.design_feature_timelines[0].id.as_str())
+            && finding.message == "Fusion Design feature timeline has an invalid typed frame"
+    }));
+
+    let mut invalid_offsets = native.clone();
+    invalid_offsets.design_feature_timelines[0].item_record_index_offsets[0] = 244;
+    invalid_offsets
+        .store(ir.native.namespace_mut("f3d"))
+        .unwrap();
+    assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
+        finding.entity.as_deref() == Some(invalid_offsets.design_feature_timelines[0].id.as_str())
+            && finding.message == "Fusion Design feature timeline has an invalid typed frame"
+    }));
+
+    native.design_feature_timelines[0].item_record_indices[0] = 102;
+    native.store(ir.native.namespace_mut("f3d")).unwrap();
+    assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
+        finding.entity.as_deref() == Some(native.design_feature_timelines[0].id.as_str())
+            && finding.message == "Fusion Design feature timeline has an invalid typed frame"
+    }));
 }
 
 #[test]
 fn generated_source_less_writes_design_type_metastream() {
-    use crate::records::DesignType;
+    use crate::records::SegmentType;
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let mut native = f3d_native_mut(&mut source_less);
     native.design_types = vec![
-        DesignType {
+        SegmentType {
             id: "generated:design-type#0".into(),
             byte_offset: 0,
             module: "Fusion".to_owned(),
@@ -9650,7 +10389,7 @@ fn generated_source_less_writes_design_type_metastream() {
             version: 7,
             version_offset: 0,
         },
-        DesignType {
+        SegmentType {
             id: "generated:design-type#1".into(),
             byte_offset: 0,
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
@@ -9663,7 +10402,7 @@ fn generated_source_less_writes_design_type_metastream() {
             version: 9,
             version_offset: 0,
         },
-        DesignType {
+        SegmentType {
             id: "generated:design-type#2".into(),
             byte_offset: 0,
             module: "FutureFeature".to_owned(),
@@ -9935,11 +10674,11 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
 
 #[test]
 fn generated_source_less_writes_design_ownership_and_record_headers() {
-    use crate::records::{DesignBodyMember, DesignEntityHeader, DesignRecordHeader, DesignType};
+    use crate::records::{DesignBodyMember, DesignEntityHeader, DesignRecordHeader, SegmentType};
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let mut native = f3d_native_mut(&mut source_less);
-    native.design_types = vec![DesignType {
+    native.design_types = vec![SegmentType {
         id: "generated:design-type#0".into(),
         byte_offset: 0,
         module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
@@ -9971,7 +10710,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         byte_offset: 0,
         entity_suffix: 277,
         entity_id: "0_277".into(),
-        class_tag: "269".into(),
+        class_tag: "256".into(),
         optional_slot_present: true,
         module: Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: Some(584),
@@ -10056,7 +10795,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
 #[test]
 fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     use crate::records::{
-        DesignEntityHeader, DesignType, SketchConstraintKind, SketchCurveGeometry,
+        DesignEntityHeader, SegmentType, SketchConstraintKind, SketchCurveGeometry,
         SketchCurveIdentity, SketchPoint, SketchRelation,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -10064,24 +10803,24 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let mut native = f3d_native_mut(&mut source_less);
     native.design_types = vec![
-        DesignType {
-            id: "generated:sketch-object#0".into(),
+        SegmentType {
+            id: "generated:sketch-type-00-object#0".into(),
             byte_offset: 0,
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
             entity_ids: vec![277],
             entity_id_offsets: Vec::new(),
-            type_guid: "22222222-3333-4444-5555-666666666666".into(),
+            type_guid: crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID.into(),
             type_guid_offset: 0,
             base_type_guid: None,
             base_type_guid_offset: None,
             version: 1,
             version_offset: 0,
         },
-        DesignType {
-            id: "generated:sketch-relation-type#0".into(),
+        SegmentType {
+            id: "generated:sketch-type-01-relation#0".into(),
             byte_offset: 1,
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
-            entity_ids: Vec::new(),
+            entity_ids: vec![33],
             entity_id_offsets: Vec::new(),
             type_guid: "60403D47-0C49-49B0-BDE8-1679608164A2".into(),
             type_guid_offset: 0,
@@ -10090,13 +10829,80 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             version: 1,
             version_offset: 0,
         },
+        SegmentType {
+            id: "generated:sketch-type-02-point#0".into(),
+            byte_offset: 2,
+            module: "Geometry".into(),
+            entity_ids: vec![100],
+            entity_id_offsets: Vec::new(),
+            type_guid: "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB".into(),
+            type_guid_offset: 0,
+            base_type_guid: None,
+            base_type_guid_offset: None,
+            version: 11,
+            version_offset: 0,
+        },
+        SegmentType {
+            id: "generated:sketch-type-03-line#0".into(),
+            byte_offset: 3,
+            module: "Geometry".into(),
+            entity_ids: vec![600],
+            entity_id_offsets: Vec::new(),
+            type_guid: "DCA267ED-D615-4934-B64F-AD805E8003E2".into(),
+            type_guid_offset: 0,
+            base_type_guid: None,
+            base_type_guid_offset: None,
+            version: 2,
+            version_offset: 0,
+        },
+        SegmentType {
+            id: "generated:sketch-type-04-circular#0".into(),
+            byte_offset: 4,
+            module: "Geometry".into(),
+            entity_ids: vec![601],
+            entity_id_offsets: Vec::new(),
+            type_guid: "F0130424-8B7E-4092-93C9-1CA807482534".into(),
+            type_guid_offset: 0,
+            base_type_guid: None,
+            base_type_guid_offset: None,
+            version: 0,
+            version_offset: 0,
+        },
+        SegmentType {
+            id: "generated:sketch-type-05-nurbs#0".into(),
+            byte_offset: 5,
+            module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
+            entity_ids: vec![602],
+            entity_id_offsets: Vec::new(),
+            type_guid: "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B".into(),
+            type_guid_offset: 0,
+            base_type_guid: None,
+            base_type_guid_offset: None,
+            version: 3,
+            version_offset: 0,
+        },
+        SegmentType {
+            id: "generated:sketch-type-06-point-companion#0".into(),
+            byte_offset: 6,
+            module: "Geometry".into(),
+            entity_ids: vec![101],
+            entity_id_offsets: Vec::new(),
+            type_guid: crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE
+                .0
+                .into(),
+            type_guid_offset: 0,
+            base_type_guid: None,
+            base_type_guid_offset: None,
+            version: crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.1,
+            version_offset: 0,
+        },
     ];
     native.design_entity_headers = vec![DesignEntityHeader {
         id: "generated:sketch-header#0".into(),
         byte_offset: 0,
         entity_suffix: 277,
         entity_id: "0_277".into(),
-        class_tag: "269".into(),
+        class_tag: "256".into(),
         optional_slot_present: true,
         module: Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: Some(584),
@@ -10110,22 +10916,35 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     native.sketch_points = vec![SketchPoint {
         id: "generated:sketch-point#0".into(),
         record_index: 100,
-        owner_reference: None,
-        class_tag: "360".into(),
+        owner_reference: Some(277),
+        class_tag: "258".into(),
         byte_offset: 0,
         coordinate_offset: 89,
         entity_genesis: Some(900),
-        persistent_id: 500,
+        record_form: crate::records::SketchPointRecordForm::Version11 {
+            padded_paired_reference: false,
+        },
+        persistent_id: Some(500),
         paired_reference: 101,
+        flags: [0; 8],
         coordinates: Point2::new(12.5, -25.0),
-        raw_bytes: Vec::new(),
+        depth: 0.0,
+        closure: Some(crate::records::SketchPointClosure {
+            selector: 0,
+            state: 1,
+        }),
+        companion: Some(crate::records::SketchPointCompanion {
+            prefix_present_zero: false,
+            reference_encoding: crate::records::SketchPointCompanionReferenceEncoding::SameSegment,
+            incident_curves: Vec::new(),
+        }),
     }];
     native.sketch_curve_identities = vec![
         SketchCurveIdentity {
             id: "generated:sketch-curve#0".into(),
             record_index: 600,
-            owner_reference: None,
-            class_tag: "361".into(),
+            owner_reference: Some(277),
+            class_tag: "259".into(),
             byte_offset: 0,
             geometry_offset: 133,
             entity_genesis: Some(901),
@@ -10141,8 +10960,8 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         SketchCurveIdentity {
             id: "generated:sketch-curve#1".into(),
             record_index: 601,
-            owner_reference: None,
-            class_tag: "362".into(),
+            owner_reference: Some(277),
+            class_tag: "260".into(),
             byte_offset: 0,
             geometry_offset: 133,
             entity_genesis: None,
@@ -10160,8 +10979,8 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         SketchCurveIdentity {
             id: "generated:sketch-curve#2".into(),
             record_index: 602,
-            owner_reference: None,
-            class_tag: "363".into(),
+            owner_reference: Some(277),
+            class_tag: "261".into(),
             byte_offset: 0,
             geometry_offset: 133,
             entity_genesis: None,
@@ -10195,6 +11014,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         owner_reference_offset: 0,
         auxiliary_references: Vec::new(),
         auxiliary_reference_offsets: Vec::new(),
+        rectangular_counted_reference_count: None,
         members: vec![100, 600],
         resolved_members: Vec::new(),
         member_offsets: Vec::new(),
@@ -10227,6 +11047,60 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         })
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less sketch BulkStream encode");
+    let mut extended_source_less = source_less.clone();
+    {
+        let mut archive = zip::ZipArchive::new(Cursor::new(&encoded)).expect("generated F3D ZIP");
+        let mut bulkstream = Vec::new();
+        archive
+            .by_name("FusionAssetName[Active]/Design1/BulkStream.dat")
+            .expect("generated Design BulkStream")
+            .read_to_end(&mut bulkstream)
+            .expect("read generated Design BulkStream");
+        let mut companion = Vec::new();
+        companion.extend_from_slice(&3u32.to_le_bytes());
+        companion.extend_from_slice(b"262");
+        companion.extend_from_slice(&101u32.to_le_bytes());
+        companion.extend_from_slice(&[0; 15]);
+        companion.push(1);
+        companion.extend_from_slice(&100u64.to_le_bytes());
+        companion.extend_from_slice(&[0; 2]);
+        assert_eq!(companion.len(), 37);
+        assert!(bulkstream
+            .windows(companion.len())
+            .any(|window| window == companion));
+    }
+    f3d_native_mut(&mut source_less).sketch_points[0].owner_reference = None;
+    let error = F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect_err("source-less points require their direct owner backlink");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    f3d_native_mut(&mut source_less).sketch_points[0].owner_reference = Some(277);
+    f3d_native_mut(&mut source_less).design_types[6]
+        .entity_ids
+        .clear();
+    let error = F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect_err("source-less points require a registered inverse companion");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    f3d_native_mut(&mut source_less).design_types[6].entity_ids = vec![101];
+    f3d_native_mut(&mut source_less).design_types[2].version = 10;
+    let error = F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect_err("source-less points require the current writable class version");
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    f3d_native_mut(&mut source_less).design_types[2].version = 11;
     {
         let relation = &mut f3d_native_mut(&mut source_less).sketch_relations[0];
         relation.members = vec![100, 600, 100, 600, 100, 600, 100, 600];
@@ -10303,10 +11177,26 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         .expect("source-less sketch BulkStream round trip");
     let native = f3d_native(&round_trip.ir);
     assert_eq!(native.sketch_points.len(), 1);
-    assert_eq!(native.sketch_points[0].persistent_id, 500);
+    assert_eq!(native.sketch_points[0].persistent_id, Some(500));
     assert_eq!(native.sketch_points[0].entity_genesis, Some(900));
     assert_eq!(native.sketch_points[0].coordinate_offset, 141);
     assert_eq!(native.sketch_points[0].owner_reference, Some(277));
+    assert_eq!(native.sketch_points[0].depth, 0.0);
+    assert_eq!(
+        native.sketch_points[0].closure,
+        Some(crate::records::SketchPointClosure {
+            selector: 0,
+            state: 1,
+        })
+    );
+    assert_eq!(
+        native.sketch_points[0].companion,
+        Some(crate::records::SketchPointCompanion {
+            prefix_present_zero: false,
+            reference_encoding: crate::records::SketchPointCompanionReferenceEncoding::SameSegment,
+            incident_curves: Vec::new(),
+        })
+    );
     assert_eq!(
         native.sketch_points[0].coordinates,
         Point2::new(12.5, -25.0)
@@ -10320,6 +11210,10 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     assert_eq!(genesis_curve.entity_genesis, Some(901));
     assert_eq!(genesis_curve.geometry_offset, 185);
     assert_eq!(genesis_curve.owner_reference, Some(277));
+    assert!(native
+        .sketch_curve_identities
+        .iter()
+        .all(|curve| curve.owner_reference == Some(277)));
     for expected in expected_geometries {
         assert!(native
             .sketch_curve_identities
@@ -10338,7 +11232,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         [
             crate::records::SketchRelationOperand::Point {
                 record_index: 100,
-                persistent_id: 500,
+                persistent_id: Some(500),
             },
             crate::records::SketchRelationOperand::Curve {
                 record_index: 600,
@@ -10357,11 +11251,63 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             },
             crate::records::SketchRelationOperand::Point {
                 record_index: 100,
-                persistent_id: 500,
+                persistent_id: Some(500),
             },
         ]
     );
     assert!(crate::validate::validate_native(&round_trip.ir).is_empty());
+
+    {
+        let point = &mut f3d_native_mut(&mut extended_source_less).sketch_points[0];
+        point.depth = 7.5;
+        point.flags = [1, 0, 0, 1, 0, 1, 0, 1];
+        point.record_form = crate::records::SketchPointRecordForm::Version11 {
+            padded_paired_reference: true,
+        };
+        point.closure = Some(crate::records::SketchPointClosure {
+            selector: 4,
+            state: 0,
+        });
+        point.companion = Some(crate::records::SketchPointCompanion {
+            prefix_present_zero: true,
+            reference_encoding: crate::records::SketchPointCompanionReferenceEncoding::SameSegment,
+            incident_curves: vec![600],
+        });
+    }
+    let mut extended_encoded = Vec::new();
+    F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &extended_source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut extended_encoded))
+        .expect("source-less extended sketch point encode");
+    let extended_round_trip = F3dCodec
+        .decode(
+            &mut Cursor::new(extended_encoded),
+            &DecodeOptions::default(),
+        )
+        .expect("source-less extended sketch point round trip");
+    let extended_native = f3d_native(&extended_round_trip.ir);
+    let extended_point = &extended_native.sketch_points[0];
+    assert_eq!(extended_point.depth, 7.5);
+    assert_eq!(extended_point.flags, [1, 0, 0, 1, 0, 1, 0, 1]);
+    assert_eq!(
+        extended_point.closure,
+        Some(crate::records::SketchPointClosure {
+            selector: 4,
+            state: 0,
+        })
+    );
+    assert_eq!(
+        extended_point.companion,
+        Some(crate::records::SketchPointCompanion {
+            prefix_present_zero: true,
+            reference_encoding: crate::records::SketchPointCompanionReferenceEncoding::SameSegment,
+            incident_curves: vec![600],
+        })
+    );
+    assert!(crate::validate::validate_native(&extended_round_trip.ir).is_empty());
 
     let mut inconsistent = round_trip.ir.clone();
     f3d_native_mut(&mut inconsistent).sketch_relations[0]
@@ -10409,14 +11355,9 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
 }
 
 #[test]
-fn generated_source_less_writes_act_table_channels_and_root_component() {
-    use std::collections::BTreeMap;
+fn generated_source_less_rejects_act_without_segment_metadata() {
+    use crate::records::ActEntity;
 
-    use crate::records::{ActEntity, ActGuid, ActRootComponent};
-
-    let appearance_guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
-    let physical_guid = "cccccccc-1111-2222-3333-dddddddddddd";
-    let standalone_guid = "eeeeeeee-1111-2222-3333-ffffffffffff";
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let mut native = f3d_native_mut(&mut source_less);
     native.act_entities = vec![ActEntity {
@@ -10428,152 +11369,28 @@ fn generated_source_less_writes_act_table_channels_and_root_component() {
         table_entity_id_offset: None,
         channel_entity_id_offset: None,
         in_table: true,
-        channel_class_tag: Some("261".into()),
-        channels: BTreeMap::from([
-            ("Appearance".into(), appearance_guid.into()),
-            ("PhysicalMaterial".into(), physical_guid.into()),
-        ]),
-        channel_guid_offsets: BTreeMap::new(),
+        channel_class_tag: None,
+        channels: Default::default(),
+        channel_guid_offsets: Default::default(),
     }];
-    native.act_guids = [standalone_guid, appearance_guid, physical_guid]
-        .into_iter()
-        .enumerate()
-        .map(|(ordinal, guid)| ActGuid {
-            id: format!("generated:act-guid#{ordinal}"),
-            byte_offset: 0,
-            guid_offset: 0,
-            ordinal: u32::try_from(ordinal).unwrap(),
-            guid: guid.into(),
-        })
-        .collect();
-    native.act_root_components = vec![ActRootComponent {
-        id: "generated:act-root#0".into(),
-        byte_offset: 0,
-        record_index: 9,
-        record_index_offset: 0,
-        class_tag: "267".into(),
-        instance_root_record: 12,
-        instance_root_record_offset: 0,
-        components_root_record: 7,
-        components_root_record_offset: 0,
-        registry_flag: 1,
-        registry_flag_offset: 0,
-        entity_id: "0_3".into(),
-        entity_id_offset: 0,
-        display_name: "Generated Design".into(),
-        display_name_offset: 0,
-    }];
-
     drop(native);
-    let mut encoded = Vec::new();
-    F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .expect("source-less ACT encode");
-    let round_trip = F3dCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .expect("source-less ACT round trip");
-    let native = f3d_native(&round_trip.ir);
-    assert_eq!(native.act_entities.len(), 1);
-    assert!(native.act_entities[0].in_table);
-    assert_eq!(native.act_entities[0].record_index, 7);
-    assert_eq!(native.act_entities[0].entity_id, "0_985");
-    assert_eq!(
-        native.act_entities[0]
-            .channels
-            .get("Appearance")
-            .map(String::as_str),
-        Some(appearance_guid)
-    );
-    assert_eq!(native.act_guids.len(), 3);
-    assert!(native
-        .act_guids
-        .iter()
-        .any(|guid| guid.guid == standalone_guid));
-    assert_eq!(native.act_root_components.len(), 1);
-    assert_eq!(native.act_root_components[0].instance_root_record, 12);
-    assert_eq!(native.act_root_components[0].components_root_record, 7);
-    assert_eq!(
-        native.act_root_components[0].display_name,
-        "Generated Design"
-    );
-}
-
-#[test]
-fn generated_source_less_rejects_lossy_act_layouts() {
-    use std::collections::BTreeMap;
-
-    use crate::records::{ActEntity, ActGuid};
-
-    let channel_guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
-    let standalone_guid = "eeeeeeee-1111-2222-3333-ffffffffffff";
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
-    {
-        let mut native = f3d_native_mut(&mut source_less);
-        native.act_entities = vec![ActEntity {
-            id: "generated:act-entity#0".into(),
-            record_index: 7,
-            table_record_index_offset: None,
-            channel_record_index_offset: None,
-            entity_id: "0_985".into(),
-            table_entity_id_offset: None,
-            channel_entity_id_offset: None,
-            in_table: true,
-            channel_class_tag: Some("261".into()),
-            channels: BTreeMap::from([("Appearance".into(), channel_guid.into())]),
-            channel_guid_offsets: BTreeMap::new(),
-        }];
-        native.act_guids = [channel_guid, standalone_guid]
-            .into_iter()
-            .enumerate()
-            .map(|(ordinal, guid)| ActGuid {
-                id: format!("generated:act-guid#{ordinal}"),
-                byte_offset: 0,
-                guid_offset: 0,
-                ordinal: ordinal as u32,
-                guid: guid.into(),
-            })
-            .collect();
-    }
     let error = F3dCodec
         .plan(cadmpeg_ir::codec::EncodeInput {
             ir: &source_less,
             fidelity: None,
         })
         .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("ACT GUID order must not be normalized");
+        .expect_err("ACT generation without its record registry must fail atomically");
     assert!(error
         .to_string()
-        .contains("cannot preserve this ACT GUID pool ordering"));
-
-    {
-        let mut native = f3d_native_mut(&mut source_less);
-        native.act_guids.clear();
-        native.act_entities[0].in_table = false;
-        native.act_entities[0].channels.clear();
-        native.act_entities[0].channel_class_tag = None;
-    }
-    let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("unemitted ACT entities must not disappear");
-    assert!(error
-        .to_string()
-        .contains("has neither a table row nor channels"));
+        .contains("requires a retained MetaStream record registry"));
 }
 
 #[test]
-fn generated_source_less_writes_protein_appearance_and_body_binding() {
+fn generated_source_less_writes_unassigned_protein_appearance() {
     use std::collections::BTreeMap;
 
-    use crate::records::{DesignMaterialAssignment, DesignType};
-    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::appearance::Appearance;
     use cadmpeg_ir::ids::AppearanceId;
     use cadmpeg_ir::topology::Color;
 
@@ -10601,45 +11418,6 @@ fn generated_source_less_writes_protein_appearance_and_body_binding() {
         ]),
         textures: Vec::new(),
     }];
-    source_less.model.appearance_bindings = vec![AppearanceBinding {
-        id: "generated:appearance-binding#0".into(),
-        target: AppearanceTarget::Body(source_less.model.bodies[0].id.clone()),
-        appearance: appearance_id,
-        source_entity_id: Some("0_985".into()),
-        object_type: Some("Body".into()),
-        channels: BTreeMap::new(),
-    }];
-    let mut native = f3d_native_mut(&mut source_less);
-    native.design_types = vec![DesignType {
-        id: "generated:body-object#0".into(),
-        byte_offset: 0,
-        module: "Body".to_owned(),
-        entity_ids: vec![985],
-        entity_id_offsets: Vec::new(),
-        type_guid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into(),
-        type_guid_offset: 0,
-        base_type_guid: None,
-        base_type_guid_offset: None,
-        version: 1,
-        version_offset: 0,
-    }];
-    native.design_material_assignments = vec![DesignMaterialAssignment {
-        id: "generated:material-assignment#0".into(),
-        asm_body_key: 42,
-        asm_body_key_offset: 0,
-        entity_suffix: 985,
-        entity_suffix_offset: 0,
-        entity_id: "0_985".into(),
-        entity_id_offset: 0,
-        visual_guid: visual_guid.into(),
-        visual_guid_offset: 0,
-        physical_token: Some("PrismMaterial-Generated".into()),
-        physical_token_offset: None,
-        visual_preset: None,
-        visual_preset_offset: None,
-    }];
-
-    drop(native);
     let mut encoded = Vec::new();
     F3dCodec
         .plan(cadmpeg_ir::codec::EncodeInput {
@@ -10671,51 +11449,67 @@ fn generated_source_less_writes_protein_appearance_and_body_binding() {
         Some(&0.25)
     );
     assert_eq!(appearance.properties.get("refraction_index"), Some(&1.5));
-    assert_eq!(round_trip.ir.model.appearance_bindings.len(), 1);
-    assert!(matches!(
-        &round_trip.ir.model.appearance_bindings[0].target,
-        AppearanceTarget::Body(body) if body == &round_trip.ir.model.bodies[0].id
-    ));
-    assert_eq!(round_trip.ir.model.bodies[0].color, appearance.base_color);
-    assert_eq!(
-        f3d_native(&round_trip.ir).design_material_assignments[0].asm_body_key,
-        42
-    );
-    assert_eq!(
-        f3d_native(&round_trip.ir).design_material_assignments[0].visual_guid,
-        visual_guid
-    );
-    assert_eq!(
-        f3d_native(&round_trip.ir).design_material_assignments[0].visual_preset,
-        None
+    assert!(round_trip.ir.model.appearance_bindings.is_empty());
+    assert!(crate::validate::validate_native(&round_trip.ir).is_empty());
+    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    assert!(
+        validation.is_ok(),
+        "validation findings: {:?}",
+        validation.findings
     );
 }
 
 #[test]
-fn generated_source_less_rejects_collapsed_design_body_bindings() {
+fn generated_source_less_rejects_material_assignment_without_presentation_graph() {
     use crate::records::DesignMaterialAssignment;
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
-    f3d_native_mut(&mut source_less).design_material_assignments = [("0_985", 985), ("0_986", 986)]
+    f3d_native_mut(&mut source_less).design_material_assignments = vec![DesignMaterialAssignment {
+        id: "generated:material-assignment#0".into(),
+        asm_body_key: 42,
+        asm_body_key_offset: 0,
+        entity_suffix: 985,
+        entity_suffix_offset: 0,
+        entity_id: "0_985".into(),
+        entity_id_offset: 0,
+        visual_guid: "11111111-2222-3333-4444-555555555555".into(),
+        visual_guid_offset: 0,
+        physical_token: Some("PrismMaterial-Generated".into()),
+        physical_token_offset: None,
+        visual_preset: None,
+        visual_preset_offset: None,
+    }];
+
+    let error = F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect_err("an incomplete generated presentation graph must be refused");
+    assert!(error
+        .to_string()
+        .contains("requires a typed body-presentation B-rep and scene graph"));
+}
+
+#[test]
+fn generated_source_less_rejects_collapsed_visibility_body_bindings() {
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    source_less.model.bodies[0].visible = Some(false);
+    let body = source_less.model.bodies[0].id.clone();
+    f3d_native_mut(&mut source_less).body_visibilities = [985, 986]
         .into_iter()
         .enumerate()
-        .map(
-            |(ordinal, (entity_id, entity_suffix))| DesignMaterialAssignment {
-                id: format!("generated:material-assignment#{ordinal}"),
-                asm_body_key: 42,
-                asm_body_key_offset: 0,
-                entity_suffix,
-                entity_suffix_offset: 0,
-                entity_id: entity_id.into(),
-                entity_id_offset: 0,
-                visual_guid: "11111111-2222-3333-4444-555555555555".into(),
-                visual_guid_offset: 0,
-                physical_token: Some("PrismMaterial-Generated".into()),
-                physical_token_offset: None,
-                visual_preset: None,
-                visual_preset_offset: None,
-            },
-        )
+        .map(|(ordinal, entity_suffix)| crate::records::BodyVisibility {
+            id: format!("generated:body-visibility#{ordinal}"),
+            body: body.clone(),
+            stream: "generated/Design1/BulkStream.dat".into(),
+            byte_offset: 0,
+            asm_body_key_offset: 0,
+            asm_body_key: 42,
+            entity_suffix,
+            visible: false,
+        })
         .collect();
 
     let error = F3dCodec
@@ -10864,6 +11658,119 @@ fn validation_rejects_wrong_sketch_constraint_kind_with_equal_cardinality() {
 }
 
 #[test]
+fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
+    use crate::records::{
+        ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector,
+        DesignBodyRecipeOperand, DesignBodyRecipeOperandOwner, DesignBodyRecipeReference,
+        DesignCombineBodySelection, DesignCombineForm, DesignCombineOperation,
+        DesignExtrudeOperation, DesignParameterScope, DesignRecordHeader,
+    };
+
+    let stream = "f3d:Design/BulkStream.dat";
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut scopes = Vec::new();
+    let mut headers = Vec::new();
+    let mut recipes = Vec::new();
+    let mut operands = Vec::new();
+    for ordinal in 0..2u32 {
+        let scope_record_index = 10 + ordinal;
+        let operand_record_index = 100 + ordinal * 10;
+        let byte_offset = 1_000 + u64::from(ordinal) * 1_000;
+        let recipe_id = format!("{stream}:construction-recipe#{ordinal}");
+        let mut scope = DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#{scope_record_index}"),
+            "Combine",
+            scope_record_index,
+        );
+        scope.reference_members = vec![1, 2, 3, 4, 5, operand_record_index];
+        scope.combine_operation = Some(DesignCombineOperation {
+            form: DesignCombineForm::Standard,
+            operation: DesignExtrudeOperation::Join,
+            operation_offset: 0,
+            keep_tools: false,
+            keep_tools_offset: 0,
+            target: DesignCombineBodySelection {
+                record_index: operand_record_index,
+                external_identity: None,
+            },
+            tools: vec![DesignCombineBodySelection {
+                record_index: operand_record_index + 1,
+                external_identity: None,
+            }],
+        });
+        scopes.push(scope);
+        headers.push(DesignRecordHeader {
+            id: format!("{stream}:design-record-header#{operand_record_index}"),
+            record_index: operand_record_index,
+            class_tag: "365".into(),
+            byte_offset,
+        });
+        recipes.push(ConstructionRecipe {
+            id: recipe_id.clone(),
+            byte_offset: byte_offset + 220,
+            record_index_offset: None,
+            kind: ConstructionRecipeKind::Body,
+            design_id: Some("301".into()),
+            design_id_offset: Some(byte_offset + 197),
+            design_selector: Some(ConstructionRecipeSelector {
+                value: operand_record_index + 4,
+                byte_offset: byte_offset + 200,
+            }),
+            recipe_index: ordinal,
+            record_index: i32::try_from(operand_record_index + 3).unwrap(),
+        });
+        operands.push(DesignBodyRecipeOperand {
+            id: format!("{stream}:design-body-recipe-operand#{operand_record_index}"),
+            scope_record_index,
+            owner: DesignBodyRecipeOperandOwner::ScopeReference {
+                scope_reference_ordinal: 5,
+            },
+            record_index: operand_record_index,
+            byte_offset,
+            class_tag: "365".into(),
+            asset_id: "11111111-1111-4111-8111-111111111111".into(),
+            asset_id_offset: byte_offset + 56,
+            context_id: "22222222-2222-4222-8222-222222222222".into(),
+            context_id_offset: byte_offset + 136,
+            references: vec![DesignBodyRecipeReference {
+                design_reference: u64::from(300 + ordinal),
+                design_reference_offset: byte_offset + 25,
+                form: 3,
+                form_offset: byte_offset + 33,
+                candidate_faces: Vec::new(),
+                preceding_candidate_faces: Vec::new(),
+                preceding_body_slots: Vec::new(),
+            }],
+            nested_record_index: u64::from(operand_record_index + 3),
+            nested_record_index_offset: byte_offset + 38,
+            recipe_id,
+            resolved_face_slot: None,
+            resolved_body_state_id: None,
+            resolved_body_slot: None,
+            resolved_body_face_slots: Vec::new(),
+            next_record_index: operand_record_index + 4,
+            next_byte_offset: byte_offset + 300,
+        });
+    }
+    {
+        let mut native = f3d_native_mut(&mut ir);
+        native.design_parameter_scopes = scopes;
+        native.design_record_headers = headers;
+        native.construction_recipes = recipes;
+        native.design_body_recipe_operands = operands;
+    }
+
+    let findings = crate::validate::validate_native(&ir);
+    let invalid_operands = findings
+        .iter()
+        .filter(|finding| {
+            finding.message == "Fusion Design body recipe operand has an invalid nested frame"
+        })
+        .collect::<Vec<_>>();
+    assert!(invalid_operands.is_empty(), "{invalid_operands:#?}");
+}
+
+#[test]
 fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
@@ -10875,12 +11782,13 @@ fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
         assert!(native.sketch_points.len() >= 2);
         assert!(native.sketch_curve_identities.len() >= 2);
         native.sketch_points[1].persistent_id = native.sketch_points[0].persistent_id;
-        native.sketch_points[1].owner_reference = native.sketch_points[0].owner_reference;
+        native.sketch_points[0].owner_reference = Some(100);
+        native.sketch_points[1].owner_reference = Some(100);
         native.sketch_curve_identities[1].primary_id = native.sketch_curve_identities[0].primary_id;
         native.sketch_curve_identities[1].secondary_id =
             native.sketch_curve_identities[0].secondary_id;
-        native.sketch_curve_identities[1].owner_reference =
-            native.sketch_curve_identities[0].owner_reference;
+        native.sketch_curve_identities[0].owner_reference = Some(100);
+        native.sketch_curve_identities[1].owner_reference = Some(100);
         (
             native.sketch_points[1].id.clone(),
             native.sketch_curve_identities[1].id.clone(),
@@ -10930,6 +11838,35 @@ fn validation_accepts_sketch_geometry_persistent_identities_reused_by_another_ow
             finding.check == cadmpeg_ir::Check::NativeLinks
                 && (finding.entity.as_deref() == Some(point_id.as_str())
                     || finding.entity.as_deref() == Some(curve_id.as_str()))
+                && finding.message.contains("persistent identity")
+        })
+    );
+}
+
+#[test]
+fn validation_accepts_sketch_geometry_identities_with_unknown_owner() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated F3D decode");
+    let mut ir = decoded.ir;
+    {
+        let mut native = f3d_native_mut(&mut ir);
+        assert!(native.sketch_points.len() >= 2);
+        assert!(native.sketch_curve_identities.len() >= 2);
+        native.sketch_points[1].persistent_id = native.sketch_points[0].persistent_id;
+        native.sketch_points[0].owner_reference = None;
+        native.sketch_points[1].owner_reference = None;
+        native.sketch_curve_identities[1].primary_id = native.sketch_curve_identities[0].primary_id;
+        native.sketch_curve_identities[1].secondary_id =
+            native.sketch_curve_identities[0].secondary_id;
+        native.sketch_curve_identities[0].owner_reference = None;
+        native.sketch_curve_identities[1].owner_reference = None;
+    }
+
+    assert!(
+        !crate::validate::validate_native(&ir).iter().any(|finding| {
+            finding.check == cadmpeg_ir::Check::NativeLinks
                 && finding.message.contains("persistent identity")
         })
     );
@@ -11071,6 +12008,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         entity_id: "0_10".into(),
         entity_suffix: 10,
         entity_reference_offset: 250,
+        region_selection: None,
         paired_class_tag: "260".into(),
         paired_byte_offset: 300,
     };
@@ -11086,9 +12024,12 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             reference: None,
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 128,
-            extent_discriminators: [1, 2],
+            direction_face_extend_values: [1, 2],
+            side_extent_discriminators: [1, 0],
+            side_extent_discriminator_offsets: [177, 190],
+            first_side_target_ordinal: None,
             extent: DesignExtrudeExtent::OneSidedDistance,
-            extent_discriminator_offsets: [132, 136],
+            direction_face_extend_offsets: [132, 136],
             direction_reversed: false,
             direction_reversed_offset: 140,
             solid_operation: true,
@@ -11106,6 +12047,8 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         coil_section_placement_offset: None,
         coil_clockwise: None,
         coil_clockwise_offset: None,
+        coil_placement: None,
+        coil_transform: None,
         feature_ordinal: 1,
         feature_ordinal_offset: 220,
         history_state_id: None,
@@ -11150,6 +12093,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
+        hole_construction: None,
         extrude_profile: Some(profile),
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -11524,11 +12468,10 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let object = native
         .design_types
         .iter_mut()
-        .find(|design_type| design_type.module == crate::records::DESIGN_MODULE_BODY)
-        .expect("generated body design object");
+        .find(|design_type| design_type.entity_ids == [33, 44])
+        .expect("generated relation design type");
     assert!(object.byte_offset < object.version_offset);
-    assert_eq!(object.entity_id_offsets.len(), 1);
-    object.entity_ids[0] = 986;
+    assert_eq!(object.entity_id_offsets.len(), 2);
     object.type_guid = "91111111-2222-3333-4444-555555555555".into();
     object.base_type_guid = Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef".into());
     object.version = 9;
@@ -11539,8 +12482,8 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .expect("generated standalone ACT GUID");
     assert!(act_guid.guid_offset > act_guid.byte_offset);
     act_guid.guid = "ffffffff-1111-2222-3333-444444444444".into();
+    native.act_registry_channels[0].guid = "dddddddd-1111-2222-3333-eeeeeeeeeeee".into();
     let act_root = &mut native.act_root_components[0];
-    act_root.record_index = 70;
     act_root.instance_root_record = 71;
     act_root.components_root_record = 72;
     act_root.registry_flag = 0;
@@ -11554,8 +12497,6 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         "dddddddd-1111-2222-3333-eeeeeeeeeeee".into(),
     );
     let binding = &mut edited.model.appearance_bindings[0];
-    binding.id = binding.id.replace("0_985", "0_986");
-    binding.source_entity_id = Some("0_986".into());
     binding.channels.insert(
         "Appearance".into(),
         "dddddddd-1111-2222-3333-eeeeeeeeeeee".into(),
@@ -11568,8 +12509,6 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let assignment = &mut native.design_material_assignments[0];
     assert!(assignment.entity_id_offset > 0);
     assert!(assignment.asm_body_key_offset > 0);
-    assignment.entity_id = "0_986".into();
-    assignment.entity_suffix = 986;
     assignment.physical_token = Some("PrismMaterial-019".into());
     assignment.visual_preset = Some("Prism-002".into());
     native.body_native_keys[0].asm_body_key = Some(84);
@@ -11586,7 +12525,6 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     edited.model.appearances[0]
         .properties
         .insert("refraction_index".into(), 1.8);
-    native.act_entities[0].entity_id = "0_986".into();
     assert_eq!(
         native.act_entities[0].entity_id,
         native.design_material_assignments[0].entity_id
@@ -11628,15 +12566,17 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .find(|header| header.in_sketch_module())
         .cloned()
         .expect("round-trip sketch entity header");
+    assert_eq!(header.entity_suffix, 277);
+    assert_eq!(header.entity_id, "0_277");
     assert_eq!(header.record_reference, Some(585));
     assert_eq!(header.reference_indices, [44, 33]);
     let object = f3d_native(&round_trip.ir)
         .design_types
         .iter()
-        .find(|design_type| design_type.module == crate::records::DESIGN_MODULE_BODY)
+        .find(|design_type| design_type.entity_ids == [33, 44])
         .cloned()
-        .expect("round-trip body design object");
-    assert_eq!(object.entity_ids, [986]);
+        .expect("round-trip relation design type");
+    assert_eq!(object.entity_ids, [33, 44]);
     assert_eq!(object.type_guid, "91111111-2222-3333-4444-555555555555");
     assert_eq!(
         object.base_type_guid.as_deref(),
@@ -11648,20 +12588,24 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .iter()
         .any(|guid| guid.guid == "ffffffff-1111-2222-3333-444444444444"));
     let act_root = &f3d_native(&round_trip.ir).act_root_components[0];
-    assert_eq!(act_root.record_index, 70);
+    assert_eq!(act_root.record_index, 9);
     assert_eq!(act_root.instance_root_record, 71);
     assert_eq!(act_root.components_root_record, 72);
     assert_eq!(act_root.registry_flag, 0);
     assert_eq!(act_root.entity_id, "1_3");
     assert_eq!(act_root.display_name, "(Renamed)");
+    assert_eq!(
+        f3d_native(&round_trip.ir).act_registry_channels[0].guid,
+        "dddddddd-1111-2222-3333-eeeeeeeeeeee"
+    );
     let act_entity = &f3d_native(&round_trip.ir).act_entities[0];
-    assert_eq!(act_entity.entity_id, "0_986");
+    assert_eq!(act_entity.entity_id, "0_985");
     assert_eq!(
         act_entity.channels.get("Appearance").map(String::as_str),
         Some("dddddddd-1111-2222-3333-eeeeeeeeeeee")
     );
     let binding = &round_trip.ir.model.appearance_bindings[0];
-    assert_eq!(binding.source_entity_id.as_deref(), Some("0_986"));
+    assert_eq!(binding.source_entity_id.as_deref(), Some("0_985"));
     assert_eq!(
         binding.channels.get("Appearance").map(String::as_str),
         Some("dddddddd-1111-2222-3333-eeeeeeeeeeee")
@@ -11671,7 +12615,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert_eq!(lost_edge.record_index, 4_700);
     assert_eq!(
         f3d_native(&round_trip.ir).design_material_assignments[0].entity_id,
-        "0_986"
+        "0_985"
     );
     assert_eq!(
         f3d_native(&round_trip.ir).design_material_assignments[0]
@@ -11727,6 +12671,27 @@ fn generated_f3d_rejects_act_binding_divergence() {
 }
 
 #[test]
+fn generated_f3d_rejects_act_record_index_edit_without_metastream_edit() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated ACT decode");
+    let mut edited = decoded.ir;
+    update_f3d_native(&mut edited, |native| {
+        native.act_root_components[0].record_index += 1;
+    });
+
+    let error = F3dCodec
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
+        .expect_err("an ACT record-index edit without its MetaStream index must fail");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::NotImplemented(message)
+            if message.contains("ACT root edit changes fields")
+    ));
+}
+
+#[test]
 fn generated_f3d_rejects_material_assignment_divergence() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
@@ -11741,6 +12706,27 @@ fn generated_f3d_rejects_material_assignment_divergence() {
         .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
         .expect_err("divergent assignment and appearance must fail");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+}
+
+#[test]
+fn generated_f3d_rejects_partial_material_assignment_identity_edit() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated material decode");
+    let mut edited = decoded.ir;
+    update_f3d_native(&mut edited, |native| {
+        let assignment = &mut native.design_material_assignments[0];
+        assignment.entity_id = "0_986".into();
+        assignment.entity_suffix = 986;
+    });
+
+    let error = F3dCodec
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
+        .expect_err("a partial presentation-graph identity edit must fail");
+    assert!(error.to_string().contains(
+        "requires synchronized body-presentation, browser-node, B-rep, and scene graphs"
+    ));
 }
 
 #[test]
@@ -11890,6 +12876,109 @@ fn generated_f3d_rewrites_body_rgb_color() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated F3D decode");
     assert_eq!(round_trip.ir.model.bodies[0].color, Some(expected));
+}
+
+#[test]
+fn generated_f3d_rewrites_the_winning_truecolor_attribute() {
+    let source = f3d_with_smbh(&synthetic_geometry_with_body_truecolor_chain_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated truecolor F3D decode");
+    assert_eq!(
+        decoded.ir.model.bodies[0].color,
+        Some(cadmpeg_ir::topology::Color {
+            r: 32.0 / 255.0,
+            g: 64.0 / 255.0,
+            b: 96.0 / 255.0,
+            a: 1.0,
+        })
+    );
+    let mut edited = decoded.ir;
+    let expected = cadmpeg_ir::topology::Color {
+        r: 64.0 / 255.0,
+        g: 128.0 / 255.0,
+        b: 192.0 / 255.0,
+        a: 1.0,
+    };
+    edited.model.bodies[0].color = Some(expected);
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .expect("truecolor regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated truecolor decode");
+    assert_eq!(round_trip.ir.model.bodies[0].color, Some(expected));
+}
+
+#[test]
+fn generated_f3d_rewrites_fixed_width_decimal_color_text() {
+    let source = f3d_with_smbh(&synthetic_geometry_with_body_decimal_color_chain_smbh(
+        "04227264",
+    ));
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated decimal-color F3D decode");
+    let mut edited = decoded.ir;
+    let expected = cadmpeg_ir::topology::Color {
+        r: 1.0 / 255.0,
+        g: 2.0 / 255.0,
+        b: 3.0 / 255.0,
+        a: 1.0,
+    };
+    edited.model.bodies[0].color = Some(expected);
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut regenerated)
+        .expect("decimal-color regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated decimal-color decode");
+    assert_eq!(round_trip.ir.model.bodies[0].color, Some(expected));
+}
+
+#[test]
+fn generated_f3d_rejects_lossy_truecolor_edit() {
+    let source = f3d_with_smbh(&synthetic_geometry_with_body_truecolor_chain_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated truecolor F3D decode");
+    let mut edited = decoded.ir;
+    edited.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
+        r: 0.5,
+        g: 64.0 / 255.0,
+        b: 96.0 / 255.0,
+        a: 1.0,
+    });
+
+    let error = F3dCodec
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
+        .expect_err("nonrepresentable truecolor edit must be rejected");
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+}
+
+#[test]
+fn generated_f3d_rejects_decimal_color_text_growth() {
+    let source = f3d_with_smbh(&synthetic_geometry_with_body_decimal_color_chain_smbh(
+        "255",
+    ));
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated decimal-color F3D decode");
+    let mut edited = decoded.ir;
+    edited.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
+        r: 1.0,
+        g: 0.0,
+        b: 0.0,
+        a: 1.0,
+    });
+
+    let error = F3dCodec
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
+        .expect_err("wider decimal-color text must be rejected");
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
 
 #[test]
@@ -12065,8 +13154,7 @@ fn f3d_with_smbh_and_instance_properties(smbh: &[u8], properties: &[Vec<u8>]) ->
         .collect::<Vec<_>>();
 
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     zip.start_file(
         "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
         stored,
@@ -12083,32 +13171,67 @@ fn f3d_with_smbh_and_instance_properties(smbh: &[u8], properties: &[Vec<u8>]) ->
         .unwrap();
         zip.write_all(protein).unwrap();
     }
+    let (design_bulk, design_records) = generated_design_bulkstream();
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
         .unwrap();
-    zip.write_all(&generated_design_bulkstream()).unwrap();
+    zip.write_all(&design_bulk).unwrap();
     zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
         .unwrap();
-    zip.write_all(&generated_design_metastream()).unwrap();
+    zip.write_all(&generated_design_metastream(&design_records))
+        .unwrap();
+    let (act_bulk, act_records) = generated_act_bulkstream();
     zip.start_file(
         "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat",
         stored,
     )
     .unwrap();
-    zip.write_all(&generated_act_bulkstream()).unwrap();
+    zip.write_all(&act_bulk).unwrap();
+    zip.start_file(
+        "FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat",
+        stored,
+    )
+    .unwrap();
+    zip.write_all(&generated_act_metastream(&act_records))
+        .unwrap();
     zip.finish().unwrap().into_inner()
 }
 
-/// Build one Design `MetaStream` segment holding `types`, each entry a
-/// `(type GUID, base type GUID, version, module, entity ids)` tuple. An empty
-/// base GUID marks a root type. The segment carries the modern header shape
-/// and empty named-entity and record indexes, and closes on its own end.
+/// Build one Design `MetaStream` segment with an empty primary record index.
 pub(crate) fn design_metastream(types: &[(&str, &str, u32, &str, &[u64])]) -> Vec<u8> {
+    design_metastream_with_records(types, &[])
+}
+
+/// Build one Design `MetaStream` segment holding `types`, each entry a
+/// `(type GUID, base type GUID, version, module, entity ids)` tuple, and the
+/// ordered primary `(entity id, BulkStream offset)` record index. An empty base
+/// GUID marks a root type. The segment carries the modern header shape and
+/// closes on its own end.
+fn design_metastream_with_records(
+    types: &[(&str, &str, u32, &str, &[u64])],
+    records: &[(u64, u64)],
+) -> Vec<u8> {
+    segment_metastream(
+        "Design",
+        "FusionDesignSegmentType",
+        "Fusion",
+        types,
+        records,
+    )
+}
+
+fn segment_metastream(
+    short_name: &str,
+    full_name: &str,
+    add_in: &str,
+    types: &[(&str, &str, u32, &str, &[u64])],
+    records: &[(u64, u64)],
+) -> Vec<u8> {
     fn lp(out: &mut Vec<u8>, value: &str) {
         out.extend_from_slice(&(value.len() as u32).to_le_bytes());
         out.extend_from_slice(value.as_bytes());
     }
     let mut out = Vec::new();
-    lp(&mut out, "Design");
+    lp(&mut out, short_name);
     out.extend_from_slice(&0u32.to_le_bytes());
     let asset_guid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
     out.extend_from_slice(&(asset_guid.encode_utf16().count() as u32).to_le_bytes());
@@ -12117,8 +13240,8 @@ pub(crate) fn design_metastream(types: &[(&str, &str, u32, &str, &[u64])]) -> Ve
     }
     out.extend_from_slice(&1234u32.to_le_bytes());
     out.extend_from_slice(&[0; 12]);
-    lp(&mut out, "FusionDesignSegmentType");
-    lp(&mut out, "Fusion");
+    lp(&mut out, full_name);
+    lp(&mut out, add_in);
     out.extend_from_slice(&[0; 8]);
     out.extend_from_slice(&(types.len() as u32).to_le_bytes());
     for (type_guid, base_type_guid, version, module, entity_ids) in types {
@@ -12131,48 +13254,221 @@ pub(crate) fn design_metastream(types: &[(&str, &str, u32, &str, &[u64])]) -> Ve
             out.extend_from_slice(&entity_id.to_le_bytes());
         }
     }
-    // Empty named-entity list, record index, and secondary index, then the
-    // next-entity counter, the flag, and an empty property block.
-    out.extend_from_slice(&[0; 12]);
+    // Empty named-entity list, the primary record index, and an empty secondary
+    // index, then the next-entity counter, the flag, and an empty property
+    // block.
+    out.extend_from_slice(&0_u32.to_le_bytes());
+    out.extend_from_slice(&(records.len() as u32).to_le_bytes());
+    for (entity_id, bulk_offset) in records {
+        out.extend_from_slice(&entity_id.to_le_bytes());
+        out.extend_from_slice(&bulk_offset.to_le_bytes());
+    }
+    out.extend_from_slice(&0_u32.to_le_bytes());
     out.extend_from_slice(&[0; 16]);
     out
 }
 
-fn generated_design_metastream() -> Vec<u8> {
+fn generated_design_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     let base = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
-    design_metastream(&[
-        (
-            "11111111-2222-3333-4444-555555555555",
-            base,
-            3,
-            "Body",
-            &[985],
-        ),
-        (
-            "22222222-3333-4444-5555-666666666666",
-            base,
-            4,
-            "MSketch",
-            &[277],
-        ),
-        (
-            "33333333-4444-5555-6666-777777777777",
-            "",
-            5,
-            "Dimension",
-            &[270, 271],
-        ),
-        (
-            "60403D47-0C49-49B0-BDE8-1679608164A2",
-            base,
-            1,
-            "MSketch",
-            &[],
-        ),
-    ])
+    design_metastream_with_records(
+        &[
+            (
+                crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
+                crate::design::presentation::BODY_PRESENTATION_BASE_TYPE_GUID,
+                crate::design::presentation::BODY_PRESENTATION_TYPE_VERSION,
+                "Body",
+                &[985],
+            ),
+            (
+                crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID,
+                base,
+                4,
+                "MSketch",
+                &[277],
+            ),
+            (
+                "33333333-4444-5555-6666-777777777777",
+                "",
+                5,
+                "Dimension",
+                &[270, 271],
+            ),
+            (
+                "60403D47-0C49-49B0-BDE8-1679608164A2",
+                base,
+                1,
+                "MSketch",
+                &[33, 44],
+            ),
+            (
+                crate::design::presentation::BROWSER_NODE_TYPE_GUID,
+                crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID,
+                crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
+                crate::records::DESIGN_MODULE_FUSION,
+                &[900],
+            ),
+            (
+                crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
+                base,
+                crate::design::presentation::BREP_CONTAINER_TYPE_VERSION,
+                crate::records::DESIGN_MODULE_BODY,
+                &[7],
+            ),
+            (
+                crate::design::presentation::BODY_SCENE_NODE_TYPE_GUID,
+                base,
+                crate::design::presentation::BODY_SCENE_NODE_TYPE_VERSION,
+                "Scene",
+                &[986],
+            ),
+            (
+                crate::design::body::BODY_MAP_CARRIER_TYPE_GUID,
+                crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID,
+                crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
+                crate::records::DESIGN_MODULE_BODY,
+                &[899],
+            ),
+            (
+                "F0130424-8B7E-4092-93C9-1CA807482534",
+                base,
+                0,
+                "Geometry",
+                &[600],
+            ),
+            (
+                "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B",
+                base,
+                3,
+                crate::records::DESIGN_MODULE_SKETCH,
+                &[800],
+            ),
+            (
+                "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB",
+                base,
+                11,
+                "Geometry",
+                &[100, 200, 300, 400, 700],
+            ),
+            (
+                crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.0,
+                base,
+                crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.1,
+                crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.2,
+                &[101, 201, 301, 401, 701],
+            ),
+        ],
+        records,
+    )
 }
 
-fn generated_act_bulkstream() -> Vec<u8> {
+fn generated_act_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+    let entity_1 = [1];
+    let entity_2 = [2];
+    let entity_7 = [7];
+    let entity_9 = [9];
+    let types = [
+        (
+            "00000000-0000-0000-0000-000000000100",
+            "",
+            1,
+            "ACT",
+            &entity_2[..],
+        ),
+        (
+            "00000000-0000-0000-0000-000000000101",
+            "",
+            1,
+            "ACT",
+            &[][..],
+        ),
+        (
+            "00000000-0000-0000-0000-000000000102",
+            "",
+            1,
+            "ACT",
+            &[][..],
+        ),
+        (
+            "00000000-0000-0000-0000-000000000103",
+            "",
+            1,
+            "ACT",
+            &[][..],
+        ),
+        (
+            "00000000-0000-0000-0000-000000000104",
+            "",
+            1,
+            "ACT",
+            &[][..],
+        ),
+        (
+            "00000000-0000-0000-0000-000000000105",
+            "",
+            1,
+            "ACT",
+            &entity_7[..],
+        ),
+        (
+            "00000000-0000-0000-0000-000000000106",
+            "",
+            1,
+            "ACT",
+            &[][..],
+        ),
+        (
+            "00000000-0000-0000-0000-000000000107",
+            "",
+            1,
+            "ACT",
+            &[][..],
+        ),
+        (
+            "00000000-0000-0000-0000-000000000108",
+            "",
+            1,
+            "ACT",
+            &[][..],
+        ),
+        (
+            "00000000-0000-0000-0000-000000000109",
+            "",
+            1,
+            "ACT",
+            &[][..],
+        ),
+        (
+            "00000000-0000-0000-0000-00000000010a",
+            "",
+            1,
+            "ACT",
+            &[][..],
+        ),
+        (
+            "00000000-0000-0000-0000-00000000010b",
+            "",
+            1,
+            "ACT",
+            &entity_9[..],
+        ),
+        (
+            "00000000-0000-0000-0000-00000000010c",
+            "",
+            1,
+            "ACT",
+            &entity_1[..],
+        ),
+    ];
+    segment_metastream(
+        "FusionACTSegmentType",
+        "FusionACTSegmentType",
+        "Fusion",
+        &types,
+        records,
+    )
+}
+
+fn generated_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     fn lp_ascii(out: &mut Vec<u8>, value: &str) {
         out.extend_from_slice(&(value.len() as u32).to_le_bytes());
         out.extend_from_slice(value.as_bytes());
@@ -12185,6 +13481,12 @@ fn generated_act_bulkstream() -> Vec<u8> {
         }
     }
     let mut out = Vec::new();
+    let mut records = vec![(2, out.len() as u64)];
+    lp_ascii(&mut out, "256");
+    out.extend_from_slice(&2u32.to_le_bytes());
+    out.extend_from_slice(b"decoy:ACTTable");
+    out.extend_from_slice(&[0; 6]);
+    records.push((1, out.len() as u64));
     lp_ascii(&mut out, "268");
     out.extend_from_slice(&1u32.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
@@ -12196,6 +13498,19 @@ fn generated_act_bulkstream() -> Vec<u8> {
     out.extend_from_slice(&[0u8; 6]);
     lp_utf16(&mut out, "0_985");
     lp_utf16(&mut out, "eeeeeeee-1111-2222-3333-ffffffffffff");
+    out.extend_from_slice(&1u32.to_le_bytes());
+    out.push(1);
+    out.extend_from_slice(&9u32.to_le_bytes());
+    out.extend_from_slice(&[0; 6]);
+    out.extend_from_slice(&2u32.to_le_bytes());
+    for (name, guid) in [
+        ("Appearance", "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+        ("PhysicalMaterial", "cccccccc-1111-2222-3333-dddddddddddd"),
+    ] {
+        lp_ascii(&mut out, name);
+        lp_utf16(&mut out, guid);
+    }
+    records.push((9, out.len() as u64));
     lp_ascii(&mut out, "267");
     out.extend_from_slice(&9u32.to_le_bytes());
     out.extend_from_slice(&[0u8; 10]);
@@ -12213,6 +13528,7 @@ fn generated_act_bulkstream() -> Vec<u8> {
     out.push(1);
     out.extend_from_slice(&7u32.to_le_bytes());
     out.extend_from_slice(&[0u8; 6]);
+    records.push((7, out.len() as u64));
     lp_ascii(&mut out, "261");
     out.extend_from_slice(&7u32.to_le_bytes());
     out.extend_from_slice(&[0u8; 10]);
@@ -12225,10 +13541,10 @@ fn generated_act_bulkstream() -> Vec<u8> {
         lp_utf16(&mut out, guid);
     }
     lp_utf16(&mut out, "0_985");
-    out
+    (out, records)
 }
 
-fn generated_design_bulkstream() -> Vec<u8> {
+fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     fn lp_utf16(out: &mut Vec<u8>, value: &str) {
         let units: Vec<u16> = value.encode_utf16().collect();
         out.extend_from_slice(&(units.len() as u32).to_le_bytes());
@@ -12242,26 +13558,92 @@ fn generated_design_bulkstream() -> Vec<u8> {
         relation[at + 1..at + 9].copy_from_slice(&u64::from(target).to_le_bytes());
     }
 
+    fn push_reference(out: &mut Vec<u8>, target: u64) {
+        out.push(1);
+        out.extend_from_slice(&target.to_le_bytes());
+        out.extend_from_slice(&[0, 0]);
+    }
+
+    fn close_current_point(out: &mut Vec<u8>, paired_reference: u32, owner_reference: u32) {
+        out.extend_from_slice(&[0; 16]);
+        out.push(1);
+        out.extend_from_slice(&[0; 12]);
+        out.extend_from_slice(&1.0f32.to_le_bytes());
+        out.extend_from_slice(&1.0f32.to_le_bytes());
+        out.extend_from_slice(&[0, 1, 0, 0, 0]);
+        push_reference(out, u64::from(paired_reference));
+        push_reference(out, u64::from(owner_reference));
+    }
+
+    fn push_point_companion(
+        out: &mut Vec<u8>,
+        class_tag: &str,
+        record_index: u32,
+        point_record_index: u32,
+    ) {
+        out.extend_from_slice(&3u32.to_le_bytes());
+        out.extend_from_slice(class_tag.as_bytes());
+        out.extend_from_slice(&record_index.to_le_bytes());
+        out.extend_from_slice(&[0; 15]);
+        push_reference(out, u64::from(point_record_index));
+    }
+
     let mut out = Vec::new();
+    let mut records = vec![(899, 0)];
+    out.extend_from_slice(&3u32.to_le_bytes());
+    out.extend_from_slice(b"263");
+    out.extend_from_slice(&899u32.to_le_bytes());
+    out.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
     out.extend_from_slice(&1u32.to_le_bytes());
     out.extend_from_slice(&42u64.to_le_bytes());
     out.extend_from_slice(&985u64.to_le_bytes());
     out.extend_from_slice(&1793u64.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
     lp_utf16(&mut out, "BREP.synthetic.smbh");
-    for value in [
-        "0_985",
-        "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C",
-        "PrismMaterial-018",
-        "Body",
-        "11111111-2222-3333-4444-555555555555",
-        "BA5EE55E-9982-449B-9D66-9F036540E140",
-        "Prism-001",
-    ] {
-        lp_utf16(&mut out, value);
-    }
+    records.push((
+        985,
+        u64::try_from(out.len()).expect("synthetic Design record offset"),
+    ));
+    let node_guid = "ABCD0000-1111-8222-A333-444444444444";
     out.extend_from_slice(&3u32.to_le_bytes());
-    out.extend_from_slice(b"269");
+    out.extend_from_slice(b"256");
+    out.extend_from_slice(&985u64.to_le_bytes());
+    out.extend_from_slice(&[0; 6]);
+    lp_utf16(&mut out, "0_985");
+    lp_utf16(&mut out, node_guid);
+    out.extend_from_slice(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    lp_utf16(&mut out, "99999999-8888-8777-A666-555555555555");
+    lp_utf16(
+        &mut out,
+        crate::design::presentation::PHYSICAL_MATERIAL_LIBRARY_ID,
+    );
+    lp_utf16(&mut out, "PrismMaterial-018");
+    push_reference(&mut out, 7);
+    out.push(0);
+    push_reference(&mut out, 986);
+    lp_utf16(&mut out, "Body");
+    out.extend_from_slice(&1.0f32.to_le_bytes());
+    out.extend_from_slice(&[1, 1]);
+    lp_utf16(&mut out, "11111111-2222-3333-4444-555555555555");
+    lp_utf16(&mut out, crate::design::presentation::APPEARANCE_LIBRARY_ID);
+    lp_utf16(&mut out, "Prism-001");
+    records.push((
+        900,
+        u64::try_from(out.len()).expect("synthetic Design record offset"),
+    ));
+    out.extend_from_slice(&3u32.to_le_bytes());
+    out.extend_from_slice(b"260");
+    out.extend_from_slice(&900u32.to_le_bytes());
+    out.extend_from_slice(&[0; 10]);
+    lp_utf16(&mut out, node_guid);
+    out.extend_from_slice(&[0, 1, 1]);
+    out.extend_from_slice(&985u64.to_le_bytes());
+    records.push((
+        277,
+        u64::try_from(out.len()).expect("synthetic Design record offset"),
+    ));
+    out.extend_from_slice(&3u32.to_le_bytes());
+    out.extend_from_slice(b"257");
     out.extend_from_slice(&277u64.to_le_bytes());
     out.extend_from_slice(&[0u8; 5]);
     out.push(1);
@@ -12279,6 +13661,10 @@ fn generated_design_bulkstream() -> Vec<u8> {
     for (class_tag, record_index, members) in
         [("259", 33u32, [100u32, 200u32]), ("259", 44, [300, 400])]
     {
+        records.push((
+            u64::from(record_index),
+            u64::try_from(out.len()).expect("synthetic Design record offset"),
+        ));
         // A relation is `u8 1`, the counted `(reference, relation ordinal)`
         // pairs, the property-block presence byte, `ParentNode`, the u64
         // mask, the counted return run, and one zero byte.
@@ -12304,9 +13690,14 @@ fn generated_design_bulkstream() -> Vec<u8> {
         (300, 502, [-1.0, 0.5]),
         (400, 503, [2.0, 1.0]),
     ] {
-        let mut point = vec![0u8; 112];
+        records.push((
+            u64::from(record_index),
+            u64::try_from(out.len()).expect("synthetic Design record offset"),
+        ));
+        let paired_reference = record_index + 1;
+        let mut point = vec![0u8; 105];
         point[0..4].copy_from_slice(&3u32.to_le_bytes());
-        point[4..7].copy_from_slice(b"360");
+        point[4..7].copy_from_slice(b"266");
         point[7..11].copy_from_slice(&record_index.to_le_bytes());
         point[20] = 1;
         point[21..25].copy_from_slice(&1u32.to_le_bytes());
@@ -12316,14 +13707,24 @@ fn generated_design_bulkstream() -> Vec<u8> {
         point[39..62].copy_from_slice(b"IntrinsicMetaTypeuint64");
         point[62..70].copy_from_slice(&persistent_id.to_le_bytes());
         point[70] = 1;
-        point[71..75].copy_from_slice(&(record_index + 1).to_le_bytes());
+        point[71..75].copy_from_slice(&paired_reference.to_le_bytes());
         point[89..97].copy_from_slice(&coordinates[0].to_le_bytes());
         point[97..105].copy_from_slice(&coordinates[1].to_le_bytes());
+        close_current_point(&mut point, paired_reference, 277);
         out.extend_from_slice(&point);
+        records.push((
+            u64::from(paired_reference),
+            u64::try_from(out.len()).expect("synthetic Design record offset"),
+        ));
+        push_point_companion(&mut out, "267", paired_reference, record_index);
     }
+    records.push((
+        600,
+        u64::try_from(out.len()).expect("synthetic Design record offset"),
+    ));
     let mut curve = vec![0u8; 229];
     curve[0..4].copy_from_slice(&3u32.to_le_bytes());
-    curve[4..7].copy_from_slice(b"361");
+    curve[4..7].copy_from_slice(b"264");
     curve[7..11].copy_from_slice(&600u32.to_le_bytes());
     curve[20] = 1;
     curve[21..25].copy_from_slice(&2u32.to_le_bytes());
@@ -12357,10 +13758,15 @@ fn generated_design_bulkstream() -> Vec<u8> {
         let offset = 133 + ordinal * 8;
         curve[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
+    push_reference(&mut curve, 277);
     out.extend_from_slice(&curve);
-    let mut alternate_point = vec![0u8; 164];
+    records.push((
+        700,
+        u64::try_from(out.len()).expect("synthetic Design record offset"),
+    ));
+    let mut alternate_point = vec![0u8; 157];
     alternate_point[0..4].copy_from_slice(&3u32.to_le_bytes());
-    alternate_point[4..7].copy_from_slice(b"362");
+    alternate_point[4..7].copy_from_slice(b"266");
     alternate_point[7..11].copy_from_slice(&700u32.to_le_bytes());
     alternate_point[20] = 1;
     alternate_point[21..25].copy_from_slice(&2u32.to_le_bytes());
@@ -12378,11 +13784,21 @@ fn generated_design_bulkstream() -> Vec<u8> {
     alternate_point[123..127].copy_from_slice(&701u32.to_le_bytes());
     alternate_point[141..149].copy_from_slice(&(-4.0f64).to_le_bytes());
     alternate_point[149..157].copy_from_slice(&5.0f64.to_le_bytes());
+    close_current_point(&mut alternate_point, 701, 277);
     out.extend_from_slice(&alternate_point);
+    records.push((
+        701,
+        u64::try_from(out.len()).expect("synthetic Design record offset"),
+    ));
+    push_point_companion(&mut out, "267", 701, 700);
 
+    records.push((
+        800,
+        u64::try_from(out.len()).expect("synthetic Design record offset"),
+    ));
     let mut alternate_curve = vec![0u8; 443];
     alternate_curve[0..4].copy_from_slice(&3u32.to_le_bytes());
-    alternate_curve[4..7].copy_from_slice(b"363");
+    alternate_curve[4..7].copy_from_slice(b"265");
     alternate_curve[7..11].copy_from_slice(&800u32.to_le_bytes());
     alternate_curve[20] = 1;
     alternate_curve[21..25].copy_from_slice(&3u32.to_le_bytes());
@@ -12428,6 +13844,7 @@ fn generated_design_bulkstream() -> Vec<u8> {
         let offset = 371 + ordinal * 8;
         alternate_curve[offset..offset + 8].copy_from_slice(&coordinate.to_le_bytes());
     }
+    push_reference(&mut alternate_curve, 277);
     out.extend_from_slice(&alternate_curve);
     out.extend_from_slice(&10u32.to_le_bytes());
     out.extend_from_slice(b"BodiesRoot");
@@ -12466,7 +13883,7 @@ fn generated_design_bulkstream() -> Vec<u8> {
     out.extend_from_slice(b"419");
     out.extend_from_slice(&4646u32.to_le_bytes());
     out.extend_from_slice(b"body_recipe_data");
-    out
+    (out, records)
 }
 
 fn generated_instance_properties_for(guid: &str) -> Vec<u8> {
@@ -12594,8 +14011,7 @@ fn synthetic_f3d(include_smbh: bool) -> Vec<u8> {
     let deflated = crate::zip_write::file_options(CompressionMethod::Deflated);
 
     let folder = "FusionAssetName[Active]";
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
 
     if include_smbh {
         zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smbh"), deflated)
@@ -12630,8 +14046,7 @@ fn synthetic_legacy_multi_brep_f3d() -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     let folder = "FusionAssetName[Active]";
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     for name in ["first", "second"] {
         let mut smb = synthetic_smbh();
         smb[39..47].copy_from_slice(&2u64.to_le_bytes());
@@ -12644,6 +14059,64 @@ fn synthetic_legacy_multi_brep_f3d() -> Vec<u8> {
         zip.start_file(format!("{folder}/Design1/{stream}"), stored)
             .unwrap();
         zip.write_all(b"legacy-design").unwrap();
+    }
+    zip.finish().unwrap().into_inner()
+}
+
+fn synthetic_multi_asset_f3d(include_design_brep: bool) -> Vec<u8> {
+    const DESIGN_GUID: &str = "10000000-0000-4000-8000-000000000001";
+    const SIBLING_GUID: &str = "20000000-0000-4000-8000-000000000002";
+    const SECONDARY_GUID: &str = "30000000-0000-4000-8000-000000000003";
+
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    zip.start_file("Manifest.dat", stored).unwrap();
+    zip.write_all(
+        &crate::manifest::encode_top_level(DESIGN_GUID, &["Simulation", "DesignAsset"]).unwrap(),
+    )
+    .unwrap();
+    zip.start_file("Simulation/Manifest.dat", stored).unwrap();
+    zip.write_all(
+        &crate::manifest::encode_asset_header(
+            "Simulation",
+            SIBLING_GUID,
+            SECONDARY_GUID,
+            "SimulationAssetType",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    zip.start_file("Simulation/FusionDesignSegmentType1/BulkStream.dat", stored)
+        .unwrap();
+    zip.write_all(b"sibling Design-name decoy").unwrap();
+    zip.start_file("Simulation/Breps.BlobParts/BREP.sibling.smbh", stored)
+        .unwrap();
+    zip.write_all(&synthetic_smbh()).unwrap();
+    zip.start_file("DesignAsset[Active]/Manifest.dat", stored)
+        .unwrap();
+    zip.write_all(&crate::manifest::encode_design_asset("DesignAsset", DESIGN_GUID).unwrap())
+        .unwrap();
+    zip.start_file(
+        "DesignAsset[Active]/FusionDesignSegmentType1/BulkStream.dat",
+        stored,
+    )
+    .unwrap();
+    zip.write_all(b"selected Design stream").unwrap();
+    zip.start_file(
+        "DesignAsset[Active]/FusionNonDesignSegmentType1/BulkStream.dat",
+        stored,
+    )
+    .unwrap();
+    zip.write_all(b"selected-folder name decoy").unwrap();
+    if include_design_brep {
+        let mut design_brep = synthetic_geometry_smbh();
+        design_brep[39..47].copy_from_slice(&2u64.to_le_bytes());
+        zip.start_file(
+            "DesignAsset[Active]/Breps.BlobParts/BREP.design.smb",
+            stored,
+        )
+        .unwrap();
+        zip.write_all(&design_brep).unwrap();
     }
     zip.finish().unwrap().into_inner()
 }
@@ -13408,6 +14881,87 @@ fn legacy_design_segment_selects_its_complete_brep_set() {
         assert!(selected[0].name.ends_with("BREP.first.smb"));
         assert!(selected[1].name.ends_with("BREP.second.smb"));
     });
+}
+
+#[test]
+fn manifest_selects_design_asset_independently_of_brep_order() {
+    let f3d = synthetic_multi_asset_f3d(true);
+    with_scan(&f3d, |scan| {
+        assert_eq!(scan.design_asset_folder(), Some("DesignAsset[Active]"));
+        assert_eq!(scan.breps.len(), 2);
+        let design_breps = container::design_breps(scan).collect::<Vec<_>>();
+        assert_eq!(design_breps.len(), 1);
+        assert!(design_breps[0].name.ends_with("BREP.design.smb"));
+        assert!(container::select_history_brep(scan).is_none());
+        assert_eq!(
+            container::select_fallback_brep(scan).map(|brep| brep.name.as_str()),
+            Some("DesignAsset[Active]/Breps.BlobParts/BREP.design.smb")
+        );
+        let streams = scan
+            .entries
+            .iter()
+            .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+            .map(|entry| entry.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            streams,
+            ["DesignAsset[Active]/FusionDesignSegmentType1/BulkStream.dat"]
+        );
+    });
+}
+
+#[test]
+fn manifest_selects_brep_less_design_asset() {
+    let f3d = synthetic_multi_asset_f3d(false);
+    with_scan(&f3d, |scan| {
+        assert_eq!(scan.design_asset_folder(), Some("DesignAsset[Active]"));
+        assert_eq!(scan.breps.len(), 1);
+        assert_eq!(container::design_breps(scan).count(), 0);
+        assert!(container::select_fallback_brep(scan).is_none());
+        assert!(container::select_history_brep(scan).is_none());
+    });
+}
+
+#[test]
+fn decode_uses_manifest_selected_geometry_not_the_first_brep_asset() {
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(synthetic_multi_asset_f3d(true)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(decoded.report.geometry_transferred);
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(
+        decoded
+            .ir
+            .source
+            .as_ref()
+            .and_then(|source| source.attributes.get("asset_folder"))
+            .map(String::as_str),
+        Some("DesignAsset[Active]")
+    );
+    assert!(decoded
+        .ir
+        .model
+        .bodies
+        .iter()
+        .all(|body| !body.id.0.contains("BREP.sibling")));
+}
+
+#[test]
+fn decode_does_not_use_a_sibling_brep_for_a_brep_less_design_asset() {
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(synthetic_multi_asset_f3d(false)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(decoded.ir.model.bodies.is_empty());
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.code == LossCode::MissingGeometryStream
+            && loss.message == "no ASM BREP stream (.smb/.smbh) was found in the container"
+    }));
 }
 
 #[test]
@@ -19748,8 +21302,7 @@ fn decode_carries_the_document_modeling_length_unit_into_source_metadata() {
     ]);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
         .unwrap();
     zip.write_all(&synthetic_geometry_smbh()).unwrap();
@@ -20793,7 +22346,7 @@ fn rgb_attribute_chain_decodes_body_color() {
 }
 
 #[test]
-fn truecolor_attribute_chain_decodes_argb() {
+fn truecolor_attribute_chain_decodes_by_color_as_opaque_rgb() {
     use std::collections::HashMap;
 
     let mut bytes = Vec::new();
@@ -20805,7 +22358,7 @@ fn truecolor_attribute_chain_decodes_argb() {
     t_ident(&mut bytes, "attrib");
     t_ref(&mut bytes, -1);
     bytes.push(0x17);
-    bytes.extend_from_slice(&(0x8040_80c0i64).to_le_bytes());
+    bytes.extend_from_slice(&(0xc240_80c0i64).to_le_bytes());
     t_end(&mut bytes);
 
     let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
@@ -20814,7 +22367,7 @@ fn truecolor_attribute_chain_decodes_argb() {
         cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!(
         (color.r, color.g, color.b, color.a),
-        (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 128.0 / 255.0)
+        (64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0, 1.0)
     );
 }
 
@@ -20847,7 +22400,7 @@ fn bt_text_color_attribute_chain_decodes_rgb() {
 fn bt_text_color_rejects_non_decimal_and_overwide_values() {
     use std::collections::HashMap;
 
-    for value in ["0x4080c0", "16777216"] {
+    for value in ["", "+4227264", "0x4080c0", "16777216"] {
         let mut bytes = Vec::new();
         t_ident(&mut bytes, "face");
         t_ref(&mut bytes, 1);
@@ -21367,7 +22920,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     let ProceduralCurveDefinition::Subset {
         source,
         parameter_range,
-        ..
+        sense: _,
     } = &result.ir.model.procedural_curves[0].definition
     else {
         panic!("expected subset construction")
@@ -21440,7 +22993,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     let ProceduralCurveDefinition::Subset {
         source,
         parameter_range,
-        ..
+        sense: _,
     } = &round_trip.ir.model.procedural_curves[0].definition
     else {
         panic!("expected round-trip subset")
@@ -23874,40 +25427,49 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
     // binding id, or the arena holds colliding ids and fails both the global
     // identity check and the strict arena-order check.
     let face_guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
-    let visual_guid = "11111111-2222-3333-4444-555555555555";
+    let visual_family = "11111111-2222-3333-4444-555555555555";
+    let visual_guid = "11111111-2222-3333-4444-555555555555_Post2015";
     let mut ir = cadmpeg_ir::CadIr::empty(Units::default());
     for face in ["face:1", "face:2", "face:3"] {
         ir.model.attributes.push(SourceAttribute {
             id: format!("attr:{face}").into(),
             target: AttributeTarget::Face(face.into()),
-            name: "NEUTRON_Material_attrib_def".into(),
+            name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
                 AttributeValue::String("NEUTRON_Material_attrib_def".into()),
                 AttributeValue::String(face_guid.into()),
             ],
         });
     }
-    ir.model.appearances.push(Appearance {
-        id: "appearance:1".into(),
+    let appearance = |id: &str, token: &str| Appearance {
+        id: id.into(),
         name: None,
         asset_guid: None,
         library_id: None,
-        visual_guid: Some(visual_guid.into()),
+        visual_guid: Some(token.into()),
         physical_token: None,
         schema: None,
         category: None,
         base_color: None,
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
-    });
+    };
+    // The base record is deliberately first. Prefix-only selection would bind
+    // it instead of the revision token carried by the face assignment.
+    ir.model.appearances.extend([
+        appearance("appearance:base", visual_family),
+        appearance("appearance:revision", visual_guid),
+    ]);
 
     crate::decode::resolve_face_appearance_bindings(
         &mut ir,
         &[crate::materials::FaceAppearanceAssignment {
             face_guid: face_guid.into(),
             visual_guid: visual_guid.into(),
+            color: None,
         }],
-    );
+    )
+    .expect("unique face appearance");
 
     assert_eq!(ir.model.appearance_bindings.len(), 3);
     let ids = ir
@@ -23917,6 +25479,11 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         .map(|binding| binding.id.clone())
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(ids.len(), 3);
+    assert!(ir
+        .model
+        .appearance_bindings
+        .iter()
+        .all(|binding| binding.appearance.as_str() == "appearance:revision"));
     let targets = ir
         .model
         .appearance_bindings
@@ -23940,6 +25507,131 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         .appearance_bindings
         .windows(2)
         .all(|pair| pair[0].id < pair[1].id));
+
+    ir.model.attributes[0].values.push(AttributeValue::String(
+        "cccccccc-1111-2222-3333-dddddddddddd".into(),
+    ));
+    let error = crate::decode::resolve_face_appearance_bindings(
+        &mut ir,
+        &[crate::materials::FaceAppearanceAssignment {
+            face_guid: face_guid.into(),
+            visual_guid: visual_guid.into(),
+            color: None,
+        }],
+    )
+    .expect_err("a face material attribute with two GUID operands is ambiguous");
+    assert!(error
+        .to_string()
+        .contains("exactly one lower-case face GUID"));
+}
+
+#[test]
+fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
+    use cadmpeg_ir::appearance::Appearance;
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    use cadmpeg_ir::topology::Color;
+
+    let face_guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+    let visual_guid = "11111111-2222-3333-4444-555555555555_Post2015";
+    let assignment_color = Color {
+        r: 0.75,
+        g: 0.25,
+        b: 0.125,
+        a: 1.0,
+    };
+    let explicit_color = Color {
+        r: 0.1,
+        g: 0.8,
+        b: 0.2,
+        a: 1.0,
+    };
+    let make_ir = || {
+        let mut ir = cadmpeg_ir::examples::unit_cube();
+        let face = ir.model.faces[0].id.clone();
+        ir.model.attributes.push(SourceAttribute {
+            id: "f3d:test:face-material".into(),
+            target: AttributeTarget::Face(face),
+            name: "ATTRIB_CUSTOM-attrib".into(),
+            values: vec![
+                AttributeValue::String("NEUTRON_Material_attrib_def".into()),
+                AttributeValue::String(face_guid.into()),
+            ],
+        });
+        ir.model.appearances.push(Appearance {
+            id: "appearance:face".into(),
+            name: None,
+            asset_guid: None,
+            library_id: None,
+            visual_guid: Some(visual_guid.into()),
+            physical_token: None,
+            schema: None,
+            category: None,
+            base_color: Some(Color {
+                r: 0.0,
+                g: 0.0,
+                b: 1.0,
+                a: 1.0,
+            }),
+            properties: std::collections::BTreeMap::new(),
+            textures: Vec::new(),
+        });
+        ir
+    };
+    let assignment = crate::materials::FaceAppearanceAssignment {
+        face_guid: face_guid.into(),
+        visual_guid: visual_guid.into(),
+        color: Some(assignment_color),
+    };
+
+    let mut ir = make_ir();
+    crate::decode::resolve_face_appearance_bindings(&mut ir, std::slice::from_ref(&assignment))
+        .expect("legacy face assignment");
+    assert_eq!(ir.model.faces[0].color, Some(assignment_color));
+    assert_eq!(ir.model.appearance_bindings.len(), 1);
+
+    let mut explicit = make_ir();
+    explicit.model.faces[0].color = Some(explicit_color);
+    crate::decode::resolve_face_appearance_bindings(
+        &mut explicit,
+        std::slice::from_ref(&assignment),
+    )
+    .expect("explicit face color");
+    assert_eq!(explicit.model.faces[0].color, Some(explicit_color));
+
+    let mut no_asset = make_ir();
+    no_asset.model.appearances.clear();
+    crate::decode::resolve_face_appearance_bindings(
+        &mut no_asset,
+        std::slice::from_ref(&assignment),
+    )
+    .expect("face color independent of appearance lookup");
+    assert_eq!(no_asset.model.faces[0].color, Some(assignment_color));
+    assert!(no_asset.model.appearance_bindings.is_empty());
+}
+
+#[test]
+fn duplicate_face_assignments_reject_conflicting_colors() {
+    use cadmpeg_ir::topology::Color;
+
+    let face_guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+    let visual_guid = "11111111-2222-3333-4444-555555555555_Post2015";
+    let assignment = |r| crate::materials::FaceAppearanceAssignment {
+        face_guid: face_guid.into(),
+        visual_guid: visual_guid.into(),
+        color: Some(Color {
+            r,
+            g: 0.25,
+            b: 0.5,
+            a: 1.0,
+        }),
+    };
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let error = crate::decode::resolve_face_appearance_bindings(
+        &mut ir,
+        &[assignment(0.25), assignment(0.75)],
+    )
+    .expect_err("one face material GUID cannot carry two neutral colors");
+    assert!(error.to_string().contains("conflicting neutral colors"));
 }
 
 #[test]
@@ -23972,10 +25664,25 @@ fn decode_transfers_generated_protein_appearance() {
     assert_eq!(f3d_native(&result.ir).act_entities.len(), 1);
     assert_eq!(f3d_native(&result.ir).act_entities[0].record_index, 7);
     assert_eq!(f3d_native(&result.ir).act_entities[0].entity_id, "0_985");
-    assert!(f3d_native(&result.ir)
-        .act_guids
-        .iter()
-        .any(|record| record.guid == "eeeeeeee-1111-2222-3333-ffffffffffff"));
+    assert_eq!(f3d_native(&result.ir).act_guids.len(), 1);
+    assert_eq!(
+        f3d_native(&result.ir).act_guids[0].guid,
+        "eeeeeeee-1111-2222-3333-ffffffffffff"
+    );
+    assert_eq!(f3d_native(&result.ir).act_registry_channels.len(), 2);
+    assert_eq!(f3d_native(&result.ir).act_table_references.len(), 1);
+    assert_eq!(
+        f3d_native(&result.ir).act_table_references[0].target_record,
+        9
+    );
+    assert_eq!(
+        f3d_native(&result.ir).act_registry_channels[0].name,
+        "Appearance"
+    );
+    assert_eq!(
+        f3d_native(&result.ir).act_registry_channels[1].name,
+        "PhysicalMaterial"
+    );
     assert!(f3d_native(&result.ir).act_entities[0].in_table);
     assert_eq!(f3d_native(&result.ir).act_root_components.len(), 1);
     assert_eq!(
@@ -23989,6 +25696,10 @@ fn decode_transfers_generated_protein_appearance() {
     assert_eq!(
         f3d_native(&result.ir).act_root_components[0].instance_root_record,
         12
+    );
+    assert_eq!(
+        f3d_native(&result.ir).act_root_components[0].tracked_entity_record,
+        3
     );
     assert_eq!(
         f3d_native(&result.ir).act_root_components[0].components_root_record,
@@ -24074,43 +25785,32 @@ fn decode_transfers_generated_protein_appearance() {
     assert!(result.report.losses.iter().any(|loss| loss
         .message
         .contains("source parametric edge reference(s) were marked")));
-    assert_eq!(f3d_native(&result.ir).design_types.len(), 4);
+    assert_eq!(f3d_native(&result.ir).design_types.len(), 12);
     let sketch = f3d_native(&result.ir)
         .design_types
         .iter()
-        .find(|design_type| design_type.module == crate::records::DESIGN_MODULE_SKETCH)
+        .find(|design_type| design_type.entity_ids.contains(&277))
         .cloned()
         .unwrap();
     assert_eq!(sketch.entity_ids, vec![277]);
     assert_eq!(sketch.version, 4);
-    assert_eq!(f3d_native(&result.ir).design_entity_headers.len(), 1);
+    assert_eq!(f3d_native(&result.ir).design_entity_headers.len(), 2);
+    let sketch_header = f3d_native(&result.ir)
+        .design_entity_headers
+        .iter()
+        .find(|header| header.entity_suffix == 277)
+        .cloned()
+        .expect("generated sketch entity header");
+    assert_eq!(sketch_header.entity_id, "0_277");
+    assert_eq!(sketch_header.class_tag, "257");
+    assert!(sketch_header.optional_slot_present);
     assert_eq!(
-        f3d_native(&result.ir).design_entity_headers[0].entity_id,
-        "0_277"
-    );
-    assert_eq!(
-        f3d_native(&result.ir).design_entity_headers[0].class_tag,
-        "269"
-    );
-    assert!(f3d_native(&result.ir).design_entity_headers[0].optional_slot_present);
-    assert_eq!(
-        f3d_native(&result.ir).design_entity_headers[0]
-            .module
-            .as_deref(),
+        sketch_header.module.as_deref(),
         Some(crate::records::DESIGN_MODULE_SKETCH)
     );
-    assert_eq!(
-        f3d_native(&result.ir).design_entity_headers[0].record_reference,
-        Some(584)
-    );
-    assert_eq!(
-        f3d_native(&result.ir).design_entity_headers[0].declared_reference_count,
-        Some(2)
-    );
-    assert_eq!(
-        f3d_native(&result.ir).design_entity_headers[0].reference_indices,
-        [33, 44]
-    );
+    assert_eq!(sketch_header.record_reference, Some(584));
+    assert_eq!(sketch_header.declared_reference_count, Some(2));
+    assert_eq!(sketch_header.reference_indices, [33, 44]);
     assert_eq!(f3d_native(&result.ir).design_record_headers.len(), 6);
     let record_33 = f3d_native(&result.ir)
         .design_record_headers
@@ -24151,7 +25851,7 @@ fn decode_transfers_generated_protein_appearance() {
     let point_500 = f3d_native(&result.ir)
         .sketch_points
         .iter()
-        .find(|point| point.persistent_id == 500)
+        .find(|point| point.persistent_id == Some(500))
         .cloned()
         .expect("point 500");
     assert_eq!(point_500.coordinates.u, 12.5);
@@ -24159,7 +25859,7 @@ fn decode_transfers_generated_protein_appearance() {
     let point_600 = f3d_native(&result.ir)
         .sketch_points
         .iter()
-        .find(|point| point.persistent_id == 600)
+        .find(|point| point.persistent_id == Some(600))
         .cloned()
         .expect("point 600");
     assert_eq!(point_600.coordinates.u, -40.0);
@@ -24204,6 +25904,70 @@ fn decode_transfers_generated_protein_appearance() {
         .design_body_members
         .iter()
         .all(|member| member.flags == 0));
+    assert!(crate::validate::validate_native(&result.ir).is_empty());
+}
+
+#[test]
+fn generated_act_native_validation_rejects_structural_drift() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated ACT decode");
+
+    let mut wrong_root = decoded.ir.clone();
+    update_f3d_native(&mut wrong_root, |native| {
+        native.act_root_components[0].tracked_entity_record = 4;
+    });
+    assert!(crate::validate::validate_native(&wrong_root)
+        .iter()
+        .any(|finding| finding.message.contains("ACT root component")));
+
+    let mut table_only = decoded.ir.clone();
+    update_f3d_native(&mut table_only, |native| {
+        let entity = &mut native.act_entities[0];
+        entity.channel_class_tag = None;
+        entity.channel_record_index_offset = None;
+        entity.channel_entity_id_offset = None;
+        entity.channels.clear();
+        entity.channel_guid_offsets.clear();
+    });
+    assert!(crate::validate::validate_native(&table_only)
+        .iter()
+        .any(|finding| finding.message.contains("ACT entity")));
+
+    let mut shifted_table_row = decoded.ir.clone();
+    update_f3d_native(&mut shifted_table_row, |native| {
+        native.act_entities[0].table_entity_id_offset = native.act_entities[0]
+            .table_entity_id_offset
+            .and_then(|offset| offset.checked_add(1));
+    });
+    assert!(crate::validate::validate_native(&shifted_table_row)
+        .iter()
+        .any(|finding| finding.message.contains("ACT entity")));
+
+    let mut colliding_root = decoded.ir.clone();
+    update_f3d_native(&mut colliding_root, |native| {
+        native.act_root_components[0].record_index = native.act_entities[0].record_index;
+    });
+    assert!(crate::validate::validate_native(&colliding_root)
+        .iter()
+        .any(|finding| finding.message.contains("ACT root component")));
+
+    let mut wrong_registry = decoded.ir;
+    update_f3d_native(&mut wrong_registry, |native| {
+        native.act_registry_channels[1].ordinal = 0;
+    });
+    assert!(crate::validate::validate_native(&wrong_registry)
+        .iter()
+        .any(|finding| finding.message.contains("ACT channel-registry entry")));
+
+    let mut wrong_table_reference = wrong_registry;
+    update_f3d_native(&mut wrong_table_reference, |native| {
+        native.act_table_references[0].target_record_offset += 1;
+    });
+    assert!(crate::validate::validate_native(&wrong_table_reference)
+        .iter()
+        .any(|finding| finding.message.contains("ACT table reference")));
 }
 
 #[test]
@@ -24542,8 +26306,13 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
     }
 
     let mut bulk = Vec::new();
-    // Body-binding record: pair count, (ASM key, member) pairs, the 12-byte
-    // tail, then the blob name.
+    let mut primary_records = vec![(899u64, 0u64)];
+    // Typed body-map record: indexed header, ten zero bytes, pair count,
+    // (ASM key, member) pairs, the 12-byte tail, then the blob name.
+    bulk.extend_from_slice(&3u32.to_le_bytes());
+    bulk.extend_from_slice(b"256");
+    bulk.extend_from_slice(&899u32.to_le_bytes());
+    bulk.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
     bulk.extend_from_slice(&2u32.to_le_bytes());
     for (key, member) in [(3u64, 269u64), (6, 533)] {
         bulk.extend_from_slice(&key.to_le_bytes());
@@ -24552,11 +26321,20 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
     bulk.extend_from_slice(&1793u64.to_le_bytes());
     bulk.extend_from_slice(&0u32.to_le_bytes());
     lp_utf16(&mut bulk, "BREP.synthetic.smbh");
-    // Browser-node records: GUID, hidden flag, `01 01` marker, member id.
-    for (guid, hidden, member) in [
-        ("b412e170-dc0c-4932-b699-43fc72cc8b13", 0u8, 269u64),
-        ("d4b1078c-43bf-4f6d-a50a-963f94273901", 1, 533),
+    // Typed browser-node records: indexed header, ten-byte base payload,
+    // GUID, hidden flag, `01 01` marker, and member id.
+    for (record_index, guid, hidden, member) in [
+        (900u32, "b412e170-dc0c-4932-b699-43fc72cc8b13", 0u8, 269u64),
+        (901, "d4b1078c-43bf-4f6d-a50a-963f94273901", 1, 533),
     ] {
+        primary_records.push((
+            u64::from(record_index),
+            u64::try_from(bulk.len()).expect("synthetic BulkStream offset"),
+        ));
+        bulk.extend_from_slice(&3u32.to_le_bytes());
+        bulk.extend_from_slice(b"257");
+        bulk.extend_from_slice(&record_index.to_le_bytes());
+        bulk.extend_from_slice(&[0; 10]);
         lp_utf16(&mut bulk, guid);
         bulk.push(hidden);
         bulk.extend_from_slice(&[0x01, 0x01]);
@@ -24565,11 +26343,32 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
 
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
         .unwrap();
     zip.write_all(&bulk).unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&design_metastream_with_records(
+        &[
+            (
+                crate::design::body::BODY_MAP_CARRIER_TYPE_GUID,
+                crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID,
+                crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
+                crate::records::DESIGN_MODULE_BODY,
+                &[899],
+            ),
+            (
+                crate::design::presentation::BROWSER_NODE_TYPE_GUID,
+                crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID,
+                crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
+                crate::records::DESIGN_MODULE_FUSION,
+                &[900, 901],
+            ),
+        ],
+        &primary_records,
+    ))
+    .unwrap();
     let bytes = zip.finish().unwrap().into_inner();
 
     with_scan(&bytes, |scan| {
@@ -24593,77 +26392,20 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
     });
 }
 
-fn browser_body_record(entity: u64, name: Option<&str>, visual: &str) -> Vec<u8> {
-    let mut bytes = vec![0u8; 8];
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(b"299");
-    bytes.extend_from_slice(&entity.to_le_bytes());
-    bytes.extend(std::iter::repeat_n(0u8, 40));
-    bytes.extend(lp_utf16_bytes("D87FBE62-3B12-4CA8-9014-BAD31ABDB101"));
-    bytes.extend(lp_utf16_bytes("C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C"));
-    bytes.extend([0u8; 4]);
-    bytes.extend(lp_utf16_bytes("PrismMaterial-018"));
-    bytes.push(0x01);
-    bytes.extend_from_slice(&(entity - 100).to_le_bytes());
-    bytes.extend([0u8; 3]);
-    bytes.extend(lp_utf16_bytes("67a722bb-f14e-43d6-94b1-d0539bb8060c"));
-    bytes.push(0x01);
-    bytes.extend_from_slice(&(entity + 1).to_le_bytes());
-    bytes.extend([0u8; 2]);
-    if let Some(name) = name {
-        bytes.extend(lp_utf16_bytes(name));
-    }
-    bytes.extend([0u8; 12]);
-    bytes.extend_from_slice(&1f32.to_le_bytes());
-    bytes.extend([0x01, 0x01]);
-    bytes.extend([0u8; 10]);
-    bytes.extend(lp_utf16_bytes(visual));
-    bytes
-}
-
 #[test]
-fn browser_body_appearance_decodes_named_and_nameless_records() {
-    let visual = "7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015_Post2015";
-    let mut bytes = browser_body_record(200_598, Some("Hexagon 1"), visual);
-    bytes.extend(browser_body_record(454_966, None, visual));
-    let out = crate::materials::browser_body_appearances(&bytes);
-    assert_eq!(
-        out,
-        vec![
-            (200_598, "7DD7765D-CA8C-4A38-B156-B3B4916E0C17".to_string()),
-            (454_966, "7DD7765D-CA8C-4A38-B156-B3B4916E0C17".to_string()),
-        ]
-    );
-}
-
-#[test]
-fn protein_revision_suffix_does_not_change_visual_guid_identity() {
-    assert!(crate::materials::visual_guid_matches(
+fn protein_revision_suffix_distinguishes_visual_record_identity() {
+    assert!(!crate::materials::visual_tokens_match(
         "7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015_Post2015",
         "7dd7765d-ca8c-4a38-b156-b3b4916e0c17",
     ));
-    assert!(!crate::materials::visual_guid_matches(
+    assert!(crate::materials::visual_tokens_match(
         "7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015",
-        "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F",
+        "7dd7765d-ca8c-4a38-b156-b3b4916e0c17_Post2015",
     ));
-    assert!(!crate::materials::visual_guid_matches(
+    assert!(!crate::materials::visual_tokens_match(
         "not-a-guid_Post2015",
         "not-a-guid",
     ));
-}
-
-#[test]
-fn browser_body_appearance_requires_head_and_node_entity_agreement() {
-    let visual = "7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015";
-    let mut bytes = browser_body_record(200_598, Some("Hexagon 1"), visual);
-    // Corrupt the node entity so it no longer equals the head entity plus one.
-    let node = 200_599_u64.to_le_bytes();
-    let at = bytes
-        .windows(8)
-        .position(|window| window == node)
-        .expect("node entity bytes are present");
-    bytes[at..at + 8].copy_from_slice(&(999u64).to_le_bytes());
-    assert!(crate::materials::browser_body_appearances(&bytes).is_empty());
 }
 
 #[test]
@@ -24704,8 +26446,8 @@ fn browser_body_appearance_joins_through_browser_node_guid() {
     assert_eq!(
         crate::materials::browser_body_appearances(&bytes),
         [
-            (37_251, "674E6024-4294-4322-B572-A88F64F0DA77".to_string()),
-            (37_441, "4218E352-E25F-423E-8DCD-527E5148C2F6".to_string()),
+            (37_251, records[0].1.to_string()),
+            (37_441, records[1].1.to_string()),
         ]
     );
     assert!(
@@ -24715,34 +26457,188 @@ fn browser_body_appearance_joins_through_browser_node_guid() {
 }
 
 #[test]
-fn face_appearance_assignment_joins_face_guid_to_visual_guid() {
+fn legacy_face_appearance_assignment_decodes_both_variable_width_forms() {
+    let face_guid = "cd92d0f6-5b31-4bbf-84ae-4611f435537e";
+    let visual_guid = "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015";
+    let first = legacy_face_appearance_entry(
+        face_guid,
+        [0.25, 0.5, 0.75, 1.0],
+        visual_guid,
+        0,
+        None,
+        "Prism-042",
+    );
+    let second = legacy_face_appearance_entry(
+        "e6c14fe2-6c11-4a22-8ccc-c10fba912345",
+        [0.75, 0.25, 0.5, 1.0],
+        "A1C44310-E91B-4B59-B527-18265C123456_Post2015",
+        1,
+        Some("X"),
+        "PrismOpaque",
+    );
+    assert_ne!(first.len(), second.len());
+
     let mut bytes = vec![0u8; 8];
-    bytes.extend(lp_utf16_bytes("cd92d0f6-5b31-4bbf-84ae-4611f435537e"));
-    bytes.extend([0u8; 20]);
-    bytes.extend(lp_utf16_bytes(
-        "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015_Post2015",
-    ));
-    bytes.extend([0u8; 6]);
-    bytes.extend(lp_utf16_bytes("BA5EE55E-9982-449B-9D66-9F036540E140"));
+    bytes.extend(first);
+    bytes.extend(second);
     let out = crate::materials::face_appearance_assignments(&bytes);
-    assert_eq!(out.len(), 1);
-    assert_eq!(out[0].face_guid, "cd92d0f6-5b31-4bbf-84ae-4611f435537e");
-    assert_eq!(out[0].visual_guid, "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F");
+    assert_eq!(out.len(), 2);
+    assert_eq!(out[0].face_guid, face_guid);
+    assert_eq!(out[0].visual_guid, visual_guid);
+    assert_eq!(
+        out[0].color,
+        Some(cadmpeg_ir::topology::Color {
+            r: 0.25,
+            g: 0.5,
+            b: 0.75,
+            a: 1.0,
+        })
+    );
+    assert_eq!(
+        out[1].color,
+        Some(cadmpeg_ir::topology::Color {
+            r: 0.75,
+            g: 0.25,
+            b: 0.5,
+            a: 1.0,
+        })
+    );
 }
 
 #[test]
 fn face_appearance_assignment_rejects_entity_id_and_uppercase_targets() {
     // A body-style assignment has an entity id, not a face GUID, before the
-    // visual GUID; an uppercase GUID is a marker constant, not a face GUID.
-    for target in ["0_985", "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C"] {
-        let mut bytes = vec![0u8; 8];
-        bytes.extend(lp_utf16_bytes(target));
-        bytes.extend(lp_utf16_bytes(
+    // visual token. Uppercase or mixed-case GUIDs are not face identities.
+    for target in [
+        "0_985",
+        "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C",
+        "c1eea57c-3f56-45fc-b8cb-a9ec46a9994C",
+    ] {
+        let bytes = legacy_face_appearance_entry(
+            target,
+            [0.25, 0.5, 0.75, 1.0],
             "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015",
-        ));
-        bytes.extend(lp_utf16_bytes("BA5EE55E-9982-449B-9D66-9F036540E140"));
+            1,
+            None,
+            "PrismOpaque",
+        );
         assert!(crate::materials::face_appearance_assignments(&bytes).is_empty());
     }
+}
+
+#[test]
+fn legacy_face_appearance_assignment_rejects_partial_and_malformed_envelopes() {
+    let face_guid = "cd92d0f6-5b31-4bbf-84ae-4611f435537e";
+    let visual_guid = "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015";
+    let mut partial = lp_utf16_bytes(face_guid);
+    partial.extend(lp_utf16_bytes(visual_guid));
+    partial.extend(lp_utf16_bytes("BA5EE55E-9982-449B-9D66-9F036540E140"));
+    assert!(crate::materials::face_appearance_assignments(&partial).is_empty());
+
+    let mut malformed = legacy_face_appearance_entry(
+        face_guid,
+        [0.25, 0.5, 0.75, 1.0],
+        visual_guid,
+        1,
+        None,
+        "PrismOpaque",
+    );
+    let carrier_at = lp_utf16_bytes(face_guid).len() + 4 * size_of::<f32>();
+    malformed[carrier_at + 2] = 1;
+    assert!(crate::materials::face_appearance_assignments(&malformed).is_empty());
+}
+
+fn legacy_face_appearance_entry(
+    face_guid: &str,
+    color: [f32; 4],
+    visual_guid: &str,
+    selector_kind: u8,
+    display_name: Option<&str>,
+    selector: &str,
+) -> Vec<u8> {
+    let mut bytes = lp_utf16_bytes(face_guid);
+    for component in color {
+        bytes.extend(component.to_le_bytes());
+    }
+    bytes.extend([1, 1]);
+    bytes.extend([0; 9]);
+    bytes.push(selector_kind);
+    bytes.extend(lp_utf16_bytes(visual_guid));
+    bytes.extend(lp_utf16_bytes("BA5EE55E-9982-449B-9D66-9F036540E140"));
+    if let Some(display_name) = display_name {
+        bytes.extend(lp_utf16_bytes(display_name));
+    } else {
+        bytes.extend(0_u32.to_le_bytes());
+    }
+    bytes.extend(lp_utf16_bytes(selector));
+    bytes.extend(0_f32.to_le_bytes());
+    bytes.extend(1_f32.to_le_bytes());
+    bytes
+}
+
+#[test]
+fn modern_face_appearance_assignment_uses_second_framed_lowercase_guid() {
+    let unrelated_guid = "11111111-1111-1111-1111-111111111111";
+    let first_guid = "22222222-2222-2222-2222-222222222222";
+    let face_guid = "33333333-3333-3333-3333-333333333333";
+    let visual_guid = "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015";
+    let mut bytes = lp_utf16_bytes(unrelated_guid);
+    bytes.extend(lp_utf16_bytes(first_guid));
+    bytes.extend([0xa5; 8]);
+    bytes.extend([0; 8]);
+    bytes.extend(1_u32.to_le_bytes());
+    bytes.extend([1, 1, 0, 0, 0]);
+    bytes.extend(lp_utf16_bytes(face_guid));
+    bytes.extend([0; 12]);
+    bytes.extend(1_f32.to_le_bytes());
+    bytes.extend([1, 1]);
+    bytes.extend([0; 10]);
+    for value in [visual_guid, "08861000-1D69-CF2A-C082-CBD98E7E5D7F"] {
+        bytes.extend(lp_utf16_bytes(value));
+    }
+    bytes.extend(0_u32.to_le_bytes());
+    bytes.extend(lp_utf16_bytes("005E1000-55CE-AFB6-81A1-36E3EF077C5F"));
+    let out = crate::materials::face_appearance_assignments(&bytes);
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].face_guid, face_guid);
+    assert_eq!(out[0].visual_guid, visual_guid);
+    assert_eq!(out[0].color, None);
+
+    let mut malformed = bytes;
+    let first_gap_at = lp_utf16_bytes(unrelated_guid).len() + lp_utf16_bytes(first_guid).len();
+    malformed[first_gap_at + 8] = 1;
+    assert!(crate::materials::face_appearance_assignments(&malformed).is_empty());
+}
+
+#[test]
+fn modern_face_appearance_assignment_requires_the_first_guid_carrier() {
+    let mut bytes = vec![0u8; 8];
+    for value in [
+        "22222222-2222-2222-2222-222222222222",
+        "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015",
+        "08861000-1D69-CF2A-C082-CBD98E7E5D7F",
+    ] {
+        bytes.extend(lp_utf16_bytes(value));
+    }
+    bytes.extend(0_u32.to_le_bytes());
+    bytes.extend(lp_utf16_bytes("005E1000-55CE-AFB6-81A1-36E3EF077C5F"));
+    assert!(crate::materials::face_appearance_assignments(&bytes).is_empty());
+}
+
+#[test]
+fn modern_body_appearance_is_not_a_face_assignment() {
+    let mut bytes = vec![0u8; 8];
+    for value in [
+        "11111111-1111-1111-1111-111111111111",
+        "PrismMaterial-018",
+        "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015",
+        "08861000-1D69-CF2A-C082-CBD98E7E5D7F",
+    ] {
+        bytes.extend(lp_utf16_bytes(value));
+    }
+    bytes.extend(0_u32.to_le_bytes());
+    bytes.extend(lp_utf16_bytes("005E1000-55CE-AFB6-81A1-36E3EF077C5F"));
+    assert!(crate::materials::face_appearance_assignments(&bytes).is_empty());
 }
 
 /// A `RedirectionsStream.dat` body with one self design entry plus one design
@@ -24772,8 +26668,7 @@ fn redirections_json(own_name: &str, targets: &[(&str, &str)]) -> String {
 fn f3d_without_brep(doc_type: &str, own_name: &str, targets: &[(&str, &str)]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     zip.start_file("Properties.dat", stored).unwrap();
     let properties = format!(
         r#"{{"docstruct":{{"version":"1.0.0","type":"{doc_type}","subtype":"synthetic","attributes":{{}}}}}}"#
@@ -24959,8 +26854,8 @@ fn brep_less_part_reports_an_absent_stream_not_a_failed_decode() {
 #[test]
 fn a_text_only_carrier_without_geometry_is_reported_as_empty_not_absent() {
     let archive = f3d_with_text_brep(&[
-        "Fusion[Active]/Breps.BlobParts/BREP0.sat",
-        "Fusion[Active]/Breps.BlobParts/BREP1.sat",
+        "FusionAssetName[Active]/Breps.BlobParts/BREP0.sat",
+        "FusionAssetName[Active]/Breps.BlobParts/BREP1.sat",
     ]);
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
@@ -25027,7 +26922,7 @@ fn a_text_carrier_with_geometry_decodes_through_the_shared_brep_path() {
         zip.start_file(name, stored).unwrap();
         zip.write_all(&bytes).unwrap();
     }
-    zip.start_file("Fusion[Active]/Breps.BlobParts/BREP0.sat", stored)
+    zip.start_file("FusionAssetName[Active]/Breps.BlobParts/BREP0.sat", stored)
         .unwrap();
     zip.write_all(text.as_bytes()).unwrap();
     let archive = zip.finish().unwrap().into_inner();
@@ -25092,8 +26987,7 @@ fn ambiguous_brep_selection_reports_the_streams_that_are_present() {
 fn synthetic_ambiguous_multi_brep_f3d() -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     for name in ["first", "second"] {
         let mut smb = synthetic_smbh();
         smb[39..47].copy_from_slice(&2u64.to_le_bytes()); // no history partition
@@ -25350,96 +27244,6 @@ fn f3z_prefix_detects_as_f3d() {
         F3dCodec.detect(&archive[..512.min(archive.len())]),
         Confidence::High
     );
-}
-
-#[test]
-fn colliding_body_keys_bind_the_smallest_body() {
-    let body_keys = [
-        (
-            cadmpeg_ir::ids::BodyId("f3d:brep/b.smbh/brep:entity#1".into()),
-            7u64,
-        ),
-        (
-            cadmpeg_ir::ids::BodyId("f3d:brep/a.smbh/brep:entity#1".into()),
-            7u64,
-        ),
-        (
-            cadmpeg_ir::ids::BodyId("f3d:brep/c.smbh/brep:entity#1".into()),
-            9u64,
-        ),
-    ]
-    .into_iter()
-    .collect::<std::collections::HashMap<_, _>>();
-    assert_eq!(
-        crate::materials::body_for_key(&body_keys, 7).map(|body| body.0),
-        Some("f3d:brep/a.smbh/brep:entity#1".to_owned())
-    );
-    assert_eq!(
-        crate::materials::body_for_key(&body_keys, 9).map(|body| body.0),
-        Some("f3d:brep/c.smbh/brep:entity#1".to_owned())
-    );
-    assert_eq!(crate::materials::body_for_key(&body_keys, 11), None);
-}
-
-/// Push one same-segment reference: the `01` tag, a `u64` target, and the
-/// two-byte tail that names no other segment.
-fn push_design_reference(bytes: &mut Vec<u8>, target: u64) {
-    bytes.push(1);
-    bytes.extend(target.to_le_bytes());
-    bytes.extend([0, 0]);
-}
-
-/// Build a modern body-scope appearance-assignment record.
-///
-/// `node` is the record's browser-node entity, which is the owning body's
-/// design-entity suffix plus one.
-fn modern_appearance_record(node: u64, visual: &str, trailer: bool, token: bool) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    bytes.extend(lp_utf16_bytes("C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C"));
-    if token {
-        bytes.extend(lp_utf16_bytes("PrismMaterial-022"));
-    }
-    push_design_reference(&mut bytes, 7);
-    bytes.push(0);
-    push_design_reference(&mut bytes, node);
-    bytes.extend(lp_utf16_bytes("BodyName"));
-    bytes.extend(1.0f32.to_le_bytes());
-    bytes.extend([1, 1]);
-    bytes.extend(lp_utf16_bytes(visual));
-    bytes.extend(lp_utf16_bytes("08861000-1D69-CF2A-C082-CBD98E7E5D7F"));
-    if trailer {
-        bytes.extend(lp_utf16_bytes("005E1000-55CE-AFB6-81A1-36E3EF077C5F"));
-    }
-    bytes
-}
-
-const MODERN_VISUAL_GUID: &str = "251E92E9-B7B8-D3F3-C174-753263AF8709";
-
-#[test]
-fn modern_body_appearance_record_binds_through_its_browser_node_reference() {
-    let bytes = modern_appearance_record(292, MODERN_VISUAL_GUID, true, true);
-    assert_eq!(
-        crate::materials::browser_body_appearances(&bytes),
-        vec![(291, MODERN_VISUAL_GUID.to_owned())]
-    );
-}
-
-#[test]
-fn modern_appearance_record_without_its_trailer_binds_nothing() {
-    let bytes = modern_appearance_record(292, MODERN_VISUAL_GUID, false, true);
-    assert!(crate::materials::browser_body_appearances(&bytes).is_empty());
-}
-
-#[test]
-fn modern_appearance_record_without_a_physical_token_is_not_body_scoped() {
-    let bytes = modern_appearance_record(292, MODERN_VISUAL_GUID, true, false);
-    assert!(crate::materials::browser_body_appearances(&bytes).is_empty());
-}
-
-#[test]
-fn modern_appearance_record_refuses_a_browser_node_entity_of_zero() {
-    let bytes = modern_appearance_record(0, MODERN_VISUAL_GUID, true, true);
-    assert!(crate::materials::browser_body_appearances(&bytes).is_empty());
 }
 
 /// A report carrying the BREP-less geometry losses that `build_container_report`

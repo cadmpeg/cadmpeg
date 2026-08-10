@@ -411,6 +411,18 @@ fn project_all_dimension_constraints(
         ) {
             return Some(definition);
         }
+        if parameter.source_kind.starts_with("Angular Dimension") {
+            let indices = group
+                .loci
+                .iter()
+                .map(|locus| locus.geometry_record_index)
+                .collect::<Vec<_>>();
+            if let Some(definition) =
+                exact_definition(scope, parameter, &indices, parameter_id.clone())
+            {
+                return Some(definition);
+            }
+        }
         if group.state == 0 && group.unknown_constraint_bits == 0 {
             if let Some(definition) = counted_role_relation(&locus_entities, group.owner_role) {
                 return Some(definition);
@@ -418,14 +430,6 @@ fn project_all_dimension_constraints(
             if let Some(definition) = exact_counted_dimension_relation(&locus_entities) {
                 return Some(definition);
             }
-        }
-        if parameter.source_kind.starts_with("Angular Dimension") {
-            let indices = group
-                .loci
-                .iter()
-                .map(|locus| locus.geometry_record_index)
-                .collect::<Vec<_>>();
-            return exact_definition(scope, parameter, &indices, parameter_id);
         }
         if parameter.source_kind.starts_with("Linear Dimension") {
             if group.state == 0x20 && group.unknown_constraint_bits == 0 {
@@ -842,22 +846,12 @@ fn project_all_dimension_constraints(
             let linear_candidates = if parameter.source_kind.starts_with("Linear Dimension")
                 && design_dimension_unit(parameter)
             {
-                let candidates = recipe_linear_dimension_candidates(
+                recipe_linear_dimension_candidates(
                     entities,
                     &sketch,
                     parameter.evaluated_value * 10.0,
                     &parameter_id,
-                );
-                if records.iter().all(|record| {
-                    record.recipe_kind == crate::records::ConstructionRecipeKind::Edge
-                }) {
-                    candidates
-                        .into_iter()
-                        .filter(|candidate| matches!(candidate, Definition::Distance { .. }))
-                        .collect()
-                } else {
-                    candidates
-                }
+                )
             } else {
                 Vec::default()
             };
@@ -1625,6 +1619,7 @@ pub(crate) fn constraint_parameters(
             .flat_map(|direction| {
                 [
                     direction.spacing_parameter.as_ref(),
+                    direction.span_parameter.as_ref(),
                     direction.count_parameter.as_ref(),
                 ]
                 .into_iter()
@@ -1899,6 +1894,7 @@ pub fn project_spatial_dimension_constraints(
                         let signed = design_length(parameter)?.0;
                         spatial_counted_offset_dimension_definition(
                             &native_kind,
+                            native_state,
                             &operands,
                             parameter_id,
                             expected,
@@ -2432,8 +2428,9 @@ fn spatial_reflection_symmetry(
     clippy::too_many_arguments,
     reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
 )]
-fn spatial_counted_offset_dimension_definition(
+pub(crate) fn spatial_counted_offset_dimension_definition(
     native_kind: &str,
+    native_state: Option<u64>,
     operands: &[cadmpeg_ir::sketches::SketchNativeOperand],
     parameter: &cadmpeg_ir::features::ParameterId,
     distance: f64,
@@ -2443,17 +2440,16 @@ fn spatial_counted_offset_dimension_definition(
     spatial_by_record: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SpatialSketchEntity>,
 ) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinition> {
     use cadmpeg_ir::features::Length;
-    use cadmpeg_ir::sketches::{
-        SpatialSketchConstraintDefinition as Definition, SpatialSketchOffsetPair,
-    };
+    use cadmpeg_ir::sketches::SpatialSketchConstraintDefinition as Definition;
 
     if !native_kind.starts_with("Linear Dimension")
+        || native_state != Some(0x20)
         || !distance.is_finite()
         || distance <= 1.0e-9
-        || !signed_parameter.is_finite()
     {
         return None;
     }
+    let parameter_factor = offset_parameter_factor(distance, signed_parameter)?;
     let scope = operands
         .iter()
         .find_map(|operand| native_stream(operand.native_ref.as_deref()?))?;
@@ -2466,9 +2462,13 @@ fn spatial_counted_offset_dimension_definition(
     let returns = operands.get(owner_position + 1..)?;
     if owner.native_field.as_deref() != Some("owner")
         || owner.native_kind != "record"
-        || returns
-            .iter()
-            .any(|operand| operand.native_field.as_deref() != Some("return"))
+        || owner.native_role != Some(0)
+        || loci.iter().any(|operand| operand.native_kind != "curve")
+        || returns.iter().any(|operand| {
+            operand.native_kind != "curve"
+                || operand.native_field.as_deref() != Some("return")
+                || operand.native_role.is_some()
+        })
         || loci.len() < 4
         || !loci.len().is_multiple_of(2)
         || returns.len() != loci.len()
@@ -2514,25 +2514,29 @@ fn spatial_counted_offset_dimension_definition(
     let spatial = spatial_sketches
         .iter()
         .find(|candidate| &candidate.id == sketch)?;
-    let normal = spatial
-        .profiles
-        .iter()
-        .find(|profile| {
-            profile.boundary.len() == result_ids.len()
-                && profile
-                    .boundary
-                    .iter()
-                    .all(|use_| result_ids.contains(&use_.entity))
-        })?
-        .normal;
-    let mut pairs = Vec::with_capacity(source_count);
+    let mut matching_profiles = spatial.profiles.iter().filter(|profile| {
+        let boundary = profile
+            .boundary
+            .iter()
+            .map(|use_| &use_.entity)
+            .collect::<HashSet<_>>();
+        boundary.len() == profile.boundary.len() && boundary == result_ids
+    });
+    let normal = matching_profiles.next()?.normal;
+    let normal_length = normal.norm();
+    if matching_profiles.next().is_some()
+        || !normal_length.is_finite()
+        || (normal_length - 1.0).abs() > 1.0e-9
+    {
+        return None;
+    }
+    let mut sources = Vec::with_capacity(source_count);
+    let mut results = Vec::with_capacity(source_count);
     let mut used = HashSet::new();
-    let mut reversal = None;
-    let mut witnesses = 0usize;
     for operands in returns.chunks_exact(2) {
         let source_record = operands[0].object_index;
         let result_record = operands[1].object_index;
-        if roles.get(&source_record) == Some(&0)
+        if !matches!(roles.get(&source_record), Some(role) if *role != 0)
             || roles.get(&result_record) != Some(&0)
             || !used.insert(source_record)
             || !used.insert(result_record)
@@ -2548,43 +2552,19 @@ fn spatial_counted_offset_dimension_definition(
         {
             return None;
         }
-        if let Some(signed) =
-            cadmpeg_ir::eval::spatial_line_offset(&source.geometry, &result.geometry, normal)
-        {
-            let scale = 1.0 + signed.abs().max(distance);
-            if (signed.abs() - distance).abs() > 1.0e-9 * scale {
-                return None;
-            }
-            let pair_reversal = signed.is_sign_negative();
-            if reversal.is_some_and(|expected| expected != pair_reversal) {
-                return None;
-            }
-            reversal = Some(pair_reversal);
-            witnesses += 1;
-        }
-        pairs.push((source.id.clone(), result.id.clone()));
+        sources.push(source.id.clone());
+        results.push(result.id.clone());
     }
-    if used.len() != loci.len() || witnesses == 0 {
+    if used.len() != loci.len() {
         return None;
     }
-    let source_reversed = reversal?;
     Some(Definition::Offset {
-        pairs: pairs
-            .into_iter()
-            .map(|(source, result)| SpatialSketchOffsetPair {
-                source,
-                result,
-                source_reversed,
-            })
-            .collect(),
+        sources,
+        results,
         normal,
         distance: Length(distance),
         parameter: Some(parameter.clone()),
-        parameter_factor: Some(if signed_parameter.is_sign_negative() {
-            -1.0
-        } else {
-            1.0
-        }),
+        parameter_factor: Some(parameter_factor),
     })
 }
 
@@ -3727,13 +3707,7 @@ pub(crate) fn recipe_linear_dimension_candidates(
                 endpoints.into_iter().any(|end| same_point(*position, end))
             })
         };
-    let mut candidates = line_pairs
-        .iter()
-        .map(|(first, second)| Definition::Distance {
-            entities: vec![first.id.clone(), second.id.clone()],
-            parameter: parameter.clone(),
-        })
-        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
     for first in 0..points.len() {
         for second in first + 1..points.len() {
             let subsumed_by_line_pair = line_pairs.iter().any(|(first_line, second_line)| {
@@ -3754,6 +3728,14 @@ pub(crate) fn recipe_linear_dimension_candidates(
             }
         }
     }
+    candidates.extend(
+        line_pairs
+            .iter()
+            .map(|(first, second)| Definition::Distance {
+                entities: vec![first.id.clone(), second.id.clone()],
+                parameter: parameter.clone(),
+            }),
+    );
     candidates
 }
 

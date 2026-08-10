@@ -1148,8 +1148,12 @@ mod tests {
                 Point3::new(3.0, 0.75, 0.0),
             ],
             triangles: vec![[0, 1, 2]],
+            feature_edges: Vec::new(),
             strip_lengths: Vec::new(),
             normals: Vec::new(),
+            corner_normals: Vec::new(),
+            triangle_groups: Vec::new(),
+            texture_assignments: Vec::new(),
             channels: Vec::new(),
         });
 
@@ -1200,6 +1204,10 @@ mod tests {
             triangles: vec![triangle],
             strip_lengths: Vec::new(),
             normals: Vec::new(),
+            feature_edges: Vec::new(),
+            corner_normals: Vec::new(),
+            triangle_groups: Vec::new(),
+            texture_assignments: Vec::new(),
             channels: Vec::new(),
         };
         let boundary_chord = mesh(

@@ -3,11 +3,19 @@
   "entries": [
     {
       "attributes": {},
-      "compressed_size": 18,
+      "compressed_size": 571,
       "compression": "stored",
       "name": "Manifest.dat",
       "role": "manifest",
-      "uncompressed_size": 18
+      "uncompressed_size": 571
+    },
+    {
+      "attributes": {},
+      "compressed_size": 589,
+      "compression": "stored",
+      "name": "FusionAssetName[Active]/Manifest.dat",
+      "role": "manifest",
+      "uncompressed_size": 589
     },
     {
       "attributes": {
@@ -35,7 +43,7 @@
   ],
   "format": "f3d",
   "notes": [
-    "asset folder (from entry paths): FusionAssetName[Active]",
+    "Design asset folder (from manifests): FusionAssetName[Active]",
     "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
     "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/Body1.smbh (2916 bytes uncompressed)",
     "container-level inspection only; run `decode` to resolve Design body bindings and build each referenced BREP graph"

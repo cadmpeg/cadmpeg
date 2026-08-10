@@ -2730,6 +2730,18 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
             mesh.id
         )));
     }
+    if !mesh.feature_edges.is_empty() || !mesh.corner_normals.is_empty() {
+        return Err(CodecError::NotImplemented(format!(
+            "mesh {} uses feature edges or corner normals not yet writable",
+            mesh.id
+        )));
+    }
+    if !mesh.triangle_groups.is_empty() || !mesh.texture_assignments.is_empty() {
+        return Err(CodecError::NotImplemented(format!(
+            "mesh {} uses triangle groups or texture assignments not yet writable",
+            mesh.id
+        )));
+    }
     if !mesh.normals.is_empty() && mesh.normals.len() != vertex_count {
         return Err(CodecError::Malformed(format!(
             "mesh {} normal count mismatch",
@@ -3985,8 +3997,12 @@ mod tests {
                     Point3::new(0.0, 3.0, 0.0),
                 ],
                 triangles: vec![[0, 1, 2]],
+                feature_edges: Vec::new(),
                 strip_lengths: Vec::new(),
                 normals: vec![cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0); 3],
+                corner_normals: Vec::new(),
+                triangle_groups: Vec::new(),
+                texture_assignments: Vec::new(),
                 channels: Vec::new(),
             });
         for version in [
@@ -4021,6 +4037,20 @@ mod tests {
             assert_eq!(actual.triangles, ir.model.tessellations[0].triangles);
             assert_eq!(actual.normals, ir.model.tessellations[0].normals);
         }
+
+        ir.model.tessellations[0].triangle_groups.push(
+            cadmpeg_ir::tessellation::TessellationTriangleGroup {
+                source_id: Some("synthetic:test:group#0".into()),
+                triangles: vec![0],
+            },
+        );
+        assert!(matches!(
+            RhinoEncoder::new(RhinoArchiveVersion::V8).plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            }),
+            Err(cadmpeg_core::CodecError::NotImplemented(_))
+        ));
     }
 
     #[test]
@@ -4040,8 +4070,12 @@ mod tests {
                     Point3::new(0.0, 1.0, 0.0),
                 ],
                 triangles: vec![[0, 1, 2]],
+                feature_edges: Vec::new(),
                 strip_lengths: Vec::new(),
                 normals: Vec::new(),
+                corner_normals: Vec::new(),
+                triangle_groups: Vec::new(),
+                texture_assignments: Vec::new(),
                 channels: Vec::new(),
             });
         let mut v5 = Vec::new();
@@ -4109,8 +4143,12 @@ mod tests {
                 source_object: None,
                 vertices,
                 triangles: vec![[0, 1, 2]],
+                feature_edges: Vec::new(),
                 strip_lengths: Vec::new(),
                 normals: Vec::new(),
+                corner_normals: Vec::new(),
+                triangle_groups: Vec::new(),
+                texture_assignments: Vec::new(),
                 channels: channels.clone(),
             });
         let mut bytes = Vec::new();
@@ -4153,8 +4191,12 @@ mod tests {
                     Point3::new(0.0, 1.0, 0.0),
                 ],
                 triangles: vec![[0, 1, 2]],
+                feature_edges: Vec::new(),
                 strip_lengths: Vec::new(),
                 normals: Vec::new(),
+                corner_normals: Vec::new(),
+                triangle_groups: Vec::new(),
+                texture_assignments: Vec::new(),
                 channels: vec![cadmpeg_ir::tessellation::TessellationChannel {
                     domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
                     kind: CHANNEL_UV,

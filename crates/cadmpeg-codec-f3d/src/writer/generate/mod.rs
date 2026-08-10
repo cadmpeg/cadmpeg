@@ -8,6 +8,7 @@ use std::io::{Seek, SeekFrom, Write};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 
+use crate::manifest::{self, GENERATED_DESIGN_ASSET_FOLDER as DESIGN_FOLDER};
 use crate::writer::primitives::{
     f3d_native, validate_assembly_projection, validate_configuration_projection,
 };
@@ -16,17 +17,19 @@ pub(crate) mod index;
 pub(crate) mod native_bytes;
 pub(crate) mod native_geometry;
 pub(crate) mod preconditions;
+pub(crate) mod presentation;
 pub(crate) mod records;
 pub(crate) mod smbh;
 use preconditions::{
-    validate_source_less_act, validate_source_less_auxiliary_geometry,
-    validate_source_less_design_bindings, validate_source_less_design_links,
-    validate_source_less_design_ownership, validate_source_less_history_graph,
-    validate_source_less_procedural_carriers, validate_source_less_recipes,
-    validate_source_less_sketch_graph, validate_source_less_topology_tolerances,
+    validate_source_less_auxiliary_geometry, validate_source_less_design_bindings,
+    validate_source_less_design_links, validate_source_less_design_ownership,
+    validate_source_less_history_graph, validate_source_less_procedural_carriers,
+    validate_source_less_recipes, validate_source_less_sketch_graph,
+    validate_source_less_topology_tolerances,
 };
-use records::{encode_act_bulkstream, encode_design_bulkstream, encode_design_metastream};
-use smbh::encode_planar_triangle_smbh;
+use presentation::GeneratedDesignRegistry;
+use records::{encode_design_bulkstream, encode_design_metastream};
+use smbh::encode_smbh;
 
 /// Write a canonical source-less F3D archive for the currently supported
 /// native construction profile.
@@ -35,7 +38,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
     validate_assembly_projection(target, loaded_native.as_ref())?;
     let has_native = loaded_native.is_some();
     let native = loaded_native.unwrap_or_default();
-    let attributes = attributes::AttributeIndex::new(target, &native);
+    let attributes = attributes::AttributeIndex::new(target, &native)?;
     if !target.model.subds.is_empty() {
         return Err(CodecError::NotImplemented(
             "source-less F3D generation does not support SubD surfaces".into(),
@@ -49,34 +52,47 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
     validate_source_less_procedural_carriers(target)?;
     validate_source_less_topology_tolerances(target, &native)?;
     validate_source_less_auxiliary_geometry(target)?;
-    let design_bindings = if has_native {
+    if !native.act_entities.is_empty()
+        || !native.act_guids.is_empty()
+        || !native.act_registry_channels.is_empty()
+        || !native.act_root_components.is_empty()
+        || !native.act_table_references.is_empty()
+    {
+        return Err(CodecError::NotImplemented(
+            "source-less F3D ACT generation requires a retained MetaStream record registry".into(),
+        ));
+    }
+    let design_bindings = validate_source_less_design_bindings(&native)?;
+    if has_native {
         validate_configuration_projection(target, &native)?;
         validate_source_less_history_graph(target, &native)?;
-        validate_source_less_act(&native)?;
-        let design_bindings = validate_source_less_design_bindings(&native)?;
         validate_source_less_design_ownership(&native)?;
         validate_source_less_sketch_graph(&native)?;
         validate_source_less_recipes(&native)?;
         validate_source_less_design_links(target, &native, &attributes)?;
-        Some(design_bindings)
-    } else {
-        None
-    };
-    let smbh = encode_planar_triangle_smbh(target, &native, &attributes)?;
+    }
+    let design_registry = GeneratedDesignRegistry::new(target, design_bindings, &attributes)?;
+    let smbh = encode_smbh(target, &native, &attributes)?;
     let mut staged = tempfile::tempfile()?;
     let mut archive = zip::ZipWriter::new(&mut staged);
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     archive
         .start_file("Manifest.dat", options)
         .map_err(|error| CodecError::Malformed(format!("cannot create F3D manifest: {error}")))?;
-    archive.write_all(b"cadmpeg-generated-f3d")?;
+    archive.write_all(&manifest::generated_top_level()?)?;
     archive
         .start_file("Properties.dat", options)
         .map_err(|error| CodecError::Malformed(format!("cannot create F3D properties: {error}")))?;
     archive.write_all(&0u32.to_le_bytes())?;
     archive
+        .start_file(format!("{DESIGN_FOLDER}/Manifest.dat"), options)
+        .map_err(|error| {
+            CodecError::Malformed(format!("cannot create F3D asset manifest: {error}"))
+        })?;
+    archive.write_all(&manifest::generated_design_asset()?)?;
+    archive
         .start_file(
-            "FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
+            format!("{DESIGN_FOLDER}/Breps.BlobParts/BREP.generated.smbh"),
             options,
         )
         .map_err(|error| CodecError::Malformed(format!("cannot create F3D BREP entry: {error}")))?;
@@ -93,11 +109,6 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
                     configuration.entry_name
                 )));
             }
-            crate::design::configurations::validate_configuration_payload(
-                &configuration.entry_name,
-                configuration.kind,
-                &configuration.payload,
-            )?;
             let valid_name = match configuration.kind {
                 crate::records::DesignConfigurationKind::Table => {
                     configuration.entry_name.ends_with(".dsgcfg")
@@ -112,53 +123,41 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
                     configuration.entry_name
                 )));
             }
+            let payload =
+                crate::design::configurations::encode_configuration_payload(configuration)?;
             archive
                 .start_file(&configuration.entry_name, options)
                 .map_err(|error| {
                     CodecError::Malformed(format!("cannot create F3D configuration entry: {error}"))
                 })?;
-            let payload = serde_json::to_vec(&configuration.payload).map_err(|error| {
-                CodecError::Malformed(format!("cannot encode F3D configuration JSON: {error}"))
-            })?;
             archive.write_all(&payload)?;
         }
     }
-    if let Some(bulk_stream) = encode_design_bulkstream(target, &native, &attributes)? {
+    let design_bulk = encode_design_bulkstream(target, &native, &design_registry)?;
+    if let Some(bulk_stream) = &design_bulk {
         archive
-            .start_file("FusionAssetName[Active]/Design1/BulkStream.dat", options)
+            .start_file(format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"), options)
             .map_err(|error| {
                 CodecError::Malformed(format!("cannot create F3D Design BulkStream: {error}"))
             })?;
-        archive.write_all(&bulk_stream)?;
+        archive.write_all(&bulk_stream.bytes)?;
     }
-    if let Some(design_bindings) = design_bindings {
-        if let Some(meta_stream) = encode_design_metastream(design_bindings)? {
-            archive
-                .start_file("FusionAssetName[Active]/Design1/MetaStream.dat", options)
-                .map_err(|error| {
-                    CodecError::Malformed(format!("cannot create F3D Design MetaStream: {error}"))
-                })?;
-            archive.write_all(&meta_stream)?;
-        }
-    }
-    if let Some(act_stream) = encode_act_bulkstream(&native)? {
+    let primary_records = design_bulk.as_ref().map_or(&[][..], |bulk_stream| {
+        bulk_stream.primary_records.as_slice()
+    });
+    if let Some(meta_stream) = encode_design_metastream(&design_registry, primary_records)? {
         archive
-            .start_file(
-                "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat",
-                options,
-            )
+            .start_file(format!("{DESIGN_FOLDER}/Design1/MetaStream.dat"), options)
             .map_err(|error| {
-                CodecError::Malformed(format!("cannot create F3D ACT BulkStream: {error}"))
+                CodecError::Malformed(format!("cannot create F3D Design MetaStream: {error}"))
             })?;
-        archive.write_all(&act_stream)?;
+        archive.write_all(&meta_stream)?;
     }
     for (ordinal, appearance) in target.model.appearances.iter().enumerate() {
         let protein = crate::materials::encode_protein(appearance)?;
         archive
             .start_file(
-                format!(
-                    "FusionAssetName[Active]/ProteinAssets.BlobParts/ProteinAsset.{ordinal}.protein"
-                ),
+                format!("{DESIGN_FOLDER}/ProteinAssets.BlobParts/ProteinAsset.{ordinal}.protein"),
                 options,
             )
             .map_err(|error| {

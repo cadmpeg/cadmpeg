@@ -999,6 +999,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         PathRef::Unresolved(_) | PathRef::Native(_) => true,
         PathRef::Sketch(_) => false,
         PathRef::SketchCurves { curves, .. } => curves.is_empty(),
+        PathRef::SpatialSketchCurves { curves, .. } => curves.is_empty(),
     };
     let incomplete_vertex_selection = |selection: &cadmpeg_ir::features::VertexSelection| {
         matches!(
@@ -1508,7 +1509,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 incomplete_face_selection(targets)
                     || match tool {
                         SplitFaceTool::Path(path) => incomplete_path(path),
-                        SplitFaceTool::Plane { .. } => false,
+                        SplitFaceTool::Plane { .. } | SplitFaceTool::Planes { .. } => false,
                     }
             }
             FeatureDefinition::SewBodies {
@@ -2580,8 +2581,12 @@ fn build_geometry_ir(
                     source_object: None,
                     vertices: mesh.vertices,
                     triangles: mesh.triangles,
+                    feature_edges: Vec::new(),
                     strip_lengths: mesh.strip_lengths,
                     normals: mesh.normals,
+                    corner_normals: Vec::new(),
+                    triangle_groups: Vec::new(),
+                    texture_assignments: Vec::new(),
                     channels: mesh.channels,
                 });
         }

@@ -93,6 +93,10 @@ struct Schema {
 /// One typed property decoded according to its packaged schema.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DecodedProperty {
+    /// Byte offset of the scalar or color payload relative to its record.
+    /// A unit-tagged scalar points after its four-byte unit tag.
+    /// A multiple-value property points to its count prefix.
+    pub value_offset: usize,
     /// Decoded property value.
     pub value: PropertyValue,
     /// Connected asset identifiers in serialized order.
@@ -134,6 +138,8 @@ pub enum PropertyValue {
 pub struct DecodedRecord {
     /// Zero-based logical-record ordinal in the paged instance stream.
     pub ordinal: u64,
+    /// Byte offset of the record in the dechunked logical stream.
+    pub logical_offset: usize,
     /// Schema identifier selected by the record.
     pub schema: String,
     /// Asset instance GUID.
@@ -145,6 +151,16 @@ pub struct DecodedRecord {
     pub asset_lib_id: String,
     /// Properties keyed by schema property identifier.
     pub properties: BTreeMap<String, DecodedProperty>,
+}
+
+/// One exact logical record recovered from the `InstanceProperties` page
+/// framing.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecordFrame {
+    /// Byte offset in the dechunked logical stream.
+    pub logical_offset: usize,
+    /// Complete record bytes, including the opening marker.
+    pub bytes: Vec<u8>,
 }
 
 /// One paged instance record rejected by schema-driven decoding.
@@ -177,17 +193,17 @@ pub fn decode(protein: &[u8], instance: &[u8]) -> Result<Vec<DecodedRecord>, Cod
 /// logical record without discarding later valid records.
 pub fn decode_detailed(protein: &[u8], instance: &[u8]) -> Result<DecodeOutcome, CodecError> {
     let schemas = schemas(protein)?;
-    let Some(pages) = paged_records(instance) else {
+    let Some(frames) = record_frames(instance) else {
         return Err(CodecError::Malformed(
             "Protein InstanceProperties page framing is invalid".into(),
         ));
     };
     let mut outcome = DecodeOutcome::default();
-    for (ordinal, record) in pages.into_iter().enumerate() {
+    for (ordinal, frame) in frames.into_iter().enumerate() {
         let ordinal = u64::try_from(ordinal).map_err(|_| {
             CodecError::Malformed("Protein logical-record ordinal exceeds u64".into())
         })?;
-        match decode_record(&record, &schemas, ordinal) {
+        match decode_record(&frame.bytes, &schemas, ordinal, frame.logical_offset) {
             Ok(Some(record)) => outcome.records.push(record),
             Ok(None) => outcome.rejected.push(RejectedRecord {
                 ordinal,
@@ -209,7 +225,7 @@ pub fn decode_detailed(protein: &[u8], instance: &[u8]) -> Result<DecodeOutcome,
 /// extends it, and a page opening with [`TERMINAL_MARKER`] closes it and carries
 /// the used byte count as a `u16` at offset 4. Every record is returned with the
 /// opening marker restored so record offsets match the on-page layout.
-fn paged_records(bytes: &[u8]) -> Option<Vec<Vec<u8>>> {
+pub fn record_frames(bytes: &[u8]) -> Option<Vec<RecordFrame>> {
     if bytes.len() < 16 + PAGE_SIZE
         || u32::from_le_bytes(bytes.get(0..4)?.try_into().ok()?) as usize != PAGE_SIZE
         || !(bytes.len() - 16).is_multiple_of(PAGE_SIZE)
@@ -217,27 +233,36 @@ fn paged_records(bytes: &[u8]) -> Option<Vec<Vec<u8>>> {
         return None;
     }
     let mut records = Vec::new();
-    let mut current: Option<Vec<u8>> = None;
+    let mut current: Option<RecordFrame> = None;
+    let mut logical_offset = 0usize;
     for page in bytes[16..].chunks_exact(PAGE_SIZE) {
         if page.get(4..8) == Some(RECORD_MARKER) {
-            if current.is_some() {
-                return None;
+            if let Some(record) = current.take() {
+                logical_offset = logical_offset.checked_add(record.bytes.len())?;
+                records.push(record);
             }
-            let mut record = RECORD_MARKER.to_vec();
-            record.extend_from_slice(&page[8..]);
-            current = Some(record);
+            let mut frame = RecordFrame {
+                logical_offset,
+                bytes: RECORD_MARKER.to_vec(),
+            };
+            frame.bytes.extend_from_slice(&page[8..]);
+            current = Some(frame);
         } else if page.get(4..8) == Some(CONTINUATION_MARKER) {
-            current.as_mut()?.extend_from_slice(&page[8..]);
+            current.as_mut()?.bytes.extend_from_slice(&page[8..]);
         } else if page.get(0..4) == Some(TERMINAL_MARKER) {
             let used = u16::from_le_bytes(page.get(4..6)?.try_into().ok()?) as usize;
-            let mut record = current.take()?;
-            record.extend_from_slice(page.get(8..8 + used)?);
-            records.push(record);
+            let mut frame = current.take()?;
+            frame.bytes.extend_from_slice(page.get(8..8 + used)?);
+            logical_offset = logical_offset.checked_add(frame.bytes.len())?;
+            records.push(frame);
         } else {
             return None;
         }
     }
-    current.is_none().then_some(records)
+    if let Some(record) = current {
+        records.push(record);
+    }
+    Some(records)
 }
 
 /// Whether the Protein archive packages schema XML documents.
@@ -374,6 +399,7 @@ fn decode_record(
     record: &[u8],
     schemas: &HashMap<String, Schema>,
     ordinal: u64,
+    logical_offset: usize,
 ) -> Result<Option<DecodedRecord>, CodecError> {
     if !record.starts_with(RECORD_MARKER) {
         return Ok(None);
@@ -402,6 +428,17 @@ fn decode_record(
             continue;
         }
         let property_at = at;
+        let value_offset = if !property.multiple
+            && matches!(property.carrier, Carrier::UnitFloat | Carrier::Distance)
+        {
+            property_at.checked_add(4).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "Protein {schema} instance {guid} property {id} offset overflows usize"
+                ))
+            })?
+        } else {
+            property_at
+        };
         let value = read_property(record, &mut at, &property, &id).map_err(|error| {
             CodecError::Malformed(format!(
                 "Protein {schema} instance {guid} property {id} at {property_at}..{at}/{}: {error}",
@@ -418,7 +455,14 @@ fn decode_record(
         } else {
             Vec::new()
         };
-        values.insert(id, DecodedProperty { value, connections });
+        values.insert(
+            id,
+            DecodedProperty {
+                value_offset,
+                value,
+                connections,
+            },
+        );
     }
     if at != record.len() {
         return Err(CodecError::Malformed(format!(
@@ -428,6 +472,7 @@ fn decode_record(
     }
     Ok(Some(DecodedRecord {
         ordinal,
+        logical_offset,
         schema,
         guid,
         base,
@@ -751,12 +796,14 @@ mod tests {
         assert_eq!(records.len(), 1);
         let properties = &records[0].properties;
         assert_eq!(
-            properties["a_color"],
-            DecodedProperty {
-                value: PropertyValue::Color([0.1, 0.2, 0.3, 1.0]),
-                connections: vec!["first-guid".into(), "second-guid".into()],
-            }
+            properties["a_color"].value,
+            PropertyValue::Color([0.1, 0.2, 0.3, 1.0])
         );
+        assert_eq!(
+            properties["a_color"].connections,
+            ["first-guid", "second-guid"]
+        );
+        assert!(properties["a_color"].value_offset > RECORD_MARKER.len());
         assert_eq!(
             properties["b_distance"].value,
             PropertyValue::Distance {
@@ -898,24 +945,18 @@ mod tests {
             push_lp(&mut second, value);
         }
         let stream = paged_stream(&[&first, &second]);
-        let records = paged_records(&stream).expect("stream is paged");
-        assert_eq!(records.len(), 2);
-        assert_eq!(records[0], [RECORD_MARKER, &first].concat());
-        assert_eq!(records[1], [RECORD_MARKER, &second].concat());
+        let frames = record_frames(&stream).expect("stream is paged");
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0].logical_offset, 0);
+        assert_eq!(frames[0].bytes, [RECORD_MARKER, &first].concat());
+        assert_eq!(frames[1].logical_offset, frames[0].bytes.len());
+        assert_eq!(frames[1].bytes, [RECORD_MARKER, &second].concat());
         assert!(stream.len() > 16 + 3 * PAGE_SIZE, "record one spans pages");
 
-        assert!(paged_records(&[]).is_none());
+        assert!(record_frames(&[]).is_none());
         let mut truncated = stream.clone();
         truncated.truncate(16 + PAGE_SIZE + 1);
-        assert!(paged_records(&truncated).is_none());
-
-        let mut missing_terminal = stream.clone();
-        missing_terminal.truncate(16 + PAGE_SIZE);
-        assert!(paged_records(&missing_terminal).is_none());
-
-        let mut repeated_start = stream[..16 + PAGE_SIZE].to_vec();
-        repeated_start.extend_from_slice(&stream[16..16 + PAGE_SIZE]);
-        assert!(paged_records(&repeated_start).is_none());
+        assert!(record_frames(&truncated).is_none());
     }
 
     /// Lay records out as `InstanceProperties.bin` does: a 16-byte stream header,

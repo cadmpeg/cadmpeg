@@ -247,6 +247,7 @@ mod tests {
     fn catalog_projects_assets_and_refuses_ambiguous_texture_guids() {
         let color = DecodedRecord {
             ordinal: 0,
+            logical_offset: 0,
             schema: "GenericSchema".into(),
             guid: "appearance".into(),
             base: "Blue".into(),
@@ -254,6 +255,7 @@ mod tests {
             properties: BTreeMap::from([(
                 "generic_diffuse".into(),
                 DecodedProperty {
+                    value_offset: 0,
                     value: PropertyValue::Color([0.0, 0.25, 1.0, 1.0]),
                     connections: vec!["duplicate-texture".into()],
                 },
@@ -261,6 +263,7 @@ mod tests {
         };
         let texture = || DecodedRecord {
             ordinal: 1,
+            logical_offset: 0,
             schema: "UnifiedBitmapSchema".into(),
             guid: "duplicate-texture".into(),
             base: "Texture".into(),

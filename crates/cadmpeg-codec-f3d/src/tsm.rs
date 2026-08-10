@@ -40,19 +40,17 @@ enum GripVertexMarker {
 pub(crate) fn decode(
     scan: &ContainerScan,
 ) -> Result<(Vec<SubdSurface>, Vec<cadmpeg_ir::report::LossNote>), CodecError> {
-    let prefix = scan
-        .asset_folder
-        .as_ref()
-        .map(|folder| format!("{folder}{ENTRY_MARKER}"));
+    let Some(folder) = scan.design_asset_folder() else {
+        return Ok((Vec::new(), Vec::new()));
+    };
+    let prefix = format!("{folder}{ENTRY_MARKER}");
     let mut cages = Vec::new();
     let mut losses = Vec::new();
     for entry in scan.entries.iter().filter(|entry| {
         std::path::Path::new(&entry.name)
             .extension()
             .is_some_and(|ext| ext.eq_ignore_ascii_case("tsm"))
-            && prefix
-                .as_ref()
-                .is_none_or(|prefix| entry.name.starts_with(prefix))
+            && entry.name.starts_with(&prefix)
     }) {
         match parse(&entry.name, scan.entry_bytes(&entry.name)?) {
             Ok(parsed) => {

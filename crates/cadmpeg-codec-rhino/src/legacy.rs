@@ -1040,8 +1040,12 @@ fn legacy_mesh(
         source_object: None,
         vertices,
         triangles,
+        feature_edges: Vec::new(),
         strip_lengths: Vec::new(),
         normals,
+        corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
         channels: Vec::new(),
     })
 }

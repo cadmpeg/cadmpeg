@@ -3,11 +3,19 @@
   "entries": [
     {
       "attributes": {},
-      "compressed_size": 18,
+      "compressed_size": 571,
       "compression": "stored",
       "name": "Manifest.dat",
       "role": "manifest",
-      "uncompressed_size": 18
+      "uncompressed_size": 571
+    },
+    {
+      "attributes": {},
+      "compressed_size": 589,
+      "compression": "stored",
+      "name": "FusionAssetName[Active]/Manifest.dat",
+      "role": "manifest",
+      "uncompressed_size": 589
     },
     {
       "attributes": {
@@ -42,32 +50,40 @@
     },
     {
       "attributes": {},
-      "compressed_size": 2192,
+      "compressed_size": 3026,
       "compression": "stored",
       "name": "FusionAssetName[Active]/Design1/BulkStream.dat",
       "role": "bulkstream",
-      "uncompressed_size": 2192
+      "uncompressed_size": 3026
     },
     {
       "attributes": {},
-      "compressed_size": 574,
+      "compressed_size": 1792,
       "compression": "stored",
       "name": "FusionAssetName[Active]/Design1/MetaStream.dat",
       "role": "metastream",
-      "uncompressed_size": 574
+      "uncompressed_size": 1792
     },
     {
       "attributes": {},
-      "compressed_size": 450,
+      "compressed_size": 686,
       "compression": "stored",
       "name": "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat",
       "role": "bulkstream",
-      "uncompressed_size": 450
+      "uncompressed_size": 686
+    },
+    {
+      "attributes": {},
+      "compressed_size": 1057,
+      "compression": "stored",
+      "name": "FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat",
+      "role": "metastream",
+      "uncompressed_size": 1057
     }
   ],
   "format": "f3d",
   "notes": [
-    "asset folder (from entry paths): FusionAssetName[Active]",
+    "Design asset folder (from manifests): FusionAssetName[Active]",
     "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
     "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh (1610 bytes uncompressed)",
     "container-level inspection only; run `decode` to resolve Design body bindings and build each referenced BREP graph"

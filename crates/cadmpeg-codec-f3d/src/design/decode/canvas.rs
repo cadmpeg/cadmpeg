@@ -23,7 +23,7 @@ pub fn decode_canvas_images(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let stream = ids::native_scope(&entry.name);
@@ -64,7 +64,7 @@ pub fn project_canvas_images(
             continue;
         };
         let mut entries = scan.entries.iter().filter(|entry| {
-            entry.role == role::IMAGE
+            scan.is_design_asset_entry(entry, role::IMAGE)
                 && entry.name.rsplit('/').next() == Some(image.asset_name.as_str())
         });
         let (Some(entry), None) = (entries.next(), entries.next()) else {

@@ -264,8 +264,12 @@ pub(super) fn decode(
             }),
             vertices: local_vertices,
             triangles: local_triangles,
+            feature_edges: Vec::new(),
             strip_lengths,
             normals,
+            corner_normals: Vec::new(),
+            triangle_groups: Vec::new(),
+            texture_assignments: Vec::new(),
             channels: Vec::new(),
         });
         typed.extend([id, coordinate_id]);

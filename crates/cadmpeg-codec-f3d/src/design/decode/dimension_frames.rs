@@ -74,8 +74,7 @@ pub fn decode_dimension_recipe_records(
             continue;
         };
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
@@ -155,10 +154,23 @@ pub(crate) fn decode_recipe_references(
         .get(..10)
         .is_none_or(|bytes| bytes.iter().any(|byte| *byte != 0))
         || u32_at(prefix, 10) != Some(1)
-        || u32_at(prefix, 14) != Some(3)
         || u32_at(prefix, 18).is_none_or(|value| value == 0)
-        || u32_at(prefix, 22).is_none_or(|value| value == 0)
     {
+        return Vec::new();
+    }
+    match u32_at(prefix, 14) {
+        Some(2) => decode_paired_recipe_references(prefix, prefix_offset),
+        Some(3) => decode_standard_recipe_references(prefix, prefix_offset),
+        Some(5) => decode_grouped_recipe_references(prefix, prefix_offset),
+        _ => Vec::new(),
+    }
+}
+
+fn decode_standard_recipe_references(
+    prefix: &[u8],
+    prefix_offset: u64,
+) -> Vec<crate::records::DesignRecipeReference> {
+    if u32_at(prefix, 22).is_none_or(|value| value == 0) {
         return Vec::new();
     }
     let mut references = Vec::new();
@@ -167,55 +179,196 @@ pub(crate) fn decode_recipe_references(
         if recipe_reference_suffix(&prefix[at..]) {
             return references;
         }
-        let Some(selector) = u32_at(prefix, at).filter(|value| *value != 0) else {
+        let Some((mut operand_references, next)) = decode_recipe_reference_operand(
+            prefix,
+            prefix_offset,
+            at,
+            RecipeReferenceTokenFrame::Either,
+            true,
+        ) else {
             return Vec::new();
         };
-        let token_encoding_at = at + 4;
-        let length_prefixed =
+        references.append(&mut operand_references);
+        at = next;
+    }
+    if prefix.get(at..) == Some(&[0, 0, 0, 0]) {
+        references
+    } else {
+        Vec::new()
+    }
+}
+
+fn decode_paired_recipe_references(
+    prefix: &[u8],
+    prefix_offset: u64,
+) -> Vec<crate::records::DesignRecipeReference> {
+    const MINIMUM_PAIR_SIZE: usize = 42;
+
+    let Some(pair_count) = usize::try_from(u32_at(prefix, 18).unwrap_or(0)).ok() else {
+        return Vec::new();
+    };
+    if pair_count == 0 || pair_count > prefix.len().saturating_sub(22) / MINIMUM_PAIR_SIZE {
+        return Vec::new();
+    }
+    let Some(operand_count) = pair_count.checked_mul(2) else {
+        return Vec::new();
+    };
+    let mut at = 22usize;
+    let mut operands = Vec::with_capacity(operand_count);
+    for _ in 0..pair_count {
+        let Some((packed, next)) = decode_recipe_reference_operand(
+            prefix,
+            prefix_offset,
+            at,
+            RecipeReferenceTokenFrame::Packed,
+            false,
+        ) else {
+            return Vec::new();
+        };
+        at = next;
+        let Some((length_prefixed, next)) = decode_recipe_reference_operand(
+            prefix,
+            prefix_offset,
+            at,
+            RecipeReferenceTokenFrame::LengthPrefixed,
+            true,
+        ) else {
+            return Vec::new();
+        };
+        operands.push(packed);
+        operands.push(length_prefixed);
+        at = next;
+    }
+    if at != prefix.len()
+        || operands.chunks_exact(2).any(|pair| {
+            pair[0].first().map(|reference| reference.selector)
+                != pair[1].first().map(|reference| reference.selector)
+                || pair[0]
+                    .iter()
+                    .map(|reference| reference.design_reference)
+                    .ne(pair[1].iter().map(|reference| reference.design_reference))
+        })
+    {
+        return Vec::new();
+    }
+    operands.into_iter().flatten().collect()
+}
+
+fn decode_grouped_recipe_references(
+    prefix: &[u8],
+    prefix_offset: u64,
+) -> Vec<crate::records::DesignRecipeReference> {
+    const MINIMUM_PACKED_OPERAND_SIZE: usize = 17;
+    const GROUP_COUNT: usize = 5;
+
+    let mut references = Vec::new();
+    let mut at = 18usize;
+    for _ in 0..GROUP_COUNT {
+        let Some(operand_count) = usize::try_from(u32_at(prefix, at).unwrap_or(0)).ok() else {
+            return Vec::new();
+        };
+        let Some(next) = at.checked_add(4) else {
+            return Vec::new();
+        };
+        at = next;
+        if operand_count == 0
+            || operand_count > prefix.len().saturating_sub(at) / MINIMUM_PACKED_OPERAND_SIZE
+        {
+            return Vec::new();
+        }
+        for _ in 0..operand_count {
+            let Some((mut operand_references, next)) = decode_recipe_reference_operand(
+                prefix,
+                prefix_offset,
+                at,
+                RecipeReferenceTokenFrame::Packed,
+                false,
+            ) else {
+                return Vec::new();
+            };
+            references.append(&mut operand_references);
+            at = next;
+        }
+    }
+    if prefix.get(at..) == Some(&[0, 0, 0, 0]) {
+        references
+    } else {
+        Vec::new()
+    }
+}
+
+pub(crate) fn is_paired_recipe_reference_frame(prefix: &[u8]) -> bool {
+    u32_at(prefix, 14) == Some(2) && !decode_recipe_references(prefix, 0).is_empty()
+}
+
+pub(crate) fn is_grouped_recipe_reference_frame(prefix: &[u8]) -> bool {
+    u32_at(prefix, 14) == Some(5) && !decode_recipe_references(prefix, 0).is_empty()
+}
+
+#[derive(Clone, Copy)]
+enum RecipeReferenceTokenFrame {
+    Either,
+    Packed,
+    LengthPrefixed,
+}
+
+fn decode_recipe_reference_operand(
+    prefix: &[u8],
+    prefix_offset: u64,
+    at: usize,
+    token_frame: RecipeReferenceTokenFrame,
+    terminated: bool,
+) -> Option<(Vec<crate::records::DesignRecipeReference>, usize)> {
+    let selector = u32_at(prefix, at).filter(|value| *value != 0)?;
+    let token_encoding_at = at.checked_add(4)?;
+    let length_prefixed = (!matches!(token_frame, RecipeReferenceTokenFrame::Packed))
+        .then(|| {
             lp_ascii_filtered(prefix, token_encoding_at, 0..=2000, u8::is_ascii_graphic).and_then(
                 |(token, marker_at)| {
-                    (!token.is_empty()
-                        && token.bytes().all(|byte| byte.is_ascii_digit())
+                    (is_decimal_integer_token(token.as_bytes())
                         && u32_at(prefix, marker_at) == Some(0))
                     .then_some((token, token_encoding_at + 4, marker_at + 4))
                 },
-            );
-        let packed = (1usize..=8).find_map(|length| {
-            let token = prefix.get(token_encoding_at..token_encoding_at + length)?;
-            let zero_at = token_encoding_at.checked_add(length)?;
-            (token.iter().all(u8::is_ascii_digit)
-                && prefix.get(zero_at..zero_at + 4) == Some(&[0; 4]))
-            .then(|| std::str::from_utf8(token).ok())
-            .flatten()
-            .map(|token| (token.to_owned(), token_encoding_at, zero_at + 4))
-        });
-        let Some((token, token_at, marker_at)) = length_prefixed.or(packed) else {
-            return Vec::new();
-        };
-        let Some(reference_count) = u32_at(prefix, marker_at).filter(|value| *value != 0) else {
-            return Vec::new();
-        };
-        let Some(reference_bytes) = usize::try_from(reference_count)
-            .ok()
-            .and_then(|count| count.checked_mul(4))
-        else {
-            return Vec::new();
-        };
-        let references_at = marker_at + 4;
-        let Some(terminator_at) = references_at.checked_add(reference_bytes) else {
-            return Vec::new();
-        };
-        if u32_at(prefix, terminator_at) != Some(0) {
-            return Vec::new();
+            )
+        })
+        .flatten();
+    let packed = (!matches!(token_frame, RecipeReferenceTokenFrame::LengthPrefixed))
+        .then(|| {
+            (1usize..=8).find_map(|length| {
+                let token =
+                    prefix.get(token_encoding_at..token_encoding_at.checked_add(length)?)?;
+                let zero_at = token_encoding_at.checked_add(length)?;
+                (is_decimal_integer_token(token)
+                    && prefix.get(zero_at..zero_at + 4) == Some(&[0; 4]))
+                .then(|| std::str::from_utf8(token).ok())
+                .flatten()
+                .map(|token| (token.to_owned(), token_encoding_at, zero_at + 4))
+            })
+        })
+        .flatten();
+    let (token, token_at, marker_at) = length_prefixed.or(packed)?;
+    let reference_count =
+        usize::try_from(u32_at(prefix, marker_at).filter(|value| *value != 0)?).ok()?;
+    let reference_bytes = reference_count.checked_mul(4)?;
+    let references_at = marker_at.checked_add(4)?;
+    if reference_bytes > prefix.len().saturating_sub(references_at) {
+        return None;
+    }
+    let references_end = references_at.checked_add(reference_bytes)?;
+    let next = if terminated {
+        if u32_at(prefix, references_end) != Some(0) {
+            return None;
         }
-        for reference_ordinal in 0..reference_count as usize {
-            let design_reference_at = references_at + 4 * reference_ordinal;
-            let Some(design_reference) =
-                u32_at(prefix, design_reference_at).filter(|value| *value != 0)
-            else {
-                return Vec::new();
-            };
-            references.push(crate::records::DesignRecipeReference {
+        references_end.checked_add(4)?
+    } else {
+        references_end
+    };
+    let references = (0..reference_count)
+        .map(|reference_ordinal| {
+            let design_reference_at = references_at.checked_add(4 * reference_ordinal)?;
+            let design_reference =
+                u32_at(prefix, design_reference_at).filter(|value| *value != 0)?;
+            Some(crate::records::DesignRecipeReference {
                 selector: i64::from(selector),
                 selector_offset: prefix_offset.saturating_add(at as u64),
                 token: token.clone(),
@@ -226,15 +379,15 @@ pub(crate) fn decode_recipe_references(
                 candidate_edges: Vec::new(),
                 alternate_selector_faces: Vec::new(),
                 alternate_selector_edges: Vec::new(),
-            });
-        }
-        at = terminator_at + 4;
-    }
-    if prefix.get(at..) == Some(&[0, 0, 0, 0]) {
-        references
-    } else {
-        Vec::new()
-    }
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some((references, next))
+}
+
+fn is_decimal_integer_token(token: &[u8]) -> bool {
+    let digits = token.strip_prefix(b"-").unwrap_or(token);
+    !digits.is_empty() && digits.iter().all(u8::is_ascii_digit)
 }
 
 fn recipe_reference_suffix(bytes: &[u8]) -> bool {
@@ -472,8 +625,7 @@ pub fn decode_dimension_locus_pairs(
         })
     }) {
         let entry = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && companion
                     .id
                     .starts_with(&ids::native_scope_prefix(&entry.name))
@@ -715,8 +867,7 @@ pub fn decode_dimension_null_locus_pairs(
         })
     }) {
         let entry = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && companion
                     .id
                     .starts_with(&ids::native_scope_prefix(&entry.name))
@@ -911,8 +1062,7 @@ pub fn decode_dimension_annotation_frames(
     let mut decoded_offsets = HashSet::new();
     for stream in streams {
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
@@ -1244,8 +1394,7 @@ pub fn decode_dimension_locus_groups(
         })
     }) {
         let entry = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && companion
                     .id
                     .starts_with(&ids::native_scope_prefix(&entry.name))

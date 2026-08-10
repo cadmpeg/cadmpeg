@@ -9,9 +9,9 @@ use crate::design::feature_project::closed_spatial_sketch_profiles;
 use crate::design::geometry::closed_sketch_profiles;
 use crate::ids::{
     native_stream, neutral_sketch_constraint_id, neutral_sketch_curve_id, neutral_sketch_id,
-    neutral_sketch_point_id, neutral_sketch_text_id, neutral_sketch_text_record_id,
+    neutral_sketch_point_id, neutral_sketch_record_id, neutral_sketch_text_id,
     neutral_spatial_sketch_curve_id, neutral_spatial_sketch_id, neutral_spatial_sketch_point_id,
-    neutral_spatial_sketch_surface_id,
+    neutral_spatial_sketch_record_id, neutral_spatial_sketch_surface_id,
 };
 use crate::records::{
     DesignSketchPlacement, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
@@ -123,7 +123,10 @@ pub fn project_sketch_design(
             let placement = placements_by_suffix.get(&(scope, owner))?;
             let sketch = neutral_sketch_id(placement);
             Some(SketchEntity {
-                id: neutral_sketch_point_id(&sketch, point.persistent_id),
+                id: point.persistent_id.map_or_else(
+                    || neutral_sketch_record_id(&sketch, point.record_index),
+                    |persistent_id| neutral_sketch_point_id(&sketch, persistent_id),
+                ),
                 sketch,
                 construction: false,
                 native_ref: Some(point.id.clone()),
@@ -221,7 +224,7 @@ pub fn project_sketch_design(
         let sketch = neutral_sketch_id(placement);
         Some(SketchEntity {
             id: text.persistent_id.map_or_else(
-                || neutral_sketch_text_record_id(&sketch, text.record_index),
+                || neutral_sketch_record_id(&sketch, text.record_index),
                 |persistent_id| neutral_sketch_text_id(&sketch, persistent_id),
             ),
             sketch,
@@ -490,7 +493,10 @@ pub fn project_spatial_sketch_design(
         let sketch = neutral_spatial_sketch_id(placement);
         let depth = sketch_point_depth(point)?;
         Some(SpatialSketchEntity {
-            id: neutral_spatial_sketch_point_id(&sketch, point.persistent_id),
+            id: point.persistent_id.map_or_else(
+                || neutral_spatial_sketch_record_id(&sketch, point.record_index),
+                |persistent_id| neutral_spatial_sketch_point_id(&sketch, persistent_id),
+            ),
             sketch,
             construction: false,
             native_ref: Some(point.id.clone()),
@@ -619,12 +625,15 @@ pub fn project_spatial_sketch_constraints(
             }
             let scope = native_stream(&relation.id)?;
             let (sketch, placement) = sketches.get(&(scope, relation.owner_reference))?;
-            let member_entities = relation
-                .members
+            // The second relation run is the semantic member order. The first
+            // run interleaves per-member relation ordinals and has no role
+            // order, so it cannot define a neutral spatial constraint.
+            let semantic_entities = relation
+                .return_members
                 .iter()
                 .map(|record_index| projected.get(&(scope, *record_index)).copied())
                 .collect::<Option<Vec<_>>>()?;
-            let members = member_entities
+            let members = semantic_entities
                 .iter()
                 .map(|entity| entity.id.clone())
                 .collect::<Vec<_>>();
@@ -634,7 +643,7 @@ pub fn project_spatial_sketch_constraints(
             }
             let definition = match relation.constraint_kinds[0] {
                 SketchConstraintKind::Coincident => {
-                    let [first, second] = member_entities.as_slice() else {
+                    let [first, second] = semantic_entities.as_slice() else {
                         return None;
                     };
                     let point_on_surface = match (&first.geometry, &second.geometry) {
@@ -690,7 +699,7 @@ pub fn project_spatial_sketch_constraints(
                     Definition::SplineGroup { entities: members }
                 }
                 SketchConstraintKind::Tangent => {
-                    let [first, second] = member_entities.as_slice() else {
+                    let [first, second] = semantic_entities.as_slice() else {
                         return None;
                     };
                     let curve = |geometry: &SpatialSketchGeometry| {
@@ -711,7 +720,7 @@ pub fn project_spatial_sketch_constraints(
                     }
                 }
                 SketchConstraintKind::Midpoint => {
-                    let [first, second] = member_entities.as_slice() else {
+                    let [first, second] = semantic_entities.as_slice() else {
                         return None;
                     };
                     let (point, line, position, start, end) =
@@ -744,7 +753,7 @@ pub fn project_spatial_sketch_constraints(
                     }
                 }
                 SketchConstraintKind::Horizontal | SketchConstraintKind::Vertical => {
-                    let [entity] = member_entities.as_slice() else {
+                    let [entity] = semantic_entities.as_slice() else {
                         return None;
                     };
                     let SpatialSketchGeometry::Line { start, end } = entity.geometry else {

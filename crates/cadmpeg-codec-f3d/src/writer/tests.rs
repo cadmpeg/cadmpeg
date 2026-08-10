@@ -7,11 +7,46 @@ use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Sense;
 
+use crate::writer::patch::edits::encode_sketch_relation_state;
 use crate::writer::patch::geometry::{
     patch_framed_geometry, patch_tagged_integer_at, GeometryEdits,
 };
 use crate::writer::primitives::normalized_face_sense_to_native;
 use cadmpeg_asm::sab;
+
+#[test]
+fn sketch_relation_state_encoding_requires_the_stored_width_discriminator() {
+    let record = |discriminator| {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"298");
+        bytes.extend_from_slice(&7u32.to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 8]);
+        bytes.push(discriminator);
+        bytes
+    };
+
+    assert_eq!(
+        encode_sketch_relation_state("relation-u32", &record(0), 0x8000_0000).unwrap(),
+        0x8000_0000u32.to_le_bytes()
+    );
+    assert_eq!(
+        encode_sketch_relation_state("relation-u64", &record(1), 0x0020_0000_0000).unwrap(),
+        0x0020_0000_0000_u64.to_le_bytes()
+    );
+    assert!(
+        encode_sketch_relation_state("relation-unknown", &record(2), 1)
+            .unwrap_err()
+            .to_string()
+            .contains("mask-width discriminator")
+    );
+    assert!(
+        encode_sketch_relation_state("relation-u32", &record(0), 0x1_0000_0000)
+            .unwrap_err()
+            .to_string()
+            .contains("cannot carry")
+    );
+}
 
 #[test]
 fn generated_face_sense_edit_preserves_native_normalization_relation() {

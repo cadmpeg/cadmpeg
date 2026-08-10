@@ -416,19 +416,6 @@ pub struct SpatialSketchConstraint {
     pub native_ref: Option<String>,
 }
 
-/// One progenitor/result pair in a model-space sketch offset relation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct SpatialSketchOffsetPair {
-    /// Source entity whose stored direction defines the signed offset normal.
-    pub source: SpatialSketchEntityId,
-    /// Entity produced at the shared signed offset distance.
-    pub result: SpatialSketchEntityId,
-    /// Reverse the source traversal before selecting its left normal.
-    #[serde(default)]
-    pub source_reversed: bool,
-}
-
 /// One unordered entity pair in a repeated model-space sketch relation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -543,13 +530,18 @@ pub enum SpatialSketchConstraintDefinition {
         /// Driving distance parameter.
         parameter: crate::features::ParameterId,
     },
-    /// One or more model-space curves offset from their progenitors.
+    /// A model-space curve set generated at one offset distance from a source set.
     Offset {
-        /// Ordered progenitor/result pairs.
-        pairs: Vec<SpatialSketchOffsetPair>,
-        /// Unit normal of the common offset plane.
+        /// Source curves in native relation order.
+        sources: Vec<SpatialSketchEntityId>,
+        /// Generated curves in native relation order.
+        ///
+        /// Position does not imply pairwise geometric correspondence with
+        /// `sources`; an offset operation can change curve carriers or topology.
+        results: Vec<SpatialSketchEntityId>,
+        /// Unit normal of the result curve set's common plane.
         normal: Vector3,
-        /// Strictly positive common offset magnitude.
+        /// Strictly positive operation-level offset magnitude.
         distance: crate::features::Length,
         /// Driving offset-distance parameter, when dimensional.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -572,7 +564,6 @@ pub enum SpatialSketchConstraintDefinition {
     },
 }
 
-/// Solved geometry in model coordinates.
 /// Solved model-space spatial-sketch geometry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -762,12 +753,12 @@ pub struct SketchPatternDirection {
     /// Number of instances along this axis, including the seed instance.
     pub count: u32,
     /// Driving adjacent-spacing parameter, when the source exposes it as a neutral parameter.
-    #[serde(
-        default,
-        alias = "span_parameter",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spacing_parameter: Option<ParameterId>,
+    /// Driving seed-to-final-span parameter, when the source exposes span
+    /// rather than adjacent spacing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub span_parameter: Option<ParameterId>,
     /// Driving instance-count parameter, when the source exposes it as a neutral parameter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub count_parameter: Option<ParameterId>,

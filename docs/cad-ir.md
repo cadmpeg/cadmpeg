@@ -202,6 +202,24 @@ Native records retain typed references into the neutral model. Format-neutral co
 
 Tessellations are display meshes independent of exact B-rep geometry. Appearances describe visual or physical assets. Appearance bindings assign appearances to topology entities or native source carriers. Attributes attach source-native values to supported targets.
 
+`Tessellation.triangles` preserves source winding. `feature_edges` is the
+source-classified undirected feature-edge set. The list is lexicographically
+sorted. Each pair is strictly ascending, unique, and indexes `vertices`; an
+ordinary triangulation edge is absent unless the source classifies it as a
+feature. `normals` is empty or parallel to `vertices`. `corner_normals` is empty
+or parallel to the flattened triangle corner sequence. Corner normals preserve
+normal seams without duplicating vertices and take precedence when an exporter
+supports only one normal domain.
+
+`triangle_groups` is empty or is an ordered partition of all triangle ordinals.
+Each group is nonempty, its ordinals are strictly increasing, and a nonempty
+`source_id` is unique within the tessellation. `texture_assignments` associates
+one source texture resource and asset with each nonempty, strictly increasing
+triangle subset. Nonempty texture-resource identities are unique. Anonymous
+assignments use an asset at most once. Distinct source resources can use the
+same asset. Assignment subsets do not overlap, and an omitted triangle has no
+direct texture assignment.
+
 A tessellation channel stores `count` fixed-width values in `data`. A vertex
 channel uses implicit vertex-order addressing and has no `indices`. A corner
 channel has one selector for each triangle corner, and a triangle channel has
@@ -226,7 +244,8 @@ Validation uses reference lookup and in-IR arithmetic. It checks:
 - annotation entity, stream, and field-path integrity;
 - canonical periodic parameter domains;
 - finite coordinates, unit directions, positive radii, and NURBS shape invariants;
-- tessellation channel and index bounds;
+- tessellation channel and index bounds, canonical feature-edge pairs, and
+  vertex- and corner-normal cardinalities;
 - native record counts, IDs, links, and payload spans;
 - opaque payload length and SHA-256;
 - retained-record byte length and SHA-256 digest.

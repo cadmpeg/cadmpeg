@@ -15,9 +15,65 @@ pub(crate) fn resolved_edge_group(
     identity_operands: &[DesignEdgeIdentityOperand],
     previous_state_id: Option<i64>,
     feature_id: &cadmpeg_ir::features::FeatureId,
+) -> cadmpeg_ir::features::EdgeSelection {
+    resolved_edge_group_with_transition_chain(
+        group,
+        groups,
+        operands,
+        identity_operands,
+        previous_state_id,
+        feature_id,
+        EdgeGroupProof::Generic,
+    )
+}
+
+/// Resolve an edge-treatment group with the exact transition chain available
+/// to Fillet and Chamfer operations.
+pub(crate) fn resolved_edge_treatment_group(
+    group: &DesignConstructionOperandGroup,
+    groups: &[DesignConstructionOperandGroup],
+    operands: &[DesignEdgeOperand],
+    identity_operands: &[DesignEdgeIdentityOperand],
+    previous_state_id: Option<i64>,
+    feature_id: &cadmpeg_ir::features::FeatureId,
     treatment_radius: Option<f64>,
 ) -> cadmpeg_ir::features::EdgeSelection {
+    resolved_edge_group_with_transition_chain(
+        group,
+        groups,
+        operands,
+        identity_operands,
+        previous_state_id,
+        feature_id,
+        EdgeGroupProof::Treatment {
+            radius: treatment_radius,
+        },
+    )
+}
+
+#[derive(Clone, Copy)]
+enum EdgeGroupProof {
+    /// Member-local recipe and persistent-identity proofs only.
+    Generic,
+    /// Fillet or Chamfer proofs that may consume an exact operation transition.
+    Treatment { radius: Option<f64> },
+}
+
+fn resolved_edge_group_with_transition_chain(
+    group: &DesignConstructionOperandGroup,
+    groups: &[DesignConstructionOperandGroup],
+    operands: &[DesignEdgeOperand],
+    identity_operands: &[DesignEdgeIdentityOperand],
+    previous_state_id: Option<i64>,
+    feature_id: &cadmpeg_ir::features::FeatureId,
+    proof: EdgeGroupProof,
+) -> cadmpeg_ir::features::EdgeSelection {
     use cadmpeg_ir::features::EdgeSelection;
+
+    let (allow_edge_treatment_transition_chain, treatment_radius) = match proof {
+        EdgeGroupProof::Generic => (false, None),
+        EdgeGroupProof::Treatment { radius } => (true, radius),
+    };
 
     let feature_key = feature_id
         .0
@@ -44,6 +100,87 @@ pub(crate) fn resolved_edge_group(
         }
     };
     let stream = native_stream(&group.id);
+    let has_surface_patch_operand = operands.iter().any(|operand| {
+        native_stream(&operand.id) == stream
+            && operand.scope_record_index == group.scope_record_index
+            && group.members.contains(&operand.record_index)
+            && operand.surface_patch_recipe_structure.is_some()
+    });
+    if has_surface_patch_operand {
+        let mut member_ids = HashSet::new();
+        if group
+            .members
+            .iter()
+            .any(|member| !member_ids.insert(*member))
+        {
+            return unmatched_selection(previous_state_id);
+        }
+        let matched_operands = group
+            .members
+            .iter()
+            .map(|member| {
+                let mut matches = operands.iter().filter(|operand| {
+                    native_stream(&operand.id) == stream
+                        && operand.scope_record_index == group.scope_record_index
+                        && operand.record_index == *member
+                });
+                let operand = matches.next()?;
+                matches.next().is_none().then_some(operand)
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(matched_operands) = matched_operands else {
+            return unmatched_selection(previous_state_id);
+        };
+        if matched_operands
+            .iter()
+            .any(|operand| operand.surface_patch_recipe_structure.is_none())
+        {
+            return unmatched_selection(previous_state_id);
+        }
+        let state_id = previous_state_id.or_else(|| {
+            let mut states = matched_operands
+                .iter()
+                .filter_map(|operand| operand.recipe_state_id);
+            let state_id = states.next()?;
+            (states.all(|candidate| candidate == state_id)
+                && matched_operands
+                    .iter()
+                    .all(|operand| operand.recipe_state_id == Some(state_id)))
+            .then_some(state_id)
+        });
+        let Some(state_id) = state_id else {
+            return unmatched_selection(previous_state_id);
+        };
+        let Some(edges) = matched_operands
+            .iter()
+            .map(|operand| operand.resolved_edge_slot)
+            .collect::<Option<Vec<_>>>()
+        else {
+            return unmatched_selection(Some(state_id));
+        };
+        let mut resolved_edges = Vec::new();
+        for edge_slot in edges {
+            if !resolved_edges.contains(&edge_slot) {
+                resolved_edges.push(edge_slot);
+            }
+        }
+        if resolved_edges.is_empty() {
+            return unmatched_selection(Some(state_id));
+        }
+        return EdgeSelection::Historical {
+            state: feature_input_topology_id(feature_id, state_id),
+            edges: resolved_edges
+                .into_iter()
+                .map(|edge_slot| {
+                    ids::history_input_edge_id(
+                        &ids::history_input_prefix(feature_key, state_id),
+                        edge_slot,
+                    )
+                })
+                .collect(),
+            native: group.id.clone(),
+        };
+    }
     let identity_matches = group
         .members
         .iter()
@@ -88,8 +225,9 @@ pub(crate) fn resolved_edge_group(
             _ => false,
         }
     });
-    let identity_transition_slots = treatment_radius
-        .is_none()
+    let identity_transition_slots = (allow_edge_treatment_transition_chain
+        && treatment_radius.is_none()
+        && group.members.len() == 1)
         .then(|| {
             let [operand] = identity_matches.as_ref()?.as_slice() else {
                 return None;
@@ -100,14 +238,14 @@ pub(crate) fn resolved_edge_group(
             (!edges.is_empty()).then_some(edges)
         })
         .flatten();
-    let identity_group_transition_slots = identity_matches.as_ref().and_then(|operands| {
-        let first = operands.first()?;
+    let identity_group_transition_slots = identity_matches.as_ref().and_then(|identity_operands| {
+        let first = identity_operands.first()?;
         let mut edges = first.transition_edge_candidates.clone();
         edges.sort_unstable();
         edges.dedup();
-        (!edges.is_empty()
+        let is_complete_compact_deletion_set = allow_edge_treatment_transition_chain
             && edges.len() == group.members.len()
-            && operands.iter().all(|operand| {
+            && identity_operands.iter().all(|operand| {
                 if !operand.compact_layout {
                     return false;
                 }
@@ -115,9 +253,32 @@ pub(crate) fn resolved_edge_group(
                 candidate.sort_unstable();
                 candidate.dedup();
                 candidate == edges
-            }))
-        .then_some(edges)
+            });
+        (!edges.is_empty() && is_complete_compact_deletion_set).then_some(edges)
     });
+    let recipe_supports_transition_chain = |chain: &[i64]| {
+        let member_operands = group
+            .members
+            .iter()
+            .map(|member| {
+                let mut matches = operands.iter().filter(|operand| {
+                    native_stream(&operand.id) == stream
+                        && operand.scope_record_index == group.scope_record_index
+                        && operand.record_index == *member
+                });
+                let operand = matches.next()?;
+                matches.next().is_none().then_some(operand)
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(member_operands) = member_operands else {
+            return false;
+        };
+        transition_chain_is_supported_by_recipe(chain, group.members.len(), member_operands)
+    };
+    let identity_transition_is_supported = identity_transition_slots
+        .as_deref()
+        .or(identity_group_transition_slots.as_deref())
+        .is_some_and(recipe_supports_transition_chain);
     let identity_radius_slots = treatment_radius.and_then(|radius| {
         radius_edge_identity_group_candidates(identity_matches.as_ref()?, radius)
     });
@@ -129,27 +290,10 @@ pub(crate) fn resolved_edge_group(
                 || identity_group_transition_slots.is_some()
                 || identity_radius_slots.is_some())
     });
-    let recipe_corroborates_identity_transition =
-        identity_transition_slots.as_ref().is_some_and(|slots| {
-            group.members.len() == 1
-                && operands
-                    .iter()
-                    .filter(|operand| {
-                        native_stream(&operand.id) == stream
-                            && operand.scope_record_index == group.scope_record_index
-                            && operand.record_index == group.members[0]
-                    })
-                    .all(|operand| {
-                        slots.iter().all(|slot| {
-                            operand.changed_boundary_edge_slots.contains(slot)
-                                || operand.deleted_boundary_edge_slots.contains(slot)
-                        })
-                    })
-        });
     if let Some(identity_matches) = identity_matches.as_ref().filter(|_| {
         !has_recipe_operands
             || (has_complete_identity_selection
-                && (!has_concrete_recipe_evidence || recipe_corroborates_identity_transition))
+                && (!has_concrete_recipe_evidence || identity_transition_is_supported))
     }) {
         if identity_matches.is_empty() {
             return unmatched_selection(previous_state_id);
@@ -442,7 +586,6 @@ pub(crate) fn resolved_hem_edge_group(
         identity_operands,
         previous_state_id,
         feature_id,
-        None,
     );
     if !matches!(selection, EdgeSelection::Native(_)) {
         return selection;
@@ -497,6 +640,53 @@ pub(crate) fn resolved_hem_edge_slot(
         return Some(*edge);
     }
     previous_state_id.and_then(|_| hem_transition_edge_slot(operand))
+}
+
+/// Check recipe evidence before an exact edge-treatment transition chain
+/// replaces persistent recipe or identity context.
+///
+/// Changed and deleted recipe boundaries are hard evidence. A deleted edge
+/// proven by a recipe but absent from the treatment chain contradicts that
+/// chain. A member with deleted boundaries must also share at least one edge
+/// with the chain. When any member has changed or deleted boundary evidence,
+/// every edge in the exact chain must occur in the group's combined recipe
+/// boundary set.
+fn transition_chain_is_supported_by_recipe<'a>(
+    chain: &[i64],
+    member_count: usize,
+    operands: impl IntoIterator<Item = &'a DesignEdgeOperand>,
+) -> bool {
+    let operands = operands.into_iter().collect::<Vec<_>>();
+    if operands.len() != member_count {
+        return false;
+    }
+    let mut all_recipe_edges = Vec::new();
+    for operand in &operands {
+        let resolved = resolved_edge_operand(operand);
+        if let Some(edge) = resolved {
+            if operand.deleted_boundary_edge_slots.contains(&edge) && !chain.contains(&edge) {
+                return false;
+            }
+        }
+        if !operand.deleted_boundary_edge_slots.is_empty()
+            && !operand
+                .deleted_boundary_edge_slots
+                .iter()
+                .any(|edge| chain.contains(edge))
+        {
+            return false;
+        }
+        all_recipe_edges.extend(
+            operand
+                .changed_boundary_edge_slots
+                .iter()
+                .chain(&operand.deleted_boundary_edge_slots)
+                .copied(),
+        );
+    }
+    all_recipe_edges.sort_unstable();
+    all_recipe_edges.dedup();
+    all_recipe_edges.is_empty() || chain.iter().all(|edge| all_recipe_edges.contains(edge))
 }
 
 fn hem_transition_edge_slot(operand: &DesignEdgeOperand) -> Option<i64> {
@@ -790,10 +980,6 @@ pub(crate) fn radius_edge_group_candidates(
         if resolved_edge_operand(operand).is_none()
             && !has_radius_candidate
             && !operand.changed_boundary_edge_slots.is_empty()
-            && !operand
-                .changed_boundary_edge_slots
-                .iter()
-                .any(|edge| chain.contains(edge))
         {
             return None;
         }
@@ -809,44 +995,36 @@ fn radius_edge_identity_group_candidates(
         return None;
     }
     let tolerance = 1.0e-9 * (1.0 + radius.abs());
-    let mut chain = operands
-        .iter()
-        .flat_map(|operand| {
-            operand
-                .resolved_edge_slot
-                .iter()
-                .copied()
-                .chain(operand.resolved_edge_slots.iter().copied())
-                .chain(
-                    operand
-                        .treatment_radius_candidates
-                        .iter()
-                        .filter(|candidate| (candidate.radius - radius).abs() <= tolerance)
-                        .map(|candidate| candidate.edge_slot),
-                )
-        })
-        .collect::<Vec<_>>();
-    chain.sort_unstable();
-    chain.dedup();
-    if chain.is_empty() {
-        return None;
-    }
-    operands
-        .iter()
-        .all(|operand| {
-            operand.resolved_edge_slot.is_some()
-                || !operand.resolved_edge_slots.is_empty()
-                || operand
+    // Radius candidates on identity operands describe the complete operation
+    // transition, not one member. They prove a group only when that group has
+    // one member. A multi-member group requires an exact contribution from
+    // every identity; recipe-local radius candidates are handled separately.
+    let use_transition_radius = operands.len() == 1;
+    let mut chain = Vec::new();
+    for operand in operands {
+        let mut contribution = operand
+            .resolved_edge_slot
+            .iter()
+            .copied()
+            .chain(operand.resolved_edge_slots.iter().copied())
+            .collect::<Vec<_>>();
+        if use_transition_radius {
+            contribution.extend(
+                operand
                     .treatment_radius_candidates
                     .iter()
-                    .any(|candidate| (candidate.radius - radius).abs() <= tolerance)
-                || operand.transition_edge_candidates.is_empty()
-                || operand
-                    .transition_edge_candidates
-                    .iter()
-                    .any(|edge| chain.contains(edge))
-        })
-        .then_some(chain)
+                    .filter(|candidate| (candidate.radius - radius).abs() <= tolerance)
+                    .map(|candidate| candidate.edge_slot),
+            );
+        }
+        if contribution.is_empty() {
+            return None;
+        }
+        chain.extend(contribution);
+    }
+    chain.sort_unstable();
+    chain.dedup();
+    (!chain.is_empty()).then_some(chain)
 }
 
 pub(crate) fn unique_edge_assignment_with_context(
@@ -1571,7 +1749,7 @@ pub(crate) fn project_fixed_fillet(
                     let [operand] = matches.as_slice() else {
                         return None;
                     };
-                    Some(*operand)
+                    operand.compact_layout.then_some(*operand)
                 })
                 .collect::<Option<Vec<_>>>()?;
             radius_edge_identity_group_candidates(&identities, radius.0)?;
@@ -1594,7 +1772,7 @@ pub(crate) fn project_fixed_fillet(
                 | RadiusSpec::Variable { .. }
                 | RadiusSpec::Unresolved { .. } => None,
             };
-            let edges = resolved_edge_group(
+            let edges = resolved_edge_treatment_group(
                 edge_group,
                 construction_groups,
                 edge_operands,
@@ -1618,9 +1796,14 @@ pub(crate) fn project_fixed_fillet(
 
 #[cfg(test)]
 mod radius_identity_tests {
-    use super::*;
+    use super::{
+        project_fixed_fillet, radius_edge_identity_group_candidates, resolved_edge_group,
+        resolved_edge_treatment_group, transition_chain_is_supported_by_recipe,
+        unique_hem_transition_edge_candidate,
+    };
     use crate::records::{
-        DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignParameterScope,
+        DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignEdgeOperand,
+        DesignParameterScope,
     };
 
     fn identity(record_index: u32, candidates: &[(i64, f64)]) -> DesignEdgeIdentityOperand {
@@ -1655,16 +1838,28 @@ mod radius_identity_tests {
     }
 
     #[test]
-    fn identity_radius_candidates_select_only_the_matching_law() {
-        let first = identity(10, &[(17, 3.0), (18, 5.0)]);
-        let second = identity(11, &[(19, 3.0), (20, 5.0)]);
+    fn identity_radius_candidates_require_member_local_evidence() {
+        let mut first = identity(10, &[(17, 3.0), (18, 5.0)]);
+        let mut second = identity(11, &[(19, 3.0), (20, 5.0)]);
         assert_eq!(
-            radius_edge_identity_group_candidates(&[&first, &second], 3.0),
-            Some(vec![17, 19])
+            radius_edge_identity_group_candidates(&[&first], 3.0),
+            Some(vec![17])
         );
         assert_eq!(
-            radius_edge_identity_group_candidates(&[&first, &second], 4.0),
+            radius_edge_identity_group_candidates(&[&first, &second], 3.0),
             None
+        );
+        let copied = identity(11, &[(17, 3.0), (18, 5.0)]);
+        assert_eq!(
+            radius_edge_identity_group_candidates(&[&first, &copied], 3.0),
+            None
+        );
+
+        first.resolved_edge_slot = Some(17);
+        second.resolved_edge_slots = vec![19, 20];
+        assert_eq!(
+            radius_edge_identity_group_candidates(&[&first, &second], 3.0),
+            Some(vec![17, 19, 20])
         );
     }
 
@@ -1759,6 +1954,137 @@ mod radius_identity_tests {
     }
 
     #[test]
+    fn full_layout_identity_does_not_assign_the_fixed_fillet_edge_role() {
+        let scope = fixed_scope();
+        let group = group(2, 10);
+        let mut identity = identity(10, &[(17, 3.0), (19, 3.0)]);
+        identity.compact_layout = false;
+
+        assert!(project_fixed_fillet(&scope, &[group], &[], &[identity]).is_none());
+    }
+
+    #[test]
+    fn only_edge_treatments_use_single_member_transition_chains() {
+        let group = group(2, 10);
+        let mut generic_identity = identity(10, &[(17, 3.0), (19, 3.0)]);
+        generic_identity.compact_layout = false;
+        generic_identity.treatment_radius_candidates.clear();
+        let generic_feature_id =
+            cadmpeg_ir::features::FeatureId("f3d:model:feature#ruled-surface".into());
+
+        assert!(matches!(
+            resolved_edge_group(
+                &group,
+                std::slice::from_ref(&group),
+                &[],
+                &[generic_identity],
+                Some(7),
+                &generic_feature_id,
+            ),
+            cadmpeg_ir::features::EdgeSelection::Native(_)
+        ));
+        let treatment_feature_id =
+            cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into());
+        let mut identity = identity(10, &[(17, 3.0), (19, 3.0)]);
+        identity.compact_layout = false;
+        identity.treatment_radius_candidates.clear();
+        assert!(matches!(
+            resolved_edge_treatment_group(
+                &group,
+                std::slice::from_ref(&group),
+                &[],
+                &[identity],
+                Some(7),
+                &treatment_feature_id,
+                None,
+            ),
+            cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+                if edges == [
+                    cadmpeg_ir::ids::HistoricalEdgeId(
+                        "f3d:history-input:edge#6:fillet:7:17".into()
+                    ),
+                    cadmpeg_ir::ids::HistoricalEdgeId(
+                        "f3d:history-input:edge#6:fillet:7:19".into()
+                    ),
+                ]
+        ));
+    }
+
+    #[test]
+    fn multiple_full_layout_members_do_not_use_the_operation_transition_chain() {
+        let mut selection_group = group(2, 10);
+        selection_group.members = vec![10, 11];
+        selection_group.member_offsets = vec![0, 0];
+        let mut first = identity(10, &[(17, 0.0), (18, 0.0), (19, 0.0)]);
+        first.compact_layout = false;
+        let mut second = identity(11, &[(17, 0.0), (18, 0.0), (19, 0.0)]);
+        second.compact_layout = false;
+        second.group_member_ordinal = 1;
+        let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into());
+
+        assert!(matches!(
+            resolved_edge_treatment_group(
+                &selection_group,
+                std::slice::from_ref(&selection_group),
+                &[],
+                &[first, second],
+                Some(7),
+                &feature_id,
+                None,
+            ),
+            cadmpeg_ir::features::EdgeSelection::Native(_)
+        ));
+    }
+
+    fn recipe_edge_operand(
+        record_index: u32,
+        changed_boundary_edge_slots: &[i64],
+        deleted_boundary_edge_slots: &[i64],
+    ) -> DesignEdgeOperand {
+        serde_json::from_value(serde_json::json!({
+            "id": format!("f3d:test:edge-operand#{record_index}"),
+            "scope_record_index": 1,
+            "scope_reference_ordinal": 0,
+            "record_index": record_index,
+            "byte_offset": 0,
+            "class_tag": "297",
+            "paired_byte_offset": 0,
+            "paired_class_tag": "259",
+            "recipe_record_index": record_index + 3,
+            "recipe_record_byte_offset": 0,
+            "recipe_id": "f3d:test:recipe",
+            "recipe_prefix_offset": 0,
+            "recipe_prefix_bytes": "",
+            "recipe_references": [],
+            "recipe_program_offset": 0,
+            "recipe_program": [],
+            "changed_boundary_edge_slots": changed_boundary_edge_slots,
+            "deleted_boundary_edge_slots": deleted_boundary_edge_slots,
+            "next_record_index": record_index + 4,
+            "next_byte_offset": 0,
+        }))
+        .expect("edge recipe operand")
+    }
+
+    #[test]
+    fn edge_treatment_chain_requires_complete_recipe_boundary_coverage() {
+        let first = recipe_edge_operand(10, &[17], &[17]);
+        let second = recipe_edge_operand(11, &[], &[]);
+        assert!(!transition_chain_is_supported_by_recipe(
+            &[17, 18],
+            2,
+            [&first, &second],
+        ));
+
+        let first = recipe_edge_operand(10, &[17, 18], &[17]);
+        assert!(transition_chain_is_supported_by_recipe(
+            &[17, 18],
+            2,
+            [&first, &second],
+        ));
+    }
+
+    #[test]
     fn compact_identity_group_does_not_displace_a_possible_support_group() {
         let scope = fixed_scope();
         let first = group(2, 10);
@@ -1793,6 +2119,17 @@ mod radius_identity_tests {
                 &[first.clone(), second.clone()],
                 Some(7),
                 &feature_id,
+            ),
+            cadmpeg_ir::features::EdgeSelection::Native(_)
+        ));
+        assert!(matches!(
+            resolved_edge_treatment_group(
+                &selection_group,
+                std::slice::from_ref(&selection_group),
+                &[],
+                &[first.clone(), second.clone()],
+                Some(7),
+                &feature_id,
                 Some(3.0),
             ),
             cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
@@ -1803,7 +2140,7 @@ mod radius_identity_tests {
         let mut second = identity(11, &[(17, 5.0), (18, 5.0), (19, 5.0)]);
         second.group_member_ordinal = 1;
         assert!(matches!(
-            resolved_edge_group(
+            resolved_edge_treatment_group(
                 &selection_group,
                 std::slice::from_ref(&selection_group),
                 &[],

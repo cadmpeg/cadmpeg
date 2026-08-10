@@ -1399,8 +1399,12 @@ fn tessellation_counts_must_be_consistent() {
             Point3::new(0.0, 1.0, 0.0),
         ],
         triangles: vec![[0, 1, 2]],
+        feature_edges: Vec::new(),
         strip_lengths: vec![4],
         normals: vec![Vector3::new(0.0, 0.0, 1.0); 2],
+        corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
         channels: vec![TessellationChannel {
             domain: TessellationChannelDomain::Corner,
             item_size: 1,
@@ -1423,8 +1427,12 @@ fn tessellation_counts_must_be_consistent() {
             Point3::new(0.0, 1.0, 0.0),
         ],
         triangles: vec![[0, 2, 1]],
+        feature_edges: Vec::new(),
         strip_lengths: vec![3],
         normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
+        corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
         channels: Vec::new(),
     });
     ir.finalize();
@@ -1452,6 +1460,167 @@ fn tessellation_counts_must_be_consistent() {
     assert!(report.findings.iter().any(|finding| finding
         .message
         .contains("invalid tessellation channel indices")));
+}
+
+#[test]
+fn corner_normals_and_feature_edges_have_explicit_domains() {
+    use crate::math::{Point3, Vector3};
+    use crate::report::{Check, Severity};
+    use crate::tessellation::Tessellation;
+
+    let mesh = |id: &str| Tessellation {
+        id: id.into(),
+        body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
+        source_object: None,
+        vertices: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ],
+        triangles: vec![[0, 1, 2]],
+        feature_edges: vec![[0, 1]],
+        strip_lengths: Vec::new(),
+        normals: Vec::new(),
+        corner_normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
+        channels: Vec::new(),
+    };
+    let mut invalid_normals = mesh("synthetic:test:tessellation#invalid-corner-normals");
+    invalid_normals.corner_normals.pop();
+    let mut invalid_edge = mesh("synthetic:test:tessellation#invalid-feature-edge");
+    invalid_edge.feature_edges = vec![[1, 2], [0, 1]];
+    let valid = mesh("synthetic:test:tessellation#valid-domains");
+
+    let mut ir = unit_cube();
+    ir.model
+        .tessellations
+        .extend([invalid_normals, invalid_edge, valid]);
+    ir.finalize();
+    let report = validate(&ir, Vec::new());
+    let errors_for = |entity: &str| {
+        report
+            .findings
+            .iter()
+            .filter(|finding| {
+                finding.check == Check::Tessellation
+                    && finding.severity == Severity::Error
+                    && finding.entity.as_deref() == Some(entity)
+            })
+            .count()
+    };
+    assert_eq!(
+        errors_for("synthetic:test:tessellation#invalid-corner-normals"),
+        1
+    );
+    assert_eq!(
+        errors_for("synthetic:test:tessellation#invalid-feature-edge"),
+        1
+    );
+    assert_eq!(errors_for("synthetic:test:tessellation#valid-domains"), 0);
+}
+
+#[test]
+fn tessellation_triangle_groups_and_texture_assignments_validate() {
+    use crate::assets::{Asset, AssetContent, AssetId};
+    use crate::math::Point3;
+    use crate::report::{Check, Severity};
+    use crate::tessellation::{
+        Tessellation, TessellationTextureAssignment, TessellationTriangleGroup,
+    };
+
+    let texture = AssetId("synthetic:test:asset#mesh-texture".into());
+    let valid = Tessellation {
+        id: "synthetic:test:tessellation#valid-groups".into(),
+        body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
+        source_object: None,
+        vertices: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(1.0, 1.0, 0.0),
+        ],
+        triangles: vec![[0, 1, 2], [1, 3, 2]],
+        feature_edges: Vec::new(),
+        strip_lengths: Vec::new(),
+        normals: Vec::new(),
+        corner_normals: Vec::new(),
+        triangle_groups: vec![
+            TessellationTriangleGroup {
+                source_id: Some("group-a".into()),
+                triangles: vec![0],
+            },
+            TessellationTriangleGroup {
+                source_id: Some("group-b".into()),
+                triangles: vec![1],
+            },
+        ],
+        texture_assignments: vec![
+            TessellationTextureAssignment {
+                source_id: Some("texture-resource-a".into()),
+                texture: texture.clone(),
+                triangles: vec![0],
+            },
+            TessellationTextureAssignment {
+                source_id: Some("texture-resource-b".into()),
+                texture: texture.clone(),
+                triangles: vec![1],
+            },
+        ],
+        channels: Vec::new(),
+    };
+    let mut invalid = valid.clone();
+    invalid.id = "synthetic:test:tessellation#invalid-groups".into();
+    invalid.triangle_groups.push(TessellationTriangleGroup {
+        source_id: Some("group-b".into()),
+        triangles: vec![0],
+    });
+    invalid.texture_assignments[0].texture = AssetId("synthetic:test:asset#missing".into());
+    let mut duplicate_group_id = valid.clone();
+    duplicate_group_id.id = "synthetic:test:tessellation#duplicate-group-id".into();
+    duplicate_group_id.triangle_groups[1].source_id = Some("group-a".into());
+    let mut duplicate_texture = valid.clone();
+    duplicate_texture.id = "synthetic:test:tessellation#duplicate-texture".into();
+    duplicate_texture.texture_assignments[1].source_id = Some("texture-resource-a".into());
+
+    let mut ir = unit_cube();
+    ir.model.assets.push(Asset {
+        id: texture,
+        name: None,
+        media_type: None,
+        content: AssetContent::Embedded { data: vec![0] },
+        native_ref: None,
+    });
+    ir.model
+        .tessellations
+        .extend([valid, invalid, duplicate_group_id, duplicate_texture]);
+    ir.finalize();
+    let report = validate(&ir, Vec::new());
+    let errors_for = |entity: &str| {
+        report
+            .findings
+            .iter()
+            .filter(|finding| {
+                finding.check == Check::Tessellation
+                    && finding.severity == Severity::Error
+                    && finding.entity.as_deref() == Some(entity)
+            })
+            .count()
+    };
+    assert_eq!(errors_for("synthetic:test:tessellation#valid-groups"), 0);
+    assert_eq!(errors_for("synthetic:test:tessellation#invalid-groups"), 2);
+    assert_eq!(
+        errors_for("synthetic:test:tessellation#duplicate-group-id"),
+        1
+    );
+    assert_eq!(
+        errors_for("synthetic:test:tessellation#duplicate-texture"),
+        1
+    );
 }
 
 #[test]
@@ -4858,8 +5027,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     use crate::sketches::{
         SketchConstraintId, SpatialSketch, SpatialSketchConstraint,
         SpatialSketchConstraintDefinition, SpatialSketchEntity, SpatialSketchEntityId,
-        SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchOffsetPair,
-        SpatialSketchProfile,
+        SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
     };
 
     let mut ir = unit_cube();
@@ -5085,11 +5253,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#offset".into()),
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::Offset {
-                pairs: vec![SpatialSketchOffsetPair {
-                    source: line.clone(),
-                    result: parallel_line.clone(),
-                    source_reversed: false,
-                }],
+                sources: vec![line.clone()],
+                results: vec![parallel_line.clone()],
                 normal: Vector3::new(
                     -2.0 / 6.0f64.sqrt(),
                     1.0 / 6.0f64.sqrt(),
@@ -5238,6 +5403,47 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         });
     ir.finalize();
     assert!(validate(&ir, Vec::new()).findings.is_empty());
+    let mut overlapping_offset = ir.clone();
+    let SpatialSketchConstraintDefinition::Offset {
+        sources, results, ..
+    } = &mut overlapping_offset
+        .model
+        .spatial_sketch_constraints
+        .iter_mut()
+        .find(|constraint| constraint.id.0.ends_with("#offset"))
+        .expect("spatial offset constraint")
+        .definition
+    else {
+        panic!("spatial offset definition");
+    };
+    results[0] = sources[0].clone();
+    assert!(validate(&overlapping_offset, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message == "invalid spatial constraint arity"));
+    let mut non_curve_offset = ir.clone();
+    let point_entity = non_curve_offset
+        .model
+        .spatial_sketch_entities
+        .iter()
+        .find(|entity| matches!(entity.geometry, SpatialSketchGeometry::Point { .. }))
+        .expect("spatial point")
+        .id
+        .clone();
+    let SpatialSketchConstraintDefinition::Offset { sources, .. } = &mut non_curve_offset
+        .model
+        .spatial_sketch_constraints
+        .iter_mut()
+        .find(|constraint| constraint.id.0.ends_with("#offset"))
+        .expect("spatial offset constraint")
+        .definition
+    else {
+        panic!("spatial offset definition");
+    };
+    sources[0] = point_entity;
+    assert!(validate(&non_curve_offset, Vec::new()).findings.iter().any(
+        |finding| finding.message == "spatial offset source and result members must be curves"
+    ));
     let mut invalid_distance = ir.clone();
     invalid_distance
         .model
@@ -5246,12 +5452,13 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         .find(|parameter| parameter.id == distance)
         .expect("spatial distance parameter")
         .value = Some(ParameterValue::Length(Length(3.0)));
-    assert!(validate(&invalid_distance, Vec::new())
-        .findings
+    let invalid_distance_findings = validate(&invalid_distance, Vec::new()).findings;
+    assert!(invalid_distance_findings.iter().any(|finding| finding
+        .message
+        .contains("spatial distance requires parallel lines")));
+    assert!(invalid_distance_findings
         .iter()
-        .any(|finding| finding
-            .message
-            .contains("spatial distance requires parallel lines")));
+        .any(|finding| finding.message == "spatial offset distance does not match its parameter"));
     let json = ir.to_canonical_json().expect("serialize spatial sketch");
     let decoded = CadIr::from_json(&json).expect("deserialize spatial sketch");
     assert_eq!(decoded.model.spatial_sketches, ir.model.spatial_sketches);
@@ -5786,14 +5993,23 @@ fn historical_edge_paths_round_trip_through_json() {
 #[test]
 fn spatial_sketch_paths_round_trip_through_json() {
     use crate::features::PathRef;
-    use crate::sketches::SpatialSketchId;
+    use crate::sketches::{SpatialSketchEntityId, SpatialSketchId};
 
-    let path = PathRef::SpatialSketchSelection {
+    let path = PathRef::SpatialSketchCurves {
         sketch: SpatialSketchId("synthetic:test:spatial-sketch#0".into()),
-        selections: vec!["native:path-selection#0".into()],
+        curves: vec![SpatialSketchEntityId(
+            "synthetic:test:spatial-sketch-entity#0".into(),
+        )],
     };
     let json = serde_json::to_string(&path).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), path);
+
+    let native = PathRef::SpatialSketchSelection {
+        sketch: SpatialSketchId("synthetic:test:spatial-sketch#0".into()),
+        selections: vec!["native:path-selection#0".into()],
+    };
+    let json = serde_json::to_string(&native).unwrap();
+    assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), native);
 }
 
 #[test]

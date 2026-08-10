@@ -365,6 +365,44 @@ mod width_tests {
         b
     }
 
+    /// A revision-gated exact curve with one plane support and one paired BS2
+    /// pcurve in the shared cache-first context.
+    fn exact_cache_first_curve(int_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0f];
+        push_ident(&mut bytes, "exact_int_cur");
+        push_int(&mut bytes, 0x04, 23_100, int_width);
+        push_int(&mut bytes, 0x15, 0, int_width);
+        bytes.extend_from_slice(&curve_block(int_width));
+        push_f64(&mut bytes, 0.0);
+
+        // Slot 1 is an inline plane support with one paired UV curve.
+        push_ident(&mut bytes, "plane");
+        push_position(&mut bytes, [0.0, 0.0, 0.0]);
+        push_vector(&mut bytes, [0.0, 0.0, 1.0]);
+        push_vector(&mut bytes, [1.0, 0.0, 0.0]);
+        bytes.extend_from_slice(&[0x0b; 5]);
+        push_ident(&mut bytes, "null_surface");
+
+        // Slot 1 has one paired UV curve; slot 2 has pcurve absence.
+        bytes.extend_from_slice(&pcurve_block(int_width));
+        push_ident(&mut bytes, "nullbs");
+        bytes.extend_from_slice(&[0x0b; 2]);
+        for _ in 0..3 {
+            push_int(&mut bytes, 0x04, 0, int_width);
+        }
+        push_int(&mut bytes, 0x04, 0, int_width);
+
+        // Exact-curve fields after the shared cache-first context.
+        bytes.push(0x0a);
+        push_f64(&mut bytes, 1.0);
+        bytes.push(0x0a);
+        push_f64(&mut bytes, 0.0);
+        push_int(&mut bytes, 0x15, 0, int_width);
+        push_int(&mut bytes, 0x15, 0, int_width);
+        bytes.push(0x10);
+        bytes
+    }
+
     #[test]
     fn intcurve_selector_uses_the_serialized_direct_slot() {
         for int_width in [4usize, 8] {
@@ -385,6 +423,59 @@ mod width_tests {
                 crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 1, &table)
                     .is_none()
             );
+        }
+    }
+
+    #[test]
+    fn exact_curve_selector_uses_its_cache_first_support_slot() {
+        for int_width in [4usize, 8] {
+            let bytes = exact_cache_first_curve(int_width);
+
+            let toks = crate::nurbs::toks::lex_test_span(&bytes, int_width);
+            let table = crate::nurbs::toks::test_table(&bytes, int_width);
+            let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(&toks, &table)
+                .unwrap_or_else(|| panic!("exact curve at width {int_width}"));
+            assert_eq!(decoded.native_kind, "exact_int_cur");
+            let pcurve =
+                crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 1, &table)
+                    .unwrap_or_else(|| panic!("exact curve pcurve at width {int_width}"));
+            assert_eq!(
+                pcurve.control_points[1],
+                cadmpeg_ir::math::Point2::new(10.0, -10.0)
+            );
+            assert!(
+                crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, -1, &table)
+                    .is_some()
+            );
+            assert!(
+                crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 2, &table)
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn exact_curve_selector_follows_subtype_reference() {
+        for int_width in [4usize, 8] {
+            let active = exact_cache_first_curve(int_width);
+            for named in [false, true] {
+                let mut wrapper = vec![0x0f];
+                if named {
+                    push_ident(&mut wrapper, "ref");
+                }
+                push_int(&mut wrapper, 0x04, 0, int_width);
+                wrapper.push(0x10);
+                let toks = crate::nurbs::toks::lex_test_span(&wrapper, int_width);
+                let table = crate::nurbs::toks::test_table(&active, int_width);
+                assert!(
+                    crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, -1, &table)
+                        .is_some()
+                );
+                assert!(
+                    crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 2, &table)
+                        .is_none()
+                );
+            }
         }
     }
 

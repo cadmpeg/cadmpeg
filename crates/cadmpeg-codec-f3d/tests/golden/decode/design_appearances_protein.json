@@ -12,7 +12,7 @@
         "product_version": "ASM 231.6.3.65535 OSX",
         "save_date": "Tue Mar 31 16:16:19 2026",
         "solved_record_len": "1597",
-        "zip_entry_count": "6"
+        "zip_entry_count": "8"
       }
     },
     "units": {
@@ -35,7 +35,8 @@
             "g": 0.2,
             "b": 0.3,
             "a": 1.0
-          }
+          },
+          "visible": true
         }
       ],
       "regions": [
@@ -272,12 +273,12 @@
             {
               "id": "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-entity#7",
               "channel_class_tag": "261",
-              "channel_entity_id_offset": 440,
+              "channel_entity_id_offset": 676,
               "channel_guid_offsets": {
-                "Appearance": 268,
-                "PhysicalMaterial": 364
+                "Appearance": 504,
+                "PhysicalMaterial": 600
               },
-              "channel_record_index_offset": 232,
+              "channel_record_index_offset": 468,
               "channels": {
                 "Appearance": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
                 "PhysicalMaterial": "cccccccc-1111-2222-3333-dddddddddddd"
@@ -285,50 +286,67 @@
               "entity_id": "0_985",
               "in_table": true,
               "record_index": 7,
-              "table_entity_id_offset": 48,
-              "table_record_index_offset": 34
+              "table_entity_id_offset": 79,
+              "table_record_index_offset": 65
             }
           ],
           "act_guids": [
             {
-              "id": "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-guid#264",
-              "byte_offset": 264,
-              "guid": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
-              "guid_offset": 268,
-              "ordinal": 1
-            },
-            {
-              "id": "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-guid#360",
-              "byte_offset": 360,
-              "guid": "cccccccc-1111-2222-3333-dddddddddddd",
-              "guid_offset": 364,
-              "ordinal": 2
-            },
-            {
-              "id": "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-guid#58",
-              "byte_offset": 58,
+              "id": "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-guid#89",
+              "byte_offset": 89,
               "guid": "eeeeeeee-1111-2222-3333-ffffffffffff",
-              "guid_offset": 62,
+              "guid_offset": 93,
               "ordinal": 0
+            }
+          ],
+          "act_registry_channels": [
+            {
+              "id": "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-registry-channel#184",
+              "byte_offset": 184,
+              "guid": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
+              "guid_offset": 202,
+              "name": "Appearance",
+              "name_offset": 188,
+              "ordinal": 0
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-registry-channel#274",
+              "byte_offset": 274,
+              "guid": "cccccccc-1111-2222-3333-dddddddddddd",
+              "guid_offset": 298,
+              "name": "PhysicalMaterial",
+              "name_offset": 278,
+              "ordinal": 1
             }
           ],
           "act_root_components": [
             {
-              "id": "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-root-component#134",
-              "byte_offset": 134,
+              "id": "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-root-component#370",
+              "byte_offset": 370,
               "class_tag": "267",
               "components_root_record": 7,
-              "components_root_record_offset": 215,
+              "components_root_record_offset": 451,
               "display_name": "(Unsaved)",
-              "display_name_offset": 195,
+              "display_name_offset": 431,
               "entity_id": "0_3",
-              "entity_id_offset": 170,
+              "entity_id_offset": 406,
               "instance_root_record": 12,
-              "instance_root_record_offset": 156,
+              "instance_root_record_offset": 392,
               "record_index": 9,
-              "record_index_offset": 141,
+              "record_index_offset": 377,
               "registry_flag": 1,
-              "registry_flag_offset": 187
+              "registry_flag_offset": 423,
+              "tracked_entity_record": 3,
+              "tracked_entity_record_offset": 413
+            }
+          ],
+          "act_table_references": [
+            {
+              "id": "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-table-reference#169",
+              "byte_offset": 169,
+              "ordinal": 0,
+              "target_record": 9,
+              "target_record_offset": 170
             }
           ],
           "asm_bulletin_boards": [],
@@ -346,34 +364,45 @@
               "source_brep": "BREP.synthetic.smbh"
             }
           ],
-          "body_visibilities": [],
+          "body_visibilities": [
+            {
+              "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh:body-visibility#42",
+              "asm_body_key": 42,
+              "asm_body_key_offset": 25,
+              "body": "f3d:brep:entity#1",
+              "byte_offset": 719,
+              "entity_suffix": 985,
+              "stream": "FusionAssetName[Active]/Design1/BulkStream.dat",
+              "visible": true
+            }
+          ],
           "construction_recipes": [
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:construction-recipe#2032",
-              "byte_offset": 2032,
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:construction-recipe#2866",
+              "byte_offset": 2866,
               "design_id": "322",
-              "design_id_offset": 2009,
+              "design_id_offset": 2843,
               "design_selector": {
-                "byte_offset": 2012,
+                "byte_offset": 2846,
                 "value": 0
               },
               "kind": "body",
               "recipe_index": 0,
               "record_index": 123,
-              "record_index_offset": 2016
+              "record_index_offset": 2850
             }
           ],
           "creation_timestamps": [],
           "design_body_bindings": [
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-body-binding#4",
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-body-binding#25",
               "asm_body_key": 42,
-              "asm_body_key_offset": 4,
+              "asm_body_key_offset": 25,
               "blob_name": "BREP.synthetic.smbh",
-              "blob_name_offset": 36,
+              "blob_name_offset": 57,
               "body": "f3d:brep:entity#1",
               "entity_suffix": 985,
-              "entity_suffix_offset": 12,
+              "entity_suffix_offset": 33,
               "pair_count": 1,
               "pair_ordinal": 0,
               "stream": "FusionAssetName[Active]/Design1/BulkStream.dat"
@@ -382,14 +411,14 @@
           "design_body_bounds": [],
           "design_body_members": [
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-body-member#1982",
-              "byte_offset": 1982,
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-body-member#2816",
+              "byte_offset": 2816,
               "entity_suffix": 985,
               "flags": 0
             },
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-body-member#1993",
-              "byte_offset": 1993,
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-body-member#2827",
+              "byte_offset": 2827,
               "entity_suffix": 8422,
               "flags": 0
             }
@@ -409,95 +438,175 @@
           "design_edge_operands": [],
           "design_entity_headers": [
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-entity-header#388",
-              "byte_offset": 388,
-              "class_tag": "269",
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-entity-header#730",
+              "byte_offset": 730,
+              "class_tag": "257",
               "declared_reference_count": 2,
               "entity_id": "0_277",
               "entity_suffix": 277,
               "module": "MSketch",
               "optional_slot_present": true,
               "record_reference": 584,
-              "record_reference_offset": 427,
+              "record_reference_offset": 769,
               "reference_indices": [
                 33,
                 44
               ],
               "reference_offsets": [
-                441,
-                452
+                783,
+                794
               ]
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-entity-header#95",
+              "byte_offset": 95,
+              "class_tag": "256",
+              "entity_id": "0_985",
+              "entity_suffix": 985,
+              "module": "Body",
+              "optional_slot_present": false,
+              "reference_indices": [],
+              "reference_offsets": []
             }
           ],
           "design_entity_selection_operands": [],
           "design_extrude_selection_groups": [],
           "design_extrude_selection_members": [],
           "design_face_operands": [],
+          "design_feature_timelines": [],
           "design_fillet_radius_groups": [],
           "design_material_assignments": [
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:material-assignment#74",
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:material-assignment#95",
               "asm_body_key": 42,
-              "asm_body_key_offset": 4,
+              "asm_body_key_offset": 25,
               "entity_id": "0_985",
-              "entity_id_offset": 78,
+              "entity_id_offset": 120,
               "entity_suffix": 985,
-              "entity_suffix_offset": 12,
+              "entity_suffix_offset": 33,
               "physical_token": "PrismMaterial-018",
-              "physical_token_offset": 168,
+              "physical_token_offset": 373,
               "visual_guid": "11111111-2222-3333-4444-555555555555",
-              "visual_guid_offset": 218,
+              "visual_guid_offset": 452,
               "visual_preset": "Prism-001",
-              "visual_preset_offset": 370
+              "visual_preset_offset": 604
             }
           ],
+          "design_mesh_features": [],
           "design_parameter_companions": [],
           "design_parameter_owners": [],
           "design_parameter_scopes": [],
           "design_parameters": [],
           "design_record_headers": [
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1000",
-              "byte_offset": 1000,
-              "class_tag": "360",
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1006",
+              "byte_offset": 1006,
+              "class_tag": "266",
+              "record_index": 100
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1212",
+              "byte_offset": 1212,
+              "class_tag": "266",
+              "record_index": 200
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1418",
+              "byte_offset": 1418,
+              "class_tag": "266",
+              "record_index": 300
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1624",
+              "byte_offset": 1624,
+              "class_tag": "266",
               "record_index": 400
             },
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#462",
-              "byte_offset": 462,
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#804",
+              "byte_offset": 804,
               "class_tag": "259",
               "record_index": 33
             },
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#563",
-              "byte_offset": 563,
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#905",
+              "byte_offset": 905,
               "class_tag": "259",
               "record_index": 44
-            },
-            {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#664",
-              "byte_offset": 664,
-              "class_tag": "360",
-              "record_index": 100
-            },
-            {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#776",
-              "byte_offset": 776,
-              "class_tag": "360",
-              "record_index": 200
-            },
-            {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#888",
-              "byte_offset": 888,
-              "class_tag": "360",
-              "record_index": 300
             }
           ],
           "design_sketch_placements": [],
           "design_types": [
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#155",
+              "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1089",
               "base_type_guid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+              "base_type_guid_offset": 1133,
+              "byte_offset": 1089,
+              "entity_id_offsets": [
+                1188
+              ],
+              "entity_ids": [
+                800
+              ],
+              "module": "MSketch",
+              "type_guid": "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B",
+              "type_guid_offset": 1093,
+              "version": 3,
+              "version_offset": 1169
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1196",
+              "base_type_guid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+              "base_type_guid_offset": 1240,
+              "byte_offset": 1196,
+              "entity_id_offsets": [
+                1296,
+                1304,
+                1312,
+                1320,
+                1328
+              ],
+              "entity_ids": [
+                100,
+                200,
+                300,
+                400,
+                700
+              ],
+              "module": "Geometry",
+              "type_guid": "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB",
+              "type_guid_offset": 1200,
+              "version": 11,
+              "version_offset": 1276
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1336",
+              "base_type_guid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+              "base_type_guid_offset": 1380,
+              "byte_offset": 1336,
+              "entity_id_offsets": [
+                1436,
+                1444,
+                1452,
+                1460,
+                1468
+              ],
+              "entity_ids": [
+                101,
+                201,
+                301,
+                401,
+                701
+              ],
+              "module": "Geometry",
+              "type_guid": "362B7EC3-0F09-47C8-A3BE-DC066715CDAE",
+              "type_guid_offset": 1340,
+              "version": 0,
+              "version_offset": 1416
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#155",
+              "base_type_guid": "63D6AD42-466A-40B7-9CCD-EB21BC500EF6",
               "base_type_guid_offset": 199,
               "byte_offset": 155,
               "entity_id_offsets": [
@@ -507,9 +616,9 @@
                 985
               ],
               "module": "Body",
-              "type_guid": "11111111-2222-3333-4444-555555555555",
+              "type_guid": "D3937028-C20C-4E65-B010-94AD418A5C20",
               "type_guid_offset": 159,
-              "version": 3,
+              "version": 19,
               "version_offset": 235
             },
             {
@@ -524,7 +633,7 @@
                 277
               ],
               "module": "MSketch",
-              "type_guid": "22222222-3333-4444-5555-666666666666",
+              "type_guid": "44A64366-4BD3-4B24-881A-F94C206E8F2D",
               "type_guid_offset": 263,
               "version": 4,
               "version_offset": 339
@@ -551,13 +660,104 @@
               "base_type_guid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
               "base_type_guid_offset": 491,
               "byte_offset": 447,
-              "entity_id_offsets": [],
-              "entity_ids": [],
+              "entity_id_offsets": [
+                546,
+                554
+              ],
+              "entity_ids": [
+                33,
+                44
+              ],
               "module": "MSketch",
               "type_guid": "60403D47-0C49-49B0-BDE8-1679608164A2",
               "type_guid_offset": 451,
               "version": 1,
               "version_offset": 527
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#562",
+              "base_type_guid": "CB844AB6-240D-4fc9-9C9F-3679DC896D6F",
+              "base_type_guid_offset": 606,
+              "byte_offset": 562,
+              "entity_id_offsets": [
+                660
+              ],
+              "entity_ids": [
+                900
+              ],
+              "module": "Fusion",
+              "type_guid": "D26351F0-5940-4D23-AA20-2C35475A6D9E",
+              "type_guid_offset": 566,
+              "version": 2,
+              "version_offset": 642
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#668",
+              "base_type_guid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+              "base_type_guid_offset": 712,
+              "byte_offset": 668,
+              "entity_id_offsets": [
+                764
+              ],
+              "entity_ids": [
+                7
+              ],
+              "module": "Body",
+              "type_guid": "CD57BC48-50EC-47DC-975A-FB6DEA72F4DA",
+              "type_guid_offset": 672,
+              "version": 4,
+              "version_offset": 748
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#772",
+              "base_type_guid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+              "base_type_guid_offset": 816,
+              "byte_offset": 772,
+              "entity_id_offsets": [
+                869
+              ],
+              "entity_ids": [
+                986
+              ],
+              "module": "Scene",
+              "type_guid": "702b9cd2-537c-429e-8cc4-22beeeb98c37",
+              "type_guid_offset": 776,
+              "version": 1,
+              "version_offset": 852
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#877",
+              "base_type_guid": "E8DCB040-6A0E-4AD1-BCF3-1E1AEDD35EE4",
+              "base_type_guid_offset": 921,
+              "byte_offset": 877,
+              "entity_id_offsets": [
+                973
+              ],
+              "entity_ids": [
+                899
+              ],
+              "module": "Body",
+              "type_guid": "74CA4562-59F8-4C97-8AD1-F8297C21F9AA",
+              "type_guid_offset": 881,
+              "version": 0,
+              "version_offset": 957
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#981",
+              "base_type_guid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+              "base_type_guid_offset": 1025,
+              "byte_offset": 981,
+              "entity_id_offsets": [
+                1081
+              ],
+              "entity_ids": [
+                600
+              ],
+              "module": "Geometry",
+              "type_guid": "F0130424-8B7E-4092-93C9-1CA807482534",
+              "type_guid_offset": 985,
+              "version": 0,
+              "version_offset": 1061
             }
           ],
           "edge_continuities": [
@@ -618,98 +818,98 @@
           ],
           "lost_edge_references": [
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:lost-edge-reference#2117",
-              "byte_offset": 2146,
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:lost-edge-reference#2951",
+              "byte_offset": 2980,
               "class_tag": "419",
-              "class_tag_offset": 2121,
-              "next_byte_offset": 2165,
+              "class_tag_offset": 2955,
+              "next_byte_offset": 2999,
               "next_class_tag": "419",
               "next_record_index": 4646,
-              "record_byte_offset": 2117,
+              "record_byte_offset": 2951,
               "record_index": 4645,
-              "record_index_offset": 2124
+              "record_index_offset": 2958
             }
           ],
           "mesh_surface_sentinels": [],
           "persistent_design_links": [],
           "persistent_references": [
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1029",
-              "byte_offset": 1029,
-              "kind": "point",
-              "value": 503,
-              "value_offset": 33
-            },
-            {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1141",
-              "byte_offset": 1141,
-              "kind": "curve_primary",
-              "value": 440,
-              "value_offset": 41
-            },
-            {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1194",
-              "byte_offset": 1194,
-              "kind": "curve_secondary",
-              "value": 0,
-              "value_offset": 43
-            },
-            {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1422",
-              "byte_offset": 1422,
-              "kind": "point",
-              "value": 600,
-              "value_offset": 33
-            },
-            {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1586",
-              "byte_offset": 1586,
-              "kind": "curve_primary",
-              "value": 700,
-              "value_offset": 41
-            },
-            {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1639",
-              "byte_offset": 1639,
-              "kind": "curve_secondary",
-              "value": 0,
-              "value_offset": 43
-            },
-            {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2076",
-              "byte_offset": 2076,
-              "kind": "point",
-              "value": 439,
-              "value_offset": 33
-            },
-            {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#693",
-              "byte_offset": 693,
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1035",
+              "byte_offset": 1035,
               "kind": "point",
               "value": 500,
               "value_offset": 33
             },
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#805",
-              "byte_offset": 805,
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1241",
+              "byte_offset": 1241,
               "kind": "point",
               "value": 501,
               "value_offset": 33
             },
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#917",
-              "byte_offset": 917,
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1447",
+              "byte_offset": 1447,
               "kind": "point",
               "value": 502,
+              "value_offset": 33
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1653",
+              "byte_offset": 1653,
+              "kind": "point",
+              "value": 503,
+              "value_offset": 33
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1859",
+              "byte_offset": 1859,
+              "kind": "curve_primary",
+              "value": 440,
+              "value_offset": 41
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1912",
+              "byte_offset": 1912,
+              "kind": "curve_secondary",
+              "value": 0,
+              "value_offset": 43
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2151",
+              "byte_offset": 2151,
+              "kind": "point",
+              "value": 600,
+              "value_offset": 33
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2409",
+              "byte_offset": 2409,
+              "kind": "curve_primary",
+              "value": 700,
+              "value_offset": 41
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2462",
+              "byte_offset": 2462,
+              "kind": "curve_secondary",
+              "value": 0,
+              "value_offset": 43
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2910",
+              "byte_offset": 2910,
+              "kind": "point",
+              "value": 439,
               "value_offset": 33
             }
           ],
           "persistent_subentity_tags": [],
           "sketch_curve_identities": [
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-curve-identity#1112",
-              "byte_offset": 1112,
-              "class_tag": "361",
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-curve-identity#1830",
+              "byte_offset": 1830,
+              "class_tag": "264",
               "geometry": {
                 "center": {
                   "x": 10.0,
@@ -732,14 +932,15 @@
                 "start_angle": 0.0
               },
               "geometry_offset": 133,
+              "owner_reference": 277,
               "primary_id": 440,
               "record_index": 600,
               "secondary_id": 0
             },
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-curve-identity#1505",
-              "byte_offset": 1505,
-              "class_tag": "363",
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-curve-identity#2328",
+              "byte_offset": 2328,
+              "class_tag": "265",
               "entity_genesis": 10,
               "geometry": {
                 "carrier_reference": 42,
@@ -785,79 +986,145 @@
           "sketch_curve_links": [],
           "sketch_points": [
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1000",
-              "byte_offset": 1000,
-              "class_tag": "360",
-              "coordinate_offset": 89,
-              "coordinates": {
-                "u": 20.0,
-                "v": 10.0
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1006",
+              "byte_offset": 1006,
+              "class_tag": "266",
+              "closure": {
+                "selector": 0,
+                "state": 1
               },
-              "owner_reference": 277,
-              "paired_reference": 401,
-              "persistent_id": 503,
-              "raw_bytes": "AwAAADM2MJABAAAAAAAAAAAAAAABAQAAAAYAAABwdF90YWcXAAAASW50cmluc2ljTWV0YVR5cGV1aW50NjT3AQAAAAAAAAGRAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAPA/AAAAAAAAAAM=",
-              "record_index": 400
-            },
-            {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1341",
-              "byte_offset": 1341,
-              "class_tag": "362",
-              "coordinate_offset": 141,
-              "coordinates": {
-                "u": -40.0,
-                "v": 50.0
+              "companion": {
+                "incident_curves": [],
+                "prefix_present_zero": false,
+                "reference_encoding": "same_segment"
               },
-              "entity_genesis": 9,
-              "paired_reference": 701,
-              "persistent_id": 600,
-              "raw_bytes": "AwAAADM2MrwCAAAAAAAAAAAAAAABAgAAAA0AAABFbnRpdHlHZW5lc2lzFwAAAEludHJpbnNpY01ldGFUeXBldWludDY0CQAAAAAAAAAGAAAAcHRfdGFnFwAAAEludHJpbnNpY01ldGFUeXBldWludDY0WAIAAAAAAAABvQIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEMAAAAAAAAAUQAAAAAAAAAAD",
-              "record_index": 700
-            },
-            {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#664",
-              "byte_offset": 664,
-              "class_tag": "360",
               "coordinate_offset": 89,
               "coordinates": {
                 "u": 12.5,
                 "v": -25.0
               },
+              "depth": 0.0,
               "owner_reference": 277,
               "paired_reference": 101,
               "persistent_id": 500,
-              "raw_bytes": "AwAAADM2MGQAAAAAAAAAAAAAAAABAQAAAAYAAABwdF90YWcXAAAASW50cmluc2ljTWV0YVR5cGV1aW50NjT0AQAAAAAAAAFlAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD0PwAAAAAAAATAAAAAAAAAAAM=",
+              "record_form": {
+                "kind": "version11",
+                "padded_paired_reference": false
+              },
               "record_index": 100
             },
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#776",
-              "byte_offset": 776,
-              "class_tag": "360",
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1212",
+              "byte_offset": 1212,
+              "class_tag": "266",
+              "closure": {
+                "selector": 0,
+                "state": 1
+              },
+              "companion": {
+                "incident_curves": [],
+                "prefix_present_zero": false,
+                "reference_encoding": "same_segment"
+              },
               "coordinate_offset": 89,
               "coordinates": {
                 "u": 30.0,
                 "v": 40.0
               },
+              "depth": 0.0,
               "owner_reference": 277,
               "paired_reference": 201,
               "persistent_id": 501,
-              "raw_bytes": "AwAAADM2MMgAAAAAAAAAAAAAAAABAQAAAAYAAABwdF90YWcXAAAASW50cmluc2ljTWV0YVR5cGV1aW50NjT1AQAAAAAAAAHJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIQAAAAAAAABBAAAAAAAAAAAM=",
+              "record_form": {
+                "kind": "version11",
+                "padded_paired_reference": false
+              },
               "record_index": 200
             },
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#888",
-              "byte_offset": 888,
-              "class_tag": "360",
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1418",
+              "byte_offset": 1418,
+              "class_tag": "266",
+              "closure": {
+                "selector": 0,
+                "state": 1
+              },
+              "companion": {
+                "incident_curves": [],
+                "prefix_present_zero": false,
+                "reference_encoding": "same_segment"
+              },
               "coordinate_offset": 89,
               "coordinates": {
                 "u": -10.0,
                 "v": 5.0
               },
+              "depth": 0.0,
               "owner_reference": 277,
               "paired_reference": 301,
               "persistent_id": 502,
-              "raw_bytes": "AwAAADM2MCwBAAAAAAAAAAAAAAABAQAAAAYAAABwdF90YWcXAAAASW50cmluc2ljTWV0YVR5cGV1aW50NjT2AQAAAAAAAAEtAQAAAAAAAAAAAAAAAAAAAAAAAAAAAADwvwAAAAAAAOA/AAAAAAAAAAM=",
+              "record_form": {
+                "kind": "version11",
+                "padded_paired_reference": false
+              },
               "record_index": 300
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1624",
+              "byte_offset": 1624,
+              "class_tag": "266",
+              "closure": {
+                "selector": 0,
+                "state": 1
+              },
+              "companion": {
+                "incident_curves": [],
+                "prefix_present_zero": false,
+                "reference_encoding": "same_segment"
+              },
+              "coordinate_offset": 89,
+              "coordinates": {
+                "u": 20.0,
+                "v": 10.0
+              },
+              "depth": 0.0,
+              "owner_reference": 277,
+              "paired_reference": 401,
+              "persistent_id": 503,
+              "record_form": {
+                "kind": "version11",
+                "padded_paired_reference": false
+              },
+              "record_index": 400
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#2070",
+              "byte_offset": 2070,
+              "class_tag": "266",
+              "closure": {
+                "selector": 0,
+                "state": 1
+              },
+              "companion": {
+                "incident_curves": [],
+                "prefix_present_zero": false,
+                "reference_encoding": "same_segment"
+              },
+              "coordinate_offset": 141,
+              "coordinates": {
+                "u": -40.0,
+                "v": 50.0
+              },
+              "depth": 0.0,
+              "entity_genesis": 9,
+              "owner_reference": 277,
+              "paired_reference": 701,
+              "persistent_id": 600,
+              "record_form": {
+                "kind": "version11",
+                "padded_paired_reference": false
+              },
+              "record_index": 700
             }
           ],
           "sketch_relations": [
@@ -865,7 +1132,7 @@
               "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-relation#33",
               "auxiliary_reference_offsets": [],
               "auxiliary_references": [],
-              "byte_offset": 462,
+              "byte_offset": 804,
               "class_tag": "259",
               "constraint_kinds": [
                 "parallel"
@@ -929,7 +1196,7 @@
               "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-relation#44",
               "auxiliary_reference_offsets": [],
               "auxiliary_references": [],
-              "byte_offset": 563,
+              "byte_offset": 905,
               "class_tag": "259",
               "constraint_kinds": [
                 "concentric"
@@ -1040,7 +1307,12 @@
       {
         "code": "feature_history_retained",
         "severity": "warning",
-        "message": "4 decoded sketch point(s) have no neutral sketch entity."
+        "message": "5 decoded sketch point(s) have no neutral sketch entity."
+      },
+      {
+        "code": "feature_history_retained",
+        "severity": "warning",
+        "message": "1 decoded sketch curve(s) have no neutral sketch entity."
       },
       {
         "code": "feature_history_retained",
@@ -1049,7 +1321,7 @@
       }
     ],
     "notes": [
-      "asset folder (from entry paths): FusionAssetName[Active]",
+      "Design asset folder (from manifests): FusionAssetName[Active]",
       "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
       "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh (1610 bytes uncompressed)"
     ]
@@ -1063,147 +1335,152 @@
         "f3d:FusionAssetName[Active]/ProteinAssets.BlobParts/ProteinAsset.0.protein"
       ],
       "provenance": {
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:construction-recipe#2032": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:construction-recipe#2866": {
           "stream": 1,
           "offset": 0,
           "tag": "construction_recipe"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-body-member#1982": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-body-member#2816": {
           "stream": 1,
           "offset": 0,
           "tag": "BodiesRoot"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-body-member#1993": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-body-member#2827": {
           "stream": 1,
           "offset": 0,
           "tag": "BodiesRoot"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-entity-header#388": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-entity-header#730": {
           "stream": 1,
           "offset": 0,
           "tag": "design_entity_header"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1000": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-entity-header#95": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_entity_header"
+        },
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1006": {
           "stream": 1,
           "offset": 0,
           "tag": "design_record_header"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#462": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1212": {
           "stream": 1,
           "offset": 0,
           "tag": "design_record_header"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#563": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1418": {
           "stream": 1,
           "offset": 0,
           "tag": "design_record_header"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#664": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1624": {
           "stream": 1,
           "offset": 0,
           "tag": "design_record_header"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#776": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#804": {
           "stream": 1,
           "offset": 0,
           "tag": "design_record_header"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#888": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#905": {
           "stream": 1,
           "offset": 0,
           "tag": "design_record_header"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:lost-edge-reference#2117": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:lost-edge-reference#2951": {
           "stream": 1,
           "offset": 0,
           "tag": "EDGE_REFERENCE_LOST"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:material-assignment#74": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:material-assignment#95": {
           "stream": 1,
           "offset": 0,
           "tag": "material_assignment"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1029": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1035": {
           "stream": 1,
           "offset": 0,
           "tag": "persistent_reference"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1141": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1241": {
           "stream": 1,
           "offset": 0,
           "tag": "persistent_reference"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1194": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1447": {
           "stream": 1,
           "offset": 0,
           "tag": "persistent_reference"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1422": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1653": {
           "stream": 1,
           "offset": 0,
           "tag": "persistent_reference"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1586": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1859": {
           "stream": 1,
           "offset": 0,
           "tag": "persistent_reference"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1639": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#1912": {
           "stream": 1,
           "offset": 0,
           "tag": "persistent_reference"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2076": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2151": {
           "stream": 1,
           "offset": 0,
           "tag": "persistent_reference"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#693": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2409": {
           "stream": 1,
           "offset": 0,
           "tag": "persistent_reference"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#805": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2462": {
           "stream": 1,
           "offset": 0,
           "tag": "persistent_reference"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#917": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#2910": {
           "stream": 1,
           "offset": 0,
           "tag": "persistent_reference"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-curve-identity#1112": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-curve-identity#1830": {
           "stream": 1,
           "offset": 0,
           "tag": "sketch_curve"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-curve-identity#1505": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-curve-identity#2328": {
           "stream": 1,
           "offset": 0,
           "tag": "sketch_curve"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1000": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1006": {
           "stream": 1,
           "offset": 0,
           "tag": "sketch_point"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1341": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1212": {
           "stream": 1,
           "offset": 0,
           "tag": "sketch_point"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#664": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1418": {
           "stream": 1,
           "offset": 0,
           "tag": "sketch_point"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#776": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1624": {
           "stream": 1,
           "offset": 0,
           "tag": "sketch_point"
         },
-        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#888": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#2070": {
           "stream": 1,
           "offset": 0,
           "tag": "sketch_point"
@@ -1217,6 +1494,21 @@
           "stream": 1,
           "offset": 0,
           "tag": "sketch_relation"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1089": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1196": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1336": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_type"
         },
         "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#155": {
           "stream": 1,
@@ -1238,30 +1530,60 @@
           "offset": 0,
           "tag": "design_type"
         },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#562": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#668": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#772": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#877": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#981": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_type"
+        },
         "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-entity#7": {
           "stream": 1,
           "offset": 0,
           "tag": "ACTEntity"
         },
-        "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-guid#264": {
+        "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-guid#89": {
           "stream": 1,
           "offset": 0,
           "tag": "ACTGuid"
         },
-        "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-guid#360": {
+        "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-registry-channel#184": {
           "stream": 1,
           "offset": 0,
-          "tag": "ACTGuid"
+          "tag": "ACTRegistryChannel"
         },
-        "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-guid#58": {
+        "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-registry-channel#274": {
           "stream": 1,
           "offset": 0,
-          "tag": "ACTGuid"
+          "tag": "ACTRegistryChannel"
         },
-        "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-root-component#134": {
+        "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-root-component#370": {
           "stream": 1,
           "offset": 0,
           "tag": "ACTRootComponent"
+        },
+        "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-table-reference#169": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "ACTTableReference"
         },
         "f3d:appearance:binding#0_985:11111111-2222-3333-4444-555555555555": {
           "stream": 1,
@@ -1379,9 +1701,9 @@
         "id": "f3d:file:source-image#0",
         "stream": "f3d",
         "offset": 0,
-        "byte_len": 6724,
-        "sha256": "087387884ffd8be82ed8007f313332b8bc0e8dfe1ce082041c1520b0fe854c3a",
-        "data": "UEsDBAoAAAAAAAAAIQDgjy/+EgAAABIAAAAMAAAATWFuaWZlc3QuZGF0c3ludGhldGljLW1hbmlmZXN0UEsDBAoAAAAAAAAAIQA9d09eSgYAAEoGAAA7AAAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vQnJlcHMuQmxvYlBhcnRzL0JSRVAuc3ludGhldGljLnNtYmhBU00gQmluYXJ5RmlsZTg8WgAAAAAAAAAAAAAAAAAABQAAAAAAAAADAAAAAAAAAAcQQXV0b2Rlc2sgTmV1dHJvbgcVQVNNIDIzMS42LjMuNjU1MzUgT1NYBxhUdWUgTWFyIDMxIDE2OjE2OjE5IDIwMjYGAAAAAAAATkAGje21oPfGsD4Gu73X2d982z0NCWFzbWhlYWRlcgcNMjMxLjYuMy42NTUzNRENBGJvZHkM//////////8EKgAAAAAAAAAM//////////8MAgAAAAAAAAAM//////////8M//////////8RDQZyZWdpb24M//////////8E//////////8M//////////8M//////////8MAwAAAAAAAAAMAQAAAAAAAAARDQVzaGVsbAz//////////wT//////////wz//////////wz//////////wz//////////wwEAAAAAAAAAAz//////////wwCAAAAAAAAABENBGZhY2UM//////////8E//////////8M//////////8M//////////8MBQAAAAAAAAAMAwAAAAAAAAAM//////////8MBgAAAAAAAAALCxENBGxvb3AM//////////8E//////////8M//////////8M//////////8MBwAAAAAAAAAMBAAAAAAAAAARDgVwbGFuZQ0Hc3VyZmFjZQz//////////wT//////////wz//////////xMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/FAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAsRDQZjb2VkZ2UM//////////8E//////////8M//////////8MCAAAAAAAAAAMCQAAAAAAAAAM//////////8MCgAAAAAAAAALDAUAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DAkAAAAAAAAADAcAAAAAAAAADP//////////DAsAAAAAAAAACwwFAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwHAAAAAAAAAAwIAAAAAAAAAAz//////////wwMAAAAAAAAAAsMBQAAAAAAAAAEAAAAAAAAAAAM//////////8RDQRlZGdlDP//////////BP//////////DP//////////DA0AAAAAAAAABgAAAAAAAAAADA4AAAAAAAAABgAAAAAAAPA/DP//////////DP//////////CwcHdW5rbm93bhENBGVkZ2UM//////////8E//////////8M//////////8MDgAAAAAAAAAGAAAAAAAAAAAMDwAAAAAAAAAGAAAAAAAA8D8M//////////8M//////////8LBwd1bmtub3duEQ0EZWRnZQz//////////wT//////////wz//////////wwPAAAAAAAAAAYAAAAAAAAAAAwNAAAAAAAAAAYAAAAAAADwPwz//////////wz//////////wsHB3Vua25vd24RDQZ2ZXJ0ZXgM//////////8E//////////8M//////////8MCgAAAAAAAAAEAAAAAAAAAAAMEAAAAAAAAAARDQZ2ZXJ0ZXgM//////////8E//////////8M//////////8MCgAAAAAAAAAEAQAAAAAAAAAMEQAAAAAAAAARDQZ2ZXJ0ZXgM//////////8E//////////8M//////////8MDAAAAAAAAAAEAAAAAAAAAAAMEgAAAAAAAAARDQVwb2ludAz//////////wT//////////wz//////////xMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARDQVwb2ludAz//////////wT//////////wz//////////xMAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAARDQVwb2ludAz//////////wT//////////wz//////////xMAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAARDQtkZWx0YV9zdGF0ZVBLAwQKAAAAAAAAACEAed7HFjADAAAwAwAARgAAAEZ1c2lvbkFzc2V0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NDQtNTU1NS02NjY2LTc3Nzc3Nzc3Nzc3NwAAAAAFAAAACQAAAERpbWVuc2lvbgIAAAAOAQAAAAAAAA8BAAAAAAAAJAAAADYwNDAzRDQ3LTBDNDktNDlCMC1CREU4LTE2Nzk2MDgxNjRBMiQAAABhYWFhYWFhYS1iYmJiLWNjY2MtZGRkZC1lZWVlZWVlZWVlZWUBAAAABwAAAE1Ta2V0Y2gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFBLAwQKAAAAAAAAACEACTrH+8IBAADCAQAAPAAAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL0Z1c2lvbkFDVFNlZ21lbnRUeXBlMS9CdWxrU3RyZWFtLmRhdAMAAAAyNjgBAAAAAAAAAAgAAABBQ1RUYWJsZQAAAQAAAAEHAAAAAAAAAAAABQAAADAAXwA5ADgANQAkAAAAZQBlAGUAZQBlAGUAZQBlAC0AMQAxADEAMQAtADIAMgAyADIALQAzADMAMwAzAC0AZgBmAGYAZgBmAGYAZgBmAGYAZgBmAGYAAwAAADI2NwkAAAAAAAAAAAAAAAAAAQwAAAAAAAAAAAADAAAAMABfADMAAQMAAAAAAAAAAAEBAAAACQAAACgAVQBuAHMAYQB2AGUAZAApAAABBwAAAAAAAAAAAAMAAAAyNjEHAAAAAAAAAAAAAAAAAAIAAAAKAAAAQXBwZWFyYW5jZSQAAABhAGEAYQBhAGEAYQBhAGEALQAxADEAMQAxAC0AMgAyADIAMgAtADMAMwAzADMALQBiAGIAYgBiAGIAYgBiAGIAYgBiAGIAYgAQAAAAUGh5c2ljYWxNYXRlcmlhbCQAAABjAGMAYwBjAGMAYwBjAGMALQAxADEAMQAxAC0AMgAyADIAMgAtADMAMwAzADMALQBkAGQAZABkAGQAZABkAGQAZABkAGQAZAAFAAAAMABfADkAOAA1AFBLAQIKAwoAAAAAAAAAIQDgjy/+EgAAABIAAAAMAAAAAAAAAAAAAACkgQAAAABNYW5pZmVzdC5kYXRQSwECCgMKAAAAAAAAACEAPXdPXkoGAABKBgAAOwAAAAAAAAAAAAAApIE8AAAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vQnJlcHMuQmxvYlBhcnRzL0JSRVAuc3ludGhldGljLnNtYmhQSwECCgMKAAAAAAAAACEAed7HFjADAAAwAwAARgAAAAAAAAAAAAAApIHfBgAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vUHJvdGVpbkFzc2V0cy5CbG9iUGFydHMvUHJvdGVpbkFzc2V0LjAucHJvdGVpblBLAQIKAwoAAAAAAAAAIQBQi3elkAgAAJAIAAAuAAAAAAAAAAAAAACkgXMKAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9EZXNpZ24xL0J1bGtTdHJlYW0uZGF0UEsBAgoDCgAAAAAAAAAhAFiM2ug+AgAAPgIAAC4AAAAAAAAAAAAAAKSBTxMAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL0Rlc2lnbjEvTWV0YVN0cmVhbS5kYXRQSwECCgMKAAAAAAAAACEACTrH+8IBAADCAQAAPAAAAAAAAAAAAAAApIHZFQAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vRnVzaW9uQUNUU2VnbWVudFR5cGUxL0J1bGtTdHJlYW0uZGF0UEsFBgAAAAAGAAYAOQIAAPUXAAAAAA=="
+        "byte_len": 11555,
+        "sha256": "e5e4a2545666e2db6274e284b2392b69fcac036c276e438239c02300eb8c4e8f",
+        "data": "UEsDBAoAAAAAAAAAIQCgv7HrOwIAADsCAAAMAAAATWFuaWZlc3QuZGF0BwAAADMtMi0wLTANAAAARnVzaW9uRG9jVHlwZQQAAAAuAGYAMwBkAA8AAABGAHUAcwBpAG8AbgAgAEQAbwBjAHUAbQBlAG4AdAARAAAAQQAgAEYAdQBzAGkAbwBuACAARABvAGMAdQBtAGUAbgB0ACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADIA0gQAABQAAAAkAAAAQABAKgcAAAALAAAAQXBwbGljYXRpb24BAAAAAwAAAENBTQQAAAAIAAAAUGFyYU1lc2gIAAAACQAAAFNpbUNvbW1vbjV1AAAPAAAAU2ltRkVBQ1NPYmplY3RzAgAAABAAAABTaW1GbHVpZER5bmFtaWNzAgAAABcAAABTaW1TdHJ1Y3R1cmFsQXR0cmlidXRlcxInAAAAAAAAACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMwABAAAADwAAAEYAdQBzAGkAbwBuAEEAcwBzAGUAdABOAGEAbQBlAAAAAAABCQAAAE4AQQBfAEUAWABQAE8AUgBUAFBLAwQKAAAAAAAAACEAfc3VPU0CAABNAgAAJAAAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL01hbmlmZXN0LmRhdA8AAABGAHUAcwBpAG8AbgBBAHMAcwBlAHQATgBhAG0AZQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADMAJAAAADAAMAAwADAAMAAwADAAMAAtADAAMAAwADAALQA0ADAAMAAwAC0AOAAwADAAMAAtADAAMAAwADAAMAAwADAAMAAwADAAMAA0AA8AAABGdXNpb25Bc3NldFR5cGUUAAAABAAAAAsAAABBcHBsaWNhdGlvbosAAAAIAAAAUGFyYU1lc2gNAAAABgAAAFNlcnZlciQAAAAIAAAAVm9sRmllbGQEAAAAEgAAAE5ldXRyb24zREFzc2V0VHlwZQAAAAAAAQAAABIAAABwaHlzaWNhbENoYW5nZUd1aWQkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADUAAAAAAAcAAAADAAAAAAAAABcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZRcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZQEAAAAUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUCAAAAGAAAAEZ1c2lvbkJyb3dzZXJTZWdtZW50VHlwZRgAAABGdXNpb25Ccm93c2VyU2VnbWVudFR5cGVQSwMECgAAAAAAAAAhAD13T15KBgAASgYAADsAAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9CcmVwcy5CbG9iUGFydHMvQlJFUC5zeW50aGV0aWMuc21iaEFTTSBCaW5hcnlGaWxlODxaAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAMAAAAAAAAABxBBdXRvZGVzayBOZXV0cm9uBxVBU00gMjMxLjYuMy42NTUzNSBPU1gHGFR1ZSBNYXIgMzEgMTY6MTY6MTkgMjAyNgYAAAAAAABOQAaN7bWg98awPga7vdfZ33zbPQ0JYXNtaGVhZGVyBw0yMzEuNi4zLjY1NTM1EQ0EYm9keQz//////////wQqAAAAAAAAAAz//////////wwCAAAAAAAAAAz//////////wz//////////xENBnJlZ2lvbgz//////////wT//////////wz//////////wz//////////wwDAAAAAAAAAAwBAAAAAAAAABENBXNoZWxsDP//////////BP//////////DP//////////DP//////////DP//////////DAQAAAAAAAAADP//////////DAIAAAAAAAAAEQ0EZmFjZQz//////////wT//////////wz//////////wz//////////wwFAAAAAAAAAAwDAAAAAAAAAAz//////////wwGAAAAAAAAAAsLEQ0EbG9vcAz//////////wT//////////wz//////////wz//////////wwHAAAAAAAAAAwEAAAAAAAAABEOBXBsYW5lDQdzdXJmYWNlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8UAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAACxENBmNvZWRnZQz//////////wT//////////wz//////////wwIAAAAAAAAAAwJAAAAAAAAAAz//////////wwKAAAAAAAAAAsMBQAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MCQAAAAAAAAAMBwAAAAAAAAAM//////////8MCwAAAAAAAAALDAUAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DAcAAAAAAAAADAgAAAAAAAAADP//////////DAwAAAAAAAAACwwFAAAAAAAAAAQAAAAAAAAAAAz//////////xENBGVkZ2UM//////////8E//////////8M//////////8MDQAAAAAAAAAGAAAAAAAAAAAMDgAAAAAAAAAGAAAAAAAA8D8M//////////8M//////////8LBwd1bmtub3duEQ0EZWRnZQz//////////wT//////////wz//////////wwOAAAAAAAAAAYAAAAAAAAAAAwPAAAAAAAAAAYAAAAAAADwPwz//////////wz//////////wsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DA8AAAAAAAAABgAAAAAAAAAADA0AAAAAAAAABgAAAAAAAPA/DP//////////DP//////////CwcHdW5rbm93bhENBnZlcnRleAz//////////wT//////////wz//////////wwKAAAAAAAAAAQAAAAAAAAAAAwQAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwKAAAAAAAAAAQBAAAAAAAAAAwRAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwMAAAAAAAAAAQAAAAAAAAAAAwSAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAABENC2RlbHRhX3N0YXRlUEsDBAoAAAAAAAAAIQB53scWMAMAADADAABGAAAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vUHJvdGVpbkFzc2V0cy5CbG9iUGFydHMvUHJvdGVpbkFzc2V0LjAucHJvdGVpblBLAwQKAAAAAAAAACEAdljpDqgBAACoAQAAIAAAAEFzc2V0RGF0YS9JbnN0YW5jZVByb3BlcnRpZXMuYmluiAAAAP//////////AAAAAAAAAACAAAEADQAAAEdlbmVyaWNTY2hlbWEkAAAAMTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtNTU1NTU1NTU1NTU1CQAAAFByaXNtLTAwMSQAAABhYWFhYWFhYS1iYmJiLWNjY2MtZGRkZC1lZWVlZWVlZWVlZWUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACamZmZmZm5P5qZmZmZmck/MzMzMzMz0z8AAAAAAADwPwAA/////z8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAAAAAAAAAAANA/AAAAAAAAAAAAAAAAAAAMAAAAAAAAAAAA+D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFBLAwQKAAAAAAAAACEABnkigUYAAABGAAAAKgAAAEFzc2V0RGF0YS9EZWZpbml0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c2lvbgAAAAAAAAAADAAAACQAAABEMzkzNzAyOC1DMjBDLTRFNjUtQjAxMC05NEFENDE4QTVDMjAkAAAANjNENkFENDItNDY2QS00MEI3LTlDQ0QtRUIyMUJDNTAwRUY2EwAAAAQAAABCb2R5AQAAANkDAAAAAAAAJAAAADQ0QTY0MzY2LTRCRDMtNEIyNC04ODFBLUY5NEMyMDZFOEYyRCQAAABhYWFhYWFhYS1iYmJiLWNjY2MtZGRkZC1lZWVlZWVlZWVlZWUEAAAABwAAAE1Ta2V0Y2gBAAAAFQEAAAAAAAAkAAAAMzMzMzMzMzMtNDQ0NC01NTU1LTY2NjYtNzc3Nzc3Nzc3Nzc3AAAAAAUAAAAJAAAARGltZW5zaW9uAgAAAA4BAAAAAAAADwEAAAAAAAAkAAAANjA0MDNENDctMEM0OS00OUIwLUJERTgtMTY3OTYwODE2NEEyJAAAAGFhYWFhYWFhLWJiYmItY2NjYy1kZGRkLWVlZWVlZWVlZWVlZQEAAAAHAAAATVNrZXRjaAIAAAAhAAAAAAAAACwAAAAAAAAAJAAAAEQyNjM1MUYwLTU5NDAtNEQyMy1BQTIwLTJDMzU0NzVBNkQ5RSQAAABDQjg0NEFCNi0yNDBELTRmYzktOUM5Ri0zNjc5REM4OTZENkYCAAAABgAAAEZ1c2lvbgEAAACEAwAAAAAAACQAAABDRDU3QkM0OC01MEVDLTQ3REMtOTc1QS1GQjZERUE3MkY0REEkAAAAYWFhYWFhYWEtYmJiYi1jY2NjLWRkZGQtZWVlZWVlZWVlZWVlBAAAAAQAAABCb2R5AQAAAAcAAAAAAAAAJAAAADcwMmI5Y2QyLTUzN2MtNDI5ZS04Y2M0LTIyYmVlZWI5OGMzNyQAAABhYWFhYWFhYS1iYmJiLWNjY2MtZGRkZC1lZWVlZWVlZWVlZWUBAAAABQAAAFNjZW5lAQAAANoDAAAAAAAAJAAAADc0Q0E0NTYyLTU5RjgtNEM5Ny04QUQxLUY4Mjk3QzIxRjlBQSQAAABFOERDQjA0MC02QTBFLTRBRDEtQkNGMy0xRTFBRUREMzVFRTQAAAAABAAAAEJvZHkBAAAAgwMAAAAAAAAkAAAARjAxMzA0MjQtOEI3RS00MDkyLTkzQzktMUNBODA3NDgyNTM0JAAAAGFhYWFhYWFhLWJiYmIt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MDAtMDAwMC0wMDAwLTAwMDAwMDAwMDEwMAAAAAABAAAAAwAAAEFDVAEAAAACAAAAAAAAACQAAAAwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAxMDEAAAAAAQAAAAMAAABBQ1QAAAAAJAAAADAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDEwMgAAAAABAAAAAwAAAEFDVAAAAAAkAAAAMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMTAzAAAAAAEAAAADAAAAQUNUAAAAACQAAAAwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAxMDQAAAAAAQAAAAMAAABBQ1QAAAAAJAAAADAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDEwNQAAAAABAAAAAwAAAEFDVAEAAAAHAAAAAAAAACQAAAAwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAxMDYAAAAAAQAAAAMAAABBQ1QAAAAAJAAAADAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDEwNwAAAAABAAAAAwAAAEFDVAAAAAAkAAAAMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMTA4AAAAAAEAAAADAAAAQUNUAAAAACQAAAAwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAxMDkAAAAAAQAAAAMAAABBQ1QAAAAAJAAAADAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDEwYQAAAAABAAAAAwAAAEFDVAAAAAAkAAAAMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMTBiAAAAAAEAAAADAAAAQUNUAQAAAAkAAAAAAAAAJAAAADAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDEwYwAAAAABAAAAAwAAAEFDVAEAAAABAAAAAAAAAAAAAAAEAAAAAgAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAHwAAAAAAAAAJAAAAAAAAAHIBAAAAAAAABwAAAAAAAADNAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUEsBAgoDCgAAAAAAAAAhAKC/ses7AgAAOwIAAAwAAAAAAAAAAAAAAKSBAAAAAE1hbmlmZXN0LmRhdFBLAQIKAwoAAAAAAAAAIQB9zdU9TQIAAE0CAAAkAAAAAAAAAAAAAACkgWUCAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9NYW5pZmVzdC5kYXRQSwECCgMKAAAAAAAAACEAPXdPXkoGAABKBgAAOwAAAAAAAAAAAAAApIH0BAAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vQnJlcHMuQmxvYlBhcnRzL0JSRVAuc3ludGhldGljLnNtYmhQSwECCgMKAAAAAAAAACEAed7HFjADAAAwAwAARgAAAAAAAAAAAAAApIGXCwAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vUHJvdGVpbkFzc2V0cy5CbG9iUGFydHMvUHJvdGVpbkFzc2V0LjAucHJvdGVpblBLAQIKAwoAAAAAAAAAIQBeitZc0gsAANILAAAuAAAAAAAAAAAAAACkgSsPAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9EZXNpZ24xL0J1bGtTdHJlYW0uZGF0UEsBAgoDCgAAAAAAAAAhAAlqcTAABwAAAAcAAC4AAAAAAAAAAAAAAKSBSRsAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL0Rlc2lnbjEvTWV0YVN0cmVhbS5kYXRQSwECCgMKAAAAAAAAACEA/W0jp64CAACuAgAAPAAAAAAAAAAAAAAApIGVIgAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vRnVzaW9uQUNUU2VnbWVudFR5cGUxL0J1bGtTdHJlYW0uZGF0UEsBAgoDCgAAAAAAAAAhAByaJHEhBAAAIQQAADwAAAAAAAAAAAAAAKSBnSUAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL0Z1c2lvbkFDVFNlZ21lbnRUeXBlMS9NZXRhU3RyZWFtLmRhdFBLBQYAAAAACAAIAPUCAAAYKgAAAAA="
       }
     ]
   }

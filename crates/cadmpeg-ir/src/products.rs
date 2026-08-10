@@ -437,10 +437,13 @@ pub enum JointKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct JointOperand {
-    /// Local placed occurrence when the object resolves within this document.
+    /// Containing local placed occurrence; absent for an object in the document root.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub occurrence: Option<OccurrenceId>,
-    /// External document token when resolution is intentionally deferred.
+    /// External document token when the object is outside this document.
+    ///
+    /// This and `occurrence` are mutually exclusive. When both are absent,
+    /// `object` belongs to the current document root.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub external_document: Option<ExternalDocumentReference>,
     /// Exact referenced application object identity.

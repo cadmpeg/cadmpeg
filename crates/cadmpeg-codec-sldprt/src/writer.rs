@@ -2059,9 +2059,21 @@ fn has_core_tessellation_channels(
 pub(super) fn sequential_tessellation(
     mesh: &cadmpeg_ir::tessellation::Tessellation,
 ) -> Result<cadmpeg_ir::tessellation::Tessellation, CodecError> {
+    if !mesh.triangle_groups.is_empty() || !mesh.texture_assignments.is_empty() {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT display tessellation triangle groups and texture assignments are not writable"
+                .into(),
+        ));
+    }
+    if !mesh.feature_edges.is_empty() {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT display tessellation feature edges are not writable".into(),
+        ));
+    }
     let expected = triangles_from_strips(&mesh.strip_lengths)?;
     if expected == mesh.triangles
         && mesh.strip_lengths.iter().sum::<u32>() as usize == mesh.vertices.len()
+        && mesh.corner_normals.is_empty()
     {
         return Ok(mesh.clone());
     }
@@ -2077,7 +2089,14 @@ pub(super) fn sequential_tessellation(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let vertices = indices.iter().map(|index| mesh.vertices[*index]).collect();
-    let normals = if mesh.normals.is_empty() {
+    let normals = if !mesh.corner_normals.is_empty() {
+        if mesh.corner_normals.len() != indices.len() {
+            return Err(CodecError::Malformed(
+                "tessellation corner normals are not parallel to triangle corners".into(),
+            ));
+        }
+        mesh.corner_normals.clone()
+    } else if mesh.normals.is_empty() {
         Vec::new()
     } else {
         if mesh.normals.len() != mesh.vertices.len() {
@@ -2123,8 +2142,12 @@ pub(super) fn sequential_tessellation(
         source_object: mesh.source_object.clone(),
         vertices,
         triangles: triangles_from_strips(&vec![3; triangle_count as usize])?,
+        feature_edges: Vec::new(),
         strip_lengths: vec![3; triangle_count as usize],
         normals,
+        corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
         channels,
     })
 }

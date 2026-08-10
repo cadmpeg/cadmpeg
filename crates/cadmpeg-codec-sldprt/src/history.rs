@@ -17320,6 +17320,7 @@ fn path_source(
         PathRef::Native(id) => Some(native.get(id).cloned().unwrap_or_else(|| id.clone())),
         PathRef::Sketch(id) => sketches.get(id).cloned(),
         PathRef::SketchCurves { .. }
+        | PathRef::SpatialSketchCurves { .. }
         | PathRef::SpatialSketchSelection { .. }
         | PathRef::HistoricalEdges { .. } => None,
         PathRef::Edges(edges) if !edges.is_empty() => Some(

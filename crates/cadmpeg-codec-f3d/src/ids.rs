@@ -14,7 +14,10 @@
 //! sites that share a prefix but differ in tail structure get distinct builders
 //! rather than a single reshaped one.
 
-use crate::records::{DesignParameter, DesignParameterScope, DesignSketchPlacement};
+use crate::records::{
+    DesignAssemblyAxialSelectorIdentity, DesignCombineExternalBodyIdentity, DesignParameter,
+    DesignParameterScope, DesignSketchPlacement,
+};
 
 /// The scheme prefix shared by every `f3d:` URN. Used to strip or test the
 /// scheme when parsing an identity key back into its stream and tail.
@@ -239,6 +242,86 @@ pub(crate) fn neutral_feature_id_parts(
     ))
 }
 
+/// Feature-input-local body key for one complete external `Combine` selector path.
+pub(crate) fn neutral_combine_external_body_id(
+    identity: &DesignCombineExternalBodyIdentity,
+) -> String {
+    let selector_asset = identity_key_component(&identity.selector_asset_id);
+    let selector_context = identity_key_component(&identity.selector_context_id);
+    let external_asset = identity_key_component(&identity.external_asset_id);
+    let link_name = identity_key_component(&identity.external_link_name);
+    let property_key = identity
+        .external_property_key
+        .as_deref()
+        .map(identity_key_component)
+        .unwrap_or_default();
+    let version_urn = identity
+        .external_version_urn
+        .as_deref()
+        .map(identity_key_component)
+        .unwrap_or_default();
+    format!(
+        "f3d:feature-input:body#combine-external:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+        selector_asset.len(),
+        selector_asset,
+        selector_context.len(),
+        selector_context,
+        identity.occurrence_reference,
+        identity.external_body_reference,
+        identity.external_segment,
+        external_asset.len(),
+        external_asset,
+        link_name.len(),
+        link_name,
+        u8::from(identity.external_property_key.is_some()),
+        property_key.len(),
+        property_key,
+        u8::from(identity.external_version_urn.is_some()),
+        version_urn.len(),
+        version_urn,
+    )
+}
+
+/// Feature-input-local connector key for one pathless axial assembly selector.
+pub(crate) fn neutral_assembly_axial_object_id(
+    identity: &DesignAssemblyAxialSelectorIdentity,
+) -> String {
+    let selector_asset = identity_key_component(&identity.selector_asset_id.to_ascii_lowercase());
+    let selector_context =
+        identity_key_component(&identity.selector_context_id.to_ascii_lowercase());
+    let external_asset = identity_key_component(&identity.external_asset_id.to_ascii_lowercase());
+    let link_name = identity_key_component(&identity.external_link_name);
+    let property_key = identity
+        .external_property_key
+        .as_deref()
+        .map(|value| identity_key_component(&value.to_ascii_lowercase()))
+        .unwrap_or_default();
+    let version_urn = identity
+        .external_version_urn
+        .as_deref()
+        .map(identity_key_component)
+        .unwrap_or_default();
+    format!(
+        "f3d:feature-input:connector#assembly-axial:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+        selector_asset.len(),
+        selector_asset,
+        selector_context.len(),
+        selector_context,
+        identity.external_object_reference,
+        identity.external_segment,
+        external_asset.len(),
+        external_asset,
+        link_name.len(),
+        link_name,
+        u8::from(identity.external_property_key.is_some()),
+        property_key.len(),
+        property_key,
+        u8::from(identity.external_version_urn.is_some()),
+        version_urn.len(),
+        version_urn,
+    )
+}
+
 /// The neutral embedded-asset key for one exact archive entry.
 pub(crate) fn neutral_asset_id(entry_name: &str) -> cadmpeg_ir::assets::AssetId {
     let entry_name = identity_key_component(entry_name);
@@ -333,9 +416,9 @@ pub(crate) fn neutral_sketch_text_id(
     ))
 }
 
-/// The source-local neutral key for a planar sketch-text record that predates
-/// the persistent text-identity property.
-pub(crate) fn neutral_sketch_text_record_id(
+/// The source-local neutral key for a planar sketch record that has no
+/// persistent entity identity.
+pub(crate) fn neutral_sketch_record_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     record_index: u32,
 ) -> cadmpeg_ir::sketches::SketchEntityId {
@@ -374,6 +457,20 @@ pub(crate) fn neutral_spatial_sketch_point_id(
     ))
 }
 
+/// The source-local neutral key for a spatial-sketch record that has no
+/// persistent entity identity.
+pub(crate) fn neutral_spatial_sketch_record_id(
+    sketch: &cadmpeg_ir::sketches::SpatialSketchId,
+    record_index: u32,
+) -> cadmpeg_ir::sketches::SpatialSketchEntityId {
+    cadmpeg_ir::sketches::SpatialSketchEntityId(sketch_entity_tagged(
+        "spatial-sketch-entity",
+        &sketch.0,
+        'x',
+        u64::from(record_index),
+    ))
+}
+
 /// The neutral spatial-sketch surface-entity key under `sketch`.
 pub(crate) fn neutral_spatial_sketch_surface_id(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
@@ -388,7 +485,7 @@ pub(crate) fn neutral_spatial_sketch_surface_id(
 }
 
 /// A single-tag sketch-entity key: the escaped owning-sketch key, length-
-/// prefixed, followed by a one-character `tag` (`p`/`t`/`s`) and one id. The
+/// prefixed, followed by a one-character `tag` (`p`/`t`/`s`/`x`) and one id. The
 /// `segment` selects `sketch-entity` or `spatial-sketch-entity`; every other
 /// byte is identical across the planar and spatial variants.
 fn sketch_entity_tagged(segment: &str, sketch_key: &str, tag: char, id: u64) -> String {
@@ -543,6 +640,20 @@ native_record_id!(
     "design-parameter-scope"
 );
 native_record_id!(
+    /// The native ordered Design feature-timeline record key.
+    native_design_feature_timeline_id,
+    "design-feature-timeline"
+);
+
+/// The native ordered Design feature-timeline key in an already encoded
+/// `f3d:` stream scope.
+pub(crate) fn native_design_feature_timeline_id_in_stream(
+    stream: &str,
+    offset: impl std::fmt::Display,
+) -> String {
+    format!("{stream}:design-feature-timeline#{offset}")
+}
+native_record_id!(
     /// The native design Canvas image-plane binding key.
     native_design_canvas_image_id,
     "design-canvas-image"
@@ -678,6 +789,11 @@ native_record_id!(
     "mesh-body"
 );
 native_record_id!(
+    /// The native Design mesh-feature graph key.
+    native_design_mesh_feature_id,
+    "design-mesh-feature"
+);
+native_record_id!(
     /// The native design-body-member record key.
     native_design_body_member_id,
     "design-body-member"
@@ -700,7 +816,11 @@ native_record_id!(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        decode_identity_key_component, design_segment, native_design_feature_timeline_id_in_stream,
+        native_design_type_id, native_scope, neutral_face_appearance_binding_id,
+        neutral_sketch_record_id, neutral_sketch_text_id, same_native_occurrence, SCHEME_PREFIX,
+    };
 
     #[test]
     fn design_segment_joins_sibling_meta_and_bulk_stream_ids() {
@@ -734,6 +854,10 @@ mod tests {
             crate::writer::patch::records::native_stream(&id, ":design-type#")
                 .expect("writer stream"),
             entry
+        );
+        assert_eq!(
+            native_design_feature_timeline_id_in_stream(&native_scope(entry), 20),
+            "f3d:Simulation%20Case/Design%3A1/MetaStream%2520.dat:design-feature-timeline#20"
         );
     }
 
@@ -776,12 +900,12 @@ mod tests {
     }
 
     #[test]
-    fn identityless_sketch_text_uses_a_disjoint_source_record_namespace() {
+    fn identityless_sketch_geometry_uses_a_disjoint_source_record_namespace() {
         let sketch = cadmpeg_ir::sketches::SketchId("f3d:model:sketch#example".into());
         let persistent = neutral_sketch_text_id(&sketch, 42);
-        let source_record = neutral_sketch_text_record_id(&sketch, 42);
+        let source_record = neutral_sketch_record_id(&sketch, 42);
         assert_ne!(persistent, source_record);
-        assert_eq!(source_record, neutral_sketch_text_record_id(&sketch, 42));
-        assert_ne!(source_record, neutral_sketch_text_record_id(&sketch, 43));
+        assert_eq!(source_record, neutral_sketch_record_id(&sketch, 42));
+        assert_ne!(source_record, neutral_sketch_record_id(&sketch, 43));
     }
 }

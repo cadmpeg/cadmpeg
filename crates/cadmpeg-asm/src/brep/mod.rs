@@ -47,6 +47,7 @@ use serde::{Deserialize, Serialize};
 use serde_value::Value;
 use std::collections::{HashMap, HashSet};
 
+use self::attributes::attribute_owner;
 use self::emit::{
     count_other_records, emit_annotation_records, emit_attributes, emit_carrier_records,
     emit_coedges, emit_containers, emit_edges, emit_faces, emit_loops, emit_passthrough_unknowns,
@@ -697,7 +698,7 @@ pub(crate) fn inherited_attribute_target(
         if !attribute.name.ends_with("-attrib") {
             return None;
         }
-        owner = attribute.ref_at(4)?;
+        owner = attribute_owner(attribute)?;
     }
     None
 }

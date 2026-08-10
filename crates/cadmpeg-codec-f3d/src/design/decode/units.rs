@@ -171,7 +171,7 @@ pub(crate) fn decode_modeling_length_unit(bytes: &[u8]) -> Option<String> {
 pub(crate) fn decode_document_length_unit(scan: &ContainerScan) -> Option<String> {
     scan.entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
         .filter_map(|entry| scan.entry_bytes(&entry.name).ok())
         .find_map(decode_modeling_length_unit)
 }

@@ -41,7 +41,7 @@ pub(crate) fn patch_material_assignments(
             bytes,
             assignment.visual_guid_offset,
             &assignment.visual_guid,
-            "material-assignment visual GUID",
+            "material-assignment visual token",
         )?;
         if let (Some(offset), Some(value)) = (
             assignment.physical_token_offset,
@@ -125,11 +125,6 @@ pub(crate) fn patch_act_roots(
 ) -> Result<(), CodecError> {
     for root in edits {
         for (offset, value, field) in [
-            (
-                root.record_index_offset,
-                root.record_index,
-                "ACT root record index",
-            ),
             (
                 root.instance_root_record_offset,
                 root.instance_root_record,

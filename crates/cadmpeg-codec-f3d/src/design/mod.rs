@@ -6,6 +6,7 @@
 //! stable identifiers for native regeneration.
 
 pub mod assembly;
+pub(crate) mod body;
 pub mod components;
 pub mod configurations;
 pub mod constraints;
@@ -15,6 +16,7 @@ pub mod edge_resolve;
 pub mod face_resolve;
 pub mod feature_project;
 pub mod geometry;
+pub(crate) mod presentation;
 pub mod profile_select;
 pub mod sketch_project;
 #[cfg(test)]
@@ -94,6 +96,17 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
         "Hem" => Some(DesignFeatureFamily::SheetMetalHem),
         _ => None,
     }
+}
+
+/// Return whether `kind` is a localized spelling of an edge-treatment family.
+///
+/// Canonical Fillet and Chamfer scopes require every selection to use a
+/// counted construction-operand group. Their localized spellings do not.
+pub(crate) fn is_localized_edge_treatment_kind(kind: &str) -> bool {
+    matches!(
+        design_feature_family(kind),
+        Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
+    ) && !matches!(kind, "Fillet" | "Chamfer")
 }
 
 pub(crate) const RECIPES: &[(&[u8], ConstructionRecipeKind)] = &[

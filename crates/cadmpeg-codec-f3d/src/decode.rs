@@ -241,6 +241,19 @@ fn report_unresolved_configuration_rules(
     }
 }
 
+fn report_unretained_act_component_links(report: &mut DecodeReport, count: usize) {
+    if count != 0 {
+        report.losses.push(LossNote {
+            code: LossKind::AssemblyComponentsExternal,
+            severity: Severity::Warning,
+            message: format!(
+                "{count} non-root ACT component link(s) remain source-only because their product-structure role is unresolved."
+            ),
+            provenance: None,
+        });
+    }
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 struct DesignProjectionGaps {
     unresolved_body_bindings: usize,
@@ -284,6 +297,41 @@ fn face_selection_is_resolved(selection: &cadmpeg_ir::features::FaceSelection) -
         FaceSelection::Resolved { faces, .. } => !faces.is_empty(),
         FaceSelection::Historical { faces, .. } => !faces.is_empty(),
         _ => false,
+    }
+}
+
+fn loft_profile_is_resolved(profile: &cadmpeg_ir::features::ProfileRef) -> bool {
+    use cadmpeg_ir::features::ProfileRef;
+
+    match profile {
+        ProfileRef::Unresolved(_)
+        | ProfileRef::Native(_)
+        | ProfileRef::SketchSelection { .. }
+        | ProfileRef::SpatialSketchSelection { .. } => false,
+        ProfileRef::Sketch(_) | ProfileRef::Feature(_) => true,
+        ProfileRef::SketchProfiles { profiles, .. }
+        | ProfileRef::SpatialSketchProfiles { profiles, .. } => !profiles.is_empty(),
+        ProfileRef::SketchRegions { regions, .. } => !regions.is_empty(),
+        ProfileRef::SketchEntities { entities, .. } => !entities.is_empty(),
+        ProfileRef::HistoricalFaces { faces, .. } => !faces.is_empty(),
+        ProfileRef::Generated { curves, .. } => !curves.is_empty(),
+        ProfileRef::Faces(faces) => !faces.is_empty(),
+    }
+}
+
+fn loft_path_is_resolved(path: &cadmpeg_ir::features::PathRef) -> bool {
+    use cadmpeg_ir::features::PathRef;
+
+    match path {
+        PathRef::Unresolved(_) | PathRef::Native(_) | PathRef::SpatialSketchSelection { .. } => {
+            false
+        }
+        PathRef::Sketch(_) => true,
+        PathRef::SketchCurves { curves, .. } => !curves.is_empty(),
+        PathRef::SpatialSketchCurves { curves, .. } => !curves.is_empty(),
+        PathRef::Edges(edges) => !edges.is_empty(),
+        PathRef::Curves(curves) => !curves.is_empty(),
+        PathRef::HistoricalEdges { edges, .. } => !edges.is_empty(),
     }
 }
 
@@ -352,13 +400,38 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::SplitFace { targets, tool } => {
             !face_selection_is_resolved(targets)
                 || match tool {
-                    cadmpeg_ir::features::SplitFaceTool::Plane { .. } => false,
+                    cadmpeg_ir::features::SplitFaceTool::Plane { .. }
+                    | cadmpeg_ir::features::SplitFaceTool::Planes { .. } => false,
                     cadmpeg_ir::features::SplitFaceTool::Path(path) => matches!(
                         path,
                         cadmpeg_ir::features::PathRef::Native(_)
                             | cadmpeg_ir::features::PathRef::Unresolved(_)
                     ),
                 }
+        }
+        FeatureDefinition::Loft {
+            sections,
+            guides,
+            centerline,
+            ..
+        } => {
+            sections.len() < 2
+                || sections.iter().any(|section| match section {
+                    cadmpeg_ir::features::LoftSection::Profile(profile) => {
+                        !loft_profile_is_resolved(profile)
+                    }
+                    cadmpeg_ir::features::LoftSection::Point(
+                        cadmpeg_ir::features::LoftPointSection::Native(_),
+                    ) => true,
+                    cadmpeg_ir::features::LoftSection::Point(
+                        cadmpeg_ir::features::LoftPointSection::Point(_)
+                        | cadmpeg_ir::features::LoftPointSection::Vertex(_),
+                    ) => false,
+                })
+                || guides.iter().any(|path| !loft_path_is_resolved(path))
+                || centerline
+                    .as_ref()
+                    .is_some_and(|path| !loft_path_is_resolved(path))
         }
         FeatureDefinition::FullRoundFillet { groups } => {
             groups.is_empty()
@@ -475,70 +548,32 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         .iter()
         .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature)))
         .collect::<HashMap<_, _>>();
-    let mut state_scopes = HashMap::<(&str, i64), Vec<&str>>::new();
-    for scope in &native.design_parameter_scopes {
-        let (Some(stream), Some(state_id)) =
-            (crate::ids::native_stream(&scope.id), scope.history_state_id)
-        else {
-            continue;
-        };
-        state_scopes
-            .entry((stream, state_id))
-            .or_default()
-            .push(scope.id.as_str());
-    }
     let mut unprojected_history_dependencies = 0;
     let mut ambiguous_history_dependencies = 0;
-    let bound_scope_histories = crate::history::bind_scope_histories(
+    let scope_history = crate::design::feature_project::ScopeHistoryGraph::new(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.asm_histories,
     );
     for scope in &native.design_parameter_scopes {
-        let (Some(stream), Some(previous_state_id), Some(feature)) = (
-            crate::ids::native_stream(&scope.id),
-            scope.previous_history_state_id,
-            projected_features.get(scope.id.as_str()),
-        ) else {
+        let Some(feature) = projected_features.get(scope.id.as_str()) else {
             continue;
         };
-        let Some(predecessors) = state_scopes.get(&(stream, previous_state_id)) else {
-            continue;
+        let predecessor_scope = match scope_history.predecessor(scope, |candidate| {
+            projected_features.contains_key(candidate.id.as_str())
+        }) {
+            Ok(crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor)) => {
+                predecessor
+            }
+            Ok(crate::design::feature_project::ScopeHistoryPredecessor::Ambiguous) | Err(_) => {
+                ambiguous_history_dependencies += 1;
+                continue;
+            }
+            Ok(crate::design::feature_project::ScopeHistoryPredecessor::None) => {
+                continue;
+            }
         };
-        let predecessor_ref = if native.asm_histories.is_empty() {
-            let [predecessor_ref] = predecessors.as_slice() else {
-                ambiguous_history_dependencies += 1;
-                continue;
-            };
-            *predecessor_ref
-        } else {
-            let Some(history_id) = bound_scope_histories.get(&scope.id) else {
-                ambiguous_history_dependencies += 1;
-                continue;
-            };
-            let predecessors = predecessors
-                .iter()
-                .filter(|predecessor_ref| {
-                    let Some(predecessor_scope) = native
-                        .design_parameter_scopes
-                        .iter()
-                        .find(|candidate| candidate.id == **predecessor_ref)
-                    else {
-                        return false;
-                    };
-                    bound_scope_histories
-                        .get(&predecessor_scope.id)
-                        .is_some_and(|predecessor_history_id| predecessor_history_id == history_id)
-                })
-                .copied()
-                .collect::<Vec<_>>();
-            let [predecessor_ref] = predecessors.as_slice() else {
-                ambiguous_history_dependencies += 1;
-                continue;
-            };
-            *predecessor_ref
-        };
-        let Some(predecessor) = projected_features.get(predecessor_ref) else {
+        let Some(predecessor) = projected_features.get(predecessor_scope.id.as_str()) else {
             unprojected_history_dependencies += 1;
             continue;
         };
@@ -637,6 +672,11 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         }
     }
 
+    let authored_scopes = crate::design::feature_project::authored_scope_ordinals_per_stream(
+        &native.design_parameter_scopes,
+        &native.design_feature_timelines,
+    )
+    .ok();
     let mut gaps = DesignProjectionGaps {
         unresolved_body_bindings: native
             .design_body_bindings
@@ -649,12 +689,21 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             .design_parameter_scopes
             .iter()
             .filter(|scope| {
-                !projected_feature_refs.contains(scope.id.as_str())
-                    && scope
-                        .assembly_alignment
-                        .as_ref()
-                        .and_then(|alignment| alignment.joint_origin_scope_record_index)
-                        .is_none()
+                let authored = authored_scopes.as_ref().map_or_else(
+                    || {
+                        scope
+                            .assembly_alignment
+                            .as_ref()
+                            .and_then(|alignment| alignment.joint_origin_scope_record_index)
+                            .is_none()
+                    },
+                    |ordinals| {
+                        let stream = crate::ids::native_stream(&scope.id)
+                            .unwrap_or(crate::ids::DEFAULT_STREAM);
+                        ordinals.contains_key(&(stream, scope.record_index))
+                    },
+                );
+                authored && !projected_feature_refs.contains(scope.id.as_str())
             })
             .count(),
         unprojected_parameters: native
@@ -975,6 +1024,28 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                     gaps.path_selections += 1;
                 }
             }
+            FeatureDefinition::Loft {
+                sections,
+                guides,
+                centerline,
+                ..
+            } => {
+                gaps.profile_selections += sections
+                    .iter()
+                    .filter(|section| {
+                        matches!(
+                            section,
+                            cadmpeg_ir::features::LoftSection::Profile(profile)
+                                if !loft_profile_is_resolved(profile)
+                        )
+                    })
+                    .count();
+                gaps.path_selections += guides
+                    .iter()
+                    .chain(centerline.iter())
+                    .filter(|path| !loft_path_is_resolved(path))
+                    .count();
+            }
             FeatureDefinition::Shell {
                 bodies,
                 removed_faces,
@@ -985,6 +1056,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 }
                 face_selection(removed_faces);
             }
+            FeatureDefinition::CosmeticThread { face, .. } => face_selection(face),
             FeatureDefinition::SheetMetalHem { edges, .. } => edge_selection(edges),
             FeatureDefinition::MoveFace { faces, .. } => face_selection(faces),
             _ => {}
@@ -1262,9 +1334,7 @@ fn model_brep_candidates(
         if !seen.insert(binding.blob_name.as_str()) {
             continue;
         }
-        let matches = scan
-            .breps
-            .iter()
+        let matches = container::design_breps(scan)
             .filter(|brep| brep.name.rsplit('/').next() == Some(binding.blob_name.as_str()))
             .collect::<Vec<_>>();
         match matches.as_slice() {
@@ -1290,10 +1360,10 @@ fn model_brep_candidates(
             None
         };
         if let Some(legacy) = legacy {
-            candidates.extend_from_slice(legacy);
+            candidates.extend(legacy.into_iter().cloned());
         } else if let Some(fallback) = container::select_fallback_brep(scan) {
             candidates.push((*fallback).clone());
-        } else if !scan.breps.is_empty() {
+        } else if container::design_breps(scan).next().is_some() {
             return Err(CodecError::Malformed(
                 "Design body map is absent and BREP selection is ambiguous".to_string(),
             ));
@@ -1386,7 +1456,12 @@ fn finish_model_decode<'a>(
             provenance: None,
         });
     }
-    let decoded_materials = materials::decode_with_bodies(scan, &brep.asm.body_keys)?;
+    let design_body_bindings = crate::design::decode::body::decode_design_body_bindings(
+        scan,
+        Some(&primary_model_brep.name),
+        &brep.asm.body_native_keys,
+    )?;
+    let decoded_materials = materials::decode_with_body_bindings(scan, &design_body_bindings)?;
     let (mut ir, mut native, asm_remainder) =
         build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
     let AsmTransferRemainder {
@@ -1398,7 +1473,7 @@ fn finish_model_decode<'a>(
     } = asm_remainder;
     let (subds, subd_losses) = crate::tsm::decode(scan)?;
     ir.model.subds = subds;
-    let mesh_projection = project_mesh_bodies(scan, &mut ir, &mut report)?;
+    let mesh_projection = project_mesh_bodies(scan, &mut ir, &mut native, &mut report)?;
     report.losses.extend(subd_losses);
     native.body_visibilities = body_visibilities;
     for history_brep in container::history_breps(scan) {
@@ -1411,7 +1486,7 @@ fn finish_model_decode<'a>(
         crate::design::decode::sketch::decode_persistent_references(scan)?;
     native.lost_edge_references = crate::design::decode::sketch::decode_lost_edge_references(scan)?;
     native.design_material_assignments = crate::materials::decode_design_assignments(scan)?;
-    native.design_types = crate::design::decode::sketch::decode_types(scan)?;
+    native.design_types = crate::design::decode::meta::decode_types(scan)?;
     native.design_parameters = crate::design::decode::parameters::decode_parameters(scan)?;
     native.design_entity_headers = crate::design::decode::sketch::decode_entity_headers(scan)?;
     native.design_record_headers =
@@ -1485,11 +1560,7 @@ fn finish_model_decode<'a>(
         &mut native.sketch_curve_identities,
     )?;
     native.design_body_members = crate::design::decode::body::decode_body_members(scan)?;
-    native.design_body_bindings = crate::design::decode::body::decode_design_body_bindings(
-        scan,
-        Some(&primary_model_brep.name),
-        &native.body_native_keys,
-    )?;
+    native.design_body_bindings = design_body_bindings;
     native.design_body_bounds =
         crate::design::decode::body::decode_body_bounds(scan, &native.design_entity_headers)?;
     crate::design::decode::body::bind_body_bounds(
@@ -1498,13 +1569,14 @@ fn finish_model_decode<'a>(
     );
     native.design_configurations = crate::design::configurations::decode_configurations(scan)?;
     ir.model.configurations =
-        crate::design::configurations::project_configurations(&native.design_configurations);
+        crate::design::configurations::project_configurations(&native.design_configurations)?;
     (ir.model.features, ir.model.parameters) =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
             &crate::design::feature_project::ProjectInputs {
                 native: &native.design_parameters,
                 owners: &native.design_parameter_owners,
                 scopes: &native.design_parameter_scopes,
+                timelines: &native.design_feature_timelines,
                 construction_groups: &native.design_construction_operand_groups,
                 fillet_radius_groups: &native.design_fillet_radius_groups,
                 edge_operands: &native.design_edge_operands,
@@ -1517,7 +1589,7 @@ fn finish_model_decode<'a>(
                 body_bindings: &native.design_body_bindings,
                 histories: &native.asm_histories,
             },
-        );
+        )?;
     bind_mesh_feature_definitions(
         &mut ir.model.features,
         &native.design_parameter_scopes,
@@ -1529,12 +1601,13 @@ fn finish_model_decode<'a>(
         &mut ir.model.features,
         &ir.model.subds,
     )?;
-    ir.model.assets = crate::design::decode::canvas::project_canvas_images(
+    let canvas_assets = crate::design::decode::canvas::project_canvas_images(
         scan,
         &native.design_parameter_scopes,
         &native.design_canvas_images,
         &mut ir.model.features,
     )?;
+    extend_unique_assets(&mut ir.model.assets, canvas_assets)?;
     crate::design::configurations::bind_configuration_parameter_overrides(
         &mut ir.model.configurations,
         &ir.model.parameters,
@@ -1562,6 +1635,8 @@ fn finish_model_decode<'a>(
             scopes: &native.design_parameter_scopes,
             groups: &native.design_construction_operand_groups,
             body_recipe_operands: &native.design_body_recipe_operands,
+            construction_recipes: &native.construction_recipes,
+            persistent_design_links: &native.persistent_design_links,
             histories: &native.asm_histories,
             bodies: &ir.model.bodies,
             regions: &ir.model.regions,
@@ -1619,6 +1694,8 @@ fn finish_model_decode<'a>(
             curve_identities: &native.sketch_curve_identities,
             sketches: &ir.model.sketches,
             sketch_entities: &ir.model.sketch_entities,
+            spatial_sketches: &ir.model.spatial_sketches,
+            spatial_sketch_entities: &ir.model.spatial_sketch_entities,
         },
     );
     crate::design::profile_select::bind_split_face_sketch_selections(
@@ -1631,6 +1708,8 @@ fn finish_model_decode<'a>(
             curve_identities: &native.sketch_curve_identities,
             sketches: &ir.model.sketches,
             sketch_entities: &ir.model.sketch_entities,
+            spatial_sketches: &ir.model.spatial_sketches,
+            spatial_sketch_entities: &ir.model.spatial_sketch_entities,
         },
     );
     crate::design::profile_select::bind_loft_sketch_selections(
@@ -1642,7 +1721,12 @@ fn finish_model_decode<'a>(
             entity_selection_operands: &native.design_entity_selection_operands,
             placements: &native.design_sketch_placements,
             curve_identities: &native.sketch_curve_identities,
+            sketches: &ir.model.sketches,
+            sketch_entities: &ir.model.sketch_entities,
             spatial_sketches: &ir.model.spatial_sketches,
+            spatial_sketch_entities: &ir.model.spatial_sketch_entities,
+            linear_tolerance: ir.tolerances.linear,
+            angular_tolerance: ir.tolerances.angular,
         },
         &mut ir.model.features,
     )?;
@@ -1739,9 +1823,12 @@ fn finish_model_decode<'a>(
         .spatial_sketch_constraints
         .sort_by_key(|constraint| constraint.id.clone());
     let act = crate::act::decode(scan)?;
+    report_unretained_act_component_links(&mut report, act.non_root_component_links);
     native.act_entities = act.entities;
     native.act_guids = act.guids;
+    native.act_registry_channels = act.registry_channels;
     native.act_root_components = act.root_components;
+    native.act_table_references = act.table_references;
     report_unresolved_dimension_companions(&mut report, &native, &ir);
     report_unresolved_configuration_rules(&mut report, &native, &ir);
     if !native.lost_edge_references.is_empty() {
@@ -1757,7 +1844,7 @@ fn finish_model_decode<'a>(
     }
     ir.model.appearances = decoded_materials.appearances;
     ir.model.appearance_bindings = decoded_materials.bindings;
-    resolve_face_appearance_bindings(&mut ir, &decoded_materials.face_assignments);
+    resolve_face_appearance_bindings(&mut ir, &decoded_materials.face_assignments)?;
     apply_appearance_base_colors(&mut ir);
     ir.model.appearance_bindings.sort_by(|a, b| a.id.cmp(&b.id));
     reconcile_appearance_loss(&mut report, &ir, decoded_materials.has_topology_assignments);
@@ -1792,6 +1879,7 @@ fn finish_model_decode<'a>(
     ir.model.assembly_joints = crate::design::assembly::project_assembly_joints(
         &native.design_parameter_scopes,
         &native.design_component_occurrences,
+        &ir.model.features,
     );
     report_design_projection_gaps(&mut report, &ir, &native);
     native.store(ir.native.namespace_mut("f3d"))?;
@@ -1942,7 +2030,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     native.lost_edge_references =
         crate::design::decode::sketch::decode_lost_edge_references(&scan)?;
     native.design_material_assignments = crate::materials::decode_design_assignments(&scan)?;
-    native.design_types = crate::design::decode::sketch::decode_types(&scan)?;
+    native.design_types = crate::design::decode::meta::decode_types(&scan)?;
     native.design_parameters = crate::design::decode::parameters::decode_parameters(&scan)?;
     native.design_entity_headers = crate::design::decode::sketch::decode_entity_headers(&scan)?;
     native.design_record_headers =
@@ -2032,13 +2120,14 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     );
     native.design_configurations = crate::design::configurations::decode_configurations(&scan)?;
     ir.model.configurations =
-        crate::design::configurations::project_configurations(&native.design_configurations);
+        crate::design::configurations::project_configurations(&native.design_configurations)?;
     (ir.model.features, ir.model.parameters) =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
             &crate::design::feature_project::ProjectInputs {
                 native: &native.design_parameters,
                 owners: &native.design_parameter_owners,
                 scopes: &native.design_parameter_scopes,
+                timelines: &native.design_feature_timelines,
                 construction_groups: &native.design_construction_operand_groups,
                 fillet_radius_groups: &native.design_fillet_radius_groups,
                 edge_operands: &native.design_edge_operands,
@@ -2051,19 +2140,20 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 body_bindings: &native.design_body_bindings,
                 histories: &native.asm_histories,
             },
-        );
+        )?;
     crate::design::feature_project::bind_form_cages(
         &scan,
         &native.design_parameter_scopes,
         &mut ir.model.features,
         &ir.model.subds,
     )?;
-    ir.model.assets = crate::design::decode::canvas::project_canvas_images(
+    let canvas_assets = crate::design::decode::canvas::project_canvas_images(
         &scan,
         &native.design_parameter_scopes,
         &native.design_canvas_images,
         &mut ir.model.features,
     )?;
+    extend_unique_assets(&mut ir.model.assets, canvas_assets)?;
     crate::design::configurations::bind_configuration_parameter_overrides(
         &mut ir.model.configurations,
         &ir.model.parameters,
@@ -2091,6 +2181,8 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             scopes: &native.design_parameter_scopes,
             groups: &native.design_construction_operand_groups,
             body_recipe_operands: &native.design_body_recipe_operands,
+            construction_recipes: &native.construction_recipes,
+            persistent_design_links: &native.persistent_design_links,
             histories: &native.asm_histories,
             bodies: &ir.model.bodies,
             regions: &ir.model.regions,
@@ -2148,6 +2240,8 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             curve_identities: &native.sketch_curve_identities,
             sketches: &ir.model.sketches,
             sketch_entities: &ir.model.sketch_entities,
+            spatial_sketches: &ir.model.spatial_sketches,
+            spatial_sketch_entities: &ir.model.spatial_sketch_entities,
         },
     );
     crate::design::profile_select::bind_split_face_sketch_selections(
@@ -2160,6 +2254,8 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             curve_identities: &native.sketch_curve_identities,
             sketches: &ir.model.sketches,
             sketch_entities: &ir.model.sketch_entities,
+            spatial_sketches: &ir.model.spatial_sketches,
+            spatial_sketch_entities: &ir.model.spatial_sketch_entities,
         },
     );
     crate::design::profile_select::bind_loft_sketch_selections(
@@ -2171,7 +2267,12 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             entity_selection_operands: &native.design_entity_selection_operands,
             placements: &native.design_sketch_placements,
             curve_identities: &native.sketch_curve_identities,
+            sketches: &ir.model.sketches,
+            sketch_entities: &ir.model.sketch_entities,
             spatial_sketches: &ir.model.spatial_sketches,
+            spatial_sketch_entities: &ir.model.spatial_sketch_entities,
+            linear_tolerance: ir.tolerances.linear,
+            angular_tolerance: ir.tolerances.angular,
         },
         &mut ir.model.features,
     )?;
@@ -2267,9 +2368,12 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         .spatial_sketch_constraints
         .sort_by_key(|constraint| constraint.id.clone());
     let act = crate::act::decode(&scan)?;
+    let non_root_act_component_links = act.non_root_component_links;
     native.act_entities = act.entities;
     native.act_guids = act.guids;
+    native.act_registry_channels = act.registry_channels;
     native.act_root_components = act.root_components;
+    native.act_table_references = act.table_references;
     let decoded_materials = materials::decode(&scan)?;
     let has_appearance_assignments = decoded_materials.has_topology_assignments;
     ir.model.appearances = decoded_materials.appearances;
@@ -2302,10 +2406,12 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     ir.model.assembly_joints = crate::design::assembly::project_assembly_joints(
         &native.design_parameter_scopes,
         &native.design_component_occurrences,
+        &ir.model.features,
     );
     let mut report = build_container_report(&scan, false);
+    report_unretained_act_component_links(&mut report, non_root_act_component_links);
     reconcile_appearance_loss(&mut report, &ir, has_appearance_assignments);
-    let mesh_projection = project_mesh_bodies(&scan, &mut ir, &mut report)?;
+    let mesh_projection = project_mesh_bodies(&scan, &mut ir, &mut native, &mut report)?;
     bind_mesh_feature_definitions(
         &mut ir.model.features,
         &native.design_parameter_scopes,
@@ -2320,7 +2426,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     } else {
         apply_sketch_only_classification(
             &mut report,
-            scan.breps.len(),
+            container::design_breps(&scan).count(),
             container::text_brep_names(&scan).len(),
             native.design_body_bindings.len() + native.design_body_members.len(),
             ir.model.sketch_entities.len() + ir.model.spatial_sketch_entities.len(),
@@ -2343,6 +2449,25 @@ struct MeshProjection {
     tessellations_by_scope: std::collections::HashMap<(String, u32), Vec<String>>,
 }
 
+fn extend_unique_assets(
+    assets: &mut Vec<cadmpeg_ir::assets::Asset>,
+    incoming: Vec<cadmpeg_ir::assets::Asset>,
+) -> Result<(), CodecError> {
+    for asset in incoming {
+        match assets.iter().find(|existing| existing.id == asset.id) {
+            Some(existing) if existing != &asset => {
+                return Err(CodecError::Malformed(format!(
+                    "F3D embedded asset {} has conflicting projections",
+                    asset.id.0
+                )))
+            }
+            Some(_) => {}
+            None => assets.push(asset),
+        }
+    }
+    Ok(())
+}
+
 /// Project each mesh body's container geometry into the tessellation arena.
 ///
 /// A mesh body carries no B-rep topology: its geometry is a triangle list, and
@@ -2352,12 +2477,78 @@ struct MeshProjection {
 fn project_mesh_bodies(
     scan: &ContainerScan,
     ir: &mut CadIr,
+    native: &mut F3dNative,
     report: &mut DecodeReport,
 ) -> Result<MeshProjection, CodecError> {
     use crate::design::decode::mesh::MeshContainerOutcome;
 
+    let decoded = crate::design::decode::mesh::decode_mesh_bodies(scan)?;
+    native.design_mesh_features = decoded.features;
+    let mut texture_assets = Vec::new();
+    for texture in native
+        .design_mesh_features
+        .iter()
+        .flat_map(|feature| &feature.textures)
+    {
+        if ir
+            .model
+            .assets
+            .iter()
+            .chain(&texture_assets)
+            .any(|asset: &cadmpeg_ir::assets::Asset| asset.id == texture.asset)
+        {
+            continue;
+        }
+        let media_type = std::path::Path::new(&texture.filename)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .and_then(|extension| match extension.to_ascii_lowercase().as_str() {
+                "jpg" | "jpeg" => Some("image/jpeg"),
+                "png" => Some("image/png"),
+                _ => None,
+            })
+            .map(str::to_owned);
+        texture_assets.push(cadmpeg_ir::assets::Asset {
+            id: texture.asset.clone(),
+            name: Some(texture.filename.clone()),
+            media_type,
+            content: cadmpeg_ir::assets::AssetContent::Embedded {
+                data: scan.entry_bytes(&texture.archive_entry_name)?.to_vec(),
+            },
+            native_ref: Some(crate::ids::native_scope(&texture.archive_entry_name)),
+        });
+    }
+    extend_unique_assets(&mut ir.model.assets, texture_assets)?;
+    let mut texture_tables = std::collections::HashMap::new();
+    for feature in &native.design_mesh_features {
+        let texture_table = feature
+            .textures
+            .iter()
+            .enumerate()
+            .map(|(ordinal, texture)| {
+                if usize::try_from(texture.ordinal) != Ok(ordinal) {
+                    return Err(CodecError::Malformed(
+                        "F3D mesh texture ordinals do not match flags-map order".into(),
+                    ));
+                }
+                Ok((texture.resource_guid.clone(), texture.asset.clone()))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        for body in &feature.bodies {
+            if let Some(tessellation_id) = &body.tessellation_id {
+                if texture_tables
+                    .insert(tessellation_id.clone(), texture_table.clone())
+                    .is_some()
+                {
+                    return Err(CodecError::Malformed(
+                        "F3D mesh tessellation belongs to more than one texture table".into(),
+                    ));
+                }
+            }
+        }
+    }
     let mut bodies = Vec::new();
-    for outcome in crate::design::decode::mesh::decode_mesh_bodies(scan)? {
+    for outcome in decoded.outcomes {
         match outcome {
             MeshContainerOutcome::Joined(body) => bodies.push(body),
             MeshContainerOutcome::Unjoined { entry_name } => report.losses.push(LossNote {
@@ -2374,6 +2565,14 @@ fn project_mesh_bodies(
                 message: format!("mesh geometry container `{entry_name}` was not decoded: {error}"),
                 provenance: None,
             }),
+            MeshContainerOutcome::Missing { entry_name } => report.losses.push(LossNote {
+                code: LossKind::AssetNotTransferred,
+                severity: Severity::Warning,
+                message: format!(
+                    "Design mesh body names `{entry_name}`, but no unique geometry container joined it"
+                ),
+                provenance: None,
+            }),
         }
     }
     let mut unresolved = std::collections::BTreeMap::new();
@@ -2381,15 +2580,25 @@ fn project_mesh_bodies(
         count: bodies.len(),
         tessellations_by_scope: std::collections::HashMap::new(),
     };
-    for body in bodies {
+    for mut body in bodies {
         let id = body.id.clone();
-        for scope_record_index in body.design_scope_record_indices {
-            projection
-                .tessellations_by_scope
-                .entry((body.design_stream.clone(), scope_record_index))
-                .or_default()
-                .push(id.clone());
-        }
+        let texture_table = texture_tables.remove(&id).ok_or_else(|| {
+            CodecError::Malformed("F3D joined mesh body has no owning texture table".into())
+        })?;
+        let texture_assignments = mesh_texture_assignments(
+            body.texture_ids.as_deref(),
+            &texture_table,
+            body.triangles.len(),
+        )?;
+        let triangle_groups = std::mem::take(&mut body.triangle_groups)
+            .into_iter()
+            .map(
+                |group| cadmpeg_ir::tessellation::TessellationTriangleGroup {
+                    source_id: Some(group.source_id),
+                    triangles: group.triangles,
+                },
+            )
+            .collect();
         let channels = mesh_attribute_channels(
             &body.attributes,
             body.vertices.len(),
@@ -2408,13 +2617,92 @@ fn project_mesh_bodies(
                 source_object: None,
                 vertices: body.vertices,
                 triangles: body.triangles,
+                feature_edges: body.feature_edges,
                 strip_lengths: Vec::new(),
                 normals: Vec::new(),
+                corner_normals: body.corner_normals,
+                triangle_groups,
+                texture_assignments,
                 channels,
             });
     }
+    if !texture_tables.is_empty() {
+        return Err(CodecError::Malformed(
+            "F3D mesh texture table has no joined tessellation body".into(),
+        ));
+    }
+    for feature in &native.design_mesh_features {
+        let tessellations = feature
+            .bodies
+            .iter()
+            .filter_map(|body| body.tessellation_id.clone())
+            .collect::<Vec<_>>();
+        if tessellations.is_empty() {
+            continue;
+        }
+        let stream = crate::ids::native_stream(&feature.id)
+            .unwrap_or(crate::ids::DEFAULT_STREAM)
+            .to_owned();
+        if projection
+            .tessellations_by_scope
+            .insert((stream, feature.scope_record.record_index), tessellations)
+            .is_some()
+        {
+            return Err(CodecError::Malformed(
+                "F3D Design mesh feature scope is not unique".into(),
+            ));
+        }
+    }
     report_unresolved_mesh_attributes(report, &unresolved);
     Ok(projection)
+}
+
+/// Resolve one-based `tid` values through a Design texture table. Zero leaves
+/// the triangle untextured.
+fn mesh_texture_assignments(
+    texture_ids: Option<&[u32]>,
+    textures: &[(String, cadmpeg_ir::assets::AssetId)],
+    triangle_count: usize,
+) -> Result<Vec<cadmpeg_ir::tessellation::TessellationTextureAssignment>, CodecError> {
+    let Some(texture_ids) = texture_ids else {
+        return Ok(Vec::new());
+    };
+    if texture_ids.len() != triangle_count {
+        return Err(CodecError::Malformed(
+            "F3D mesh texture-id count differs from the triangle count".into(),
+        ));
+    }
+    let mut triangles = vec![Vec::new(); textures.len()];
+    for (triangle, texture_id) in texture_ids.iter().enumerate() {
+        if *texture_id == 0 {
+            continue;
+        }
+        let index = texture_id
+            .checked_sub(1)
+            .and_then(|index| usize::try_from(index).ok())
+            .filter(|index| *index < textures.len())
+            .ok_or_else(|| {
+                CodecError::Malformed(
+                    "F3D mesh triangle texture id names no Design texture resource".into(),
+                )
+            })?;
+        triangles[index].push(u32::try_from(triangle).map_err(|_| {
+            CodecError::Malformed("F3D mesh triangle ordinal is out of range".into())
+        })?);
+    }
+    Ok(textures
+        .iter()
+        .cloned()
+        .zip(triangles)
+        .filter(|(_, triangles)| !triangles.is_empty())
+        .map(|((source_id, texture), triangles)| {
+            cadmpeg_ir::tessellation::TessellationTextureAssignment {
+                source_id: Some(source_id),
+                texture,
+                triangles,
+            }
+        })
+        .collect())
 }
 
 /// Replace the native definition of each mesh-import scope with its exact
@@ -2480,62 +2768,10 @@ fn mesh_attribute_channels(
                 });
             }
             (MeshAttributeDomain::Corner, Some(item_size), Some(count)) => {
-                let Some(index_positions) = attribute.indices.as_deref() else {
+                let Some(selectors) = attribute.corner_selectors(vertices, triangles) else {
                     *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
                     continue;
                 };
-                let Some(vertex_count) = u32::try_from(vertices).ok() else {
-                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
-                    continue;
-                };
-                if count < vertex_count {
-                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
-                    continue;
-                }
-                let Some(override_count) = count.checked_sub(vertex_count) else {
-                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
-                    continue;
-                };
-                if usize::try_from(override_count) != Ok(index_positions.len()) {
-                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
-                    continue;
-                }
-                let mut selectors = Vec::with_capacity(triangles.len().saturating_mul(3));
-                let mut valid = true;
-                for triangle in triangles {
-                    for vertex in triangle {
-                        if usize::try_from(*vertex)
-                            .ok()
-                            .is_none_or(|vertex| vertex >= vertices)
-                            || *vertex >= count
-                        {
-                            valid = false;
-                        }
-                        selectors.push(*vertex);
-                    }
-                }
-                for (ordinal, position) in index_positions.iter().enumerate() {
-                    let Some(ordinal) = u32::try_from(ordinal).ok() else {
-                        valid = false;
-                        continue;
-                    };
-                    let Some(selector) = vertex_count.checked_add(ordinal) else {
-                        valid = false;
-                        continue;
-                    };
-                    let Some(slot) = usize::try_from(*position)
-                        .ok()
-                        .and_then(|position| selectors.get_mut(position))
-                    else {
-                        valid = false;
-                        continue;
-                    };
-                    *slot = selector;
-                }
-                if !valid {
-                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
-                    continue;
-                }
                 channels.push(cadmpeg_ir::tessellation::TessellationChannel {
                     domain: cadmpeg_ir::tessellation::TessellationChannelDomain::Corner,
                     item_size,
@@ -2638,7 +2874,7 @@ fn xref_parse_loss(error: &CodecError) -> LossNote {
 /// Mesh bodies use tessellation as their geometry carrier. The report marks
 /// geometry as transferred and records vertex precision.
 fn apply_mesh_body_classification(report: &mut DecodeReport, scan: &ContainerScan, bodies: usize) {
-    if !scan.breps.is_empty() {
+    if container::design_breps(scan).next().is_some() {
         return;
     }
     report.losses.retain(|loss| {
@@ -2979,8 +3215,14 @@ fn populate_annotations(
         for entity in &native.act_guids {
             note(&entity.id, "ACTGuid");
         }
+        for entity in &native.act_registry_channels {
+            note(&entity.id, "ACTRegistryChannel");
+        }
         for entity in &native.act_root_components {
             note(&entity.id, "ACTRootComponent");
+        }
+        for entity in &native.act_table_references {
+            note(&entity.id, "ACTTableReference");
         }
         for history in &native.asm_histories {
             note(&history.id, "history_stream");
@@ -3002,7 +3244,7 @@ fn populate_annotations(
     let appearance_stream = scan
         .entries
         .iter()
-        .find(|entry| entry.role == container::role::PROTEIN)
+        .find(|entry| scan.is_design_asset_entry(entry, container::role::PROTEIN))
         .map(|entry| annotations.stream(crate::ids::native_scope(&entry.name)));
     if let Some(stream) = appearance_stream {
         for appearance in &ir.model.appearances {
@@ -3156,7 +3398,9 @@ fn extend_related_design_records(
         &native.design_parameters,
         &native.design_parameter_owners,
         &native.design_component_occurrences,
+        &native.construction_recipes,
     )?;
+    native.design_feature_timelines = crate::design::decode::meta::decode_feature_timelines(scan)?;
     native.design_canvas_images =
         crate::design::decode::canvas::decode_canvas_images(scan, &native.design_parameter_scopes)?;
     crate::design::decode::operands::disambiguate_fixed_fillet_parameters(
@@ -3285,15 +3529,21 @@ fn extend_related_design_records(
                     .unwrap_or(crate::ids::DEFAULT_STREAM)
                     .to_owned();
                 group
-                    .frame
-                    .trailing_record_indices
+                    .members
                     .iter()
-                    .flat_map(|record_index| {
-                        std::iter::once(*record_index)
-                            .chain(record_index.checked_add(1))
-                            .chain(record_index.checked_add(2))
-                            .chain(record_index.checked_add(3))
-                    })
+                    .copied()
+                    .chain(
+                        group
+                            .frame
+                            .trailing_record_indices
+                            .iter()
+                            .flat_map(|record_index| {
+                                std::iter::once(*record_index)
+                                    .chain(record_index.checked_add(1))
+                                    .chain(record_index.checked_add(2))
+                                    .chain(record_index.checked_add(3))
+                            }),
+                    )
                     .chain(
                         group
                             .frame
@@ -3393,9 +3643,11 @@ fn extend_related_design_records(
         let kind = scopes
             .get(&(stream.to_owned(), group.scope_record_index))
             .copied();
-        !matches!(kind, Some("Congé" | "Chanfrein"))
-            || identified_groups.contains(&(stream.to_owned(), group.record_index))
-            || identity_member_groups.contains(&(stream.to_owned(), group.record_index))
+        crate::design::decode::operands::construction_operand_group_is_retained(
+            kind,
+            identified_groups.contains(&(stream.to_owned(), group.record_index))
+                || identity_member_groups.contains(&(stream.to_owned(), group.record_index)),
+        )
     });
     native.design_fillet_radius_groups =
         crate::design::decode::operands::decode_fillet_radius_groups(
@@ -3482,6 +3734,7 @@ fn extend_related_design_records(
         &mut native.design_body_recipe_operands,
         &native.construction_recipes,
         &native.persistent_subentity_tags,
+        &native.design_parameter_scopes,
     );
     crate::history::bind_body_recipe_operand_history_candidates(
         &mut native.design_body_recipe_operands,
@@ -3562,7 +3815,7 @@ fn extend_related_design_records(
     let stream_lengths: std::collections::HashMap<String, usize> = scan
         .entries
         .iter()
-        .filter(|entry| entry.role == container::role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, container::role::BULKSTREAM))
         .map(|entry| {
             scan.entry_bytes(&entry.name)
                 .map(|bytes| (crate::ids::native_scope(&entry.name), bytes.len()))
@@ -3673,8 +3926,8 @@ fn source_and_tolerances(
     primary_model_brep: &BrepFacts,
 ) -> (SourceMeta, Tolerances) {
     let mut attributes = std::collections::BTreeMap::new();
-    if let Some(folder) = &scan.asset_folder {
-        attributes.insert("asset_folder".to_string(), folder.clone());
+    if let Some(folder) = scan.design_asset_folder() {
+        attributes.insert("asset_folder".to_string(), folder.to_owned());
     }
     attributes.insert(
         "zip_entry_count".to_string(),
@@ -3881,8 +4134,8 @@ fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
     let mut unknowns = Vec::new();
 
     let mut attributes = std::collections::BTreeMap::new();
-    if let Some(folder) = &scan.asset_folder {
-        attributes.insert("asset_folder".to_string(), folder.clone());
+    if let Some(folder) = scan.design_asset_folder() {
+        attributes.insert("asset_folder".to_string(), folder.to_owned());
     }
     attributes.insert(
         "zip_entry_count".to_string(),
@@ -3939,7 +4192,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
 /// decode-failure note. Each remaining state gets its own loss description.
 fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
     let summary = container::summarize(scan);
-    let brep_count = scan.breps.len();
+    let brep_count = container::design_breps(scan).count();
     let selected = container::select_fallback_brep(scan);
     let text_breps = container::text_brep_names(scan);
 
@@ -4092,15 +4345,46 @@ pub(crate) fn reconcile_appearance_loss(
 pub(crate) fn resolve_face_appearance_bindings(
     ir: &mut CadIr,
     face_assignments: &[materials::FaceAppearanceAssignment],
-) {
+) -> Result<(), CodecError> {
     use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+    use std::collections::btree_map::Entry;
 
     if face_assignments.is_empty() {
-        return;
+        return Ok(());
     }
-    let mut faces_by_guid: std::collections::HashMap<&str, Vec<cadmpeg_ir::ids::FaceId>> =
-        std::collections::HashMap::new();
+
+    let mut assignments_by_guid = std::collections::BTreeMap::new();
+    for assignment in face_assignments {
+        match assignments_by_guid.entry(assignment.face_guid.clone()) {
+            Entry::Vacant(entry) => {
+                entry.insert(assignment.clone());
+            }
+            Entry::Occupied(mut entry) => {
+                let existing = entry.get_mut();
+                if !materials::visual_tokens_match(&existing.visual_guid, &assignment.visual_guid) {
+                    return Err(CodecError::Malformed(format!(
+                        "F3D face material GUID {} carries conflicting visual tokens",
+                        assignment.face_guid
+                    )));
+                }
+                match (existing.color, assignment.color) {
+                    (Some(left), Some(right)) if left != right => {
+                        return Err(CodecError::Malformed(format!(
+                            "F3D face material GUID {} carries conflicting neutral colors",
+                            assignment.face_guid
+                        )));
+                    }
+                    (None, Some(color)) => existing.color = Some(color),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    let mut faces_by_guid =
+        std::collections::BTreeMap::<String, Vec<cadmpeg_ir::ids::FaceId>>::new();
+    let mut guid_by_face = std::collections::BTreeMap::<cadmpeg_ir::ids::FaceId, String>::new();
     for attribute in &ir.model.attributes {
         let AttributeTarget::Face(face) = &attribute.target else {
             continue;
@@ -4113,37 +4397,98 @@ pub(crate) fn resolve_face_appearance_bindings(
                 _ => None,
             })
             .collect();
-        if !strings.contains(&"NEUTRON_Material_attrib_def") {
+        let material_name_count = strings
+            .iter()
+            .filter(|value| **value == "NEUTRON_Material_attrib_def")
+            .count();
+        if material_name_count == 0 {
             continue;
         }
-        for value in strings {
-            if value.len() == 36 && value.matches('-').count() == 4 {
-                faces_by_guid.entry(value).or_default().push(face.clone());
+        if material_name_count != 1 {
+            return Err(CodecError::Malformed(
+                "F3D face material attribute repeats its attribute-definition name".into(),
+            ));
+        }
+        let mut face_guids = strings.iter().copied().filter(|value| {
+            crate::bytes::is_guid_hyphenated(value)
+                && value.bytes().all(|byte| !byte.is_ascii_uppercase())
+        });
+        let Some(face_guid) = face_guids.next() else {
+            return Err(CodecError::Malformed(
+                "F3D face material attribute does not carry exactly one lower-case face GUID"
+                    .into(),
+            ));
+        };
+        if face_guids.next().is_some() {
+            return Err(CodecError::Malformed(
+                "F3D face material attribute does not carry exactly one lower-case face GUID"
+                    .into(),
+            ));
+        }
+        if let Some(previous) = guid_by_face.insert(face.clone(), face_guid.to_owned()) {
+            if previous != face_guid {
+                return Err(CodecError::Malformed(format!(
+                    "F3D face {face} carries multiple material GUIDs"
+                )));
             }
         }
+        faces_by_guid
+            .entry(face_guid.to_owned())
+            .or_default()
+            .push(face.clone());
+    }
+    for faces in faces_by_guid.values_mut() {
+        faces.sort();
+        faces.dedup();
     }
     let mut bound_targets = ir
         .model
         .appearance_bindings
         .iter()
-        .map(|binding| binding.target.clone())
-        .collect::<std::collections::HashSet<_>>();
-    for assignment in face_assignments {
+        .map(|binding| (binding.target.clone(), binding.appearance.clone()))
+        .collect::<std::collections::HashMap<_, _>>();
+    let face_indices = ir
+        .model
+        .faces
+        .iter()
+        .enumerate()
+        .map(|(index, face)| (face.id.clone(), index))
+        .collect::<std::collections::HashMap<_, _>>();
+    for assignment in assignments_by_guid.values() {
         let Some(faces) = faces_by_guid.get(assignment.face_guid.as_str()) else {
             continue;
         };
-        let Some(appearance) = ir.model.appearances.iter().find(|appearance| {
-            appearance
-                .visual_guid
-                .as_deref()
-                .is_some_and(|guid| materials::visual_guid_matches(guid, &assignment.visual_guid))
-        }) else {
-            continue;
-        };
+        let appearance = materials::appearance_for_visual_token(
+            &ir.model.appearances,
+            &assignment.visual_guid,
+            None,
+        )?
+        .map(|appearance| appearance.id.clone());
         for face in faces {
-            let target = AppearanceTarget::Face(face.clone());
-            if !bound_targets.insert(target.clone()) {
+            if let Some(color) = assignment.color {
+                if let Some(index) = face_indices.get(face).copied() {
+                    let target = &mut ir.model.faces[index];
+                    if target.color.is_none() {
+                        target.color = Some(color);
+                    }
+                }
+            }
+            let Some(appearance) = appearance.as_ref() else {
                 continue;
+            };
+            let target = AppearanceTarget::Face(face.clone());
+            match bound_targets.entry(target.clone()) {
+                std::collections::hash_map::Entry::Occupied(entry) => {
+                    if entry.get() != appearance {
+                        return Err(CodecError::Malformed(format!(
+                            "F3D face {face} carries conflicting appearance assignments"
+                        )));
+                    }
+                    continue;
+                }
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(appearance.clone());
+                }
             }
             ir.model.appearance_bindings.push(AppearanceBinding {
                 // The face id completes the key: one appearance attribute GUID
@@ -4155,13 +4500,14 @@ pub(crate) fn resolve_face_appearance_bindings(
                     face,
                 ),
                 target,
-                appearance: appearance.id.clone(),
+                appearance: appearance.clone(),
                 source_entity_id: None,
                 object_type: None,
                 channels: std::collections::BTreeMap::new(),
             });
         }
     }
+    Ok(())
 }
 
 /// Fill absent explicit topology colors from uniquely bound appearance assets.
@@ -4201,17 +4547,23 @@ fn apply_appearance_base_colors(ir: &mut CadIr) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        apply_appearance_base_colors, bind_mesh_feature_definitions,
+        container_only_dimension_parameters, design_projection_gaps,
+        feature_definition_is_incomplete, incomplete_feature_families, mesh_attribute_channels,
+        mesh_texture_assignments, unresolved_dimension_companion_count, DesignProjectionGaps,
+        MeshProjection,
+    };
     use crate::native::F3dNative;
     use crate::records::{
         DesignBodyBinding, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
-        DesignDimensionRecipeRecord, DesignParameter, DesignParameterCompanion,
-        DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignSketchPlacement,
-        LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation,
+        DesignDimensionRecipeRecord, DesignFeatureTimeline, DesignParameter,
+        DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+        DesignSketchPlacement, LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation,
     };
 
     #[test]
-    fn mesh_feature_binds_tessellation_through_mesh_body_scope_reference() {
+    fn mesh_feature_binds_tessellations_in_design_body_order() {
         use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 
         let scope_id = "f3d:Design/BulkStream.dat:design-parameter-scope#10";
@@ -4238,10 +4590,10 @@ mod tests {
             native_ref: Some(scope_id.into()),
         }];
         let projection = MeshProjection {
-            count: 1,
+            count: 2,
             tessellations_by_scope: std::collections::HashMap::from([(
                 ("f3d:Design/BulkStream.dat".into(), 10),
-                vec!["tessellation:mesh-body".into()],
+                vec!["tessellation:z-body".into(), "tessellation:a-body".into()],
             )]),
         };
 
@@ -4250,21 +4602,68 @@ mod tests {
         assert_eq!(
             features[0].definition,
             FeatureDefinition::MeshImport {
-                tessellations: vec!["tessellation:mesh-body".into()],
+                tessellations: vec!["tessellation:z-body".into(), "tessellation:a-body".into(),],
             }
         );
         assert!(!feature_definition_is_incomplete(&features[0].definition));
     }
 
     #[test]
+    fn mesh_texture_ids_resolve_through_design_table_order() {
+        use cadmpeg_ir::assets::AssetId;
+        use cadmpeg_ir::tessellation::TessellationTextureAssignment;
+
+        let first = AssetId("asset:first".into());
+        let second = AssetId("asset:second".into());
+        let textures = [
+            ("resource:first".into(), first.clone()),
+            ("resource:second".into(), second.clone()),
+            ("resource:third".into(), first.clone()),
+        ];
+        assert_eq!(
+            mesh_texture_assignments(Some(&[0, 2, 1, 3, 2]), &textures, 5)
+                .expect("texture assignments"),
+            vec![
+                TessellationTextureAssignment {
+                    source_id: Some("resource:first".into()),
+                    texture: first,
+                    triangles: vec![2],
+                },
+                TessellationTextureAssignment {
+                    source_id: Some("resource:second".into()),
+                    texture: second,
+                    triangles: vec![1, 4],
+                },
+                TessellationTextureAssignment {
+                    source_id: Some("resource:third".into()),
+                    texture: AssetId("asset:first".into()),
+                    triangles: vec![3],
+                },
+            ]
+        );
+        assert!(matches!(
+            mesh_texture_assignments(
+                Some(&[2]),
+                &[("resource:only".into(), AssetId("asset:only".into()))],
+                1,
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
+
+    #[test]
     fn indexed_mesh_channels_project_default_and_override_selectors() {
         let attribute = crate::paramesh::MeshAttribute {
             role: 4,
+            resource_guid: None,
+            authored_name: None,
+            groups: Vec::new(),
             element_code: 4,
             domain: crate::paramesh::MeshAttributeDomain::Corner,
             item_size: Some(1),
             values: vec![10, 11, 12, 13, 14],
             indices: Some(vec![0, 2]),
+            triangle_values: None,
         };
         let mut unresolved = std::collections::BTreeMap::new();
         let channels = mesh_attribute_channels(&[attribute], 3, &[[0, 1, 2]], &mut unresolved);
@@ -4336,6 +4735,69 @@ mod tests {
     }
 
     #[test]
+    fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+
+        let resolved: FeatureDefinition = serde_json::from_value(serde_json::json!({
+            "definition": "loft",
+            "sections": [
+                {
+                    "kind": "spatial_sketch_profiles",
+                    "value": {"sketch": "spatial-sketch", "profiles": [2, 3]}
+                },
+                {
+                    "kind": "spatial_sketch_profiles",
+                    "value": {"sketch": "spatial-sketch", "profiles": [1, 4]}
+                }
+            ],
+            "guides": [{
+                "kind": "spatial_sketch_curves",
+                "value": {"sketch": "spatial-sketch", "curves": ["curve"]}
+            }],
+            "op": "join"
+        }))
+        .expect("resolved Loft definition");
+        assert!(!feature_definition_is_incomplete(&resolved));
+
+        let unresolved: FeatureDefinition = serde_json::from_value(serde_json::json!({
+            "definition": "loft",
+            "sections": [
+                {"kind": "native", "value": "native:profile"},
+                {
+                    "kind": "spatial_sketch_profiles",
+                    "value": {"sketch": "spatial-sketch", "profiles": [1, 4]}
+                }
+            ],
+            "guides": [{"kind": "native", "value": "native:guide"}],
+            "op": "join"
+        }))
+        .expect("unresolved Loft definition");
+        assert!(feature_definition_is_incomplete(&unresolved));
+
+        let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+        ir.model.features.push(Feature {
+            id: FeatureId("feature:loft".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: Some("Loft".into()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: unresolved,
+            native_ref: None,
+        });
+
+        let gaps = design_projection_gaps(&ir, &F3dNative::default());
+        assert_eq!(gaps.incomplete_features, 1);
+        assert_eq!(gaps.profile_selections, 1);
+        assert_eq!(gaps.path_selections, 1);
+    }
+
+    #[test]
     fn incomplete_feature_families_are_counted_by_source_operation() {
         use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 
@@ -4397,6 +4859,44 @@ mod tests {
         assert_eq!(
             design_projection_gaps(&ir, &native).unresolved_body_bindings,
             1
+        );
+    }
+
+    #[test]
+    fn design_projection_gaps_count_cosmetic_thread_faces() {
+        let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+        for (ordinal, face) in [
+            serde_json::json!({"kind": "native", "value": "native:thread-face"}),
+            serde_json::json!({"kind": "unresolved"}),
+            serde_json::json!({
+                "kind": "historical",
+                "value": {
+                    "state": "feature-input",
+                    "faces": ["historical:face"],
+                    "native": "native:thread-group"
+                }
+            }),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            ir.model.features.push(
+                serde_json::from_value(serde_json::json!({
+                    "id": format!("thread-{ordinal}"),
+                    "ordinal": ordinal,
+                    "definition": {
+                        "definition": "cosmetic_thread",
+                        "face": face,
+                        "diameter": 2.5
+                    }
+                }))
+                .expect("CosmeticThread feature"),
+            );
+        }
+
+        assert_eq!(
+            design_projection_gaps(&ir, &F3dNative::default()).face_selections,
+            2
         );
     }
 
@@ -4580,10 +5080,14 @@ mod tests {
             byte_offset: 0,
             coordinate_offset: 0,
             entity_genesis: None,
-            persistent_id: 1,
+            record_form: crate::records::SketchPointRecordForm::default(),
+            persistent_id: Some(1),
             paired_reference: 0,
+            flags: [0; 8],
             coordinates: Point2::new(0.0, 0.0),
-            raw_bytes: Vec::new(),
+            depth: 0.0,
+            closure: None,
+            companion: None,
         });
         native.sketch_curve_identities.push(SketchCurveIdentity {
             id: "native:sketch-curve".into(),
@@ -4619,6 +5123,7 @@ mod tests {
             owner_entity_id: "0_1".into(),
             auxiliary_references: Vec::new(),
             auxiliary_reference_offsets: Vec::new(),
+            rectangular_counted_reference_count: None,
             members: Vec::new(),
             resolved_members: Vec::new(),
             member_offsets: Vec::new(),
@@ -4674,6 +5179,8 @@ mod tests {
             coil_section_placement_offset: None,
             coil_clockwise: None,
             coil_clockwise_offset: None,
+            coil_placement: None,
+            coil_transform: None,
             feature_ordinal: 1,
             feature_ordinal_offset: 0,
             history_state_id: None,
@@ -4718,6 +5225,7 @@ mod tests {
             unclosed_construction_operand_groups: Vec::new(),
             work_point_reference_type: None,
             work_point_input_record_indices: Vec::new(),
+            hole_construction: None,
             extrude_profile: None,
             sweep_profile: None,
             circular_pattern_construction: None,
@@ -4845,6 +5353,8 @@ mod tests {
             coil_section_placement_offset: None,
             coil_clockwise: None,
             coil_clockwise_offset: None,
+            coil_placement: None,
+            coil_transform: None,
             feature_ordinal: record_index,
             feature_ordinal_offset: 0,
             history_state_id: current,
@@ -4889,6 +5399,7 @@ mod tests {
             unclosed_construction_operand_groups: Vec::new(),
             work_point_reference_type: None,
             work_point_input_record_indices: Vec::new(),
+            hole_construction: None,
             extrude_profile: None,
             sweep_profile: None,
             circular_pattern_construction: None,
@@ -4945,6 +5456,76 @@ mod tests {
     }
 
     #[test]
+    fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scope() {
+        let stream = "f3d:Design/BulkStream.dat";
+        let mut predecessor = DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#100"),
+            "Extrude",
+            100,
+        );
+        predecessor.history_state_id = Some(7);
+        let mut internal = DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#150"),
+            "Base Feature",
+            150,
+        );
+        internal.history_state_id = Some(8);
+        internal.previous_history_state_id = Some(7);
+        let mut successor = DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#200"),
+            "Fillet",
+            200,
+        );
+        successor.history_state_id = Some(9);
+        successor.previous_history_state_id = Some(8);
+        let scopes = vec![successor, internal, predecessor];
+        let timeline = DesignFeatureTimeline {
+            id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+            byte_offset: 0,
+            class_tag: "256".into(),
+            record_index: 1,
+            source_ordinal: 0,
+            frame_length: 0,
+            context_record_index: 2,
+            context_record_index_offset: 0,
+            item_count_offset: 0,
+            item_record_indices: vec![100, 200],
+            item_record_index_offsets: vec![0, 0],
+        };
+        let (features, _) =
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                &crate::design::feature_project::ProjectInputs {
+                    native: &[],
+                    owners: &[],
+                    scopes: &scopes,
+                    timelines: std::slice::from_ref(&timeline),
+                    construction_groups: &[],
+                    fillet_radius_groups: &[],
+                    edge_operands: &[],
+                    edge_identity_operands: &[],
+                    entity_selection_operands: &[],
+                    curve_identities: &[],
+                    face_operands: &[],
+                    body_recipe_operands: &[],
+                    placements: &[],
+                    body_bindings: &[],
+                    histories: &[],
+                },
+            )
+            .expect("timeline projection through one internal scope");
+        let mut native = F3dNative::default();
+        native.design_parameter_scopes = scopes;
+        native.design_feature_timelines = vec![timeline];
+        let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+        ir.model.features = features;
+
+        let gaps = design_projection_gaps(&ir, &native);
+        assert_eq!(gaps.unprojected_feature_scopes, 0);
+        assert_eq!(gaps.unprojected_history_dependencies, 0);
+        assert_eq!(gaps.ambiguous_history_dependencies, 0);
+    }
+
+    #[test]
     fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
         let stream = "f3d:test/BulkStream.dat";
         let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -4973,6 +5554,7 @@ mod tests {
         native.design_parameter_owners.push(DesignParameterOwner {
             id: format!("{stream}:design-parameter-owner#20"),
             byte_offset: 120,
+            frame_length: 104,
             class_tag: "292".into(),
             record_index: 20,
             scope_record_index: 1,

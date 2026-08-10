@@ -1876,6 +1876,46 @@ impl<'a> Builder<'a> {
         let ir = self.ir;
         let mut representation_items = Vec::new();
         for mesh in &ir.model.tessellations {
+            if !mesh.feature_edges.is_empty() {
+                self.loss(
+                    LossKind::AttributesNotTransferred,
+                    Severity::Warning,
+                    format!(
+                        "tessellation '{}' feature-edge classification is not represented",
+                        mesh.id
+                    ),
+                );
+            }
+            if !mesh.corner_normals.is_empty() {
+                self.loss(
+                    LossKind::AttributesNotTransferred,
+                    Severity::Warning,
+                    format!(
+                        "tessellation '{}' corner normals are not represented",
+                        mesh.id
+                    ),
+                );
+            }
+            if !mesh.triangle_groups.is_empty() {
+                self.loss(
+                    LossKind::AttributesNotTransferred,
+                    Severity::Warning,
+                    format!(
+                        "tessellation '{}' triangle groups are not represented",
+                        mesh.id
+                    ),
+                );
+            }
+            if !mesh.texture_assignments.is_empty() {
+                self.loss(
+                    LossKind::AttributesNotTransferred,
+                    Severity::Warning,
+                    format!(
+                        "tessellation '{}' texture assignments are not represented",
+                        mesh.id
+                    ),
+                );
+            }
             if mesh.vertices.is_empty()
                 || mesh.triangles.is_empty()
                 || mesh

@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bulkstream and sketch/design record encoders for source-less generation.
 
-use std::collections::BTreeMap;
-
 use crate::records::{
-    ConstructionRecipeKind, PersistentReferenceKind, SketchCurveGeometry, SketchText,
+    ConstructionRecipeKind, PersistentReferenceKind, SketchCurveGeometry,
+    SketchPointCompanionReferenceEncoding, SketchPointRecordForm, SketchText,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -12,14 +11,19 @@ use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::ids::CoedgeId;
 use cadmpeg_ir::math::Point3;
 
-use super::attributes::source_less_body_key;
 use super::index::NativeGenerationIndex;
 use super::native_bytes::{native_f64, native_i64, native_ref};
 use super::native_geometry::native_nurbs_curve;
-use super::preconditions::DesignBindingsValidated;
+use super::presentation::GeneratedDesignRegistry;
 use crate::native::F3dNative;
 use crate::writer::primitives::native_bool;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
+
+/// Generated Design `BulkStream` and the primary offsets known while writing it.
+pub(crate) struct EncodedDesignBulkStream {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) primary_records: Vec<crate::metastream::RecordIndexEntry>,
+}
 
 pub(crate) fn tolerant_coedge_range(
     index: &NativeGenerationIndex<'_>,
@@ -105,122 +109,18 @@ pub(crate) fn native_tolerant_coedge_extension(
     }
 }
 
-pub(crate) fn encode_act_bulkstream(native: &F3dNative) -> Result<Option<Vec<u8>>, CodecError> {
-    if native.act_entities.is_empty()
-        && native.act_guids.is_empty()
-        && native.act_root_components.is_empty()
-    {
-        return Ok(None);
-    }
-
-    let mut out = Vec::new();
-    native_lp_ascii(&mut out, "ACTTable")?;
-    out.extend_from_slice(&0u16.to_le_bytes());
-    let table_entities = native
-        .act_entities
-        .iter()
-        .filter(|entity| entity.in_table)
-        .collect::<Vec<_>>();
-    let count = u32::try_from(table_entities.len())
-        .map_err(|_| CodecError::Malformed("ACT table exceeds u32::MAX entities".into()))?;
-    out.extend_from_slice(&count.to_le_bytes());
-    for entity in table_entities {
-        out.push(1);
-        out.extend_from_slice(&entity.record_index.to_le_bytes());
-        out.extend_from_slice(&[0; 6]);
-        native_lp_utf16(&mut out, &entity.entity_id)?;
-    }
-
-    let channel_guids = native
-        .act_entities
-        .iter()
-        .flat_map(|entity| entity.channels.values())
-        .collect::<Vec<_>>();
-    let mut emitted_channel_guids = BTreeMap::<&str, usize>::new();
-    for guid in &channel_guids {
-        *emitted_channel_guids.entry(guid.as_str()).or_default() += 1;
-    }
-    for guid in &native.act_guids {
-        validate_guid(&guid.guid, "ACT GUID")?;
-        let remaining = emitted_channel_guids.entry(guid.guid.as_str()).or_default();
-        if *remaining > 0 {
-            *remaining -= 1;
-        } else {
-            native_lp_utf16(&mut out, &guid.guid)?;
-        }
-    }
-    for entity in native
-        .act_entities
-        .iter()
-        .filter(|entity| !entity.channels.is_empty())
-    {
-        let class_tag = entity.channel_class_tag.as_deref().ok_or_else(|| {
-            CodecError::Malformed("ACT channel entity lacks a dynamic class tag".into())
-        })?;
-        validate_dynamic_class_tag(class_tag, "ACT channel entity")?;
-        native_lp_ascii(&mut out, class_tag)?;
-        out.extend_from_slice(&entity.record_index.to_le_bytes());
-        out.extend_from_slice(&[0; 10]);
-        let channel_count = u32::try_from(entity.channels.len())
-            .map_err(|_| CodecError::Malformed("ACT entity exceeds u32::MAX channels".into()))?;
-        if !(1..=8).contains(&channel_count) {
-            return Err(CodecError::NotImplemented(
-                "source-less ACT channel groups require one to eight channels".into(),
-            ));
-        }
-        out.extend_from_slice(&channel_count.to_le_bytes());
-        for (name, guid) in &entity.channels {
-            validate_guid(guid, "ACT channel GUID")?;
-            native_lp_ascii(&mut out, name)?;
-            native_lp_utf16(&mut out, guid)?;
-        }
-        native_lp_utf16(&mut out, &entity.entity_id)?;
-    }
-    for root in &native.act_root_components {
-        validate_dynamic_class_tag(&root.class_tag, "ACT root component")?;
-        native_lp_ascii(&mut out, &root.class_tag)?;
-        out.extend_from_slice(&root.record_index.to_le_bytes());
-        out.extend_from_slice(&[0; 10]);
-        out.push(1);
-        out.extend_from_slice(&root.instance_root_record.to_le_bytes());
-        out.extend_from_slice(&[0; 6]);
-        native_lp_utf16(&mut out, &root.entity_id)?;
-        // The key is `<segment id>_<entity id>` of the entity this link
-        // tracks, and the reference beside it names that same entity.
-        let tracked = root
-            .entity_id
-            .rsplit_once('_')
-            .and_then(|(_, entity)| entity.parse::<u32>().ok())
-            .ok_or_else(|| {
-                CodecError::Malformed(format!(
-                    "F3D ACT root component entity key is not `<segment id>_<entity id>`: {}",
-                    root.entity_id
-                ))
-            })?;
-        out.push(1);
-        out.extend_from_slice(&tracked.to_le_bytes());
-        out.extend_from_slice(&[0; 5]);
-        out.push(1);
-        out.extend_from_slice(&root.registry_flag.to_le_bytes());
-        native_lp_utf16(&mut out, &root.display_name)?;
-        out.push(0);
-        out.push(1);
-        out.extend_from_slice(&root.components_root_record.to_le_bytes());
-    }
-    Ok(Some(out))
-}
-
 pub(crate) fn encode_design_bulkstream(
     target: &CadIr,
     native: &F3dNative,
-    attributes: &super::attributes::AttributeIndex<'_>,
-) -> Result<Option<Vec<u8>>, CodecError> {
+    registry: &GeneratedDesignRegistry,
+) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
     let (_, projected_parameters) =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
             &crate::design::feature_project::ProjectInputs {
                 native: &native.design_parameters,
                 owners: &native.design_parameter_owners,
                 scopes: &native.design_parameter_scopes,
+                timelines: &native.design_feature_timelines,
                 construction_groups: &native.design_construction_operand_groups,
                 fillet_radius_groups: &native.design_fillet_radius_groups,
                 edge_operands: &native.design_edge_operands,
@@ -233,7 +133,7 @@ pub(crate) fn encode_design_bulkstream(
                 body_bindings: &native.design_body_bindings,
                 histories: &native.asm_histories,
             },
-        );
+        )?;
     if target.model.parameters != projected_parameters {
         return Err(CodecError::Malformed(
             "neutral F3D parameters must equal the projection of native Design parameters".into(),
@@ -280,44 +180,25 @@ pub(crate) fn encode_design_bulkstream(
     }
 
     let mut out = Vec::new();
+    let mut primary_records = Vec::new();
     for parameter in &native.design_parameters {
         encode_document_parameter(&mut out, parameter)?;
     }
-    let mut body_map = native
-        .design_material_assignments
-        .iter()
-        .map(|assignment| (assignment.asm_body_key, assignment.entity_suffix))
-        .collect::<BTreeMap<_, _>>();
-    let body_visibilities = native
-        .body_visibilities
-        .iter()
-        .map(|metadata| (metadata.body.as_str(), metadata))
-        .collect::<std::collections::HashMap<_, _>>();
-    let mut visibility_rows = Vec::new();
-    for (ordinal, body) in target.model.bodies.iter().enumerate() {
-        let Some(visible) = body.visible else {
-            continue;
-        };
-        let metadata = body_visibilities.get(body.id.as_str()).copied();
-        let asm_body_key =
-            match metadata {
-                Some(metadata) => metadata.asm_body_key,
-                None => u64::try_from(source_less_body_key(attributes, body, ordinal)?).map_err(
-                    |_| CodecError::Malformed("source-less ASM body key is negative".into()),
-                )?,
-            };
-        let entity_suffix = metadata
-            .map(|metadata| metadata.entity_suffix)
-            .or_else(|| body_map.get(&asm_body_key).copied())
-            .unwrap_or(asm_body_key);
-        body_map.insert(asm_body_key, entity_suffix);
-        visibility_rows.push((entity_suffix, visible));
-    }
-    if !body_map.is_empty() {
-        let count = u32::try_from(body_map.len())
+    if !registry.body_map.is_empty() {
+        let class_tag = registry.body_map_class_tag.as_deref().ok_or_else(|| {
+            CodecError::Malformed("generated F3D body map has no registered type".into())
+        })?;
+        let record_index = registry.body_map_record_index.ok_or_else(|| {
+            CodecError::Malformed("generated F3D body map has no record identity".into())
+        })?;
+        primary_records.push(primary_record(record_index, out.len())?);
+        native_lp_ascii(&mut out, class_tag)?;
+        out.extend_from_slice(&record_index.to_le_bytes());
+        out.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
+        let count = u32::try_from(registry.body_map.len())
             .map_err(|_| CodecError::Malformed("Design body map exceeds u32::MAX".into()))?;
         out.extend_from_slice(&count.to_le_bytes());
-        for (body_key, entity_suffix) in body_map {
+        for (&body_key, &entity_suffix) in &registry.body_map {
             out.extend_from_slice(&body_key.to_le_bytes());
             out.extend_from_slice(&entity_suffix.to_le_bytes());
         }
@@ -325,32 +206,7 @@ pub(crate) fn encode_design_bulkstream(
         out.extend_from_slice(&0u32.to_le_bytes());
         native_lp_utf16(&mut out, "BREP.generated.smbh")?;
     }
-    for assignment in &native.design_material_assignments {
-        native_lp_utf16(&mut out, &assignment.entity_id)?;
-        native_lp_utf16(
-            &mut out,
-            assignment
-                .physical_token
-                .as_deref()
-                .expect("validated source-less material token"),
-        )?;
-        native_lp_utf16(&mut out, "Body")?;
-        native_lp_utf16(&mut out, "00000000-0000-0000-0000-000000000000")?;
-        native_lp_utf16(&mut out, &assignment.visual_guid)?;
-        native_lp_utf16(&mut out, "BA5EE55E-9982-449B-9D66-9F036540E140")?;
-        if let Some(visual_preset) = &assignment.visual_preset {
-            native_lp_utf16(&mut out, visual_preset)?;
-        }
-    }
-    for (ordinal, (entity_suffix, visible)) in visibility_rows.into_iter().enumerate() {
-        native_lp_utf16(
-            &mut out,
-            &format!("00000000-0000-0000-0000-{:012X}", ordinal + 1),
-        )?;
-        out.push(u8::from(!visible));
-        out.extend_from_slice(&[0x01, 0x01]);
-        out.extend_from_slice(&entity_suffix.to_le_bytes());
-    }
+    encode_browser_nodes(&mut out, &mut primary_records, registry)?;
     for recipe in &native.construction_recipes {
         let name = construction_recipe_name(recipe.kind);
         let mut prefix = [0u8; 27];
@@ -393,6 +249,7 @@ pub(crate) fn encode_design_bulkstream(
     }
     for header in &native.design_entity_headers {
         validate_dynamic_class_tag(&header.class_tag, "Design entity header")?;
+        primary_records.push(primary_record_u64(header.entity_suffix, out.len())?);
         out.extend_from_slice(&3u32.to_le_bytes());
         out.extend_from_slice(header.class_tag.as_bytes());
         out.extend_from_slice(&header.entity_suffix.to_le_bytes());
@@ -429,15 +286,56 @@ pub(crate) fn encode_design_bulkstream(
         out.extend_from_slice(&header.record_index.to_le_bytes());
     }
     for point in &native.sketch_points {
+        let expected = crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE;
+        let mut companion_types = registry
+            .types
+            .iter()
+            .enumerate()
+            .filter(|(_, design_type)| {
+                design_type.type_guid.eq_ignore_ascii_case(expected.0)
+                    && design_type.version == expected.1
+                    && design_type.module == expected.2
+                    && design_type
+                        .entity_ids
+                        .contains(&u64::from(point.paired_reference))
+            });
+        let companion_type_ordinal = companion_types
+            .next()
+            .map(|(ordinal, _)| ordinal)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "generated sketch point {} has no registered companion type",
+                    point.id
+                ))
+            })?;
+        if companion_types.next().is_some() {
+            return Err(CodecError::Malformed(format!(
+                "generated sketch point {} has multiple registered companion types",
+                point.id
+            )));
+        }
+        let companion_class_tag = super::presentation::dynamic_class_tag(companion_type_ordinal)?;
+        primary_records.push(primary_record(point.record_index, out.len())?);
         encode_sketch_point(&mut out, point)?;
+        primary_records.push(primary_record(point.paired_reference, out.len())?);
+        encode_sketch_point_companion(
+            &mut out,
+            &companion_class_tag,
+            point.paired_reference,
+            point.record_index,
+            point.companion.as_ref(),
+        )?;
     }
     for curve in &native.sketch_curve_identities {
+        primary_records.push(primary_record(curve.record_index, out.len())?);
         encode_sketch_curve_identity(&mut out, curve)?;
     }
     for text in &native.sketch_texts {
+        primary_records.push(primary_record(text.record_index, out.len())?);
         encode_sketch_text(&mut out, text)?;
     }
     for relation in &native.sketch_relations {
+        primary_records.push(primary_record(relation.record_index, out.len())?);
         encode_sketch_relation(&mut out, relation)?;
     }
     for reference in &native.persistent_references {
@@ -474,7 +372,29 @@ pub(crate) fn encode_design_bulkstream(
         native_lp_ascii(&mut out, &reference.next_class_tag)?;
         out.extend_from_slice(&reference.next_record_index.to_le_bytes());
     }
-    Ok(Some(out))
+    Ok(Some(EncodedDesignBulkStream {
+        bytes: out,
+        primary_records,
+    }))
+}
+
+fn primary_record(
+    entity_id: u32,
+    bulk_offset: usize,
+) -> Result<crate::metastream::RecordIndexEntry, CodecError> {
+    primary_record_u64(u64::from(entity_id), bulk_offset)
+}
+
+fn primary_record_u64(
+    entity_id: u64,
+    bulk_offset: usize,
+) -> Result<crate::metastream::RecordIndexEntry, CodecError> {
+    Ok(crate::metastream::RecordIndexEntry {
+        entity_id,
+        bulk_offset: u64::try_from(bulk_offset).map_err(|_| {
+            CodecError::Malformed("generated Design record offset exceeds u64".into())
+        })?,
+    })
 }
 
 fn encode_document_parameter(
@@ -526,13 +446,37 @@ fn encode_sketch_point(
     out: &mut Vec<u8>,
     point: &crate::records::SketchPoint,
 ) -> Result<(), CodecError> {
-    if !point.coordinates.u.is_finite() || !point.coordinates.v.is_finite() {
+    if !point.coordinates.u.is_finite()
+        || !point.coordinates.v.is_finite()
+        || !point.depth.is_finite()
+    {
         return Err(CodecError::Malformed(
             "source-less sketch point coordinates must be finite".into(),
         ));
     }
+    let owner_reference = point.owner_reference.ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "source-less sketch point {} has no direct owner",
+            point.id
+        ))
+    })?;
     let shift = usize::from(point.entity_genesis.is_some()) * 52;
-    let mut record = vec![0u8; 112 + shift];
+    let &SketchPointRecordForm::Version11 {
+        padded_paired_reference,
+    } = &point.record_form
+    else {
+        return Err(CodecError::NotImplemented(format!(
+            "source-less sketch point {} requires the version-11 member sequence",
+            point.id
+        )));
+    };
+    let persistent_id = point.persistent_id.ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "source-less sketch point {} has no persistent identity",
+            point.id
+        ))
+    })?;
+    let mut record = vec![0u8; 105 + shift];
     encode_sketch_record_header(&mut record, &point.class_tag, point.record_index)?;
     record[20] = 1;
     record[21..25].copy_from_slice(&(1 + u32::from(point.entity_genesis.is_some())).to_le_bytes());
@@ -543,13 +487,82 @@ fn encode_sketch_point(
     record[29 + shift..35 + shift].copy_from_slice(b"pt_tag");
     record[35 + shift..39 + shift].copy_from_slice(&23u32.to_le_bytes());
     record[39 + shift..62 + shift].copy_from_slice(b"IntrinsicMetaTypeuint64");
-    record[62 + shift..70 + shift].copy_from_slice(&point.persistent_id.to_le_bytes());
+    record[62 + shift..70 + shift].copy_from_slice(&persistent_id.to_le_bytes());
     record[70 + shift] = 1;
     record[71 + shift..75 + shift].copy_from_slice(&point.paired_reference.to_le_bytes());
+    if point.flags.iter().any(|flag| *flag > 1) {
+        return Err(CodecError::Malformed(format!(
+            "source-less sketch point {} has a flag outside zero or one",
+            point.id
+        )));
+    }
+    record[81 + shift..89 + shift].copy_from_slice(&point.flags);
     record[89 + shift..97 + shift]
         .copy_from_slice(&(point.coordinates.u / LEN_TO_MM).to_le_bytes());
     record[97 + shift..105 + shift]
         .copy_from_slice(&(point.coordinates.v / LEN_TO_MM).to_le_bytes());
+    let closure = point.closure.as_ref().ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "source-less sketch point {} has no version-11 closure",
+            point.id
+        ))
+    })?;
+    if !point.record_form.closure_is_valid(Some(closure)) {
+        return Err(CodecError::Malformed(format!(
+            "source-less sketch point {} has an invalid closure selector or state",
+            point.id
+        )));
+    }
+    record.extend_from_slice(&(point.depth / LEN_TO_MM).to_le_bytes());
+    record.extend_from_slice(&closure.selector.to_le_bytes());
+    record.push(closure.state);
+    record.extend_from_slice(&[0; 12]);
+    record.extend_from_slice(&1.0f32.to_le_bytes());
+    record.extend_from_slice(&1.0f32.to_le_bytes());
+    record.extend_from_slice(&[0, 1, 0, 0, 0]);
+    write_reference(&mut record, point.paired_reference);
+    if padded_paired_reference {
+        record.extend_from_slice(&[0; 4]);
+    }
+    write_reference(&mut record, owner_reference);
+    out.extend_from_slice(&record);
+    Ok(())
+}
+
+fn encode_sketch_point_companion(
+    out: &mut Vec<u8>,
+    class_tag: &str,
+    record_index: u32,
+    point_record_index: u32,
+    companion: Option<&crate::records::SketchPointCompanion>,
+) -> Result<(), CodecError> {
+    let companion = companion.ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "source-less sketch point {point_record_index} has no inverse companion"
+        ))
+    })?;
+    let prefix_present_zero = companion.prefix_present_zero;
+    if companion.reference_encoding != SketchPointCompanionReferenceEncoding::SameSegment {
+        return Err(CodecError::NotImplemented(
+            "source-less sketch point companions require same-segment references".into(),
+        ));
+    }
+    let incident_curves = companion.incident_curves.as_slice();
+    let count = u32::try_from(incident_curves.len()).map_err(|_| {
+        CodecError::Malformed("source-less sketch point companion exceeds u32::MAX curves".into())
+    })?;
+    let prefix_len = if prefix_present_zero { 25 } else { 21 };
+    let mut record = vec![0u8; prefix_len];
+    encode_sketch_record_header(&mut record, class_tag, record_index)?;
+    if prefix_present_zero {
+        record[20] = 1;
+    }
+    record.extend_from_slice(&count.to_le_bytes());
+    for incident_curve in incident_curves {
+        write_reference(&mut record, *incident_curve);
+    }
+    record.push(0);
+    write_reference(&mut record, point_record_index);
     out.extend_from_slice(&record);
     Ok(())
 }
@@ -558,6 +571,12 @@ fn encode_sketch_curve_identity(
     out: &mut Vec<u8>,
     curve: &crate::records::SketchCurveIdentity,
 ) -> Result<(), CodecError> {
+    let owner_reference = curve.owner_reference.ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "source-less sketch curve {} has no direct owner",
+            curve.id
+        ))
+    })?;
     let shift = usize::from(curve.entity_genesis.is_some()) * 52;
     let mut record = vec![0u8; 133 + shift];
     encode_sketch_record_header(&mut record, &curve.class_tag, curve.record_index)?;
@@ -645,8 +664,14 @@ fn encode_sketch_curve_identity(
             weights,
             control_points,
         )?,
-        None => {}
+        None => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less sketch curve {} has no writable geometry",
+                curve.id
+            )))
+        }
     }
+    write_reference(&mut record, owner_reference);
     out.extend_from_slice(&record);
     Ok(())
 }
@@ -892,16 +917,15 @@ pub(crate) fn validate_dynamic_class_tag(value: &str, field: &str) -> Result<(),
 }
 
 pub(crate) fn encode_design_metastream(
-    bindings: DesignBindingsValidated<'_>,
+    registry: &GeneratedDesignRegistry,
+    primary_records: &[crate::metastream::RecordIndexEntry],
 ) -> Result<Option<Vec<u8>>, CodecError> {
-    let native = bindings.native();
-    if native.design_types.is_empty() {
+    if registry.types.is_empty() {
         return Ok(None);
     }
 
-    // A generated segment carries no source records, so it writes the modern
-    // header shape, the type table the IR holds, and empty named-entity and
-    // record indexes. The stream closes on its own end, as every segment does.
+    // A generated segment writes the modern header shape, the type table, and
+    // the primary offsets captured while writing its sibling BulkStream.
     let mut out = Vec::new();
     native_lp_ascii(&mut out, "Design")?;
     out.extend_from_slice(&0u32.to_le_bytes());
@@ -912,12 +936,12 @@ pub(crate) fn encode_design_metastream(
     native_lp_ascii(&mut out, "Fusion")?;
     out.extend_from_slice(&1u32.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
-    let type_count = u32::try_from(native.design_types.len()).map_err(|_| {
+    let type_count = u32::try_from(registry.types.len()).map_err(|_| {
         CodecError::Malformed("Design MetaStream registers more than u32::MAX types".into())
     })?;
     out.extend_from_slice(&type_count.to_le_bytes());
     let mut next_entity_id = 1u64;
-    for design_type in &native.design_types {
+    for design_type in &registry.types {
         validate_guid(&design_type.type_guid, "Design type GUID")?;
         native_lp_ascii(&mut out, &design_type.type_guid)?;
         match &design_type.base_type_guid {
@@ -944,12 +968,70 @@ pub(crate) fn encode_design_metastream(
             next_entity_id = next_entity_id.max(entity_id.saturating_add(1));
         }
     }
-    // Named-entity list, record index, and secondary index.
-    out.extend_from_slice(&[0; 12]);
+    // Named-entity list, primary record index, and secondary index.
+    out.extend_from_slice(&0u32.to_le_bytes());
+    let record_count = u32::try_from(primary_records.len()).map_err(|_| {
+        CodecError::Malformed("Design primary index exceeds u32::MAX records".into())
+    })?;
+    out.extend_from_slice(&record_count.to_le_bytes());
+    let registered_entities = registry
+        .types
+        .iter()
+        .flat_map(|design_type| design_type.entity_ids.iter().copied())
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut indexed_entities = std::collections::BTreeSet::new();
+    let mut previous_offset = None;
+    for record in primary_records {
+        if !registered_entities.contains(&record.entity_id) {
+            return Err(CodecError::Malformed(format!(
+                "generated Design primary entity {} has no type registration",
+                record.entity_id
+            )));
+        }
+        if !indexed_entities.insert(record.entity_id) {
+            return Err(CodecError::Malformed(format!(
+                "generated Design primary entity {} is indexed more than once",
+                record.entity_id
+            )));
+        }
+        if previous_offset.is_some_and(|previous| previous >= record.bulk_offset) {
+            return Err(CodecError::Malformed(
+                "generated Design primary offsets are not strictly increasing".into(),
+            ));
+        }
+        previous_offset = Some(record.bulk_offset);
+        out.extend_from_slice(&record.entity_id.to_le_bytes());
+        out.extend_from_slice(&record.bulk_offset.to_le_bytes());
+    }
+    out.extend_from_slice(&0u32.to_le_bytes());
     out.extend_from_slice(&next_entity_id.to_le_bytes());
     // Trailing flag and empty property block.
     out.extend_from_slice(&[0; 8]);
     Ok(Some(out))
+}
+
+fn encode_browser_nodes(
+    out: &mut Vec<u8>,
+    primary_records: &mut Vec<crate::metastream::RecordIndexEntry>,
+    registry: &GeneratedDesignRegistry,
+) -> Result<(), CodecError> {
+    if registry.browser_nodes.is_empty() {
+        return Ok(());
+    }
+    let node_class_tag = registry.browser_node_class_tag.as_deref().ok_or_else(|| {
+        CodecError::Malformed("generated F3D browser nodes have no registered type".into())
+    })?;
+    for node in &registry.browser_nodes {
+        primary_records.push(primary_record(node.record_index, out.len())?);
+        native_lp_ascii(out, node_class_tag)?;
+        out.extend_from_slice(&node.record_index.to_le_bytes());
+        out.extend_from_slice(&[0; 10]);
+        native_lp_utf16(out, &node.node_guid)?;
+        out.push(u8::from(!node.visible));
+        out.extend_from_slice(&[0x01, 0x01]);
+        out.extend_from_slice(&node.entity_suffix.to_le_bytes());
+    }
+    Ok(())
 }
 
 /// Asset GUID written into a generated Design `MetaStream`, which has no source

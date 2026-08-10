@@ -451,12 +451,53 @@ pub(crate) fn pcurve_for_selector_with_chart(
         2 | -2 => 1,
         _ => return None,
     };
+    pcurve_for_selector_recursive(toks, slot, table, &mut Vec::new())
+}
+
+fn pcurve_for_selector_recursive(
+    toks: &[Token],
+    slot: usize,
+    table: &SubtypeTable,
+    seen: &mut Vec<usize>,
+) -> Option<(NurbsPcurve, bool)> {
+    // A record-level intcurve wrapper can carry only a compact `{ref N}`
+    // scope. Follow that one construction reference before decoding the
+    // wrapper. Typed constructions may contain support references, but their
+    // own ordered slots remain authoritative and must not be searched here.
+    if let Some(index) = direct_subtype_reference(toks) {
+        if !seen.contains(&index) {
+            seen.push(index);
+            if let Some(target) = table.span(index) {
+                if let Some(result) = pcurve_for_selector_recursive(target, slot, table, seen) {
+                    return Some(result);
+                }
+            }
+        }
+    }
     let has_typed_construction = crate::nurbs::toks::owned_construction_subtype(toks).is_some();
     if let Some(decoded) = procedural_curve_resolving_refs(toks, table) {
         if let Some(pcurve) = selected_pcurve(&decoded, slot) {
             return Some((pcurve, false));
         }
         if decoded.native_kind != "intcurve" {
+            // Modern exact curves can carry the same cache-first support
+            // context as the surface-related intcurve families. Their
+            // construction remains exact, but the pcurve selector still
+            // names one of that context's ordered support slots. Parse the
+            // context only from the exact-intcurve marker; do not search
+            // arbitrary BS2/BS3 blocks in the record.
+            if let Some(marker) =
+                crate::nurbs::toks::find_owned_intcurve_subtype(toks, "exact_int_cur")
+            {
+                let mut cur = Cur::at(toks, marker + 2);
+                if let Some(context) = cache_first_curve_context(&mut cur, &decoded.curve, table) {
+                    if let Some(pcurve) =
+                        selected_optional_pcurve(&context.surfaces, &context.pcurves, slot)
+                    {
+                        return Some((pcurve, false));
+                    }
+                }
+            }
             return None;
         }
     }
@@ -466,6 +507,48 @@ pub(crate) fn pcurve_for_selector_with_chart(
     (slot == 1)
         .then(|| direct_pcurve_after_curve(toks))?
         .map(|pcurve| (pcurve, true))
+}
+
+/// Return the sole record-level subtype-table reference of an untyped wrapper.
+///
+/// A nested reference inside a typed construction is deliberately excluded:
+/// its owner has a structural pcurve slot, while an untyped wrapper has no
+/// carrier of its own and delegates the complete construction.
+fn direct_subtype_reference(toks: &[Token]) -> Option<usize> {
+    if crate::nurbs::toks::owned_construction_subtype(toks).is_some() {
+        return None;
+    }
+    let mut depth = 0usize;
+    let mut candidate = None;
+    for (position, token) in toks.iter().enumerate() {
+        match token {
+            Token::SubtypeOpen => {
+                if depth == 0 {
+                    let scope = crate::nurbs::toks::subtype_span(toks, position)?;
+                    let index = match scope {
+                        [Token::SubtypeOpen, Token::Long(index), Token::SubtypeClose]
+                            if *index >= 0 =>
+                        {
+                            usize::try_from(*index).ok()
+                        }
+                        [Token::SubtypeOpen, Token::Ident(name), Token::Long(index), Token::SubtypeClose]
+                            if name == "ref" && *index >= 0 =>
+                        {
+                            usize::try_from(*index).ok()
+                        }
+                        _ => None,
+                    }?;
+                    if candidate.replace(index).is_some() {
+                        return None;
+                    }
+                }
+                depth += 1;
+            }
+            Token::SubtypeClose => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    candidate
 }
 
 fn selected_optional_pcurve(

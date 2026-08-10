@@ -212,6 +212,7 @@ dependencies = [
  "cadmpeg-protein",
  "lzma-rs",
  "memchr",
+ "roxmltree",
  "schemars",
  "serde",
  "serde-value",

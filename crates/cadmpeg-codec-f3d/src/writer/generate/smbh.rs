@@ -14,7 +14,7 @@ use cadmpeg_ir::topology::Sense;
 use super::attributes::{
     edge_persistent_attribute_ref, encode_source_less_attributes, owner_color_or_body_tag_ref,
     owner_color_or_face_tag_ref, sketch_link_attribute_ref, source_less_body_key,
-    timestamp_attribute_ref, AttributeIndex,
+    timestamp_attribute_ref, AttributeIndex, AttributeOwnerStarts,
 };
 use super::index::NativeGenerationIndex;
 use super::native_bytes::{
@@ -34,656 +34,28 @@ use super::records::{native_tolerant_coedge_extension, tolerant_coedge_range};
 use crate::writer::primitives::{native_bool, normalized_face_sense_to_native};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
-pub(crate) fn encode_planar_triangle_smbh(
+pub(crate) fn encode_smbh(
     target: &CadIr,
     native: &F3dNative,
     attributes: &AttributeIndex<'_>,
 ) -> Result<Vec<u8>, CodecError> {
-    use cadmpeg_ir::geometry::SurfaceGeometry;
-
-    let model = &target.model;
     let topology = NativeGenerationIndex::new(native);
-    if model.faces.is_empty()
-        && model
+    if target.model.faces.is_empty() {
+        if !target
+            .model
             .shells
             .iter()
             .any(|shell| !shell.wire_edges.is_empty() || !shell.free_vertices.is_empty())
-    {
-        return encode_wire_body_smbh(target, native, attributes, &topology);
-    }
-    validate_source_less_body_kinds(model)?;
-    let wire_vertices = validate_source_less_wire_vertices(target)?;
-    if model.faces.len() > 1
-        || model.loops.len() > 1
-        || model.surfaces.len() > 1
-        || model
-            .shells
-            .iter()
-            .any(|shell| !shell.wire_edges.is_empty() || !shell.free_vertices.is_empty())
-        || model
-            .bodies
-            .iter()
-            .any(|body| body.color.is_some() || body.transform.is_some())
-        || model.faces.iter().any(|face| face.color.is_some())
-    {
-        return encode_multi_face_shell_smbh(target, native, attributes, &topology, wire_vertices);
-    }
-    if model.bodies.is_empty()
-        || model.regions.is_empty()
-        || model.shells.is_empty()
-        || model.faces.len() != 1
-        || model.loops.len() != 1
-        || model.coedges.len() < 3
-        || model.edges.len() != model.coedges.len()
-        || model.vertices.len() != model.coedges.len()
-        || model.points.len() != model.coedges.len()
-        || model.surfaces.len() != 1
-    {
-        return Err(CodecError::NotImplemented(
-            "source-less F3D generation currently requires one polygonal planar face".into(),
-        ));
-    }
-    let body = &model.bodies[0];
-    let region = &model.regions[0];
-    let shell = &model.shells[0];
-    let face = &model.faces[0];
-    let loop_ = &model.loops[0];
-    let surface_geometry = &model.surfaces[0].geometry;
-    if body.regions.as_slice() != [region.id.clone()]
-        || region.body != body.id
-        || region.shells.as_slice() != [shell.id.clone()]
-        || shell.region != region.id
-        || shell.faces.as_slice() != [face.id.clone()]
-        || !shell.wire_edges.is_empty()
-        || !shell.free_vertices.is_empty()
-        || face.shell != shell.id
-        || face.surface != model.surfaces[0].id
-        || face.loops.as_slice() != [loop_.id.clone()]
-        || loop_.face != face.id
-        || loop_.coedges.len() != model.coedges.len()
-        || body.transform.is_some()
-    {
-        return Err(CodecError::NotImplemented(
-            "source-less F3D generation requires one directly owned polygonal face".into(),
-        ));
-    }
-
-    let coedges = loop_
-        .coedges
-        .iter()
-        .map(|id| {
-            model
-                .coedges
-                .iter()
-                .find(|coedge| coedge.id == *id)
-                .ok_or_else(|| {
-                    CodecError::Malformed(format!("loop references missing coedge {id}"))
-                })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    for (index, coedge) in coedges.iter().enumerate() {
-        if coedge.pcurves.len() > 1 {
-            return Err(CodecError::NotImplemented(format!(
-                "coedge {} has an ordered pcurve collection",
-                coedge.id
-            )));
-        }
-        let next = coedges[(index + 1) % coedges.len()];
-        let previous = coedges[(index + coedges.len() - 1) % coedges.len()];
-        if coedge.owner_loop != loop_.id
-            || coedge.next != next.id
-            || coedge.previous != previous.id
-            || coedge.radial_next != coedge.id
         {
             return Err(CodecError::NotImplemented(
-                "source-less F3D generation requires a laminar polygon coedge ring".into(),
+                "source-less F3D generation requires owned face topology or a nonempty wire shell"
+                    .into(),
             ));
         }
+        return encode_wire_body_smbh(target, native, attributes, &topology);
     }
-
-    let curve_start = 7i64;
-    let pcurve_start = native_record_index(curve_start, model.curves.len())?;
-    let ref_pcurve_count = model
-        .pcurves
-        .iter()
-        .map(pcurve_uses_ref_form)
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .filter(|uses_ref_form| *uses_ref_form)
-        .count();
-    let pcurve_record_count = model
-        .pcurves
-        .len()
-        .checked_add(ref_pcurve_count)
-        .ok_or_else(|| CodecError::Malformed("pcurve record count overflows usize".into()))?;
-    let coedge_start = native_record_index(pcurve_start, pcurve_record_count)?;
-    let edge_start = native_record_index(coedge_start, coedges.len())?;
-    let vertex_start = native_record_index(edge_start, model.edges.len())?;
-    let point_start = native_record_index(vertex_start, model.vertices.len())?;
-
-    let mut records = Vec::new();
-    native_ident(&mut records, "asmheader")?;
-    native_string(&mut records, "231.6.3.65535")?;
-    records.push(0x11);
-
-    native_ident(&mut records, "body")?;
-    native_ref(&mut records, -1);
-    native_i64(&mut records, source_less_body_key(attributes, body, 0)?);
-    native_ref(&mut records, -1);
-    native_ref(&mut records, 2);
-    native_ref(&mut records, -1);
-    native_ref(&mut records, -1);
-    records.push(0x11);
-
-    native_ident(&mut records, "region")?;
-    native_ref(&mut records, -1);
-    native_i64(&mut records, -1);
-    native_ref(&mut records, -1);
-    native_ref(&mut records, -1);
-    native_ref(&mut records, 3);
-    native_ref(&mut records, 1);
-    records.push(0x11);
-
-    native_ident(&mut records, "shell")?;
-    native_ref(&mut records, -1);
-    native_i64(&mut records, -1);
-    native_ref(&mut records, -1);
-    native_ref(&mut records, -1);
-    native_ref(&mut records, -1);
-    native_ref(&mut records, 4);
-    native_ref(&mut records, -1);
-    native_ref(&mut records, 2);
-    records.push(0x11);
-
-    native_ident(&mut records, "face")?;
-    native_ref(&mut records, -1);
-    native_i64(&mut records, -1);
-    native_ref(&mut records, -1);
-    native_ref(&mut records, -1);
-    native_ref(&mut records, 5);
-    native_ref(&mut records, 3);
-    native_ref(&mut records, -1);
-    native_ref(&mut records, 6);
-    records.push(native_bool(
-        native_face_sense(&topology, face) == Sense::Reversed,
-    ));
-    native_face_sidedness(&mut records, &topology, face);
-    records.push(0x11);
-
-    native_ident(&mut records, "loop")?;
-    native_ref(&mut records, -1);
-    native_i64(&mut records, -1);
-    native_ref(&mut records, -1);
-    native_ref(&mut records, -1);
-    native_ref(&mut records, coedge_start);
-    native_ref(&mut records, 4);
-    records.push(0x11);
-
-    match *surface_geometry {
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => {
-            native_surface_base(&mut records, "plane")?;
-            native_point(
-                &mut records,
-                [
-                    origin.x / LEN_TO_MM,
-                    origin.y / LEN_TO_MM,
-                    origin.z / LEN_TO_MM,
-                ],
-            );
-            native_vector(&mut records, [normal.x, normal.y, normal.z]);
-            native_vector(&mut records, [u_axis.x, u_axis.y, u_axis.z]);
-            records.push(0x0b);
-        }
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-        } => {
-            native_surface_base(&mut records, "cone")?;
-            native_point(
-                &mut records,
-                [
-                    origin.x / LEN_TO_MM,
-                    origin.y / LEN_TO_MM,
-                    origin.z / LEN_TO_MM,
-                ],
-            );
-            native_vector(&mut records, [axis.x, axis.y, axis.z]);
-            native_vector(
-                &mut records,
-                [
-                    ref_direction.x * radius / LEN_TO_MM,
-                    ref_direction.y * radius / LEN_TO_MM,
-                    ref_direction.z * radius / LEN_TO_MM,
-                ],
-            );
-            native_f64(&mut records, 1.0);
-            records.extend_from_slice(&[0x0b, 0x0b]);
-            native_f64(&mut records, 0.0);
-            native_f64(&mut records, 1.0);
-            native_f64(&mut records, radius / LEN_TO_MM);
-            records.extend_from_slice(&[0x0b; 5]);
-        }
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-            ratio,
-            half_angle,
-        } => {
-            native_surface_base(&mut records, "cone")?;
-            native_point(
-                &mut records,
-                [
-                    origin.x / LEN_TO_MM,
-                    origin.y / LEN_TO_MM,
-                    origin.z / LEN_TO_MM,
-                ],
-            );
-            native_vector(&mut records, [axis.x, axis.y, axis.z]);
-            native_vector(
-                &mut records,
-                [
-                    ref_direction.x * radius / LEN_TO_MM,
-                    ref_direction.y * radius / LEN_TO_MM,
-                    ref_direction.z * radius / LEN_TO_MM,
-                ],
-            );
-            native_f64(&mut records, ratio);
-            records.extend_from_slice(&[0x0b, 0x0b]);
-            native_f64(&mut records, half_angle.sin());
-            native_f64(&mut records, half_angle.cos());
-            native_f64(&mut records, radius / LEN_TO_MM);
-            records.extend_from_slice(&[0x0b; 5]);
-        }
-        SurfaceGeometry::Sphere {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
-            native_surface_base(&mut records, "sphere")?;
-            native_point(
-                &mut records,
-                [
-                    center.x / LEN_TO_MM,
-                    center.y / LEN_TO_MM,
-                    center.z / LEN_TO_MM,
-                ],
-            );
-            native_f64(&mut records, radius / LEN_TO_MM);
-            native_vector(
-                &mut records,
-                [ref_direction.x, ref_direction.y, ref_direction.z],
-            );
-            native_vector(&mut records, [axis.x, axis.y, axis.z]);
-            records.extend_from_slice(&[0x0b; 5]);
-        }
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } => {
-            native_surface_base(&mut records, "torus")?;
-            native_point(
-                &mut records,
-                [
-                    center.x / LEN_TO_MM,
-                    center.y / LEN_TO_MM,
-                    center.z / LEN_TO_MM,
-                ],
-            );
-            native_vector(&mut records, [axis.x, axis.y, axis.z]);
-            native_f64(&mut records, major_radius / LEN_TO_MM);
-            native_f64(&mut records, minor_radius / LEN_TO_MM);
-            native_vector(
-                &mut records,
-                [ref_direction.x, ref_direction.y, ref_direction.z],
-            );
-            records.extend_from_slice(&[0x0b; 5]);
-        }
-        SurfaceGeometry::Nurbs(ref surface) => {
-            if !native_procedural_surface(&mut records, target, &model.surfaces[0], surface)? {
-                native_surface_base(&mut records, "spline")?;
-                native_nurbs_surface(&mut records, surface)?;
-            }
-        }
-        SurfaceGeometry::Polygonal { .. } => {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D generation does not support polygonal surface carriers".into(),
-            ));
-        }
-        SurfaceGeometry::Transformed { .. } => {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D generation does not support transformed surface carriers".into(),
-            ));
-        }
-        SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {
-            if !native_cacheless_procedural_surface(&mut records, target, &model.surfaces[0])? {
-                return Err(CodecError::NotImplemented(
-                    "source-less F3D generation does not support this surface carrier".into(),
-                ));
-            }
-        }
-    }
-    records.push(0x11);
-
-    for carrier in &model.curves {
-        match carrier.geometry {
-            CurveGeometry::Line { origin, direction } => {
-                native_curve_base(&mut records, "straight")?;
-                native_point(
-                    &mut records,
-                    [
-                        origin.x / LEN_TO_MM,
-                        origin.y / LEN_TO_MM,
-                        origin.z / LEN_TO_MM,
-                    ],
-                );
-                native_vector(&mut records, [direction.x, direction.y, direction.z]);
-            }
-            CurveGeometry::Circle {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } => {
-                native_curve_base(&mut records, "ellipse")?;
-                native_point(
-                    &mut records,
-                    [
-                        center.x / LEN_TO_MM,
-                        center.y / LEN_TO_MM,
-                        center.z / LEN_TO_MM,
-                    ],
-                );
-                native_vector(&mut records, [axis.x, axis.y, axis.z]);
-                native_vector(
-                    &mut records,
-                    [
-                        ref_direction.x * radius / LEN_TO_MM,
-                        ref_direction.y * radius / LEN_TO_MM,
-                        ref_direction.z * radius / LEN_TO_MM,
-                    ],
-                );
-                native_f64(&mut records, 1.0);
-            }
-            CurveGeometry::Ellipse {
-                center,
-                axis,
-                major_direction,
-                major_radius,
-                minor_radius,
-            } => {
-                if major_radius == 0.0 {
-                    return Err(CodecError::Malformed(
-                        "source-less F3D ellipse has zero major radius".into(),
-                    ));
-                }
-                native_curve_base(&mut records, "ellipse")?;
-                native_point(
-                    &mut records,
-                    [
-                        center.x / LEN_TO_MM,
-                        center.y / LEN_TO_MM,
-                        center.z / LEN_TO_MM,
-                    ],
-                );
-                native_vector(&mut records, [axis.x, axis.y, axis.z]);
-                native_vector(
-                    &mut records,
-                    [
-                        major_direction.x * major_radius / LEN_TO_MM,
-                        major_direction.y * major_radius / LEN_TO_MM,
-                        major_direction.z * major_radius / LEN_TO_MM,
-                    ],
-                );
-                native_f64(&mut records, minor_radius / major_radius);
-            }
-            CurveGeometry::Nurbs(ref curve) => {
-                if !native_procedural_curve(&mut records, target, &carrier.id, curve)? {
-                    native_curve_base(&mut records, "intcurve")?;
-                    native_nurbs_curve(&mut records, curve)?;
-                }
-            }
-            CurveGeometry::Procedural { .. } => {
-                if !native_cacheless_procedural_curve(&mut records, target, &carrier.id)? {
-                    return Err(CodecError::Malformed(format!(
-                        "procedural curve carrier {} has no construction",
-                        carrier.id
-                    )));
-                }
-            }
-            CurveGeometry::Degenerate { point } => {
-                native_curve_base(&mut records, "degenerate_curve")?;
-                native_point(
-                    &mut records,
-                    [
-                        point.x / LEN_TO_MM,
-                        point.y / LEN_TO_MM,
-                        point.z / LEN_TO_MM,
-                    ],
-                );
-                records.extend_from_slice(&[0x0b, 0x0b]);
-            }
-            _ => {
-                return Err(CodecError::NotImplemented(
-                    "source-less F3D generation does not support this curve carrier".into(),
-                ));
-            }
-        }
-        records.push(0x11);
-    }
-
-    let ref_pcurve_start = native_record_index(pcurve_start, model.pcurves.len())?;
-    let mut ref_pcurve_ordinal = 0usize;
-    for pcurve in &model.pcurves {
-        let support = pcurve_support_geometry(model, &pcurve.id)?;
-        let companion_ref = pcurve_uses_ref_form(pcurve)?
-            .then(|| native_record_index(ref_pcurve_start, ref_pcurve_ordinal))
-            .transpose()?;
-        native_pcurve(&mut records, pcurve, companion_ref, support)?;
-        ref_pcurve_ordinal += usize::from(companion_ref.is_some());
-        records.push(0x11);
-    }
-    for pcurve in model
-        .pcurves
-        .iter()
-        .filter(|pcurve| pcurve_uses_ref_form(pcurve).is_ok_and(|value| value))
-    {
-        let support = pcurve_support_geometry(model, &pcurve.id)?;
-        native_ref_pcurve_companion(&mut records, pcurve, support)?;
-        records.push(0x11);
-    }
-
-    for (index, coedge) in coedges.iter().enumerate() {
-        let edge_index = model
-            .edges
-            .iter()
-            .position(|edge| edge.id == coedge.edge)
-            .ok_or_else(|| {
-                CodecError::Malformed(format!("coedge references missing edge {}", coedge.edge))
-            })?;
-        let tolerant_range = tolerant_coedge_range(&topology, &coedge.id);
-        native_ident(
-            &mut records,
-            if tolerant_range.is_some() {
-                "tcoedge"
-            } else {
-                "coedge"
-            },
-        )?;
-        native_ref(&mut records, -1);
-        native_i64(&mut records, -1);
-        native_ref(&mut records, -1);
-        native_ref(
-            &mut records,
-            native_record_index(coedge_start, (index + 1) % coedges.len())?,
-        );
-        native_ref(
-            &mut records,
-            native_record_index(coedge_start, (index + coedges.len() - 1) % coedges.len())?,
-        );
-        native_ref(&mut records, -1);
-        native_ref(&mut records, native_record_index(edge_start, edge_index)?);
-        records.push(native_bool(coedge.sense == Sense::Reversed));
-        native_ref(&mut records, 5);
-        native_i64(&mut records, 0);
-        let pcurve_ref = coedge
-            .pcurves
-            .first()
-            .map(|use_| {
-                let pcurve_id = &use_.pcurve;
-                model
-                    .pcurves
-                    .iter()
-                    .position(|pcurve| pcurve.id == *pcurve_id)
-                    .ok_or_else(|| {
-                        CodecError::Malformed(format!(
-                            "coedge references missing pcurve {pcurve_id}"
-                        ))
-                    })
-                    .and_then(|ordinal| native_record_index(pcurve_start, ordinal))
-            })
-            .transpose()?
-            .unwrap_or(-1);
-        native_ref(&mut records, pcurve_ref);
-        if let Some(range) = tolerant_range {
-            native_f64(&mut records, range[0]);
-            native_f64(&mut records, range[1]);
-            native_tolerant_coedge_extension(&mut records, target, &topology, &coedge.id)?;
-        }
-        records.push(0x11);
-    }
-
-    let mut edge_owners = BTreeMap::new();
-    apply_native_edge_owners(target, &topology, coedge_start, &mut edge_owners)?;
-    for edge in &model.edges {
-        let start = model
-            .vertices
-            .iter()
-            .position(|vertex| vertex.id == edge.start)
-            .ok_or_else(|| {
-                CodecError::Malformed(format!("edge references missing vertex {}", edge.start))
-            })?;
-        let end = model
-            .vertices
-            .iter()
-            .position(|vertex| vertex.id == edge.end)
-            .ok_or_else(|| {
-                CodecError::Malformed(format!("edge references missing vertex {}", edge.end))
-            })?;
-        let curve_ref = edge
-            .curve
-            .as_ref()
-            .map(|curve_id| {
-                model
-                    .curves
-                    .iter()
-                    .position(|curve| curve.id == *curve_id)
-                    .ok_or_else(|| {
-                        CodecError::Malformed(format!("edge references missing curve {curve_id}"))
-                    })
-                    .and_then(|ordinal| native_record_index(curve_start, ordinal))
-            })
-            .transpose()?
-            .unwrap_or(-1);
-        let mut range = edge.param_range.unwrap_or([0.0, 1.0]);
-        // Conic edge parameters are angles in both the IR and the native
-        // stream; line parameters are arc lengths, millimeters in the IR
-        // and centimeters natively.
-        if edge.curve.as_ref().is_some_and(|curve_id| {
-            model.curves.iter().any(|curve| {
-                curve.id == *curve_id && matches!(curve.geometry, CurveGeometry::Line { .. })
-            })
-        }) {
-            range[0] /= LEN_TO_MM;
-            range[1] /= LEN_TO_MM;
-        }
-        native_ident(
-            &mut records,
-            if edge.tolerance.is_some() {
-                "tedge"
-            } else {
-                "edge"
-            },
-        )?;
-        native_ref(&mut records, -1);
-        native_i64(&mut records, -1);
-        native_ref(&mut records, -1);
-        native_ref(&mut records, native_record_index(vertex_start, start)?);
-        native_f64(&mut records, range[0]);
-        native_ref(&mut records, native_record_index(vertex_start, end)?);
-        native_f64(&mut records, range[1]);
-        native_ref(
-            &mut records,
-            edge_owners.get(&edge.id).copied().unwrap_or(-1),
-        );
-        native_ref(&mut records, curve_ref);
-        let (sense, continuity) = edge_record_metadata(&topology, edge)?;
-        records.push(native_bool(sense == Sense::Reversed));
-        native_string(&mut records, &continuity)?;
-        native_tolerant_edge_tail(&mut records, &topology, edge)?;
-        records.push(0x11);
-    }
-
-    for vertex in &model.vertices {
-        let point = model
-            .points
-            .iter()
-            .position(|point| point.id == vertex.point)
-            .ok_or_else(|| {
-                CodecError::Malformed(format!("vertex references missing point {}", vertex.point))
-            })?;
-        let (owning_edge, endpoint_index) = vertex_ownership(target, &topology, vertex)?;
-        native_ident(
-            &mut records,
-            if vertex.tolerance.is_some()
-                || topology.tolerant_vertices.contains_key(vertex.id.as_str())
-            {
-                "tvertex"
-            } else {
-                "vertex"
-            },
-        )?;
-        native_ref(&mut records, -1);
-        native_i64(&mut records, -1);
-        native_ref(&mut records, -1);
-        native_ref(&mut records, native_record_index(edge_start, owning_edge)?);
-        native_i64(&mut records, i64::from(endpoint_index));
-        native_ref(&mut records, native_record_index(point_start, point)?);
-        native_tolerant_vertex_tail(&mut records, &topology, vertex)?;
-        records.push(0x11);
-    }
-
-    for point in &model.points {
-        native_ident(&mut records, "point")?;
-        native_ref(&mut records, -1);
-        native_i64(&mut records, -1);
-        native_ref(&mut records, -1);
-        native_point(
-            &mut records,
-            [
-                point.position.x / LEN_TO_MM,
-                point.position.y / LEN_TO_MM,
-                point.position.z / LEN_TO_MM,
-            ],
-        );
-        records.push(0x11);
-    }
-    native_history_tail(&mut records, native)?;
-
-    let mut bytes = native_smbh_header(target)?;
-    bytes.extend_from_slice(&records);
-    Ok(bytes)
+    let wire_vertices = validate_source_less_wire_vertices(target)?;
+    encode_face_topology_smbh(target, native, attributes, &topology, wire_vertices)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1169,7 +541,19 @@ fn encode_wire_body_smbh(
             records.push(0x11);
         }
     }
-    encode_source_less_attributes(&mut records, target, attributes, attribute_start)?;
+    encode_source_less_attributes(
+        &mut records,
+        target,
+        attributes,
+        attribute_start,
+        AttributeOwnerStarts {
+            body: body_start,
+            face: None,
+            coedge: None,
+            edge: edge_start,
+            vertex: vertex_start,
+        },
+    )?;
     native_history_tail(&mut records, native)?;
     let mut bytes = native_smbh_header(target)?;
     bytes.extend_from_slice(&records);
@@ -1224,7 +608,12 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
                 major_direction,
                 major_radius,
                 minor_radius,
-            } if major_radius != 0.0 => {
+            } => {
+                if major_radius == 0.0 {
+                    return Err(CodecError::Malformed(
+                        "source-less F3D ellipse has zero major radius".into(),
+                    ));
+                }
                 native_curve_base(records, "ellipse")?;
                 native_point(
                     records,
@@ -1273,7 +662,7 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
             }
             _ => {
                 return Err(CodecError::NotImplemented(
-                    "source-less F3D wire curve carrier is unsupported".into(),
+                    "source-less F3D does not support this curve carrier".into(),
                 ))
             }
         }
@@ -1282,7 +671,7 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
     Ok(())
 }
 
-fn encode_multi_face_shell_smbh(
+fn encode_face_topology_smbh(
     target: &CadIr,
     native: &F3dNative,
     attributes: &AttributeIndex<'_>,
@@ -1567,7 +956,7 @@ fn encode_multi_face_shell_smbh(
             .ok_or_else(|| CodecError::Malformed(format!("shell does not own face {}", face.id)))?;
         if face.loops.is_empty() {
             return Err(CodecError::NotImplemented(
-                "source-less multi-loop F3D requires every face to own a loop".into(),
+                "source-less F3D face generation requires every face to own a loop".into(),
             ));
         }
         let loop_position = model
@@ -1829,20 +1218,20 @@ fn encode_multi_face_shell_smbh(
             }
             SurfaceGeometry::Polygonal { .. } => {
                 return Err(CodecError::NotImplemented(format!(
-                    "source-less multi-face F3D does not support polygonal surface carrier {}",
+                    "source-less F3D face generation does not support polygonal surface carrier {}",
                     surface.id
                 )));
             }
             SurfaceGeometry::Transformed { .. } => {
                 return Err(CodecError::NotImplemented(format!(
-                    "source-less multi-face F3D does not support transformed surface carrier {}",
+                    "source-less F3D face generation does not support transformed surface carrier {}",
                     surface.id
                 )));
             }
             SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {
                 if !native_cacheless_procedural_surface(&mut records, target, surface)? {
                     return Err(CodecError::NotImplemented(format!(
-                        "source-less multi-face F3D does not support surface carrier {}",
+                        "source-less F3D face generation does not support surface carrier {}",
                         surface.id
                     )));
                 }
@@ -1851,112 +1240,7 @@ fn encode_multi_face_shell_smbh(
         records.push(0x11);
     }
 
-    for carrier in &model.curves {
-        match carrier.geometry {
-            CurveGeometry::Line { origin, direction } => {
-                native_curve_base(&mut records, "straight")?;
-                native_point(
-                    &mut records,
-                    [
-                        origin.x / LEN_TO_MM,
-                        origin.y / LEN_TO_MM,
-                        origin.z / LEN_TO_MM,
-                    ],
-                );
-                native_vector(&mut records, [direction.x, direction.y, direction.z]);
-            }
-            CurveGeometry::Nurbs(ref curve) => {
-                if !native_procedural_curve(&mut records, target, &carrier.id, curve)? {
-                    native_curve_base(&mut records, "intcurve")?;
-                    native_nurbs_curve(&mut records, curve)?;
-                }
-            }
-            CurveGeometry::Procedural { .. } => {
-                if !native_cacheless_procedural_curve(&mut records, target, &carrier.id)? {
-                    return Err(CodecError::Malformed(format!(
-                        "procedural curve carrier {} has no construction",
-                        carrier.id
-                    )));
-                }
-            }
-            CurveGeometry::Degenerate { point } => {
-                native_curve_base(&mut records, "degenerate_curve")?;
-                native_point(
-                    &mut records,
-                    [
-                        point.x / LEN_TO_MM,
-                        point.y / LEN_TO_MM,
-                        point.z / LEN_TO_MM,
-                    ],
-                );
-                records.extend_from_slice(&[0x0b, 0x0b]);
-            }
-            CurveGeometry::Circle {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } => {
-                native_curve_base(&mut records, "ellipse")?;
-                native_point(
-                    &mut records,
-                    [
-                        center.x / LEN_TO_MM,
-                        center.y / LEN_TO_MM,
-                        center.z / LEN_TO_MM,
-                    ],
-                );
-                native_vector(&mut records, [axis.x, axis.y, axis.z]);
-                native_vector(
-                    &mut records,
-                    [
-                        ref_direction.x * radius / LEN_TO_MM,
-                        ref_direction.y * radius / LEN_TO_MM,
-                        ref_direction.z * radius / LEN_TO_MM,
-                    ],
-                );
-                native_f64(&mut records, 1.0);
-            }
-            CurveGeometry::Ellipse {
-                center,
-                axis,
-                major_direction,
-                major_radius,
-                minor_radius,
-            } => {
-                if major_radius == 0.0 {
-                    return Err(CodecError::Malformed(
-                        "source-less F3D ellipse has zero major radius".into(),
-                    ));
-                }
-                native_curve_base(&mut records, "ellipse")?;
-                native_point(
-                    &mut records,
-                    [
-                        center.x / LEN_TO_MM,
-                        center.y / LEN_TO_MM,
-                        center.z / LEN_TO_MM,
-                    ],
-                );
-                native_vector(&mut records, [axis.x, axis.y, axis.z]);
-                native_vector(
-                    &mut records,
-                    [
-                        major_direction.x * major_radius / LEN_TO_MM,
-                        major_direction.y * major_radius / LEN_TO_MM,
-                        major_direction.z * major_radius / LEN_TO_MM,
-                    ],
-                );
-                native_f64(&mut records, minor_radius / major_radius);
-            }
-            _ => {
-                return Err(CodecError::NotImplemented(
-                    "source-less multi-face F3D does not support this curve carrier".into(),
-                ));
-            }
-        }
-        records.push(0x11);
-    }
+    encode_source_less_curves(&mut records, target)?;
 
     let ref_pcurve_start = native_record_index(pcurve_start, model.pcurves.len())?;
     let mut ref_pcurve_ordinal = 0usize;
@@ -2117,7 +1401,19 @@ fn encode_multi_face_shell_smbh(
             records.push(0x11);
         }
     }
-    encode_source_less_attributes(&mut records, target, attributes, attribute_start)?;
+    encode_source_less_attributes(
+        &mut records,
+        target,
+        attributes,
+        attribute_start,
+        AttributeOwnerStarts {
+            body: body_start,
+            face: Some(face_start),
+            coedge: Some(coedge_start),
+            edge: edge_start,
+            vertex: vertex_start,
+        },
+    )?;
     native_history_tail(&mut records, native)?;
     let mut bytes = native_smbh_header(target)?;
     bytes.extend_from_slice(&records);

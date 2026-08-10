@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![deny(clippy::disallowed_methods)]
-//! Scan and classify the ZIP container inside a `.f3d` file.
+//! Scan and classify Fusion `.f3d` and `.f3z` ZIP containers.
 //!
 //! [`scan`] retains the source archive, enumerates each entry, reads ASM headers
 //! from `.smb` and `.smbh` B-rep streams, and locates their `delta_state`
@@ -21,6 +21,8 @@ use cadmpeg_ir::hash::sha256_hex;
 
 use cadmpeg_asm::asm_header;
 use cadmpeg_asm::kernel_header::KernelHeader;
+
+use crate::manifest;
 
 pub(crate) const MAX_ARCHIVE_BYTES: u64 = 256 * 1024 * 1024;
 pub(crate) const MAX_INFLATED_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
@@ -183,8 +185,21 @@ pub struct BrepFacts {
     pub sha256: String,
 }
 
-/// The full result of reading a `.f3d` container: the entry list plus decoded
-/// BREP facts. Shared by `inspect` and `decode`.
+/// The manifest-level kind of a scanned Fusion archive.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum F3dContainerKind {
+    /// One F3D document whose manifests select one Design asset folder.
+    Document {
+        /// Exact archive folder of the Design asset.
+        design_asset_folder: String,
+    },
+    /// An outer F3Z archive whose `.f3d` members each carry their own
+    /// manifests and Design asset.
+    MultiDocument,
+}
+
+/// The full result of reading a Fusion ZIP: the entry list plus decoded BREP
+/// facts. Shared by `inspect` and `decode`.
 ///
 /// The `'a` lifetime is the session's root address space: stored entries are
 /// views borrowing the root without copying, and compressed entries are arena-backed views the
@@ -196,8 +211,8 @@ pub struct ContainerScan<'a> {
     pub entries: Vec<ContainerEntry>,
     /// Decoded BREP stream facts, in archive order.
     pub breps: Vec<BrepFacts>,
-    /// The asset-folder prefix observed from BREP entry paths, if any.
-    pub asset_folder: Option<String>,
+    /// Whether this ZIP is one F3D document or an outer F3Z archive.
+    pub kind: F3dContainerKind,
     /// Entry payload views, keyed by archive path.
     inflated_entries: BTreeMap<String, View<'a>>,
 }
@@ -214,6 +229,74 @@ impl<'a> ContainerScan<'a> {
     pub(crate) fn entry_view(&self, name: &str) -> Option<View<'a>> {
         self.inflated_entries.get(name).copied()
     }
+
+    /// Exact archive folder of the manifest-selected Design asset. An outer
+    /// F3Z archive has no folder of its own; each member has one.
+    pub fn design_asset_folder(&self) -> Option<&str> {
+        match &self.kind {
+            F3dContainerKind::Document {
+                design_asset_folder,
+            } => Some(design_asset_folder),
+            F3dContainerKind::MultiDocument => None,
+        }
+    }
+
+    /// Whether this is an outer multi-document F3Z archive.
+    pub fn is_multi_document(&self) -> bool {
+        matches!(self.kind, F3dContainerKind::MultiDocument)
+    }
+
+    /// Whether `name` is inside the manifest-selected Design asset folder.
+    pub(crate) fn belongs_to_design_asset(&self, name: &str) -> bool {
+        self.design_asset_folder().is_some_and(|folder| {
+            name.strip_prefix(folder)
+                .is_some_and(|suffix| suffix.starts_with('/'))
+        })
+    }
+
+    /// Whether `entry` has `expected_role` inside the manifest-selected
+    /// Design asset.
+    pub(crate) fn is_design_asset_entry(
+        &self,
+        entry: &ContainerEntry,
+        expected_role: &str,
+    ) -> bool {
+        entry.role == expected_role && self.belongs_to_design_asset(&entry.name)
+    }
+
+    /// Whether `entry` is a stream of `expected_role` in a Design segment of
+    /// the manifest-selected Design asset.
+    pub(crate) fn is_design_stream(&self, entry: &ContainerEntry, expected_role: &str) -> bool {
+        if !self.is_design_asset_entry(entry, expected_role) {
+            return false;
+        }
+        self.asset_segment(&entry.name).is_some_and(|segment| {
+            segment == "Design1" || is_numbered_segment(segment, "FusionDesignSegmentType")
+        })
+    }
+
+    /// Whether `entry` is a `BulkStream.dat` in an ACT segment of the
+    /// manifest-selected Design asset.
+    pub(crate) fn is_act_stream(&self, entry: &ContainerEntry) -> bool {
+        self.is_design_asset_entry(entry, role::BULKSTREAM)
+            && self
+                .asset_segment(&entry.name)
+                .is_some_and(|segment| is_numbered_segment(segment, "FusionACTSegmentType"))
+    }
+
+    fn asset_segment<'n>(&self, name: &'n str) -> Option<&'n str> {
+        let relative = self
+            .design_asset_folder()
+            .and_then(|folder| name.strip_prefix(folder))?
+            .strip_prefix('/')?;
+        relative.split_once('/').map(|(segment, _)| segment)
+    }
+}
+
+fn is_numbered_segment(segment: &str, prefix: &str) -> bool {
+    segment.strip_prefix(prefix).is_some_and(|ordinal| {
+        !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+    })
 }
 
 /// Read and classify every entry, decoding ASM headers for BREP streams.
@@ -226,7 +309,6 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
 
     let mut entries = Vec::new();
     let mut breps = Vec::new();
-    let mut asset_folder = None;
     let mut inflated_entries = BTreeMap::new();
 
     for file in archive.entries() {
@@ -241,11 +323,6 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         let view = archive.open(ctx, file)?;
         let buf = view.window();
         if is_brep {
-            if asset_folder.is_none() {
-                if let Some((folder, _)) = name.split_once("/Breps.BlobParts") {
-                    asset_folder = Some(folder.to_string());
-                }
-            }
             let header = asm_header::parse(buf);
             let solved_record_limit = asm_header::solved_record_limit(buf);
             let sha = sha256_hex(buf);
@@ -316,11 +393,34 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         inflated_entries.insert(name, view);
     }
 
+    let kind = if let Some(top_level_manifest) = inflated_entries.get("Manifest.dat") {
+        let top_level_manifest = manifest::parse_top_level(top_level_manifest.window())?;
+        let design_asset_folder = manifest::resolve_design_folder(
+            &top_level_manifest,
+            inflated_entries.keys().map(String::as_str),
+            |name| inflated_entries.get(name).map(|view| view.window()),
+        )?;
+        F3dContainerKind::Document {
+            design_asset_folder,
+        }
+    } else if inflated_entries.contains_key("Manifest.json")
+        && inflated_entries.contains_key("DesignDescription.json")
+        && inflated_entries
+            .keys()
+            .any(|name| !name.contains('/') && name.to_ascii_lowercase().ends_with(".f3d"))
+    {
+        F3dContainerKind::MultiDocument
+    } else {
+        return Err(CodecError::Malformed(
+            "Fusion ZIP has neither a top-level Manifest.dat nor the F3Z manifest set".into(),
+        ));
+    };
+
     Ok(ContainerScan {
         source_image,
         entries,
         breps,
-        asset_folder,
+        kind,
         inflated_entries,
     })
 }
@@ -329,16 +429,24 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
 /// extension. Design body bindings perform the model selection during decode.
 pub fn summarize(scan: &ContainerScan<'_>) -> ContainerSummary {
     let mut notes = Vec::new();
-    if let Some(folder) = &scan.asset_folder {
-        notes.push(format!("asset folder (from entry paths): {folder}"));
+    if let Some(folder) = scan.design_asset_folder() {
+        notes.push(format!("Design asset folder (from manifests): {folder}"));
+    } else {
+        notes.push("outer F3Z archive; each F3D member selects its own Design asset".into());
     }
+    let design_brep_count = design_breps(scan).count();
     notes.push(format!(
-        "{} ASM BREP stream(s); Design body-to-blob bindings select model geometry",
-        scan.breps.len()
+        "{design_brep_count} ASM BREP stream(s); Design body-to-blob bindings select model geometry"
     ));
+    if design_brep_count != scan.breps.len() {
+        notes.push(format!(
+            "{} ASM BREP stream(s) belong to non-Design assets",
+            scan.breps.len() - design_brep_count
+        ));
+    }
     let history_count = history_breps(scan).count();
     match history_count {
-        0 if !scan.breps.is_empty() => {
+        0 if design_brep_count != 0 => {
             notes.push("no BREP header declares a history partition".to_string());
         }
         1 => {
@@ -371,7 +479,7 @@ pub fn summarize(scan: &ContainerScan<'_>) -> ContainerSummary {
 /// Iterate over every BREP whose parsed header sets the history-partition bit.
 /// The extension is not used as a semantic substitute for the header flag.
 pub fn history_breps<'s>(scan: &'s ContainerScan<'_>) -> impl Iterator<Item = &'s BrepFacts> + 's {
-    scan.breps.iter().filter(|brep| {
+    design_breps(scan).filter(|brep| {
         brep.header
             .as_ref()
             .is_some_and(KernelHeader::has_history_partition)
@@ -393,10 +501,17 @@ pub fn select_fallback_brep<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s BrepF
     if let Some(history) = select_history_brep(scan) {
         return Some(history);
     }
-    match scan.breps.as_slice() {
-        [only] => Some(only),
-        _ => None,
-    }
+    let mut candidates = design_breps(scan);
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
+}
+
+/// Iterate over binary ASM BREP entries inside the manifest-selected Design
+/// asset.
+pub fn design_breps<'s>(scan: &'s ContainerScan<'_>) -> impl Iterator<Item = &'s BrepFacts> + 's {
+    scan.breps
+        .iter()
+        .filter(|brep| scan.belongs_to_design_asset(&brep.name))
 }
 
 /// Names of the text-encoded ASM BREP entries, in archive order.
@@ -409,7 +524,7 @@ pub fn select_fallback_brep<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s BrepF
 pub fn text_brep_names<'s>(scan: &'s ContainerScan<'_>) -> Vec<&'s str> {
     scan.entries
         .iter()
-        .filter(|entry| entry.role == role::BREP_TEXT)
+        .filter(|entry| entry.role == role::BREP_TEXT && scan.belongs_to_design_asset(&entry.name))
         .map(|entry| entry.name.as_str())
         .collect()
 }
@@ -420,17 +535,16 @@ pub fn text_brep_names<'s>(scan: &'s ContainerScan<'_>) -> Vec<&'s str> {
 /// the archive's BREP entries, in archive order. Both design streams must be
 /// present so an unrelated path component named `Design1` cannot select this
 /// fallback.
-pub fn legacy_design_model_breps<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s [BrepFacts]> {
+pub fn legacy_design_model_breps<'s>(scan: &'s ContainerScan<'_>) -> Option<Vec<&'s BrepFacts>> {
     let has = |leaf: &str| {
-        scan.entries.iter().any(|entry| {
-            entry
-                .name
-                .strip_suffix(leaf)
-                .is_some_and(|parent| parent.ends_with("/Design1"))
+        scan.design_asset_folder().is_some_and(|folder| {
+            scan.entries
+                .iter()
+                .any(|entry| entry.name == format!("{folder}/Design1/{leaf}"))
         })
     };
-    (has("/BulkStream.dat") && has("/MetaStream.dat") && !scan.breps.is_empty())
-        .then_some(scan.breps.as_slice())
+    let breps = design_breps(scan).collect::<Vec<_>>();
+    (has("BulkStream.dat") && has("MetaStream.dat") && !breps.is_empty()).then_some(breps)
 }
 
 fn asm_magic_label(bytes: &[u8]) -> String {

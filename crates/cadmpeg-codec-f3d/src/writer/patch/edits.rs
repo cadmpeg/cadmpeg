@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::history_records::{AsmBulletinBoard, AsmDeltaState, AsmEntityChange};
 use crate::records::{
-    ActEntity, ActGuid, ActRootComponent, DesignMaterialAssignment, LostEdgeReference,
-    SketchCurveGeometry,
+    ActEntity, ActGuid, ActRegistryChannel, ActRootComponent, DesignMaterialAssignment,
+    LostEdgeReference, SketchCurveGeometry,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Model};
@@ -776,18 +776,24 @@ pub(crate) fn validate_material_assignment_appearances(
         }
         if edit.color.is_some() || !edit.properties.is_empty() {
             let guid = after.visual_guid.clone().ok_or_else(|| {
-                CodecError::NotImplemented(format!("F3D appearance {id} has no visual GUID"))
+                CodecError::NotImplemented(format!("F3D appearance {id} has no visual token"))
             })?;
             appearance_edits.insert(guid, edit);
         }
         if after.physical_token == before.physical_token {
             continue;
         }
-        let synchronized = target_assignments.iter().any(|assignment| {
-            after.visual_guid.as_deref().is_some_and(|guid| {
-                crate::materials::visual_guid_matches(guid, &assignment.visual_guid)
-            }) && after.physical_token == assignment.physical_token
-        });
+        let mut synchronized = false;
+        for assignment in target_assignments {
+            let selected =
+                crate::materials::appearance_for_assignment(&target.model.appearances, assignment)?;
+            if selected.is_some_and(|appearance| appearance.id == after.id)
+                && after.physical_token == assignment.physical_token
+            {
+                synchronized = true;
+                break;
+            }
+        }
         if !synchronized {
             return Err(CodecError::NotImplemented(format!(
                 "F3D appearance {id} changed without a synchronized material assignment"
@@ -801,12 +807,10 @@ pub(crate) fn validate_material_assignment_appearances(
         else {
             continue;
         };
+        let selected =
+            crate::materials::appearance_for_assignment(&target.model.appearances, after)?;
         if after.physical_token != before.physical_token
-            && !target.model.appearances.iter().any(|appearance| {
-                appearance.visual_guid.as_deref().is_some_and(|guid| {
-                    crate::materials::visual_guid_matches(guid, &after.visual_guid)
-                }) && appearance.physical_token == after.physical_token
-            })
+            && selected.is_none_or(|appearance| appearance.physical_token != after.physical_token)
         {
             return Err(CodecError::NotImplemented(format!(
                 "F3D material assignment {} changed without its appearance physical token",
@@ -846,9 +850,12 @@ pub(crate) fn validate_material_assignment_edits(
     let mut edits: BTreeMap<String, Vec<DesignMaterialAssignment>> = BTreeMap::new();
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
+        if after.entity_id != before.entity_id || after.entity_suffix != before.entity_suffix {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D material-assignment identity edit requires synchronized body-presentation, browser-node, B-rep, and scene graphs: {id}"
+            )));
+        }
         let mut normalized = after.clone();
-        normalized.entity_id.clone_from(&before.entity_id);
-        normalized.entity_suffix = before.entity_suffix;
         normalized.visual_guid.clone_from(&before.visual_guid);
         normalized.physical_token.clone_from(&before.physical_token);
         normalized.visual_preset.clone_from(&before.visual_preset);
@@ -1262,6 +1269,63 @@ pub(crate) fn validate_act_guid_edits(
     Ok(edits)
 }
 
+pub(crate) fn validate_act_registry_channel_edits(
+    native: PatchNatives<'_>,
+) -> Result<BTreeMap<String, Vec<ActGuidEdit>>, CodecError> {
+    let baseline = native
+        .baseline
+        .map(|native| &native.act_registry_channels[..])
+        .unwrap_or_default();
+    let target = native
+        .target
+        .map(|native| &native.act_registry_channels[..])
+        .unwrap_or_default();
+    let baseline_by_id = baseline
+        .iter()
+        .map(|channel| (channel.id.as_str(), channel))
+        .collect::<BTreeMap<_, _>>();
+    let target_by_id = target
+        .iter()
+        .map(|channel| (channel.id.as_str(), channel))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_by_id.keys().ne(target_by_id.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D ACT channel-registry regeneration requires the unchanged entry-id set".into(),
+        ));
+    }
+    let mut edits: BTreeMap<String, Vec<ActGuidEdit>> = BTreeMap::new();
+    for (id, before) in baseline_by_id {
+        let after = target_by_id[id];
+        let mut normalized: ActRegistryChannel = after.clone();
+        normalized.guid.clone_from(&before.guid);
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D ACT channel-registry edit changes fields other than guid: {id}"
+            )));
+        }
+        if after.guid == before.guid {
+            continue;
+        }
+        if after.guid.encode_utf16().count() != before.guid.encode_utf16().count()
+            || !canonical_guid(&after.guid)
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D ACT channel-registry GUID {id} must be a same-length canonical GUID"
+            )));
+        }
+        let encoded = after
+            .guid
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>();
+        edits
+            .entry(native_stream(id, ":act-registry-channel#")?)
+            .or_default()
+            .push((after.guid_offset, encoded));
+    }
+    Ok(edits)
+}
+
 pub(crate) fn validate_act_root_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<ActRootComponent>>, CodecError> {
@@ -1292,7 +1356,6 @@ pub(crate) fn validate_act_root_edits(
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         let mut normalized = after.clone();
-        normalized.record_index = before.record_index;
         normalized.instance_root_record = before.instance_root_record;
         normalized.components_root_record = before.components_root_record;
         normalized.registry_flag = before.registry_flag;
@@ -1300,7 +1363,7 @@ pub(crate) fn validate_act_root_edits(
         normalized.display_name.clone_from(&before.display_name);
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
-                "F3D ACT root edit changes fields outside fixed numeric graph links: {id}"
+                "F3D ACT root edit changes fields outside supported graph links and fixed-length strings: {id}"
             )));
         }
         if after == before {
@@ -1470,14 +1533,10 @@ pub(crate) fn validate_configuration_edits(
                 "retained F3D configuration edit changes entry identity: {name}"
             )));
         }
-        if before.payload != after.payload {
+        if before.payload != after.payload || before.variant_order != after.variant_order {
             edits.insert(
                 name.to_owned(),
-                serde_json::to_vec(&after.payload).map_err(|error| {
-                    CodecError::Malformed(format!(
-                        "cannot encode retained F3D configuration {name}: {error}"
-                    ))
-                })?,
+                crate::design::configurations::encode_configuration_payload(after)?,
             );
         }
     }
@@ -2374,6 +2433,29 @@ fn valid_sketch_geometry(geometry: &SketchCurveGeometry) -> bool {
     }
 }
 
+pub(crate) fn encode_sketch_relation_state(
+    relation_id: &str,
+    raw_bytes: &[u8],
+    state: u64,
+) -> Result<Vec<u8>, CodecError> {
+    match crate::design::decode::sketch::relation_mask_width(raw_bytes).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "F3D sketch relation {relation_id} has no valid mask-width discriminator"
+        ))
+    })? {
+        crate::design::decode::sketch::SketchRelationMaskWidth::U64 => {
+            Ok(state.to_le_bytes().to_vec())
+        }
+        crate::design::decode::sketch::SketchRelationMaskWidth::U32 => u32::try_from(state)
+            .map(|state| state.to_le_bytes().to_vec())
+            .map_err(|_| {
+                CodecError::NotImplemented(format!(
+                    "F3D sketch relation {relation_id} stores a u32 mask that cannot carry the requested 64-bit state"
+                ))
+            }),
+    }
+}
+
 pub(crate) fn validate_sketch_relation_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<SketchRelationEdit>>, CodecError> {
@@ -2474,24 +2556,8 @@ pub(crate) fn validate_sketch_relation_edits(
             &mut values,
         )?;
         if relation.state != before.state {
-            // The stored mask width follows the record's class version: a u64
-            // with the paired member run, a u32 without it.
-            let paired_run =
-                crate::design::decode::sketch::relation_has_paired_member_run(&relation.raw_bytes)
-                    .unwrap_or(true);
-            let encoded = if paired_run {
-                relation.state.to_le_bytes().to_vec()
-            } else {
-                u32::try_from(relation.state)
-                    .map_err(|_| {
-                        CodecError::NotImplemented(format!(
-                            "F3D sketch relation {} stores a u32 mask that cannot carry the requested 64-bit state",
-                            relation.id
-                        ))
-                    })?
-                    .to_le_bytes()
-                    .to_vec()
-            };
+            let encoded =
+                encode_sketch_relation_state(&relation.id, &before.raw_bytes, relation.state)?;
             values.push((
                 relation.byte_offset + u64::from(relation.state_offset),
                 encoded,

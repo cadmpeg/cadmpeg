@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse body members, bounds, bindings, and visibility.
 
-use crate::bytes::lp_ascii_filtered;
+use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::{role, ContainerScan};
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::RECIPES;
@@ -14,7 +14,7 @@ use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::le::{f64_at, u32_at, u32_at as read_u32, u64_at as read_u64};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point3;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Decode the `BodiesRoot` member list following the doubled `BodiesRoot`
 /// marker in each design `BulkStream` entry in `scan`: each member's entity
@@ -32,7 +32,7 @@ pub fn decode_body_members(scan: &ContainerScan) -> Result<Vec<DesignBodyMember>
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(start) = bytes
@@ -102,8 +102,7 @@ pub fn decode_body_bounds(
             continue;
         };
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
@@ -369,65 +368,206 @@ pub(crate) struct BodyBinding {
     pub entity_suffix_offset: usize,
 }
 
-/// Parse every BREP body-map record in a Design `BulkStream`: a `u32` pair
-/// count, `count` pairs of `(u64 asm_body_key, u64 entity_suffix)`, the
-/// trailing record ref and pad, then the length-prefixed UTF-16 blob name
-/// ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
-pub(crate) fn body_bindings(bytes: &[u8]) -> Vec<BodyBinding> {
-    let needle: Vec<u8> = "BREP.".encode_utf16().flat_map(u16::to_le_bytes).collect();
+/// Parse every exactly indexed BREP body-map record in a Design `BulkStream`.
+///
+/// The type GUID names a family with more than one record frame. The
+/// `MetaStream` entity list and primary record index select exact candidate
+/// extents. A candidate is a body map only when one supported reserved-zero
+/// width makes its count, pair run, tail, and basename consume that extent.
+pub(crate) fn body_bindings(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Result<Vec<BodyBinding>, CodecError> {
+    let record_frames = crate::metastream::primary_record_frames(meta, bytes.len())?;
+
+    let mut primary_by_entity = HashMap::<u64, Option<usize>>::new();
+    for (ordinal, record) in meta.records.iter().enumerate() {
+        primary_by_entity
+            .entry(record.entity_id)
+            .and_modify(|record_ordinal| *record_ordinal = None)
+            .or_insert(Some(ordinal));
+    }
+
     let mut out = Vec::new();
-    for offset in bytes
-        .windows(needle.len())
-        .enumerate()
-        .filter_map(|(offset, window)| (window == needle).then_some(offset))
-    {
-        let Some(name_chars) = offset
-            .checked_sub(4)
-            .and_then(|at| read_u32(bytes, at))
-            .map(|chars| chars as usize)
-        else {
+    let mut typed_entities = HashSet::new();
+    for (type_ordinal, design_type) in meta.types.iter().enumerate() {
+        if !design_type
+            .type_guid
+            .eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_TYPE_GUID)
+        {
             continue;
-        };
-        let Some(blob_name) = bytes
-            .get(offset..offset + name_chars * 2)
-            .map(utf16_le_string)
-        else {
-            continue;
-        };
-        // 16 bytes separate the pairs from the name: the 12-byte record tail
-        // and the name's u32 length prefix.
-        let Some(pairs_end) = offset.checked_sub(16) else {
-            continue;
-        };
-        // The pair count precedes the pairs; scanning ascending is unambiguous
-        // because the high halves of the little-endian ids are zero.
-        for count in 1usize..=64 {
-            let span = 16 * count;
-            let Some(count_at) = pairs_end.checked_sub(span + 4) else {
-                break;
-            };
-            if read_u32(bytes, count_at) != Some(count as u32) {
-                continue;
+        }
+        if design_type.version != crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION {
+            return Err(CodecError::NotImplemented(format!(
+                "unsupported F3D Design body-map carrier version {}",
+                design_type.version
+            )));
+        }
+        if design_type.module != DESIGN_MODULE_BODY
+            || !design_type.base_type_guid.as_deref().is_some_and(|base| {
+                base.eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID)
+            })
+        {
+            return Err(CodecError::Malformed(
+                "F3D Design body-map carrier type has incompatible registration metadata".into(),
+            ));
+        }
+        let class_tag = u32::try_from(type_ordinal)
+            .ok()
+            .and_then(|ordinal| ordinal.checked_add(256))
+            .filter(|class_tag| *class_tag <= 999)
+            .ok_or_else(|| {
+                CodecError::Malformed(
+                    "F3D Design body-map carrier class tag is not three digits".into(),
+                )
+            })?;
+        let class_tag = class_tag.to_string();
+
+        for &entity_id in &design_type.entity_ids {
+            if !typed_entities.insert(entity_id) {
+                return Err(CodecError::Malformed(format!(
+                    "F3D Design body-map carrier entity {entity_id} is registered more than once"
+                )));
             }
-            for pair in 0..count {
-                let at = count_at + 4 + pair * 16;
-                if let (Some(key), Some(suffix)) = (read_u64(bytes, at), read_u64(bytes, at + 8)) {
-                    out.push(BodyBinding {
-                        blob_name: blob_name.clone(),
-                        blob_name_offset: offset,
-                        pair_count: count as u32,
-                        pair_ordinal: pair as u32,
-                        asm_key: key,
-                        asm_key_offset: at,
-                        entity_suffix: suffix,
-                        entity_suffix_offset: at + 8,
-                    });
+            let record_ordinal = match primary_by_entity.get(&entity_id) {
+                Some(Some(record_ordinal)) => *record_ordinal,
+                Some(None) => {
+                    return Err(CodecError::Malformed(format!(
+                    "F3D Design body-map carrier entity {entity_id} has multiple primary records"
+                )))
+                }
+                None => {
+                    return Err(CodecError::Malformed(format!(
+                        "F3D Design body-map carrier entity {entity_id} has no primary record"
+                    )))
+                }
+            };
+            let frame = record_frames[record_ordinal];
+            let start = frame.start;
+            let end = frame.end;
+            let record_index = u32::try_from(entity_id).map_err(|_| {
+                CodecError::Malformed(format!(
+                    "F3D Design body-map carrier entity {entity_id} exceeds u32"
+                ))
+            })?;
+            if read_u32(bytes, start) != Some(3)
+                || bytes.get(start + 4..start + 7) != Some(class_tag.as_bytes())
+                || read_u32(bytes, start + 7) != Some(record_index)
+            {
+                return Err(CodecError::Malformed(format!(
+                    "F3D Design body-map carrier entity {entity_id} has an invalid indexed header"
+                )));
+            }
+
+            let mut matched = None;
+            for prefix_len in crate::design::body::BODY_MAP_ZERO_PREFIX_LENGTHS {
+                let Some(bindings) = parse_body_map_frame(bytes, start, end, prefix_len)? else {
+                    continue;
+                };
+                if matched.replace(bindings).is_some() {
+                    return Err(CodecError::Malformed(format!(
+                        "F3D Design body-map carrier entity {entity_id} has an ambiguous frame"
+                    )));
                 }
             }
-            break;
+            if let Some(bindings) = matched {
+                out.extend(bindings);
+            }
         }
     }
-    out
+    Ok(out)
+}
+
+fn parse_body_map_frame(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    prefix_len: usize,
+) -> Result<Option<Vec<BodyBinding>>, CodecError> {
+    let Some(count_at) = start
+        .checked_add(11)
+        .and_then(|payload| payload.checked_add(prefix_len))
+    else {
+        return Ok(None);
+    };
+    if !bytes
+        .get(start + 11..count_at)
+        .is_some_and(|prefix| prefix.iter().all(|byte| *byte == 0))
+    {
+        return Ok(None);
+    }
+    let Some(pair_count) = read_u32(bytes, count_at) else {
+        return Ok(None);
+    };
+    let count = usize::try_from(pair_count).map_err(|_| {
+        CodecError::Malformed(format!(
+            "F3D Design body map at byte {start} pair count does not fit this platform"
+        ))
+    })?;
+    let Some(pairs_start) = count_at.checked_add(4) else {
+        return Ok(None);
+    };
+    let Some(pairs_end) = count
+        .checked_mul(16)
+        .and_then(|span| pairs_start.checked_add(span))
+    else {
+        return Ok(None);
+    };
+    let Some(name_at) = pairs_end.checked_add(12) else {
+        return Ok(None);
+    };
+    if read_u64(bytes, pairs_end).is_none() || read_u32(bytes, pairs_end + 8) != Some(0) {
+        return Ok(None);
+    }
+    let Some(max_name_chars) = name_at
+        .checked_add(4)
+        .and_then(|payload| end.checked_sub(payload))
+        .map(|remaining| remaining / 2)
+    else {
+        return Ok(None);
+    };
+    let Some((blob_name, _name_end)) =
+        lp_utf16_bounded(bytes, name_at, 0..=max_name_chars).filter(|(name, name_end)| {
+            *name_end == end
+                && ((pair_count == 0 && name.is_empty())
+                    || (pair_count > 0 && is_brep_blob_basename(name)))
+        })
+    else {
+        return Ok(None);
+    };
+
+    let mut bindings = Vec::new();
+    bindings.try_reserve(count).map_err(|_| {
+        CodecError::Malformed(format!(
+            "F3D Design body map at byte {start} pair count exceeds decoder capacity"
+        ))
+    })?;
+    for pair in 0..count {
+        let at = pairs_start + pair * 16;
+        let (Some(key), Some(suffix)) = (read_u64(bytes, at), read_u64(bytes, at + 8)) else {
+            return Err(CodecError::Malformed(format!(
+                "F3D Design body map at byte {start} has a truncated pair run"
+            )));
+        };
+        bindings.push(BodyBinding {
+            blob_name: blob_name.clone(),
+            blob_name_offset: name_at + 4,
+            pair_count,
+            pair_ordinal: u32::try_from(pair).expect("pair ordinal is below its u32 pair count"),
+            asm_key: key,
+            asm_key_offset: at,
+            entity_suffix: suffix,
+            entity_suffix_offset: at + 8,
+        });
+    }
+    Ok(Some(bindings))
+}
+
+fn is_brep_blob_basename(value: &str) -> bool {
+    let extension = value.rsplit_once('.').map(|(_, extension)| extension);
+    value.starts_with("BREP.")
+        && matches!(extension, Some("smb" | "smbh"))
+        && !value.contains(['/', '\\'])
 }
 
 /// Decode every ordered Design BREP body-map pair and resolve each pair in its
@@ -439,16 +579,18 @@ pub fn decode_design_body_bindings(
 ) -> Result<Vec<DesignBodyBinding>, CodecError> {
     let active_basename = active_brep_entry.and_then(|entry| entry.rsplit('/').next());
     let mut out = Vec::new();
-    for entry in scan.entries.iter().filter(|entry| {
-        entry.role == role::BULKSTREAM
-            && entry.name.contains("Design")
-            && scan
-                .asset_folder
-                .as_ref()
-                .is_none_or(|folder| entry.name.starts_with(&format!("{folder}/")))
-    }) {
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+    {
         let bytes = scan.entry_bytes(&entry.name)?;
-        for binding in body_bindings(bytes) {
+        let Some(metadata) =
+            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+        else {
+            continue;
+        };
+        for binding in body_bindings(bytes, &metadata)? {
             let source_bodies = body_keys
                 .iter()
                 .filter(|key| {
@@ -521,17 +663,19 @@ pub(crate) fn decode_all_body_visibility(
     scan: &ContainerScan,
 ) -> Result<HashMap<(String, u64), DecodedBodyVisibility>, CodecError> {
     let mut out = HashMap::new();
-    for entry in scan.entries.iter().filter(|entry| {
-        entry.role == role::BULKSTREAM
-            && entry.name.contains("Design")
-            && scan
-                .asset_folder
-                .as_ref()
-                .is_none_or(|folder| entry.name.starts_with(&format!("{folder}/")))
-    }) {
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+    {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let hidden_by_entity = browser_node_hidden_flags(bytes);
-        for binding in body_bindings(bytes) {
+        let Some(metadata) =
+            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+        else {
+            continue;
+        };
+        let hidden_by_entity = typed_browser_node_hidden_flags(bytes, &metadata)?;
+        for binding in body_bindings(bytes, &metadata)? {
             if let Some(node) = hidden_by_entity.get(&binding.entity_suffix) {
                 out.insert(
                     (binding.blob_name, binding.asm_key),
@@ -549,28 +693,55 @@ pub(crate) fn decode_all_body_visibility(
     Ok(out)
 }
 
-/// Scan for browser-node records: a length-prefixed 36-character UTF-16 GUID,
-/// one hidden-flag byte, the `01 01` marker, and the `u64` design-entity
-/// suffix.
+/// Visibility selected from one typed browser-node record.
 #[derive(Debug, Clone, Copy)]
 struct BrowserNodeVisibility {
     byte_offset: u64,
     hidden: bool,
 }
 
-fn browser_node_hidden_flags(bytes: &[u8]) -> HashMap<u64, BrowserNodeVisibility> {
-    browser_node_records(bytes)
-        .into_iter()
-        .map(|record| {
-            (
-                record.entity_suffix,
+fn typed_browser_node_hidden_flags(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Result<HashMap<u64, BrowserNodeVisibility>, CodecError> {
+    let nodes = crate::design::decode::presentation::browser_node_records(bytes, meta)?;
+    let presentations = crate::design::decode::presentation::body_presentations(bytes, meta)?;
+    let mut nodes_by_entity = HashMap::<u64, Vec<_>>::new();
+    for node in &nodes {
+        nodes_by_entity
+            .entry(node.entity_suffix)
+            .or_default()
+            .push(node);
+    }
+
+    let mut out = HashMap::new();
+    for (entity_suffix, candidates) in nodes_by_entity {
+        let mut linked = presentations
+            .iter()
+            .filter(|presentation| presentation.entity_suffix == entity_suffix)
+            .filter_map(|presentation| presentation.browser_node.as_ref())
+            .collect::<Vec<_>>();
+        linked.sort_by_key(|node| node.record_index);
+        linked.dedup_by_key(|node| node.record_index);
+        let selected = match linked.as_slice() {
+            [node] => Some(*node),
+            [] => match candidates.as_slice() {
+                [node] => Some(*node),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(node) = selected {
+            out.insert(
+                entity_suffix,
                 BrowserNodeVisibility {
-                    byte_offset: record.byte_offset,
-                    hidden: record.hidden,
+                    byte_offset: node.hidden_offset,
+                    hidden: node.hidden,
                 },
-            )
-        })
-        .collect()
+            );
+        }
+    }
+    Ok(out)
 }
 
 /// Map each browser-node GUID to its Design entity suffix.
@@ -597,8 +768,6 @@ pub(crate) fn browser_node_entities(bytes: &[u8]) -> HashMap<String, u64> {
 struct BrowserNodeRecord {
     guid: String,
     entity_suffix: u64,
-    byte_offset: u64,
-    hidden: bool,
 }
 
 fn browser_node_records(bytes: &[u8]) -> Vec<BrowserNodeRecord> {
@@ -615,12 +784,10 @@ fn browser_node_records(bytes: &[u8]) -> Vec<BrowserNodeRecord> {
         }
         let flag_at = at + 4 + GUID_BYTES;
         if bytes.get(flag_at + 1..flag_at + 3) == Some(&[0x01, 0x01]) {
-            if let (flag @ (0 | 1), Some(member)) = (bytes[flag_at], read_u64(bytes, flag_at + 3)) {
+            if let (0 | 1, Some(member)) = (bytes[flag_at], read_u64(bytes, flag_at + 3)) {
                 out.push(BrowserNodeRecord {
                     guid: utf16_le_string(&bytes[at + 4..at + 4 + GUID_BYTES]),
                     entity_suffix: member,
-                    byte_offset: flag_at as u64,
-                    hidden: flag == 1,
                 });
             }
         }
@@ -641,4 +808,289 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
     bytes
         .chunks_exact(2)
         .all(|pair| pair[1] == 0 && (pair[0].is_ascii_hexdigit() || pair[0] == b'-'))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bytes::lp_utf16_bytes;
+    use crate::design::presentation::{
+        APPEARANCE_LIBRARY_ID, BODY_PRESENTATION_BASE_TYPE_GUID, BODY_PRESENTATION_TYPE_GUID,
+        BODY_PRESENTATION_TYPE_VERSION, BODY_SCENE_NODE_TYPE_GUID, BODY_SCENE_NODE_TYPE_VERSION,
+        BREP_CONTAINER_TYPE_GUID, BREP_CONTAINER_TYPE_VERSION, BROWSER_NODE_BASE_TYPE_GUID,
+        BROWSER_NODE_TYPE_GUID, BROWSER_NODE_TYPE_VERSION, PHYSICAL_MATERIAL_LIBRARY_ID,
+    };
+    use crate::records::DESIGN_MODULE_FUSION;
+
+    fn push_indexed_header(out: &mut Vec<u8>, class_tag: &str, record_index: u32) {
+        out.extend_from_slice(&3u32.to_le_bytes());
+        out.extend_from_slice(class_tag.as_bytes());
+        out.extend_from_slice(&record_index.to_le_bytes());
+    }
+
+    fn push_entity_header(out: &mut Vec<u8>, class_tag: &str, entity: u64) {
+        out.extend_from_slice(&3u32.to_le_bytes());
+        out.extend_from_slice(class_tag.as_bytes());
+        out.extend_from_slice(&entity.to_le_bytes());
+        out.extend_from_slice(&[0; 6]);
+        out.extend(lp_utf16_bytes(&format!("0_{entity}")));
+    }
+
+    fn push_reference(out: &mut Vec<u8>, target: u64) {
+        out.push(1);
+        out.extend_from_slice(&target.to_le_bytes());
+        out.extend_from_slice(&[0, 0]);
+    }
+
+    fn presentation_type(
+        type_guid: &str,
+        base_type_guid: Option<&str>,
+        version: u32,
+        module: &str,
+        entity_ids: Vec<u64>,
+    ) -> crate::records::SegmentType {
+        crate::records::SegmentType {
+            id: String::new(),
+            byte_offset: 0,
+            type_guid: type_guid.into(),
+            type_guid_offset: 0,
+            base_type_guid: base_type_guid.map(str::to_owned),
+            base_type_guid_offset: base_type_guid.map(|_| 0),
+            version,
+            version_offset: 0,
+            module: module.into(),
+            entity_ids,
+            entity_id_offsets: Vec::new(),
+        }
+    }
+
+    fn primary_record(entity_id: u64, bulk_offset: usize) -> crate::metastream::RecordIndexEntry {
+        crate::metastream::RecordIndexEntry {
+            entity_id,
+            bulk_offset: bulk_offset as u64,
+        }
+    }
+
+    fn body_map_bytes(prefix_len: usize, declared_count: u32, pairs: &[(u64, u64)]) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_indexed_header(&mut out, "256", 900);
+        out.extend(std::iter::repeat_n(0, prefix_len));
+        out.extend_from_slice(&declared_count.to_le_bytes());
+        for (key, suffix) in pairs {
+            out.extend_from_slice(&key.to_le_bytes());
+            out.extend_from_slice(&suffix.to_le_bytes());
+        }
+        out.extend_from_slice(&1793u64.to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes());
+        out.extend(lp_utf16_bytes(if declared_count == 0 {
+            ""
+        } else {
+            "BREP.synthetic.smbh"
+        }));
+        out
+    }
+
+    fn body_map_metadata() -> crate::metastream::MetaStream {
+        crate::metastream::MetaStream {
+            types: vec![crate::records::SegmentType {
+                id: String::new(),
+                byte_offset: 0,
+                type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID.into(),
+                type_guid_offset: 0,
+                base_type_guid: Some(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID.into()),
+                base_type_guid_offset: Some(0),
+                version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
+                version_offset: 0,
+                module: DESIGN_MODULE_BODY.into(),
+                entity_ids: vec![900],
+                entity_id_offsets: vec![0],
+            }],
+            records: vec![crate::metastream::RecordIndexEntry {
+                entity_id: 900,
+                bulk_offset: 0,
+            }],
+            secondary_records: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn body_map_count_is_bounded_by_the_stream_not_sixty_four_pairs() {
+        let pairs = (0u64..65)
+            .map(|ordinal| (1000 + ordinal, (1u64 << 40) + ordinal))
+            .collect::<Vec<_>>();
+        let bindings = body_bindings(&body_map_bytes(10, 65, &pairs), &body_map_metadata())
+            .expect("65-pair body map");
+        assert_eq!(bindings.len(), 65);
+        assert!(bindings.iter().all(|binding| binding.pair_count == 65));
+        assert_eq!(bindings[0].pair_ordinal, 0);
+        assert_eq!(bindings[64].pair_ordinal, 64);
+        assert_eq!(bindings[64].asm_key, 1064);
+        assert_eq!(bindings[64].entity_suffix, (1u64 << 40) + 64);
+    }
+
+    #[test]
+    fn both_empty_body_map_prefixes_have_no_pairs_or_brep_basename() {
+        for prefix_len in crate::design::body::BODY_MAP_ZERO_PREFIX_LENGTHS {
+            let bytes = body_map_bytes(prefix_len, 0, &[]);
+            let frame = parse_body_map_frame(&bytes, 0, bytes.len(), prefix_len)
+                .expect("empty body-map frame")
+                .expect("supported empty body-map variant");
+            assert!(frame.is_empty());
+            assert!(body_bindings(&bytes, &body_map_metadata())
+                .expect("empty typed body map")
+                .is_empty());
+        }
+    }
+
+    #[test]
+    fn body_map_header_prevents_a_high_word_count_alias() {
+        let bytes = body_map_bytes(10, 2, &[(10, (1u64 << 32) + 77), (20, 30)]);
+        let bindings =
+            body_bindings(&bytes, &body_map_metadata()).expect("typed two-pair body map");
+        assert_eq!(bindings.len(), 2);
+        assert_eq!(bindings[0].entity_suffix, (1u64 << 32) + 77);
+        assert_eq!(bindings[1].asm_key, 20);
+    }
+
+    #[test]
+    fn truncated_body_map_frame_is_not_decoded() {
+        let bytes = body_map_bytes(10, 2, &[(10, 20)]);
+        assert!(body_bindings(&bytes, &body_map_metadata())
+            .expect("typed carrier record")
+            .is_empty());
+    }
+
+    #[test]
+    fn body_map_parser_does_not_scan_an_unindexed_nested_header() {
+        let mut bytes = Vec::new();
+        push_indexed_header(&mut bytes, "256", 900);
+        bytes.extend_from_slice(&[0xff; 4]);
+        bytes.extend(body_map_bytes(10, 1, &[(10, 20)]));
+
+        assert!(body_bindings(&bytes, &body_map_metadata())
+            .expect("outer typed carrier record")
+            .is_empty());
+    }
+
+    fn push_browser_node(
+        out: &mut Vec<u8>,
+        record_index: u32,
+        guid: &str,
+        hidden: bool,
+        entity: u64,
+    ) -> u64 {
+        push_indexed_header(out, "257", record_index);
+        out.extend_from_slice(&[0; 10]);
+        out.extend(lp_utf16_bytes(guid));
+        let hidden_offset = out.len() as u64;
+        out.push(u8::from(hidden));
+        out.extend_from_slice(&[1, 1]);
+        out.extend_from_slice(&entity.to_le_bytes());
+        hidden_offset
+    }
+
+    #[test]
+    fn presentation_guid_selects_visibility_when_suffix_repeats() {
+        let entity = 42u64;
+        let selected_guid = "11111111-2222-8333-A444-555555555555";
+        let competing_guid = "AAAAAAAA-BBBB-8CCC-9DDD-EEEEEEEEEEEE";
+        let mut bytes = Vec::new();
+        push_entity_header(&mut bytes, "256", entity);
+        bytes.extend(lp_utf16_bytes(selected_guid));
+        bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        bytes.extend(lp_utf16_bytes("99999999-8888-8777-A666-555555555555"));
+        bytes.extend(lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID));
+        bytes.extend(lp_utf16_bytes("PrismMaterial-001"));
+        push_reference(&mut bytes, 7);
+        bytes.push(0);
+        push_reference(&mut bytes, entity + 1);
+        bytes.extend(lp_utf16_bytes("Body"));
+        bytes.extend_from_slice(&1.0f32.to_le_bytes());
+        bytes.extend_from_slice(&[1, 1]);
+        bytes.extend(lp_utf16_bytes("12345678-1234-8234-A234-123456789ABC"));
+        bytes.extend(lp_utf16_bytes(APPEARANCE_LIBRARY_ID));
+        let selected_start = bytes.len();
+        let selected_offset = push_browser_node(&mut bytes, 100, selected_guid, false, entity);
+        let competing_start = bytes.len();
+        push_browser_node(&mut bytes, 101, competing_guid, true, entity);
+
+        let meta = crate::metastream::MetaStream {
+            types: vec![
+                presentation_type(
+                    BODY_PRESENTATION_TYPE_GUID,
+                    Some(BODY_PRESENTATION_BASE_TYPE_GUID),
+                    BODY_PRESENTATION_TYPE_VERSION,
+                    DESIGN_MODULE_BODY,
+                    vec![entity],
+                ),
+                presentation_type(
+                    BROWSER_NODE_TYPE_GUID,
+                    Some(BROWSER_NODE_BASE_TYPE_GUID),
+                    BROWSER_NODE_TYPE_VERSION,
+                    DESIGN_MODULE_FUSION,
+                    vec![100, 101],
+                ),
+                presentation_type(
+                    BREP_CONTAINER_TYPE_GUID,
+                    None,
+                    BREP_CONTAINER_TYPE_VERSION,
+                    "",
+                    vec![7],
+                ),
+                presentation_type(
+                    BODY_SCENE_NODE_TYPE_GUID,
+                    None,
+                    BODY_SCENE_NODE_TYPE_VERSION,
+                    "",
+                    vec![entity + 1],
+                ),
+            ],
+            records: vec![
+                primary_record(entity, 0),
+                primary_record(100, selected_start),
+                primary_record(101, competing_start),
+            ],
+            secondary_records: Vec::new(),
+        };
+        let visibility =
+            typed_browser_node_hidden_flags(&bytes, &meta).expect("typed presentation graph");
+        let selected = visibility.get(&entity).expect("presentation-selected node");
+        assert_eq!(selected.byte_offset, selected_offset);
+        assert!(!selected.hidden);
+
+        let mut nodes_only = Vec::new();
+        let selected_start = nodes_only.len();
+        push_browser_node(&mut nodes_only, 100, selected_guid, false, entity);
+        let competing_start = nodes_only.len();
+        push_browser_node(&mut nodes_only, 101, competing_guid, true, entity);
+        let meta = crate::metastream::MetaStream {
+            types: vec![
+                presentation_type(
+                    BODY_PRESENTATION_TYPE_GUID,
+                    Some(BODY_PRESENTATION_BASE_TYPE_GUID),
+                    BODY_PRESENTATION_TYPE_VERSION,
+                    DESIGN_MODULE_BODY,
+                    Vec::new(),
+                ),
+                presentation_type(
+                    BROWSER_NODE_TYPE_GUID,
+                    Some(BROWSER_NODE_BASE_TYPE_GUID),
+                    BROWSER_NODE_TYPE_VERSION,
+                    DESIGN_MODULE_FUSION,
+                    vec![100, 101],
+                ),
+            ],
+            records: vec![
+                primary_record(100, selected_start),
+                primary_record(101, competing_start),
+            ],
+            secondary_records: Vec::new(),
+        };
+        let visibility =
+            typed_browser_node_hidden_flags(&nodes_only, &meta).expect("typed browser nodes");
+        assert!(
+            !visibility.contains_key(&entity),
+            "two unjoined typed nodes are ambiguous"
+        );
+    }
 }

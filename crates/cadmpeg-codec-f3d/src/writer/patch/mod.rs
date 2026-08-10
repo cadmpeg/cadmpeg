@@ -20,20 +20,21 @@ pub(crate) mod geometry;
 pub(crate) mod records;
 use edits::{
     validate_act_appearance_bindings, validate_act_entity_edits, validate_act_guid_edits,
-    validate_act_root_edits, validate_body_color_edits, validate_body_member_edits,
-    validate_body_native_key_edits, validate_body_transform_edits, validate_body_visibility_edits,
-    validate_coedge_sense_edits, validate_configuration_edits, validate_construction_recipe_edits,
-    validate_creation_timestamp_edits, validate_curve_edits, validate_design_type_edits,
-    validate_edge_continuity_edits, validate_edge_ownership_edits, validate_edge_range_edits,
-    validate_entity_header_edits, validate_face_color_edits, validate_face_sense_edits,
-    validate_face_sidedness_edits, validate_history_state_edits, validate_lost_edge_edits,
-    validate_material_assignment_appearances, validate_material_assignment_edits,
-    validate_pcurve_edits, validate_persistent_reference_edits, validate_procedural_curve_edits,
-    validate_procedural_surface_edits, validate_procedural_surface_fit_edits,
-    validate_sketch_curve_edits, validate_sketch_point_edits, validate_sketch_relation_edits,
-    validate_surface_edits, validate_tolerant_coedge_edits, validate_tolerant_edge_edits,
-    validate_tolerant_vertex_edits, validate_transform_hint_edits, validate_vertex_ownership_edits,
-    validate_wire_topology_edits, NurbsCurveEdit, NurbsSurfaceEdit, PatchNatives,
+    validate_act_registry_channel_edits, validate_act_root_edits, validate_body_color_edits,
+    validate_body_member_edits, validate_body_native_key_edits, validate_body_transform_edits,
+    validate_body_visibility_edits, validate_coedge_sense_edits, validate_configuration_edits,
+    validate_construction_recipe_edits, validate_creation_timestamp_edits, validate_curve_edits,
+    validate_design_type_edits, validate_edge_continuity_edits, validate_edge_ownership_edits,
+    validate_edge_range_edits, validate_entity_header_edits, validate_face_color_edits,
+    validate_face_sense_edits, validate_face_sidedness_edits, validate_history_state_edits,
+    validate_lost_edge_edits, validate_material_assignment_appearances,
+    validate_material_assignment_edits, validate_pcurve_edits, validate_persistent_reference_edits,
+    validate_procedural_curve_edits, validate_procedural_surface_edits,
+    validate_procedural_surface_fit_edits, validate_sketch_curve_edits,
+    validate_sketch_point_edits, validate_sketch_relation_edits, validate_surface_edits,
+    validate_tolerant_coedge_edits, validate_tolerant_edge_edits, validate_tolerant_vertex_edits,
+    validate_transform_hint_edits, validate_vertex_ownership_edits, validate_wire_topology_edits,
+    NurbsCurveEdit, NurbsSurfaceEdit, PatchNatives,
 };
 use geometry::patch_geometry;
 use records::{
@@ -177,9 +178,25 @@ pub fn write_semantic(
     let material_assignment_edits = validate_material_assignment_edits(natives)?;
     let protein_appearance_edits =
         validate_material_assignment_appearances(natives, &baseline.ir, target)?;
-    let act_guid_edits = validate_act_guid_edits(natives)?;
+    let mut act_guid_edits = validate_act_guid_edits(natives)?;
+    for (stream, edits) in validate_act_registry_channel_edits(natives)? {
+        act_guid_edits.entry(stream).or_default().extend(edits);
+    }
     let act_root_edits = validate_act_root_edits(natives)?;
     let act_entity_edits = validate_act_entity_edits(natives)?;
+    let baseline_act_table_references = natives
+        .baseline
+        .map(|native| &native.act_table_references[..])
+        .unwrap_or_default();
+    let target_act_table_references = natives
+        .target
+        .map(|native| &native.act_table_references[..])
+        .unwrap_or_default();
+    if baseline_act_table_references != target_act_table_references {
+        return Err(CodecError::NotImplemented(
+            "F3D ACT table-reference edits require regeneration of the complete table graph".into(),
+        ));
+    }
     let configuration_edits = validate_configuration_edits(natives)?;
     validate_act_appearance_bindings(natives, &baseline.ir, target)?;
     let body_transform_edits =
@@ -326,6 +343,9 @@ pub fn write_semantic(
             .design_material_assignments
             .clone_from(&target_native.design_material_assignments);
         supported.act_guids.clone_from(&target_native.act_guids);
+        supported
+            .act_registry_channels
+            .clone_from(&target_native.act_registry_channels);
         supported
             .act_root_components
             .clone_from(&target_native.act_root_components);
