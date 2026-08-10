@@ -172,16 +172,6 @@ from a conformant file.
 
 **Need.** We need each row to name the arena of the entity the fixture exists to exercise, and a test that compares the table with the matrix `destination` column.
 
-### EV-04. Assertions that restate a generated identifier
-
-**Question.** Which ordered collections have order evidence?
-
-**Known.** `tests.rs:5189-5214` is named `decode_preserves_ordered_type_141_pcurve_collections` and asserts `coedge.pcurves[0].pcurve.0.ends_with(":0:0:0")` and `[1]...ends_with(":0:0:1")`. The identifier suffix is the array index, minted by the `enumerate()` that builds the array (`trimming.rs:684-691`). The assertion holds for every permutation of the source list, so a decoder that reverses, sorts, or de-duplicates the Type 141 pcurve pointers keeps the test green. The fixture supplies two distinguishable pcurve geometries and neither is inspected.
-
-**Note.** The sibling test at `tests.rs:5312-5316` is sound, because it also asserts the isoparametric flag, which comes from the source tuple and not from an index.
-
-**Need.** We need order evidence taken from the data, not from a generated identifier.
-
 ### EV-05. The power-basis conversion is exercised on linear data only
 
 **Question.** Is the Type 112 and Type 114 power-basis to Bezier conversion correct?

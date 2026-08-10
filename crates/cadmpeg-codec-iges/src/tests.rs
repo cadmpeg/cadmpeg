@@ -6472,8 +6472,30 @@ fn decode_preserves_ordered_type_141_pcurve_collections() {
         .find(|coedge| coedge.id.0 == "iges:model:coedge#D11:0:0")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report.losses));
     assert_eq!(coedge.pcurves.len(), 2);
-    assert!(coedge.pcurves[0].pcurve.0.ends_with(":0:0:0"));
-    assert!(coedge.pcurves[1].pcurve.0.ends_with(":0:0:1"));
+    let endpoints = coedge
+        .pcurves
+        .iter()
+        .map(|pcurve_use| {
+            let pcurve = result
+                .ir
+                .model
+                .pcurves
+                .iter()
+                .find(|pcurve| pcurve.id == pcurve_use.pcurve)
+                .expect("coedge pcurve resolves");
+            (
+                cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 0.0).expect("start evaluates"),
+                cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 1.0).expect("end evaluates"),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        endpoints,
+        [
+            (Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)),
+            (Point2::new(1.0, 1.0), Point2::new(0.0, 0.0)),
+        ]
+    );
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
