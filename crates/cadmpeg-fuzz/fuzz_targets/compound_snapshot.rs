@@ -17,7 +17,10 @@ fuzz_target!(|data: &[u8]| {
     let Ok(snapshot) = CompoundSnapshot::new(&ctx, root) else {
         return;
     };
-    if let Some(CompoundEntry::Stream(entry)) = snapshot.entries().first() {
+    if let Some(entry) = snapshot.entries().iter().find_map(|entry| match entry {
+        CompoundEntry::Stream(stream) => Some(stream),
+        CompoundEntry::Storage(_) => None,
+    }) {
         let _ = snapshot.open(&ctx, entry);
     }
 });

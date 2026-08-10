@@ -57,7 +57,7 @@ def counted_section(data: bytearray, values: list[bytes], item_size: int) -> Non
     push32(data, 4 + len(values) * item_size)
 
 
-def metadata_body(payload_length: int) -> bytes:
+def metadata_body(payload_length: int, short_section7: bool = False) -> bytes:
     data = bytearray()
     for value in (3, 0, 2, 1, 0, 4, 0):
         put16(data, len(data), value)
@@ -70,8 +70,8 @@ def metadata_body(payload_length: int) -> bytes:
     counted_section(data, [], 28)
     type_id = evidence.KERNEL_RECORD_TYPE_ID
     counted_section(data, [type_id + (1).to_bytes(2, "little") + (2).to_bytes(4, "little") + (3).to_bytes(2, "little") + (4).to_bytes(4, "little")], 28)
-    payloads = (0, 0, 0, 0, 0, 0, 0x48)
-    discriminators = (evidence.FREE, 0, 0, 0, 0, 0, 18)
+    payloads = (0, 0, 32 if short_section7 else 0, 0, 0, 0, 0x48)
+    discriminators = (evidence.FREE, 0, 1 if short_section7 else 0, 0, 0, 0, 18)
     push32(data, discriminators[0])
     for index in range(1, len(payloads)):
         push32(data, payloads[index - 1] + 4)
@@ -278,10 +278,11 @@ def synthetic_primary() -> bytes:
 
 def synthetic_v4_regular() -> bytes:
     sector_size = 4096
+    header_size = sector_size
     directory_sector = 0
     stream_sector = 1
     fat_sector = 2
-    file = bytearray(512 + (fat_sector + 1) * sector_size)
+    file = bytearray(header_size + (fat_sector + 1) * sector_size)
     file[:8] = evidence.MAGIC
     put16(file, 24, 0x003E)
     put16(file, 26, 4)
@@ -304,18 +305,25 @@ def synthetic_v4_regular() -> bytes:
         directory[offset + 68 : offset + 80] = bytes([0xFF]) * 12
     directory_entry(directory, 0, "Root Entry", 5, evidence.FREE, evidence.FREE, 1, evidence.EOC, 0)
     directory_entry(directory, 1, "Wide", 2, evidence.FREE, evidence.FREE, evidence.FREE, stream_sector, sector_size)
-    file[512 : 512 + sector_size] = directory
-    file[512 + stream_sector * sector_size : 512 + (stream_sector + 1) * sector_size] = bytes([0x6D]) * sector_size
+    file[header_size : header_size + sector_size] = directory
+    file[
+        header_size + stream_sector * sector_size : header_size + (stream_sector + 1) * sector_size
+    ] = bytes([0x6D]) * sector_size
     fat = [evidence.FREE] * (sector_size // 4)
     fat[directory_sector] = evidence.EOC
     fat[stream_sector] = evidence.EOC
     fat[fat_sector] = evidence.FAT_SECTOR
     for index, value in enumerate(fat):
-        put32(file, 512 + fat_sector * sector_size + index * 4, value)
+        put32(file, header_size + fat_sector * sector_size + index * 4, value)
     return bytes(file)
 
 
 class EvidenceTest(unittest.TestCase):
+    def test_metadata_section7_short_form_is_framed(self) -> None:
+        blocks, type_ids = evidence.parse_meta_body(metadata_body(1, short_section7=True))
+        self.assertEqual(blocks, [(True, 1)])
+        self.assertEqual(type_ids, [evidence.KERNEL_RECORD_TYPE_ID])
+
     def test_v4_uses_the_full_directory_stream_size(self) -> None:
         reader = evidence.CompoundReader(synthetic_v4_regular(), 1 << 20).parse()
         stream = reader.stream("Wide")

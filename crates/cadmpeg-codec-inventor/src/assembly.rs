@@ -195,12 +195,11 @@ where
 
 fn external_prototype(reference: &ExternalReferenceRecord) -> PrototypeReference {
     let path = (!reference.path.is_empty()).then(|| reference.path.clone());
-    let document_id = (path.is_none()
-        && reference
-            .document_id
-            .chars()
-            .any(|character| character != '0'))
-    .then(|| reference.document_id.clone());
+    let document_id = reference
+        .document_id
+        .chars()
+        .any(|character| character != '0')
+        .then(|| reference.document_id.clone());
     if path.is_none() && document_id.is_none() {
         return PrototypeReference::Unresolved;
     }
@@ -625,6 +624,51 @@ mod tests {
         assert_eq!(document.document_id, None);
         assert_eq!(document.resolution, ExternalResolution::Unresolved);
         assert_eq!(object, &None);
+    }
+
+    #[test]
+    fn projects_repeated_occurrences_with_distinct_stable_identity() {
+        let ufrx = [ufrx_occurrence(4, 7, 0), ufrx_occurrence(4, 8, 1)];
+        let reference = external_reference(4, "components/part.ipt", [0, 0]);
+        let occurrences = [assembly_occurrence(7), assembly_occurrence(8)];
+        let mut first = assembly_placement(7);
+        first.transform[0][3] = 1.0;
+        let mut second = assembly_placement(8);
+        second.transform[0][3] = 2.0;
+
+        let projection = project_occurrences(&ufrx, &[reference], &occurrences, &[first, second]);
+
+        assert_eq!(projection.unresolved_placements, 0);
+        assert_eq!(projection.occurrences.len(), 2);
+        assert_ne!(projection.occurrences[0].id, projection.occurrences[1].id);
+        assert_ne!(
+            projection.occurrences[0].transform,
+            projection.occurrences[1].transform
+        );
+    }
+
+    #[test]
+    fn preserves_path_and_document_id_on_external_prototypes() {
+        let mut reference = external_reference(4, "components/part.ipt", [0, 0]);
+        reference.document_id = "00112233445566778899aabbccddeeff".into();
+        let projection = project_occurrences(
+            &[ufrx_occurrence(4, 7, 0)],
+            &[reference],
+            &[assembly_occurrence(7)],
+            &[assembly_placement(7)],
+        );
+
+        let [projected] = projection.occurrences.as_slice() else {
+            panic!("one occurrence must be projected");
+        };
+        let PrototypeReference::External { document, .. } = &projected.prototype else {
+            panic!("the persisted document identity must remain external");
+        };
+        assert_eq!(document.path.as_deref(), Some("components/part.ipt"));
+        assert_eq!(
+            document.document_id.as_deref(),
+            Some("00112233445566778899aabbccddeeff")
+        );
     }
 
     #[test]

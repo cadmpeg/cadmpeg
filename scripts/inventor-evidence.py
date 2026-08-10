@@ -38,6 +38,9 @@ FAT_SECTOR = 0xFFFF_FFFD
 DIFAT_SECTOR = 0xFFFF_FFFC
 NO_STREAM = FREE
 KERNEL_RECORD_TYPE_ID = bytes.fromhex("5c5945f6d5113313100060a6bba647b5")
+V3_MAX_FILE_SIZE = 0x8000_0000
+RANGE_LOCK_START = 0x7FFF_FF00
+RANGE_LOCK_END = 0x8000_0000
 
 
 class EvidenceError(Exception):
@@ -144,10 +147,12 @@ class CompoundReader:
         self.max_stream_bytes = max_stream_bytes
         self.major = 0
         self.sector_size = 0
+        self.header_size = 512
         self.mini_sector_size = 0
         self.mini_cutoff = 0
         self.sector_count = 0
         self.fat: list[int] = []
+        self.full_fat: list[int] = []
         self.directory: list[DirectoryEntry] = []
         self.streams: dict[str, Stream] = {}
         self.roles: list[str | None] = []
@@ -160,6 +165,13 @@ class CompoundReader:
         self._parse_header()
         difat, difat_sector_ids = self._read_difat()
         self._load_fat(difat)
+        if any(self.fat[sector] != DIFAT_SECTOR for sector in difat_sector_ids):
+            raise EvidenceError("CFB DIFAT sector has the wrong role marker")
+        if self.major == 4 and len(self.source) > RANGE_LOCK_END:
+            range_lock_sector = RANGE_LOCK_START // self.sector_size - 1
+            if range_lock_sector >= self.sector_count or self.fat[range_lock_sector] != EOC:
+                raise EvidenceError("CFB range lock sector is not an end-of-chain sector")
+            self._claim([range_lock_sector], "range lock")
         self._claim(difat, "fat")
         self._claim(difat_sector_ids, "difat")
 
@@ -191,7 +203,9 @@ class CompoundReader:
             root.size,
             "root mini stream",
         )
-        self.mini_roles = [None] * (len(self.root_mini_data) // self.mini_sector_size)
+        self.mini_roles = [None] * (
+            (len(self.root_mini_data) + self.mini_sector_size - 1) // self.mini_sector_size
+        )
 
         live = [entry for entry in self.directory if entry.object_type in (1, 2, 5)]
         for entry in live:
@@ -211,6 +225,8 @@ class CompoundReader:
         self.major = u16(self.source, 26)
         if self.major not in (3, 4):
             raise EvidenceError(f"unsupported CFB major version {self.major}")
+        if self.source[8:24] != bytes(16) or u16(self.source, 24) != 0x003E:
+            raise EvidenceError("invalid CFB header identity")
         if u16(self.source, 28) != 0xFFFE:
             raise EvidenceError("CFB byte order is not little endian")
         sector_shift = u16(self.source, 30)
@@ -218,6 +234,7 @@ class CompoundReader:
         if sector_shift not in (9, 12) or mini_shift != 6:
             raise EvidenceError("unsupported CFB sector layout")
         self.sector_size = 1 << sector_shift
+        self.header_size = self.sector_size if self.major == 4 else 512
         self.mini_sector_size = 1 << mini_shift
         self.mini_cutoff = u32(self.source, 56)
         directory_sector_count = u32(self.source, 40)
@@ -225,19 +242,29 @@ class CompoundReader:
             self.major == 4 and directory_sector_count == 0
         ):
             raise EvidenceError("CFB directory sector count is invalid for its version")
-        if self.mini_cutoff == 0 or self.mini_cutoff % self.mini_sector_size:
+        if self.source[34:40] != bytes(6) or self.mini_cutoff != 4096:
             raise EvidenceError("invalid CFB mini-stream cutoff")
-        if (len(self.source) - 512) % self.sector_size:
+        if self.major == 4 and self.source[512 : 1 << sector_shift] != bytes(
+            (1 << sector_shift) - 512
+        ):
+            raise EvidenceError("CFB v4 header padding is not zero")
+        if self.major == 3 and len(self.source) > V3_MAX_FILE_SIZE:
+            raise EvidenceError("CFB v3 file exceeds the 2 GiB size ceiling")
+        if len(self.source) < self.header_size or (len(self.source) - self.header_size) % self.sector_size:
             raise EvidenceError("CFB file has a partial sector")
-        self.sector_count = (len(self.source) - 512) // self.sector_size
-        if self.sector_count == 0:
-            raise EvidenceError("CFB file has no sectors")
+        self.sector_count = (len(self.source) - self.header_size) // self.sector_size
+        if self.sector_count < 2:
+            raise EvidenceError("CFB file has fewer than the minimum sector count")
+        fat_count = u32(self.source, 44)
+        difat_count = u32(self.source, 72)
+        if fat_count == 0 or fat_count > self.sector_count or difat_count > self.sector_count:
+            raise EvidenceError("CFB allocation-table count is invalid")
         self.roles = [None] * self.sector_count
 
     def _sector(self, sector: int) -> bytes:
         if sector < 0 or sector >= self.sector_count:
             raise EvidenceError(f"CFB sector {sector} is outside the file")
-        start = 512 + sector * self.sector_size
+        start = self.header_size + sector * self.sector_size
         return self.source[start : start + self.sector_size]
 
     def _read_difat(self) -> tuple[list[int], list[int]]:
@@ -246,12 +273,19 @@ class CompoundReader:
         difat_count = u32(self.source, 72)
         if fat_count > self.sector_count:
             raise EvidenceError("CFB FAT sector count is too large")
-        if difat_count and first_difat in (EOC, FREE):
-            raise EvidenceError("CFB DIFAT count has no first sector")
+        if (difat_count == 0 and first_difat != EOC) or (
+            difat_count != 0 and first_difat in (EOC, FREE)
+        ):
+            raise EvidenceError("CFB DIFAT chain length does not match the header")
         values: list[int] = []
+        header_free_seen = False
         for offset in range(76, 512, 4):
             value = u32(self.source, offset)
-            if value != FREE:
+            if value == FREE:
+                header_free_seen = True
+            else:
+                if header_free_seen:
+                    raise EvidenceError("non-free CFB header DIFAT entry follows a free entry")
                 values.append(value)
         difat_sectors: list[int] = []
         current = first_difat
@@ -263,10 +297,15 @@ class CompoundReader:
             seen.add(current)
             difat_sectors.append(current)
             sector = self._sector(current)
-            values.extend(
-                u32(sector, offset) for offset in range(0, entries_per_difat * 4, 4)
-                if u32(sector, offset) != FREE
-            )
+            free_seen = False
+            for offset in range(0, entries_per_difat * 4, 4):
+                value = u32(sector, offset)
+                if value == FREE:
+                    free_seen = True
+                else:
+                    if free_seen:
+                        raise EvidenceError("non-free CFB DIFAT entry follows a free entry")
+                    values.append(value)
             current = u32(sector, entries_per_difat * 4)
         if difat_count and current != EOC:
             raise EvidenceError("CFB DIFAT chain has an unexpected successor")
@@ -275,6 +314,8 @@ class CompoundReader:
         values = values[:fat_count]
         if len(set(values)) != len(values):
             raise EvidenceError("CFB DIFAT names a FAT sector more than once")
+        if set(values) & set(difat_sectors):
+            raise EvidenceError("CFB sector has both FAT and DIFAT roles")
         for value in values:
             if value >= self.sector_count:
                 raise EvidenceError("CFB DIFAT names an out-of-range FAT sector")
@@ -282,12 +323,16 @@ class CompoundReader:
 
     def _load_fat(self, fat_sector_ids: Sequence[int]) -> None:
         fat_bytes = b"".join(self._sector(sector) for sector in fat_sector_ids)
-        self.fat = [
+        self.full_fat = [
             u32(fat_bytes, offset) for offset in range(0, len(fat_bytes) - 3, 4)
         ]
-        if len(self.fat) < self.sector_count:
+        if len(self.full_fat) < self.sector_count:
             raise EvidenceError("CFB FAT does not cover every file sector")
-        self.fat = self.fat[: self.sector_count]
+        if any(value != FREE for value in self.full_fat[self.sector_count :]):
+            raise EvidenceError("CFB FAT entries past end-of-file are not free")
+        if any(self.full_fat[sector] != FAT_SECTOR for sector in fat_sector_ids):
+            raise EvidenceError("CFB FAT sector has the wrong role marker")
+        self.fat = self.full_fat[: self.sector_count]
 
     def _claim(self, sectors: Iterable[int], role: str) -> None:
         for sector in sectors:
@@ -339,8 +384,14 @@ class CompoundReader:
         ):
             object_type = entry[66]
             if object_type == 0:
+                if (
+                    any(entry[:68])
+                    or any(u32(entry, offset) != FREE for offset in (68, 72, 76))
+                    or any(entry[80:])
+                ):
+                    raise EvidenceError("CFB unallocated directory entry is not zeroed")
                 entries.append(
-                    DirectoryEntry(index, "", 0, entry[67], FREE, FREE, FREE, EOC, 0)
+                    DirectoryEntry(index, "", 0, 0, FREE, FREE, FREE, EOC, 0)
                 )
                 continue
             name_len = u16(entry, 64)
@@ -352,7 +403,7 @@ class CompoundReader:
                 name = entry[: name_len - 2].decode("utf-16-le")
             except UnicodeDecodeError as error:
                 raise EvidenceError("CFB directory name is not valid UTF-16") from error
-            if any(character in name for character in "\\/:*?\"<>|"):
+            if any(character in name for character in "/\\:!"):
                 raise EvidenceError("CFB directory name contains a forbidden character")
             if object_type not in (1, 2, 5):
                 raise EvidenceError("CFB directory entry has an invalid object type")
@@ -414,7 +465,7 @@ class CompoundReader:
             child_root, parent_path = active_storages.pop()
             if child_root == FREE:
                 continue
-            values: list[tuple[int, tuple[int, str]]] = []
+            values: list[tuple[int, tuple[int, tuple[int, ...]]]] = []
             stack: list[tuple[int, int]] = [(child_root, 0)]
             while stack:
                 node, state = stack.pop()
@@ -469,7 +520,7 @@ class CompoundReader:
         for sector in chain:
             length = min(remaining, self.sector_size)
             data.extend(self._sector(sector)[:length])
-            spans.append(Span(512 + sector * self.sector_size, length))
+            spans.append(Span(self.header_size + sector * self.sector_size, length))
             remaining -= length
         if remaining:
             raise EvidenceError(f"{role} did not provide its declared size")
@@ -517,7 +568,7 @@ class CompoundReader:
             data.extend(self.root_mini_data[begin : begin + length])
             remaining -= length
             for root_span in self.root_mini_spans:
-                root_begin = root_span.offset - 512
+                root_begin = root_span.offset - self.header_size
                 root_end = root_begin + root_span.length
                 logical_begin = begin
                 logical_end = begin + length
@@ -548,6 +599,14 @@ class CompoundReader:
         return Stream(entry.path, entry.size, data, spans, allocation)
 
     def _finish_allocation_checks(self) -> None:
+        for mini_sector, marker in enumerate(self.mini_fat):
+            if (
+                mini_sector >= len(self.mini_roles)
+                or self.mini_roles[mini_sector] is None
+            ) and marker != FREE:
+                raise EvidenceError(
+                    f"CFB mini-sector {mini_sector} is allocated in mini FAT but unreachable"
+                )
         for sector, role in enumerate(self.roles):
             if role is None:
                 if self.fat[sector] != FREE:
@@ -791,9 +850,10 @@ def parse_meta_body(body: bytes) -> tuple[list[tuple[bool, int]], list[bytes]]:
         if previous_span < 4:
             raise EvidenceError("RSe reverse metadata chain has an invalid back span")
         if number == 7:
-            valid = discriminator == 0 or len(payload) // discriminator >= 0x4C
-            if not valid:
-                raise EvidenceError("RSe section 7 has an invalid payload")
+            if discriminator and len(payload) // discriminator < 0x4C:
+                expected = discriminator * 32
+                if len(payload) != expected:
+                    raise EvidenceError("RSe section 7 has an invalid payload")
         elif number == 8:
             expected = discriminator * 20
             if len(payload) != expected:
@@ -1022,11 +1082,17 @@ class DocumentEvidence:
             meta = parse_meta(metadata[token])
             expanded = exact_zlib(bulk[token].data[18:])
             form = u16(bulk[token].data, 16)
-            registry = next(
-                (entry for entry in self.registry if entry.segment_id == meta.segment_id),
-                None,
-            )
-            version_major = registry.version_major if registry is not None else 0
+            registry_matches = [
+                entry for entry in self.registry if entry.segment_id == meta.segment_id
+            ]
+            if len(registry_matches) != 1:
+                raise EvidenceError(
+                    "RSe metadata segment id does not select exactly one registry entry"
+                )
+            registry = registry_matches[0]
+            if registry.display_name != meta.display_name:
+                raise EvidenceError("RSe registry and metadata display names differ")
+            version_major = registry.version_major
             records, trailer_start = frame_records(bulk[token], expanded, meta, version_major)
             bulk_info = BulkInfo(bulk[token], form, expanded, 18, records, trailer_start)
             self.metas[token] = meta
@@ -1114,12 +1180,28 @@ class DocumentEvidence:
                 state = "unavailable"
                 detail = "typed carrier has no kernel signature at its declared payload start"
             if state == "framed":
-                if payload[carrier_end + 4] not in (0, 1):
+                cursor = carrier_end
+                _selected_key = u32(payload, cursor)
+                cursor += 4
+                enabled = payload[cursor]
+                cursor += 1
+                _delta_state = u32(payload, cursor)
+                cursor += 4
+                if version_major >= 23:
+                    if payload[cursor] != 0:
+                        state = "unavailable"
+                        detail = "typed carrier versioned padding is nonzero"
+                    cursor += 1
+                _history_reference = u32(payload, cursor)
+                cursor += 4
+                terminator = u32(payload, cursor)
+                cursor += 4
+                if enabled not in (0, 1):
                     state = "unavailable"
                     detail = "typed carrier enabled flag is invalid"
-                elif u32(payload, len(payload) - 4) != FREE:
+                elif terminator != FREE or cursor != len(payload):
                     state = "unavailable"
-                    detail = "typed carrier terminator is invalid"
+                    detail = "typed carrier footer is not exactly exhausted"
                 else:
                     carrier = candidate
         result = {
