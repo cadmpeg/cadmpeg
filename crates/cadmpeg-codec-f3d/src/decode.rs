@@ -547,70 +547,32 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         .iter()
         .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature)))
         .collect::<HashMap<_, _>>();
-    let mut state_scopes = HashMap::<(&str, i64), Vec<&str>>::new();
-    for scope in &native.design_parameter_scopes {
-        let (Some(stream), Some(state_id)) =
-            (crate::ids::native_stream(&scope.id), scope.history_state_id)
-        else {
-            continue;
-        };
-        state_scopes
-            .entry((stream, state_id))
-            .or_default()
-            .push(scope.id.as_str());
-    }
     let mut unprojected_history_dependencies = 0;
     let mut ambiguous_history_dependencies = 0;
-    let bound_scope_histories = crate::history::bind_scope_histories(
+    let scope_history = crate::design::feature_project::ScopeHistoryGraph::new(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.asm_histories,
     );
     for scope in &native.design_parameter_scopes {
-        let (Some(stream), Some(previous_state_id), Some(feature)) = (
-            crate::ids::native_stream(&scope.id),
-            scope.previous_history_state_id,
-            projected_features.get(scope.id.as_str()),
-        ) else {
+        let Some(feature) = projected_features.get(scope.id.as_str()) else {
             continue;
         };
-        let Some(predecessors) = state_scopes.get(&(stream, previous_state_id)) else {
-            continue;
+        let predecessor_scope = match scope_history.predecessor(scope, |candidate| {
+            projected_features.contains_key(candidate.id.as_str())
+        }) {
+            Ok(crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor)) => {
+                predecessor
+            }
+            Ok(crate::design::feature_project::ScopeHistoryPredecessor::Ambiguous) | Err(_) => {
+                ambiguous_history_dependencies += 1;
+                continue;
+            }
+            Ok(crate::design::feature_project::ScopeHistoryPredecessor::None) => {
+                continue;
+            }
         };
-        let predecessor_ref = if native.asm_histories.is_empty() {
-            let [predecessor_ref] = predecessors.as_slice() else {
-                ambiguous_history_dependencies += 1;
-                continue;
-            };
-            *predecessor_ref
-        } else {
-            let Some(history_id) = bound_scope_histories.get(&scope.id) else {
-                ambiguous_history_dependencies += 1;
-                continue;
-            };
-            let predecessors = predecessors
-                .iter()
-                .filter(|predecessor_ref| {
-                    let Some(predecessor_scope) = native
-                        .design_parameter_scopes
-                        .iter()
-                        .find(|candidate| candidate.id == **predecessor_ref)
-                    else {
-                        return false;
-                    };
-                    bound_scope_histories
-                        .get(&predecessor_scope.id)
-                        .is_some_and(|predecessor_history_id| predecessor_history_id == history_id)
-                })
-                .copied()
-                .collect::<Vec<_>>();
-            let [predecessor_ref] = predecessors.as_slice() else {
-                ambiguous_history_dependencies += 1;
-                continue;
-            };
-            *predecessor_ref
-        };
-        let Some(predecessor) = projected_features.get(predecessor_ref) else {
+        let Some(predecessor) = projected_features.get(predecessor_scope.id.as_str()) else {
             unprojected_history_dependencies += 1;
             continue;
         };
@@ -709,6 +671,11 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         }
     }
 
+    let authored_scopes = crate::design::feature_project::authored_scope_ordinals_per_stream(
+        &native.design_parameter_scopes,
+        &native.design_feature_timelines,
+    )
+    .ok();
     let mut gaps = DesignProjectionGaps {
         unresolved_body_bindings: native
             .design_body_bindings
@@ -721,12 +688,21 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             .design_parameter_scopes
             .iter()
             .filter(|scope| {
-                !projected_feature_refs.contains(scope.id.as_str())
-                    && scope
-                        .assembly_alignment
-                        .as_ref()
-                        .and_then(|alignment| alignment.joint_origin_scope_record_index)
-                        .is_none()
+                let authored = authored_scopes.as_ref().map_or_else(
+                    || {
+                        scope
+                            .assembly_alignment
+                            .as_ref()
+                            .and_then(|alignment| alignment.joint_origin_scope_record_index)
+                            .is_none()
+                    },
+                    |ordinals| {
+                        let stream = crate::ids::native_stream(&scope.id)
+                            .unwrap_or(crate::ids::DEFAULT_STREAM);
+                        ordinals.contains_key(&(stream, scope.record_index))
+                    },
+                );
+                authored && !projected_feature_refs.contains(scope.id.as_str())
             })
             .count(),
         unprojected_parameters: native
@@ -4589,9 +4565,9 @@ mod tests {
     use crate::native::F3dNative;
     use crate::records::{
         DesignBodyBinding, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
-        DesignDimensionRecipeRecord, DesignParameter, DesignParameterCompanion,
-        DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignSketchPlacement,
-        LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation,
+        DesignDimensionRecipeRecord, DesignFeatureTimeline, DesignParameter,
+        DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+        DesignSketchPlacement, LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation,
     };
 
     #[test]
@@ -5485,6 +5461,76 @@ mod tests {
         let gaps = design_projection_gaps(&ir, &native);
         assert_eq!(gaps.unprojected_history_dependencies, 0);
         assert_eq!(gaps.ambiguous_history_dependencies, 1);
+    }
+
+    #[test]
+    fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scope() {
+        let stream = "f3d:Design/BulkStream.dat";
+        let mut predecessor = DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#100"),
+            "Extrude",
+            100,
+        );
+        predecessor.history_state_id = Some(7);
+        let mut internal = DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#150"),
+            "Base Feature",
+            150,
+        );
+        internal.history_state_id = Some(8);
+        internal.previous_history_state_id = Some(7);
+        let mut successor = DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#200"),
+            "Fillet",
+            200,
+        );
+        successor.history_state_id = Some(9);
+        successor.previous_history_state_id = Some(8);
+        let scopes = vec![successor, internal, predecessor];
+        let timeline = DesignFeatureTimeline {
+            id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+            byte_offset: 0,
+            class_tag: "256".into(),
+            record_index: 1,
+            source_ordinal: 0,
+            frame_length: 0,
+            context_record_index: 2,
+            context_record_index_offset: 0,
+            item_count_offset: 0,
+            item_record_indices: vec![100, 200],
+            item_record_index_offsets: vec![0, 0],
+        };
+        let (features, _) =
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                &crate::design::feature_project::ProjectInputs {
+                    native: &[],
+                    owners: &[],
+                    scopes: &scopes,
+                    timelines: std::slice::from_ref(&timeline),
+                    construction_groups: &[],
+                    fillet_radius_groups: &[],
+                    edge_operands: &[],
+                    edge_identity_operands: &[],
+                    entity_selection_operands: &[],
+                    curve_identities: &[],
+                    face_operands: &[],
+                    body_recipe_operands: &[],
+                    placements: &[],
+                    body_bindings: &[],
+                    histories: &[],
+                },
+            )
+            .expect("timeline projection through one internal scope");
+        let mut native = F3dNative::default();
+        native.design_parameter_scopes = scopes;
+        native.design_feature_timelines = vec![timeline];
+        let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+        ir.model.features = features;
+
+        let gaps = design_projection_gaps(&ir, &native);
+        assert_eq!(gaps.unprojected_feature_scopes, 0);
+        assert_eq!(gaps.unprojected_history_dependencies, 0);
+        assert_eq!(gaps.ambiguous_history_dependencies, 0);
     }
 
     #[test]

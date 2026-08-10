@@ -64,14 +64,14 @@ pub struct ProjectInputs<'a> {
     pub(crate) histories: &'a [crate::history_records::AsmHistory],
 }
 
-/// Authored construction ordinal of every decoded parameter scope.
+/// Authored construction ordinal of every parameter scope represented by a
+/// neutral top-level feature. All input scopes must share one Design stream.
 pub(crate) fn authored_scope_ordinals<'a>(
     scopes: &'a [DesignParameterScope],
     timelines: &[DesignFeatureTimeline],
 ) -> Result<HashMap<(&'a str, u32), u64>, CodecError> {
-    let mut out = HashMap::with_capacity(scopes.len());
     let Some(first_scope) = scopes.first() else {
-        return Ok(out);
+        return Ok(HashMap::new());
     };
     let stream = native_stream(&first_scope.id).unwrap_or(ids::DEFAULT_STREAM);
     if scopes
@@ -81,6 +81,76 @@ pub(crate) fn authored_scope_ordinals<'a>(
         return Err(CodecError::NotImplemented(
             "independent Design scope streams have no shared authored timeline order".into(),
         ));
+    }
+    authored_scope_ordinals_for_stream(&scopes.iter().collect::<Vec<_>>(), timelines)
+}
+
+/// Authored scope ordinals evaluated independently for every Design stream.
+pub(crate) fn authored_scope_ordinals_per_stream<'a>(
+    scopes: &'a [DesignParameterScope],
+    timelines: &[DesignFeatureTimeline],
+) -> Result<HashMap<(&'a str, u32), u64>, CodecError> {
+    let mut streams = HashMap::<&str, Vec<&DesignParameterScope>>::new();
+    for scope in scopes {
+        streams
+            .entry(native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM))
+            .or_default()
+            .push(scope);
+    }
+    let mut out = HashMap::with_capacity(scopes.len());
+    for stream_scopes in streams.into_values() {
+        for (key, ordinal) in authored_scope_ordinals_for_stream(&stream_scopes, timelines)? {
+            if out.insert(key, ordinal).is_some() {
+                return Err(CodecError::Malformed(
+                    "Design scope record identity is not unique".into(),
+                ));
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn authored_scope_ordinals_for_stream<'a>(
+    scopes: &[&'a DesignParameterScope],
+    timelines: &[DesignFeatureTimeline],
+) -> Result<HashMap<(&'a str, u32), u64>, CodecError> {
+    let mut out = HashMap::with_capacity(scopes.len());
+    let Some(first_scope) = scopes.first().copied() else {
+        return Ok(out);
+    };
+    let stream = native_stream(&first_scope.id).unwrap_or(ids::DEFAULT_STREAM);
+    let mut scopes_by_record = HashMap::<u32, &DesignParameterScope>::new();
+    for scope in scopes {
+        if scopes_by_record
+            .insert(scope.record_index, *scope)
+            .is_some()
+        {
+            return Err(CodecError::Malformed(
+                "Design scope record identity is not unique".into(),
+            ));
+        }
+    }
+    for scope in scopes {
+        let Some(target_record_index) = scope
+            .assembly_alignment
+            .as_ref()
+            .and_then(|alignment| alignment.joint_origin_scope_record_index)
+        else {
+            continue;
+        };
+        let Some(target) = scopes_by_record.get(&target_record_index) else {
+            return Err(CodecError::Malformed(
+                "Design assembly datum envelope has no JointOrigin target".into(),
+            ));
+        };
+        if scope.kind != "Assemble"
+            || target.kind != "JointOrigin"
+            || target.joint_origin_transform.is_none()
+        {
+            return Err(CodecError::Malformed(
+                "Design assembly datum envelope has an invalid JointOrigin target".into(),
+            ));
+        }
     }
 
     let mut stream_timelines = timelines
@@ -96,7 +166,7 @@ pub(crate) fn authored_scope_ordinals<'a>(
                 |family| design_feature_family(&scope.kind) == Some(family),
             )
         });
-        let mut ordered = scopes.iter().collect::<Vec<_>>();
+        let mut ordered = scopes.to_vec();
         ordered.sort_by_key(|scope| scope.feature_ordinal);
         let complete_ordinals = ordered.iter().enumerate().all(|(ordinal, scope)| {
             u32::try_from(ordinal)
@@ -164,21 +234,149 @@ pub(crate) fn authored_scope_ordinals<'a>(
         }
     }
     for scope in scopes {
-        let ordinal = item_ordinals
-            .get(&u64::from(scope.record_index))
-            .copied()
-            .ok_or_else(|| {
-                CodecError::Malformed(
-                    "Design parameter scope is absent from its feature timeline".into(),
-                )
-            })?;
-        if out.insert((stream, scope.record_index), ordinal).is_some() {
+        if let Some(ordinal) = item_ordinals.get(&u64::from(scope.record_index)).copied() {
+            out.insert((stream, scope.record_index), ordinal);
+        }
+    }
+    for scope in scopes {
+        let Some(target_record_index) = scope
+            .assembly_alignment
+            .as_ref()
+            .and_then(|alignment| alignment.joint_origin_scope_record_index)
+        else {
+            continue;
+        };
+        let target = scopes_by_record[&target_record_index];
+        let source_key = (stream, scope.record_index);
+        let Some(source_ordinal) = out.remove(&source_key) else {
+            continue;
+        };
+        let target_key = (stream, target.record_index);
+        if item_ordinals.contains_key(&u64::from(target.record_index)) {
+            continue;
+        }
+        if out.insert(target_key, source_ordinal).is_some() {
             return Err(CodecError::Malformed(
-                "Design scope record identity is not unique".into(),
+                "Design JointOrigin target has multiple authored timeline positions".into(),
             ));
         }
     }
     Ok(out)
+}
+
+/// Result of following one scope's preceding state through internal scopes.
+pub(crate) enum ScopeHistoryPredecessor<'a> {
+    /// The state chain reaches no projected parameter scope.
+    None,
+    /// The chain reaches one projected parameter scope.
+    Scope(&'a DesignParameterScope),
+    /// The state or history identity does not select one scope.
+    Ambiguous,
+}
+
+/// History-state index qualified by Design stream and bound ASM history.
+pub(crate) struct ScopeHistoryGraph<'a> {
+    histories_present: bool,
+    bound_histories: HashMap<String, String>,
+    scopes_by_state: HashMap<(String, String, i64), Vec<&'a DesignParameterScope>>,
+}
+
+impl<'a> ScopeHistoryGraph<'a> {
+    pub(crate) fn new(
+        scopes: &'a [DesignParameterScope],
+        body_bindings: &[DesignBodyBinding],
+        histories: &[crate::history_records::AsmHistory],
+    ) -> Self {
+        let bound_histories =
+            crate::history::bind_scope_histories(scopes, body_bindings, histories);
+        let histories_present = !histories.is_empty();
+        let mut scopes_by_state = HashMap::new();
+        for scope in scopes {
+            let (Some(stream), Some(state_id)) = (native_stream(&scope.id), scope.history_state_id)
+            else {
+                continue;
+            };
+            let history_id = if histories_present {
+                let Some(history_id) = bound_histories.get(&scope.id) else {
+                    continue;
+                };
+                history_id.clone()
+            } else {
+                String::new()
+            };
+            scopes_by_state
+                .entry((stream.to_owned(), history_id, state_id))
+                .or_insert_with(Vec::new)
+                .push(scope);
+        }
+        Self {
+            histories_present,
+            bound_histories,
+            scopes_by_state,
+        }
+    }
+
+    /// Follow `scope.previous_history_state_id` until a scope accepted by
+    /// `projected` is reached. Internal scopes preserve state continuity but
+    /// are not themselves authored top-level features.
+    pub(crate) fn predecessor<F>(
+        &self,
+        scope: &DesignParameterScope,
+        projected: F,
+    ) -> Result<ScopeHistoryPredecessor<'a>, CodecError>
+    where
+        F: Fn(&DesignParameterScope) -> bool,
+    {
+        let Some(mut state_id) = scope.previous_history_state_id else {
+            return Ok(ScopeHistoryPredecessor::None);
+        };
+        let Some(stream) = native_stream(&scope.id) else {
+            return Ok(ScopeHistoryPredecessor::Ambiguous);
+        };
+        let history_id = if self.histories_present {
+            let Some(history_id) = self.bound_histories.get(&scope.id) else {
+                return Ok(ScopeHistoryPredecessor::Ambiguous);
+            };
+            history_id.as_str()
+        } else {
+            ""
+        };
+        let mut visited = HashSet::new();
+        loop {
+            let Some(candidates) =
+                self.scopes_by_state
+                    .get(&(stream.to_owned(), history_id.to_owned(), state_id))
+            else {
+                return Ok(ScopeHistoryPredecessor::None);
+            };
+            let [candidate] = candidates.as_slice() else {
+                return Ok(ScopeHistoryPredecessor::Ambiguous);
+            };
+            if candidate.id == scope.id {
+                if visited.is_empty() {
+                    return Ok(ScopeHistoryPredecessor::None);
+                }
+                return Err(CodecError::Malformed(
+                    "Design scope history-state dependency is cyclic".into(),
+                ));
+            }
+            if projected(candidate) {
+                return Ok(ScopeHistoryPredecessor::Scope(candidate));
+            }
+            if !visited.insert(candidate.id.as_str()) {
+                return Err(CodecError::Malformed(
+                    "Design scope history-state dependency is cyclic".into(),
+                ));
+            }
+            let Some(previous_state_id) = candidate.previous_history_state_id else {
+                return Ok(ScopeHistoryPredecessor::None);
+            };
+            if candidate.history_state_id == Some(previous_state_id) {
+                return Ok(ScopeHistoryPredecessor::None);
+            }
+            state_id = previous_state_id;
+        }
+    }
 }
 
 fn ensure_feature_dependencies_precede(
@@ -323,22 +521,9 @@ pub fn project_parameter_design_with_edge_identities(
         .iter()
         .filter_map(|scope| {
             let stream = native_stream(&scope.id)?;
-            let feature_id = scope
-                .assembly_alignment
-                .as_ref()
-                .and_then(|alignment| alignment.joint_origin_scope_record_index)
-                .and_then(|record_index| {
-                    let mut targets = scopes.iter().filter(|target| {
-                        native_stream(&target.id) == Some(stream)
-                            && target.record_index == record_index
-                            && target.kind == "JointOrigin"
-                            && target.joint_origin_transform.is_some()
-                    });
-                    let target = targets.next()?;
-                    targets.next().is_none().then(|| neutral_feature_id(target))
-                })
-                .unwrap_or_else(|| neutral_feature_id(scope));
-            Some(((stream, scope.record_index), feature_id))
+            source_ordinals
+                .contains_key(&(stream, scope.record_index))
+                .then(|| ((stream, scope.record_index), neutral_feature_id(scope)))
         })
         .collect::<HashMap<_, _>>();
     let owners_by_index = owners
@@ -351,11 +536,8 @@ pub fn project_parameter_design_with_edge_identities(
     let mut features = scopes
         .iter()
         .filter(|scope| {
-            scope
-                .assembly_alignment
-                .as_ref()
-                .and_then(|alignment| alignment.joint_origin_scope_record_index)
-                .is_none()
+            let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
+            source_ordinals.contains_key(&(stream, scope.record_index))
         })
         .map(|scope| {
             let native_scope = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
@@ -1146,29 +1328,7 @@ pub fn project_parameter_design_with_edge_identities(
             }
         })
         .collect::<Vec<_>>();
-    let bound_scope_histories =
-        crate::history::bind_scope_histories(scopes, body_bindings, histories);
-    let scope_history = |scope: &DesignParameterScope| {
-        if histories.is_empty() {
-            return Some("");
-        }
-        bound_scope_histories.get(&scope.id).map(String::as_str)
-    };
-    let mut state_features =
-        HashMap::<(&str, &str, i64), Option<cadmpeg_ir::features::FeatureId>>::new();
-    for scope in scopes {
-        let (Some(stream), Some(state_id)) = (native_stream(&scope.id), scope.history_state_id)
-        else {
-            continue;
-        };
-        let Some(history_id) = scope_history(scope) else {
-            continue;
-        };
-        state_features
-            .entry((stream, history_id, state_id))
-            .and_modify(|feature| *feature = None)
-            .or_insert_with(|| scope_ids.get(&(stream, scope.record_index)).cloned());
-    }
+    let scope_history = ScopeHistoryGraph::new(scopes, body_bindings, histories);
     for feature in &mut features {
         let Some(scope) = feature
             .native_ref
@@ -1177,20 +1337,20 @@ pub fn project_parameter_design_with_edge_identities(
         else {
             continue;
         };
-        let Some(previous_state_id) = scope.previous_history_state_id else {
+        let ScopeHistoryPredecessor::Scope(predecessor_scope) =
+            scope_history.predecessor(scope, |candidate| {
+                let stream = native_stream(&candidate.id).unwrap_or(ids::DEFAULT_STREAM);
+                scope_ids.contains_key(&(stream, candidate.record_index))
+            })?
+        else {
             continue;
         };
-        let Some(history_id) = scope_history(scope) else {
+        let stream = native_stream(&predecessor_scope.id).unwrap_or(ids::DEFAULT_STREAM);
+        let Some(predecessor) = scope_ids.get(&(stream, predecessor_scope.record_index)) else {
             continue;
         };
-        if let Some(Some(predecessor)) = state_features.get(&(
-            native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM),
-            history_id,
-            previous_state_id,
-        )) {
-            if predecessor != &feature.id && !feature.dependencies.contains(predecessor) {
-                feature.dependencies.push(predecessor.clone());
-            }
+        if predecessor != &feature.id && !feature.dependencies.contains(predecessor) {
+            feature.dependencies.push(predecessor.clone());
         }
     }
     for feature in &mut features {
@@ -1285,17 +1445,6 @@ pub fn project_parameter_design_with_edge_identities(
                         ))
                     })
                     .and_then(|owner| {
-                        if scopes.iter().any(|scope| {
-                            native_stream(&scope.id) == native_stream(&owner.id)
-                                && scope.record_index == owner.scope_record_index
-                                && scope
-                                    .assembly_alignment
-                                    .as_ref()
-                                    .and_then(|alignment| alignment.joint_origin_scope_record_index)
-                                    .is_some()
-                        }) {
-                            return None;
-                        }
                         scope_ids.get(&(
                             native_stream(&owner.id).unwrap_or(ids::DEFAULT_STREAM),
                             owner.scope_record_index,

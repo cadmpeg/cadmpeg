@@ -1225,7 +1225,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
     }
 
     let mut scope_positions = HashMap::<&str, u64>::new();
-    match crate::design::feature_project::authored_scope_ordinals(
+    match crate::design::feature_project::authored_scope_ordinals_per_stream(
         &native.design_parameter_scopes,
         &native.design_feature_timelines,
     ) {
@@ -1251,54 +1251,42 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
         }
     }
 
-    let bound_histories = history::bind_scope_histories(
+    let scope_history = crate::design::feature_project::ScopeHistoryGraph::new(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.asm_histories,
     );
-    let scope_history = |scope: &records::DesignParameterScope| {
-        if native.asm_histories.is_empty() {
-            Some("")
-        } else {
-            bound_histories.get(&scope.id).map(String::as_str)
-        }
-    };
-    let mut states = HashMap::<(&str, &str, i64), Option<(&str, u64)>>::new();
     for scope in &native.design_parameter_scopes {
-        let (Some(segment), Some(history_id), Some(state_id), Some(position)) = (
-            ids::design_segment(&scope.id),
-            scope_history(scope),
-            scope.history_state_id,
-            scope_positions.get(scope.id.as_str()).copied(),
-        ) else {
+        let Some(position) = scope_positions.get(scope.id.as_str()).copied() else {
             continue;
         };
-        states
-            .entry((segment, history_id, state_id))
-            .and_modify(|position| *position = None)
-            .or_insert(Some((scope.id.as_str(), position)));
-    }
-    for scope in &native.design_parameter_scopes {
-        let (Some(segment), Some(history_id), Some(previous), Some(position)) = (
-            ids::design_segment(&scope.id),
-            scope_history(scope),
-            scope.previous_history_state_id,
-            scope_positions.get(scope.id.as_str()).copied(),
-        ) else {
-            continue;
-        };
-        if states
-            .get(&(segment, history_id, previous))
-            .is_some_and(|predecessor| {
-                predecessor.is_some_and(|(id, value)| id != scope.id && value >= position)
-            })
-        {
-            findings.push(Finding {
+        match scope_history.predecessor(scope, |candidate| {
+            scope_positions.contains_key(candidate.id.as_str())
+        }) {
+            Ok(crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor)) => {
+                if scope_positions
+                    .get(predecessor.id.as_str())
+                    .is_some_and(|predecessor| *predecessor >= position)
+                {
+                    findings.push(Finding {
+                        check: Check::NativeLinks,
+                        severity: Severity::Error,
+                        message: "Fusion Design history edge runs forward in its feature timeline"
+                            .into(),
+                        entity: Some(scope.id.clone()),
+                    });
+                }
+            }
+            Err(_) => findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
-                message: "Fusion Design history edge runs forward in its feature timeline".into(),
+                message: "Fusion Design scope history-state dependency is cyclic".into(),
                 entity: Some(scope.id.clone()),
-            });
+            }),
+            Ok(
+                crate::design::feature_project::ScopeHistoryPredecessor::None
+                | crate::design::feature_project::ScopeHistoryPredecessor::Ambiguous,
+            ) => {}
         }
     }
 }

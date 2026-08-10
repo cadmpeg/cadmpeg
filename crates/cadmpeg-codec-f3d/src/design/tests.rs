@@ -1008,6 +1008,404 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
 }
 
 #[test]
+fn feature_projection_collapses_internal_scope_history_chains() {
+    let stream = "f3d:Design/BulkStream.dat";
+    let mut predecessor = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#100"),
+        "Extrude",
+        100,
+    );
+    predecessor.history_state_id = Some(7);
+    let mut internal = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#150"),
+        "Base Feature",
+        150,
+    );
+    internal.history_state_id = Some(8);
+    internal.previous_history_state_id = Some(7);
+    let mut successor = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#200"),
+        "Fillet",
+        200,
+    );
+    successor.history_state_id = Some(9);
+    successor.previous_history_state_id = Some(8);
+    let scopes = vec![successor.clone(), internal.clone(), predecessor.clone()];
+    let timeline = DesignFeatureTimeline {
+        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 10),
+        byte_offset: 10,
+        class_tag: "256".into(),
+        record_index: 35,
+        source_ordinal: 0,
+        frame_length: 0,
+        context_record_index: 17,
+        context_record_index_offset: 0,
+        item_count_offset: 0,
+        item_record_indices: vec![100, 200],
+        item_record_index_offsets: vec![0, 0],
+    };
+    let mut parameter = parse_design_parameter(&parameter_record(
+        Some(40),
+        "1 mm",
+        "FeatureInput",
+        Some("mm"),
+        "InternalValue",
+        0.1,
+    ))
+    .expect("synthetic internal parameter");
+    parameter.id = format!("{stream}:design-parameter#41");
+    parameter.record_index = 41;
+    parameter.owner_record_index = Some(40);
+    let owner = DesignParameterOwner {
+        id: format!("{stream}:design-parameter-owner#40"),
+        byte_offset: 0,
+        frame_length: 0,
+        class_tag: "292".into(),
+        record_index: 40,
+        scope_record_index: internal.record_index,
+        local_ordinal: 0,
+        evaluated_value: 0.1,
+        evaluated_value_offset: 0,
+        parameter_record_index: parameter.record_index,
+        owned_ordinal: 0,
+        variant: None,
+        companion_record_index: 42,
+    };
+    let (features, parameters) = project_parameter_design_with_edge_identities(
+        &crate::design::feature_project::ProjectInputs {
+            native: std::slice::from_ref(&parameter),
+            owners: std::slice::from_ref(&owner),
+            scopes: &scopes,
+            timelines: std::slice::from_ref(&timeline),
+            construction_groups: &[],
+            fillet_radius_groups: &[],
+            edge_operands: &[],
+            edge_identity_operands: &[],
+            entity_selection_operands: &[],
+            curve_identities: &[],
+            face_operands: &[],
+            body_recipe_operands: &[],
+            placements: &[],
+            body_bindings: &[],
+            histories: &[],
+        },
+    )
+    .expect("timeline-listed feature projection through one internal scope");
+
+    assert_eq!(features.len(), 2);
+    assert!(features
+        .iter()
+        .all(|feature| feature.native_ref.as_deref() != Some(internal.id.as_str())));
+    let predecessor_feature = features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(predecessor.id.as_str()))
+        .expect("projected predecessor");
+    let successor_feature = features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(successor.id.as_str()))
+        .expect("projected successor");
+    assert_eq!(
+        successor_feature.dependencies,
+        [predecessor_feature.id.clone()]
+    );
+    assert_eq!(parameters.len(), 1);
+    assert!(parameters[0].owner.is_none());
+    assert_eq!(
+        parameters[0].properties.get("owner_record_index"),
+        Some(&owner.record_index.to_string())
+    );
+}
+
+#[test]
+fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope() {
+    let stream = "f3d:Design/BulkStream.dat";
+    let mut assembly = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#10"),
+        "Assemble",
+        10,
+    );
+    assembly.assembly_alignment = Some(DesignAssemblyAlignment {
+        angle: 0.0,
+        offset: [0.0; 3],
+        owner_record_indices: Vec::new(),
+        value_offsets: Vec::new(),
+        operand_frames: None,
+        operand_paths: None,
+        axial_operand_targets: None,
+        joint_origin_scope_record_index: Some(20),
+    });
+    let mut origin = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#20"),
+        "JointOrigin",
+        20,
+    );
+    origin.joint_origin_transform = Some(identity_matrix());
+    let mut internal_origin = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#30"),
+        "JointOrigin",
+        30,
+    );
+    internal_origin.joint_origin_transform = Some(identity_matrix());
+    let scopes = vec![assembly, origin.clone(), internal_origin.clone()];
+    let timeline = DesignFeatureTimeline {
+        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+        byte_offset: 0,
+        class_tag: "256".into(),
+        record_index: 1,
+        source_ordinal: 0,
+        frame_length: 0,
+        context_record_index: 2,
+        context_record_index_offset: 0,
+        item_count_offset: 0,
+        item_record_indices: vec![10],
+        item_record_index_offsets: vec![0],
+    };
+    let (features, _) = project_parameter_design_with_edge_identities(
+        &crate::design::feature_project::ProjectInputs {
+            native: &[],
+            owners: &[],
+            scopes: &scopes,
+            timelines: std::slice::from_ref(&timeline),
+            construction_groups: &[],
+            fillet_radius_groups: &[],
+            edge_operands: &[],
+            edge_identity_operands: &[],
+            entity_selection_operands: &[],
+            curve_identities: &[],
+            face_operands: &[],
+            body_recipe_operands: &[],
+            placements: &[],
+            body_bindings: &[],
+            histories: &[],
+        },
+    )
+    .expect("one authored datum envelope");
+
+    let [feature] = features.as_slice() else {
+        panic!("expected one projected datum feature");
+    };
+    assert_eq!(feature.ordinal, 0);
+    assert_eq!(feature.native_ref.as_deref(), Some(origin.id.as_str()));
+    assert!(matches!(
+        feature.definition,
+        FeatureDefinition::DatumCoordinateSystem { .. }
+    ));
+    assert_ne!(
+        feature.native_ref.as_deref(),
+        Some(internal_origin.id.as_str())
+    );
+
+    let mut directly_listed = timeline;
+    directly_listed
+        .item_record_indices
+        .push(origin.record_index.into());
+    directly_listed.item_record_index_offsets.push(0);
+    let (features, _) = project_parameter_design_with_edge_identities(
+        &crate::design::feature_project::ProjectInputs {
+            native: &[],
+            owners: &[],
+            scopes: &scopes,
+            timelines: std::slice::from_ref(&directly_listed),
+            construction_groups: &[],
+            fillet_radius_groups: &[],
+            edge_operands: &[],
+            edge_identity_operands: &[],
+            entity_selection_operands: &[],
+            curve_identities: &[],
+            face_operands: &[],
+            body_recipe_operands: &[],
+            placements: &[],
+            body_bindings: &[],
+            histories: &[],
+        },
+    )
+    .expect("directly listed datum target");
+    let [feature] = features.as_slice() else {
+        panic!("expected one directly listed datum feature");
+    };
+    assert_eq!(feature.ordinal, 1);
+}
+
+#[test]
+fn feature_projection_rejects_multiple_datum_envelope_positions() {
+    let stream = "f3d:Design/BulkStream.dat";
+    let envelope = |record_index| {
+        let mut scope = DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#{record_index}"),
+            "Assemble",
+            record_index,
+        );
+        scope.assembly_alignment = Some(DesignAssemblyAlignment {
+            angle: 0.0,
+            offset: [0.0; 3],
+            owner_record_indices: Vec::new(),
+            value_offsets: Vec::new(),
+            operand_frames: None,
+            operand_paths: None,
+            axial_operand_targets: None,
+            joint_origin_scope_record_index: Some(20),
+        });
+        scope
+    };
+    let mut origin = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#20"),
+        "JointOrigin",
+        20,
+    );
+    origin.joint_origin_transform = Some(identity_matrix());
+    let scopes = vec![envelope(10), envelope(11), origin];
+    let timeline = DesignFeatureTimeline {
+        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+        byte_offset: 0,
+        class_tag: "256".into(),
+        record_index: 1,
+        source_ordinal: 0,
+        frame_length: 0,
+        context_record_index: 2,
+        context_record_index_offset: 0,
+        item_count_offset: 0,
+        item_record_indices: vec![10, 11],
+        item_record_index_offsets: vec![0, 0],
+    };
+    let result = crate::design::feature_project::authored_scope_ordinals(
+        &scopes,
+        std::slice::from_ref(&timeline),
+    );
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
+}
+
+#[test]
+fn feature_projection_rejects_a_cyclic_internal_scope_history() {
+    let stream = "f3d:Design/BulkStream.dat";
+    let mut first_internal = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#10"),
+        "Base Feature",
+        10,
+    );
+    first_internal.history_state_id = Some(1);
+    first_internal.previous_history_state_id = Some(2);
+    let mut second_internal = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#20"),
+        "Base Feature",
+        20,
+    );
+    second_internal.history_state_id = Some(2);
+    second_internal.previous_history_state_id = Some(1);
+    let mut consumer =
+        DesignParameterScope::empty(&format!("{stream}:design-parameter-scope#30"), "Move", 30);
+    consumer.history_state_id = Some(3);
+    consumer.previous_history_state_id = Some(1);
+    let scopes = vec![first_internal, second_internal, consumer];
+    let timeline = DesignFeatureTimeline {
+        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+        byte_offset: 0,
+        class_tag: "256".into(),
+        record_index: 1,
+        source_ordinal: 0,
+        frame_length: 0,
+        context_record_index: 2,
+        context_record_index_offset: 0,
+        item_count_offset: 0,
+        item_record_indices: vec![30],
+        item_record_index_offsets: vec![0],
+    };
+    let result = project_parameter_design_with_edge_identities(
+        &crate::design::feature_project::ProjectInputs {
+            native: &[],
+            owners: &[],
+            scopes: &scopes,
+            timelines: std::slice::from_ref(&timeline),
+            construction_groups: &[],
+            fillet_radius_groups: &[],
+            edge_operands: &[],
+            edge_identity_operands: &[],
+            entity_selection_operands: &[],
+            curve_identities: &[],
+            face_operands: &[],
+            body_recipe_operands: &[],
+            placements: &[],
+            body_bindings: &[],
+            histories: &[],
+        },
+    );
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
+}
+
+#[test]
+fn feature_projection_does_not_invent_an_ambiguous_internal_dependency() {
+    let stream = "f3d:Design/BulkStream.dat";
+    let mut predecessor = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#100"),
+        "Extrude",
+        100,
+    );
+    predecessor.history_state_id = Some(7);
+    let internal = |record_index| {
+        let mut scope = DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#{record_index}"),
+            "Base Feature",
+            record_index,
+        );
+        scope.history_state_id = Some(8);
+        scope.previous_history_state_id = Some(7);
+        scope
+    };
+    let mut successor = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#200"),
+        "Fillet",
+        200,
+    );
+    successor.history_state_id = Some(9);
+    successor.previous_history_state_id = Some(8);
+    let scopes = vec![predecessor, internal(150), internal(160), successor.clone()];
+    let timeline = DesignFeatureTimeline {
+        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+        byte_offset: 0,
+        class_tag: "256".into(),
+        record_index: 1,
+        source_ordinal: 0,
+        frame_length: 0,
+        context_record_index: 2,
+        context_record_index_offset: 0,
+        item_count_offset: 0,
+        item_record_indices: vec![100, 200],
+        item_record_index_offsets: vec![0, 0],
+    };
+    let (features, _) = project_parameter_design_with_edge_identities(
+        &crate::design::feature_project::ProjectInputs {
+            native: &[],
+            owners: &[],
+            scopes: &scopes,
+            timelines: std::slice::from_ref(&timeline),
+            construction_groups: &[],
+            fillet_radius_groups: &[],
+            edge_operands: &[],
+            edge_identity_operands: &[],
+            entity_selection_operands: &[],
+            curve_identities: &[],
+            face_operands: &[],
+            body_recipe_operands: &[],
+            placements: &[],
+            body_bindings: &[],
+            histories: &[],
+        },
+    )
+    .expect("ambiguous internal state chain remains unresolved");
+
+    let successor = features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(successor.id.as_str()))
+        .expect("projected successor");
+    assert!(successor.dependencies.is_empty());
+}
+
+#[test]
 fn timeline_less_feature_family_uses_complete_family_ordinals() {
     let stream = "f3d:Design/BulkStream.dat";
     let mut first = DesignParameterScope::empty(
@@ -1035,6 +1433,32 @@ fn timeline_less_feature_family_uses_complete_family_ordinals() {
     assert!(error
         .to_string()
         .contains("no complete authored timeline order"));
+}
+
+#[test]
+fn authored_scope_validation_orders_independent_streams_separately() {
+    let mut first = DesignParameterScope::empty(
+        "f3d:DesignA/BulkStream.dat:design-parameter-scope#10",
+        "Extrude",
+        10,
+    );
+    first.feature_ordinal = 1;
+    let mut second = DesignParameterScope::empty(
+        "f3d:DesignB/BulkStream.dat:design-parameter-scope#10",
+        "Fillet",
+        10,
+    );
+    second.feature_ordinal = 1;
+    let scopes = [first, second];
+
+    let ordinals = crate::design::feature_project::authored_scope_ordinals_per_stream(&scopes, &[])
+        .expect("independent stream-local orders");
+    assert_eq!(ordinals.len(), 2);
+    assert!(ordinals.values().all(|ordinal| *ordinal == 0));
+    assert!(matches!(
+        crate::design::feature_project::authored_scope_ordinals(&scopes, &[]),
+        Err(cadmpeg_core::CodecError::NotImplemented(_))
+    ));
 }
 
 #[test]
