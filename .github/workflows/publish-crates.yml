@@ -37,14 +37,18 @@ jobs:
           crates=(
             cadmpeg-core
             cadmpeg-container
+            cadmpeg-protein
             cadmpeg-ir
+            cadmpeg-asm
             cadmpeg-codec-catia
             cadmpeg-codec-creo
             cadmpeg-codec-f3d
             cadmpeg-codec-freecad
             cadmpeg-codec-iges
+            cadmpeg-codec-inventor
             cadmpeg-codec-nx
             cadmpeg-codec-rhino
+            cadmpeg-codec-sat
             cadmpeg-codec-sldprt
             cadmpeg-codec-step
             cadmpeg
