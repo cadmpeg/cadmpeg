@@ -90,6 +90,40 @@ pub struct FeatureOperationRecord {
     pub source_offset: u64,
 }
 
+/// Exact nested object-relation frame retained from one feature operation.
+///
+/// The endpoint order and link tag are native evidence. They do not assign a
+/// body, operand, input, or output role.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationObjectRelation {
+    /// Globally unique relation identity.
+    pub id: String,
+    /// Owning operation-label identity.
+    pub operation_label: String,
+    /// Owning bounded operation-record identity.
+    pub operation_record: String,
+    /// Zero-based relation order within the operation payload.
+    pub ordinal: u32,
+    /// Byte between the opening `01 02` marker and the first object index.
+    pub link_tag: u8,
+    /// First object index in serialized order.
+    pub first_object_index: u32,
+    /// Exact serialized first object-index token.
+    pub raw_first_object_index: Vec<u8>,
+    /// Absolute offset of the first object-index token.
+    pub first_object_index_source_offset: u64,
+    /// Second object index in serialized order.
+    pub second_object_index: u32,
+    /// Exact serialized second object-index token.
+    pub raw_second_object_index: Vec<u8>,
+    /// Absolute offset of the second object-index token.
+    pub second_object_index_source_offset: u64,
+    /// Exact serialized frame byte length.
+    pub byte_len: u64,
+    /// Absolute offset of the opening `01 02` marker.
+    pub source_offset: u64,
+}
+
 /// Exactly framed common record in one bounded feature operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureOperationCommonFrame {
@@ -2891,6 +2925,60 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
         );
     }
     records
+}
+
+/// Decode exact nested object-relation frames from bounded feature operations.
+pub fn feature_operation_object_relations(
+    container: &Container,
+) -> Vec<FeatureOperationObjectRelation> {
+    let sections = container.om_sections();
+    let mut relations = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
+            let operation_record = format!(
+                "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
+            );
+            for (ordinal, relation) in crate::om::operation_object_relations(record)
+                .into_iter()
+                .enumerate()
+            {
+                relations.push(FeatureOperationObjectRelation {
+                    id: format!(
+                        "nx:feature-history:operation-object-relation#{section_key}-{operation_ordinal:010}-{ordinal:010}"
+                    ),
+                    operation_label: operation_label.clone(),
+                    operation_record: operation_record.clone(),
+                    ordinal: ordinal as u32,
+                    link_tag: relation.link_tag,
+                    first_object_index: relation.first_object_index,
+                    raw_first_object_index: relation.raw_first_object_index,
+                    first_object_index_source_offset: entry_offset
+                        + relation.first_object_index_offset as u64,
+                    second_object_index: relation.second_object_index,
+                    raw_second_object_index: relation.raw_second_object_index,
+                    second_object_index_source_offset: entry_offset
+                        + relation.second_object_index_offset as u64,
+                    byte_len: (relation.end_offset - relation.offset) as u64,
+                    source_offset: entry_offset + relation.offset as u64,
+                });
+            }
+        }
+    }
+    relations
 }
 
 /// Decode every exact common frame from bounded feature operations.

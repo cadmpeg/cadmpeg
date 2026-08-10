@@ -9841,6 +9841,7 @@ mod golden {
         "feature_operation_body_reference_lanes",
         "feature_operation_body_scalar_triples",
         "feature_operation_labels",
+        "feature_operation_object_relations",
         "feature_operation_records",
         "feature_operation_common_frames",
         "feature_operation_terminal_discriminators",
@@ -10641,7 +10642,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (229), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (230), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -10652,13 +10653,13 @@ mod golden {
 
         use crate::native::catalogue::CATALOGUE;
 
-        assert_eq!(CATALOGUE.len(), 229, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 230, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE
                 .iter()
                 .filter(|row| row.phase == Phase::GroupA)
                 .count(),
-            107,
+            108,
             "group A family count"
         );
         assert_eq!(

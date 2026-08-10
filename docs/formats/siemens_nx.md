@@ -1508,6 +1508,8 @@ A complete block construction requires nineteen contiguous reference ordinals, o
 
 A body-reference field is `01 02 10, object_index, ff`. `object_index` uses the feature object-index form: `00..7f` is direct, `80..8f` contributes the high index byte and is followed by one low byte, `90` is followed by a big-endian `u16`, and `ff` is null. Every complete non-null field in a bounded operation record is retained in byte order. Exactly one field identifies an unambiguous primary-body writer; records containing zero or multiple fields do not establish that writer role.
 
+A nested operation object-relation frame is `01 02, link_tag:u8, first:object_index, 97 75 01 02 11, second:object_index, ff`. Both object indices are non-null and use the canonical feature object-index form. The frame retains its link tag, ordered object indices, exact serialized index tokens, byte length, and absolute offsets. The frame does not assign a body, operand, input, or output role to either endpoint.
+
 A bounded operation payload's terminal common-frame suffix is
 `local_ordinal, local_ordinal, object_index, 00`. Both local-ordinal tokens are
 non-null, byte-identical, and canonical. The object index is canonical and may

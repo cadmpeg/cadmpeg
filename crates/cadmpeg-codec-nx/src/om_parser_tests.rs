@@ -1094,6 +1094,81 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
 }
 
 #[test]
+fn om_operation_object_relation_requires_complete_canonical_endpoints() {
+    let label = super::OperationLabel {
+        header_offset: 100,
+        offset: 100,
+        value: "EXTRUDE",
+        object_indices: [None; 4],
+        object_index_offsets: [0; 4],
+    };
+    let payload = [
+        0x01, 0x02, 0x17, 0x81, 0x23, 0x97, 0x75, 0x01, 0x02, 0x11, 0x86, 0x45, 0xff, 0x01, 0x02,
+        0x10, 0x81, 0x23, 0xff,
+    ];
+    let record = super::OperationRecord {
+        offset: 50,
+        bytes: &payload,
+        payload_offset: 100,
+        payload: &payload,
+        label,
+    };
+    assert_eq!(
+        super::operation_object_relations(record),
+        [super::OperationObjectRelation {
+            offset: 100,
+            link_tag: 0x17,
+            first_object_index: 0x123,
+            raw_first_object_index: vec![0x81, 0x23],
+            first_object_index_offset: 103,
+            second_object_index: 0x645,
+            raw_second_object_index: vec![0x86, 0x45],
+            second_object_index_offset: 110,
+            end_offset: 113,
+        }]
+    );
+
+    let mut noncanonical_first = payload;
+    noncanonical_first[3] = 0x80;
+    assert!(super::operation_object_relations(super::OperationRecord {
+        bytes: &noncanonical_first,
+        payload: &noncanonical_first,
+        ..record
+    })
+    .is_empty());
+
+    let mut truncated = payload[..13].to_vec();
+    truncated.pop();
+    assert!(super::operation_object_relations(super::OperationRecord {
+        bytes: &truncated,
+        payload: &truncated,
+        ..record
+    })
+    .is_empty());
+
+    let direct_body = [0x01, 0x02, 0x10, 0x81, 0x23, 0xff];
+    assert!(super::operation_object_relations(super::OperationRecord {
+        bytes: &direct_body,
+        payload: &direct_body,
+        ..record
+    })
+    .is_empty());
+
+    let nested = [
+        0x01, 0x02, 0x11, 0x80, 0xa9, 0x97, 0x75, 0x01, 0x02, 0x11, 0x86, 0x93, 0xff,
+    ];
+    let nested_relations = super::operation_object_relations(super::OperationRecord {
+        bytes: &nested,
+        payload: &nested,
+        ..record
+    });
+    assert_eq!(nested_relations.len(), 1);
+    assert_eq!(nested_relations[0].link_tag, 0x11);
+    assert_eq!(nested_relations[0].first_object_index, 0xa9);
+    assert_eq!(nested_relations[0].second_object_index, 0x693);
+}
+
+#[test]
 fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
     let label = super::OperationLabel {
         header_offset: 100,

@@ -1863,6 +1863,32 @@ pub struct OperationBodyReference {
     pub raw_object_index: Vec<u8>,
 }
 
+/// One exact nested object-relation frame in a bounded operation record.
+///
+/// The two object indices are retained in wire order. Their semantic roles
+/// depend on the owning operation and are deliberately not inferred here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationObjectRelation {
+    /// Absolute offset of the opening `01 02` marker.
+    pub offset: usize,
+    /// Byte between the opening marker and the first object index.
+    pub link_tag: u8,
+    /// First object index in serialized order.
+    pub first_object_index: u32,
+    /// Exact serialized first object-index token.
+    pub raw_first_object_index: Vec<u8>,
+    /// Absolute offset of the first object-index token.
+    pub first_object_index_offset: usize,
+    /// Second object index in serialized order.
+    pub second_object_index: u32,
+    /// Exact serialized second object-index token.
+    pub raw_second_object_index: Vec<u8>,
+    /// Absolute offset of the second object-index token.
+    pub second_object_index_offset: usize,
+    /// Exclusive absolute end offset after the frame terminator.
+    pub end_offset: usize,
+}
+
 /// Object-index reference in one bounded offset-only OM data block.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataBlockObjectReference {
@@ -4987,6 +5013,61 @@ pub fn operation_body_references(record: OperationRecord<'_>) -> Vec<OperationBo
         }
     }
     matches
+}
+
+/// Decode every exact nested `01 02 tag index 97 75 01 02 11 index ff` frame.
+///
+/// Both indices are non-null and canonical. The fixed middle sequence is a
+/// structural relation marker; this parser does not assign endpoint roles.
+pub fn operation_object_relations(record: OperationRecord<'_>) -> Vec<OperationObjectRelation> {
+    const MIDDLE: &[u8] = &[0x97, 0x75, 0x01, 0x02, 0x11];
+    let mut relations = Vec::new();
+    for marker in record
+        .payload
+        .windows(2)
+        .enumerate()
+        .filter_map(|(offset, window)| (window == [0x01, 0x02]).then_some(offset))
+    {
+        let Some(link_tag) = record.payload.get(marker + 2).copied() else {
+            continue;
+        };
+        let first_token = marker + 3;
+        let Some((Some(first_object_index), first_end)) =
+            feature_object_index(record.payload, first_token)
+        else {
+            continue;
+        };
+        let raw_first_object_index = &record.payload[first_token..first_end];
+        if !canonical_feature_object_index(Some(first_object_index), raw_first_object_index)
+            || record.payload.get(first_end..first_end + MIDDLE.len()) != Some(MIDDLE)
+        {
+            continue;
+        }
+        let second_token = first_end + MIDDLE.len();
+        let Some((Some(second_object_index), second_end)) =
+            feature_object_index(record.payload, second_token)
+        else {
+            continue;
+        };
+        let raw_second_object_index = &record.payload[second_token..second_end];
+        if !canonical_feature_object_index(Some(second_object_index), raw_second_object_index)
+            || record.payload.get(second_end) != Some(&0xff)
+        {
+            continue;
+        }
+        relations.push(OperationObjectRelation {
+            offset: record.payload_offset + marker,
+            link_tag,
+            first_object_index,
+            raw_first_object_index: raw_first_object_index.to_vec(),
+            first_object_index_offset: record.payload_offset + first_token,
+            second_object_index,
+            raw_second_object_index: raw_second_object_index.to_vec(),
+            second_object_index_offset: record.payload_offset + second_token,
+            end_offset: record.payload_offset + second_end + 1,
+        });
+    }
+    relations
 }
 
 fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)> {
