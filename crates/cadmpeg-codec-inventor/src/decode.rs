@@ -3,6 +3,8 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
+use cadmpeg_asm::brep::AsmBrep;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
@@ -12,8 +14,8 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, Severity, TransferLedger};
-use cadmpeg_ir::units::Units;
-use cadmpeg_ir::{SourceFidelity, UnknownRecord};
+use cadmpeg_ir::units::{Tolerances, Units};
+use cadmpeg_ir::{AnnotationBuilder, NativeUnknownRecord, SourceFidelity, UnknownRecord};
 
 use crate::container::{ContainerPurpose, InventorContainer};
 use crate::database::{RevisionPayload, VersionTuple};
@@ -805,14 +807,68 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     namespace.set_arena("segment_bulk_issues", &segment_bulk_issues)?;
     namespace.set_arena("unpaired_segments", &unpaired_segments)?;
     namespace.set_arena("active_carrier", std::slice::from_ref(&active_carrier))?;
+    ctx.charge_entities(ir.model.entity_count() as u64, "admit Inventor entities")?;
+
+    let mut geometry_failure = None;
+    let asm_brep = match &container.rse.active_carrier {
+        ActiveCarrierState::Selected(carrier)
+            if carrier.family == crate::kernel::KernelFamily::Asm =>
+        {
+            match crate::kernel::decode_asm_carrier(ctx, carrier) {
+                Ok(decoded) => {
+                    apply_asm_header(&mut ir, &decoded.header);
+                    Some(decoded.brep)
+                }
+                Err(error) => {
+                    geometry_failure = Some(error.to_string());
+                    None
+                }
+            }
+        }
+        _ => None,
+    };
+    let AsmTransferRemainder {
+        body_keys: _,
+        unknowns: asm_unknowns,
+        stats: asm_stats,
+        annotation_records: asm_annotations,
+    } = transfer_into_ir(
+        ctx,
+        &mut ir,
+        "inventor",
+        INVENTOR_NATIVE_VERSION,
+        asm_brep.unwrap_or_else(AsmBrep::default),
+    )?;
+    ir.set_native_unknowns("inventor", &[] as &[NativeUnknownRecord])?;
+    let geometry_transferred =
+        !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
+    if geometry_transferred {
+        let body_ids = ir
+            .model
+            .bodies
+            .iter()
+            .map(|body| body.id.clone())
+            .collect::<Vec<_>>();
+        for product in &mut ir.model.product_definitions {
+            product.bodies.clone_from(&body_ids);
+        }
+    } else if matches!(
+        &container.rse.active_carrier,
+        ActiveCarrierState::Selected(carrier)
+            if carrier.family == crate::kernel::KernelFamily::Asm
+    ) && geometry_failure.is_none()
+    {
+        geometry_failure =
+            Some("the active kernel carrier decoded no surfaces, points, or faces".into());
+    }
     let mut losses = Vec::new();
     if ctx.container_only() {
         losses.push(LossNote::new(
             LossKind::ContainerOnly,
             "Container-only decode was requested.",
         ));
-    } else if !matches!(document_kind, DocumentKind::Assembly) {
-        let detail = match &container.rse.active_carrier {
+    } else if !matches!(document_kind, DocumentKind::Assembly) && !geometry_transferred {
+        let detail = geometry_failure.unwrap_or_else(|| match &container.rse.active_carrier {
             ActiveCarrierState::Selected(carrier)
                 if carrier.family == crate::kernel::KernelFamily::Acis =>
             {
@@ -831,13 +887,22 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             ActiveCarrierState::NotExpanded => {
                 unreachable!("non-container decode expands RSe bulk streams")
             }
-        };
+        });
         losses.push(
             LossNote::new(LossKind::GeometryNotTransferred, detail)
                 .with_severity(Severity::Blocking),
         );
     }
     if !ctx.container_only() {
+        if asm_stats.unknown_surface_faces != 0 {
+            losses.push(LossNote::new(
+                LossKind::GeometryNotTransferred,
+                format!(
+                    "{} face(s) use procedural surfaces without a decoded carrier.",
+                    asm_stats.unknown_surface_faces
+                ),
+            ));
+        }
         if !segment_pairs.is_empty() {
             losses.push(LossNote::new(
                 LossKind::RecordNotTyped,
@@ -923,9 +988,19 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         UfrxState::Absent | UfrxState::Parsed(_) => {}
         }
     }
-    ctx.charge_entities(ir.model.entity_count() as u64, "admit Inventor entities")?;
     let preview_asset_count = ir.model.assets.len();
     let mut source_fidelity = SourceFidelity::default();
+    let mut annotations = AnnotationBuilder::new();
+    for record in asm_annotations {
+        let stream = annotations.stream(format!("inventor:{}", record.stream));
+        annotations
+            .note(&record.id, stream, record.offset)
+            .tag(record.tag);
+        for field in record.derived_fields {
+            annotations.derived(&record.id, field);
+        }
+    }
+    source_fidelity.annotations = annotations.build();
     if let ActiveCarrierState::Selected(carrier) = &container.rse.active_carrier {
         if carrier.family == crate::kernel::KernelFamily::Acis {
             let data = ctx.copy_retained(
@@ -949,13 +1024,21 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             );
         }
     }
+    if !asm_unknowns.is_empty() {
+        source_fidelity
+            .attach_native_unknown_records(&mut ir, "inventor", asm_unknowns)
+            .map_err(|error| {
+                CodecError::Malformed(format!("Inventor ASM unknown retention failed: {error}"))
+            })?;
+    }
     source_fidelity.finalize();
+    let asm_unknown_record_count = ir.native_unknowns("inventor")?.len();
     Ok(DecodeResult::new(
         ir,
         DecodeReport {
             format: "inventor".into(),
             container_only: ctx.container_only(),
-            geometry_transferred: false,
+            geometry_transferred,
             coverage: BTreeMap::from([
                 ("rse_storage_bands".into(), storage_bands.len()),
                 ("rse_databases".into(), databases.len()),
@@ -980,6 +1063,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                         ActiveCarrierState::Selected(_)
                     )),
                 ),
+                ("asm_unknown_records".into(), asm_unknown_record_count),
+                (
+                    "asm_unknown_surface_faces".into(),
+                    asm_stats.unknown_surface_faces,
+                ),
             ]),
             losses,
             notes: Vec::new(),
@@ -995,6 +1083,41 @@ fn version_record(version: VersionTuple) -> VersionTupleRecord {
         minor: version.minor,
         major: version.major,
         state: hex(&version.state),
+    }
+}
+
+fn apply_asm_header(ir: &mut CadIr, header: &cadmpeg_asm::asm_header::AsmHeader) {
+    let source = ir
+        .source
+        .as_mut()
+        .expect("Inventor source metadata is established before ASM transfer");
+    if let Some(version) = header.save_format_version {
+        source
+            .attributes
+            .insert("asm_save_format_version".into(), version.to_string());
+    }
+    if let Some(count) = header.entity_count {
+        source
+            .attributes
+            .insert("asm_entity_count".into(), count.to_string());
+    }
+    if let Some(flags) = header.flags {
+        source
+            .attributes
+            .insert("asm_flags".into(), flags.to_string());
+    }
+    if let Some(family) = &header.product_family {
+        source
+            .attributes
+            .insert("asm_product_family".into(), family.clone());
+    }
+    if let Some(version) = &header.product_version {
+        source
+            .attributes
+            .insert("asm_product_version".into(), version.clone());
+    }
+    if let (Some(linear), Some(angular)) = (header.linear, header.angular) {
+        ir.tolerances = Tolerances { linear, angular };
     }
 }
 

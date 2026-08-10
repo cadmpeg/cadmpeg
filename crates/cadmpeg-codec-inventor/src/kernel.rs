@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed Inventor kernel-carrier selection and envelope framing.
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+
+use cadmpeg_asm::asm_header;
+use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
+use cadmpeg_asm::ids::IdFormat;
+use cadmpeg_asm::sab;
 
 use crate::rse::{
     DocumentKind, RecordFrameState, SegmentBulkState, SegmentDescriptor, SegmentKind,
@@ -51,6 +56,48 @@ pub(crate) enum ActiveCarrierState<'a> {
     NotExpanded,
     Selected(ActiveCarrier<'a>),
     Unavailable(String),
+}
+
+pub(crate) struct DecodedAsmCarrier {
+    pub(crate) header: asm_header::AsmHeader,
+    pub(crate) brep: AsmBrep,
+}
+
+pub(crate) fn decode_asm_carrier(
+    ctx: &DecodeContext<'_>,
+    carrier: &ActiveCarrier<'_>,
+) -> Result<DecodedAsmCarrier, CodecError> {
+    if carrier.family != KernelFamily::Asm {
+        return Err(CodecError::Malformed(
+            "Inventor active carrier is not ASM".into(),
+        ));
+    }
+    let bytes = carrier.bytes.window();
+    let header = asm_header::parse(bytes).ok_or_else(|| {
+        CodecError::Malformed("Inventor ASM carrier has no parseable header".into())
+    })?;
+    let width = usize::from(header.width);
+    let start = asm_header::record_stream_start(bytes)
+        .ok_or_else(|| CodecError::Malformed("Inventor ASM carrier has no record stream".into()))?;
+    let records = match asm_header::solved_record_limit(bytes) {
+        Some(limit) => sab::frame(bytes, start, limit, width),
+        None => sab::frame_history(bytes, start, bytes.len(), width),
+    }
+    .map_err(|error| CodecError::Malformed(format!("Inventor ASM framing failed: {error}")))?;
+    ctx.charge_collection_items(records.len() as u64, "frame Inventor ASM records")?;
+    let stream = format!(
+        "RSeStorage/B{}:record:{}",
+        carrier.segment_token, carrier.record_ordinal
+    );
+    let brep = decode_with_header(
+        &records,
+        bytes,
+        Some(header.clone()),
+        &stream,
+        IdFormat("inventor"),
+        DecodePurpose::Model,
+    );
+    Ok(DecodedAsmCarrier { header, brep })
 }
 
 pub(crate) fn select_active_carrier<'a>(
@@ -251,6 +298,23 @@ mod tests {
         });
     }
 
+    #[test]
+    fn asm_carrier_uses_header_boundary_and_shared_decoder() {
+        let asm = empty_asm_fixture();
+        let bytes = carrier_fixture(&asm, 23);
+        let arena = DecodeArena::new();
+        let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic carrier fits policy");
+        let carrier = parse_carrier(view, "token", 7, 100, 23).expect("carrier parses");
+        let decoded = decode_asm_carrier(&ctx, &carrier).expect("ASM carrier decodes");
+
+        assert_eq!(decoded.header.width, 4);
+        assert_eq!(decoded.header.save_format_version, Some(700));
+        assert_eq!(decoded.header.product_family.as_deref(), Some("Inventor"));
+        assert!(decoded.brep.bodies.is_empty());
+        assert!(decoded.brep.unknowns.is_empty());
+    }
+
     fn carrier_fixture(carrier: &[u8], version: u8) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&1_u32.to_le_bytes());
@@ -266,6 +330,24 @@ mod tests {
         }
         bytes.extend_from_slice(&6_u32.to_le_bytes());
         bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+        bytes
+    }
+
+    fn empty_asm_fixture() -> Vec<u8> {
+        let mut bytes = b"ASM BinaryFile4".to_vec();
+        bytes.extend_from_slice(&700_u32.to_le_bytes());
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        for value in ["Inventor", "ASM test", "2000-01-01"] {
+            bytes.push(0x07);
+            bytes.push(value.len() as u8);
+            bytes.extend_from_slice(value.as_bytes());
+        }
+        for value in [1.0_f64, 1.0e-6, 1.0e-10] {
+            bytes.push(0x06);
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
         bytes
     }
 

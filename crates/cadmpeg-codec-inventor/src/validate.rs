@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_ir::{CadIr, Check, Finding, Severity};
+use cadmpeg_ir::{CadIr, Check, Finding, NativeUnknownRecord, Severity};
 
 use crate::native::{
     ActiveCarrierRecord, ActiveCarrierRecordState, DatabaseIssueRecord, DatabaseRecord,
@@ -17,11 +17,16 @@ use crate::native::{
 
 const ARENAS: &[&str] = &[
     "active_carrier",
+    "body_native_keys",
     "database_issues",
     "databases",
     "external_references",
+    "edge_continuities",
+    "edge_ownerships",
+    "face_sidedness",
     "meta_sections",
     "meta_types",
+    "mesh_surface_sentinels",
     "properties",
     "property_sections",
     "property_set_issues",
@@ -38,8 +43,15 @@ const ARENAS: &[&str] = &[
     "segment_registry",
     "storage_bands",
     "structural_issues",
+    "tolerant_coedge_parameters",
+    "tolerant_edge_tails",
+    "tolerant_vertex_tails",
+    "transform_hints",
     "ufrx",
+    "unknowns",
     "unpaired_segments",
+    "vertex_ownerships",
+    "wire_topologies",
 ];
 
 pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
@@ -98,6 +110,11 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_databases(&data, &mut findings);
     validate_segments(&data, &mut findings);
     validate_active_carrier(&data, &mut findings);
+    unique(
+        &mut findings,
+        data.unknowns.iter().map(|record| record.id.0.as_str()),
+        "ASM unknown-record id",
+    );
     validate_properties(&data, &mut findings);
     validate_protein(&data, &mut findings);
     validate_ufrx(&data, &mut findings);
@@ -216,6 +233,7 @@ struct NativeData {
     ufrx: Vec<UfrxRecord>,
     external_references: Vec<ExternalReferenceRecord>,
     active_carrier: Vec<ActiveCarrierRecord>,
+    unknowns: Vec<NativeUnknownRecord>,
 }
 
 impl NativeData {
@@ -247,6 +265,7 @@ impl NativeData {
             ufrx: namespace.arena_as("ufrx")?,
             external_references: namespace.arena_as("external_references")?,
             active_carrier: namespace.arena_as("active_carrier")?,
+            unknowns: namespace.arena_as("unknowns")?,
         })
     }
 }
