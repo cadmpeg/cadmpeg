@@ -50,6 +50,7 @@ A level passes only when every criterion holds for the declared envelope:
 | Siemens NX `.prt` (unselected multi-partition history)                | **L2** | connected candidate B-reps, external-dependency inspection                                                                 |
 | CATIA V5 `.CATPart` (other layout bands)                              | **L1** |                                                                                                                            |
 | Creo Parametric `.prt`                                                | **L1** | partial placed geometry, connected topology, sketches, constraints, parameters, expressions, features                      |
+| ASM/ACIS bare `.sat`/`.smt`/`.smb`/`.sab` (admitted branches)         | **L3** | retained unknown SAB records; unsupported ACIS binary save-format bands identified and refused                             |
 | Rhino `.3dm` (V3/V4)                                                  | **L1** | metadata and bounded object-record retention                                                                               |
 | Rhino `.3dm` (V2)                                                     | **L1** | partial legacy geometry transfer                                                                                           |
 | Rhino `.3dm` (V1 and archive 5)                                       | **L0** | bounded header and legacy-record inspection                                                                                |
@@ -75,6 +76,18 @@ Each current score applies to the envelope described in its profile.
 - **Write:** None. The codec has no encoder, replay path, or patch path.
 
 See [`formats/inventor.md`](formats/inventor.md) and [`formats/inventor-open-items.md`](formats/inventor-open-items.md).
+
+## ASM/ACIS bare `.sat`/`.smt`/`.smb`/`.sab` streams
+
+**Model:** Standalone ShapeManager or Spatial ACIS B-rep stream outside any CAD container
+
+**Primary structural envelope:** `ASM BinaryFile4`, `ASM BinaryFile8`, `ACIS BinaryFile` save-format 217 or 218, and text SAT/SMT streams that terminate with `End-of-ASM-data` or `End-of-ACIS-data`. Stream content selects the decoder; file extensions do not. Other ACIS binary save-format bands are separate envelopes.
+
+**Ladder: L3.** Detection, inspection, and decode cover the admitted binary and text branches. The codec transfers solved-record analytic, NURBS, topology, placement, and procedural carriers through `cadmpeg-asm` into connected B-rep when the stream yields surfaces, points, or faces. Header scale and tolerances populate the neutral document. Unknown SAB records retain source range, digest, and kernel-qualified identity under the `sat` namespace. An empty or unsupported decoded carrier produces blocking `geometry_not_transferred`. Feature history, assemblies, presentation documents, and native writing are inapplicable or absent for this envelope.
+
+- **Write:** None. The codec has no encoder, replay path, or patch path.
+
+See [`formats/asm.md`](formats/asm.md) and [`formats/asm-open-items.md`](formats/asm-open-items.md).
 
 ## Status terms
 

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Mutates container bytes, then runs detection, inspection, and decoding with
-//! every binary CAD codec. The first input byte selects deterministic mutation
-//! and truncation strategies. Codec errors are expected; panics are failures.
+//! the registered binary container codecs. The first input byte selects
+//! deterministic mutation and truncation strategies. Codec errors are expected;
+//! panics are failures.
 
 #![no_main]
 
@@ -10,10 +11,12 @@ use std::io::Cursor;
 use cadmpeg_codec_catia::CatiaCodec;
 use cadmpeg_codec_creo::CreoCodec;
 use cadmpeg_codec_f3d::F3dCodec;
+use cadmpeg_codec_freecad::FcstdCodec;
+use cadmpeg_codec_inventor::InventorCodec;
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_codec_rhino::RhinoCodec;
 use cadmpeg_codec_sldprt::SldprtCodec;
-use cadmpeg_ir::codec::{Codec, CodecEntry, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_core::decode::InspectOptions;
 use libfuzzer_sys::fuzz_target;
@@ -56,6 +59,8 @@ fuzz_target!(|data: &[u8]| {
 
     let codecs: Vec<Box<dyn Codec>> = vec![
         Box::new(F3dCodec),
+        Box::new(InventorCodec),
+        Box::new(FcstdCodec),
         Box::new(SldprtCodec),
         Box::new(CatiaCodec),
         Box::new(CreoCodec),

@@ -45,24 +45,25 @@ Every encoder returns an `ExportReport` with its format id, entity census, loss 
 
 ## Crate map
 
-| Crate                   | Responsibility                                                                                                                         |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `cadmpeg`               | CLI orchestration, built-in codec registration, and output dispatch.                                                                   |
-| `cadmpeg-ir`            | `CadIr` version 5, validation, diff, codec traits, reports, and source-fidelity sidecars.                                              |
-| `cadmpeg-core`    | Shared decode budgets, arenas, views, container summaries, and I/O helpers.                                                            |
-| `cadmpeg-container`     | Shared archive and compression helpers for container codecs.                                                                           |
-| `cadmpeg-protein`       | Shared schema and paged instance-property decoding for Protein asset packages.                                                         |
-| `cadmpeg-codec-freecad` | FreeCAD `.FCStd` read and semantic write for the schema-4/file-1 envelope.                                                             |
-| `cadmpeg-codec-f3d`     | Fusion `.f3d` inspection, ASM/SAB geometry, design records, retained replay, and selected native edits.                                |
-| `cadmpeg-codec-inventor`| Inventor `.ipt`/`.iam` compound, RSe, part geometry, external occurrences, properties, appearances, and design-record decode.       |
-| `cadmpeg-codec-sldprt`  | SolidWorks `.sldprt` container, Parasolid B-rep, features, retained replay, and semantic writing.                                      |
-| `cadmpeg-codec-rhino`   | Rhino `.3dm` read and write for archive 50/60/70/80.                                                                                   |
-| `cadmpeg-codec-catia`   | CATIA V5 `.CATPart` layout inspection and carrier decode; conditional topology on the standard-nested band.                            |
-| `cadmpeg-codec-nx`      | NX `.prt` `SPLMSSTR` extraction, Parasolid carriers, and conditional topology.                                                         |
-| `cadmpeg-codec-creo`    | Creo `.prt` section decode with partial placed geometry and conditional connected bodies (general analytic intersections and pcurves). |
-| `cadmpeg-codec-iges`    | Read-only IGES 5.3 Fixed ASCII for the mechanical/document envelope.                                                                   |
-| `cadmpeg-codec-step`    | STEP Part 21 AP203, AP214, and AP242 read and write with export loss notes.                                                            |
-| `cadmpeg-fuzz`          | Nightly `cargo-fuzz` targets outside the default workspace.                                                                            |
+| Crate                    | Responsibility                                                                                                                         |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `cadmpeg`                | CLI orchestration, built-in codec registration, and output dispatch.                                                                   |
+| `cadmpeg-ir`             | `CadIr` version 5, validation, diff, codec traits, reports, and source-fidelity sidecars.                                              |
+| `cadmpeg-core`           | Shared decode budgets, arenas, views, container summaries, and I/O helpers.                                                            |
+| `cadmpeg-container`      | Shared archive and compression helpers for container codecs.                                                                           |
+| `cadmpeg-protein`        | Shared schema and paged instance-property decoding for Protein asset packages.                                                         |
+| `cadmpeg-codec-freecad`  | FreeCAD `.FCStd` read and semantic write for the schema-4/file-1 envelope.                                                             |
+| `cadmpeg-codec-f3d`      | Fusion `.f3d` inspection, ASM/SAB geometry, design records, retained replay, and selected native edits.                                |
+| `cadmpeg-codec-inventor` | Inventor `.ipt`/`.iam` compound, RSe, part geometry, external occurrences, properties, appearances, and design-record decode.          |
+| `cadmpeg-codec-sldprt`   | SolidWorks `.sldprt` container, Parasolid B-rep, features, retained replay, and semantic writing.                                      |
+| `cadmpeg-codec-rhino`    | Rhino `.3dm` read and write for archive 50/60/70/80.                                                                                   |
+| `cadmpeg-codec-catia`    | CATIA V5 `.CATPart` layout inspection and carrier decode; conditional topology on the standard-nested band.                            |
+| `cadmpeg-codec-nx`       | NX `.prt` `SPLMSSTR` extraction, Parasolid carriers, and conditional topology.                                                         |
+| `cadmpeg-codec-creo`     | Creo `.prt` section decode with partial placed geometry and conditional connected bodies (general analytic intersections and pcurves). |
+| `cadmpeg-codec-sat`      | Bare ASM/ACIS `.sat`/`.smt`/`.smb`/`.sab` stream inspection and B-rep transfer outside any container.                                  |
+| `cadmpeg-codec-iges`     | IGES 5.1/5.2/5.3 Fixed ASCII read and bounded semantic write for the mechanical/document envelope.                                     |
+| `cadmpeg-codec-step`     | STEP Part 21 AP203, AP214, and AP242 read and write with export loss notes.                                                            |
+| `cadmpeg-fuzz`           | Nightly `cargo-fuzz` targets outside the default workspace.                                                                            |
 
 ## Codec interface
 
