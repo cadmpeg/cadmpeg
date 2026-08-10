@@ -27,8 +27,7 @@
           "loops": [],
           "sense": "forward",
           "shell": "iges:model:shell#D3",
-          "surface": "iges:model:surface#D1",
-          "tolerance": 0.001
+          "surface": "iges:model:surface#D1"
         }
       ],
       "features": [],

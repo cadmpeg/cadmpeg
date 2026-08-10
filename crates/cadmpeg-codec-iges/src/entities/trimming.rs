@@ -52,7 +52,24 @@ fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
 }
 
 fn close(left: Point3, right: Point3, tolerance: f64) -> bool {
-    tolerance.is_finite() && tolerance > 0.0 && left.distance(right) <= tolerance
+    tolerance.is_finite() && tolerance >= 0.0 && left.distance(right) <= tolerance
+}
+
+fn topology_sewing_tolerance(global: &Global, points: impl Iterator<Item = Point3>) -> f64 {
+    let magnitude = points.fold(0.0_f64, |magnitude, point| {
+        magnitude
+            .max(point.x.abs())
+            .max(point.y.abs())
+            .max(point.z.abs())
+    });
+    let coordinate_quantum = if magnitude > 0.0 {
+        10.0_f64.powf(
+            magnitude.log10().floor() - f64::from(global.single_precision_significance()) + 1.0,
+        )
+    } else {
+        0.0
+    };
+    global.minimum_resolution_mm().max(coordinate_quantum)
 }
 
 fn point_position(ir: &CadIr, id: &VertexId) -> Option<Point3> {
@@ -376,7 +393,7 @@ pub(super) fn project(
     {
         handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
-        let tolerance = global.minimum_resolution_mm();
+        let agreement_tolerance = global.minimum_resolution_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -523,6 +540,7 @@ pub(super) fn project(
         let face_id = FaceId(format!("iges:model:face#{stem}"));
         let mut loop_ids = Vec::new();
         let mut consumed = Vec::new();
+        let mut face_tolerance = 0.0_f64;
         for (boundary_index, sequence) in boundary_sequences.iter().copied().enumerate() {
             let Some(boundary) = boundaries.get(&sequence).cloned() else {
                 losses.push(entity_loss(
@@ -572,7 +590,13 @@ pub(super) fn project(
                     .pcurves
                     .iter()
                     .map(|sequence| {
-                        pcurve_geometry(ir, *sequence, &support_geometry, factor, Some(tolerance))
+                        pcurve_geometry(
+                            ir,
+                            *sequence,
+                            &support_geometry,
+                            factor,
+                            Some(agreement_tolerance),
+                        )
                     })
                     .collect::<Option<Vec<_>>>();
                 let Some(pcurves) = pcurves else {
@@ -595,7 +619,7 @@ pub(super) fn project(
                         &pcurves,
                         expected_start,
                         expected_end,
-                        tolerance,
+                        agreement_tolerance,
                     );
                     if !agrees {
                         losses.push(entity_loss(
@@ -625,10 +649,15 @@ pub(super) fn project(
                     (item.end, item.start)
                 }
             };
+            let sewing_tolerance = topology_sewing_tolerance(
+                global,
+                items.iter().flat_map(|item| [item.start, item.end]),
+            );
+            face_tolerance = face_tolerance.max(sewing_tolerance);
             if items.iter().enumerate().any(|(index, item)| {
                 let (_, end) = traversal(item);
                 let (next_start, _) = traversal(&items[(index + 1) % items.len()]);
-                !close(end, next_start, tolerance)
+                !close(end, next_start, sewing_tolerance)
             }) {
                 losses.push(entity_loss(
                     entry,
@@ -652,7 +681,7 @@ pub(super) fn project(
                     &stem,
                     boundary_index,
                     item.start,
-                    tolerance,
+                    sewing_tolerance,
                 );
                 let end_vertex = face_vertex(
                     &mut candidate,
@@ -660,7 +689,7 @@ pub(super) fn project(
                     &stem,
                     boundary_index,
                     item.end,
-                    tolerance,
+                    sewing_tolerance,
                 );
                 candidate.model_mut().edges.push(Edge {
                     id: edge_id.clone(),
@@ -668,7 +697,7 @@ pub(super) fn project(
                     start: start_vertex,
                     end: end_vertex,
                     param_range: item.source_edge.param_range,
-                    tolerance: Some(tolerance),
+                    tolerance: Some(sewing_tolerance),
                 });
                 let pcurve_uses = item
                     .pcurves
@@ -684,7 +713,7 @@ pub(super) fn project(
                             wrapper_reversed: None,
                             native_tail_flags: None,
                             parameter_range: Some(parameter_range),
-                            fit_tolerance: Some(tolerance),
+                            fit_tolerance: None,
                         });
                         PcurveUse {
                             pcurve: id,
@@ -737,7 +766,7 @@ pub(super) fn project(
             loops: loop_ids,
             name: None,
             color: None,
-            tolerance: Some(tolerance),
+            tolerance: (face_tolerance > 0.0).then_some(face_tolerance),
         });
         candidate.model_mut().shells.push(Shell {
             id: shell_id.clone(),

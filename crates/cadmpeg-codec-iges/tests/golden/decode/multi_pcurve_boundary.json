@@ -235,7 +235,6 @@
       "parameters": [],
       "pcurves": [
         {
-          "fit_tolerance": 0.001,
           "geometry": {
             "control_points": [
               {
@@ -264,7 +263,6 @@
           ]
         },
         {
-          "fit_tolerance": 0.001,
           "geometry": {
             "control_points": [
               {

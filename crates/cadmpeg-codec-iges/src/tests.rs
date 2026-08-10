@@ -1543,7 +1543,7 @@ fn decode_projects_mixed_degree_composite_pcurve() {
         result.ir.model.pcurves[0].geometry,
         cadmpeg_ir::geometry::PcurveGeometry::Nurbs { degree: 3, .. }
     ));
-    assert_eq!(result.ir.model.pcurves[0].fit_tolerance, Some(0.001));
+    assert_eq!(result.ir.model.pcurves[0].fit_tolerance, None);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -3048,6 +3048,60 @@ fn bounded_plane_with_resolution_gap_file() -> Vec<u8> {
     bytes[start..start + replacement.len()].copy_from_slice(replacement);
     bytes[start + replacement.len()..payload_end].fill(b' ');
     bytes
+}
+
+fn bounded_plane_with_significance_gap_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 108,
+            form: 0,
+            label: "PLANE".into(),
+            status: "00010000",
+            parameters: "108,0,0,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "EDGE1".into(),
+            status: "00010000",
+            parameters: "110,1000,1000,0,1001,1000,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "EDGE2".into(),
+            status: "00010000",
+            parameters: "110,1001,1000.005,0,1001,1001,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "EDGE3".into(),
+            status: "00010000",
+            parameters: "110,1001,1001,0,1000,1001,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "EDGE4".into(),
+            status: "00010000",
+            parameters: "110,1000,1001,0,1000,1000,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 141,
+            form: 0,
+            label: "BOUNDARY".into(),
+            status: "00010000",
+            parameters: "141,0,1,1,4,3,1,0,5,1,0,7,1,0,9,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 143,
+            form: 0,
+            label: "BOUNDED".into(),
+            status: "00000000",
+            parameters: "143,0,1,1,11;".into(),
+        },
+    ])
 }
 
 fn parametrically_bounded_plane_file() -> Vec<u8> {
@@ -9105,6 +9159,38 @@ fn decode_accepts_a_bounded_sheet_join_within_global_resolution() {
         .edges
         .iter()
         .any(|edge| edge.tolerance == Some(0.001)));
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_sews_boundary_roundoff_with_declared_coordinate_significance() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(bounded_plane_with_significance_gap_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let face = result
+        .ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.0 == "iges:model:face#D13")
+        .expect("bounded face within one declared coordinate quantum");
+    assert_eq!(face.tolerance, Some(0.01));
+    assert!(result
+        .ir
+        .model
+        .pcurves
+        .iter()
+        .all(|pcurve| pcurve.fit_tolerance.is_none()));
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

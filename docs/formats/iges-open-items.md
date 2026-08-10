@@ -120,16 +120,6 @@ from a conformant file.
 
 ## 5. Surfaces and topology
 
-### TP-01. The Global minimum resolution serves five unrelated roles
-
-**Question.** Which of the trimming tolerances does the Global minimum resolution govern?
-
-**Known.** IGES gives Global field 19 as the smallest distance the sender considers meaningful, which is a granularity floor. `trimming.rs` uses one value for five purposes: pcurve and model-curve endpoint agreement (`:601`), loop ring closure (`:642`), the vertex merge radius (`:660-675`), the stored `Edge` and `Face` tolerance (`:682`, `:751`), and the NURBS fit tolerance given to the carrier converter and recorded on every pcurve (`:584`, `:698`).
-
-**Note.** Only the endpoint agreement use is anchored in `iges.md` "Topology". Ring closure, vertex merge, and fit tolerance have no anchor. A granularity floor used as a maximum permitted error is the strictest available reading.
-
-**Need.** A Type 141 boundary of 24 curves exported at seven significant digits near 1000 mm has adjacent endpoint gaps near 1e-4 mm. With a declared resolution of 1e-5 mm the ring-closure test fails and the complete trimmed surface is dropped. Commercial importers give this a separate sewing tolerance. We need the tolerance channel for each of the five roles.
-
 ### TP-02. Type 141 and Type 142 `PREF` is validated and discarded
 
 **Question.** What does the preferred-representation flag change?
