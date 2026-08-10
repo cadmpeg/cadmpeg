@@ -122,14 +122,6 @@ from a conformant file.
 
 ## 6. Product structure, annotation, and presentation
 
-### PS-02. The same text-box metric has two different bounds
-
-**Question.** May a character-box width or height be zero?
-
-**Known.** `annotation.rs:47-51` requires the Type 212 box width and height to be finite and nonnegative. `presentation.rs:241-245` requires the Type 312 values to be strictly positive. `annotation.rs:90-104` requires the Type 213 values to be strictly positive. `iges.md` "Views and drawings" states "nonnegative box width and height" and `iges.md` "Views and drawings" states "positive character-box width and height" for the same physical quantity.
-
-**Need.** One of the two bounds is a guess. We need the bound for each entity.
-
 ### PS-03. The perspective-view up-vector test uses an absolute epsilon
 
 **Question.** What makes a view-up vector have a nonzero component in the view plane?

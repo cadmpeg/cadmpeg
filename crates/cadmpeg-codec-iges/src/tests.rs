@@ -4738,7 +4738,7 @@ fn defaulted_text_and_view_fields_file() -> Vec<u8> {
             form: 0,
             label: "TEMPLATE".into(),
             status: "00000200",
-            parameters: "312,1,1;".into(),
+            parameters: "312,0,0;".into(),
         },
         OwnedTestEntity {
             entity_type: 212,
@@ -4746,6 +4746,13 @@ fn defaulted_text_and_view_fields_file() -> Vec<u8> {
             label: "EMPTY".into(),
             status: "00000100",
             parameters: "212,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 213,
+            form: 0,
+            label: "NEWNOTE".into(),
+            status: "00000100",
+            parameters: "213,0,0,0,0,0,0,0,0,0,0,0,1,0,2,3,-0.5,0,18,0,4HTUNL,1,0,0,1,1.5707963267948966,0,0,0,0,0,0,1HA;".into(),
         },
         OwnedTestEntity {
             entity_type: 410,
@@ -8039,7 +8046,7 @@ fn decode_types_orthographic_and_perspective_views() {
 }
 
 #[test]
-fn decode_applies_field_defaults_to_text_and_view_records() {
+fn decode_applies_defaults_and_accepts_zero_text_box_dimensions() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(defaulted_text_and_view_fields_file()),

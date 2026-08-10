@@ -227,7 +227,7 @@ pub(super) fn project(
             && (1..=2).all(|index| {
                 record
                     .number_or(index, 0.0)
-                    .is_some_and(|value| value.is_finite() && value > 0.0)
+                    .is_some_and(|value| value.is_finite() && value >= 0.0)
             })
             && font_valid
             && record
