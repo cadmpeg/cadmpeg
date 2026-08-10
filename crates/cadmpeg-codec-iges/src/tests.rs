@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, EncodeInput, Encoder};
@@ -1778,6 +1779,24 @@ fn decode_rejects_a_copious_interpretation_that_disagrees_with_its_form() {
     assert_eq!(provenance.stream, "iges");
     assert_eq!(provenance.tag.as_deref(), Some("directory_entry:D1"));
     assert_eq!(bytes[provenance.offset as usize + 72], b'D');
+}
+
+#[test]
+fn strict_decode_rejects_an_attributed_projection_loss() {
+    let bytes = copious_data_file(11, b"106,2,2,0,0,0,1,0,0;", "00000000");
+    let mut options = DecodeOptions::default();
+    options.policy.mode = DecodeMode::Strict;
+
+    let error = IgesCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .unwrap_err();
+
+    assert!(error
+        .to_string()
+        .contains("strict mode rejects record_not_typed"));
+    assert!(error
+        .to_string()
+        .contains("interpretation flag disagrees with the entity form"));
 }
 
 #[test]

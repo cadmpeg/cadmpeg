@@ -2,7 +2,7 @@
 //! Physical graph to CADIR native preservation and loss reporting.
 
 use crate::{card, directory, entities, global, graph, native, parameter};
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, DecodeMode};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
@@ -214,6 +214,17 @@ fn decode_with_occurrence_limits(
             "iges_semantic_validation",
         )?;
         reject_invalid_semantic_ir(&ir, &losses)?;
+        if options.policy.mode == DecodeMode::Strict {
+            if let Some(loss) = losses
+                .iter()
+                .find(|loss| loss.severity >= Severity::Warning)
+            {
+                return Err(CodecError::Malformed(format!(
+                    "strict mode rejects {}: {}",
+                    loss.code, loss.message
+                )));
+            }
+        }
     }
     let mut notes = directory::summary_notes(&directory);
     notes.extend(parameter::summary_notes(&parameters));
