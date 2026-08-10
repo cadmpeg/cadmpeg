@@ -1723,7 +1723,12 @@ fn finish_decode(
             ir.model
                 .procedural_surfaces
                 .iter()
-                .filter(|surface| surface.id.0.starts_with("catia:standard:revolution#"))
+                .filter(|surface| {
+                    surface
+                        .id
+                        .0
+                        .starts_with("catia:consolidated:surface-revolution#")
+                })
                 .count(),
         ),
         (

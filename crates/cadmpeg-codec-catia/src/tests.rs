@@ -7102,7 +7102,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
             curve
                 .id
                 .0
-                .starts_with("catia:standard:revolution-directrix#")
+                .starts_with("catia:consolidated:surface-revolution-directrix#")
         })
         .expect("transferred revolution directrix");
     assert!(matches!(
@@ -7121,7 +7121,12 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         .model
         .procedural_surfaces
         .iter()
-        .find(|surface| surface.id.0.starts_with("catia:standard:revolution#"))
+        .find(|surface| {
+            surface
+                .id
+                .0
+                .starts_with("catia:consolidated:surface-revolution#")
+        })
         .expect("transferred revolution construction");
     assert!(decoded.ir.model.surfaces.iter().any(|surface| {
         surface.id == revolution.surface
@@ -7243,6 +7248,35 @@ fn decode_routes_a_line_profile_only_nested_stream_to_a_wire() {
         decoded.ir.model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Wire
     );
+    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_routes_a_resolved_revolution_only_nested_stream_to_freeform() {
+    let file = standard_catpart_from_streams(&b2_resolved_revolution_stream(), &[]);
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode revolution-only nested stream");
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CONSOLIDATED_REVOLUTION_COUNT),
+        1
+    );
+    let revolution = decoded
+        .ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|surface| surface.id.0 == "catia:consolidated:surface-revolution#0")
+        .expect("transferred freeform revolution");
+    assert!(matches!(
+        revolution.definition,
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
+            parameter_interval: Some([-4.0, 9.0]),
+            ..
+        }
+    ));
     assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
 }
 

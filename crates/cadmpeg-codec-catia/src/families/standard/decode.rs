@@ -30,174 +30,13 @@ use crate::assemble::{
     unwrap_angle, TypedCounts,
 };
 use crate::container::{self, ContainerScan};
-use crate::families::freeform::append_freeform_surface_pools;
+use crate::families::freeform::{
+    append_consolidated_revolutions, append_freeform_surface_pools, ConsolidatedRevolutionBinding,
+};
 use crate::families::standard::{fbb, topology};
 use crate::families::FamilyOutput;
 use crate::solve::{mesh_quotient, missing_edge};
 use crate::wire::records::ConsolidatedRecord;
-
-#[derive(Clone)]
-struct ConsolidatedRevolutionBinding {
-    geometry: SurfaceGeometry,
-    profile_sweep: f64,
-}
-
-fn append_consolidated_revolutions(
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
-    bytes: &[u8],
-    records: &[ConsolidatedRecord],
-) -> (usize, Vec<ConsolidatedRevolutionBinding>) {
-    let resolved =
-        crate::families::b2::records::b2_resolved_revolutions_from_records(bytes, records);
-    let mut bindings = Vec::new();
-    for resolved in &resolved {
-        let index = resolved.revolution_index;
-        let revolution = &resolved.revolution;
-        let profile = &resolved.profile;
-        let direction_x = Vector3::new(
-            revolution.direction_x[0],
-            revolution.direction_x[1],
-            revolution.direction_x[2],
-        );
-        let direction_y = Vector3::new(
-            revolution.direction_y[0],
-            revolution.direction_y[1],
-            revolution.direction_y[2],
-        );
-        let axis = Vector3::new(revolution.axis[0], revolution.axis[1], revolution.axis[2]);
-        let origin = Point3::new(
-            revolution.origin[0],
-            revolution.origin[1],
-            revolution.origin[2],
-        );
-        let transverse_coordinate =
-            origin.x * direction_x.x + origin.y * direction_x.y + origin.z * direction_x.z;
-        let center = Point3::new(
-            transverse_coordinate * direction_x.x
-                + profile.center_pair[0] * direction_y.x
-                + profile.center_pair[1] * axis.x,
-            transverse_coordinate * direction_x.y
-                + profile.center_pair[0] * direction_y.y
-                + profile.center_pair[1] * axis.y,
-            transverse_coordinate * direction_x.z
-                + profile.center_pair[0] * direction_y.z
-                + profile.center_pair[1] * axis.z,
-        );
-        let directrix = CurveId(format!("catia:standard:revolution-directrix#{index}"));
-        annotate(
-            annotations,
-            &directrix,
-            "consolidated_b2_03_19",
-            profile.pos as u64,
-            format!("circle:{}", profile.record_id),
-            Exactness::ByteExact,
-        );
-        ir.model.curves.push(Curve {
-            id: directrix.clone(),
-            geometry: CurveGeometry::Circle {
-                center,
-                axis: direction_x,
-                ref_direction: direction_y,
-                radius: profile.radius,
-            },
-            source_object: Some(cgm_source("profile-circle", profile.record_id)),
-        });
-        let surface = SurfaceId(format!("catia:standard:revolution-surface#{index}"));
-        let center_offset = Vector3::new(
-            center.x - origin.x,
-            center.y - origin.y,
-            center.z - origin.z,
-        );
-        let axis_coordinate =
-            center_offset.x * axis.x + center_offset.y * axis.y + center_offset.z * axis.z;
-        let radial = Vector3::new(
-            center_offset.x - axis.x * axis_coordinate,
-            center_offset.y - axis.y * axis_coordinate,
-            center_offset.z - axis.z * axis_coordinate,
-        );
-        let major_radius = radial.x.hypot(radial.y).hypot(radial.z);
-        let profile_plane_contains_axis =
-            (direction_x.x * axis.x + direction_x.y * axis.y + direction_x.z * axis.z).abs()
-                <= 1e-12;
-        let radial_follows_profile_reference = major_radius > 0.0
-            && ((radial.x * direction_y.x + radial.y * direction_y.y + radial.z * direction_y.z)
-                .abs()
-                / major_radius
-                - 1.0)
-                .abs()
-                <= 1e-12;
-        let torus_geometry = (major_radius > 0.0
-            && major_radius.is_finite()
-            && profile.radius > 0.0
-            && profile.radius.is_finite()
-            && profile_plane_contains_axis
-            && radial_follows_profile_reference)
-            .then(|| {
-                let ref_direction = Vector3::new(
-                    radial.x / major_radius,
-                    radial.y / major_radius,
-                    radial.z / major_radius,
-                );
-                let torus_center = Point3::new(
-                    center.x - radial.x,
-                    center.y - radial.y,
-                    center.z - radial.z,
-                );
-                SurfaceGeometry::Torus {
-                    center: torus_center,
-                    axis,
-                    ref_direction,
-                    major_radius,
-                    minor_radius: profile.radius,
-                }
-            });
-        annotate(
-            annotations,
-            &surface,
-            "consolidated_b2_03_2d",
-            revolution.pos as u64,
-            format!("profile-allocation:{}", revolution.profile_allocation_id),
-            Exactness::ByteExact,
-        );
-        ir.model.surfaces.push(Surface {
-            id: surface.clone(),
-            geometry: torus_geometry
-                .clone()
-                .unwrap_or(SurfaceGeometry::Unknown { record: None }),
-            source_object: Some(cgm_source(
-                "revolution",
-                u32::from(revolution.profile_allocation_id),
-            )),
-        });
-        ir.model.procedural_surfaces.push(ProceduralSurface {
-            id: ProceduralSurfaceId(format!("catia:standard:revolution#{index}")),
-            surface,
-            definition: ProceduralSurfaceDefinition::Revolution {
-                directrix,
-                axis_origin: origin,
-                axis_direction: axis,
-                angular_interval: [
-                    revolution.angular_range[0] / revolution.angular_scale,
-                    revolution.angular_range[1] / revolution.angular_scale,
-                ],
-                parameter_interval: Some(revolution.profile_range),
-                transposed: false,
-                revision_form: None,
-            },
-            cache_fit_tolerance: None,
-            record_bounds: None,
-        });
-        if let Some(geometry) = torus_geometry {
-            bindings.push(ConsolidatedRevolutionBinding {
-                geometry,
-                profile_sweep: (revolution.profile_range[1] - revolution.profile_range[0]).abs()
-                    / profile.radius,
-            });
-        }
-    }
-    (resolved.len(), bindings)
-}
 
 fn bind_consolidated_revolution_faces_and_seams(
     ir: &mut CadIr,
@@ -541,7 +380,8 @@ fn bind_consolidated_revolution_faces_and_seams(
 
 #[cfg(test)]
 mod consolidated_revolution_binding_tests {
-    use super::{bind_consolidated_revolution_faces_and_seams, ConsolidatedRevolutionBinding};
+    use super::bind_consolidated_revolution_faces_and_seams;
+    use crate::families::freeform::ConsolidatedRevolutionBinding;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
@@ -1553,11 +1393,16 @@ pub(crate) fn try_decode_standard(
         });
     }
     ir.model.surfaces = surfaces;
-    let (resolved_revolution_count, consolidated_revolutions) = append_consolidated_revolutions(
+    let resolved_consolidated_revolutions =
+        crate::families::b2::records::b2_resolved_revolutions_from_records(
+            &scan.data,
+            &consolidated_records,
+        );
+    let resolved_revolution_count = resolved_consolidated_revolutions.len();
+    let consolidated_revolutions = append_consolidated_revolutions(
         &mut ir,
         &mut annotations,
-        &scan.data,
-        &consolidated_records,
+        &resolved_consolidated_revolutions,
     );
 
     for (i, p) in points.iter().enumerate() {
