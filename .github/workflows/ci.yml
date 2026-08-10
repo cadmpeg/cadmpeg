@@ -99,6 +99,9 @@ jobs:
         # running, so a separate `cargo build` step would be redundant.
         run: cargo test-fast
 
+      - name: Independent Inventor evidence test
+        run: python3 -m unittest -v scripts/test_inventor_evidence.py
+
       - name: Documentation tests
         # Reuses the library rlibs the step above built; on its own job this
         # would pay for the whole workspace again.
