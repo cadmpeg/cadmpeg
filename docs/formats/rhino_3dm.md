@@ -28,7 +28,9 @@ table sequence below and require an end-of-file chunk.
 
 ## 2. Header
 
-The first 32 bytes are:
+The 32-byte start section begins at the first matching magic sequence within
+the first 33554432 bytes. A leading application block can precede it. Relative
+to the start section, the bytes are:
 
 ```text
 bytes 0..23   ASCII "3D Geometry File Format "
@@ -74,9 +76,10 @@ against the containing bound before allocation.
 
 ### 3.1 Colors
 
-`ON_Color` is four direct color bytes written in memory order. It does not use
-numeric endian conversion. `ON_4fColor` is four little-endian `f32` values in
-red, green, blue, alpha order.
+`ON_Color` is four direct bytes in red, green, blue, alpha order. It does not
+use numeric endian conversion. Its alpha byte is transparency: 0 is opaque and
+255 is fully transparent. `ON_4fColor` is four little-endian `f32` values in
+red, green, blue, alpha order, with conventional opacity alpha.
 
 ### 3.2 Plane, circle, and arc
 
@@ -149,7 +152,8 @@ table record     0x20000000
 user             0x40000000
 ```
 
-Bit `0x00004000` is reserved and is zero in valid typecodes.
+The short bit alone selects short framing. Other typecode bits select identity
+and category and do not change the framing rule.
 
 The value field width is selected by the archive version:
 
@@ -175,9 +179,9 @@ u32 typecode
 i32/i64 value
 ```
 
-Negative long lengths, arithmetic overflow, and an end beyond the containing
-bound are framing failures. A V1 typecode zero may be accepted as the legacy
-long-chunk form; this exception does not apply to V2 and later.
+A negative value on a typecode without the short bit selects a bodyless chunk.
+Arithmetic overflow and an end beyond the containing bound are framing
+failures. A V1 typecode zero is the legacy long-chunk form.
 
 ### 4.1 Checksums
 
@@ -207,7 +211,7 @@ The stored CRC16 is little-endian. Test vectors are:
 ```text
 CRC16(seed=0, empty)        = 0x0000
 CRC16(seed=1, empty)        = 0x0001
-CRC16(seed=0, "123456789")  = 0x31c3
+CRC16(seed=0, "123456789")  = 0xbeef
 ```
 
 CRC32 is reflected IEEE/zlib CRC32 with initial value zero:
@@ -235,6 +239,18 @@ The chunk body cannot extend beyond `body_end`. The checksum occupies the bytes
 from `crc_start` to `declared_end`. Child payload bytes cannot overlap a parent
 trailer.
 
+A reader consumes the fields defined for the payload major version. A later
+minor version can append fields before the bounded end. Unread suffix bytes are
+skipped at the bounded end. Array and element readers that define major version
+1 accept every nonnegative minor version.
+
+Stored Boolean integers and bytes use zero for false and a nonzero value for
+true. Presence and enumeration fields that define a separate numeric grammar
+retain that grammar.
+
+A stored geometry item count is bounded by its containing payload and the byte
+width of one item. The format does not impose a separate 65536-item limit.
+
 ## 5. Versions and end of file
 
 A packed payload version is one byte:
@@ -254,17 +270,17 @@ i32 minor
 These forms are not interchangeable.
 
 `TCODE_ENDOFFILE = 0x00007fff` is a long, unchecksummed chunk. Its declared
-length is exactly the file-size field width:
+length is at least the file-size field width:
 
 ```text
 archive version < 50   length = 4, u32 file_size
 archive version >= 50  length = 8, u64 file_size
 ```
 
-The stored size includes the 32-byte header, all preceding chunks, the EOF
-typecode, the EOF value field, and the file-size field. It has no CRC. In V2+
-the stored size must equal the complete input length. V1 may omit EOF; interior
-legacy `ENDOFFILE_GOO` markers are not document termination.
+The stored size includes the start section, all preceding archive chunks, the
+EOF typecode, the EOF value field, and the file-size field. It is informational
+and has no CRC. V1 may omit EOF; interior legacy `ENDOFFILE_GOO` markers are not
+document termination.
 
 ## 6. Typecode registry
 
@@ -312,13 +328,13 @@ legacy `ENDOFFILE_GOO` markers are not document termination.
 | texture-mapping record     | `0x2000807a` |
 | history-record record      | `0x2000807b` |
 | object record              | `0x20008070` |
-| object record type         | `0x82a00071` |
+| object record type         | `0x82000071` |
 | object attributes          | `0x02008072` |
 | attribute userdata         | `0x02000073` |
 | object history             | `0x02008074` |
 | history header             | `0x02008075` |
 | history data               | `0x02008076` |
-| object record end          | `0x82a0007f` |
+| object record end          | `0x8200007f` |
 
 ### 6.3 Properties, settings, and user chunks
 
@@ -338,6 +354,10 @@ legacy `ENDOFFILE_GOO` markers are not document termination.
 | named construction planes | `0x20008035` |
 | named views               | `0x20008036` |
 | views                     | `0x20008037` |
+
+The writer-version property is the openNURBS packed version `0xa0000026`.
+Version-gated readers use this stored value independently of the archive
+version.
 | current layer             | `0xa0000038` |
 | current material          | `0x20008039` |
 | current color             | `0x2000803a` |
@@ -545,6 +565,9 @@ if minor >= 2: ON_Interval third_evaluation_interval
 if minor >= 3: i32 object_snap_mode
 ```
 
+An evaluation interval gated by the minor version is absent when its field is
+not stored. It is not the interval `[0,0]`.
+
 An instance-reference path item is an anonymous version 1.0 or 1.1 chunk:
 
 ```text
@@ -584,8 +607,8 @@ if minor >= 1:
   ON_Interval segment_trim_domain
 ```
 
-A SubD edge-chain value is an anonymous version 1.0 chunk containing an `i32`
-count followed by that many edge-chain anonymous version 1.0 chunks:
+A SubD edge-chain value is an anonymous version 1.1 chunk containing an `i32`
+count followed by that many edge-chain anonymous version 1.1 chunks:
 
 ```text
 ON_UUID persistent_subd_id
@@ -652,8 +675,9 @@ u32 code_unit_count_including_NUL
 code_unit_count_including_NUL UTF-16LE code units
 ```
 
-Surrogate pairs count as two code units. Nonzero strings end with a zero code
-unit. The archive `size_t` destination type does not change either file count.
+Surrogate pairs count as two code units. An empty string has count zero and no
+code units. A nonempty string ends with a zero code unit. The archive `size_t`
+destination type does not change either file count.
 
 ## 8. Properties, settings, units, and layers
 
@@ -748,6 +772,13 @@ Defined structure versions are 100, 101, and 102. Unit values are:
 |    25 | parsecs            |
 |   255 | unset              |
 
+Unit system `none` retains native coordinates at scale 1.0 and supplies no
+millimetre binding. Unit system `unset` supplies no coordinate scale.
+
+Unit values 23, 24, and 25 scale one stored unit to
+`149597870000000`, `9460730472580800000`, and `30856775800000000000`
+millimeters, respectively.
+
 The legacy V1 structure is:
 
 ```text
@@ -757,6 +788,114 @@ f64 absolute tolerance
 f64 relative tolerance
 f64 angle tolerance
 ```
+
+V1 geometry is a flat sequence. `TCODE_RH_POINT` (`0x00100001`) begins with
+three `f64` coordinates. Attribute chunks follow the coordinates inside the
+same bounded chunk.
+
+`TCODE_LEGACY_CRV` (`0x00010008`) contains attribute chunks followed by one
+`TCODE_LEGACY_CRVSTUFF` (`0x00010108`). Curve stuff stores dimension `u8`,
+closure `u8`, segment count `u16`, two dimension-wide bounding-box points, and
+that many `TCODE_LEGACY_SPL` children. Each spline contains
+`TCODE_LEGACY_SPLSTUFF` (`0x00010109`):
+
+```text
+u8 dimension (2 or 3)
+u8 rational form (0 nonrational, 1 euclidean, 2 homogeneous)
+u8 order
+u16 control-point count
+u8 closure (0 open, 1 closed, 2 periodic)
+u8 legacy form
+2 × dimension × f64 bounding box
+if order > 2: u8 clamped-end mask
+compressed openNURBS knot vector
+control-point count × (dimension + rational) × f64 control points
+```
+
+The clamped-end mask supplies omitted repeated end knots. The neutral knot
+vector restores the two superfluous end knots. A rational control point stores
+one weight after its coordinates.
+
+`TCODE_LEGACY_FAC` (`0x00010004`) contains one
+`TCODE_LEGACY_FACSTUFF` (`0x00010104`). Face stuff stores:
+
+```text
+i32 reversed-surface flag
+i32 legacy face type
+i32 (2 × boundary count + outer-boundary-present)
+6 × f64 model-space bounding box
+i32 seam-trim count
+seam-trim count × u16 seam permutation
+TCODE_LEGACY_SRF
+boundary count × TCODE_LEGACY_BND
+```
+
+`TCODE_LEGACY_SRF` contains `TCODE_LEGACY_SRFSTUFF` (`0x00010107`).
+Surface stuff stores dimension and form bytes, two degree bytes, two `u16`
+pole-count deltas, two rational-form bytes, two closure bytes, two singularity
+bytes, a dimension-wide bounding box, the U and V openNURBS knot vectors, and
+the U-major control lattice. Each order is its stored degree plus one. Each
+pole count is `order - 1 + stored delta`. Rational form 1 stores Euclidean
+coordinates followed by weight. Rational form 2 stores homogeneous
+coordinates followed by weight.
+
+Each `TCODE_LEGACY_BND` contains `TCODE_LEGACY_BNDSTUFF` (`0x00010105`):
+
+```text
+i32 trim count
+i32 boundary type (-1 slit, 0 outer, 1 inner)
+4 × f64 parameter-space bounding box
+trim count × TCODE_LEGACY_TRM
+```
+
+Each `TCODE_LEGACY_TRM` contains `TCODE_LEGACY_TRMSTUFF` (`0x00010106`):
+
+```text
+u8 edge/mate/seam flags
+i32 edge-reversal flag
+i32 legacy continuity
+i32 legacy monotonicity
+f64 model-space tolerance
+f64 parameter-space tolerance
+TCODE_LEGACY_CRV parameter-space curve
+if edge-present: TCODE_LEGACY_CRV model-space edge curve
+```
+
+Flag bit 0 marks an explicit model-space edge curve. Bits 1 or 2 mark a mate;
+bit 1 marks a seam on the same face. The face seam permutation pairs seam
+trims that use one edge.
+
+`TCODE_LEGACY_SHL` (`0x00010003`) contains one
+`TCODE_LEGACY_SHLSTUFF` (`0x00010103`):
+
+```text
+i32 outer-shell flag
+i32 face count
+6 × f64 model-space bounding box
+i32 shared-trim count
+shared-trim count × u16 shared-trim permutation
+face count × TCODE_LEGACY_FAC
+```
+
+The shell permutation pairs mated trims on different faces. A paired trim that
+does not store a model-space curve uses the edge curve stored by its mate.
+
+`TCODE_MESH_OBJECT` (`0x00100015`) contains
+`TCODE_COMPRESSED_MESH_GEOMETRY` (`0x00100017`). The geometry body stores four
+`i32` values for point count, face count, normal presence, and texture-coordinate
+presence; a six-`f64` bounding box; three `u16` quantized coordinates per
+vertex; four `u16` indices per face when the point count is below 65535 and
+four `i32` indices otherwise; optional three signed bytes per normal; and
+optional two `u16` texture coordinates per vertex. Quantized coordinate 0 is
+the box minimum and 65535 is the box maximum.
+
+V1 legacy wrapper/stuff pairs share the wrapper's trailing CRC16. The final
+stuff child ends at the wrapper end and does not add a second CRC16.
+
+V2 uses the table and polymorphic class-record grammar in sections 7 through
+17. The archive uses four-byte chunk values and the class UUID selects the
+same point, curve, surface, mesh, Brep, and annotation payload grammar as a
+later archive carrying that class and payload version.
 
 For standard units, the enum determines the scale. For custom units,
 `meters-per-unit` and the custom name determine the scale and label.
@@ -888,6 +1027,11 @@ Defaults are normal object mode, visible unless hidden, layer color/linetype/
 material/plot color/plot weight sources, model space, wire density 1, and plot
 weight 0.0.
 
+The low nibble of object mode is 0 normal, 1 hidden, 2 locked, or 3 instance-
+definition member. Higher bits do not change the mode. Before the explicit
+visibility field exists, mode 1 selects invisible and all other modes select
+visible.
+
 ### 9.2 V5 through V8 tagged attributes
 
 The payload begins with packed version `2.minor`, object UUID, and layer
@@ -932,7 +1076,7 @@ Item payloads:
 |  25 | obsolete line-join source `u8`               |
 |  26 | obsolete line-join style `u8`                |
 |  27 | obsolete clip-participation source `u8`      |
-|  28 | clipping proof `bool` and UUID list          |
+|  28 | clipping proof `bool` and `ON_UuidList`      |
 |  29 | section-attributes source `u8`               |
 |  30 | hatch-pattern referenced index `i32`         |
 |  31 | section-hatch scale `f64`                    |
@@ -971,6 +1115,9 @@ unset colors, plot weight 0.0, decoration none, wire density 1, visible true,
 normal mode, layer selectors, empty groups, model space, nil viewport, empty
 display-material list, display order 0, linetype scale 1.0, hatch boundary
 hidden, and default frame/label style.
+
+Present tagged items occur in ascending item-ID order. The terminator follows
+the last item.
 
 The effective display state is object visibility combined with layer visibility.
 Each color, material, linetype, plot color, and plot weight uses the object
@@ -1122,6 +1269,10 @@ i32 dimension
 Invalid dimensions are normalized to 3 by the payload rule. Radius and both
 intervals must be valid.
 
+A full circle uses the analytic representation when its angle and curve domain
+are `[0, 2π]` and the x-axis norm differs from one by less than `1e-10`.
+Otherwise the transfer uses the rational quadratic representation.
+
 ### 12.5 Polyline curve
 
 Packed version `1.0`; major 1 is accepted:
@@ -1160,6 +1311,19 @@ segment count × polymorphic ON_Curve
 
 Parameter count is segment count plus one. Segment parameters are finite and
 strictly increasing. Each child is a curve.
+
+Conversion of a polycurve to one NURBS curve first maps each segment to its
+polycurve parameter interval. Each segment is endpoint-clamped. Segments of
+lower degree are elevated to the maximum segment degree. At each join, the last
+control point of the accumulated curve and the first control point of the next
+segment move to their midpoint. The first control point of the next segment is
+then omitted. The appended knots are translated by the difference between the
+accumulated end parameter and the next segment start parameter. The internal
+join has `degree` equal knots. The result has this identity:
+
+```text
+knot count = control-point count + degree + 1
+```
 
 #### 12.6.1 Persistent polyedge references
 
@@ -1374,7 +1538,8 @@ if present: polymorphic ON_Curve profile
 ```
 
 Major 1 defaults the surface parameter interval to the angular interval. A
-present profile is a curve.
+present profile is a curve. A profile control point on the revolution axis
+produces one exact axis control point at every angular control position.
 
 ### 13.6 Sum surface
 
@@ -1424,9 +1589,11 @@ i32 index width
 face count × four indices
 ```
 
-Width is 1 when vertex count is below 256, 2 when below 65536, and 4
-otherwise. Indices are little-endian unsigned values. A triangle is
-`[v0,v1,v2,v2]`; a quad is `[v0,v1,v2,v3]`.
+The stored width is 1, 2, or 4. Writers select 1 when vertex count is below
+256, 2 when it is below 65536, and 4 otherwise. Readers use the stored width.
+Indices are little-endian unsigned values. A triangle is `[v0,v1,v2,v2]`; a
+quad is `[v0,v1,v2,v3]`. Neutral triangulation splits a quad along its shorter
+geometric diagonal. A repeated quad vertex is removed before triangulation.
 
 Major 1 follows the face array with raw counted arrays:
 
@@ -1446,11 +1613,12 @@ the expected channel byte count. Minor gates are:
 ```
 minor >= 2: i32 packed texture rotation
 minor >= 3: texture-mapping UUID, compressed surface parameters (2×f64/vertex)
-minor >= 4 and writer version >= 200606010: anonymous mapping tag
-minor >= 5: manifold, oriented, solid bytes
-minor >= 6: ngon-present byte and optional ngon chunk
-minor >= 7: double-vertex-present byte and optional double-vertex chunk
-minor >= 8: serialized vertex bounding box
+minor >= 4 and writer version >= 200606010:
+  anonymous mapping tag
+  minor >= 5: manifold, oriented, solid bytes
+  minor >= 6: ngon-present byte and optional ngon chunk
+  minor >= 7: double-vertex-present byte and optional double-vertex chunk
+  minor >= 8: serialized vertex bounding box
 ```
 
 The mapping tag is version 1.0 or 1.1: mapping UUID, `i32` CRC, sixteen
@@ -1515,7 +1683,8 @@ archive >= 3 and writer version >= 200206180:
 ```
 
 Without the final domain, edge domain equals proxy domain. Proxy reversal is
-an `i32` flag.
+an `i32` flag. Both intervals are increasing. A nonzero proxy-reversal flag
+reverses the proxy curve before the edge domain is assigned.
 
 ### 15.3 Trim
 
@@ -1552,6 +1721,9 @@ not-iso, 1 interior U, 2 interior V, 3 west, 4 south, 5 east, and 6 north.
 Values outside the defined sets are unknown. Singular and point-on-surface
 trims use edge index -1 and identical endpoint vertices.
 
+A boundary trim is the only use of its edge. A mated trim has one edge mate in
+a different loop. A seam trim has one edge mate in the same loop.
+
 ### 15.4 Loop and face
 
 Loop:
@@ -1576,9 +1748,22 @@ i32 reversed surface
 i32 face material channel
 ```
 
-Negative material channels map to zero. Every positional index must match its
-record index; references must be in range and non-null where required. Trim
-domains and loop rings must be finite, endpoint-continuous, and closed.
+An explicit neutral outer or inner boundary role selects loop type 1 or 2.
+When the role is unspecified, the first loop of a face is outer and the other
+loops are inner.
+
+The face array uses packed version 1.1 below archive 70 and 1.2 at archive 70
+and later. Version 1.1 appends one UUID per face. Version 1.2 then appends a
+color-presence byte and, when nonzero, one `ON_Color` per face.
+
+The `reversed surface` field states whether the face normal is opposite to the
+surface normal. A region face-side direction identifies the side that contains
+the region and does not replace the face orientation.
+
+Negative material channels map to zero. A vertex, edge, trim, loop, or face
+array position is authoritative and replaces a disagreeing stored positional
+index. References must be in range and non-null where required. Trim domains
+and loop rings must be finite, endpoint-continuous, and closed.
 
 ### 15.5 Mesh sides, solid state, and regions
 
@@ -1587,9 +1772,13 @@ byte per face; nonzero is followed by a polymorphic object which must be an
 `ON_Mesh`. These are cache channels and do not alter Brep topology.
 
 For minor at least 2, `i32 is_solid` is 0 unset, 1 solid/outward, 2
-solid/inward, and 3 not-solid. Other values become unset.
+solid/inward, and 3 not-solid. Other values become unset. An unset value
+requires the reader to derive the solid state and orientation from the Brep.
+For an archive writer version before 2 October 2002, the stored value is unset.
+A Brep is closed when it has at least one face and every edge has exactly two
+trim uses. A closed Brep is solid; another Brep is a sheet.
 
-For minor 3, the region wrapper is anonymous version 1.0, followed by a
+For minor 3, the region wrapper is anonymous version 1.1, followed by a
 presence byte and, when present, a version-1.0 region-topology object. The
 object contains a face-side array and region array, each with version 1.0 and
 an `i32` count. Before archive 60, arrays contain raw anonymous element chunks;
@@ -1644,6 +1833,10 @@ Miter vectors are serialized even when their presence flags are false. Minor
 Minor 3 appends an anonymous mesh-cache chunk. The complete 1.3 order is the
 common fields, profile count, two caps, and mesh cache.
 
+A present miter normal is unitized. The miter applies only when the unitized
+local Z component is greater than `1/64`. A normal that cannot be unitized or
+does not exceed this threshold selects the flat cap transform.
+
 For minor below 1, profile count defaults to one when a profile exists and
 zero otherwise. For minor below 2, closed outer profiles default both caps to
 true; otherwise both defaults are false. The mesh cache is display data and is
@@ -1682,6 +1875,12 @@ minor >= 4:
   bool synchronize packing hash serials
   face-packing topology hash record
 ```
+
+The symmetry record stores a type byte. Type 2 is rotate symmetry and type 113
+is its prototype form. The nested transform chunk stores the rotation axis as
+two `ON_3dPoint` values. For nested minor version at least 2, type 2 follows the
+axis with four ignored `f64` values. Writers store four quiet NaNs. Type 113
+omits these values.
 
 Each level is anonymous version 1.1:
 
@@ -1748,6 +1947,9 @@ minor >= 6: linked component appearance
 minor >= 7: file-reference presence and record
 ```
 
+The unit-system detail replaces the earlier unit fields. A version-1.7 reader
+skips all bytes after the optional file-reference record as an abandoned tail.
+
 V6 through V8 use anonymous version 1.0:
 
 ```
@@ -1779,6 +1981,9 @@ ON_BoundingBox bounds
 
 Definition membership comes from the definition UUID array, not object
 attributes. The reference payload carries the transform and bounding box.
+The transform applies to each free entity emitted by the definition. A body
+transform carries its topology and vertex points. A free point is transformed
+independently when the same definition also emits a body.
 
 ### 18.1 Modern dimensions
 
@@ -1801,6 +2006,9 @@ anonymous common dimension version 1.minor
   if minor >= 1: i32 text fit
 family fields
 ```
+
+Arrow fit 0 is automatic, 1 forces arrows inside, and 2 forces arrows outside.
+The neutral arrow-position values are 0, 1, and -1 respectively.
 
 The annotation is an anonymous chunk with major version 1 and minor versions
 0 through 4:
@@ -1832,7 +2040,8 @@ measurement is `abs(definition_point.x) * distance_scale`.
 Angular family fields are two `ON_2dVector` directions, two `f64` extension
 offsets, and an `ON_2dPoint` dimension-line point. Annotation types 2 and 11
 select angular dimensions. The measured sweep is the counterclockwise angle
-between the directions that contains the dimension-line direction.
+from the first direction to the second direction. The dimension-line point does
+not select the measured arc.
 
 Radial family fields are radius point and dimension-line point as two
 `ON_2dPoint` values. Annotation type 3 selects diameter and type 4 selects
@@ -1889,17 +2098,27 @@ Linear annotation type 1 is rotated and type 2 is aligned. Its five points are
 the first extension endpoint, first arrow, second extension endpoint, second
 arrow, and user text point. The first extension endpoint becomes the defining
 plane origin. The second endpoint and arrow midpoint define the dimension and
-dimension-line points relative to that origin. Rotated measurement is the
-absolute plane-x difference; aligned measurement is the endpoint distance.
+dimension-line points relative to that origin. Both types measure the absolute
+plane-x difference. The neutral annotation types are rotated 5 and aligned 1.
 
-Angular annotation type 3 has four points: user text, first ray, second ray,
-and an interior arc point. The ray points define unit directions. The stored
-radius places the dimension-line point along the arc-point direction, and the
-stored angle is the measurement.
+Angular annotation type 3 has four archived points, but its geometry comes from
+the stored angle and radius. The first direction is `(1,0)`, the second is
+`(cos(angle),sin(angle))`, and the dimension-line point is the radius at half
+the angle. The stored angle is the measurement. Its neutral annotation type is
+2.
 
 Radial annotation type 4 is diameter and type 5 is radius. Its four points are
 center, arrow, tail, and knee. The center becomes the defining plane origin;
-arrow and tail become relative radius and dimension-line points.
+arrow and tail become relative radius and dimension-line points. Their neutral
+annotation types are 3 and 4 respectively.
+
+When the common annotation has no scaling field, model-space text scaling is
+false. Minor 3 selects the dimension-style index from the dimension-style slot
+for dimensions. For text, it selects the text-style slot first, then the
+initial slot, then the dimension-style slot. A text annotation with zero
+justification becomes top-left, and its plane origin moves by one text height
+along the plane y axis. V5 text, leader, and ordinate annotation types map to
+neutral types 9, 10, and 6.
 
 The legacy V5 ordinate class has an anonymous version 1.0 or 1.1 family chunk.
 Its first child is an anonymous version 1.0 wrapper containing the common
@@ -1967,6 +2186,16 @@ and basepoint coordinates use document length conversion. Plane axes, pattern
 scale, and pattern rotation are unscaled. Pattern scale is finite and positive;
 pattern rotation and every geometric coordinate are finite. Loop count is
 nonnegative and every loop object derives from the curve family.
+
+In archive 50, a nonzero base point for a hatch below minor 2 is in
+`ON_OBSOLETE_V5_HatchExtra` userdata class
+`3FF7007C-3D04-463F-84E3-132ACEB91062`. Its payload is:
+
+```text
+anonymous version 1.minor
+ON_UUID ignored_id
+ON_2dPoint basepoint
+```
 
 ### 18.3 Detail views
 
@@ -2237,7 +2466,7 @@ if nonzero: polymorphic object
 The first wrapper is render mesh and the second analysis mesh. A nonzero entry
 must contain `ON_Mesh`; wrong-type entries are discarded independently.
 
-For Brep minor 3, the region wrapper is anonymous version 1.0, contains a
+For Brep minor 3, the region wrapper is anonymous version 1.1, contains a
 one-byte region-topology-present flag, and then one anonymous version 1.0
 region-topology object when present. Its face-side and region arrays are each
 anonymous version 1.0 with `i32 count`. Before archive 60, entries are raw
@@ -2524,6 +2753,13 @@ material fields are six colors, index of refraction, reflectivity, shine,
 transparency, an anonymous texture array, material-channel pairs, shareable and
 lighting flags, Fresnel controls, reflection and refraction glossiness, an RDK
 instance UUID, and the diffuse-texture alpha switch.
+Before writer version 1 December 2009, transparent RGB `(128,128,128)` is the
+obsolete default and the diffuse color replaces the complete transparent
+color.
+
+When component attributes omit the archive index, the in-memory index is
+`ON_UNSET_INT_INDEX` (`-2147483647`). Negative index `-1` identifies a live
+system component and is not an absence marker.
 
 Each texture-array element is an `ON_Texture` class wrapper. Its anonymous
 version 1.0 through 1.2 payload is:
@@ -2586,6 +2822,20 @@ dots store packed version, model point, point height, primary and secondary
 text, font face, and independent always-on-top, transparency, bold, and italic
 bits.
 
+V5 annotations use world X as the reference horizontal vector. Its plane-space
+direction is `(dot(world-X, plane-X), dot(world-X, plane-Y))`. V5 angular
+dimensions store the two extension-line origin offsets in
+`ON_AngularDimension2Extra` userdata UUID
+`A68B151F-C778-4A6E-BCB4-23DDD1835677`. The userdata payload is anonymous
+version 1.0 followed by two model-length `f64` values. When the userdata is
+absent, both offsets are `-1.0`. A negative offset disables the override.
+
+The V5 text-style record stores font weight and italic as separate `i32`
+fields. Italic is 0 or 1. It does not store the modern mixed-radix font
+characteristics word. Its description becomes the PostScript name only when
+it is nonempty, is not `Default`, and the archive runtime is Apple or the
+writer version is later than 23 February 2018.
+
 ### 20.4 Views and document presentation
 
 A view record is an ordered child-chunk list terminated by `TCODE_ENDOFTABLE`.
@@ -2603,7 +2853,11 @@ display-mode UUID; anonymous page settings; projection lock; an array of
 versioned clipping-plane equations, UUIDs, enabled flags, and depths; named-view
 UUID; construction-Z-axis flag; focal-blur values; rendering pixel size; and
 section behavior. Page sizes and margins are millimeters already. A clipping
-plane equation's constant and depth are model lengths.
+plane equation's constant and depth are model lengths. Clipping-plane array
+minor versions 1 and 2 enable depth clipping only for a nonnegative depth that
+is not the unset positive float `1.234321e38`; all other stored values disable
+depth clipping and give depth zero. Minor version 3 stores an explicit depth
+enabled flag.
 
 Trace images store path, width, height, plane, grayscale, hidden, filtered, and
 file-reference state. Wallpaper stores path, grayscale, hidden, and file

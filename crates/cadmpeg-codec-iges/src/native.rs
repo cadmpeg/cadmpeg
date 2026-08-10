@@ -3,19 +3,34 @@
 
 use crate::card::CardScan;
 use crate::directory::DirectoryEntry;
+use crate::entities::annotation::{parameterized_curve_type, section_boundary_type};
 use crate::entities::geometry::{resolve_transform, Affine};
-use crate::global::Global;
-use crate::graph::ReferenceEdge;
-use crate::parameter::{trailing_pointer_groups, ParameterRecord, Token, TokenValue};
+use crate::entities::structure::array_base_type;
+use crate::global::{Global, RealPrecision};
+use crate::graph::{ParameterResolver, ReferenceEdge};
+use crate::parameter::{
+    trailing_pointer_group_candidates, trailing_pointer_groups, ParameterRecord, Token, TokenValue,
+};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::CadIr;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-#[cfg(not(test))]
-const MAX_PRODUCT_OCCURRENCES: usize = 100_000;
-#[cfg(test)]
-const MAX_PRODUCT_OCCURRENCES: usize = 100;
+pub(crate) const MAX_PRODUCT_OCCURRENCES: usize = 100_000;
+pub(crate) const MAX_PRODUCT_OCCURRENCE_DEPTH: usize = 64;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ProductOccurrenceLimits {
+    output: usize,
+    depth: usize,
+}
+
+impl ProductOccurrenceLimits {
+    pub(crate) const fn new(output: usize, depth: usize) -> Self {
+        Self { output, depth }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct NativeCard {
@@ -426,6 +441,7 @@ enum NativeAssociativity {
     SingleParent {
         id: String,
         source_entity: String,
+        declared_child_count: Option<i64>,
         parent: Option<String>,
         children: Vec<Option<String>>,
     },
@@ -438,12 +454,14 @@ enum NativeAssociativity {
     DimensionedGeometry {
         id: String,
         source_entity: String,
+        declared_geometry_count: Option<i64>,
         dimension: Option<String>,
         geometry: Vec<Option<String>>,
     },
     Planar {
         id: String,
         source_entity: String,
+        declared_entity_count: Option<i64>,
         plane_transform: Option<String>,
         entities: Vec<Option<String>>,
     },
@@ -451,6 +469,12 @@ enum NativeAssociativity {
         id: String,
         source_entity: String,
         form: i64,
+        declared_associated_flow_count: Option<i64>,
+        declared_connection_count: Option<i64>,
+        declared_join_count: Option<i64>,
+        declared_name_count: Option<i64>,
+        declared_name_display_count: Option<i64>,
+        declared_continuation_count: Option<i64>,
         type_flag: Option<i64>,
         function_flag: Option<i64>,
         associated_flows: Vec<Option<String>>,
@@ -463,6 +487,7 @@ enum NativeAssociativity {
     RecalculableDimension {
         id: String,
         source_entity: String,
+        declared_geometry_count: Option<i64>,
         dimension: Option<String>,
         orientation_flag: Option<i64>,
         angle: Option<f64>,
@@ -642,9 +667,11 @@ enum NativePropertyValue {
     DimensionDisplayData {
         dimension_type: Option<i64>,
         label_position: Option<i64>,
+        declared_character_set: Option<i64>,
         character_set: Option<i64>,
         label: Option<Vec<u8>>,
         decimal_symbol: Option<i64>,
+        declared_witness_line_angle: Option<f64>,
         witness_line_angle: Option<f64>,
         text_alignment: Option<i64>,
         text_level: Option<i64>,
@@ -754,9 +781,26 @@ struct NativeProductOccurrence {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct NativeProductOccurrenceExpansion {
     id: String,
-    limit: usize,
+    output_limit: usize,
+    depth_limit: usize,
     emitted: usize,
     truncated: bool,
+    issues: Vec<ProductOccurrenceIssue>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ProductOccurrenceIssue {
+    OutputLimit,
+    DepthLimit,
+    MalformedDefinition,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ProductOccurrenceExpansion {
+    pub(crate) output_truncated: bool,
+    pub(crate) depth_truncated: bool,
+    pub(crate) root_inference_blocked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -829,8 +873,6 @@ struct NativeDrawing {
     views: Vec<NativeDrawingView>,
     annotations: Vec<Option<String>>,
     name_property: Option<String>,
-    size_property: Option<String>,
-    units_property: Option<String>,
     name: Option<Vec<u8>>,
     size: Option<[Option<f64>; 2]>,
     units_flag: Option<i64>,
@@ -1049,6 +1091,14 @@ fn token(token: &Token) -> NativeToken {
     }
 }
 
+fn binary_integer(value: Option<i64>) -> Option<bool> {
+    match value? {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
+}
+
 fn model_id_directory_sequence(id: &str, prefix: &str) -> Option<u32> {
     let suffix = id.strip_prefix(prefix)?;
     let digits = suffix
@@ -1067,6 +1117,7 @@ fn placement_affine(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     length_factor: f64,
+    precision: RealPrecision,
 ) -> Option<(u32, Affine)> {
     let definition = u32::try_from(record.integer(1)?).ok()?;
     let translation = Affine {
@@ -1113,39 +1164,53 @@ fn placement_affine(
         entries,
         records,
         length_factor,
+        precision,
         &mut std::collections::BTreeSet::new(),
     )
     .ok()?;
     Some((definition, directory.compose(translation.compose(scale))))
 }
 
-struct OccurrenceExpansion<'a> {
+struct OccurrenceExpansion<'a, 'ctx> {
     entries: &'a BTreeMap<u32, &'a DirectoryEntry>,
     records: &'a BTreeMap<u32, &'a ParameterRecord>,
     definitions: &'a BTreeMap<u32, OccurrenceDefinition>,
     neutral_links: &'a BTreeMap<u32, Vec<String>>,
     length_factor: f64,
+    precision: RealPrecision,
+    output_limit: usize,
+    depth_limit: usize,
+    ctx: Option<&'a DecodeContext<'ctx>>,
 }
 
-impl OccurrenceExpansion<'_> {
+impl OccurrenceExpansion<'_, '_> {
     fn expand(
         &self,
         instance_sequence: u32,
         parent: Affine,
         path: &mut Vec<u32>,
         occurrences: &mut Vec<NativeProductOccurrence>,
-    ) -> bool {
-        if occurrences.len() >= MAX_PRODUCT_OCCURRENCES {
-            return true;
+        depth_truncated: &mut bool,
+    ) -> Result<bool, CodecError> {
+        let _depth = self
+            .ctx
+            .map(|ctx| ctx.enter_nested("iges_product_occurrence", None))
+            .transpose()?;
+        if occurrences.len() >= self.output_limit {
+            return Ok(true);
         }
-        if path.len() >= 64 || path.contains(&instance_sequence) {
-            return false;
+        if path.len() >= self.depth_limit {
+            *depth_truncated = true;
+            return Ok(false);
+        }
+        if path.contains(&instance_sequence) {
+            return Ok(false);
         }
         let (Some(instance), Some(record)) = (
             self.entries.get(&instance_sequence).copied(),
             self.records.get(&instance_sequence).copied(),
         ) else {
-            return false;
+            return Ok(false);
         };
         let Some((definition_sequence, local)) = placement_affine(
             instance,
@@ -1153,11 +1218,12 @@ impl OccurrenceExpansion<'_> {
             self.entries,
             self.records,
             self.length_factor,
+            self.precision,
         ) else {
-            return false;
+            return Ok(false);
         };
         let Some(definition) = self.definitions.get(&definition_sequence) else {
-            return false;
+            return Ok(false);
         };
         let world = parent.compose(local);
         path.push(instance_sequence);
@@ -1170,6 +1236,9 @@ impl OccurrenceExpansion<'_> {
             .map(u32::to_string)
             .collect::<Vec<_>>()
             .join("/");
+        if let Some(ctx) = self.ctx {
+            ctx.charge_collection_items(1, "iges_product_occurrences")?;
+        }
         occurrences.push(NativeProductOccurrence {
             id: format!("iges:product:occurrence#{path_key}"),
             source_instance: format!("iges:entity:directory#{instance_sequence}"),
@@ -1181,18 +1250,18 @@ impl OccurrenceExpansion<'_> {
             world_transform: world.rows,
         });
         for member in &definition.members {
-            if occurrences.len() >= MAX_PRODUCT_OCCURRENCES {
+            if occurrences.len() >= self.output_limit {
                 path.pop();
-                return true;
+                return Ok(true);
             }
             if self
                 .entries
                 .get(member)
                 .is_some_and(|entry| matches!(entry.entity_type, 408 | 420))
             {
-                if self.expand(*member, world, path, occurrences) {
+                if self.expand(*member, world, path, occurrences, depth_truncated)? {
                     path.pop();
-                    return true;
+                    return Ok(true);
                 }
                 continue;
             }
@@ -1205,11 +1274,15 @@ impl OccurrenceExpansion<'_> {
                         self.entries,
                         self.records,
                         self.length_factor,
+                        self.precision,
                         &mut std::collections::BTreeSet::new(),
                     )
                     .ok()
                 })
                 .unwrap_or(Affine::IDENTITY);
+            if let Some(ctx) = self.ctx {
+                ctx.charge_collection_items(1, "iges_product_occurrences")?;
+            }
             occurrences.push(NativeProductOccurrence {
                 id: format!("iges:product:occurrence#{path_key}/D{member}"),
                 source_instance: format!("iges:entity:directory#{instance_sequence}"),
@@ -1222,18 +1295,23 @@ impl OccurrenceExpansion<'_> {
             });
         }
         path.pop();
-        false
+        Ok(false)
     }
 }
 
+// Each argument is an independently owned decode table or session invariant;
+// grouping them would hide this stage's data dependencies without validating them.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn store(
     ir: &mut CadIr,
     scan: &CardScan,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    references: &BTreeMap<u32, Vec<ReferenceEdge>>,
+    references: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
     global: &Global,
-) -> Result<bool, CodecError> {
+    limits: ProductOccurrenceLimits,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<ProductOccurrenceExpansion, CodecError> {
     let cards = scan
         .lines
         .iter()
@@ -1257,11 +1335,83 @@ pub(crate) fn store(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let entities = directory
+    let parameter_resolver = ParameterResolver::new(directory);
+    let mut required_back_pointer_members = std::collections::BTreeSet::new();
+    for group in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 1 | 14))
+    {
+        let record = by_directory.get(&group.sequence).copied();
+        let count = record
+            .and_then(|record| record.count(1))
+            .unwrap_or_default();
+        for index in 0..count {
+            if let Some(sequence) = record
+                .and_then(|record| record.integer(2 + index))
+                .and_then(|value| u32::try_from(value).ok())
+                .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence))
+            {
+                required_back_pointer_members.insert(sequence);
+            }
+        }
+    }
+    let mut entities = directory
         .iter()
         .map(|entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
             let trailing = parameters.and_then(|record| trailing_pointer_groups(record, &entries));
+            let invalid_trailing = (trailing.is_none()
+                && required_back_pointer_members.contains(&entry.sequence))
+            .then(|| {
+                parameters.and_then(|record| {
+                    trailing_pointer_group_candidates(record, &entries)
+                        .into_iter()
+                        .filter(|groups| !groups.association_pointers.is_empty())
+                        .min_by_key(|groups| groups.token_start)
+                })
+            })
+            .flatten();
+            let edge_trailing = trailing.as_ref().or(invalid_trailing.as_ref());
+            let resolved_associations = edge_trailing
+                .as_ref()
+                .into_iter()
+                .flat_map(|groups| groups.association_pointers.iter())
+                .filter_map(|pointer| {
+                    parameter_resolver.resolve(
+                        entry.sequence,
+                        pointer.token_index,
+                        pointer.raw_pointer,
+                        "type-212-or-type-312-or-type-402",
+                        |target| matches!(target.entity_type, 212 | 312 | 402),
+                    )
+                })
+                .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                .collect::<Vec<_>>();
+            let resolved_properties = edge_trailing
+                .as_ref()
+                .into_iter()
+                .flat_map(|groups| groups.property_pointers.iter())
+                .filter_map(|pointer| {
+                    parameter_resolver.resolve(
+                        entry.sequence,
+                        pointer.token_index,
+                        pointer.raw_pointer,
+                        "type-316-or-type-322-or-type-406-or-type-422",
+                        |target| matches!(target.entity_type, 316 | 322 | 406 | 422),
+                    )
+                })
+                .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                .collect::<Vec<_>>();
+            let association_links = if trailing.is_some() {
+                resolved_associations
+            } else {
+                Vec::new()
+            };
+            let property_links = if trailing.is_some() {
+                resolved_properties
+            } else {
+                Vec::new()
+            };
             NativeEntity {
                 id: format!("iges:entity:directory#{}", entry.sequence),
                 directory_sequence: entry.sequence,
@@ -1293,18 +1443,8 @@ pub(crate) fn store(
                     .into_iter()
                     .flat_map(|record| record.tokens.iter().map(token))
                     .collect(),
-                association_links: trailing
-                    .as_ref()
-                    .into_iter()
-                    .flat_map(|groups| groups.associations.iter())
-                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                    .collect(),
-                property_links: trailing
-                    .as_ref()
-                    .into_iter()
-                    .flat_map(|groups| groups.properties.iter())
-                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                    .collect(),
+                association_links,
+                property_links,
                 comment: parameters
                     .map(|record| record.comment.clone())
                     .unwrap_or_default(),
@@ -1330,7 +1470,7 @@ pub(crate) fn store(
                 components: (1..=3)
                     .map(|index| parameters.and_then(|record| record.number(index)))
                     .collect(),
-                physically_dependent: entry.status.subordinate == 1,
+                physically_dependent: entry.status.is_physically_dependent(),
                 has_transform: entry.transform != 0,
             }
         })
@@ -1425,8 +1565,12 @@ pub(crate) fn store(
             source_entity: format!("iges:entity:directory#{}", entry.sequence),
             visible: entry.status.blank == 0,
             line_font_number: entry.line_font,
-            line_font_definition: (entry.line_font < 0)
-                .then(|| format!("iges:entity:directory#{}", entry.line_font.unsigned_abs())),
+            line_font_definition: (entry.line_font < 0).then(|| {
+                format!(
+                    "iges:presentation:line-font#D{}",
+                    entry.line_font.unsigned_abs()
+                )
+            }),
             level_number: entry.level,
             level_definition: (entry.level < 0).then(|| {
                 format!(
@@ -1452,15 +1596,14 @@ pub(crate) fn store(
                     id: format!("iges:presentation:line-font#D{}", entry.sequence),
                     source_entity: format!("iges:entity:directory#{}", entry.sequence),
                     fallback_line_font_number: entry.line_font,
-                    tangent_oriented: parameters.and_then(|record| record.integer(1)).and_then(
-                        |value| match value {
-                            0 => Some(false),
-                            1 => Some(true),
-                            _ => None,
-                        },
+                    tangent_oriented: binary_integer(
+                        parameters.and_then(|record| record.integer(1)),
                     ),
                     template: parameters
                         .and_then(|record| record.integer(2))
+                        .and_then(|sequence| {
+                            parameter_resolver.resolve_type(entry.sequence, 2, sequence, 308, &[0])
+                        })
                         .map(|sequence| format!("iges:entity:directory#{sequence}")),
                     spacing: parameters.and_then(|record| record.number(3)),
                     scale: parameters.and_then(|record| record.number(4)),
@@ -1501,7 +1644,15 @@ pub(crate) fn store(
                 font_code,
                 font_definition: font_code
                     .filter(|value| *value < 0)
-                    .and_then(i64::checked_neg)
+                    .and_then(|value| {
+                        parameter_resolver.resolve_negative(
+                            entry.sequence,
+                            3,
+                            value,
+                            "type-310-form-0",
+                            |target| target.entity_type == 310 && target.form == 0,
+                        )
+                    })
                     .map(|sequence| format!("iges:presentation:text-font#D{sequence}")),
                 slant_angle: record.and_then(|record| record.number(4)),
                 rotation_angle: record.and_then(|record| record.number(5)),
@@ -1524,38 +1675,43 @@ pub(crate) fn store(
                 .and_then(|record| record.count(5))
                 .unwrap_or_default();
             let supersedes_code = record.and_then(|record| record.integer(3));
-            let mut cursor = 6;
-            let characters = (0..count)
-                .map(|_| {
-                    let motion_count = record
-                        .and_then(|record| record.count(cursor + 3))
-                        .unwrap_or_default();
-                    let glyph = NativeGlyph {
-                        character_code: record.and_then(|record| record.integer(cursor)),
-                        next_origin: [
-                            record.and_then(|record| record.integer(cursor + 1)),
-                            record.and_then(|record| record.integer(cursor + 2)),
-                        ],
-                        declared_motion_count: record.and_then(|record| record.integer(cursor + 3)),
-                        motions: (0..motion_count)
-                            .map(|offset| {
-                                let start = cursor + 4 + offset * 3;
-                                NativeGlyphMotion {
-                                    pen_up: record
-                                        .and_then(|record| record.integer(start))
-                                        .map(|value| value == 1),
-                                    point: [
-                                        record.and_then(|record| record.integer(start + 1)),
-                                        record.and_then(|record| record.integer(start + 2)),
-                                    ],
-                                }
-                            })
-                            .collect(),
-                    };
-                    cursor += 4 + motion_count * 3;
-                    glyph
-                })
-                .collect();
+            let mut cursor = 6_usize;
+            let mut characters = Vec::with_capacity(count);
+            for _ in 0..count {
+                let Some(record) = record else { break };
+                let Some(count_index) = cursor.checked_add(3) else {
+                    break;
+                };
+                let declared_motion_count = record.integer(count_index);
+                let motion_count = record.count_with_stride(count_index, 3);
+                let motions = motion_count
+                    .into_iter()
+                    .flat_map(|count| 0..count)
+                    .map(|offset| {
+                        let start = cursor + 4 + offset * 3;
+                        NativeGlyphMotion {
+                            pen_up: record.integer(start).map(|value| value == 1),
+                            point: [record.integer(start + 1), record.integer(start + 2)],
+                        }
+                    })
+                    .collect();
+                characters.push(NativeGlyph {
+                    character_code: record.integer(cursor),
+                    next_origin: [record.integer(cursor + 1), record.integer(cursor + 2)],
+                    declared_motion_count,
+                    motions,
+                });
+                let Some(motion_count) = motion_count else {
+                    break;
+                };
+                let Some(next) = motion_count
+                    .checked_mul(3)
+                    .and_then(|width| cursor.checked_add(4 + width))
+                else {
+                    break;
+                };
+                cursor = next;
+            }
             NativeTextFontDefinition {
                 id: format!("iges:presentation:text-font#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
@@ -1566,7 +1722,15 @@ pub(crate) fn store(
                 supersedes_code,
                 supersedes_definition: supersedes_code
                     .filter(|value| *value < 0)
-                    .and_then(i64::checked_neg)
+                    .and_then(|value| {
+                        parameter_resolver.resolve_negative(
+                            entry.sequence,
+                            3,
+                            value,
+                            "type-310-form-0",
+                            |target| target.entity_type == 310 && target.form == 0,
+                        )
+                    })
                     .map(|sequence| format!("iges:presentation:text-font#D{sequence}")),
                 grid_units_per_text_height: record.and_then(|record| record.integer(4)),
                 declared_character_count: record.and_then(|record| record.integer(5)),
@@ -1683,6 +1847,20 @@ pub(crate) fn store(
                 form: entry.form,
                 profile: record
                     .and_then(|record| record.integer(1))
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve(
+                            entry.sequence,
+                            1,
+                            sequence,
+                            "curve-entity",
+                            |target| {
+                                matches!(
+                                    target.entity_type,
+                                    100 | 102 | 104 | 106 | 110 | 112 | 126 | 130
+                                )
+                            },
+                        )
+                    })
                     .map(|sequence| format!("iges:entity:directory#{sequence}")),
                 amount: number(2),
                 origin: revolution.then(|| axis(3)),
@@ -1701,12 +1879,40 @@ pub(crate) fn store(
                 .and_then(|record| record.count(1))
                 .unwrap_or_default();
             let terms = (0..count)
-                .filter_map(|index| record.and_then(|record| record.integer(2 + index)))
-                .map(|value| {
+                .filter_map(|index| {
+                    record
+                        .and_then(|record| record.integer(2 + index))
+                        .map(|value| (index, value))
+                })
+                .map(|(index, value)| {
                     if value < 0 {
                         NativeBooleanTerm::Operand {
-                            entity: value
-                                .checked_neg()
+                            entity: parameter_resolver
+                                .resolve_negative(
+                                    entry.sequence,
+                                    2 + index,
+                                    value,
+                                    if entry.form == 1 {
+                                        "constructive-solid-or-type-186"
+                                    } else {
+                                        "constructive-solid"
+                                    },
+                                    |target| {
+                                        matches!(
+                                            target.entity_type,
+                                            150 | 152
+                                                | 154
+                                                | 156
+                                                | 158
+                                                | 160
+                                                | 162
+                                                | 164
+                                                | 168
+                                                | 180
+                                                | 430
+                                        ) || (entry.form == 1 && target.entity_type == 186)
+                                    },
+                                )
                                 .map(|sequence| format!("iges:entity:directory#{sequence}")),
                             raw: value,
                         }
@@ -1736,6 +1942,15 @@ pub(crate) fn store(
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 boolean_tree: record
                     .and_then(|record| record.integer(1))
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve(
+                            entry.sequence,
+                            1,
+                            sequence,
+                            "type-180-form-0-or-1",
+                            |target| target.entity_type == 180 && matches!(target.form, 0 | 1),
+                        )
+                    })
                     .map(|sequence| format!("iges:solid:boolean-tree#D{sequence}")),
                 selection_point: [
                     record.and_then(|record| record.number(2)),
@@ -1764,10 +1979,47 @@ pub(crate) fn store(
                     .map(|index| NativeAssemblyItem {
                         item: record
                             .and_then(|record| record.integer(2 + index))
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve(
+                                    entry.sequence,
+                                    2 + index,
+                                    sequence,
+                                    if entry.form == 1 {
+                                        "constructive-solid-or-type-186"
+                                    } else {
+                                        "constructive-solid"
+                                    },
+                                    |target| {
+                                        matches!(
+                                            target.entity_type,
+                                            150 | 152
+                                                | 154
+                                                | 156
+                                                | 158
+                                                | 160
+                                                | 162
+                                                | 164
+                                                | 168
+                                                | 180
+                                                | 184
+                                                | 430
+                                        ) || (entry.form == 1 && target.entity_type == 186)
+                                    },
+                                )
+                            })
                             .map(|sequence| format!("iges:entity:directory#{sequence}")),
                         transformation: record
                             .and_then(|record| record.integer(2 + count + index))
                             .filter(|sequence| *sequence != 0)
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve_type(
+                                    entry.sequence,
+                                    2 + count + index,
+                                    sequence,
+                                    124,
+                                    &[],
+                                )
+                            })
                             .map(|sequence| format!("iges:native:transformation#D{sequence}")),
                     })
                     .collect(),
@@ -1787,6 +2039,38 @@ pub(crate) fn store(
                 form: entry.form,
                 solid: record
                     .and_then(|record| record.integer(1))
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve(
+                            entry.sequence,
+                            1,
+                            sequence,
+                            if entry.form == 1 {
+                                "type-186"
+                            } else {
+                                "constructive-solid"
+                            },
+                            |target| {
+                                if entry.form == 1 {
+                                    target.entity_type == 186
+                                } else {
+                                    matches!(
+                                        target.entity_type,
+                                        150 | 152
+                                            | 154
+                                            | 156
+                                            | 158
+                                            | 160
+                                            | 162
+                                            | 164
+                                            | 168
+                                            | 180
+                                            | 184
+                                            | 430
+                                    )
+                                }
+                            },
+                        )
+                    })
                     .map(|sequence| format!("iges:entity:directory#{sequence}")),
                 transformation: (entry.transform > 0)
                     .then(|| format!("iges:native:transformation#D{}", entry.transform)),
@@ -1813,6 +2097,9 @@ pub(crate) fn store(
                     .map(|index| {
                         record
                             .and_then(|record| record.integer(4 + index))
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve_any(entry.sequence, 4 + index, sequence)
+                            })
                             .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
                     .collect(),
@@ -1829,6 +2116,9 @@ pub(crate) fn store(
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 definition: record
                     .and_then(|record| record.integer(1))
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve_type(entry.sequence, 1, sequence, 308, &[0])
+                    })
                     .map(|sequence| format!("iges:product:subfigure-definition#D{sequence}")),
                 translation: [
                     record.and_then(|record| record.number(2)),
@@ -1865,6 +2155,9 @@ pub(crate) fn store(
                     .map(|index| {
                         record
                             .and_then(|record| record.integer(4 + index))
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve_any(entry.sequence, 4 + index, sequence)
+                            })
                             .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
                     .collect(),
@@ -1875,6 +2168,15 @@ pub(crate) fn store(
                 display_template: record
                     .and_then(|record| record.integer(6 + member_count))
                     .filter(|sequence| *sequence != 0)
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve_type(
+                            entry.sequence,
+                            6 + member_count,
+                            sequence,
+                            312,
+                            &[0, 1],
+                        )
+                    })
                     .map(|sequence| format!("iges:entity:directory#{sequence}")),
                 declared_connect_point_count: record
                     .and_then(|record| record.integer(connect_count_index)),
@@ -1883,6 +2185,15 @@ pub(crate) fn store(
                         record
                             .and_then(|record| record.integer(8 + member_count + index))
                             .filter(|sequence| *sequence != 0)
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve_type(
+                                    entry.sequence,
+                                    8 + member_count + index,
+                                    sequence,
+                                    132,
+                                    &[0],
+                                )
+                            })
                             .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
                     .collect(),
@@ -1902,6 +2213,9 @@ pub(crate) fn store(
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 definition: record
                     .and_then(|record| record.integer(1))
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve_type(entry.sequence, 1, sequence, 320, &[0])
+                    })
                     .map(|sequence| format!("iges:product:network-definition#D{sequence}")),
                 translation: [
                     record.and_then(|record| record.number(2)),
@@ -1920,6 +2234,9 @@ pub(crate) fn store(
                 display_template: record
                     .and_then(|record| record.integer(10))
                     .filter(|sequence| *sequence != 0)
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve_type(entry.sequence, 10, sequence, 312, &[0, 1])
+                    })
                     .map(|sequence| format!("iges:entity:directory#{sequence}")),
                 declared_connect_point_count: record.and_then(|record| record.integer(11)),
                 connect_points: (0..connect_count)
@@ -1927,6 +2244,15 @@ pub(crate) fn store(
                         record
                             .and_then(|record| record.integer(12 + index))
                             .filter(|sequence| *sequence != 0)
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve_type(
+                                    entry.sequence,
+                                    12 + index,
+                                    sequence,
+                                    132,
+                                    &[0],
+                                )
+                            })
                             .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
                     .collect(),
@@ -1940,10 +2266,28 @@ pub(crate) fn store(
         .filter(|entry| entry.entity_type == 132 && entry.form == 0)
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
-            let optional_link = |index| {
+            let optional_entity_link = |index| {
                 record
                     .and_then(|record| record.integer(index))
                     .filter(|sequence| *sequence != 0)
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve_any(entry.sequence, index, sequence)
+                    })
+                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
+            };
+            let optional_template_link = |index| {
+                record
+                    .and_then(|record| record.integer(index))
+                    .filter(|sequence| *sequence != 0)
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve_type(
+                            entry.sequence,
+                            index,
+                            sequence,
+                            312,
+                            &[0, 1],
+                        )
+                    })
                     .map(|sequence| format!("iges:entity:directory#{sequence}"))
             };
             NativeConnectPoint {
@@ -1954,21 +2298,33 @@ pub(crate) fn store(
                     record.and_then(|record| record.number(2)),
                     record.and_then(|record| record.number(3)),
                 ],
-                display_geometry: optional_link(4),
+                display_geometry: optional_entity_link(4),
                 type_flag: record.and_then(|record| record.integer(5)),
                 function_flag: record.and_then(|record| record.integer(6)),
                 function_identifier: record
                     .and_then(|record| record.string(7))
                     .map(<[u8]>::to_vec),
-                identifier_display_template: optional_link(8),
+                identifier_display_template: optional_template_link(8),
                 function_name: record
                     .and_then(|record| record.string(9))
                     .map(<[u8]>::to_vec),
-                name_display_template: optional_link(10),
+                name_display_template: optional_template_link(10),
                 identifier: record.and_then(|record| record.integer(11)),
                 function_code: record.and_then(|record| record.integer(12)),
                 swap_flag: record.and_then(|record| record.integer(13)),
-                owner: optional_link(14),
+                owner: record
+                    .and_then(|record| record.integer(14))
+                    .filter(|sequence| *sequence != 0)
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve(
+                            entry.sequence,
+                            14,
+                            sequence,
+                            "type-320-or-type-420",
+                            |target| matches!(target.entity_type, 320 | 420),
+                        )
+                    })
+                    .map(|sequence| format!("iges:entity:directory#{sequence}")),
                 transformation: (entry.transform > 0)
                     .then(|| format!("iges:native:transformation#D{}", entry.transform)),
             }
@@ -1987,6 +2343,15 @@ pub(crate) fn store(
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 base: record
                     .and_then(|record| record.integer(1))
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve(
+                            entry.sequence,
+                            1,
+                            sequence,
+                            "array-base-entity",
+                            |target| array_base_type(target.entity_type, target.form),
+                        )
+                    })
                     .map(|sequence| format!("iges:entity:directory#{sequence}")),
                 scale: record.and_then(|record| record.number(2)),
                 origin: [
@@ -2021,6 +2386,15 @@ pub(crate) fn store(
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 base: record
                     .and_then(|record| record.integer(1))
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve(
+                            entry.sequence,
+                            1,
+                            sequence,
+                            "array-base-entity",
+                            |target| array_base_type(target.entity_type, target.form),
+                        )
+                    })
                     .map(|sequence| format!("iges:entity:directory#{sequence}")),
                 location_count: record.and_then(|record| record.integer(2)),
                 center: [
@@ -2095,6 +2469,9 @@ pub(crate) fn store(
                     .map(|index| {
                         record
                             .and_then(|record| record.integer(2 + index))
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve_any(entry.sequence, 2 + index, sequence)
+                            })
                             .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
                     .collect(),
@@ -2109,30 +2486,30 @@ pub(crate) fn store(
             let class_count = record
                 .and_then(|record| record.count(1))
                 .unwrap_or_default();
-            let mut cursor = 2;
-            let classes = (0..class_count)
-                .map(|_| {
-                    let item_count = record
-                        .and_then(|record| record.count(cursor + 2))
-                        .unwrap_or_default();
-                    let class = NativeAssociativityClassDefinition {
-                        back_pointers_required: record
-                            .and_then(|record| record.integer(cursor))
-                            .map(|value| value == 1),
-                        ordered: record
-                            .and_then(|record| record.integer(cursor + 1))
-                            .map(|value| value == 1),
-                        declared_item_count: record.and_then(|record| record.integer(cursor + 2)),
-                        item_types: (0..item_count)
-                            .map(|offset| {
-                                record.and_then(|record| record.integer(cursor + 3 + offset))
-                            })
-                            .collect(),
-                    };
-                    cursor += 3 + item_count;
-                    class
-                })
-                .collect();
+            let mut cursor = 2_usize;
+            let mut classes = Vec::with_capacity(class_count);
+            for _ in 0..class_count {
+                let Some(record) = record else { break };
+                let Some(count_index) = cursor.checked_add(2) else {
+                    break;
+                };
+                let item_count = record.count(count_index);
+                classes.push(NativeAssociativityClassDefinition {
+                    back_pointers_required: record.integer(cursor).map(|value| value == 1),
+                    ordered: record.integer(cursor + 1).map(|value| value == 1),
+                    declared_item_count: record.integer(cursor + 2),
+                    item_types: item_count
+                        .into_iter()
+                        .flat_map(|count| 0..count)
+                        .map(|offset| record.integer(cursor + 3 + offset))
+                        .collect(),
+                });
+                let Some(item_count) = item_count else { break };
+                let Some(next) = cursor.checked_add(3 + item_count) else {
+                    break;
+                };
+                cursor = next;
+            }
             NativeAssociativity::Definition {
                 id: format!("iges:structure:associativity#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
@@ -2157,6 +2534,9 @@ pub(crate) fn store(
                     record
                         .and_then(|record| record.integer(index))
                         .filter(|sequence| *sequence != 0)
+                        .and_then(|sequence| {
+                            parameter_resolver.resolve_any(entry.sequence, index, sequence)
+                        })
                         .map(|sequence| format!("iges:entity:directory#{sequence}"))
                 };
                 Some(match entry.form {
@@ -2172,13 +2552,39 @@ pub(crate) fn store(
                                 .map(|offset| {
                                     let start = 2 + offset * 7;
                                     NativeLabelPlacement {
-                                        view: entity_link(start),
+                                        view: record
+                                            .and_then(|record| record.integer(start))
+                                            .and_then(|sequence| {
+                                                parameter_resolver.resolve_type(
+                                                    entry.sequence,
+                                                    start,
+                                                    sequence,
+                                                    410,
+                                                    &[0, 1],
+                                                )
+                                            })
+                                            .map(|sequence| {
+                                                format!("iges:entity:directory#{sequence}")
+                                            }),
                                         text_location: [
                                             record.and_then(|record| record.number(start + 1)),
                                             record.and_then(|record| record.number(start + 2)),
                                             record.and_then(|record| record.number(start + 3)),
                                         ],
-                                        leader: entity_link(start + 4),
+                                        leader: record
+                                            .and_then(|record| record.integer(start + 4))
+                                            .and_then(|sequence| {
+                                                parameter_resolver.resolve_type(
+                                                    entry.sequence,
+                                                    start + 4,
+                                                    sequence,
+                                                    214,
+                                                    &[],
+                                                )
+                                            })
+                                            .map(|sequence| {
+                                                format!("iges:entity:directory#{sequence}")
+                                            }),
                                         label_level: record
                                             .and_then(|record| record.integer(start + 5)),
                                         entity: entity_link(start + 6),
@@ -2195,7 +2601,18 @@ pub(crate) fn store(
                             id,
                             source_entity,
                             declared_visible_count: record.and_then(|record| record.integer(1)),
-                            view: entity_link(2),
+                            view: record
+                                .and_then(|record| record.integer(2))
+                                .and_then(|sequence| {
+                                    parameter_resolver.resolve_type(
+                                        entry.sequence,
+                                        2,
+                                        sequence,
+                                        410,
+                                        &[0, 1],
+                                    )
+                                })
+                                .map(|sequence| format!("iges:entity:directory#{sequence}")),
                             visible_entities: (0..count)
                                 .map(|offset| entity_link(3 + offset))
                                 .collect(),
@@ -2208,6 +2625,7 @@ pub(crate) fn store(
                         NativeAssociativity::SingleParent {
                             id,
                             source_entity,
+                            declared_child_count: record.and_then(|record| record.integer(2)),
                             parent: entity_link(3),
                             children: (0..count).map(|offset| entity_link(4 + offset)).collect(),
                         }
@@ -2240,7 +2658,24 @@ pub(crate) fn store(
                         NativeAssociativity::DimensionedGeometry {
                             id,
                             source_entity,
-                            dimension: entity_link(3),
+                            declared_geometry_count: record.and_then(|record| record.integer(2)),
+                            dimension: record
+                                .and_then(|record| record.integer(3))
+                                .and_then(|sequence| {
+                                    parameter_resolver.resolve(
+                                        entry.sequence,
+                                        3,
+                                        sequence,
+                                        "dimension-entity",
+                                        |target| {
+                                            matches!(
+                                                target.entity_type,
+                                                202 | 206 | 216 | 218 | 220 | 222
+                                            )
+                                        },
+                                    )
+                                })
+                                .map(|sequence| format!("iges:entity:directory#{sequence}")),
                             geometry: (0..count).map(|offset| entity_link(4 + offset)).collect(),
                         }
                     }
@@ -2251,9 +2686,19 @@ pub(crate) fn store(
                         NativeAssociativity::Planar {
                             id,
                             source_entity,
+                            declared_entity_count: record.and_then(|record| record.integer(2)),
                             plane_transform: record
                                 .and_then(|record| record.integer(3))
                                 .filter(|sequence| *sequence != 0)
+                                .and_then(|sequence| {
+                                    parameter_resolver.resolve_type(
+                                        entry.sequence,
+                                        3,
+                                        sequence,
+                                        124,
+                                        &[0],
+                                    )
+                                })
                                 .map(|sequence| format!("iges:native:transformation#D{sequence}")),
                             entities: (0..count).map(|offset| entity_link(4 + offset)).collect(),
                         }
@@ -2266,17 +2711,75 @@ pub(crate) fn store(
                                     .unwrap_or_default()
                             })
                             .collect::<Vec<_>>();
-                        let link_range = |start, count| {
+                        let flow_links = |start, count| {
                             (0..count)
-                                .map(|offset| entity_link(start + offset))
+                                .map(|offset| {
+                                    let index = start + offset;
+                                    record
+                                        .and_then(|record| record.integer(index))
+                                        .and_then(|sequence| {
+                                            parameter_resolver.resolve(
+                                                entry.sequence,
+                                                index,
+                                                sequence,
+                                                "matching-flow-associativity",
+                                                |target| {
+                                                    target.entity_type == 402
+                                                        && target.form == entry.form
+                                                },
+                                            )
+                                        })
+                                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                                })
                                 .collect::<Vec<_>>()
                         };
                         let mut cursor = if entry.form == 18 { 10 } else { 9 };
-                        let associated_flows = link_range(cursor, counts[0]);
+                        let associated_flows = flow_links(cursor, counts[0]);
                         cursor += counts[0];
-                        let connections = link_range(cursor, counts[1]);
+                        let connections = (0..counts[1])
+                            .map(|offset| {
+                                let index = cursor + offset;
+                                record
+                                    .and_then(|record| record.integer(index))
+                                    .and_then(|sequence| {
+                                        parameter_resolver.resolve(
+                                            entry.sequence,
+                                            index,
+                                            sequence,
+                                            if entry.form == 18 {
+                                                "type-132-or-group"
+                                            } else {
+                                                "type-132"
+                                            },
+                                            |target| {
+                                                target.entity_type == 132
+                                                    || (entry.form == 18
+                                                        && target.entity_type == 402
+                                                        && matches!(target.form, 1 | 7 | 14 | 15))
+                                            },
+                                        )
+                                    })
+                                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                            })
+                            .collect();
                         cursor += counts[1];
-                        let joins = link_range(cursor, counts[2]);
+                        let joins = (0..counts[2])
+                            .map(|offset| {
+                                let index = cursor + offset;
+                                record
+                                    .and_then(|record| record.integer(index))
+                                    .and_then(|sequence| {
+                                        parameter_resolver.resolve(
+                                            entry.sequence,
+                                            index,
+                                            sequence,
+                                            "non-associativity-or-type-402-form-7",
+                                            |target| target.entity_type != 402 || target.form == 7,
+                                        )
+                                    })
+                                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                            })
+                            .collect();
                         cursor += counts[2];
                         let names = (0..counts[3])
                             .map(|offset| {
@@ -2286,13 +2789,74 @@ pub(crate) fn store(
                             })
                             .collect::<Vec<_>>();
                         cursor += counts[3];
-                        let name_displays = link_range(cursor, counts[4]);
+                        let name_displays = (0..counts[4])
+                            .map(|offset| {
+                                let index = cursor + offset;
+                                record
+                                    .and_then(|record| record.integer(index))
+                                    .and_then(|sequence| {
+                                        parameter_resolver.resolve(
+                                            entry.sequence,
+                                            index,
+                                            sequence,
+                                            if entry.form == 18 {
+                                                "type-312-or-type-212"
+                                            } else {
+                                                "type-312"
+                                            },
+                                            |target| {
+                                                target.entity_type == 312
+                                                    || (entry.form == 18
+                                                        && target.entity_type == 212)
+                                            },
+                                        )
+                                    })
+                                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                            })
+                            .collect();
                         cursor += counts[4];
-                        let continuations = link_range(cursor, counts[5]);
+                        let continuations = (0..counts[5])
+                            .map(|offset| {
+                                let index = cursor + offset;
+                                record
+                                    .and_then(|record| record.integer(index))
+                                    .filter(|sequence| *sequence != 0)
+                                    .and_then(|sequence| {
+                                        parameter_resolver.resolve(
+                                            entry.sequence,
+                                            index,
+                                            sequence,
+                                            if entry.form == 18 {
+                                                "type-402-form-11-or-18"
+                                            } else {
+                                                "type-402-form-20"
+                                            },
+                                            |target| {
+                                                target.entity_type == 402
+                                                    && if entry.form == 18 {
+                                                        matches!(target.form, 11 | 18)
+                                                    } else {
+                                                        target.form == 20
+                                                    }
+                                            },
+                                        )
+                                    })
+                                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                            })
+                            .collect();
                         NativeAssociativity::Flow {
                             id,
                             source_entity,
                             form: entry.form,
+                            declared_associated_flow_count: record
+                                .and_then(|record| record.integer(2)),
+                            declared_connection_count: record.and_then(|record| record.integer(3)),
+                            declared_join_count: record.and_then(|record| record.integer(4)),
+                            declared_name_count: record.and_then(|record| record.integer(5)),
+                            declared_name_display_count: record
+                                .and_then(|record| record.integer(6)),
+                            declared_continuation_count: record
+                                .and_then(|record| record.integer(7)),
                             type_flag: record.and_then(|record| record.integer(8)),
                             function_flag: (entry.form == 18)
                                 .then(|| record.and_then(|record| record.integer(9)))
@@ -2312,7 +2876,24 @@ pub(crate) fn store(
                         NativeAssociativity::RecalculableDimension {
                             id,
                             source_entity,
-                            dimension: entity_link(3),
+                            declared_geometry_count: record.and_then(|record| record.integer(2)),
+                            dimension: record
+                                .and_then(|record| record.integer(3))
+                                .and_then(|sequence| {
+                                    parameter_resolver.resolve(
+                                        entry.sequence,
+                                        3,
+                                        sequence,
+                                        "dimension-entity",
+                                        |target| {
+                                            matches!(
+                                                target.entity_type,
+                                                202 | 206 | 216 | 218 | 220 | 222
+                                            )
+                                        },
+                                    )
+                                })
+                                .map(|sequence| format!("iges:entity:directory#{sequence}")),
                             orientation_flag: record.and_then(|record| record.integer(4)),
                             angle: record.and_then(|record| record.number(5)),
                             geometry: (0..count)
@@ -2347,38 +2928,50 @@ pub(crate) fn store(
             let mut cursor = 4;
             let mut attributes = Vec::with_capacity(count);
             for _ in 0..count {
-                let attribute_type = record.and_then(|record| record.integer(cursor));
-                let value_data_type = record.and_then(|record| record.integer(cursor + 1));
-                let declared_value_count = record.and_then(|record| record.integer(cursor + 2));
+                let Some(record) = record else { break };
+                let attribute_type = record.integer(cursor);
+                let value_data_type = record.integer(cursor + 1);
+                let declared_value_count = record.integer(cursor + 2);
+                let stride = if entry.form == 2 { 2 } else { 1 };
                 let value_count = if entry.form == 0 {
-                    0
+                    Some(0)
                 } else {
-                    match record
-                        .and_then(|record| record.tokens.get(cursor + 2))
-                        .map(|token| &token.value)
-                    {
-                        None | Some(TokenValue::Omitted) => 1,
-                        Some(TokenValue::Integer(_)) => record
-                            .and_then(|record| record.count(cursor + 2))
-                            .unwrap_or_default(),
-                        Some(TokenValue::Real(_) | TokenValue::String(_)) => 0,
+                    match record.tokens.get(cursor + 2).map(|token| &token.value) {
+                        Some(TokenValue::Omitted) => {
+                            (stride <= record.tokens.len().saturating_sub(cursor + 3)).then_some(1)
+                        }
+                        Some(TokenValue::Integer(_)) => {
+                            record.count_with_stride(cursor + 2, stride)
+                        }
+                        None | Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
                     }
                 };
-                cursor += 3;
-                let mut values = Vec::with_capacity(value_count);
+                let Some(value_start) = cursor.checked_add(3) else {
+                    break;
+                };
+                let mut values = Vec::with_capacity(value_count.unwrap_or_default());
                 if entry.form != 0 {
-                    for _ in 0..value_count {
+                    for offset in 0..value_count.unwrap_or_default() {
+                        let value_index = value_start + offset * stride;
                         let value = record
-                            .and_then(|record| record.tokens.get(cursor))
+                            .tokens
+                            .get(value_index)
                             .map(token)
                             .map_or(NativeTokenValue::Omitted, |token| token.value);
-                        cursor += 1;
                         let display_template = (entry.form == 2)
-                            .then(|| record.and_then(|record| record.integer(cursor)))
+                            .then(|| record.integer(value_index + 1))
                             .flatten()
                             .filter(|sequence| *sequence != 0)
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve_type(
+                                    entry.sequence,
+                                    value_index + 1,
+                                    sequence,
+                                    312,
+                                    &[0, 1],
+                                )
+                            })
                             .map(|sequence| format!("iges:entity:directory#{sequence}"));
-                        cursor += usize::from(entry.form == 2);
                         values.push(NativeAttributeValue {
                             value,
                             display_template,
@@ -2391,6 +2984,16 @@ pub(crate) fn store(
                     declared_value_count,
                     values,
                 });
+                let Some(value_count) = value_count else {
+                    break;
+                };
+                let Some(next) = value_count
+                    .checked_mul(stride)
+                    .and_then(|width| value_start.checked_add(width))
+                else {
+                    break;
+                };
+                cursor = next;
             }
             NativeAttributeTableDefinition {
                 id: format!("iges:product:attribute-definition#D{}", entry.sequence),
@@ -2410,10 +3013,8 @@ pub(crate) fn store(
         .filter(|entry| entry.entity_type == 422 && matches!(entry.form, 0..=1))
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
-            let definition_sequence = entry
-                .structure
-                .checked_neg()
-                .and_then(|value| u32::try_from(value).ok());
+            let definition_sequence =
+                crate::graph::resolved_structure_sequence(references, entry.sequence);
             let definition_record =
                 definition_sequence.and_then(|sequence| by_directory.get(&sequence).copied());
             let attribute_count = definition_record
@@ -2634,15 +3235,15 @@ pub(crate) fn store(
                     pattern_code: record.integer(2),
                 },
                 20 => NativePropertyValue::Highlight {
-                    highlighted: record.integer(2).map(|value| value == 1),
+                    highlighted: binary_integer(record.integer(2)),
                 },
                 21 => NativePropertyValue::Pick {
-                    pickable: record.integer(2).map(|value| value == 0),
+                    pickable: binary_integer(record.integer(2)).map(|value| !value),
                 },
                 22 => NativePropertyValue::UniformRectangularGrid {
-                    finite: record.integer(2).map(|value| value == 1),
-                    lines: record.integer(3).map(|value| value == 1),
-                    weighted: record.integer(4).map(|value| value == 0),
+                    finite: binary_integer(record.integer(2)),
+                    lines: binary_integer(record.integer(3)),
+                    weighted: binary_integer(record.integer(4)).map(|value| !value),
                     origin: [record.number(5), record.number(6)],
                     spacing: [record.number(7), record.number(8)],
                     counts: [record.integer(9), record.integer(10)],
@@ -2716,7 +3317,7 @@ pub(crate) fn store(
                     placement: record.integer(4),
                     upper: record.number(5),
                     lower: record.number(6),
-                    suppress_plus: record.integer(7).map(|value| value == 1),
+                    suppress_plus: binary_integer(record.integer(7)),
                     fraction_flag: record.integer(8),
                     precision: record.integer(9),
                 },
@@ -2725,12 +3326,14 @@ pub(crate) fn store(
                     NativePropertyValue::DimensionDisplayData {
                         dimension_type: record.integer(2),
                         label_position: record.integer(3),
+                        declared_character_set: record.integer(4),
                         character_set: match record.tokens.get(4).map(|token| &token.value) {
                             None | Some(TokenValue::Omitted) => Some(1),
                             _ => record.integer(4),
                         },
                         label: record.string(5).map(<[u8]>::to_vec),
                         decimal_symbol: record.integer(6),
+                        declared_witness_line_angle: record.number(7),
                         witness_line_angle: match record.tokens.get(7).map(|token| &token.value) {
                             None | Some(TokenValue::Omitted) => Some(std::f64::consts::FRAC_PI_2),
                             _ => record.number(7),
@@ -2879,6 +3482,15 @@ pub(crate) fn store(
                             record
                                 .and_then(|record| record.integer(index))
                                 .filter(|sequence| *sequence != 0)
+                                .and_then(|sequence| {
+                                    parameter_resolver.resolve_type(
+                                        entry.sequence,
+                                        index,
+                                        sequence,
+                                        108,
+                                        &[],
+                                    )
+                                })
                                 .map(|sequence| format!("iges:entity:directory#{sequence}"))
                         })
                         .collect()
@@ -2931,9 +3543,31 @@ pub(crate) fn store(
                 displays: (0..view_count)
                     .map(|index| {
                         let start = 3 + index * width;
+                        if let Some(color) = (entry.form == 4)
+                            .then(|| record.and_then(|record| record.integer(start + 3)))
+                            .flatten()
+                            .filter(|value| *value < 0)
+                        {
+                            let _ = parameter_resolver.resolve_negative(
+                                entry.sequence,
+                                start + 3,
+                                color,
+                                "type-314-form-0",
+                                |target| target.entity_type == 314 && target.form == 0,
+                            );
+                        }
                         NativeViewDisplay {
                             view: record
                                 .and_then(|record| record.integer(start))
+                                .and_then(|sequence| {
+                                    parameter_resolver.resolve_type(
+                                        entry.sequence,
+                                        start,
+                                        sequence,
+                                        410,
+                                        &[0, 1],
+                                    )
+                                })
                                 .map(|sequence| format!("iges:presentation:view#D{sequence}")),
                             line_font: (entry.form == 4)
                                 .then(|| record.and_then(|record| record.integer(start + 1)))
@@ -2942,6 +3576,15 @@ pub(crate) fn store(
                                 .then(|| record.and_then(|record| record.integer(start + 2)))
                                 .flatten()
                                 .filter(|sequence| *sequence != 0)
+                                .and_then(|sequence| {
+                                    parameter_resolver.resolve_type(
+                                        entry.sequence,
+                                        start + 2,
+                                        sequence,
+                                        304,
+                                        &[1, 2],
+                                    )
+                                })
                                 .map(|sequence| format!("iges:presentation:line-font#D{sequence}")),
                             color: (entry.form == 4)
                                 .then(|| record.and_then(|record| record.integer(start + 3)))
@@ -2956,6 +3599,13 @@ pub(crate) fn store(
                     .map(|index| {
                         record
                             .and_then(|record| record.integer(3 + view_count * width + index))
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve_any(
+                                    entry.sequence,
+                                    3 + view_count * width + index,
+                                    sequence,
+                                )
+                            })
                             .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
                     .collect(),
@@ -2982,9 +3632,42 @@ pub(crate) fn store(
                 blocks: (0..count)
                     .map(|index| {
                         let start = 2 + index * 6;
+                        if let Some(color) = record
+                            .and_then(|record| record.integer(start + 3))
+                            .filter(|value| *value < 0)
+                        {
+                            let _ = parameter_resolver.resolve_negative(
+                                entry.sequence,
+                                start + 3,
+                                color,
+                                "type-314-form-0",
+                                |target| target.entity_type == 314 && target.form == 0,
+                            );
+                        }
+                        if let Some(line_font) = record
+                            .and_then(|record| record.integer(start + 4))
+                            .filter(|value| *value < 0)
+                        {
+                            let _ = parameter_resolver.resolve_negative(
+                                entry.sequence,
+                                start + 4,
+                                line_font,
+                                "type-304-form-1-or-2",
+                                |target| target.entity_type == 304 && matches!(target.form, 1 | 2),
+                            );
+                        }
                         NativeSegmentDisplay {
                             view: record
                                 .and_then(|record| record.integer(start))
+                                .and_then(|sequence| {
+                                    parameter_resolver.resolve_type(
+                                        entry.sequence,
+                                        start,
+                                        sequence,
+                                        410,
+                                        &[0, 1],
+                                    )
+                                })
                                 .map(|sequence| format!("iges:presentation:view#D{sequence}")),
                             breakpoint: record.and_then(|record| record.number(start + 1)),
                             display_flag: record.and_then(|record| record.integer(start + 2)),
@@ -3034,6 +3717,15 @@ pub(crate) fn store(
                         NativeDrawingView {
                             view: record
                                 .and_then(|record| record.integer(start))
+                                .and_then(|sequence| {
+                                    parameter_resolver.resolve_type(
+                                        entry.sequence,
+                                        start,
+                                        sequence,
+                                        410,
+                                        &[0, 1],
+                                    )
+                                })
                                 .map(|sequence| format!("iges:presentation:view#D{sequence}")),
                             origin: [
                                 record.and_then(|record| record.number(start + 1)),
@@ -3049,15 +3741,23 @@ pub(crate) fn store(
                     .map(|index| {
                         record
                             .and_then(|record| record.integer(annotation_count_index + 1 + index))
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve(
+                                    entry.sequence,
+                                    annotation_count_index + 1 + index,
+                                    sequence,
+                                    "drawing-space-annotation",
+                                    |target| {
+                                        target.status.use_flag == 1
+                                            && target.status.is_physically_dependent()
+                                    },
+                                )
+                            })
                             .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
                     .collect(),
                 name_property: name_property
                     .map(|sequence| format!("iges:product:property#D{sequence}")),
-                size_property: size_property
-                    .map(|sequence| format!("iges:presentation:drawing-size#D{sequence}")),
-                units_property: units_property
-                    .map(|sequence| format!("iges:presentation:drawing-units#D{sequence}")),
                 name: name_property
                     .and_then(|sequence| by_directory.get(&sequence))
                     .and_then(|record| record.string(2))
@@ -3076,13 +3776,7 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
-    let font_definition = |value: Option<i64>| {
-        value
-            .filter(|value| *value < 0)
-            .and_then(i64::checked_neg)
-            .map(|sequence| format!("iges:presentation:text-font#D{sequence}"))
-    };
-    let text_run = |record: Option<&ParameterRecord>, start: usize| {
+    let text_run = |source: u32, record: Option<&ParameterRecord>, start: usize| {
         let font_code = record.and_then(|record| record.integer(start + 3));
         NativeTextRun {
             declared_character_count: record.and_then(|record| record.integer(start)),
@@ -3094,7 +3788,18 @@ pub(crate) fn store(
                 record.and_then(|record| record.number(start + 2)),
             ],
             font_code,
-            font_definition: font_definition(font_code),
+            font_definition: font_code
+                .filter(|value| *value < 0)
+                .and_then(|value| {
+                    parameter_resolver.resolve_negative(
+                        source,
+                        start + 3,
+                        value,
+                        "type-310-form-0",
+                        |target| target.entity_type == 310 && target.form == 0,
+                    )
+                })
+                .map(|sequence| format!("iges:presentation:text-font#D{sequence}")),
             slant_angle: record.and_then(|record| record.number(start + 4)),
             rotation_angle: record.and_then(|record| record.number(start + 5)),
             mirror: record.and_then(|record| record.integer(start + 6)),
@@ -3131,7 +3836,7 @@ pub(crate) fn store(
                     source_entity: format!("iges:entity:directory#{}", entry.sequence),
                     declared_string_count: record.and_then(|record| record.integer(1)),
                     strings: (0..count)
-                        .map(|index| text_run(record, 2 + index * 12))
+                        .map(|index| text_run(entry.sequence, record, 2 + index * 12))
                         .collect(),
                     transformation,
                 }
@@ -3189,7 +3894,22 @@ pub(crate) fn store(
                                         record.and_then(|record| record.number(start + 10)),
                                     ],
                                     font_code,
-                                    font_definition: font_definition(font_code),
+                                    font_definition: font_code
+                                        .filter(|value| *value < 0)
+                                        .and_then(|value| {
+                                            parameter_resolver.resolve_negative(
+                                                entry.sequence,
+                                                start + 11,
+                                                value,
+                                                "type-310-form-0",
+                                                |target| {
+                                                    target.entity_type == 310 && target.form == 0
+                                                },
+                                            )
+                                        })
+                                        .map(|sequence| {
+                                            format!("iges:presentation:text-font#D{sequence}")
+                                        }),
                                     slant_angle: record
                                         .and_then(|record| record.number(start + 12)),
                                     rotation_angle: record
@@ -3238,26 +3958,90 @@ pub(crate) fn store(
                     transformation,
                 }
             } else {
-                let annotation_link = |index| {
+                let note_link = |index| {
                     record
                         .and_then(|record| record.integer(index))
                         .filter(|sequence| *sequence != 0)
+                        .and_then(|sequence| {
+                            parameter_resolver.resolve_type(
+                                entry.sequence,
+                                index,
+                                sequence,
+                                212,
+                                &[0],
+                            )
+                        })
                         .map(|sequence| format!("iges:presentation:annotation#D{sequence}"))
                 };
-                let entity_link = |index| {
+                let leader_link = |index| {
                     record
                         .and_then(|record| record.integer(index))
                         .filter(|sequence| *sequence != 0)
+                        .and_then(|sequence| {
+                            parameter_resolver.resolve(
+                                entry.sequence,
+                                index,
+                                sequence,
+                                "type-214-form-1-through-12",
+                                |target| target.entity_type == 214 && matches!(target.form, 1..=12),
+                            )
+                        })
+                        .map(|sequence| format!("iges:presentation:annotation#D{sequence}"))
+                };
+                let witness_link = |index| {
+                    record
+                        .and_then(|record| record.integer(index))
+                        .filter(|sequence| *sequence != 0)
+                        .and_then(|sequence| {
+                            parameter_resolver.resolve_type(
+                                entry.sequence,
+                                index,
+                                sequence,
+                                106,
+                                &[40],
+                            )
+                        })
                         .map(|sequence| format!("iges:entity:directory#{sequence}"))
                 };
-                let presentation_or_entity_link = |index| {
+                let curve_link = |index| {
                     record
                         .and_then(|record| record.integer(index))
                         .filter(|sequence| *sequence != 0)
+                        .and_then(|sequence| {
+                            parameter_resolver.resolve(
+                                entry.sequence,
+                                index,
+                                sequence,
+                                "parameterized-curve",
+                                |target| {
+                                    parameterized_curve_type(target)
+                                        && target.status.is_physically_dependent()
+                                        && target.status.use_flag == 1
+                                },
+                            )
+                        })
+                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                };
+                let ordinate_link = |index| {
+                    record
+                        .and_then(|record| record.integer(index))
+                        .filter(|sequence| *sequence != 0)
+                        .and_then(|sequence| {
+                            parameter_resolver.resolve(
+                                entry.sequence,
+                                index,
+                                sequence,
+                                "type-106-form-40-or-leader",
+                                |target| {
+                                    (target.entity_type == 106 && target.form == 40)
+                                        || (target.entity_type == 214
+                                            && matches!(target.form, 1..=12))
+                                },
+                            )
+                        })
                         .map(|sequence| {
-                            u32::try_from(sequence)
-                                .ok()
-                                .and_then(|sequence| entries.get(&sequence))
+                            entries
+                                .get(&sequence)
                                 .filter(|target| target.entity_type == 214)
                                 .map_or_else(
                                     || format!("iges:entity:directory#{sequence}"),
@@ -3271,30 +4055,30 @@ pub(crate) fn store(
                     202 => NativeAnnotation::AngularDimension {
                         id,
                         source_entity,
-                        note: annotation_link(1),
-                        witnesses: [entity_link(2), entity_link(3)],
+                        note: note_link(1),
+                        witnesses: [witness_link(2), witness_link(3)],
                         vertex: [
                             record.and_then(|record| record.number(4)),
                             record.and_then(|record| record.number(5)),
                         ],
                         radius: record.and_then(|record| record.number(6)),
-                        leaders: [annotation_link(7), annotation_link(8)],
+                        leaders: [leader_link(7), leader_link(8)],
                         transformation,
                     },
                     204 => NativeAnnotation::CurveDimension {
                         id,
                         source_entity,
-                        note: annotation_link(1),
-                        curves: [entity_link(2), entity_link(3)],
-                        leaders: [annotation_link(4), annotation_link(5)],
-                        witnesses: [entity_link(6), entity_link(7)],
+                        note: note_link(1),
+                        curves: [curve_link(2), curve_link(3)],
+                        leaders: [leader_link(4), leader_link(5)],
+                        witnesses: [witness_link(6), witness_link(7)],
                         transformation,
                     },
                     206 => NativeAnnotation::DiameterDimension {
                         id,
                         source_entity,
-                        note: annotation_link(1),
-                        leaders: [annotation_link(2), annotation_link(3)],
+                        note: note_link(1),
+                        leaders: [leader_link(2), leader_link(3)],
                         center: [
                             record.and_then(|record| record.number(4)),
                             record.and_then(|record| record.number(5)),
@@ -3311,7 +4095,7 @@ pub(crate) fn store(
                             .and_then(|record| record.count(count_index))
                             .unwrap_or_default();
                         let leaders = (0..leader_count)
-                            .map(|offset| annotation_link(leader_start + offset))
+                            .map(|offset| leader_link(leader_start + offset))
                             .collect();
                         if entry.entity_type == 208 {
                             NativeAnnotation::FlagNote {
@@ -3323,7 +4107,7 @@ pub(crate) fn store(
                                     record.and_then(|record| record.number(3)),
                                 ],
                                 rotation: record.and_then(|record| record.number(4)),
-                                note: annotation_link(note_index),
+                                note: note_link(note_index),
                                 declared_leader_count: record
                                     .and_then(|record| record.integer(count_index)),
                                 leaders,
@@ -3333,7 +4117,7 @@ pub(crate) fn store(
                             NativeAnnotation::GeneralLabel {
                                 id,
                                 source_entity,
-                                note: annotation_link(note_index),
+                                note: note_link(note_index),
                                 declared_leader_count: record
                                     .and_then(|record| record.integer(count_index)),
                                 leaders,
@@ -3345,38 +4129,54 @@ pub(crate) fn store(
                         id,
                         source_entity,
                         form: entry.form,
-                        note: annotation_link(1),
-                        leaders: [annotation_link(2), annotation_link(3)],
-                        witnesses: [entity_link(4), entity_link(5)],
+                        note: note_link(1),
+                        leaders: [leader_link(2), leader_link(3)],
+                        witnesses: [witness_link(4), witness_link(5)],
                         transformation,
                     },
                     218 => NativeAnnotation::OrdinateDimension {
                         id,
                         source_entity,
                         form: entry.form,
-                        note: annotation_link(1),
-                        ordinate: presentation_or_entity_link(2),
-                        supplemental_leader: (entry.form == 1)
-                            .then(|| annotation_link(3))
-                            .flatten(),
+                        note: note_link(1),
+                        ordinate: ordinate_link(2),
+                        supplemental_leader: (entry.form == 1).then(|| leader_link(3)).flatten(),
                         transformation,
                     },
                     220 => NativeAnnotation::PointDimension {
                         id,
                         source_entity,
-                        note: annotation_link(1),
-                        leader: annotation_link(2),
-                        enclosure: entity_link(3),
+                        note: note_link(1),
+                        leader: leader_link(2),
+                        enclosure: record
+                            .and_then(|record| record.integer(3))
+                            .filter(|sequence| *sequence != 0)
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve(
+                                    entry.sequence,
+                                    3,
+                                    sequence,
+                                    "point-dimension-enclosure",
+                                    |target| {
+                                        matches!(
+                                            (target.entity_type, target.form),
+                                            (100 | 102, 0) | (106, 63)
+                                        ) && target.status.is_physically_dependent()
+                                            && target.status.use_flag == 1
+                                    },
+                                )
+                            })
+                            .map(|sequence| format!("iges:entity:directory#{sequence}")),
                         transformation,
                     },
                     222 => NativeAnnotation::RadiusDimension {
                         id,
                         source_entity,
                         form: entry.form,
-                        note: annotation_link(1),
+                        note: note_link(1),
                         leaders: [
-                            annotation_link(2),
-                            (entry.form == 1).then(|| annotation_link(5)).flatten(),
+                            leader_link(2),
+                            (entry.form == 1).then(|| leader_link(5)).flatten(),
                         ],
                         center: [
                             record.and_then(|record| record.number(3)),
@@ -3395,12 +4195,29 @@ pub(crate) fn store(
                         NativeAnnotation::GeneralSymbol {
                             id,
                             source_entity,
-                            note: annotation_link(1),
+                            note: note_link(1),
                             geometry: (0..geometry_count)
-                                .map(|offset| entity_link(3 + offset))
+                                .map(|offset| {
+                                    let index = 3 + offset;
+                                    record
+                                        .and_then(|record| record.integer(index))
+                                        .and_then(|sequence| {
+                                            parameter_resolver.resolve(
+                                                entry.sequence,
+                                                index,
+                                                sequence,
+                                                "subordinate-annotation-geometry",
+                                                |target| {
+                                                    target.status.is_physically_dependent()
+                                                        && target.status.use_flag == 1
+                                                },
+                                            )
+                                        })
+                                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                                })
                                 .collect(),
                             leaders: (0..leader_count)
-                                .map(|offset| annotation_link(leader_count_index + 1 + offset))
+                                .map(|offset| leader_link(leader_count_index + 1 + offset))
                                 .collect(),
                             transformation,
                         }
@@ -3412,7 +4229,18 @@ pub(crate) fn store(
                         NativeAnnotation::SectionedArea {
                             id,
                             source_entity,
-                            boundary: entity_link(1),
+                            boundary: record
+                                .and_then(|record| record.integer(1))
+                                .and_then(|sequence| {
+                                    parameter_resolver.resolve(
+                                        entry.sequence,
+                                        1,
+                                        sequence,
+                                        "section-boundary-entity",
+                                        section_boundary_type,
+                                    )
+                                })
+                                .map(|sequence| format!("iges:entity:directory#{sequence}")),
                             fill_pattern: record.and_then(|record| record.integer(2)),
                             pattern_anchor: [
                                 record.and_then(|record| record.number(3)),
@@ -3422,7 +4250,21 @@ pub(crate) fn store(
                             pattern_spacing: record.and_then(|record| record.number(6)),
                             pattern_angle: record.and_then(|record| record.number(7)),
                             islands: (0..island_count)
-                                .map(|offset| entity_link(9 + offset))
+                                .map(|offset| {
+                                    let index = 9 + offset;
+                                    record
+                                        .and_then(|record| record.integer(index))
+                                        .and_then(|sequence| {
+                                            parameter_resolver.resolve(
+                                                entry.sequence,
+                                                index,
+                                                sequence,
+                                                "section-boundary-entity",
+                                                section_boundary_type,
+                                            )
+                                        })
+                                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                                })
                                 .collect(),
                             transformation,
                         }
@@ -3432,19 +4274,34 @@ pub(crate) fn store(
             })
         })
         .collect::<Vec<_>>();
+    let mut root_inference_blocked = false;
     let occurrence_definitions = directory
         .iter()
         .filter(|entry| matches!(entry.entity_type, 308 | 320) && entry.form == 0)
         .filter_map(|entry| {
-            let record = by_directory.get(&entry.sequence).copied()?;
-            let count = record.count(3)?;
+            let Some(record) = by_directory.get(&entry.sequence).copied() else {
+                root_inference_blocked = true;
+                return None;
+            };
+            let Some(count) = record.count(3) else {
+                root_inference_blocked = true;
+                return Some((
+                    entry.sequence,
+                    OccurrenceDefinition {
+                        members: Vec::new(),
+                    },
+                ));
+            };
             let members = (0..count)
-                .map(|index| {
-                    record
+                .filter_map(|index| {
+                    let member = record
                         .integer(4 + index)
                         .and_then(|value| u32::try_from(value).ok())
+                        .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence));
+                    root_inference_blocked |= member.is_none();
+                    member
                 })
-                .collect::<Option<Vec<_>>>()?;
+                .collect();
             Some((entry.sequence, OccurrenceDefinition { members }))
         })
         .collect::<BTreeMap<_, _>>();
@@ -3503,15 +4360,20 @@ pub(crate) fn store(
         }
     }
     let mut product_occurrences = Vec::new();
-    let mut product_occurrences_truncated = false;
-    if let Some(length_factor) = global.length_factor_mm() {
-        let expansion = OccurrenceExpansion {
-            entries: &entries,
-            records: &by_directory,
-            definitions: &occurrence_definitions,
-            neutral_links: &occurrence_neutral_links,
-            length_factor,
-        };
+    let mut output_truncated = false;
+    let mut depth_truncated = false;
+    let expansion = OccurrenceExpansion {
+        entries: &entries,
+        records: &by_directory,
+        definitions: &occurrence_definitions,
+        neutral_links: &occurrence_neutral_links,
+        length_factor: global.length_factor_mm(),
+        precision: global.real_precision(),
+        output_limit: limits.output,
+        depth_limit: limits.depth,
+        ctx,
+    };
+    if !root_inference_blocked {
         for root in directory.iter().filter(|entry| {
             matches!(entry.entity_type, 408 | 420)
                 && entry.form == 0
@@ -3522,18 +4384,43 @@ pub(crate) fn store(
                 Affine::IDENTITY,
                 &mut Vec::new(),
                 &mut product_occurrences,
-            ) {
-                product_occurrences_truncated = true;
+                &mut depth_truncated,
+            )? {
+                output_truncated = true;
                 break;
             }
         }
     }
+    let issues = [
+        output_truncated.then_some(ProductOccurrenceIssue::OutputLimit),
+        depth_truncated.then_some(ProductOccurrenceIssue::DepthLimit),
+        root_inference_blocked.then_some(ProductOccurrenceIssue::MalformedDefinition),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
     let product_occurrence_expansion = [NativeProductOccurrenceExpansion {
         id: "iges:product:occurrence-expansion#state".into(),
-        limit: MAX_PRODUCT_OCCURRENCES,
+        output_limit: limits.output,
+        depth_limit: limits.depth,
         emitted: product_occurrences.len(),
-        truncated: product_occurrences_truncated,
+        truncated: !issues.is_empty(),
+        issues,
     }];
+    parameter_resolver.append_to(references);
+    for entity in &mut entities {
+        entity.links = references
+            .get(&entity.directory_sequence)
+            .into_iter()
+            .flatten()
+            .filter_map(ReferenceEdge::target)
+            .map(str::to_owned)
+            .collect();
+        entity.references = references
+            .get(&entity.directory_sequence)
+            .cloned()
+            .unwrap_or_default();
+    }
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
     namespace.set_arena("cards", &cards)?;
@@ -3578,5 +4465,9 @@ pub(crate) fn store(
         "product_occurrence_expansion",
         &product_occurrence_expansion,
     )?;
-    Ok(product_occurrences_truncated)
+    Ok(ProductOccurrenceExpansion {
+        output_truncated,
+        depth_truncated,
+        root_inference_blocked,
+    })
 }

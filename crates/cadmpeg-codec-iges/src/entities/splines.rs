@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Piecewise parametric spline projection.
 
-use super::geometry::{entity_loss, resolve_transform, source_object};
+use super::geometry::{entity_loss, resolve_transform, source_object, DeclaredInterval};
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::{Global, RealPrecision};
 use crate::parameter::ParameterRecord;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry,
@@ -25,11 +25,53 @@ pub(super) struct SplineProjection {
     pub(super) wire_edges: Vec<EdgeId>,
 }
 
-fn close(left: f64, right: f64) -> bool {
-    (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * 1.0e-10
+fn declared_interval(
+    record: &ParameterRecord,
+    index: usize,
+    value: f64,
+    precision: RealPrecision,
+) -> DeclaredInterval {
+    DeclaredInterval::around(value, record.number_uncertainty(index, value, precision))
 }
 
-fn point_close(left: Point3, right: Point3) -> bool {
+fn terminal_intervals(
+    record: &ParameterRecord,
+    coefficient_start: usize,
+    coefficients: &[f64],
+    width: DeclaredInterval,
+    precision: RealPrecision,
+) -> [DeclaredInterval; 4] {
+    let coefficient = |offset: usize| {
+        declared_interval(
+            record,
+            coefficient_start + offset,
+            coefficients[offset],
+            precision,
+        )
+    };
+    let [a, b, c, d] = [
+        coefficient(0),
+        coefficient(1),
+        coefficient(2),
+        coefficient(3),
+    ];
+    let width_squared = width.multiply(width);
+    let width_cubed = width_squared.multiply(width);
+    [
+        a.add(b.multiply(width))
+            .add(c.multiply(width_squared))
+            .add(d.multiply(width_cubed)),
+        b.add(c.multiply(width).scale(2.0))
+            .add(d.multiply(width_squared).scale(3.0)),
+        c.add(d.multiply(width).scale(3.0)),
+        d,
+    ]
+}
+
+fn surface_point_close(left: Point3, right: Point3) -> bool {
+    let close = |left: f64, right: f64| {
+        (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * 1.0e-10
+    };
     close(left.x, right.x) && close(left.y, right.y) && close(left.z, right.z)
 }
 
@@ -157,10 +199,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 112 && entry.form == 0)
     {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -230,6 +269,7 @@ pub(super) fn project(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         ) {
             Ok(transform) => transform,
@@ -240,8 +280,68 @@ pub(super) fn project(
         };
         let mut control_points = Vec::with_capacity(segment_count * 3 + 1);
         let mut continuous = true;
+        let precision = global.real_precision();
+        let mut previous_terminal = None;
         for (segment, values) in coefficients.chunks_exact(12).enumerate() {
             let width = breakpoints[segment + 1] - breakpoints[segment];
+            let width_interval =
+                declared_interval(record, 5 + segment + 1, breakpoints[segment + 1], precision)
+                    .subtract(declared_interval(
+                        record,
+                        5 + segment,
+                        breakpoints[segment],
+                        precision,
+                    ));
+            let segment_start = coefficient_start + segment * 12;
+            let intervals = [
+                terminal_intervals(
+                    record,
+                    segment_start,
+                    &values[0..4],
+                    width_interval,
+                    precision,
+                ),
+                terminal_intervals(
+                    record,
+                    segment_start + 4,
+                    &values[4..8],
+                    width_interval,
+                    precision,
+                ),
+                terminal_intervals(
+                    record,
+                    segment_start + 8,
+                    &values[8..12],
+                    width_interval,
+                    precision,
+                ),
+            ];
+            if dimensions == 2
+                && (1..4).any(|power| {
+                    !declared_interval(
+                        record,
+                        segment_start + 8 + power,
+                        values[8 + power],
+                        precision,
+                    )
+                    .contains(0.0)
+                })
+            {
+                continuous = false;
+                break;
+            }
+            let starts = [0, 4, 8].map(|offset| {
+                declared_interval(record, segment_start + offset, values[offset], precision)
+            });
+            if previous_terminal.is_some_and(|previous: [DeclaredInterval; 3]| {
+                previous
+                    .into_iter()
+                    .zip(starts)
+                    .any(|(left, right)| !left.overlaps(right))
+            }) {
+                continuous = false;
+                break;
+            }
             let coordinate = |offset: usize| {
                 let a = values[offset];
                 let b = values[offset + 1];
@@ -257,10 +357,6 @@ pub(super) fn project(
             let x = coordinate(0);
             let y = coordinate(4);
             let z = coordinate(8);
-            if dimensions == 2 && (!close(z[0], z[1]) || !close(z[0], z[2]) || !close(z[0], z[3])) {
-                continuous = false;
-                break;
-            }
             let bezier = (0..4)
                 .map(|index| {
                     transform.point(Point3::new(
@@ -270,15 +366,12 @@ pub(super) fn project(
                     ))
                 })
                 .collect::<Vec<_>>();
-            if let Some(previous) = control_points.last() {
-                if !point_close(*previous, bezier[0]) {
-                    continuous = false;
-                    break;
-                }
-                control_points.extend_from_slice(&bezier[1..]);
-            } else {
+            if control_points.is_empty() {
                 control_points.extend(bezier);
+            } else {
+                control_points.extend_from_slice(&bezier[1..]);
             }
+            previous_terminal = Some([intervals[0][0], intervals[1][0], intervals[2][0]]);
         }
         if !continuous {
             losses.push(entity_loss(
@@ -296,33 +389,36 @@ pub(super) fn project(
             continue;
         };
         let last_values = &coefficients[coefficients.len() - 12..];
-        let width = breakpoints[segment_count] - breakpoints[segment_count - 1];
-        let terminal = |offset: usize| {
-            let a = last_values[offset];
-            let b = last_values[offset + 1];
-            let c = last_values[offset + 2];
-            let d = last_values[offset + 3];
-            [
-                a + b * width + c * width * width + d * width * width * width,
-                b + 2.0 * c * width + 3.0 * d * width * width,
-                c + 3.0 * d * width,
-                d,
-            ]
-        };
-        let expected_tail = [terminal(0), terminal(4), terminal(8)]
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
-        if tail
-            .iter()
-            .zip(expected_tail)
-            .any(|(actual, expected)| !close(*actual, expected))
-        {
+        let last_segment_start = coefficient_start + (segment_count - 1) * 12;
+        let last_width = declared_interval(
+            record,
+            5 + segment_count,
+            breakpoints[segment_count],
+            precision,
+        )
+        .subtract(declared_interval(
+            record,
+            5 + segment_count - 1,
+            breakpoints[segment_count - 1],
+            precision,
+        ));
+        let expected_tail = [0, 4, 8].map(|offset| {
+            terminal_intervals(
+                record,
+                last_segment_start + offset,
+                &last_values[offset..offset + 4],
+                last_width,
+                precision,
+            )
+        });
+        if tail.iter().enumerate().any(|(offset, actual)| {
+            !declared_interval(record, tail_start + offset, *actual, precision)
+                .overlaps(expected_tail[offset / 4][offset % 4])
+        }) {
             losses.push(entity_loss(
                 entry,
                 "terminal derivative block disagrees with the last polynomial",
             ));
-            continue;
         }
         let mut knots = vec![breakpoints[0]; 4];
         for breakpoint in &breakpoints[1..segment_count] {
@@ -358,10 +454,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 114 && entry.form == 0)
     {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -457,6 +550,7 @@ pub(super) fn project(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         ) {
             Ok(transform) => transform,
@@ -539,7 +633,8 @@ pub(super) fn project(
                         let u_index = u_patch * 3 + u_local;
                         let v_index = v_patch * 3 + v_local;
                         let index = u_index * v_count + v_index;
-                        if grid[index].is_some_and(|existing| !point_close(existing, point)) {
+                        if grid[index].is_some_and(|existing| !surface_point_close(existing, point))
+                        {
                             valid = false;
                             break 'patches;
                         }

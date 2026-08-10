@@ -9,10 +9,14 @@
 use crate::ids::{CurveId, PcurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use crate::math::{Point2, Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
-use crate::transform::Transform;
+use crate::transform::{Transform, Transform2};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+fn default_true() -> bool {
+    true
+}
 
 /// A tensor-product NURBS surface.
 ///
@@ -639,8 +643,26 @@ pub enum ProceduralSurfaceDefinition {
     Subset {
         /// Surface being restricted.
         support: SurfaceId,
-        /// Ordered U and V parameter intervals.
+        /// U and V parameter endpoints in the support parameterization.
+        ///
+        /// The endpoint order is significant for cyclic and reversed
+        /// trims. A producer that does not carry direction metadata may
+        /// leave the sense fields absent and use increasing endpoints.
         parameter_ranges: [[f64; 2]; 2],
+        /// Whether the trimmed surface U direction agrees with the support.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        u_sense: Option<bool>,
+        /// Whether the trimmed surface V direction agrees with the support.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        v_sense: Option<bool>,
+    },
+    /// Affine replica of a surface carrier, retaining the parent surface
+    /// construction and its parameter domain.
+    Replica {
+        /// Surface being replicated.
+        source: SurfaceId,
+        /// Affine map from the parent surface coordinates to this surface.
+        transform: Transform,
     },
     /// Parallel offset from a support surface.
     ParallelOffset {
@@ -662,6 +684,12 @@ pub enum ProceduralSurfaceDefinition {
         support: SurfaceId,
         /// Boundary curves on the support.
         boundaries: Vec<CurveId>,
+        /// Parameter-space carriers used by surface-curve boundary segments.
+        ///
+        /// These are separate from `boundaries`: one STEP surface curve can
+        /// carry both a model-space curve and pcurves on the support surface.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        boundary_pcurves: Vec<PcurveId>,
         /// Whether the support's natural outer boundary is implicit.
         implicit_outer: bool,
     },
@@ -3217,6 +3245,17 @@ pub enum ProceduralCurveDefinition {
         source: CurveId,
         /// Native parameter interval retained from the parent.
         parameter_range: [f64; 2],
+        /// Whether the subset follows increasing parent parameters.
+        #[serde(default = "default_true")]
+        sense: bool,
+    },
+    /// Affine replica of a curve carrier, retaining the parent curve's
+    /// parameter range and parameterization.
+    Replica {
+        /// Curve being replicated.
+        source: CurveId,
+        /// Affine map from the parent curve coordinates to this curve.
+        transform: Transform,
     },
     /// Spine or center curve of a blend surface.
     BlendSpine {
@@ -3411,10 +3450,22 @@ pub enum PcurveGeometry {
         #[serde(default)]
         periodic: bool,
     },
+    /// Affine replica of a parent pcurve in the same parameter space.
+    Transformed {
+        /// Exact parent pcurve and its parameterization.
+        basis: Box<PcurveGeometry>,
+        /// Two-dimensional affine map from parent coordinates to replica coordinates.
+        transform: Transform2,
+    },
     /// Parameter restriction of an exact basis pcurve.
     Trimmed {
         /// Native parameter interval retained from the basis.
         parameter_range: [f64; 2],
+        /// Whether the trimmed traversal follows increasing basis parameters.
+        ///
+        /// Older CADIR documents omitted this field and mean `true`.
+        #[serde(default = "default_true")]
+        same_sense: bool,
         /// Exact basis geometry.
         basis: Box<PcurveGeometry>,
     },
@@ -3425,6 +3476,38 @@ pub enum PcurveGeometry {
         /// Exact basis geometry.
         basis: Box<PcurveGeometry>,
     },
+}
+
+impl PcurveGeometry {
+    /// Returns the origin and direction of a line-valued pcurve.
+    ///
+    /// Trimming and affine replicas preserve a line's parameterization. An
+    /// offset does not preserve it because the offset is evaluated from the
+    /// basis tangent, so it is deliberately excluded.
+    pub fn line_parameters(&self) -> Option<(Point2, Point2)> {
+        match self {
+            Self::Line { origin, direction } => Some((*origin, *direction)),
+            Self::Transformed { basis, transform } => {
+                let (origin, direction) = basis.line_parameters()?;
+                Some((
+                    transform.apply_point(origin),
+                    transform.apply_vector(direction),
+                ))
+            }
+            Self::Trimmed { basis, .. } => basis.line_parameters(),
+            Self::PolarHarmonic { .. }
+            | Self::PolarNurbs { .. }
+            | Self::SphericalGreatCircle { .. }
+            | Self::Circle { .. }
+            | Self::Ellipse { .. }
+            | Self::Harmonic { .. }
+            | Self::Parabola { .. }
+            | Self::Hyperbola { .. }
+            | Self::Hyperbolic { .. }
+            | Self::Nurbs { .. }
+            | Self::Offset { .. } => None,
+        }
+    }
 }
 
 /// A pcurve carrier: the 2D image of a coedge in its face's surface parameter

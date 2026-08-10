@@ -181,11 +181,7 @@ fn length(reader: &mut BoundedReader<'_>, scale: f64) -> Result<f64, FramingErro
 }
 
 fn flag_i32(reader: &mut BoundedReader<'_>) -> Result<bool, FramingError> {
-    match reader.i32()? {
-        0 => Ok(false),
-        1 => Ok(true),
-        _ => Err(structural(reader, "setting flag is invalid")),
-    }
+    Ok(reader.i32()? != 0)
 }
 
 fn annotation_settings(

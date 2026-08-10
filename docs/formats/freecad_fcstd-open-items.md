@@ -82,6 +82,26 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the field meanings to transfer the side entry to a typed native or neutral record.
 
+### AR-03. Typed geometry side-entry cardinality
+
+**Question.** How many side entries can one `PropertyMeshKernel` or `PropertyPointKernel` property reference, and which entry contains the geometry payload?
+
+**Known.** `freecad_fcstd.md` §11 "Mesh-kernel properties reference a binary side entry." and "Point-kernel properties reference a side entry" define one typed payload per property. Property records retain every side-entry request in source order.
+
+**Conflict.** `application_geometry.rs` `transfer` reads only `property.side_entries.first()`. It does not reject a second entry and does not report that the second entry did not participate in neutral transfer. Changing the request order can therefore change the projected mesh or point set while both entries remain retained.
+
+**Need.** We must establish the cardinality rule for both runtime types. The decoder must reject an invalid cardinality or identify the payload entry from the typed value grammar.
+
+### AR-04. Shared side-entry logical ownership
+
+**Question.** How does the logical byte ledger represent one archive entry that is referenced by more than one property or typed payload?
+
+**Known.** An `EntryRecord` retains all property references in `referenced_by`. `freecad_fcstd.md` §4 "Every document object has a stable identity composed from the document identity and its persisted" and §11 "Application data without a neutral representation retains its owning object and property" require property-level ownership. `freecad_fcstd.md` §6 "Logical XML spans classify declarations, delimiters, comments, whitespace, and escaping as" requires each logical byte to have one non-overlapping classification.
+
+**Conflict.** `lib.rs` `logical_ledger` collects typed entry owners into a `HashMap`, so a later typed claim replaces an earlier claim. For an untyped entry, it assigns the complete `named_opaque` span to `entry.referenced_by.first()`. The other property references disappear from the byte-ledger ownership relation.
+
+**Need.** We must know whether typed side entries can be shared. If sharing is valid, the ledger needs a separate many-owner relation that does not duplicate byte spans. If sharing is invalid for a typed family, decoding must reject the conflicting claims.
+
 ## 3. GUI properties
 
 ### GP-01. Other GUI property grammars
@@ -99,6 +119,26 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `freecad_fcstd.md` §11 "GUI records retain view-provider identity separately from application-object identity." states that GUI records keep presentation data linked to its owner. Each undefined GUI property retains its runtime type and ordered value elements.
 
 **Need.** We must know the value semantics to transfer the property to the correct neutral presentation field.
+
+### GP-03. Document view-state cardinality and precedence
+
+**Question.** How many `Camera` and `ActiveView` state elements can `GuiDocument.xml` contain, and which value is authoritative when the root `active` attribute and an `ActiveView` state disagree?
+
+**Known.** `freecad_fcstd.md` §11 "Format-neutral document and view presentation arenas represent GUI state." requires one neutral document record with its active view, camera, and ordered source state. All source states remain in the native GUI graph.
+
+**Conflict.** `gui.rs` `transfer_neutral_presentation` takes the first `Camera` state and the first `ActiveView` state. An `ActiveView` state takes precedence over the root `active` attribute. The decoder does not establish uniqueness or agreement, so XML order selects the neutral camera and active view when duplicate or conflicting records exist.
+
+**Need.** We must establish the source cardinality and precedence rules. Invalid duplicate or conflicting state must not silently select the first record.
+
+### GP-04. Topology-color shape-property association
+
+**Question.** Which exact-shape property and element map does a `DiffuseColor`, `LineColorArray`, or `PointColorArray` side entry describe when the application object owns more than one shape property?
+
+**Known.** `freecad_fcstd.md` §11 "For shape-bearing objects, the view provider's shape color" requires each persistent element name to supply the neutral topology occurrences that receive an override. A missing identity leaves the side entry retained without guessing a transient topology label.
+
+**Conflict.** `gui.rs` `transfer_topology_colors` collects all payload-bearing properties on the application object, takes the first matching `ElementMapRecord`, takes its final map node, and takes the first group of the requested topology kind. It does not connect the GUI color property to one shape property. With multiple shape properties, source order can bind the color list to the wrong topology or make a valid count appear invalid.
+
+**Need.** We must find the persisted association rule between a GUI topology-color array and its application shape property. If the format supplies no association, neutral transfer must require one unambiguous shape candidate.
 
 ## 4. Sketch geometry
 
@@ -127,3 +167,145 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `corpus/freecad_fcstd/author_fixtures.py` authors fixtures through the FreeCAD Python API on a machine with a FreeCAD installation. The current build machine has no FreeCAD installation. `corpus/freecad_fcstd-fixture-charter.md` states that a synthetic parser input establishes no ladder score. No current fixture carries an arc with a non-zero sweep that a profile chain consumes.
 
 **Need.** We must extend the authoring script with one sketch that contains a circular arc with a non-zero `AngleXU`, a bounded elliptical arc with a rotated major axis, a full rotated ellipse, a hyperbola, a parabola, and line segments that meet the arc endpoints. The rotation angles must stay away from multiples of a quarter turn, because at those angles a frame built with swapped axes produces the same points. We must then run the script under FreeCAD, commit the saved documents, and pin their decode, inspect, encode, and STEP goldens. These fixtures resolve SG-01 and SG-02, and they can support format-support claims because FreeCAD wrote them.
+
+## 5. Persistence graph
+
+### PG-01. `ObjectDeps` framing and uniqueness
+
+**Question.** What count, ordering, and uniqueness invariants govern the `ObjectDeps` records when the `Objects` section enables dependency records?
+
+**Known.** For a non-export document, FreeCAD's `Document::writeObjects` writes `Dependencies="1"` and calls `writeObjectDeps`. That function writes one `ObjectDeps` record for each object, and its `Count` attribute equals the number of child `Dep` records. `Document::readObjects` consumes the declared object count as the dependency-record count and consumes each record's declared dependency count when dependency records are enabled.
+
+**Conflict.** `persistence.rs` `parse_document` does not inspect the `Dependencies` attribute and ignores each `ObjectDeps` `Count` and `AllowPartial` attribute. It does not require one dependency record per object when the records are enabled, and it accepts stray records when they are not enabled. A duplicate `Name` silently replaces the earlier dependency vector in `dependency_map`, and dependency records with no matching object remain unreported.
+
+**Need.** The current schema must validate dependency-record count, child count, object coverage, name uniqueness, and `AllowPartial` retention before it builds the object graph.
+
+### PG-02. Link-property value dispatch
+
+**Question.** Which value tag and attribute names carry the object, document, and subelement fields for each `PropertyLink` and `PropertyXLink` runtime type?
+
+**Known.** `freecad_fcstd.md` §3 "`ProgramVersion` is metadata." states that property type and value tag select parsing dispatch. Link target order and source spelling remain retained in the native property record.
+
+**Conflict.** `persistence.rs` `parse_link_targets` accepts both `Link` and `XLink` descendants for every link-family type. It selects an object attribute by the fixed priority `value`, `Value`, `object`, `Object`, `obj`, `Obj`, `name`, `Name`; it applies a similar priority to document attributes; and any structured descendant suppresses all targets decoded from other value records. Conflicting aliases or an unrelated nested `Link` element therefore select one target without a type-specific grammar or an ambiguity check.
+
+**Need.** We must define the value grammar for each link runtime type and schema. The decoder must dispatch on that grammar and reject contradictory simultaneous carriers.
+
+## 6. Persistent topology identity
+
+### PT-01. `StringHasher2` association
+
+**Question.** Which `StringHasher2` element supplies the data for a `StringHasher new="1"` marker?
+
+**Known.** FreeCAD's `StringHasher::Save` writes `StringHasher2` immediately after the compatibility marker. `StringHasher::Restore` calls `readElement("StringHasher2")` directly after it reads a marker whose `new` attribute is true. `freecad_fcstd.md` §7 "A shape value optionally carries an element-map version" states that the marker is followed by the second XML element.
+
+**Conflict.** `element_map.rs` `parse` searches all later siblings and takes the first unclaimed `StringHasher2`. If the marker's immediate successor is missing or another element is interleaved, it can claim a later table that belongs to another marker instead of rejecting the malformed sequence.
+
+**Need.** The decoder must require the direct successor that the grammar defines. A malformed association must not shift every later string-table index.
+
+### PT-02. Element-map position to neutral-occurrence order
+
+**Question.** What exact relation connects each final element-map name position to neutral topology occurrences, including repeated placed roots?
+
+**Known.** `freecad_fcstd.md` §7 "A newly encoded element map likewise uses a compatibility marker" states that group order and name position establish the transient `Face1`, `Edge1`, and `Vertex1` indices. Those positions connect persistent names to every placed neutral occurrence. The source index belongs to the B-rep topology map, not to persistent identity.
+
+**Conflict.** `element_map.rs` `bind_topology` gathers all neutral ids of one kind in arena traversal order. It assigns occurrence `position` to persistent-name slot `position % populated_name_count`. No source topology index is carried through this join, and no check proves that arena order equals the B-rep indexed-map order for each placement. A different traversal or a missing occurrence can attach a valid persistent name to the wrong face, edge, or vertex.
+
+**Need.** We must establish the B-rep indexed-map enumeration rule and carry that index through exact-topology transfer. Repeated placements must bind by placement plus source index, not by a global modulo assumption.
+
+## 7. Exact-topology transfer
+
+### XT-01. Edge endpoint child selection
+
+**Question.** What child-use cardinality and orientation combinations define the start and end vertices of normal, closed, degenerate, and malformed edge records?
+
+**Known.** Exact-shape records retain the complete ordered and oriented topology graph. Neutral edges require explicit start and end vertex identities.
+
+**Conflict.** `topology_transfer.rs` `ensure_edge` searches for a `Forward` child and a `Reversed` child. If either search fails, it uses the first child; if the reversed search still has no value, it duplicates the selected start. Thus a record with a missing orientation can become a closed edge, and an unrelated first child can become an endpoint. No loss or refusal identifies the substitution.
+
+**Need.** We must define the valid endpoint child forms. The decoder must handle each valid form explicitly and reject a form that cannot establish both endpoint identities.
+
+### XT-02. Edge representation selection and uniqueness
+
+**Question.** When an edge has multiple 3D curve, polygon, or matching curve-on-surface representations, which representation supplies its neutral carrier and face pcurve?
+
+**Known.** `freecad_fcstd.md` §7 "Part shape properties reference text or binary B-rep entries." requires retention of all geometry carriers, locations, parameter ranges, and pcurves. Polygon transfer is a fallback for an edge without an exact 3D curve.
+
+**Conflict.** `topology_transfer.rs` `ensure_edge` takes the first kind-1 curve representation, or the first kind-5 through kind-7 polygon representation. `face_pcurve` takes the first kind-2 or kind-3 representation whose surface and transform match. Neither path checks uniqueness or equivalence among multiple accepted candidates. Record order therefore selects the neutral geometry and parameter range.
+
+**Need.** We must establish representation cardinality and precedence. If multiple candidates are legal, the decoder must select by serialized role or require equivalent geometry; otherwise it must reject the duplicate form.
+
+### XT-03. Non-manifold radial order
+
+**Question.** What source order defines the radial cycle when more than two coedges use the same edge?
+
+**Known.** The native topology retains ordered child uses and their orientations. A neutral coedge has one `radial_next` relation. For a manifold edge, the one- or two-use cycle has no additional ordering choice.
+
+**Conflict.** `topology_transfer.rs` `close_radial_rings` groups emitted coedges by edge and links them in global emission order. For three or more uses, this asserts a radial order without reading a source relation or deriving the around-edge order from geometry. A different root or face traversal changes the asserted cycle.
+
+**Need.** We must establish whether the B-rep topology supplies a radial order for non-manifold uses. If it does not, the neutral model must retain an unordered incidence relation or mark the radial order as unresolved.
+
+## 8. Design projection
+
+### DP-01. Forward declared dependencies
+
+**Question.** Can a declared `ObjectDeps` target appear later than its dependent object in source order?
+
+**Known.** `freecad_fcstd.md` §11 "Part cut, fuse, common, multi-fuse, and multi-common objects" defines feature dependencies as the stable union of declared object dependencies and earlier link-property operands. The earlier-source restriction applies to link-property operands, not to declared dependencies.
+
+**Conflict.** `design.rs` `transfer` combines declared dependencies and link targets, then filters every resolved feature dependency with `dependency.order < object.order`. A valid forward declared dependency disappears from the neutral feature graph without a loss record. The retained application graph still contains it, so the native and neutral dependency graphs disagree.
+
+**Need.** The decoder must preserve every resolved declared feature dependency. It must apply the earlier-source rule only to link-property operands that supplement the declared graph.
+
+### DP-02. Sketch profile seed order
+
+**Question.** Which non-construction entity starts each oriented sketch profile chain?
+
+**Known.** `freecad_fcstd.md` §8 "Construction objects retain source order and native identity independently of their cached shape." states that planar sketch geometry transfers in persisted entity order and connects into deterministic oriented profile chains. Sketch entity ids end in their one-based decimal source position.
+
+**Conflict.** `design.rs` `build_profiles` stores unused ids in a `BTreeSet` and selects the lexicographically first id. Decimal text order places `:10` before `:2`, so a sketch with at least ten eligible entities does not use persisted entity order. The seed choice can change profile order and orientation.
+
+**Need.** Profile construction must keep the persisted entity ordinal as data and select seeds by that ordinal.
+
+### DP-03. Sketch profile junction ambiguity and tolerance
+
+**Question.** What endpoint tolerance connects two sketch entities, and what happens when more than one unused entity meets the current endpoint?
+
+**Known.** Constraints and persisted geometry can produce coincident endpoints. A neutral profile chain asserts one ordered continuation and orientation at every junction. Unresolved design geometry must remain attributable in the native lane.
+
+**Conflict.** `design.rs` `build_profiles` uses an uncited coordinate tolerance of `1e-9` on each axis. It takes the first id whose start or end passes that test. It does not detect two candidates, branching geometry, or two opposite endpoints that both pass. The selected branch depends on the id order from DP-02.
+
+**Need.** We must establish the endpoint equivalence rule and the admissible profile topology. An ambiguous junction must use constraint identity, an explicit source order rule, or an attributable refusal instead of a first match.
+
+## 9. Product structure
+
+### PS-01. Zero `ElementCount` with populated arrays
+
+**Question.** Does a persisted `ElementCount=0` permit any populated link-array field?
+
+**Known.** `freecad_fcstd.md` §9 "Link semantics remain distinct from placement." states that every array-valued field is absent or matches `ElementCount`. FreeCAD's link extension resizes placement and scale lists from the nonnegative `ElementCount` value. Zero is a present value with zero elements.
+
+**Conflict.** `product.rs` `occurrence_count` filters out a parsed zero and infers the count from the longest array field. Thus `ElementCount=0` plus a populated placement, scale, visibility, or object list becomes a nonzero neutral array instead of an invalid record.
+
+**Need.** The decoder must distinguish an absent `ElementCount` property from a present zero. A present zero must require empty arrays.
+
+## 10. Semantic annotations
+
+### SA-01. Runtime-type to annotation-kind mapping
+
+**Question.** Which exact application runtime types represent dimensions, geometric tolerances, datums, balloons, leaders, symbols, and text annotations?
+
+**Known.** The native annotation record retains the exact runtime type. `freecad_fcstd.md` §11 "Native namespace version 9 separates semantic annotation records" requires exact annotation-object coverage and separate semantic kinds.
+
+**Conflict.** `annotation.rs` `is_annotation_type` admits any object whose unqualified type name contains one of eight case-insensitive tokens. `classify` then chooses the first matching token in a different ordered test. An application-defined type can enter the semantic annotation census because an unrelated word contains a token, and a type with multiple tokens receives the first decoder-defined kind.
+
+**Need.** We must define an exact or inheritance-aware runtime-type registry and its kind mapping. Unknown application annotation types must remain native until their semantic family is established.
+
+### SA-02. Annotation scalar and position property selection
+
+**Question.** Which property carries the semantic scalar and position for each annotation runtime type?
+
+**Known.** The native property graph retains every named value independently. A neutral semantic annotation has one optional scalar and one optional position.
+
+**Conflict.** `annotation.rs` `transfer_neutral` selects the first available scalar in the fixed order `Value`, `Measurement`, `Distance`, `Angle`. It selects `Position` before the `X` and `Y` pair. It does not dispatch by runtime type or require simultaneous carriers to agree. An object that legitimately owns more than one of these properties can transfer the wrong quantity or position.
+
+**Need.** We must map scalar and position carriers by runtime type and reject contradictory duplicate carriers. The decoder must not use property-name priority as semantic dispatch.

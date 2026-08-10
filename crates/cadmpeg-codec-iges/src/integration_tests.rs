@@ -16,15 +16,324 @@ fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
     assert!(result.ir.native.namespace("iges").is_some());
 }
 
-fn decode_matrix(fixtures: Vec<Vec<u8>>) -> Vec<cadmpeg_ir::codec::DecodeResult> {
+#[derive(Clone, Copy, Debug)]
+enum ExpectedArena {
+    ModelBodies,
+    ModelCoedges,
+    ModelCurves,
+    ModelLoops,
+    ModelPoints,
+    ModelPcurves,
+    ModelProceduralCurves,
+    ModelProceduralSurfaces,
+    ModelRegions,
+    ModelShells,
+    ModelSurfaces,
+    Native(&'static str),
+}
+
+fn arena_count(result: &cadmpeg_ir::codec::DecodeResult, arena: ExpectedArena) -> usize {
+    match arena {
+        ExpectedArena::ModelBodies => result.ir.model.bodies.len(),
+        ExpectedArena::ModelCoedges => result.ir.model.coedges.len(),
+        ExpectedArena::ModelCurves => result.ir.model.curves.len(),
+        ExpectedArena::ModelLoops => result.ir.model.loops.len(),
+        ExpectedArena::ModelPoints => result.ir.model.points.len(),
+        ExpectedArena::ModelPcurves => result.ir.model.pcurves.len(),
+        ExpectedArena::ModelProceduralCurves => result.ir.model.procedural_curves.len(),
+        ExpectedArena::ModelProceduralSurfaces => result.ir.model.procedural_surfaces.len(),
+        ExpectedArena::ModelRegions => result.ir.model.regions.len(),
+        ExpectedArena::ModelShells => result.ir.model.shells.len(),
+        ExpectedArena::ModelSurfaces => result.ir.model.surfaces.len(),
+        ExpectedArena::Native(name) => result
+            .ir
+            .native
+            .namespace("iges")
+            .and_then(|namespace| namespace.arenas.get(name))
+            .map_or(0, Vec::len),
+    }
+}
+
+fn arena_ids(result: &cadmpeg_ir::codec::DecodeResult, arena: ExpectedArena) -> Vec<&str> {
+    match arena {
+        ExpectedArena::ModelBodies => result
+            .ir
+            .model
+            .bodies
+            .iter()
+            .map(|item| item.id.0.as_str())
+            .collect(),
+        ExpectedArena::ModelCoedges => result
+            .ir
+            .model
+            .coedges
+            .iter()
+            .map(|item| item.id.0.as_str())
+            .collect(),
+        ExpectedArena::ModelCurves => result
+            .ir
+            .model
+            .curves
+            .iter()
+            .map(|item| item.id.0.as_str())
+            .collect(),
+        ExpectedArena::ModelLoops => result
+            .ir
+            .model
+            .loops
+            .iter()
+            .map(|item| item.id.0.as_str())
+            .collect(),
+        ExpectedArena::ModelPoints => result
+            .ir
+            .model
+            .points
+            .iter()
+            .map(|item| item.id.0.as_str())
+            .collect(),
+        ExpectedArena::ModelPcurves => result
+            .ir
+            .model
+            .pcurves
+            .iter()
+            .map(|item| item.id.0.as_str())
+            .collect(),
+        ExpectedArena::ModelProceduralCurves => result
+            .ir
+            .model
+            .procedural_curves
+            .iter()
+            .map(|item| item.id.0.as_str())
+            .collect(),
+        ExpectedArena::ModelProceduralSurfaces => result
+            .ir
+            .model
+            .procedural_surfaces
+            .iter()
+            .map(|item| item.id.0.as_str())
+            .collect(),
+        ExpectedArena::ModelRegions => result
+            .ir
+            .model
+            .regions
+            .iter()
+            .map(|item| item.id.0.as_str())
+            .collect(),
+        ExpectedArena::ModelShells => result
+            .ir
+            .model
+            .shells
+            .iter()
+            .map(|item| item.id.0.as_str())
+            .collect(),
+        ExpectedArena::ModelSurfaces => result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .map(|item| item.id.0.as_str())
+            .collect(),
+        ExpectedArena::Native(name) => result
+            .ir
+            .native
+            .namespace("iges")
+            .and_then(|namespace| namespace.arenas.get(name))
+            .into_iter()
+            .flatten()
+            .map(cadmpeg_ir::NativeRecord::id)
+            .collect(),
+    }
+}
+
+fn identity_mentions_sequence(identity: &str, sequence: u32) -> bool {
+    identity.match_indices('D').any(|(index, _)| {
+        matches!(
+            identity.as_bytes().get(index.wrapping_sub(1)),
+            Some(b'#' | b':')
+        ) && identity[index + 1..]
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect::<String>()
+            .parse::<u32>()
+            .ok()
+            == Some(sequence)
+    })
+}
+
+fn expected_counts(name: &str) -> (usize, usize, usize) {
+    match name {
+        "line"
+        | "circular_arc"
+        | "nurbs_curve"
+        | "rational_nurbs_curve"
+        | "parametric_spline_curve"
+        | "mixed_analytic_composite_curve"
+        | "uniform_offset_circle"
+        | "linear_offset_line"
+        | "function_offset_line"
+        | "copious_polyline"
+        | "segmented_view_visibility"
+        | "drawing_with_properties"
+        | "nested_transformed_point"
+        | "point"
+        | "direction"
+        | "units_data"
+        | "grid_property"
+        | "associativity_definition"
+        | "view_list_associativity"
+        | "recalculable_dimension_associativity"
+        | "solid_assembly"
+        | "solid_instance"
+        | "patterned_instance"
+        | "network_subfigure"
+        | "connected_network_subfigure"
+        | "nurbs_surface"
+        | "parametric_spline_surface"
+        | "ruled_surface"
+        | "tabulated_cylinder"
+        | "surface_of_revolution"
+        | "placed_surface_of_revolution"
+        | "offset_plane"
+        | "explicit_vertex_loop" => (1, 1, 1),
+        "view_forms" | "attribute_definition_forms" => (3, 3, 3),
+        "view_visibility_forms"
+        | "attribute_instance_forms"
+        | "product_property"
+        | "drawing_metadata_property"
+        | "group_forms"
+        | "nested_subfigure"
+        | "text_display_template_forms"
+        | "text_font_definition" => (2, 2, 2),
+        "text_annotation" => (1, 2, 1),
+        "leader_forms" => (12, 12, 12),
+        "dimension_forms" => (3, 11, 3),
+        "legacy_dimension_and_label_forms" => (1, 8, 1),
+        "symbol_and_sectioned_area" => (1, 4, 1),
+        "scalar_property_forms" => (14, 14, 14),
+        "dimension_property_forms" | "flow_associativity" => (4, 4, 4),
+        "bounded_associativity_forms" | "external_reference_forms" => (5, 5, 5),
+        "primitive_solids" => (1, 8, 1),
+        "procedural_and_boolean_solids" => (1, 3, 1),
+        "parametrically_bounded_plane"
+        | "trimmed_plane_with_inner_loop"
+        | "explicit_tetrahedron_solid"
+        | "explicit_open_shell"
+        | "explicit_non_manifold_open_shell"
+        | "explicit_void_solid"
+        | "explicit_cylinder_seam" => (1, 2, 1),
+        "explicit_multi_pcurve_loop" => (1, 2, 2),
+        // Type 141 output identities are rooted at the owning Type 143.
+        "multi_pcurve_boundary" => (1, 1, 0),
+        _ => panic!("fixture {name} has no exact arena expectation"),
+    }
+}
+
+fn decode_matrix(
+    fixtures: Vec<(&'static str, Vec<u8>, i64, ExpectedArena)>,
+) -> Vec<cadmpeg_ir::codec::DecodeResult> {
+    let matrix_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/iges-envelope-a.toml");
+    let source = std::fs::read_to_string(matrix_path).unwrap();
+    let matrix = toml::from_str::<toml::Value>(&source).unwrap();
     fixtures
         .into_iter()
-        .map(|bytes| {
+        .map(|(name, bytes, subject_type, expected_arena)| {
+            assert_matrix_destination(&matrix, subject_type, expected_arena);
+            let (expected_subjects, expected_total, expected_associated) = expected_counts(name);
+            let scan = crate::card::scan(&bytes).expect("integration fixture cards");
+            let directory =
+                crate::directory::parse(&scan).expect("integration fixture Directory Entries");
+            let subject_count = directory
+                .iter()
+                .filter(|entry| entry.entity_type == subject_type)
+                .count();
+            let subject_sequences = directory
+                .iter()
+                .filter(|entry| entry.entity_type == subject_type)
+                .map(|entry| entry.sequence)
+                .collect::<Vec<_>>();
             let result = decode(bytes);
+            let subject_output_count = arena_ids(&result, expected_arena)
+                .into_iter()
+                .filter(|identity| {
+                    subject_sequences
+                        .iter()
+                        .any(|sequence| identity_mentions_sequence(identity, *sequence))
+                })
+                .count();
+            assert_eq!(
+                subject_count, expected_subjects,
+                "fixture {name} subject entity count"
+            );
+            assert_eq!(
+                arena_count(&result, expected_arena),
+                expected_total,
+                "fixture {name} exact arena count for {expected_arena:?}"
+            );
+            assert_eq!(
+                subject_output_count, expected_associated,
+                "fixture {name} outputs associated with entity type {subject_type}"
+            );
             assert_valid(&result);
             result
         })
         .collect()
+}
+
+fn matrix_destination(arena: ExpectedArena) -> &'static str {
+    match arena {
+        ExpectedArena::ModelBodies => "model.bodies",
+        ExpectedArena::ModelCoedges => "model.coedges",
+        ExpectedArena::ModelCurves => "model.curves",
+        ExpectedArena::ModelLoops => "model.loops",
+        ExpectedArena::ModelPoints => "model.points",
+        ExpectedArena::ModelPcurves => "model.pcurves",
+        ExpectedArena::ModelProceduralCurves => "model.procedural_curves",
+        ExpectedArena::ModelProceduralSurfaces => "model.procedural_surfaces",
+        ExpectedArena::ModelRegions => "model.regions",
+        ExpectedArena::ModelShells => "model.shells",
+        ExpectedArena::ModelSurfaces => "model.surfaces",
+        ExpectedArena::Native("directions") => "native.iges.entities",
+        ExpectedArena::Native("units_data" | "properties") => "native.iges.properties",
+        ExpectedArena::Native("primitive_solids" | "procedural_solids") => "native.iges.solids",
+        ExpectedArena::Native("solid_assemblies" | "subfigure_definitions") => {
+            "native.iges.product"
+        }
+        ExpectedArena::Native("solid_instances" | "network_definitions" | "network_instances") => {
+            "native.iges.product"
+        }
+        ExpectedArena::Native("rectangular_arrays" | "external_references") => {
+            "native.iges.product"
+        }
+        ExpectedArena::Native("groups" | "associativities") => "native.iges.associativities",
+        ExpectedArena::Native("views") => "native.iges.views",
+        ExpectedArena::Native("view_visibility" | "segmented_visibility") => {
+            "native.iges.associativities"
+        }
+        ExpectedArena::Native("drawings") => "native.iges.drawings",
+        ExpectedArena::Native("annotations") => "native.iges.annotations",
+        ExpectedArena::Native("text_templates" | "text_fonts") => "native.iges.presentation",
+        ExpectedArena::Native("attribute_table_definitions" | "attribute_table_instances") => {
+            "native.iges.properties"
+        }
+        ExpectedArena::Native("product_properties") => "native.iges.properties",
+        ExpectedArena::Native(name) => panic!("matrix destination is not defined for {name}"),
+    }
+}
+
+fn assert_matrix_destination(matrix: &toml::Value, subject_type: i64, arena: ExpectedArena) {
+    let entity = matrix["entity"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entity| entity["type"].as_integer() == Some(subject_type))
+        .unwrap_or_else(|| panic!("entity type {subject_type} is absent from the envelope matrix"));
+    let destination = entity["destination"].as_str().unwrap();
+    let expected = matrix_destination(arena);
+    assert!(
+        destination.split(',').any(|item| item == expected),
+        "entity type {subject_type} destination {destination:?} does not include {expected:?}"
+    );
 }
 
 #[test]
@@ -39,150 +348,417 @@ fn envelope_pipeline_aligns_cards_global_units_directories_transforms_and_inspec
     assert_eq!(summary.format, "iges");
     assert_eq!(summary.container_kind, "fixed-ascii");
     assert!(summary.notes.iter().any(|note| note.contains("5.3")));
-    let results = decode_matrix(vec![
-        bytes,
-        point_file(),
-        direction_file(),
-        units_data_file(),
+    decode_matrix(vec![
+        (
+            "nested_transformed_point",
+            bytes,
+            116,
+            ExpectedArena::ModelPoints,
+        ),
+        ("point", point_file(), 116, ExpectedArena::ModelPoints),
+        (
+            "direction",
+            direction_file(),
+            123,
+            ExpectedArena::Native("directions"),
+        ),
+        (
+            "units_data",
+            units_data_file(),
+            316,
+            ExpectedArena::Native("units_data"),
+        ),
     ]);
-    assert!(results
-        .iter()
-        .any(|result| !result.ir.model.points.is_empty()));
 }
 
 #[test]
 fn curve_pipeline_composes_analytic_conic_spline_composite_copious_and_offset_entities() {
-    let results = decode_matrix(vec![
-        line_file(0),
-        circular_arc_file(),
-        nurbs_curve_file(),
-        rational_nurbs_curve_file(),
-        parametric_spline_curve_file(),
-        mixed_analytic_composite_curve_file(),
-        uniform_offset_circle_file(),
-        linear_offset_line_file(1),
-        function_offset_line_file(),
-        copious_data_file(11, b"106,3,0.,0.,1.,0.;", "00000000"),
+    decode_matrix(vec![
+        ("line", line_file(0), 110, ExpectedArena::ModelCurves),
+        (
+            "circular_arc",
+            circular_arc_file(),
+            100,
+            ExpectedArena::ModelCurves,
+        ),
+        (
+            "nurbs_curve",
+            nurbs_curve_file(),
+            126,
+            ExpectedArena::ModelCurves,
+        ),
+        (
+            "rational_nurbs_curve",
+            rational_nurbs_curve_file(),
+            126,
+            ExpectedArena::ModelCurves,
+        ),
+        (
+            "parametric_spline_curve",
+            parametric_spline_curve_file(),
+            112,
+            ExpectedArena::ModelCurves,
+        ),
+        (
+            "mixed_analytic_composite_curve",
+            mixed_analytic_composite_curve_file(),
+            102,
+            ExpectedArena::ModelProceduralCurves,
+        ),
+        (
+            "uniform_offset_circle",
+            uniform_offset_circle_file(),
+            130,
+            ExpectedArena::ModelProceduralCurves,
+        ),
+        (
+            "linear_offset_line",
+            linear_offset_line_file(1),
+            130,
+            ExpectedArena::ModelProceduralCurves,
+        ),
+        (
+            "function_offset_line",
+            function_offset_line_file(),
+            130,
+            ExpectedArena::ModelProceduralCurves,
+        ),
+        (
+            "copious_polyline",
+            copious_data_file(11, b"106,1,2,0,0,0,1,0;", "00000000"),
+            106,
+            ExpectedArena::ModelCurves,
+        ),
     ]);
-    assert!(results
-        .iter()
-        .any(|result| !result.ir.model.curves.is_empty()));
-    assert!(results
-        .iter()
-        .any(|result| !result.ir.model.procedural_curves.is_empty()));
 }
 
 #[test]
 fn surface_pipeline_composes_nurbs_power_patches_sweeps_revolution_offsets_and_trims() {
-    let results = decode_matrix(vec![
-        nurbs_surface_file(),
-        parametric_spline_surface_file(),
-        ruled_surface_file(),
-        tabulated_cylinder_file(),
-        surface_of_revolution_file(),
-        placed_surface_of_revolution_file(),
-        offset_plane_file(1.0, 2.0),
-        parametrically_bounded_plane_file(),
-        trimmed_plane_with_inner_loop_file(),
+    decode_matrix(vec![
+        (
+            "nurbs_surface",
+            nurbs_surface_file(),
+            128,
+            ExpectedArena::ModelSurfaces,
+        ),
+        (
+            "parametric_spline_surface",
+            parametric_spline_surface_file(),
+            114,
+            ExpectedArena::ModelSurfaces,
+        ),
+        (
+            "ruled_surface",
+            ruled_surface_file(),
+            118,
+            ExpectedArena::ModelProceduralSurfaces,
+        ),
+        (
+            "tabulated_cylinder",
+            tabulated_cylinder_file(),
+            122,
+            ExpectedArena::ModelProceduralSurfaces,
+        ),
+        (
+            "surface_of_revolution",
+            surface_of_revolution_file(),
+            120,
+            ExpectedArena::ModelProceduralSurfaces,
+        ),
+        (
+            "placed_surface_of_revolution",
+            placed_surface_of_revolution_file(),
+            120,
+            ExpectedArena::ModelProceduralSurfaces,
+        ),
+        (
+            "offset_plane",
+            offset_plane_file(1.0, 2.0),
+            140,
+            ExpectedArena::ModelProceduralSurfaces,
+        ),
+        (
+            "parametrically_bounded_plane",
+            parametrically_bounded_plane_file(),
+            143,
+            ExpectedArena::ModelRegions,
+        ),
+        (
+            "trimmed_plane_with_inner_loop",
+            trimmed_plane_with_inner_loop_file(),
+            144,
+            ExpectedArena::ModelRegions,
+        ),
     ]);
-    assert!(results.iter().all(|result| {
-        !result.ir.model.surfaces.is_empty() || !result.ir.model.procedural_surfaces.is_empty()
-    }));
 }
 
 #[test]
 fn topology_pipeline_composes_manifold_nonmanifold_void_seam_and_boundary_graphs() {
     let (void_solid, _, _, _) = explicit_void_solid_file();
-    let results = decode_matrix(vec![
-        explicit_tetrahedron_solid_file(),
-        explicit_open_shell_file(),
-        explicit_non_manifold_open_shell_file(),
-        explicit_vertex_loop_file(),
-        void_solid,
-        explicit_multi_pcurve_loop_file(),
-        explicit_cylinder_seam_file(),
-        multi_pcurve_boundary_file(),
+    decode_matrix(vec![
+        (
+            "explicit_tetrahedron_solid",
+            explicit_tetrahedron_solid_file(),
+            186,
+            ExpectedArena::ModelBodies,
+        ),
+        (
+            "explicit_open_shell",
+            explicit_open_shell_file(),
+            514,
+            ExpectedArena::ModelShells,
+        ),
+        (
+            "explicit_non_manifold_open_shell",
+            explicit_non_manifold_open_shell_file(),
+            514,
+            ExpectedArena::ModelShells,
+        ),
+        (
+            "explicit_vertex_loop",
+            explicit_vertex_loop_file(),
+            508,
+            ExpectedArena::ModelLoops,
+        ),
+        (
+            "explicit_void_solid",
+            void_solid,
+            186,
+            ExpectedArena::ModelBodies,
+        ),
+        (
+            "explicit_multi_pcurve_loop",
+            explicit_multi_pcurve_loop_file(),
+            508,
+            ExpectedArena::ModelPcurves,
+        ),
+        (
+            "explicit_cylinder_seam",
+            explicit_cylinder_seam_file(),
+            514,
+            ExpectedArena::ModelShells,
+        ),
+        (
+            "multi_pcurve_boundary",
+            multi_pcurve_boundary_file(),
+            141,
+            ExpectedArena::ModelCoedges,
+        ),
     ]);
-    assert!(results
-        .iter()
-        .any(|result| !result.ir.model.bodies.is_empty()));
-    assert!(results
-        .iter()
-        .any(|result| !result.ir.model.pcurves.is_empty()));
 }
 
 #[test]
 fn structure_pipeline_composes_csg_products_instances_patterns_groups_and_external_links() {
-    let results = decode_matrix(vec![
-        primitive_solids_file(),
-        procedural_and_boolean_solids_file(),
-        solid_assembly_file(),
-        solid_instance_file(),
-        patterned_instance_file(),
-        external_reference_forms_file(),
-        group_forms_file(),
-        nested_subfigure_file(),
-        network_subfigure_file(),
-        connected_network_subfigure_file(),
+    decode_matrix(vec![
+        (
+            "primitive_solids",
+            primitive_solids_file(),
+            160,
+            ExpectedArena::Native("primitive_solids"),
+        ),
+        (
+            "procedural_and_boolean_solids",
+            procedural_and_boolean_solids_file(),
+            164,
+            ExpectedArena::Native("procedural_solids"),
+        ),
+        (
+            "solid_assembly",
+            solid_assembly_file(),
+            184,
+            ExpectedArena::Native("solid_assemblies"),
+        ),
+        (
+            "solid_instance",
+            solid_instance_file(),
+            430,
+            ExpectedArena::Native("solid_instances"),
+        ),
+        (
+            "patterned_instance",
+            patterned_instance_file(),
+            412,
+            ExpectedArena::Native("rectangular_arrays"),
+        ),
+        (
+            "external_reference_forms",
+            external_reference_forms_file(),
+            416,
+            ExpectedArena::Native("external_references"),
+        ),
+        (
+            "group_forms",
+            group_forms_file(),
+            402,
+            ExpectedArena::Native("groups"),
+        ),
+        (
+            "nested_subfigure",
+            nested_subfigure_file(),
+            308,
+            ExpectedArena::Native("subfigure_definitions"),
+        ),
+        (
+            "network_subfigure",
+            network_subfigure_file(),
+            320,
+            ExpectedArena::Native("network_definitions"),
+        ),
+        (
+            "connected_network_subfigure",
+            connected_network_subfigure_file(),
+            420,
+            ExpectedArena::Native("network_instances"),
+        ),
     ]);
-    assert!(results.iter().any(|result| {
-        let native = result.ir.native.namespace("iges").unwrap();
-        !native.arenas["primitive_solids"].is_empty()
-            || !native.arenas["procedural_solids"].is_empty()
-            || !native.arenas["boolean_trees"].is_empty()
-    }));
-    assert!(results.iter().any(|result| {
-        let native = result.ir.native.namespace("iges").unwrap();
-        !native.arenas["solid_assemblies"].is_empty()
-            || !native.arenas["product_occurrences"].is_empty()
-            || !native.arenas["external_references"].is_empty()
-    }));
 }
 
 #[test]
 fn drawing_pipeline_composes_views_visibility_notes_leaders_dimensions_symbols_and_fonts() {
-    let results = decode_matrix(vec![
-        view_forms_file(),
-        view_visibility_forms_file(),
-        segmented_view_visibility_file(),
-        drawing_with_properties_file(),
-        text_annotation_file(),
-        leader_forms_file(),
-        dimension_forms_file(),
-        legacy_dimension_and_label_forms_file(),
-        symbol_and_sectioned_area_file(),
-        text_display_template_forms_file(),
-        text_font_definition_file(),
+    decode_matrix(vec![
+        (
+            "view_forms",
+            view_forms_file(),
+            410,
+            ExpectedArena::Native("views"),
+        ),
+        (
+            "view_visibility_forms",
+            view_visibility_forms_file(),
+            402,
+            ExpectedArena::Native("view_visibility"),
+        ),
+        (
+            "segmented_view_visibility",
+            segmented_view_visibility_file(),
+            402,
+            ExpectedArena::Native("segmented_visibility"),
+        ),
+        (
+            "drawing_with_properties",
+            drawing_with_properties_file(),
+            404,
+            ExpectedArena::Native("drawings"),
+        ),
+        (
+            "text_annotation",
+            text_annotation_file(),
+            212,
+            ExpectedArena::Native("annotations"),
+        ),
+        (
+            "leader_forms",
+            leader_forms_file(),
+            214,
+            ExpectedArena::Native("annotations"),
+        ),
+        (
+            "dimension_forms",
+            dimension_forms_file(),
+            216,
+            ExpectedArena::Native("annotations"),
+        ),
+        (
+            "legacy_dimension_and_label_forms",
+            legacy_dimension_and_label_forms_file(),
+            202,
+            ExpectedArena::Native("annotations"),
+        ),
+        (
+            "symbol_and_sectioned_area",
+            symbol_and_sectioned_area_file(),
+            230,
+            ExpectedArena::Native("annotations"),
+        ),
+        (
+            "text_display_template_forms",
+            text_display_template_forms_file(),
+            312,
+            ExpectedArena::Native("text_templates"),
+        ),
+        (
+            "text_font_definition",
+            text_font_definition_file(),
+            310,
+            ExpectedArena::Native("text_fonts"),
+        ),
     ]);
-    assert!(results.iter().any(|result| {
-        !result.ir.native.namespace("iges").unwrap().arenas["drawings"].is_empty()
-    }));
-    assert!(results.iter().any(|result| {
-        !result.ir.native.namespace("iges").unwrap().arenas["annotations"].is_empty()
-    }));
 }
 
 #[test]
 fn metadata_pipeline_composes_properties_attributes_associativity_and_native_ownership() {
-    let results = decode_matrix(vec![
-        attribute_definition_forms_file(),
-        attribute_instance_forms_file(),
-        product_property_file(),
-        scalar_property_forms_file(),
-        grid_property_file(),
-        dimension_property_forms_file(),
-        drawing_metadata_property_forms_file(),
-        associativity_definition_file(),
-        bounded_associativity_forms_file(),
-        view_list_associativity_file(true),
-        flow_associativity_forms_file(),
-        recalculable_dimension_associativity_file(),
+    decode_matrix(vec![
+        (
+            "attribute_definition_forms",
+            attribute_definition_forms_file(),
+            322,
+            ExpectedArena::Native("attribute_table_definitions"),
+        ),
+        (
+            "attribute_instance_forms",
+            attribute_instance_forms_file(),
+            422,
+            ExpectedArena::Native("attribute_table_instances"),
+        ),
+        (
+            "product_property",
+            product_property_file(),
+            406,
+            ExpectedArena::Native("product_properties"),
+        ),
+        (
+            "scalar_property_forms",
+            scalar_property_forms_file(),
+            406,
+            ExpectedArena::Native("properties"),
+        ),
+        (
+            "grid_property",
+            grid_property_file(),
+            406,
+            ExpectedArena::Native("properties"),
+        ),
+        (
+            "dimension_property_forms",
+            dimension_property_forms_file(),
+            406,
+            ExpectedArena::Native("properties"),
+        ),
+        (
+            "drawing_metadata_property",
+            drawing_metadata_property_forms_file(),
+            406,
+            ExpectedArena::Native("properties"),
+        ),
+        (
+            "associativity_definition",
+            associativity_definition_file(),
+            302,
+            ExpectedArena::Native("associativities"),
+        ),
+        (
+            "bounded_associativity_forms",
+            bounded_associativity_forms_file(),
+            402,
+            ExpectedArena::Native("associativities"),
+        ),
+        (
+            "view_list_associativity",
+            view_list_associativity_file(true),
+            402,
+            ExpectedArena::Native("associativities"),
+        ),
+        (
+            "flow_associativity",
+            flow_associativity_forms_file(),
+            402,
+            ExpectedArena::Native("associativities"),
+        ),
+        (
+            "recalculable_dimension_associativity",
+            recalculable_dimension_associativity_file(),
+            402,
+            ExpectedArena::Native("associativities"),
+        ),
     ]);
-    assert!(results.iter().all(|result| {
-        result
-            .ir
-            .native
-            .namespace("iges")
-            .is_some_and(|namespace| !namespace.arenas["entities"].is_empty())
-    }));
 }

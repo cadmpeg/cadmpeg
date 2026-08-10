@@ -329,7 +329,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
                 horizontal_alignment: 0,
                 vertical_alignment: 0,
                 wrapped: false,
-                horizontal_direction: [1.0, 0.0],
+                horizontal_direction: [value.plane.xaxis.0[0], value.plane.yaxis.0[0]],
                 allow_text_scaling: value.allow_text_scaling,
                 legacy_text_display_mode: Some(value.text_display_mode),
                 legacy_user_text: Some(value.user_text),
@@ -428,7 +428,7 @@ mod tests {
         common.extend(0_i32.to_le_bytes());
         common.extend(12_i32.to_le_bytes());
         common.extend(1.5_f64.to_le_bytes());
-        common.extend(4_i32.to_le_bytes());
+        common.extend(0_i32.to_le_bytes());
         common.push(1);
         common.extend(utf16("formula"));
         common.extend((-1_i32).to_le_bytes());
@@ -439,9 +439,10 @@ mod tests {
             .expect("valid legacy leader");
         assert_eq!(value.rich_text, "leader");
         assert_eq!(value.user_text, "formula");
-        assert_eq!(value.plane.origin.0, [10.0, 20.0, 30.0]);
+        assert_eq!(value.plane.origin.0, [10.0, 35.0, 30.0]);
         assert_eq!(value.points, [[10.0, 20.0], [40.0, 80.0]]);
         assert_eq!(value.text_height, 15.0);
         assert_eq!(value.dimstyle_index, 12);
+        assert_eq!(value.justification, (1 << 18) | 1);
     }
 }

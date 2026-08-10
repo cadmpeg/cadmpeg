@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP product prototypes, occurrence identity, and relative placement.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, OccurrenceId, ProductDefinitionId};
@@ -20,9 +20,19 @@ use super::topology::TopologyResult;
 
 const MAX_OCCURRENCES: usize = 100_000;
 const MAX_ASSEMBLY_DEPTH: usize = 256;
+const PRODUCT_DEFINITION_FORMATION_TYPES: &[&str] = &[
+    "PRODUCT_DEFINITION_FORMATION",
+    "PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE",
+    "FINAL_SOLUTION",
+];
+const PRODUCT_DEFINITION_TYPES: &[&str] = &[
+    "PRODUCT_DEFINITION",
+    "PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS",
+];
 
 pub(super) struct ProductResult {
-    pub typed_records: BTreeSet<u64>,
+    pub product_definition_ids_by_source: BTreeMap<u64, Vec<ProductDefinitionId>>,
+    pub typed_records: HashSet<u64>,
     pub warnings: Vec<String>,
     pub losses: Vec<LossNote>,
 }
@@ -33,46 +43,74 @@ pub(super) fn decode(
     topology: &TopologyResult,
     ir: &mut CadIr,
 ) -> ProductResult {
-    let mut typed = BTreeSet::new();
+    let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
     let formations = exchange
-        .entities_any(&[
-            "PRODUCT_DEFINITION_FORMATION",
-            "PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE",
-        ])
+        .entities_any(PRODUCT_DEFINITION_FORMATION_TYPES)
         .filter_map(|(id, record)| {
-            if !matches!(
-                record.simple_name(),
-                Some(
-                    "PRODUCT_DEFINITION_FORMATION"
-                        | "PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE"
-                )
-            ) {
-                return None;
-            }
-            Some((id, record.parameter(2)?.reference()?))
+            let parameters = product_definition_formation_parameters(record)?;
+            Some((id, parameters.get(2)?.reference()?))
         })
         .collect::<BTreeMap<_, _>>();
     let definitions = exchange
-        .entities("PRODUCT_DEFINITION")
+        .entities_any(PRODUCT_DEFINITION_TYPES)
         .filter_map(|(id, record)| {
-            if record.simple_name() != Some("PRODUCT_DEFINITION") {
-                return None;
-            }
-            Some((id, *formations.get(&record.parameter(2)?.reference()?)?))
+            let parameters = product_definition_parameters(record)?;
+            Some((id, *formations.get(&parameters.get(2)?.reference()?)?))
         })
         .collect::<BTreeMap<_, _>>();
+    let mut definition_descriptions = BTreeMap::<u64, String>::new();
+    for (id, record) in exchange.entities_any(PRODUCT_DEFINITION_TYPES) {
+        let Some(parameters) = product_definition_parameters(record) else {
+            continue;
+        };
+        let Some(_) = parameters
+            .get(2)
+            .and_then(ValueExt::reference)
+            .and_then(|formation| formations.get(&formation).copied())
+        else {
+            continue;
+        };
+        let Some(description) = parameters.get(1).and_then(|value| {
+            decode_text(
+                exchange,
+                value,
+                &mut losses,
+                id,
+                "product definition description",
+                LossKind::MetadataNotTransferred,
+            )
+        }) else {
+            continue;
+        };
+        if !description.is_empty() {
+            definition_descriptions.entry(id).or_insert(description);
+        }
+    }
     let shape_bindings = shape_bindings(exchange, &definitions, topology);
+    let definition_counts =
+        definitions
+            .values()
+            .fold(BTreeMap::<u64, usize>::new(), |mut counts, product| {
+                *counts.entry(*product).or_default() += 1;
+                counts
+            });
+    let mut definition_prototypes = BTreeMap::<u64, ProductDefinitionId>::new();
+    let mut product_definition_ids_by_source = BTreeMap::<u64, Vec<ProductDefinitionId>>::new();
 
     for (step_id, record) in exchange.entities("PRODUCT") {
-        if record.simple_name() != Some("PRODUCT") {
+        let Some(parameters) = record
+            .partial("PRODUCT")
+            .map(|partial| partial.parameters.as_slice())
+        else {
             continue;
-        }
-        let product_id = record
-            .parameter(0)
+        };
+        let product_id = parameters
+            .first()
             .and_then(|value| {
                 decode_text(
+                    exchange,
                     value,
                     &mut losses,
                     step_id,
@@ -81,10 +119,11 @@ pub(super) fn decode(
                 )
             })
             .unwrap_or_else(|| format!("#{step_id}"));
-        let name = record
-            .parameter(1)
+        let name = parameters
+            .get(1)
             .and_then(|value| {
                 decode_text(
+                    exchange,
                     value,
                     &mut losses,
                     step_id,
@@ -93,48 +132,101 @@ pub(super) fn decode(
                 )
             })
             .filter(|name| !name.is_empty());
-        let has_shape_binding = shape_bindings.contains_key(&step_id);
-        let mut bodies = shape_bindings.get(&step_id).cloned().unwrap_or_default();
-        let missing = bodies
+        let product_description = parameters
+            .get(2)
+            .and_then(|value| {
+                decode_text(
+                    exchange,
+                    value,
+                    &mut losses,
+                    step_id,
+                    "product description",
+                    LossKind::MetadataNotTransferred,
+                )
+            })
+            .filter(|description| !description.is_empty());
+        let product_definitions = definitions
             .iter()
-            .filter(|body| {
-                !ir.model
+            .filter_map(|(&definition, &product)| (product == step_id).then_some(definition))
+            .collect::<Vec<_>>();
+        let definition_count = definition_counts.get(&step_id).copied().unwrap_or(0);
+        let definition_iter = if product_definitions.is_empty() {
+            vec![None]
+        } else {
+            product_definitions.into_iter().map(Some).collect()
+        };
+        for definition in definition_iter {
+            let product_definition_id = definition.map_or_else(
+                || product_ir_id(step_id),
+                |definition| {
+                    let id = product_definition_ir_id(step_id, definition, definition_count);
+                    definition_prototypes.insert(definition, id.clone());
+                    id
+                },
+            );
+            let definition_description =
+                definition.and_then(|definition| definition_descriptions.get(&definition).cloned());
+            let description = if definition_count <= 1 {
+                product_description.clone().or(definition_description)
+            } else {
+                definition_description.or_else(|| product_description.clone())
+            };
+            let has_shape_binding =
+                definition.is_some_and(|definition| shape_bindings.contains_key(&definition));
+            let mut bodies = definition
+                .and_then(|definition| shape_bindings.get(&definition).cloned())
+                .unwrap_or_default();
+            let missing = bodies
+                .iter()
+                .filter(|body| {
+                    !ir.model
+                        .bodies
+                        .iter()
+                        .any(|candidate| candidate.id == **body)
+                })
+                .map(|body| body.0.clone())
+                .collect::<Vec<_>>();
+            bodies.retain(|body| {
+                ir.model
                     .bodies
                     .iter()
-                    .any(|candidate| candidate.id == **body)
-            })
-            .map(|body| body.0.clone())
-            .collect::<Vec<_>>();
-        bodies.retain(|body| {
-            ir.model
-                .bodies
-                .iter()
-                .any(|candidate| candidate.id == *body)
-        });
-        bodies.sort();
-        bodies.dedup();
-        if !missing.is_empty() {
-            warnings.push(format!(
-                "PRODUCT #{step_id} omitted uncommitted shape body reference(s): {}",
-                missing.join(", ")
-            ));
+                    .any(|candidate| candidate.id == *body)
+            });
+            bodies.sort();
+            bodies.dedup();
+            let owner = definition.map_or_else(
+                || format!("PRODUCT #{step_id}"),
+                |definition| format!("PRODUCT_DEFINITION #{definition}"),
+            );
+            if !missing.is_empty() {
+                warnings.push(format!(
+                    "{owner} omitted uncommitted shape body reference(s): {}",
+                    missing.join(", ")
+                ));
+            }
+            if has_shape_binding && bodies.is_empty() {
+                warnings.push(format!(
+                    "{owner} has a shape representation with no committed topology body"
+                ));
+            }
+            ir.model.product_definitions.push(ProductDefinition {
+                id: product_definition_id.clone(),
+                kind: ProductDefinitionKind::Part,
+                source_name: name.clone(),
+                label: name.clone(),
+                description,
+                part_number: Some(product_id.clone()),
+                bom_properties: BTreeMap::new(),
+                bodies,
+                native_ref: Some(
+                    definition.map_or_else(|| format!("#{step_id}"), |id| format!("#{id}")),
+                ),
+            });
+            product_definition_ids_by_source
+                .entry(step_id)
+                .or_default()
+                .push(product_definition_id);
         }
-        if has_shape_binding && bodies.is_empty() {
-            warnings.push(format!(
-                "PRODUCT #{step_id} has a shape representation with no committed topology body"
-            ));
-        }
-        ir.model.product_definitions.push(ProductDefinition {
-            id: product_ir_id(step_id),
-            kind: ProductDefinitionKind::Part,
-            source_name: name.clone(),
-            label: name,
-            description: None,
-            part_number: Some(product_id),
-            bom_properties: BTreeMap::new(),
-            bodies,
-            native_ref: Some(format!("#{step_id}")),
-        });
         typed.insert(step_id);
     }
     typed.extend(formations.keys().copied());
@@ -143,26 +235,25 @@ pub(super) fn decode(
     let usages = exchange
         .entities("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
         .filter_map(|(id, record)| {
-            if record.simple_name() != Some("NEXT_ASSEMBLY_USAGE_OCCURRENCE") {
-                return None;
-            }
+            let name =
+                named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 1).and_then(|value| {
+                    decode_text(
+                        exchange,
+                        value,
+                        &mut losses,
+                        id,
+                        "assembly occurrence name",
+                        LossKind::MetadataNotTransferred,
+                    )
+                });
             Some((
                 id,
                 Usage {
-                    parent_definition: record.parameter(3)?.reference()?,
-                    child_definition: record.parameter(4)?.reference()?,
-                    name: record
-                        .parameter(1)
-                        .and_then(|value| {
-                            decode_text(
-                                value,
-                                &mut losses,
-                                id,
-                                "assembly occurrence name",
-                                LossKind::MetadataNotTransferred,
-                            )
-                        })
-                        .filter(|name| !name.is_empty()),
+                    parent_definition: named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 3)
+                        .and_then(ValueExt::reference)?,
+                    child_definition: named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 4)
+                        .and_then(ValueExt::reference)?,
+                    name: name.filter(|name| !name.is_empty()),
                 },
             ))
         })
@@ -171,19 +262,24 @@ pub(super) fn decode(
         .values()
         .map(|usage| usage.child_definition)
         .collect::<BTreeSet<_>>();
-    let mut definition_occurrences = BTreeMap::<u64, Vec<OccurrenceId>>::new();
     let mut occurrence_paths = BTreeMap::<OccurrenceId, BTreeSet<u64>>::new();
     let mut pending_occurrences = VecDeque::new();
     let mut root_ordinal = 0_u32;
-    for (&definition, &product) in &definitions {
+    for &definition in definitions.keys() {
         if child_definitions.contains(&definition) {
             continue;
         }
+        let Some(prototype) = definition_prototypes.get(&definition).cloned() else {
+            warnings.push(format!(
+                "PRODUCT_DEFINITION #{definition} has no local product prototype"
+            ));
+            continue;
+        };
         let id = OccurrenceId(format!("step:product:occurrence#definition-{definition}"));
         ir.model.occurrences.push(Occurrence {
             id: id.clone(),
             prototype: PrototypeReference::Local {
-                definition: product_ir_id(product),
+                definition: prototype,
             },
             parent: OccurrenceParent::Root,
             ordinal: root_ordinal,
@@ -203,10 +299,6 @@ pub(super) fn decode(
             native_ref: None,
         });
         root_ordinal = root_ordinal.saturating_add(1);
-        definition_occurrences
-            .entry(definition)
-            .or_default()
-            .push(id.clone());
         occurrence_paths.insert(id.clone(), BTreeSet::from([definition]));
         pending_occurrences.push_back((definition, id));
     }
@@ -229,7 +321,8 @@ pub(super) fn decode(
             .flatten()
         {
             let usage = &usages[&usage_id];
-            let Some(&product) = definitions.get(&usage.child_definition) else {
+            let Some(prototype) = definition_prototypes.get(&usage.child_definition).cloned()
+            else {
                 warnings.push(format!(
                     "NAUO #{usage_id} references an unresolved child definition"
                 ));
@@ -282,7 +375,7 @@ pub(super) fn decode(
             ir.model.occurrences.push(Occurrence {
                 id: id.clone(),
                 prototype: PrototypeReference::Local {
-                    definition: product_ir_id(product),
+                    definition: prototype,
                 },
                 parent: OccurrenceParent::Occurrence {
                     occurrence: parent.clone(),
@@ -307,10 +400,6 @@ pub(super) fn decode(
             let mut path = parent_path;
             path.insert(usage.child_definition);
             occurrence_paths.insert(id.clone(), path);
-            definition_occurrences
-                .entry(usage.child_definition)
-                .or_default()
-                .push(id.clone());
             pending_occurrences.push_back((usage.child_definition, id));
             typed.insert(usage_id);
         }
@@ -318,7 +407,15 @@ pub(super) fn decode(
     if !had_roots && !usages.is_empty() {
         warnings.push("assembly occurrence graph has no resolvable root".into());
     }
-    apply_body_placements(exchange, geometry, topology, &usages, ir, &mut warnings);
+    apply_body_placements(
+        exchange,
+        geometry,
+        topology,
+        &usages,
+        ir,
+        &mut warnings,
+        &mut losses,
+    );
     for (id, record) in exchange.entities_any(&[
         "APPLICATION_CONTEXT",
         "PRODUCT_CONTEXT",
@@ -329,29 +426,32 @@ pub(super) fn decode(
         "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION",
         "REPRESENTATION_MAP",
         "MAPPED_ITEM",
+        "SHAPE_REPRESENTATION_RELATIONSHIP",
         "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION",
     ]) {
-        if matches!(
-            record.simple_name(),
-            Some(
-                "APPLICATION_CONTEXT"
-                    | "PRODUCT_CONTEXT"
-                    | "PRODUCT_DEFINITION_CONTEXT"
-                    | "PRODUCT_DEFINITION_SHAPE"
-                    | "SHAPE_DEFINITION_REPRESENTATION"
-                    | "ITEM_DEFINED_TRANSFORMATION"
-                    | "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION"
-                    | "REPRESENTATION_MAP"
-                    | "MAPPED_ITEM"
-            )
-        ) || record
-            .partial("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
-            .is_some()
+        if [
+            "APPLICATION_CONTEXT",
+            "PRODUCT_CONTEXT",
+            "PRODUCT_DEFINITION_CONTEXT",
+            "PRODUCT_DEFINITION_SHAPE",
+            "SHAPE_DEFINITION_REPRESENTATION",
+            "ITEM_DEFINED_TRANSFORMATION",
+            "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION",
+            "REPRESENTATION_MAP",
+            "MAPPED_ITEM",
+            "SHAPE_REPRESENTATION_RELATIONSHIP",
+        ]
+        .iter()
+        .any(|name| record.partial(name).is_some())
+            || record
+                .partial("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
+                .is_some()
         {
             typed.insert(id);
         }
     }
     ProductResult {
+        product_definition_ids_by_source,
         typed_records: typed,
         warnings,
         losses,
@@ -365,26 +465,26 @@ fn apply_body_placements(
     usages: &BTreeMap<u64, Usage>,
     ir: &mut CadIr,
     warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
 ) {
     let pds = exchange
         .entities("PRODUCT_DEFINITION_SHAPE")
         .filter_map(|(id, record)| {
-            (record.simple_name() == Some("PRODUCT_DEFINITION_SHAPE"))
-                .then_some((id, record.parameter(2)?.reference()?))
+            Some((
+                id,
+                named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2)
+                    .and_then(ValueExt::reference)?,
+            ))
         })
         .collect::<BTreeMap<_, _>>();
-    let definition_representations = exchange
-        .entities("SHAPE_DEFINITION_REPRESENTATION")
-        .filter_map(|(_, record)| {
-            let definition = *pds.get(&record.parameter(0)?.reference()?)?;
-            Some((definition, record.parameter(1)?.reference()?))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let definition_representations = definition_representations(exchange, &pds);
     let assembly_representations = usages
         .values()
-        .filter_map(|usage| {
+        .flat_map(|usage| {
             definition_representations
                 .get(&usage.child_definition)
+                .into_iter()
+                .flatten()
                 .copied()
         })
         .collect::<BTreeSet<_>>();
@@ -396,48 +496,70 @@ fn apply_body_placements(
         .map(|(index, body)| (body.id.clone(), index))
         .collect::<BTreeMap<_, _>>();
     let mut representation_cache = BTreeMap::new();
+    let mut placements_by_body = BTreeMap::<BodyId, Vec<(u64, Transform)>>::new();
     for (id, item) in exchange.entities("MAPPED_ITEM") {
-        if item.simple_name() != Some("MAPPED_ITEM") {
+        if item.partial("MAPPED_ITEM").is_none() {
             continue;
         }
-        let Some(map) = item
-            .parameter(1)
-            .and_then(ValueExt::reference)
-            .and_then(|map| exchange.records.get(&map))
-        else {
-            continue;
-        };
-        let Some(origin) = map.parameter(0).and_then(ValueExt::reference) else {
-            continue;
-        };
-        let Some(representation) = map.parameter(1).and_then(ValueExt::reference) else {
+        let Some((representation, origin, target)) = mapped_item_definition(item, exchange) else {
             continue;
         };
         if assembly_representations.contains(&representation) {
             continue;
         }
-        let Some(target) = item.parameter(2).and_then(ValueExt::reference) else {
+        if is_two_dimensional_mapping(origin, target, exchange) {
             continue;
-        };
-        let Some(transform) = geometry
-            .placements
-            .get(&origin)
-            .zip(geometry.placements.get(&target))
-            .map(|(from, to)| between(*from, *to))
-        else {
-            warnings.push(format!("MAPPED_ITEM #{id} has no resolved body placement"));
-            continue;
-        };
-        for body in representation_bodies(
+        }
+        let bodies = super::topology::representation_bodies(
             representation,
             exchange,
             topology,
             &mut representation_cache,
             &mut BTreeSet::new(),
             0,
-        ) {
-            if let Some(index) = body_indices.get(&body) {
-                ir.model.bodies[*index].transform = Some(transform);
+        );
+        if bodies.is_empty() {
+            continue;
+        }
+        let Some(transform) = mapped_item_transform(origin, target, geometry) else {
+            warnings.push(format!("MAPPED_ITEM #{id} has no resolved body placement"));
+            continue;
+        };
+        for body in bodies {
+            placements_by_body
+                .entry(body)
+                .or_default()
+                .push((id, transform));
+        }
+    }
+    for (body, placements) in placements_by_body {
+        let mut unique = Vec::<(u64, Transform)>::new();
+        for placement in placements {
+            if unique.iter().all(|(_, existing)| *existing != placement.1) {
+                unique.push(placement);
+            }
+        }
+        match unique.as_slice() {
+            [(_, transform)] => {
+                if let Some(index) = body_indices.get(&body) {
+                    ir.model.bodies[*index].transform = Some(*transform);
+                }
+            }
+            [] => {}
+            _ => {
+                let mapped_items = unique
+                    .iter()
+                    .map(|(id, _)| format!("#{id}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                losses.push(LossNote {
+                    code: LossKind::AssemblyPlacementsNotTransferred,
+                    severity: Severity::Error,
+                    message: format!(
+                        "body {body} has conflicting standalone MAPPED_ITEM placements ({mapped_items}); no body placement was selected"
+                    ),
+                    provenance: None,
+                });
             }
         }
     }
@@ -457,10 +579,11 @@ fn shape_bindings(
     let pds = exchange
         .entities("PRODUCT_DEFINITION_SHAPE")
         .filter_map(|(id, record)| {
-            if record.simple_name() != Some("PRODUCT_DEFINITION_SHAPE") {
-                return None;
-            }
-            Some((id, record.parameter(2)?.reference()?))
+            Some((
+                id,
+                named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2)
+                    .and_then(ValueExt::reference)?,
+            ))
         })
         .collect::<BTreeMap<_, _>>();
     let mut result = BTreeMap::<u64, Vec<BodyId>>::new();
@@ -468,9 +591,9 @@ fn shape_bindings(
     for record in exchange
         .records
         .values()
-        .filter(|record| record.simple_name() == Some("SHAPE_DEFINITION_REPRESENTATION"))
+        .filter(|record| record.partial("SHAPE_DEFINITION_REPRESENTATION").is_some())
     {
-        if let Some((product, bodies)) = shape_binding(
+        if let Some((definition, bodies)) = shape_binding(
             record,
             exchange,
             &pds,
@@ -478,7 +601,7 @@ fn shape_bindings(
             topology,
             &mut representation_cache,
         ) {
-            result.entry(product).or_default().extend(bodies);
+            result.entry(definition).or_default().extend(bodies);
         }
     }
     result
@@ -492,10 +615,14 @@ fn shape_binding(
     topology: &TopologyResult,
     representation_cache: &mut BTreeMap<u64, Vec<BodyId>>,
 ) -> Option<(u64, Vec<BodyId>)> {
-    let definition = *pds.get(&record.parameter(0)?.reference()?)?;
-    let product = *definitions.get(&definition)?;
-    let representation = record.parameter(1)?.reference()?;
-    let bodies = representation_bodies(
+    let definition = *pds.get(
+        &named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0)
+            .and_then(ValueExt::reference)?,
+    )?;
+    definitions.get(&definition)?;
+    let representation = named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 1)
+        .and_then(ValueExt::reference)?;
+    let bodies = super::topology::representation_bodies(
         representation,
         exchange,
         topology,
@@ -503,76 +630,32 @@ fn shape_binding(
         &mut BTreeSet::new(),
         0,
     );
-    Some((product, bodies))
+    Some((definition, bodies))
 }
 
-fn representation_bodies(
-    representation: u64,
+fn definition_representations(
     exchange: &Exchange,
-    topology: &TopologyResult,
-    cache: &mut BTreeMap<u64, Vec<BodyId>>,
-    active: &mut BTreeSet<u64>,
-    depth: usize,
-) -> Vec<BodyId> {
-    if let Some(bodies) = cache.get(&representation) {
-        return bodies.clone();
-    }
-    if depth >= 256 {
-        return Vec::new();
-    }
-    if let Some(bodies) = topology.body_by_root.get(&representation) {
-        let bodies = bodies.clone();
-        cache.insert(representation, bodies.clone());
-        return bodies;
-    }
-    if !active.insert(representation) {
-        return Vec::new();
-    }
-    let bodies = exchange
-        .records
-        .get(&representation)
-        .and_then(|record| record.parameter(1))
-        .and_then(ValueExt::list)
-        .into_iter()
-        .flatten()
-        .filter_map(ValueExt::reference)
-        .flat_map(|item| {
-            let Some(record) = exchange.records.get(&item) else {
-                return Vec::new();
-            };
-            if super::topology::is_body_representation(record) {
-                return topology
-                    .body_by_root
-                    .get(&item)
-                    .cloned()
-                    .unwrap_or_default();
-            }
-            if record.simple_name() == Some("MAPPED_ITEM") {
-                let mapped_representation = record
-                    .parameter(1)
-                    .and_then(ValueExt::reference)
-                    .and_then(|map| exchange.records.get(&map))
-                    .and_then(|map| map.parameter(1))
-                    .and_then(ValueExt::reference);
-                if let Some(mapped_representation) = mapped_representation {
-                    return representation_bodies(
-                        mapped_representation,
-                        exchange,
-                        topology,
-                        cache,
-                        active,
-                        depth + 1,
-                    );
-                }
-            }
-            Vec::new()
+    pds: &BTreeMap<u64, u64>,
+) -> BTreeMap<u64, BTreeSet<u64>> {
+    exchange
+        .entities("SHAPE_DEFINITION_REPRESENTATION")
+        .filter_map(|(_, record)| {
+            let shape = named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0)
+                .and_then(ValueExt::reference)?;
+            let definition = *pds.get(&shape)?;
+            Some((
+                definition,
+                named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 1)
+                    .and_then(ValueExt::reference)?,
+            ))
         })
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    active.remove(&representation);
-    cache.insert(representation, bodies.clone());
-    bodies
+        .fold(
+            BTreeMap::<u64, BTreeSet<u64>>::new(),
+            |mut result, (definition, representation)| {
+                result.entry(definition).or_default().insert(representation);
+                result
+            },
+        )
 }
 
 fn occurrence_placements(
@@ -585,67 +668,103 @@ fn occurrence_placements(
         .records
         .iter()
         .filter_map(|(&id, record)| {
-            if record.simple_name() != Some("PRODUCT_DEFINITION_SHAPE") {
-                return None;
-            }
-            Some((id, record.parameter(2)?.reference()?))
+            Some((
+                id,
+                named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2)
+                    .and_then(ValueExt::reference)?,
+            ))
         })
         .collect::<BTreeMap<_, _>>();
+    let definition_representations = definition_representations(exchange, &pds);
+    let representation_links = representation_links(exchange);
     let mut result = BTreeMap::new();
     for (_, record) in exchange.entities("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION") {
-        if let Some((usage, transform)) = occurrence_placement(record, exchange, geometry, &pds) {
+        if let Some((usage, transform)) = occurrence_placement(
+            record,
+            exchange,
+            geometry,
+            &pds,
+            usages,
+            &definition_representations,
+            &representation_links,
+        ) {
             if usages.contains_key(&usage) {
                 result.insert(usage, transform);
             }
         }
     }
-    let definition_representations = exchange
+    let occurrence_representations = exchange
         .entities("SHAPE_DEFINITION_REPRESENTATION")
         .filter_map(|(_, record)| {
-            let shape = record.parameter(0)?.reference()?;
-            let definition = *pds.get(&shape)?;
-            Some((definition, record.parameter(1)?.reference()?))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let representation_maps = exchange
-        .entities("REPRESENTATION_MAP")
-        .filter_map(|(id, record)| {
-            (record.simple_name() == Some("REPRESENTATION_MAP")).then_some((
-                id,
-                (
-                    record.parameter(0)?.reference()?,
-                    record.parameter(1)?.reference()?,
-                ),
+            let shape = named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0)
+                .and_then(ValueExt::reference)?;
+            let usage = *pds.get(&shape)?;
+            usages.contains_key(&usage).then_some((
+                usage,
+                named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 1)
+                    .and_then(ValueExt::reference)?,
             ))
         })
-        .collect::<BTreeMap<_, _>>();
-    let mut placements_by_representation = BTreeMap::<u64, Vec<Transform>>::new();
-    for (_, record) in exchange.entities("MAPPED_ITEM") {
-        let Some((origin, mapped_representation)) = record
-            .parameter(1)
-            .and_then(ValueExt::reference)
-            .and_then(|map| representation_maps.get(&map).copied())
+        .fold(
+            BTreeMap::<u64, Vec<u64>>::new(),
+            |mut result, (usage, representation)| {
+                result.entry(usage).or_default().push(representation);
+                result
+            },
+        );
+    for (&usage_id, representations) in &occurrence_representations {
+        if result.contains_key(&usage_id) {
+            continue;
+        }
+        let Some(usage) = usages.get(&usage_id) else {
+            continue;
+        };
+        let Some(child_representations) = definition_representations.get(&usage.child_definition)
         else {
             continue;
         };
-        let Some(transform) =
-            record
-                .parameter(2)
-                .and_then(ValueExt::reference)
-                .and_then(|target| {
-                    Some(between(
-                        *geometry.placements.get(&origin)?,
-                        *geometry.placements.get(&target)?,
-                    ))
-                })
-        else {
-            continue;
-        };
-        placements_by_representation
-            .entry(mapped_representation)
-            .or_default()
-            .push(transform);
+        let mut candidates = Vec::new();
+        for &representation in representations {
+            let Some(record) = exchange.records.get(&representation) else {
+                continue;
+            };
+            let Some(items) = representation_items(record) else {
+                continue;
+            };
+            for item_id in items {
+                let Some(item) = exchange.records.get(&item_id) else {
+                    continue;
+                };
+                if item.partial("MAPPED_ITEM").is_none() {
+                    continue;
+                }
+                let Some((mapped_representation, transform)) =
+                    mapped_item_placement(item, exchange, geometry)
+                else {
+                    continue;
+                };
+                if child_representations.contains(&mapped_representation) {
+                    candidates.push(transform);
+                }
+            }
+        }
+        match candidates.as_slice() {
+            [transform] => {
+                result.insert(usage_id, *transform);
+            }
+            [] => {}
+            _ => warnings.push(format!(
+                "NAUO #{usage_id} has an ambiguous occurrence shape placement"
+            )),
+        }
     }
+    infer_parent_representation_placements(
+        exchange,
+        geometry,
+        usages,
+        &definition_representations,
+        &mut result,
+    );
     let mut usage_counts = BTreeMap::<u64, usize>::new();
     for usage in usages.values() {
         *usage_counts.entry(usage.child_definition).or_default() += 1;
@@ -654,14 +773,41 @@ fn occurrence_placements(
         if result.contains_key(&usage_id) {
             continue;
         }
-        let Some(&child_representation) = definition_representations.get(&usage.child_definition)
+        let Some(child_representations) = definition_representations.get(&usage.child_definition)
         else {
             continue;
         };
-        let placements = placements_by_representation
-            .get(&child_representation)
-            .map(Vec::as_slice)
-            .unwrap_or_default();
+        let Some(parent_representations) = definition_representations.get(&usage.parent_definition)
+        else {
+            continue;
+        };
+        let mut placements = Vec::new();
+        for &parent_representation in parent_representations {
+            let Some(record) = exchange.records.get(&parent_representation) else {
+                continue;
+            };
+            let Some(items) = representation_items(record) else {
+                continue;
+            };
+            for item_id in items {
+                let Some(item) = exchange.records.get(&item_id) else {
+                    continue;
+                };
+                if item.partial("MAPPED_ITEM").is_none() {
+                    continue;
+                }
+                let Some((mapped_representation, transform)) =
+                    mapped_item_placement(item, exchange, geometry)
+                else {
+                    continue;
+                };
+                if child_representations.contains(&mapped_representation)
+                    && !placements.contains(&transform)
+                {
+                    placements.push(transform);
+                }
+            }
+        }
         let matching_usages = usage_counts[&usage.child_definition];
         if matching_usages == 1 && placements.len() == 1 {
             result.insert(usage_id, placements[0]);
@@ -674,52 +820,289 @@ fn occurrence_placements(
     result
 }
 
+fn infer_parent_representation_placements(
+    exchange: &Exchange,
+    geometry: &GeometryResult,
+    usages: &BTreeMap<u64, Usage>,
+    definition_representations: &BTreeMap<u64, BTreeSet<u64>>,
+    result: &mut BTreeMap<u64, Transform>,
+) {
+    // A parent representation can carry occurrence mappings without an
+    // occurrence-owned shape representation. Use that ordering only when
+    // the complete mapped-child sequence agrees with the usage sequence.
+    let mut definitions_by_representation = BTreeMap::<u64, Vec<u64>>::new();
+    for (&definition, representations) in definition_representations {
+        for &representation in representations {
+            definitions_by_representation
+                .entry(representation)
+                .or_default()
+                .push(definition);
+        }
+    }
+
+    let mut parent_definitions = usages
+        .values()
+        .map(|usage| usage.parent_definition)
+        .collect::<Vec<_>>();
+    parent_definitions.sort_unstable();
+    parent_definitions.dedup();
+
+    for parent_definition in parent_definitions {
+        let mut parent_usages = usages
+            .iter()
+            .filter(|(_, usage)| usage.parent_definition == parent_definition)
+            .collect::<Vec<_>>();
+        parent_usages.sort_by_key(|(id, _)| {
+            exchange
+                .records
+                .get(id)
+                .map_or(usize::MAX, |record| record.span.start)
+        });
+
+        let mut child_definitions = BTreeSet::new();
+        if parent_usages
+            .iter()
+            .any(|(_, usage)| !child_definitions.insert(usage.child_definition))
+        {
+            // Representation item order does not bind repeated uses of one
+            // child definition. Such uses require occurrence-owned shape
+            // representations or an explicit context-dependent placement.
+            continue;
+        }
+
+        let Some(parent_representations) = definition_representations.get(&parent_definition)
+        else {
+            continue;
+        };
+        let mut parent_representations = parent_representations.iter().copied().collect::<Vec<_>>();
+        parent_representations.sort_by_key(|representation| {
+            exchange
+                .records
+                .get(representation)
+                .map_or(usize::MAX, |record| record.span.start)
+        });
+
+        let mut mapped_children = Vec::<(u64, Transform)>::new();
+        for representation in parent_representations {
+            let Some(record) = exchange.records.get(&representation) else {
+                continue;
+            };
+            let Some(items) = representation_items(record) else {
+                continue;
+            };
+            for item_id in items {
+                let Some(item) = exchange.records.get(&item_id) else {
+                    continue;
+                };
+                if item.partial("MAPPED_ITEM").is_none() {
+                    continue;
+                }
+                let Some((mapped_representation, transform)) =
+                    mapped_item_placement(item, exchange, geometry)
+                else {
+                    continue;
+                };
+                let Some(definitions) = definitions_by_representation.get(&mapped_representation)
+                else {
+                    continue;
+                };
+                let [child_definition] = definitions.as_slice() else {
+                    continue;
+                };
+                if parent_usages
+                    .iter()
+                    .any(|(_, usage)| usage.child_definition == *child_definition)
+                {
+                    mapped_children.push((*child_definition, transform));
+                }
+            }
+        }
+
+        if mapped_children.len() != parent_usages.len()
+            || parent_usages.iter().zip(&mapped_children).any(
+                |((_, usage), (child_definition, _))| usage.child_definition != *child_definition,
+            )
+        {
+            continue;
+        }
+
+        for ((usage_id, _), (_, transform)) in parent_usages.into_iter().zip(mapped_children) {
+            result.entry(*usage_id).or_insert(transform);
+        }
+    }
+}
+
+fn mapped_item_placement(
+    item: &RawRecord,
+    exchange: &Exchange,
+    geometry: &GeometryResult,
+) -> Option<(u64, Transform)> {
+    let (representation, origin, target) = mapped_item_definition(item, exchange)?;
+    Some((
+        representation,
+        mapped_item_transform(origin, target, geometry)?,
+    ))
+}
+
+fn mapped_item_transform(origin: u64, target: u64, geometry: &GeometryResult) -> Option<Transform> {
+    let from = transformation_item(origin, geometry)?;
+    let to = transformation_item(target, geometry)?;
+    Some(to.compose(from.try_inverse_affine()?))
+}
+
+fn is_two_dimensional_mapping(origin: u64, target: u64, exchange: &Exchange) -> bool {
+    [origin, target].into_iter().all(|id| {
+        exchange.records.get(&id).is_some_and(|record| {
+            record.partial("AXIS2_PLACEMENT_2D").is_some()
+                || record
+                    .partial("CARTESIAN_TRANSFORMATION_OPERATOR_2D")
+                    .is_some()
+        })
+    })
+}
+
+fn mapped_item_definition(item: &RawRecord, exchange: &Exchange) -> Option<(u64, u64, u64)> {
+    let map = named_parameter(item, "MAPPED_ITEM", 1)
+        .and_then(ValueExt::reference)
+        .and_then(|map| exchange.records.get(&map))?;
+    let origin = named_parameter(map, "REPRESENTATION_MAP", 0).and_then(ValueExt::reference)?;
+    let representation =
+        named_parameter(map, "REPRESENTATION_MAP", 1).and_then(ValueExt::reference)?;
+    let target = named_parameter(item, "MAPPED_ITEM", 2).and_then(ValueExt::reference)?;
+    Some((representation, origin, target))
+}
+
 fn occurrence_placement(
     record: &RawRecord,
     exchange: &Exchange,
     geometry: &GeometryResult,
     pds: &BTreeMap<u64, u64>,
+    usages: &BTreeMap<u64, Usage>,
+    definition_representations: &BTreeMap<u64, BTreeSet<u64>>,
+    representation_links: &BTreeMap<u64, BTreeSet<u64>>,
 ) -> Option<(u64, Transform)> {
-    let relation = exchange.records.get(&record.parameter(0)?.reference()?)?;
-    let usage = *pds.get(&record.parameter(1)?.reference()?)?;
+    let relation = exchange.records.get(
+        &named_parameter(record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 0)
+            .and_then(ValueExt::reference)?,
+    )?;
+    let usage = *pds.get(
+        &named_parameter(record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 1)
+            .and_then(ValueExt::reference)?,
+    )?;
+    let usage_data = usages.get(&usage)?;
+    let child_representations = definition_representations.get(&usage_data.child_definition)?;
+    let parent_representations = definition_representations.get(&usage_data.parent_definition)?;
+    let relation_representations = representation_relationship_endpoints(relation)?;
     let transform_id = relation
         .partial("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")?
         .parameters
         .first()?
         .reference()?;
     let transform = exchange.records.get(&transform_id)?;
-    let from = geometry
-        .placements
-        .get(&transform.parameter(2)?.reference()?)?;
-    let to = geometry
-        .placements
-        .get(&transform.parameter(3)?.reference()?)?;
-    Some((usage, between(*from, *to)))
+    let item_one = named_parameter(transform, "ITEM_DEFINED_TRANSFORMATION", 2)
+        .and_then(ValueExt::reference)?;
+    let item_two = named_parameter(transform, "ITEM_DEFINED_TRANSFORMATION", 3)
+        .and_then(ValueExt::reference)?;
+    let child_to_parent = representation_matches(
+        relation_representations.0,
+        child_representations,
+        representation_links,
+    ) && representation_matches(
+        relation_representations.1,
+        parent_representations,
+        representation_links,
+    );
+    let parent_to_child = representation_matches(
+        relation_representations.0,
+        parent_representations,
+        representation_links,
+    ) && representation_matches(
+        relation_representations.1,
+        child_representations,
+        representation_links,
+    );
+    let (from_id, to_id) = match (child_to_parent, parent_to_child) {
+        (true, false) => (item_one, item_two),
+        (false, true) => (item_two, item_one),
+        _ => return None,
+    };
+    let from = transformation_item(from_id, geometry)?;
+    let to = transformation_item(to_id, geometry)?;
+    Some((usage, to.compose(from.try_inverse_affine()?)))
 }
 
-fn between(from: (Point3, Vector3, Vector3), to: (Point3, Vector3, Vector3)) -> Transform {
-    let from_basis = basis(from.1, from.2);
-    let to_basis = basis(to.1, to.2);
-    let mut rotation = [[0.0; 3]; 3];
-    for row in 0..3 {
-        for column in 0..3 {
-            rotation[row][column] = (0..3)
-                .map(|axis| to_basis[row][axis] * from_basis[column][axis])
-                .sum();
+fn transformation_item(id: u64, geometry: &GeometryResult) -> Option<Transform> {
+    geometry
+        .placements
+        .get(&id)
+        .copied()
+        .map(placement_transform)
+        .or_else(|| geometry.transformation_operators.get(&id).copied())
+}
+
+fn representation_links(exchange: &Exchange) -> BTreeMap<u64, BTreeSet<u64>> {
+    let mut links = BTreeMap::<u64, BTreeSet<u64>>::new();
+    for record in exchange.records.values() {
+        let Some(relationship) = record.partial("SHAPE_REPRESENTATION_RELATIONSHIP") else {
+            continue;
+        };
+        if relationship.parameters.is_empty() {
+            continue;
+        }
+        let Some((left, right)) = representation_relationship_endpoints(record) else {
+            continue;
+        };
+        links.entry(left).or_default().insert(right);
+        links.entry(right).or_default().insert(left);
+    }
+    links
+}
+
+fn representation_matches(
+    candidate: u64,
+    definitions: &BTreeSet<u64>,
+    links: &BTreeMap<u64, BTreeSet<u64>>,
+) -> bool {
+    if definitions.contains(&candidate) {
+        return true;
+    }
+    let mut pending = VecDeque::from([candidate]);
+    let mut visited = BTreeSet::from([candidate]);
+    while let Some(current) = pending.pop_front() {
+        for &linked in links.get(&current).into_iter().flatten() {
+            if definitions.contains(&linked) {
+                return true;
+            }
+            if visited.insert(linked) {
+                pending.push_back(linked);
+            }
         }
     }
-    let source = [from.0.x, from.0.y, from.0.z];
-    let target = [to.0.x, to.0.y, to.0.z];
+    false
+}
+
+fn representation_relationship_endpoints(record: &RawRecord) -> Option<(u64, u64)> {
+    let relationship = record
+        .partial("REPRESENTATION_RELATIONSHIP")
+        .or_else(|| record.partial("SHAPE_REPRESENTATION_RELATIONSHIP"))?;
+    let mut references = relationship
+        .parameters
+        .iter()
+        .filter_map(ValueExt::reference);
+    Some((references.next()?, references.next()?))
+}
+
+fn placement_transform((origin, z_axis, x_axis): (Point3, Vector3, Vector3)) -> Transform {
+    let placement_basis = basis(z_axis, x_axis);
     let mut rows = Transform::identity().rows;
     for row in 0..3 {
         for column in 0..3 {
-            rows[row][column] = rotation[row][column];
+            rows[row][column] = placement_basis[row][column];
         }
-        rows[row][3] = target[row]
-            - (0..3)
-                .map(|column| rotation[row][column] * source[column])
-                .sum::<f64>();
     }
+    rows[0][3] = origin.x;
+    rows[1][3] = origin.y;
+    rows[2][3] = origin.z;
     Transform { rows }
 }
 fn basis(z: Vector3, x: Vector3) -> [[f64; 3]; 3] {
@@ -734,10 +1117,65 @@ fn product_ir_id(id: u64) -> ProductDefinitionId {
     ProductDefinitionId(format!("step:product:product#{id}"))
 }
 
+fn product_definition_ir_id(
+    product: u64,
+    definition: u64,
+    definition_count: usize,
+) -> ProductDefinitionId {
+    if definition_count == 1 {
+        product_ir_id(product)
+    } else {
+        ProductDefinitionId(format!(
+            "step:product:product#{product}-definition-{definition}"
+        ))
+    }
+}
+
+fn product_definition_formation_parameters(record: &RawRecord) -> Option<&[Value]> {
+    if let Some(partial) = record.partial("PRODUCT_DEFINITION_FORMATION") {
+        return Some(partial.parameters.as_slice());
+    }
+    match record.simple_name() {
+        Some("PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE" | "FINAL_SOLUTION") => record
+            .partials
+            .first()
+            .map(|partial| partial.parameters.as_slice()),
+        _ => None,
+    }
+}
+
+fn product_definition_parameters(record: &RawRecord) -> Option<&[Value]> {
+    if let Some(partial) = record.partial("PRODUCT_DEFINITION") {
+        return Some(partial.parameters.as_slice());
+    }
+    match record.simple_name() {
+        Some("PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS") => record
+            .partials
+            .first()
+            .map(|partial| partial.parameters.as_slice()),
+        _ => None,
+    }
+}
+
+fn named_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Option<&'a Value> {
+    record.partial(name)?.parameters.get(index)
+}
+
+fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
+    record
+        .partials
+        .iter()
+        .find(|partial| {
+            partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION")
+        })
+        .and_then(|partial| partial.parameters.get(1))
+        .and_then(ValueExt::list)
+        .map(|items| items.iter().filter_map(ValueExt::reference).collect())
+}
+
 trait RecordExt {
     fn simple_name(&self) -> Option<&str>;
     fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord>;
-    fn parameter(&self, index: usize) -> Option<&Value>;
 }
 impl RecordExt for RawRecord {
     fn simple_name(&self) -> Option<&str> {
@@ -745,9 +1183,6 @@ impl RecordExt for RawRecord {
     }
     fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord> {
         self.partials.iter().find(|partial| partial.name == name)
-    }
-    fn parameter(&self, index: usize) -> Option<&Value> {
-        self.partials.first()?.parameters.get(index)
     }
 }
 trait ValueExt {

@@ -23653,7 +23653,8 @@
             "parameter_range": [
               0.8486674734866845,
               10.88686584892016
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:13%3A2%3A1",
           "parameter_range": [
@@ -23678,7 +23679,8 @@
             "parameter_range": [
               0.8486674734866845,
               10.88686584892016
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:13%3A3%3A1",
           "parameter_range": [
@@ -23703,7 +23705,8 @@
             "parameter_range": [
               0.0,
               15.0
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:15%3A2%3A1",
           "parameter_range": [
@@ -23728,7 +23731,8 @@
             "parameter_range": [
               0.0,
               15.0
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:15%3A3%3A1",
           "parameter_range": [
@@ -23753,7 +23757,8 @@
             "parameter_range": [
               0.8486674734866845,
               10.88686584892016
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:17%3A2%3A1",
           "parameter_range": [
@@ -23778,7 +23783,8 @@
             "parameter_range": [
               0.8486674734866845,
               10.88686584892016
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:17%3A3%3A1",
           "parameter_range": [
@@ -23803,7 +23809,8 @@
             "parameter_range": [
               0.0,
               15.0
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:18%3A2%3A1",
           "parameter_range": [
@@ -23828,7 +23835,8 @@
             "parameter_range": [
               0.0,
               15.0
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:18%3A3%3A1",
           "parameter_range": [
@@ -23889,7 +23897,8 @@
             "parameter_range": [
               -0.5249319811555448,
               20.524931981155543
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:22%3A2%3A1",
           "parameter_range": [
@@ -23914,7 +23923,8 @@
             "parameter_range": [
               -0.5249319811555448,
               20.524931981155543
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:22%3A3%3A1",
           "parameter_range": [
@@ -23975,7 +23985,8 @@
             "parameter_range": [
               -0.5249319811555448,
               20.524931981155547
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:26%3A2%3A1",
           "parameter_range": [
@@ -24000,7 +24011,8 @@
             "parameter_range": [
               -0.5249319811555448,
               20.524931981155547
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:26%3A3%3A1",
           "parameter_range": [
@@ -24025,7 +24037,8 @@
             "parameter_range": [
               -0.02288995398989851,
               10.015308421443576
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:3%3A2%3A1",
           "parameter_range": [
@@ -24050,7 +24063,8 @@
             "parameter_range": [
               -0.02288995398989851,
               10.015308421443576
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:3%3A3%3A1",
           "parameter_range": [
@@ -24075,7 +24089,8 @@
             "parameter_range": [
               0.0,
               15.0
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:5%3A2%3A1",
           "parameter_range": [
@@ -24100,7 +24115,8 @@
             "parameter_range": [
               0.0,
               15.0
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:5%3A3%3A1",
           "parameter_range": [
@@ -24125,7 +24141,8 @@
             "parameter_range": [
               -0.02288995398989851,
               10.015308421443576
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:7%3A2%3A1",
           "parameter_range": [
@@ -24150,7 +24167,8 @@
             "parameter_range": [
               -0.02288995398989851,
               10.015308421443576
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:7%3A3%3A1",
           "parameter_range": [
@@ -24175,7 +24193,8 @@
             "parameter_range": [
               0.0,
               15.0
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:8%3A2%3A1",
           "parameter_range": [
@@ -24200,7 +24219,8 @@
             "parameter_range": [
               0.0,
               15.0
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Draft:Shape:Draft.Shape.brp:8%3A3%3A1",
           "parameter_range": [
@@ -29104,7 +29124,8 @@
             "parameter_range": [
               0.0,
               10.0
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Sweep:Shape:Sweep.Shape.brp:3%3A2%3A1",
           "parameter_range": [
@@ -29183,7 +29204,8 @@
             "parameter_range": [
               0.0,
               6.283185307179586
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Sweep:Shape:Sweep.Shape.brp:5%3A3%3A1",
           "parameter_range": [
@@ -29208,7 +29230,8 @@
             "parameter_range": [
               0.0,
               11.313708498984761
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Sweep:Shape:Sweep.Shape.brp:9%3A2%3A1",
           "parameter_range": [
@@ -29759,7 +29782,8 @@
             "parameter_range": [
               -14.125,
               -0.625
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Thickness:Shape:Thickness.Shape.brp:24%3A2%3A1",
           "parameter_range": [
@@ -29784,7 +29808,8 @@
             "parameter_range": [
               -14.125,
               -0.625
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Thickness:Shape:Thickness.Shape.brp:24%3A3%3A1",
           "parameter_range": [
@@ -29809,7 +29834,8 @@
             "parameter_range": [
               0.625,
               12.125
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Thickness:Shape:Thickness.Shape.brp:26%3A2%3A1",
           "parameter_range": [
@@ -29834,7 +29860,8 @@
             "parameter_range": [
               0.625,
               12.125
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Thickness:Shape:Thickness.Shape.brp:26%3A3%3A1",
           "parameter_range": [
@@ -29859,7 +29886,8 @@
             "parameter_range": [
               -14.125,
               -0.625
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Thickness:Shape:Thickness.Shape.brp:28%3A2%3A1",
           "parameter_range": [
@@ -29884,7 +29912,8 @@
             "parameter_range": [
               -14.125,
               -0.625
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Thickness:Shape:Thickness.Shape.brp:28%3A3%3A1",
           "parameter_range": [
@@ -29909,7 +29938,8 @@
             "parameter_range": [
               0.625,
               12.125
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Thickness:Shape:Thickness.Shape.brp:29%3A2%3A1",
           "parameter_range": [
@@ -29934,7 +29964,8 @@
             "parameter_range": [
               0.625,
               12.125
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Thickness:Shape:Thickness.Shape.brp:29%3A3%3A1",
           "parameter_range": [
@@ -33221,6 +33252,7 @@
               -1.1147408034263075,
               1.800735143996343
             ],
+            "sense": true,
             "source": "fcstd:model:curve#PartChamfer:Shape:PartChamfer.Shape.brp:5:basis"
           },
           "id": "fcstd:model:curve#PartChamfer:Shape:PartChamfer.Shape.brp:5:construction"
@@ -33233,6 +33265,7 @@
               -1.1147408034263075,
               1.800735143996343
             ],
+            "sense": true,
             "source": "fcstd:model:curve#PartChamfer:Shape:PartChamfer.Shape.brp:9:basis"
           },
           "id": "fcstd:model:curve#PartChamfer:Shape:PartChamfer.Shape.brp:9:construction"
@@ -33245,6 +33278,7 @@
               4.71238898038469,
               6.283185307179586
             ],
+            "sense": true,
             "source": "fcstd:model:curve#PartFillet:Shape:PartFillet.Shape.brp:5:basis"
           },
           "id": "fcstd:model:curve#PartFillet:Shape:PartFillet.Shape.brp:5:construction"
@@ -33257,6 +33291,7 @@
               4.71238898038469,
               6.283185307179586
             ],
+            "sense": true,
             "source": "fcstd:model:curve#PartFillet:Shape:PartFillet.Shape.brp:9:basis"
           },
           "id": "fcstd:model:curve#PartFillet:Shape:PartFillet.Shape.brp:9:construction"

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP semantic product-manufacturing information.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PmiId;
@@ -18,7 +18,7 @@ use super::decode_text;
 use super::geometry::GeometryResult;
 
 pub(super) struct PmiResult {
-    pub typed_records: BTreeSet<u64>,
+    pub typed_records: HashSet<u64>,
     pub warnings: Vec<String>,
     pub losses: Vec<LossNote>,
 }
@@ -32,7 +32,7 @@ struct MeasureContext<'a> {
 pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut CadIr) -> PmiResult {
     if !exchange.has_entity_matching(is_pmi_entity_name) {
         return PmiResult {
-            typed_records: BTreeSet::new(),
+            typed_records: HashSet::new(),
             warnings: Vec::new(),
             losses: Vec::new(),
         };
@@ -42,27 +42,18 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         .filter(|(_, record)| is_shape_aspect(record))
         .map(|(id, _)| id)
         .collect::<BTreeSet<_>>();
-    let mut typed = BTreeSet::new();
+    let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
     let mut annotations = BTreeMap::<u64, usize>::new();
 
     let mut presentation_semantics = BTreeMap::<u64, Vec<u64>>::new();
-    let characteristic_values = {
-        let mut measurements = MeasureContext {
-            length_scale: geometry.length_scale,
-            angle_scale: geometry.plane_angle_scale,
-            losses: &mut losses,
-        };
-        characteristic_values(exchange, &mut measurements)
-    };
+    let characteristic_values = characteristic_values(exchange, geometry, &mut losses);
     for (id, record) in exchange.entities("DATUM") {
-        let identification = record
-            .parameters()
-            .iter()
-            .rev()
-            .find_map(|value| {
+        let identification = named_parameter(record, "DATUM", 0)
+            .and_then(|value| {
                 decode_text(
+                    exchange,
                     value,
                     &mut losses,
                     id,
@@ -75,8 +66,9 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             ir,
             &mut annotations,
             id,
-            record.parameter(0).and_then(|value| {
+            shape_aspect_parameter(record, 0).and_then(|value| {
                 decode_text(
+                    exchange,
                     value,
                     &mut losses,
                     id,
@@ -97,12 +89,8 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             .rev()
             .find_map(ValueExt::list)
             .unwrap_or_default();
-        let mut datum_records = BTreeSet::new();
-        let mut measurements = MeasureContext {
-            length_scale: geometry.length_scale,
-            angle_scale: geometry.plane_angle_scale,
-            losses: &mut losses,
-        };
+        let mut datum_records = HashSet::new();
+        let mut measurements = measure_context(geometry, id, &mut losses);
         let datum_references = constituents
             .iter()
             .enumerate()
@@ -123,8 +111,9 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             ir,
             &mut annotations,
             id,
-            record.parameter(0).and_then(|value| {
+            shape_aspect_parameter(record, 0).and_then(|value| {
                 decode_text(
+                    exchange,
                     value,
                     &mut losses,
                     id,
@@ -151,32 +140,41 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         let Some(record) = exchange.records.get(&id) else {
             continue;
         };
-        let Some(mut kind) = dimension_kind(record.simple_name()) else {
+        let Some((dimension_name, mut kind)) = dimension_descriptor(record) else {
             continue;
         };
-        let name = record.parameters().iter().find_map(|value| {
-            decode_text(
-                value,
-                &mut losses,
-                id,
-                "dimension name",
-                LossKind::MetadataNotTransferred,
-            )
-        });
+        let name = record
+            .partials
+            .iter()
+            .flat_map(|partial| &partial.parameters)
+            .find_map(|value| {
+                decode_text(
+                    exchange,
+                    value,
+                    &mut losses,
+                    id,
+                    "dimension name",
+                    LossKind::MetadataNotTransferred,
+                )
+            });
         if matches!(kind, DimensionKind::Size) {
-            let category = if record
-                .simple_name()
-                .is_some_and(|name| name.starts_with("DIMENSIONAL_SIZE_WITH_DATUM_FEATURE"))
-            {
-                record.parameters().iter().rev().find_map(|value| {
-                    decode_text(
-                        value,
-                        &mut losses,
-                        id,
-                        "dimension category",
-                        LossKind::MetadataNotTransferred,
-                    )
-                })
+            let category = if dimension_name.starts_with("DIMENSIONAL_SIZE_WITH_DATUM_FEATURE") {
+                record
+                    .partials
+                    .iter()
+                    .find(|partial| partial.name == dimension_name)
+                    .into_iter()
+                    .flat_map(|partial| partial.parameters.iter().rev())
+                    .find_map(|value| {
+                        decode_text(
+                            exchange,
+                            value,
+                            &mut losses,
+                            id,
+                            "dimension category",
+                            LossKind::MetadataNotTransferred,
+                        )
+                    })
             } else {
                 name.clone()
             };
@@ -186,13 +184,11 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                 _ => kind,
             };
         }
-        let nominal = characteristic_values
-            .get(&id)
-            .and_then(|values| values.first())
-            .copied();
+        let nominal = characteristic_values.get(&id).copied();
         let aspect_ids = record
-            .parameters()
+            .partials
             .iter()
+            .flat_map(|partial| &partial.parameters)
             .flat_map(references)
             .filter(|reference| aspects.contains(reference));
         push_annotation(
@@ -237,6 +233,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                             .parameter(0)
                             .and_then(|value| {
                                 decode_text(
+                                    exchange,
                                     value,
                                     &mut losses,
                                     *reference,
@@ -249,6 +246,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                             .parameter(1)
                             .and_then(|value| {
                                 decode_text(
+                                    exchange,
                                     value,
                                     &mut losses,
                                     *reference,
@@ -261,6 +259,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                             .parameter(2)
                             .and_then(|value| {
                                 decode_text(
+                                    exchange,
                                     value,
                                     &mut losses,
                                     *reference,
@@ -273,6 +272,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                             .parameter(3)
                             .and_then(|value| {
                                 decode_text(
+                                    exchange,
                                     value,
                                     &mut losses,
                                     *reference,
@@ -286,11 +286,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             })
         });
         if let (Some(index), Some(limits)) = (dimension, limits) {
-            let mut measurements = MeasureContext {
-                length_scale: geometry.length_scale,
-                angle_scale: geometry.plane_angle_scale,
-                losses: &mut losses,
-            };
+            let mut measurements = measure_context(geometry, id, &mut losses);
             let lower = limits
                 .parameters()
                 .first()
@@ -332,24 +328,56 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         let Some(tolerance) = record
             .partials
             .iter()
-            .find_map(|partial| tolerance_kind(Some(&partial.name)))
+            .find_map(|partial| {
+                (partial.name != "GEOMETRIC_TOLERANCE")
+                    .then(|| tolerance_kind(Some(&partial.name)))
+                    .flatten()
+            })
+            .or_else(|| {
+                record
+                    .partials
+                    .iter()
+                    .find_map(|partial| tolerance_kind(Some(&partial.name)))
+            })
         else {
             continue;
         };
         let refs = record
-            .parameters()
+            .partials
             .iter()
-            .flat_map(references)
-            .collect::<Vec<_>>();
-        let mut measurements = MeasureContext {
-            length_scale: geometry.length_scale,
-            angle_scale: geometry.plane_angle_scale,
-            losses: &mut losses,
-        };
+            .find(|partial| partial.name == "GEOMETRIC_TOLERANCE")
+            .map_or_else(
+                || {
+                    record
+                        .parameters()
+                        .iter()
+                        .flat_map(references)
+                        .collect::<Vec<_>>()
+                },
+                |partial| {
+                    partial
+                        .parameters
+                        .iter()
+                        .flat_map(references)
+                        .collect::<Vec<_>>()
+                },
+            );
+        let mut measurements = measure_context(geometry, id, &mut losses);
         let magnitude = record
-            .parameters()
+            .partials
             .iter()
-            .find_map(|value| measure(value, exchange, &mut measurements));
+            .find(|partial| partial.name == "GEOMETRIC_TOLERANCE")
+            .into_iter()
+            .flat_map(|partial| partial.parameters.iter())
+            .find_map(|value| measure(value, exchange, &mut measurements))
+            .or_else(|| {
+                record
+                    .partials
+                    .iter()
+                    .filter(|partial| partial.name != "GEOMETRIC_TOLERANCE")
+                    .flat_map(|partial| partial.parameters.iter())
+                    .find_map(|value| measure(value, exchange, &mut measurements))
+            });
         let Some(magnitude) = magnitude else {
             warnings.push(format!(
                 "{} #{id} has no numeric magnitude",
@@ -357,59 +385,104 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             ));
             continue;
         };
-        // This path decodes simple tolerance entities. Datum references belong
-        // to GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE complex instances; a
-        // surplus reference on a simple entity does not alter its semantics.
-        let has_datum_reference = record
+        let defined_unit = record
             .partials
             .iter()
-            .any(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE");
-        let datum_system = if has_datum_reference {
-            refs.iter().find_map(|id| {
-                let annotation = &ir.model.pmi[*annotations.get(id)?];
+            .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DEFINED_UNIT")
+            .and_then(|partial| partial.parameters.first())
+            .and_then(|value| measure(value, exchange, &mut measurements));
+        let (defined_area_unit, defined_area_second_unit) = record
+            .partials
+            .iter()
+            .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DEFINED_AREA_UNIT")
+            .map_or((None, None), |partial| {
+                (
+                    partial
+                        .parameters
+                        .first()
+                        .and_then(ValueExt::enumeration)
+                        .map(str::to_ascii_lowercase),
+                    partial
+                        .parameters
+                        .get(1)
+                        .and_then(|value| measure(value, exchange, &mut measurements)),
+                )
+            });
+        // A complex tolerance keeps its base targets in GEOMETRIC_TOLERANCE,
+        // while GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE carries the datum
+        // system as a separate aggregate.
+        let datum_system = record
+            .partials
+            .iter()
+            .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE")
+            .into_iter()
+            .flat_map(|partial| partial.parameters.iter())
+            .flat_map(references)
+            .find_map(|id| {
+                let annotation = &ir.model.pmi[*annotations.get(&id)?];
                 matches!(annotation.definition, PmiDefinition::DatumSystem { .. })
                     .then(|| annotation.id.clone())
-            })
-        } else {
-            None
-        };
+            });
         push_annotation(
             ir,
             &mut annotations,
             id,
-            record.parameter(0).and_then(|value| {
-                decode_text(
-                    value,
-                    &mut losses,
-                    id,
-                    "geometric tolerance name",
-                    LossKind::MetadataNotTransferred,
-                )
-            }),
+            named_parameter(record, "GEOMETRIC_TOLERANCE", 0)
+                .or_else(|| record.parameter(0))
+                .and_then(|value| {
+                    decode_text(
+                        exchange,
+                        value,
+                        &mut losses,
+                        id,
+                        "geometric tolerance name",
+                        LossKind::MetadataNotTransferred,
+                    )
+                }),
             targets(refs.iter().copied().filter(|id| aspects.contains(id))),
             PmiDefinition::GeometricTolerance {
                 tolerance,
                 magnitude,
+                defined_unit,
+                defined_area_unit,
+                defined_area_second_unit,
                 datum_system,
+                modifiers: tolerance_modifiers(record),
             },
         );
         typed.insert(id);
         typed.extend(refs.iter().copied().filter(|reference| {
-            exchange.records.get(reference).is_some_and(|candidate| {
-                matches!(
-                    candidate.simple_name(),
-                    Some("LENGTH_MEASURE_WITH_UNIT" | "PLANE_ANGLE_MEASURE_WITH_UNIT")
-                )
-            })
+            exchange
+                .records
+                .get(reference)
+                .is_some_and(is_measure_record)
         }));
+        typed.extend(
+            record
+                .partials
+                .iter()
+                .flat_map(|partial| partial.parameters.iter())
+                .flat_map(references)
+                .filter(|reference| {
+                    exchange
+                        .records
+                        .get(reference)
+                        .is_some_and(is_measure_record)
+                }),
+        );
     }
 
     for (id, record) in exchange.entities("DRAUGHTING_MODEL_ITEM_ASSOCIATION") {
-        let Some(definition) = record.parameter(2).and_then(ValueExt::reference) else {
+        let Some(definition) = named_parameter(record, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 2)
+            .and_then(ValueExt::reference)
+        else {
             continue;
         };
         if annotations.contains_key(&definition) {
-            for item in record.parameter(4).into_iter().flat_map(references) {
+            for item in named_parameter(record, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 4)
+                .into_iter()
+                .flat_map(references)
+            {
                 presentation_semantics
                     .entry(item)
                     .or_default()
@@ -423,26 +496,28 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         let Some(record) = exchange.records.get(&id) else {
             continue;
         };
-        let Some(name) = record.simple_name() else {
+        let Some(name) = presentation_annotation_name(record) else {
             continue;
         };
-        if !is_presentation_annotation(name) {
-            continue;
-        }
         let mut text_records = BTreeSet::new();
-        let text = find_annotation_text(id, exchange, &mut text_records, &mut losses, 0);
-        let mut placement_records = BTreeSet::new();
-        let placement = record
-            .parameters()
+        let text = find_annotation_text(
+            id,
+            exchange,
+            &mut BTreeSet::new(),
+            &mut text_records,
+            &mut losses,
+            0,
+        );
+        let parameters = all_parameters(record).collect::<Vec<_>>();
+        let placement = parameters
             .iter()
-            .flat_map(references)
+            .flat_map(|value| references(value))
             .find_map(|reference| {
-                find_placement(reference, exchange, geometry, &mut placement_records, 0)
+                find_placement(reference, exchange, geometry, &mut BTreeSet::new(), 0)
             });
-        let mut semantics = record
-            .parameters()
+        let mut semantics = parameters
             .iter()
-            .flat_map(references)
+            .flat_map(|value| references(value))
             .filter(|reference| annotations.contains_key(reference))
             .map(pmi_id)
             .collect::<Vec<_>>();
@@ -458,15 +533,19 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             ir,
             &mut annotations,
             id,
-            record.parameter(0).and_then(|value| {
-                decode_text(
-                    value,
-                    &mut losses,
-                    id,
-                    "presentation annotation name",
-                    LossKind::MetadataNotTransferred,
-                )
-            }),
+            named_parameter(record, name, 0)
+                .or_else(|| named_parameter(record, "REPRESENTATION_ITEM", 0))
+                .or_else(|| record.parameter(0))
+                .and_then(|value| {
+                    decode_text(
+                        exchange,
+                        value,
+                        &mut losses,
+                        id,
+                        "presentation annotation name",
+                        LossKind::MetadataNotTransferred,
+                    )
+                }),
             Vec::new(),
             PmiDefinition::Presentation {
                 text,
@@ -476,7 +555,6 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         );
         typed.insert(id);
         typed.extend(text_records);
-        typed.extend(placement_records);
     }
     for (id, _) in
         exchange.entities_any(&["DRAUGHTING_MODEL", "ANNOTATION_PLANE", "DRAUGHTING_CALLOUT"])
@@ -506,13 +584,17 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
 fn mark_characteristic_representations(
     exchange: &Exchange,
     annotations: &BTreeMap<u64, usize>,
-    typed: &mut BTreeSet<u64>,
+    typed: &mut HashSet<u64>,
 ) {
     for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
-        let record_references = record
-            .parameters()
+        let parameters = record
+            .partials
             .iter()
-            .flat_map(references)
+            .flat_map(|partial| &partial.parameters)
+            .collect::<Vec<_>>();
+        let record_references = parameters
+            .iter()
+            .flat_map(|value| references(value))
             .collect::<Vec<_>>();
         if !record_references
             .iter()
@@ -525,27 +607,25 @@ fn mark_characteristic_representations(
             let Some(representation) = exchange.records.get(&representation_id) else {
                 continue;
             };
-            if representation.simple_name() != Some("SHAPE_DIMENSION_REPRESENTATION") {
+            if !representation
+                .partials
+                .iter()
+                .any(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION")
+            {
                 continue;
             }
             typed.insert(representation_id);
             typed.extend(
                 representation
-                    .parameters()
+                    .partials
                     .iter()
+                    .flat_map(|partial| &partial.parameters)
                     .flat_map(references)
                     .filter(|reference| {
-                        exchange.records.get(reference).is_some_and(|record| {
-                            matches!(
-                                record.simple_name(),
-                                Some(
-                                    "LENGTH_MEASURE_WITH_UNIT"
-                                        | "PLANE_ANGLE_MEASURE_WITH_UNIT"
-                                        | "MEASURE_WITH_UNIT"
-                                        | "MEASURE_REPRESENTATION_ITEM"
-                                )
-                            )
-                        })
+                        exchange
+                            .records
+                            .get(reference)
+                            .is_some_and(is_measure_record)
                     }),
             );
         }
@@ -557,7 +637,7 @@ fn datum_references(
     precedence: u32,
     exchange: &Exchange,
     annotations: &BTreeMap<u64, usize>,
-    typed: &mut BTreeSet<u64>,
+    typed: &mut HashSet<u64>,
     measurements: &mut MeasureContext<'_>,
 ) -> Vec<DatumReference> {
     let Some(compartment_id) = value.reference() else {
@@ -566,21 +646,19 @@ fn datum_references(
     let Some(compartment) = exchange.records.get(&compartment_id) else {
         return Vec::new();
     };
-    if !matches!(
-        compartment.simple_name(),
-        Some("DATUM_REFERENCE_COMPARTMENT" | "DATUM_REFERENCE_ELEMENT")
-    ) {
+    if !is_datum_reference_partial(compartment, "DATUM_REFERENCE_COMPARTMENT")
+        && !is_datum_reference_partial(compartment, "DATUM_REFERENCE_ELEMENT")
+    {
         return Vec::new();
     }
     typed.insert(compartment_id);
-    let compartment_modifiers = compartment
-        .parameter(5)
+    let compartment_modifiers = datum_modifiers(compartment)
         .and_then(ValueExt::list)
         .into_iter()
         .flatten()
         .filter_map(|modifier| modifier_text(modifier, exchange, typed, measurements))
         .collect::<Vec<_>>();
-    let base = compartment.parameter(4);
+    let base = datum_base(compartment);
     if is_common_datum_list(base) {
         let Some(Value::Typed(_, members)) = base else {
             return Vec::new();
@@ -596,17 +674,16 @@ fn datum_references(
             .into_iter()
             .filter_map(|element_id| {
                 let element = exchange.records.get(&element_id)?;
-                if element.simple_name() != Some("DATUM_REFERENCE_ELEMENT") {
+                if !is_datum_reference_partial(element, "DATUM_REFERENCE_ELEMENT") {
                     return None;
                 }
-                let datum = element.parameter(4).and_then(ValueExt::reference)?;
+                let datum = datum_base(element).and_then(ValueExt::reference)?;
                 if !annotations.contains_key(&datum) {
                     return None;
                 }
                 let mut modifiers = compartment_modifiers.clone();
                 modifiers.extend(
-                    element
-                        .parameter(5)
+                    datum_modifiers(element)
                         .and_then(ValueExt::list)
                         .into_iter()
                         .flatten()
@@ -639,6 +716,28 @@ fn datum_references(
         .collect()
 }
 
+fn is_datum_reference_partial(record: &RawRecord, name: &str) -> bool {
+    record.partials.iter().any(|partial| partial.name == name)
+}
+
+fn datum_base(record: &RawRecord) -> Option<&Value> {
+    record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "GENERAL_DATUM_REFERENCE")
+        .and_then(|partial| partial.parameters.first())
+        .or_else(|| record.parameter(4))
+}
+
+fn datum_modifiers(record: &RawRecord) -> Option<&Value> {
+    record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "GENERAL_DATUM_REFERENCE")
+        .and_then(|partial| partial.parameters.get(1))
+        .or_else(|| record.parameter(5))
+}
+
 fn is_common_datum_list(value: Option<&Value>) -> bool {
     matches!(value, Some(Value::Typed(kind, _)) if kind == "COMMON_DATUM_LIST")
 }
@@ -657,7 +756,7 @@ fn datum_ids(value: Option<&Value>) -> Vec<u64> {
 fn modifier_text(
     value: &Value,
     exchange: &Exchange,
-    typed: &mut BTreeSet<u64>,
+    typed: &mut HashSet<u64>,
     measurements: &mut MeasureContext<'_>,
 ) -> Option<String> {
     match value {
@@ -665,12 +764,15 @@ fn modifier_text(
         Value::Typed(_, value) => modifier_text(value, exchange, typed, measurements),
         Value::Reference(id) => {
             let record = exchange.records.get(id)?;
-            if record.simple_name() != Some("DATUM_REFERENCE_MODIFIER_WITH_VALUE") {
-                return None;
-            }
+            let parameters = record
+                .partials
+                .iter()
+                .find(|partial| partial.name == "DATUM_REFERENCE_MODIFIER_WITH_VALUE")?
+                .parameters
+                .as_slice();
             typed.insert(*id);
-            let kind = record.parameter(0)?.enumeration()?.to_ascii_lowercase();
-            let measure_id = record.parameter(1)?.reference()?;
+            let kind = parameters.first()?.enumeration()?.to_ascii_lowercase();
+            let measure_id = parameters.get(1)?.reference()?;
             let value = measure(&Value::Reference(measure_id), exchange, measurements)?.value;
             typed.insert(measure_id);
             Some(format!("{kind}:{value}"))
@@ -679,7 +781,7 @@ fn modifier_text(
     }
 }
 
-fn is_presentation_annotation(name: &str) -> bool {
+pub(super) fn is_presentation_annotation(name: &str) -> bool {
     name.starts_with("ANNOTATION_") && name.ends_with("_OCCURRENCE")
         || matches!(
             name,
@@ -690,36 +792,84 @@ fn is_presentation_annotation(name: &str) -> bool {
         )
 }
 
+fn presentation_annotation_name(record: &RawRecord) -> Option<&str> {
+    record.partials.iter().find_map(|partial| {
+        is_presentation_annotation(&partial.name).then_some(partial.name.as_str())
+    })
+}
+
+fn all_parameters(record: &RawRecord) -> impl Iterator<Item = &Value> {
+    record
+        .partials
+        .iter()
+        .flat_map(|partial| partial.parameters.iter())
+}
+
 fn find_annotation_text(
     id: u64,
     exchange: &Exchange,
     visited: &mut BTreeSet<u64>,
+    used: &mut BTreeSet<u64>,
     losses: &mut Vec<LossNote>,
     depth: usize,
 ) -> Option<String> {
+    let mut candidates = BTreeMap::new();
+    collect_annotation_text(id, exchange, visited, &mut candidates, losses, depth);
+    match candidates.len() {
+        0 => None,
+        1 => {
+            let (text_id, text) = candidates
+                .into_iter()
+                .next()
+                .expect("one annotation text candidate");
+            used.insert(text_id);
+            Some(text)
+        }
+        count => {
+            losses.push(LossNote {
+                code: LossKind::MetadataNotTransferred,
+                severity: Severity::Warning,
+                message: format!(
+                    "presentation annotation #{id} has {count} reachable text carriers with no ordered composition"
+                ),
+                provenance: None,
+            });
+            None
+        }
+    }
+}
+
+fn collect_annotation_text(
+    id: u64,
+    exchange: &Exchange,
+    visited: &mut BTreeSet<u64>,
+    candidates: &mut BTreeMap<u64, String>,
+    losses: &mut Vec<LossNote>,
+    depth: usize,
+) {
     if depth >= 256 || !visited.insert(id) {
-        return None;
+        return;
     }
-    let record = exchange.records.get(&id)?;
-    if matches!(
-        record.simple_name(),
-        Some("TEXT_LITERAL" | "TEXT_LITERAL_WITH_ASSOCIATED_CURVES")
-    ) {
-        return record.parameter(0).and_then(|value| {
-            decode_text(
-                value,
-                losses,
-                id,
-                "PMI annotation text",
-                LossKind::MetadataNotTransferred,
-            )
-        });
+    let Some(record) = exchange.records.get(&id) else {
+        return;
+    };
+    if let Some(value) = named_parameter(record, "TEXT_LITERAL", 0)
+        .or_else(|| named_parameter(record, "TEXT_LITERAL_WITH_ASSOCIATED_CURVES", 0))
+    {
+        if let Some(text) = decode_text(
+            exchange,
+            value,
+            losses,
+            id,
+            "PMI annotation text",
+            LossKind::MetadataNotTransferred,
+        ) {
+            candidates.insert(id, text);
+        }
     }
-    record
-        .parameters()
-        .iter()
-        .flat_map(references)
-        .find_map(|reference| find_annotation_text(reference, exchange, visited, losses, depth + 1))
+    for reference in all_parameters(record).flat_map(references) {
+        collect_annotation_text(reference, exchange, visited, candidates, losses, depth + 1);
+    }
 }
 
 fn find_placement(
@@ -750,11 +900,7 @@ fn find_placement(
     if !visited.insert(id) {
         return None;
     }
-    exchange
-        .records
-        .get(&id)?
-        .parameters()
-        .iter()
+    all_parameters(exchange.records.get(&id)?)
         .flat_map(references)
         .find_map(|reference| find_placement(reference, exchange, geometry, visited, depth + 1))
 }
@@ -777,7 +923,9 @@ fn push_annotation(
 }
 
 fn targets(ids: impl IntoIterator<Item = u64>) -> Vec<PmiTarget> {
+    let mut seen = BTreeSet::new();
     ids.into_iter()
+        .filter(|id| seen.insert(*id))
         .map(|id| PmiTarget::ShapeAspect {
             source_id: format!("#{id}"),
         })
@@ -807,10 +955,40 @@ fn is_pmi_entity_name(name: &str) -> bool {
 }
 
 fn is_shape_aspect(record: &RawRecord) -> bool {
-    matches!(
-        record.simple_name(),
-        Some("SHAPE_ASPECT" | "DATUM_FEATURE" | "DATUM")
-    )
+    record.partials.iter().any(|partial| {
+        matches!(
+            partial.name.as_str(),
+            "SHAPE_ASPECT" | "DATUM_FEATURE" | "DATUM"
+        )
+    })
+}
+
+fn named_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Option<&'a Value> {
+    record
+        .partials
+        .iter()
+        .find(|partial| partial.name == name)
+        .and_then(|partial| partial.parameters.get(index))
+}
+
+fn shape_aspect_parameter(record: &RawRecord, index: usize) -> Option<&Value> {
+    if let Some(partial) = record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "SHAPE_ASPECT")
+    {
+        partial.parameters.get(index)
+    } else {
+        record.parameter(index)
+    }
+}
+
+fn is_measure_record(record: &RawRecord) -> bool {
+    record.partials.iter().any(|partial| {
+        partial.name == "MEASURE_REPRESENTATION_ITEM"
+            || partial.name == "MEASURE_WITH_UNIT"
+            || partial.name.ends_with("_MEASURE_WITH_UNIT")
+    })
 }
 
 fn dimension_kind(name: Option<&str>) -> Option<DimensionKind> {
@@ -837,6 +1015,12 @@ fn dimension_kind(name: Option<&str>) -> Option<DimensionKind> {
     }
 }
 
+fn dimension_descriptor(record: &RawRecord) -> Option<(&str, DimensionKind)> {
+    record.partials.iter().find_map(|partial| {
+        dimension_kind(Some(partial.name.as_str())).map(|kind| (partial.name.as_str(), kind))
+    })
+}
+
 fn tolerance_kind(name: Option<&str>) -> Option<GeometricToleranceKind> {
     use GeometricToleranceKind as Kind;
     Some(match name? {
@@ -844,6 +1028,7 @@ fn tolerance_kind(name: Option<&str>) -> Option<GeometricToleranceKind> {
         "FLATNESS_TOLERANCE" => Kind::Flatness,
         "ROUNDNESS_TOLERANCE" => Kind::Roundness,
         "CYLINDRICITY_TOLERANCE" => Kind::Cylindricity,
+        "COAXIALITY_TOLERANCE" => Kind::Coaxiality,
         "LINE_PROFILE_TOLERANCE" => Kind::LineProfile,
         "SURFACE_PROFILE_TOLERANCE" => Kind::SurfaceProfile,
         "ANGULARITY_TOLERANCE" => Kind::Angularity,
@@ -855,35 +1040,257 @@ fn tolerance_kind(name: Option<&str>) -> Option<GeometricToleranceKind> {
         "CIRCULAR_RUNOUT_TOLERANCE" => Kind::CircularRunout,
         "TOTAL_RUNOUT_TOLERANCE" => Kind::TotalRunout,
         "GEOMETRIC_TOLERANCE" => Kind::Other("geometric_tolerance".into()),
-        name if name.ends_with("_TOLERANCE") && name != "PLUS_MINUS_TOLERANCE" => {
-            Kind::Other(name.to_ascii_lowercase())
-        }
         _ => return None,
     })
 }
 
+fn tolerance_modifiers(record: &RawRecord) -> Vec<String> {
+    record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_MODIFIERS")
+        .into_iter()
+        .flat_map(|partial| partial.parameters.iter())
+        .flat_map(modifier_values)
+        .collect()
+}
+
+fn modifier_values(value: &Value) -> Vec<String> {
+    match value {
+        Value::Enumeration(value) => vec![value.to_ascii_lowercase()],
+        Value::List(values) => values.iter().flat_map(modifier_values).collect(),
+        Value::Typed(_, value) => modifier_values(value),
+        _ => Vec::new(),
+    }
+}
+
 fn characteristic_values(
     exchange: &Exchange,
-    measurements: &mut MeasureContext<'_>,
-) -> BTreeMap<u64, Vec<PmiValue>> {
-    let mut result = BTreeMap::<u64, Vec<PmiValue>>::new();
-    for (_, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
-        let Some(characteristic) = record.parameters().iter().flat_map(references).find(|id| {
-            exchange
-                .records
-                .get(id)
-                .is_some_and(|record| dimension_kind(record.simple_name()).is_some())
-        }) else {
+    geometry: &GeometryResult,
+    losses: &mut Vec<LossNote>,
+) -> BTreeMap<u64, PmiValue> {
+    let mut result = BTreeMap::<u64, PmiValue>::new();
+    for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
+        let mut measurements = measure_context(geometry, id, losses);
+        let parameters = record
+            .partials
+            .iter()
+            .flat_map(|partial| &partial.parameters)
+            .collect::<Vec<_>>();
+        let Some(characteristic) =
+            parameters
+                .iter()
+                .flat_map(|value| references(value))
+                .find(|id| {
+                    exchange
+                        .records
+                        .get(id)
+                        .is_some_and(|record| dimension_descriptor(record).is_some())
+                })
+        else {
             continue;
         };
-        result.entry(characteristic).or_default().extend(
-            record
-                .parameters()
-                .iter()
-                .filter_map(|value| measure(value, exchange, measurements)),
-        );
+        let representation = parameters
+            .iter()
+            .flat_map(|value| references(value))
+            .find(|id| {
+                exchange.records.get(id).is_some_and(|record| {
+                    record
+                        .partials
+                        .iter()
+                        .any(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION")
+                })
+            });
+        let representation_items = representation
+            .and_then(|id| exchange.records.get(&id))
+            .and_then(|record| {
+                record
+                    .partials
+                    .iter()
+                    .find(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION")
+                    .and_then(|partial| partial.parameters.get(1))
+                    .and_then(ValueExt::list)
+            });
+        let values = if let Some(items) = representation_items {
+            characteristic_measure_values(items.iter(), exchange, &mut measurements)
+        } else {
+            characteristic_measure_values(parameters.iter().copied(), exchange, &mut measurements)
+        };
+        let named_nominals = values
+            .iter()
+            .filter(|(name, _)| {
+                name.as_deref()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("nominal value"))
+            })
+            .map(|(_, value)| *value)
+            .collect::<Vec<_>>();
+        let selected = if named_nominals.len() == 1 {
+            named_nominals.first().copied()
+        } else if named_nominals.len() > 1 {
+            losses.push(LossNote {
+                code: LossKind::MetadataNotTransferred,
+                severity: Severity::Warning,
+                message: format!(
+                    "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {} nominal value measures; the nominal is ambiguous",
+                    named_nominals.len()
+                ),
+                provenance: None,
+            });
+            None
+        } else if values.len() == 1 {
+            values.first().map(|(_, value)| *value)
+        } else {
+            if values.len() > 1 {
+                losses.push(LossNote {
+                    code: LossKind::MetadataNotTransferred,
+                    severity: Severity::Warning,
+                    message: format!(
+                        "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {} unnamed measure values; the nominal is ambiguous",
+                        values.len()
+                    ),
+                    provenance: None,
+                });
+            }
+            None
+        };
+        if let Some(selected) = selected {
+            result.insert(characteristic, selected);
+        }
     }
     result
+}
+
+fn characteristic_measure_values<'a>(
+    parameters: impl IntoIterator<Item = &'a Value>,
+    exchange: &Exchange,
+    measurements: &mut MeasureContext<'_>,
+) -> Vec<(Option<String>, PmiValue)> {
+    let parameters = parameters.into_iter().collect::<Vec<_>>();
+    let mut measure_ids = BTreeSet::new();
+    for parameter in &parameters {
+        collect_measure_ids(
+            parameter,
+            exchange,
+            &mut BTreeSet::new(),
+            0,
+            &mut measure_ids,
+        );
+    }
+    let mut values = measure_ids
+        .into_iter()
+        .filter_map(|id| {
+            let value = measure(&Value::Reference(id), exchange, measurements)?;
+            let name = exchange
+                .records
+                .get(&id)
+                .and_then(|record| measure_item_name(record, exchange, measurements.losses));
+            Some((name, value))
+        })
+        .collect::<Vec<_>>();
+    if values.is_empty() {
+        values.extend(
+            parameters.iter().filter_map(|value| {
+                measure(value, exchange, measurements).map(|value| (None, value))
+            }),
+        );
+    }
+    values
+}
+
+fn collect_measure_ids(
+    value: &Value,
+    exchange: &Exchange,
+    active: &mut BTreeSet<u64>,
+    depth: usize,
+    measure_ids: &mut BTreeSet<u64>,
+) {
+    if depth >= super::MAX_RECORD_GRAPH_DEPTH {
+        return;
+    }
+    match value {
+        Value::Reference(id) => {
+            if !active.insert(*id) {
+                return;
+            }
+            if let Some(record) = exchange.records.get(id) {
+                if is_measure_record(record) {
+                    measure_ids.insert(*id);
+                } else {
+                    for partial in &record.partials {
+                        for parameter in &partial.parameters {
+                            collect_measure_ids(
+                                parameter,
+                                exchange,
+                                active,
+                                depth + 1,
+                                measure_ids,
+                            );
+                        }
+                    }
+                }
+            }
+            active.remove(id);
+        }
+        Value::List(values) => {
+            for value in values {
+                collect_measure_ids(value, exchange, active, depth + 1, measure_ids);
+            }
+        }
+        Value::Typed(_, value) => {
+            collect_measure_ids(value, exchange, active, depth + 1, measure_ids);
+        }
+        _ => {}
+    }
+}
+
+fn measure_item_name(
+    record: &RawRecord,
+    exchange: &Exchange,
+    losses: &mut Vec<LossNote>,
+) -> Option<String> {
+    record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "REPRESENTATION_ITEM")
+        .and_then(|partial| partial.parameters.first())
+        .or_else(|| {
+            record
+                .partials
+                .iter()
+                .find(|partial| partial.name == "MEASURE_REPRESENTATION_ITEM")
+                .and_then(|partial| partial.parameters.first())
+        })
+        .and_then(|value| {
+            decode_text(
+                exchange,
+                value,
+                losses,
+                record.id,
+                "measure item name",
+                LossKind::MetadataNotTransferred,
+            )
+        })
+        .filter(|name| !name.is_empty())
+}
+
+fn measure_context<'a>(
+    geometry: &GeometryResult,
+    id: u64,
+    losses: &'a mut Vec<LossNote>,
+) -> MeasureContext<'a> {
+    MeasureContext {
+        length_scale: geometry
+            .length_scales
+            .get(&id)
+            .copied()
+            .unwrap_or(geometry.length_scale),
+        angle_scale: geometry
+            .plane_angle_scales
+            .get(&id)
+            .copied()
+            .unwrap_or(geometry.plane_angle_scale),
+        losses,
+    }
 }
 
 fn measure(
@@ -933,7 +1340,10 @@ fn measure_inner(
             if !active.insert(*id) {
                 return None;
             }
-            let record = exchange.records.get(id)?;
+            let Some(record) = exchange.records.get(id) else {
+                active.remove(id);
+                return None;
+            };
             let quantity = record
                 .partials
                 .iter()
@@ -1007,6 +1417,7 @@ fn measure_inner(
                             measure_inner(parameter, exchange, active, depth + 1, measurements)
                         })
                 });
+            active.remove(id);
             result
         }
         Value::List(values) => values

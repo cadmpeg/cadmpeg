@@ -101,6 +101,9 @@ pub enum LossKind {
     /// The B-rep topology graph was not transferred, though carriers or a
     /// container were decoded.
     TopologyNotTransferred,
+    /// The source topology violates a neutral topology invariant; the decoder
+    /// reported the defect and retained only valid neutral topology.
+    SourceTopologyInvalid,
     /// B-rep geometry was not transferred, though carriers or a container were
     /// decoded.
     GeometryNotTransferred,
@@ -134,6 +137,8 @@ pub enum LossKind {
     /// A decode-time diagnostic surfaced as a loss note; detail is in the
     /// message.
     DecodeDiagnostic,
+    /// Stored integrity data does not match the bytes it protects.
+    IntegrityFailure,
     /// The source uses a recoverable but noncanonical serialization.
     NoncanonicalSourceSyntax,
     /// Standalone mesh vertices were stored at reduced (f32) precision by the
@@ -194,6 +199,7 @@ impl LossKind {
             Self::ContainerOnly => "container_only",
             Self::MissingGeometryStream => "missing_geometry_stream",
             Self::TopologyNotTransferred => "topology_not_transferred",
+            Self::SourceTopologyInvalid => "source_topology_invalid",
             Self::GeometryNotTransferred => "geometry_not_transferred",
             Self::ReferenceGraphNotClosed => "reference_graph_not_closed",
             Self::TopologyGaugeSubstituted => "topology_gauge_substituted",
@@ -207,6 +213,7 @@ impl LossKind {
             Self::AssemblyPlacementsNotTransferred => "assembly_placements_not_transferred",
             Self::RecordNotTyped => "record_not_typed",
             Self::DecodeDiagnostic => "decode_diagnostic",
+            Self::IntegrityFailure => "integrity_failure",
             Self::NoncanonicalSourceSyntax => "noncanonical_source_syntax",
             Self::MeshVertexPrecision => "mesh_vertex_precision",
             Self::ObjectRecordsUntransferred => "object_records_untransferred",
@@ -236,6 +243,7 @@ impl LossKind {
     pub const fn category(self) -> LossCategory {
         match self {
             Self::TopologyNotTransferred
+            | Self::SourceTopologyInvalid
             | Self::ReferenceGraphNotClosed
             | Self::TopologyGaugeSubstituted
             | Self::NoExportableSolids
@@ -251,6 +259,7 @@ impl LossKind {
             }
             Self::RecordNotTyped
             | Self::DecodeDiagnostic
+            | Self::IntegrityFailure
             | Self::NoncanonicalSourceSyntax
             | Self::AssetNotTransferred
             | Self::PassthroughRecordOmitted
@@ -281,7 +290,9 @@ impl LossKind {
             Self::ContainerOnly | Self::CarrierSummary | Self::PassthroughRecordOmitted => {
                 Severity::Info
             }
-            Self::MissingGeometryStream | Self::NoExportableSolids => Severity::Error,
+            Self::MissingGeometryStream | Self::NoExportableSolids | Self::IntegrityFailure => {
+                Severity::Error
+            }
             _ => Severity::Warning,
         }
     }
@@ -297,6 +308,7 @@ impl LossKind {
             | Self::UnknownSurfaceFaceOmitted
             | Self::SubdOmitted
             | Self::NoncanonicalSourceSyntax
+            | Self::IntegrityFailure
             | Self::NoExportableSolids => Some(Severity::Warning),
             _ => None,
         }
@@ -807,6 +819,19 @@ mod tests {
         assert_eq!(kind.strict_floor(), Some(Severity::Warning));
         assert_eq!(
             LossNote::new(kind, "source order is noncanonical").strict_consequence(),
+            StrictConsequence::Reject
+        );
+    }
+
+    #[test]
+    fn integrity_failure_is_a_strict_rejectable_error() {
+        let kind = LossKind::IntegrityFailure;
+        assert_eq!(kind.as_str(), "integrity_failure");
+        assert_eq!(kind.category(), LossCategory::Other);
+        assert_eq!(kind.default_severity(), Severity::Error);
+        assert_eq!(kind.strict_floor(), Some(Severity::Warning));
+        assert_eq!(
+            LossNote::new(kind, "stored checksum differs").strict_consequence(),
             StrictConsequence::Reject
         );
     }

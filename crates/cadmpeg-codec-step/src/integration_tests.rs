@@ -3,6 +3,8 @@
 
 use super::*;
 
+use cadmpeg_ir::codec::{EncodeInput, Encoder};
+
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
@@ -79,15 +81,24 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
     let ir = unit_cube();
     for schema in [
         StepSchema::Ap203Edition1,
+        StepSchema::Ap203Edition2,
         StepSchema::Ap214,
+        StepSchema::Ap242Edition1,
+        StepSchema::Ap242Edition2,
         StepSchema::Ap242Edition3,
     ] {
-        let mut bytes = Vec::new();
         let options = StepWriteOptions {
             schema,
             ..StepWriteOptions::default()
         };
+        let mut bytes = Vec::new();
         write_step(&ir, &mut bytes, &options).expect("STEP cube write");
+        let mut repeated = Vec::new();
+        write_step(&ir, &mut repeated, &options).expect("repeat STEP cube write");
+        assert_eq!(
+            bytes, repeated,
+            "STEP output must be deterministic for {schema:?}"
+        );
         assert_eq!(StepCodec::default().detect(&bytes), Confidence::High);
         let result = StepCodec::default()
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -95,6 +106,77 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
         assert_eq!(result.ir.model.bodies.len(), 1);
         assert_eq!(result.ir.model.faces.len(), 6);
         assert_valid(&result);
+
+        let mut edited = result.ir.clone();
+        edited
+            .model
+            .points
+            .first_mut()
+            .expect("unit cube has a point")
+            .position
+            .x += 1.0;
+        let expected_model = edited.model.clone();
+        let codec = StepCodec {
+            options: options.clone(),
+        };
+        let plan = codec
+            .plan(EncodeInput {
+                ir: &edited,
+                fidelity: Some(&result.source_fidelity),
+            })
+            .expect("edited STEP document plan");
+        assert_eq!(plan.write_path(), cadmpeg_ir::WritePath::Synthesized);
+        assert_eq!(
+            plan.fidelity_resolution(),
+            &cadmpeg_ir::FidelityResolution::NotConsumed
+        );
+        let mut edited_bytes = Vec::new();
+        let export = plan
+            .write_to(&mut edited_bytes)
+            .expect("edited STEP document write");
+        assert_eq!(export.write_path, cadmpeg_ir::WritePath::Synthesized);
+        let edited_result = codec
+            .decode(&mut Cursor::new(edited_bytes), &DecodeOptions::default())
+            .expect("edited STEP document decode");
+        assert_valid(&edited_result);
+        assert_eq!(
+            edited_result.ir.model.bodies.len(),
+            expected_model.bodies.len()
+        );
+        assert_eq!(
+            edited_result.ir.model.faces.len(),
+            expected_model.faces.len()
+        );
+        let expected_points = expected_model
+            .points
+            .iter()
+            .map(|point| point.position)
+            .collect::<Vec<_>>();
+        let actual_points = edited_result
+            .ir
+            .model
+            .points
+            .iter()
+            .map(|point| point.position)
+            .collect::<Vec<_>>();
+        assert_eq!(actual_points.len(), expected_points.len());
+        let mut matched = vec![false; actual_points.len()];
+        for expected in expected_points {
+            let actual = actual_points
+                .iter()
+                .enumerate()
+                .find(|(index, actual)| {
+                    !matched[*index] && actual.distance_squared(expected) <= 1.0e-18
+                })
+                .map(|(index, actual)| {
+                    matched[index] = true;
+                    *actual
+                });
+            assert!(
+                actual.is_some(),
+                "edited point was not preserved: {expected:?}"
+            );
+        }
     }
     strict_writer_rejects_before_emitting_bytes();
     strict_writer_refuses_retained_opaque_step_records_atomically();

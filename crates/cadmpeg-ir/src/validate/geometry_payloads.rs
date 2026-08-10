@@ -476,6 +476,15 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 bounds_err(findings, &procedural.id.0, "non-finite parallel offset");
             }
         }
+        if let ProceduralSurfaceDefinition::Replica { transform, .. } = &procedural.definition {
+            if !transform.is_affine() {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "surface replica transform is not finite affine",
+                );
+            }
+        }
         if let ProceduralSurfaceDefinition::Exact { parameters, .. } = &procedural.definition {
             let valid = match parameters {
                 crate::geometry::SplineSurfaceParameters::OrderedRanges { ranges } => {
@@ -1750,12 +1759,12 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         {
             if !parameter_ranges
                 .iter()
-                .all(|range| range[0].is_finite() && range[1].is_finite() && range[0] <= range[1])
+                .all(|range| range[0].is_finite() && range[1].is_finite() && range[0] != range[1])
             {
                 bounds_err(
                     findings,
                     &procedural.id.0,
-                    "surface subset ranges are not finite and ordered",
+                    "surface subset ranges are not finite and non-zero",
                 );
             }
         }
@@ -1969,6 +1978,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             crate::geometry::PcurveGeometry::Trimmed {
                 basis,
                 parameter_range,
+                ..
             } => {
                 parameter_range.iter().all(|value| value.is_finite())
                     && parameter_range[0] <= parameter_range[1]
@@ -2042,6 +2052,9 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                                 .iter()
                                 .all(|weight| weight.is_finite() && *weight > 0.0)
                     })
+            }
+            crate::geometry::PcurveGeometry::Transformed { basis, transform } => {
+                transform.is_affine() && pcurve_basis_is_valid(basis)
             }
         };
         if !valid {
@@ -2450,6 +2463,16 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
+        if let ProceduralCurveDefinition::Replica { transform, .. } = &procedural.definition {
+            if !transform.is_affine() {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "curve replica transform is not finite affine",
+                );
+            }
+            continue;
+        }
         if let ProceduralCurveDefinition::VectorOffset {
             parameter_range,
             offset,
@@ -2648,6 +2671,7 @@ fn pcurve_basis_is_valid(geometry: &crate::geometry::PcurveGeometry) -> bool {
         PcurveGeometry::Trimmed {
             basis,
             parameter_range,
+            ..
         } => {
             finite(parameter_range)
                 && parameter_range[0] <= parameter_range[1]
@@ -2655,6 +2679,9 @@ fn pcurve_basis_is_valid(geometry: &crate::geometry::PcurveGeometry) -> bool {
         }
         PcurveGeometry::Offset { basis, distance } => {
             distance.is_finite() && pcurve_basis_is_valid(basis)
+        }
+        PcurveGeometry::Transformed { basis, transform } => {
+            transform.is_affine() && pcurve_basis_is_valid(basis)
         }
     }
 }

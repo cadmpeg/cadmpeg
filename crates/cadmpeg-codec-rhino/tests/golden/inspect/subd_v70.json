@@ -58,6 +58,7 @@
   "format": "rhino",
   "notes": [
     "archive version 70",
+    "CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0x678ad2dd",
     "object at 177 has nil object UUID"
   ]
 }
