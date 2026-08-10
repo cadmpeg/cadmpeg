@@ -108,6 +108,10 @@ pub(crate) struct MeshBody {
     pub(crate) vertices: Vec<cadmpeg_ir::math::Point3>,
     /// Triangle corner indices into `vertices`.
     pub(crate) triangles: Vec<[u32; 3]>,
+    /// Source-classified feature edges as ascending vertex-index pairs.
+    pub(crate) feature_edges: Vec<[u32; 2]>,
+    /// One transformed unit normal per flattened triangle corner.
+    pub(crate) corner_normals: Vec<cadmpeg_ir::math::Vector3>,
     /// The attribute channels the container's registry declares.
     pub(crate) attributes: Vec<crate::paramesh::MeshAttribute>,
 }
@@ -126,17 +130,63 @@ impl MeshAffineTransform {
         valid_mesh_transform(transform.rows()).then_some(transform)
     }
 
-    fn transform(self, point: [f64; 3]) -> cadmpeg_ir::math::Point3 {
+    fn transform_point(self, point: [f64; 3]) -> Result<cadmpeg_ir::math::Point3, CodecError> {
         let [x, y, z] = point;
         let cells = self.0;
-        cadmpeg_ir::math::Point3::new(
+        let point = cadmpeg_ir::math::Point3::new(
             (cells[0] * x + cells[1] * y + cells[2] * z + cells[3])
                 * cadmpeg_asm::nurbs::reader::LEN_TO_MM,
             (cells[4] * x + cells[5] * y + cells[6] * z + cells[7])
                 * cadmpeg_asm::nurbs::reader::LEN_TO_MM,
             (cells[8] * x + cells[9] * y + cells[10] * z + cells[11])
                 * cadmpeg_asm::nurbs::reader::LEN_TO_MM,
-        )
+        );
+        if !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite() {
+            return Err(CodecError::Malformed(
+                "F3D mesh placement produces a non-finite vertex".into(),
+            ));
+        }
+        Ok(point)
+    }
+
+    /// Transform an oriented surface normal with the cofactor of the linear
+    /// map. The determinant sign keeps the normal aligned with the unchanged
+    /// triangle tuple under a reflection.
+    fn transform_normal(self, normal: [f64; 3]) -> Result<cadmpeg_ir::math::Vector3, CodecError> {
+        let cells = self.0;
+        let [x, y, z] = normal;
+        let transformed = [
+            (cells[5] * cells[10] - cells[6] * cells[9]) * x
+                + (cells[6] * cells[8] - cells[4] * cells[10]) * y
+                + (cells[4] * cells[9] - cells[5] * cells[8]) * z,
+            (cells[2] * cells[9] - cells[1] * cells[10]) * x
+                + (cells[0] * cells[10] - cells[2] * cells[8]) * y
+                + (cells[1] * cells[8] - cells[0] * cells[9]) * z,
+            (cells[1] * cells[6] - cells[2] * cells[5]) * x
+                + (cells[2] * cells[4] - cells[0] * cells[6]) * y
+                + (cells[0] * cells[5] - cells[1] * cells[4]) * z,
+        ];
+        let scale = transformed
+            .iter()
+            .map(|component| component.abs())
+            .fold(0.0f64, f64::max);
+        if !scale.is_finite() || scale == 0.0 {
+            return Err(CodecError::Malformed(
+                "F3D mesh placement produces a degenerate normal".into(),
+            ));
+        }
+        let scaled = transformed.map(|component| component / scale);
+        let length = (scaled[0] * scaled[0] + scaled[1] * scaled[1] + scaled[2] * scaled[2]).sqrt();
+        if !length.is_finite() || length <= f64::EPSILON {
+            return Err(CodecError::Malformed(
+                "F3D mesh placement produces a degenerate normal".into(),
+            ));
+        }
+        Ok(cadmpeg_ir::math::Vector3::new(
+            scaled[0] / length,
+            scaled[1] / length,
+            scaled[2] / length,
+        ))
     }
 
     fn rows(self) -> [[f64; 4]; 4] {
@@ -325,19 +375,31 @@ impl MeshBody {
         body_byte_offset: u64,
         transform: MeshAffineTransform,
         container: MeshContainer,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, CodecError> {
+        let MeshContainer {
+            fusion_uuid: _,
+            vertices,
+            triangles,
+            feature_edges,
+            corner_normals,
+            attributes,
+        } = container;
+        Ok(Self {
             id: ids::native_mesh_body_id(entry_name, body_byte_offset),
-            vertices: container
-                .vertices
+            vertices: vertices
                 .into_iter()
-                .map(|point| transform.transform(point))
-                .collect(),
-            // Placement changes coordinates only. Triangle tuples and corner
-            // selectors remain in their serialized container order.
-            triangles: container.triangles,
-            attributes: container.attributes,
-        }
+                .map(|point| transform.transform_point(point))
+                .collect::<Result<_, _>>()?,
+            // Placement does not change indexing. Triangle tuples, feature
+            // edges, and corner selectors remain in serialized order.
+            triangles,
+            feature_edges,
+            corner_normals: corner_normals
+                .into_iter()
+                .map(|normal| transform.transform_normal(normal))
+                .collect::<Result<_, _>>()?,
+            attributes,
+        })
     }
 }
 
@@ -1473,12 +1535,21 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
             continue;
         };
         let body = &design_records[design_ordinal].features[feature_ordinal].bodies[body_ordinal];
-        let projected = MeshBody::from_container(
+        let projected = match MeshBody::from_container(
             &entry.name,
             body.body_record.byte_offset,
             MeshAffineTransform::from_rows(body.transform),
             container,
-        );
+        ) {
+            Ok(projected) => projected,
+            Err(error) => {
+                outcomes.push(MeshContainerOutcome::Failed {
+                    entry_name: entry.name.clone(),
+                    error,
+                });
+                continue;
+            }
+        };
         design_records[design_ordinal].features[feature_ordinal].bodies[body_ordinal]
             .tessellation_id = Some(projected.id.clone());
         outcomes.push(MeshContainerOutcome::Joined(projected));
@@ -2472,7 +2543,9 @@ mod tests {
         ];
         let transform = mesh_body_transform(&mesh_body_payload(cells)).expect("affine map");
         assert_eq!(
-            transform.transform([2.0, 5.0, 8.0]),
+            transform
+                .transform_point([2.0, 5.0, 8.0])
+                .expect("transformed point"),
             cadmpeg_ir::math::Point3::new(7.5, 10.0, 13.0)
         );
     }
@@ -2487,16 +2560,19 @@ mod tests {
             fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
             vertices: vec![[2.0, 8.0, 3.0], [0.0, 0.0, 0.0], [4.0, 4.0, -1.0]],
             triangles: vec![[2, 0, 1]],
+            feature_edges: vec![[0, 2]],
+            corner_normals: Vec::new(),
             attributes: vec![crate::paramesh::MeshAttribute {
                 role: 4,
                 element_code: 4,
                 domain: crate::paramesh::MeshAttributeDomain::Corner,
-                item_size: Some(4),
-                values: (0..20).collect(),
+                item_size: Some(16),
+                values: (0..80).collect(),
                 indices: Some(vec![0, 2]),
             }],
         };
-        let body = MeshBody::from_container("mesh.paramesh", 100, transform, container);
+        let body = MeshBody::from_container("mesh.paramesh", 100, transform, container)
+            .expect("projected mesh");
 
         assert_eq!(
             body.vertices,
@@ -2507,7 +2583,35 @@ mod tests {
             ]
         );
         assert_eq!(body.triangles, [[2, 0, 1]]);
+        assert_eq!(body.feature_edges, [[0, 2]]);
         assert_eq!(body.attributes[0].indices, Some(vec![0, 2]));
+    }
+
+    #[test]
+    fn mesh_placement_transforms_corner_normals_with_oriented_cofactors() {
+        let cells = [
+            -2.0, 0.5, 0.2, 1.0, 0.1, 3.0, 0.25, -2.0, 0.3, -0.2, 4.0, 0.5, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let transform = mesh_body_transform(&mesh_body_payload(cells)).expect("affine map");
+        let container = MeshContainer {
+            fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
+            vertices: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            triangles: vec![[0, 1, 2]],
+            feature_edges: vec![[0, 1]],
+            corner_normals: vec![[0.0, 0.0, 1.0]; 3],
+            attributes: Vec::new(),
+        };
+        let body = MeshBody::from_container("mesh.paramesh", 100, transform, container)
+            .expect("projected mesh");
+        let geometric_normal = body.vertices[1]
+            .vector_from(body.vertices[0])
+            .cross(body.vertices[2].vector_from(body.vertices[0]))
+            .unit()
+            .expect("triangle normal");
+        assert_eq!(body.corner_normals.len(), 3);
+        for normal in body.corner_normals {
+            assert!((normal.dot(geometric_normal) - 1.0).abs() < 1.0e-12);
+        }
     }
 
     #[test]

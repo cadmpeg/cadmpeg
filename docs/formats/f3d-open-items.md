@@ -457,19 +457,17 @@ The `.f3z` merge writes the note `(identity placement)` for the first cause. The
 
 ## 5. Mesh geometry
 
-### PM-01. `.paramesh` packed and per-triangle element contents
+### PM-01. `.paramesh` per-triangle and registry contents
 
-**Question.** We must find five answers:
+**Question.** We must find three answers:
 
-- how a code-5 element packs three direction components into two f32 values
-- what quantity a code-5 channel holds
 - what a code-7 per-triangle value selects
-- what the stream named by registry field 7 holds
-- what descriptor `T` values other than `0`, `1`, and `3` select, and what registry fields 9 and 12 hold
+- what descriptor `T` values other than `0`, `1`, and `3` select
+- what registry field 9 selects and what registry field 12 identifies
 
-**Known.** `f3d.md` §1.1.2 gives the container framing, both stream encodings, the descriptor value types, the registry channel entries, and the element codes. Every container declares one code-5 channel. Where the mesh is a cube, every f32 in that channel is `-1`, `0`, or `1`, which is the component set of the six face normals of a cube. A code-7 channel carries one zero per triangle while authored per-triangle colours instead add a code-4 channel, so a code-7 value is not that colour selector. Boolean descriptor `U = true` occurs on the code-5 channel and on no other.
+**Known.** `f3d.md` §1.1.2 gives the container framing, both stream encodings, the descriptor value types, the registry channel entries, the octahedral code-5 normal mapping, and the field-7 feature-edge stream. A code-7 channel carries one zero per triangle while authored per-triangle colours instead add a code-4 channel, so a code-7 value is not that colour selector. Registry field 9 is a varint. Registry field 12 is a byte string that carries a GUID.
 
-**Need.** We must know the packing, the two channel contents, and the remaining descriptor and registry fields to write a container from a neutral model.
+**Need.** We must know the code-7 value, the complete component-type enum, and the two remaining registry fields to write a container from a neutral model.
 
 ## 7. Test evidence
 

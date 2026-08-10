@@ -2588,10 +2588,10 @@ fn project_mesh_bodies(
                 source_object: None,
                 vertices: body.vertices,
                 triangles: body.triangles,
-                feature_edges: Vec::new(),
+                feature_edges: body.feature_edges,
                 strip_lengths: Vec::new(),
                 normals: Vec::new(),
-                corner_normals: Vec::new(),
+                corner_normals: body.corner_normals,
                 channels,
             });
     }
@@ -2684,62 +2684,10 @@ fn mesh_attribute_channels(
                 });
             }
             (MeshAttributeDomain::Corner, Some(item_size), Some(count)) => {
-                let Some(index_positions) = attribute.indices.as_deref() else {
+                let Some(selectors) = attribute.corner_selectors(vertices, triangles) else {
                     *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
                     continue;
                 };
-                let Some(vertex_count) = u32::try_from(vertices).ok() else {
-                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
-                    continue;
-                };
-                if count < vertex_count {
-                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
-                    continue;
-                }
-                let Some(override_count) = count.checked_sub(vertex_count) else {
-                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
-                    continue;
-                };
-                if usize::try_from(override_count) != Ok(index_positions.len()) {
-                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
-                    continue;
-                }
-                let mut selectors = Vec::with_capacity(triangles.len().saturating_mul(3));
-                let mut valid = true;
-                for triangle in triangles {
-                    for vertex in triangle {
-                        if usize::try_from(*vertex)
-                            .ok()
-                            .is_none_or(|vertex| vertex >= vertices)
-                            || *vertex >= count
-                        {
-                            valid = false;
-                        }
-                        selectors.push(*vertex);
-                    }
-                }
-                for (ordinal, position) in index_positions.iter().enumerate() {
-                    let Some(ordinal) = u32::try_from(ordinal).ok() else {
-                        valid = false;
-                        continue;
-                    };
-                    let Some(selector) = vertex_count.checked_add(ordinal) else {
-                        valid = false;
-                        continue;
-                    };
-                    let Some(slot) = usize::try_from(*position)
-                        .ok()
-                        .and_then(|position| selectors.get_mut(position))
-                    else {
-                        valid = false;
-                        continue;
-                    };
-                    *slot = selector;
-                }
-                if !valid {
-                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
-                    continue;
-                }
                 channels.push(cadmpeg_ir::tessellation::TessellationChannel {
                     domain: cadmpeg_ir::tessellation::TessellationChannelDomain::Corner,
                     item_size,

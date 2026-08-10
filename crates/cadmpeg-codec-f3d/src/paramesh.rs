@@ -6,7 +6,7 @@
 //! by chunks, of which the `v` stream holds one f32 coordinate triple per
 //! vertex and the `t` stream holds one delta-coded u32 per triangle corner.
 //! Vertex coordinates are container coordinates; the mesh-body Design record
-//! stores the scale that relates them to model space.
+//! stores the affine map that places them in model space.
 //!
 //! The registry declares attribute channels with value and index streams. Vertex
 //! channels store one value per vertex. Indexed channels store one default value
@@ -44,6 +44,10 @@ const PROTOBUF_LENGTH_DELIMITED: u8 = 2;
 const REGISTRY_VERTEX_CHANNEL: u64 = 4;
 /// Registry field that declares one triangle-domain attribute channel.
 const REGISTRY_TRIANGLE_CHANNEL: u64 = 5;
+/// Registry field that names the stream of classified feature-edge endpoints.
+const REGISTRY_FEATURE_EDGES: u64 = 7;
+/// Nested feature-edge field holding the stream name.
+const FEATURE_EDGE_STREAM: u64 = 4;
 /// Channel field holding the role the attribute plays.
 const CHANNEL_ROLE: u64 = 2;
 /// Channel field holding the stream names and the element code.
@@ -74,6 +78,10 @@ pub(crate) struct MeshContainer {
     pub(crate) vertices: Vec<[f64; 3]>,
     /// Triangle corner indices into `vertices`.
     pub(crate) triangles: Vec<[u32; 3]>,
+    /// Source-classified feature edges as ascending vertex-index pairs.
+    pub(crate) feature_edges: Vec<[u32; 2]>,
+    /// One decoded unit normal per flattened triangle corner.
+    pub(crate) corner_normals: Vec<[f64; 3]>,
     /// The attribute channels the registry declares, in registry order.
     pub(crate) attributes: Vec<MeshAttribute>,
 }
@@ -119,61 +127,123 @@ impl MeshAttribute {
             .filter(|_| self.values.len().is_multiple_of(item_size))
             .and_then(|count| u32::try_from(count).ok())
     }
-}
 
-/// Read one protobuf varint.
-fn take_varint(message: &[u8], at: &mut usize) -> Option<u64> {
-    let mut value = 0u64;
-    let mut shift = 0u32;
-    loop {
-        let byte = *message.get(*at)?;
-        *at += 1;
-        value |= u64::from(byte & 0x7f).checked_shl(shift)?;
-        if byte < 0x80 {
-            return Some(value);
+    /// Expand a vertex- or corner-domain value table to one table selector per
+    /// flattened triangle corner.
+    pub(crate) fn corner_selectors(
+        &self,
+        vertices: usize,
+        triangles: &[[u32; 3]],
+    ) -> Option<Vec<u32>> {
+        let count = self.count()?;
+        let vertex_count = u32::try_from(vertices).ok()?;
+        let positions = match self.domain {
+            MeshAttributeDomain::Vertex => {
+                (count == vertex_count && self.indices.is_none()).then_some(&[][..])?
+            }
+            MeshAttributeDomain::Corner => {
+                let positions = self.indices.as_deref()?;
+                let overrides = count.checked_sub(vertex_count)?;
+                (usize::try_from(overrides).ok()? == positions.len()).then_some(positions)?
+            }
+            MeshAttributeDomain::Triangle => return None,
+        };
+
+        let mut selectors = Vec::with_capacity(triangles.len().checked_mul(3)?);
+        for triangle in triangles {
+            for vertex in triangle {
+                if usize::try_from(*vertex)
+                    .ok()
+                    .is_none_or(|index| index >= vertices)
+                    || *vertex >= count
+                {
+                    return None;
+                }
+                selectors.push(*vertex);
+            }
         }
-        shift = shift.checked_add(7).filter(|shift| *shift < 64)?;
+        for (ordinal, position) in positions.iter().enumerate() {
+            let selector = vertex_count.checked_add(u32::try_from(ordinal).ok()?)?;
+            *selectors.get_mut(usize::try_from(*position).ok()?)? = selector;
+        }
+        Some(selectors)
     }
 }
 
-/// One protobuf field value for a wire type used by the registry.
+/// Read one bounded protobuf varint.
+fn take_varint(message: &[u8], at: &mut usize) -> Result<u64, CodecError> {
+    let mut value = 0u64;
+    for ordinal in 0..10u32 {
+        let byte = *message
+            .get(*at)
+            .ok_or_else(|| malformed("paramesh protobuf varint is truncated"))?;
+        *at += 1;
+        if ordinal == 9 && byte > 1 {
+            return Err(malformed("paramesh protobuf varint exceeds u64"));
+        }
+        value |= u64::from(byte & 0x7f) << (ordinal * 7);
+        if byte < 0x80 {
+            return Ok(value);
+        }
+    }
+    Err(malformed("paramesh protobuf varint exceeds ten bytes"))
+}
+
+/// One protobuf field value. Fixed-width values are retained only as a wire
+/// shape because the implemented registry fields do not interpret them.
 enum ProtobufValue<'a> {
     Varint(u64),
     Bytes(&'a [u8]),
+    Fixed64,
+    Fixed32,
 }
 
-/// Read protobuf fields in stored order. The registry uses two wire types; a
-/// different type ends the walk because its length is unknown.
-fn protobuf_fields(message: &[u8]) -> Vec<(u64, ProtobufValue<'_>)> {
+/// Read every protobuf field in stored order.
+fn protobuf_fields(message: &[u8]) -> Result<Vec<(u64, ProtobufValue<'_>)>, CodecError> {
     let mut fields = Vec::new();
     let mut at = 0usize;
     while at < message.len() {
-        let Some(key) = take_varint(message, &mut at) else {
-            break;
-        };
+        let key = take_varint(message, &mut at)?;
+        if key >> 3 == 0 {
+            return Err(malformed("paramesh protobuf field number is zero"));
+        }
         match key & 0x07 {
             0 => {
-                let Some(value) = take_varint(message, &mut at) else {
-                    break;
-                };
+                let value = take_varint(message, &mut at)?;
                 fields.push((key >> 3, ProtobufValue::Varint(value)));
             }
+            1 => {
+                at = at
+                    .checked_add(8)
+                    .filter(|end| *end <= message.len())
+                    .ok_or_else(|| malformed("paramesh protobuf fixed64 field is truncated"))?;
+                fields.push((key >> 3, ProtobufValue::Fixed64));
+            }
             2 => {
-                let Some(count) =
-                    take_varint(message, &mut at).and_then(|count| usize::try_from(count).ok())
-                else {
-                    break;
-                };
-                let Some(bytes) = at.checked_add(count).and_then(|end| message.get(at..end)) else {
-                    break;
-                };
+                let count = usize::try_from(take_varint(message, &mut at)?)
+                    .map_err(|_| malformed("paramesh protobuf byte count is out of range"))?;
+                let bytes = at
+                    .checked_add(count)
+                    .and_then(|end| message.get(at..end))
+                    .ok_or_else(|| malformed("paramesh protobuf byte field is truncated"))?;
                 at += count;
                 fields.push((key >> 3, ProtobufValue::Bytes(bytes)));
             }
-            _ => break,
+            5 => {
+                at = at
+                    .checked_add(4)
+                    .filter(|end| *end <= message.len())
+                    .ok_or_else(|| malformed("paramesh protobuf fixed32 field is truncated"))?;
+                fields.push((key >> 3, ProtobufValue::Fixed32));
+            }
+            _ => {
+                return Err(malformed(
+                    "paramesh protobuf message uses an unsupported group wire type",
+                ));
+            }
         }
     }
-    fields
+    Ok(fields)
 }
 
 /// One channel's declared element code and stream names.
@@ -184,25 +254,43 @@ struct ChannelStreams<'a> {
 }
 
 /// Read the stream entry of one channel.
-fn channel_streams(entry: &[u8]) -> Option<ChannelStreams<'_>> {
+fn channel_streams(entry: &[u8]) -> Result<ChannelStreams<'_>, CodecError> {
     let mut element_code = None;
     let mut values = None;
     let mut index = None;
-    for (field, value) in protobuf_fields(entry) {
+    for (field, value) in protobuf_fields(entry)? {
         match (field, value) {
-            (STREAM_ELEMENT_CODE, ProtobufValue::Varint(code)) => element_code = Some(code),
+            (STREAM_ELEMENT_CODE, ProtobufValue::Varint(code)) => {
+                if element_code.replace(code).is_some() {
+                    return Err(malformed("paramesh channel repeats its element code"));
+                }
+            }
             (STREAM_VALUES, ProtobufValue::Bytes(name)) => {
-                values = std::str::from_utf8(name).ok();
+                let name = std::str::from_utf8(name)
+                    .map_err(|_| malformed("paramesh channel value-stream name is not UTF-8"))?;
+                if values.replace(name).is_some() {
+                    return Err(malformed("paramesh channel repeats its value-stream name"));
+                }
             }
             (STREAM_INDEX, ProtobufValue::Bytes(name)) => {
-                index = std::str::from_utf8(name).ok();
+                let name = std::str::from_utf8(name)
+                    .map_err(|_| malformed("paramesh channel index-stream name is not UTF-8"))?;
+                if index.replace(name).is_some() {
+                    return Err(malformed("paramesh channel repeats its index-stream name"));
+                }
+            }
+            (STREAM_ELEMENT_CODE | STREAM_VALUES | STREAM_INDEX, _) => {
+                return Err(malformed(
+                    "paramesh channel stream field has the wrong wire type",
+                ));
             }
             _ => {}
         }
     }
-    Some(ChannelStreams {
-        element_code: element_code?,
-        values: values?,
+    Ok(ChannelStreams {
+        element_code: element_code
+            .ok_or_else(|| malformed("paramesh channel has no element code"))?,
+        values: values.ok_or_else(|| malformed("paramesh channel has no value-stream name"))?,
         index,
     })
 }
@@ -211,28 +299,39 @@ fn channel_streams(entry: &[u8]) -> Option<ChannelStreams<'_>> {
 fn registry_channel(
     entry: &[u8],
     domain: MeshAttributeDomain,
-) -> Option<(ChannelStreams<'_>, u32, MeshAttributeDomain)> {
+) -> Result<(ChannelStreams<'_>, u32, MeshAttributeDomain), CodecError> {
     let mut role = 0u32;
+    let mut has_role = false;
     let mut streams = None;
-    for (field, value) in protobuf_fields(entry) {
+    for (field, value) in protobuf_fields(entry)? {
         match (field, value) {
             (CHANNEL_ROLE, ProtobufValue::Varint(value)) => {
-                role = u32::try_from(value).ok()?;
+                if has_role {
+                    return Err(malformed("paramesh channel repeats its role"));
+                }
+                has_role = true;
+                role = u32::try_from(value)
+                    .map_err(|_| malformed("paramesh channel role is out of range"))?;
             }
             (CHANNEL_STREAMS, ProtobufValue::Bytes(nested)) => {
-                streams = channel_streams(nested);
+                if streams.replace(channel_streams(nested)?).is_some() {
+                    return Err(malformed("paramesh channel repeats its stream entry"));
+                }
+            }
+            (CHANNEL_ROLE | CHANNEL_STREAMS, _) => {
+                return Err(malformed("paramesh channel field has the wrong wire type"));
             }
             _ => {}
         }
     }
-    let streams = streams?;
+    let streams = streams.ok_or_else(|| malformed("paramesh channel has no stream entry"))?;
     // A vertex-domain channel that carries an index stream addresses triangle
     // corners; without one it stores exactly one value per vertex.
     let domain = match (domain, streams.index) {
         (MeshAttributeDomain::Vertex, Some(_)) => MeshAttributeDomain::Corner,
         (domain, _) => domain,
     };
-    Some((streams, role, domain))
+    Ok((streams, role, domain))
 }
 
 /// The bytes of one element under an element code, when the code settles it.
@@ -359,7 +458,17 @@ fn message_pack_name_table(bytes: &[u8]) -> Result<Vec<(String, u64)>, CodecErro
     let mut entries = Vec::with_capacity(count);
     for _ in 0..count {
         let name = take_string(bytes, &mut at)?;
-        entries.push((name, take_integer(bytes, &mut at)?));
+        let id = take_integer(bytes, &mut at)?;
+        if entries
+            .iter()
+            .any(|(existing_name, existing_id)| existing_name == &name || *existing_id == id)
+        {
+            return Err(malformed("paramesh name table repeats a stream name or id"));
+        }
+        entries.push((name, id));
+    }
+    if at != bytes.len() {
+        return Err(malformed("paramesh name table has trailing bytes"));
     }
     Ok(entries)
 }
@@ -519,29 +628,54 @@ fn inflate_stream(body: &[u8]) -> Result<MeshStream, CodecError> {
     })
 }
 
-/// Require the implemented element layout before interpreting stream bytes.
-fn require_layout(
-    stream: &MeshStream,
-    components: Option<u64>,
-    component_type: u64,
-    delta_coded: bool,
-) -> Result<(), CodecError> {
-    let value = |key: &str| {
-        stream.descriptor.iter().find_map(|(name, value)| {
-            (name == key)
-                .then_some(*value)
-                .and_then(|value| match value {
-                    StreamDescriptorValue::Integer(value) => Some(value),
-                    StreamDescriptorValue::Boolean(_) => None,
-                })
-        })
+/// A stream layout whose byte semantics this decoder implements.
+#[derive(Clone, Copy)]
+enum StreamLayout {
+    /// A fixed number of unpacked f32 components per element.
+    Float(u64),
+    /// One octahedrally packed three-component direction per two f32 values.
+    PackedDirection,
+    /// One u32 value, with every nonterminal word interpreted as an i32 delta.
+    TerminalDelta,
+}
+
+/// Require an exact descriptor before interpreting stream bytes.
+fn require_layout(stream: &MeshStream, layout: StreamLayout) -> Result<(), CodecError> {
+    let expected: &[(&str, StreamDescriptorValue)] = match layout {
+        StreamLayout::Float(2) => &[
+            ("D", StreamDescriptorValue::Integer(2)),
+            ("T", StreamDescriptorValue::Integer(3)),
+        ],
+        StreamLayout::Float(3) => &[
+            ("D", StreamDescriptorValue::Integer(3)),
+            ("T", StreamDescriptorValue::Integer(3)),
+        ],
+        StreamLayout::Float(4) => &[
+            ("D", StreamDescriptorValue::Integer(4)),
+            ("T", StreamDescriptorValue::Integer(3)),
+        ],
+        StreamLayout::PackedDirection => &[
+            ("D", StreamDescriptorValue::Integer(3)),
+            ("T", StreamDescriptorValue::Integer(3)),
+            ("U", StreamDescriptorValue::Boolean(true)),
+        ],
+        StreamLayout::TerminalDelta => &[
+            ("T", StreamDescriptorValue::Integer(1)),
+            ("d", StreamDescriptorValue::Integer(1)),
+        ],
+        StreamLayout::Float(_) => {
+            return Err(malformed(
+                "paramesh stream declares an unsupported f32 component count",
+            ));
+        }
     };
-    let has = |key: &str| stream.descriptor.iter().any(|(name, _)| name == key);
-    if value("D") != components
-        || value("T") != Some(component_type)
-        || has("d") != delta_coded
-        || (delta_coded && value("d") != Some(1))
-        || has("U")
+    if stream.descriptor.len() != expected.len()
+        || expected.iter().any(|(expected_name, expected_value)| {
+            !stream
+                .descriptor
+                .iter()
+                .any(|(name, value)| name == expected_name && value == expected_value)
+        })
     {
         return Err(malformed(
             "paramesh stream descriptor does not match its implemented layout",
@@ -640,6 +774,59 @@ fn decode_triangles(stream: &[u8], vertices: usize) -> Result<Vec<[u32; 3]>, Cod
         .collect())
 }
 
+/// Decode terminal-delta framing into its complete value sequence.
+///
+/// Every word except the last is an i32 difference to the next value. The
+/// final word is the absolute u32 value of the final element. The first value
+/// is therefore the terminal minus the sum of the differences.
+fn decode_terminal_delta_values(stream: &[u8]) -> Result<Vec<u32>, CodecError> {
+    if !stream.len().is_multiple_of(4) {
+        return Err(malformed(
+            "paramesh terminal-delta stream is not a whole number of values",
+        ));
+    }
+    if stream.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let value_count = stream.len() / 4;
+    let terminal_at = (value_count - 1) * 4;
+    let terminal_raw = &stream[terminal_at..terminal_at + 4];
+    let terminal = i64::from(u32::from_le_bytes([
+        terminal_raw[0],
+        terminal_raw[1],
+        terminal_raw[2],
+        terminal_raw[3],
+    ]));
+    let mut delta_total = 0i64;
+    for raw in stream[..terminal_at].chunks_exact(4) {
+        let delta = i64::from(i32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]));
+        delta_total = delta_total
+            .checked_add(delta)
+            .ok_or_else(|| malformed("paramesh terminal-delta accumulation overflows"))?;
+    }
+    let start = terminal
+        .checked_sub(delta_total)
+        .ok_or_else(|| malformed("paramesh terminal-delta start overflows"))?;
+    let mut values = Vec::with_capacity(value_count);
+    let mut current = start;
+    values.push(
+        u32::try_from(current)
+            .map_err(|_| malformed("paramesh terminal-delta value is out of range"))?,
+    );
+    for raw in stream[..terminal_at].chunks_exact(4) {
+        let delta = i64::from(i32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]));
+        current = current
+            .checked_add(delta)
+            .ok_or_else(|| malformed("paramesh terminal-delta value overflows"))?;
+        values.push(
+            u32::try_from(current)
+                .map_err(|_| malformed("paramesh terminal-delta value is out of range"))?,
+        );
+    }
+    Ok(values)
+}
+
 /// Resolve an indexed channel's delta-coded corner positions.
 ///
 /// The value stream starts with one default value for every vertex. The
@@ -677,38 +864,14 @@ fn decode_index_positions(
         return Ok(Vec::new());
     }
 
-    let raw = stream
-        .chunks_exact(4)
-        .map(|bytes| i64::from(i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])))
-        .collect::<Vec<_>>();
-    let terminal = *raw
-        .last()
-        .ok_or_else(|| malformed("paramesh channel index stream has no terminal position"))?;
-    let mut relative_positions = Vec::with_capacity(raw.len());
-    relative_positions.push(0i64);
-    let mut relative = 0i64;
-    for delta in &raw[..raw.len() - 1] {
-        relative = relative
-            .checked_add(*delta)
-            .ok_or_else(|| malformed("paramesh channel index accumulation overflows"))?;
-        relative_positions.push(relative);
-    }
-    let relative_terminal = relative_positions
-        .last()
-        .copied()
-        .ok_or_else(|| malformed("paramesh channel index stream has no positions"))?;
-    let start = terminal
-        .checked_sub(relative_terminal)
-        .ok_or_else(|| malformed("paramesh channel index start overflows"))?;
-    let corner_count = i64::try_from(corners)
-        .map_err(|_| malformed("paramesh channel corner count is out of range"))?;
-    let mut positions = Vec::with_capacity(relative_positions.len());
+    let decoded = decode_terminal_delta_values(stream)?;
+    let mut positions = Vec::with_capacity(decoded.len());
     let mut previous = None;
-    for relative in relative_positions {
-        let position = start
-            .checked_add(relative)
-            .ok_or_else(|| malformed("paramesh channel index position overflows"))?;
-        if position < 0 || position >= corner_count {
+    for position in decoded {
+        if usize::try_from(position)
+            .ok()
+            .is_none_or(|position| position >= corners)
+        {
             return Err(malformed(
                 "paramesh channel index position names no triangle corner",
             ));
@@ -718,13 +881,192 @@ fn decode_index_positions(
                 "paramesh channel index positions are not strictly increasing",
             ));
         }
-        positions.push(
-            u32::try_from(position)
-                .map_err(|_| malformed("paramesh channel index position is out of range"))?,
-        );
+        positions.push(position);
         previous = Some(position);
     }
     Ok(positions)
+}
+
+/// Decode one octahedrally packed unit direction.
+fn decode_packed_direction(packed: [f32; 2]) -> Result<[f64; 3], CodecError> {
+    let [encoded_x, encoded_y] = packed.map(f64::from);
+    if !encoded_x.is_finite()
+        || !encoded_y.is_finite()
+        || !(-1.0..=1.0).contains(&encoded_x)
+        || !(-1.0..=1.0).contains(&encoded_y)
+    {
+        return Err(malformed(
+            "paramesh packed direction is outside the octahedral domain",
+        ));
+    }
+
+    let mut normal_x = encoded_x;
+    let mut normal_y = encoded_y;
+    let normal_z = 1.0 - normal_x.abs() - normal_y.abs();
+    if normal_z < 0.0 {
+        let unfolded_x = normal_x;
+        normal_x = (1.0 - normal_y.abs()) * if unfolded_x >= 0.0 { 1.0 } else { -1.0 };
+        normal_y = (1.0 - unfolded_x.abs()) * if normal_y >= 0.0 { 1.0 } else { -1.0 };
+    }
+    let length = (normal_x * normal_x + normal_y * normal_y + normal_z * normal_z).sqrt();
+    if !length.is_finite() || length <= f64::EPSILON {
+        return Err(malformed("paramesh packed direction is degenerate"));
+    }
+    Ok([normal_x / length, normal_y / length, normal_z / length])
+}
+
+/// Expand the role-0 packed-direction channel to one normal per triangle
+/// corner. Indexed channels use their per-vertex defaults and corner overrides.
+fn decode_corner_normals(
+    attributes: &[MeshAttribute],
+    vertices: usize,
+    triangles: &[[u32; 3]],
+) -> Result<Vec<[f64; 3]>, CodecError> {
+    let mut channels = attributes.iter().filter(|attribute| {
+        attribute.role == 0 && u64::from(attribute.element_code) == ELEMENT_PACKED_DIRECTION
+    });
+    let Some(attribute) = channels.next() else {
+        return Ok(Vec::new());
+    };
+    if channels.next().is_some() {
+        return Err(malformed(
+            "paramesh registry declares more than one corner-normal channel",
+        ));
+    }
+    if attribute.item_size != Some(PACKED_DIRECTION_BYTES)
+        || !attribute
+            .values
+            .len()
+            .is_multiple_of(PACKED_DIRECTION_BYTES as usize)
+    {
+        return Err(malformed(
+            "paramesh corner-normal channel has no complete packed-direction table",
+        ));
+    }
+
+    let mut table = Vec::with_capacity(attribute.values.len() / PACKED_DIRECTION_BYTES as usize);
+    for raw in attribute
+        .values
+        .chunks_exact(PACKED_DIRECTION_BYTES as usize)
+    {
+        table.push(decode_packed_direction([
+            f32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]),
+            f32::from_le_bytes([raw[4], raw[5], raw[6], raw[7]]),
+        ])?);
+    }
+
+    if attribute.domain == MeshAttributeDomain::Triangle {
+        return Err(malformed(
+            "paramesh role-0 packed directions do not address triangles",
+        ));
+    }
+    let selectors = attribute
+        .corner_selectors(vertices, triangles)
+        .ok_or_else(|| malformed("paramesh corner-normal addressing is inconsistent"))?;
+
+    selectors
+        .into_iter()
+        .map(|selector| {
+            table
+                .get(
+                    usize::try_from(selector).map_err(|_| {
+                        malformed("paramesh corner-normal selector is out of range")
+                    })?,
+                )
+                .copied()
+                .ok_or_else(|| malformed("paramesh corner-normal selector is out of range"))
+        })
+        .collect()
+}
+
+/// Decode registry field 7 as source-classified mesh edges.
+fn registry_feature_edges(
+    message: &[u8],
+    name_table: &[(String, u64)],
+    streams: &[MeshStream],
+    triangles: &[[u32; 3]],
+    vertices: usize,
+) -> Result<Vec<[u32; 2]>, CodecError> {
+    let mut declaration = None;
+    for (field, value) in protobuf_fields(message)? {
+        if field != REGISTRY_FEATURE_EDGES {
+            continue;
+        }
+        let ProtobufValue::Bytes(entry) = value else {
+            return Err(malformed(
+                "paramesh feature-edge declaration is not a message",
+            ));
+        };
+        if declaration.replace(entry).is_some() {
+            return Err(malformed(
+                "paramesh registry repeats its feature-edge declaration",
+            ));
+        }
+    }
+    let Some(entry) = declaration else {
+        return Ok(Vec::new());
+    };
+
+    let mut stream_name = None;
+    for (field, value) in protobuf_fields(entry)? {
+        let (FEATURE_EDGE_STREAM, ProtobufValue::Bytes(name)) = (field, value) else {
+            return Err(malformed(
+                "paramesh feature-edge declaration has an undefined field",
+            ));
+        };
+        let name = std::str::from_utf8(name)
+            .map_err(|_| malformed("paramesh feature-edge stream name is not UTF-8"))?;
+        if stream_name.replace(name).is_some() {
+            return Err(malformed(
+                "paramesh feature-edge declaration repeats its stream name",
+            ));
+        }
+    }
+    let stream_name = stream_name
+        .ok_or_else(|| malformed("paramesh feature-edge declaration has no stream name"))?;
+    let stream = name_table
+        .iter()
+        .position(|(name, _)| name == stream_name)
+        .and_then(|position| streams.get(position))
+        .ok_or_else(|| malformed("paramesh feature-edge declaration names no stream"))?;
+    require_layout(stream, StreamLayout::TerminalDelta)?;
+    let endpoints = decode_terminal_delta_values(&stream.bytes)?;
+    if !endpoints.len().is_multiple_of(2) {
+        return Err(malformed(
+            "paramesh feature-edge stream has an unmatched endpoint",
+        ));
+    }
+
+    let mut topology_edges = std::collections::BTreeSet::new();
+    for [a, b, c] in triangles {
+        for [left, right] in [[*a, *b], [*b, *c], [*c, *a]] {
+            if left != right {
+                topology_edges.insert([left.min(right), left.max(right)]);
+            }
+        }
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    let mut feature_edges = Vec::with_capacity(endpoints.len() / 2);
+    for pair in endpoints.chunks_exact(2) {
+        let edge = [pair[0], pair[1]];
+        let high_in_domain = usize::try_from(edge[1]).is_ok_and(|endpoint| endpoint < vertices);
+        if edge[0] >= edge[1] || !high_in_domain {
+            return Err(malformed(
+                "paramesh feature-edge endpoints are not an ascending vertex pair",
+            ));
+        }
+        if !topology_edges.contains(&edge) {
+            return Err(malformed(
+                "paramesh feature-edge pair is not an edge of any triangle",
+            ));
+        }
+        if !seen.insert(edge) {
+            return Err(malformed("paramesh feature-edge stream repeats an edge"));
+        }
+        feature_edges.push(edge);
+    }
+    feature_edges.sort_unstable();
+    Ok(feature_edges)
 }
 
 /// Decode one `.paramesh` container entry.
@@ -785,6 +1127,11 @@ pub(crate) fn decode_mesh_container(bytes: &[u8]) -> Result<MeshContainer, Codec
     }
     let mut name_table =
         name_table.ok_or_else(|| malformed("paramesh container has no name table"))?;
+    if name_table.len() != streams.len() {
+        return Err(malformed(
+            "paramesh name table and stream chunk counts differ",
+        ));
+    }
     // The kind-4 chunks follow the name table in ascending stream-id order.
     name_table.sort_by_key(|(_, id)| *id);
     let named = |name: &str| {
@@ -795,11 +1142,11 @@ pub(crate) fn decode_mesh_container(bytes: &[u8]) -> Result<MeshContainer, Codec
     };
     let vertex_stream =
         named("v").ok_or_else(|| malformed("paramesh container has no vertex stream"))?;
-    require_layout(vertex_stream, Some(3), 3, false)?;
+    require_layout(vertex_stream, StreamLayout::Float(3))?;
     let vertices = decode_vertices(&vertex_stream.bytes)?;
     let corner_stream =
         named("t").ok_or_else(|| malformed("paramesh container has no corner stream"))?;
-    require_layout(corner_stream, None, 1, true)?;
+    require_layout(corner_stream, StreamLayout::TerminalDelta)?;
     let triangles = decode_triangles(&corner_stream.bytes, vertices.len())?;
     let corner_count = triangles
         .len()
@@ -807,18 +1154,23 @@ pub(crate) fn decode_mesh_container(bytes: &[u8]) -> Result<MeshContainer, Codec
         .ok_or_else(|| malformed("paramesh triangle corner count is out of range"))?;
     let attributes =
         registry_attributes(message, &name_table, &streams, vertices.len(), corner_count)?;
+    let feature_edges =
+        registry_feature_edges(message, &name_table, &streams, &triangles, vertices.len())?;
+    let corner_normals = decode_corner_normals(&attributes, vertices.len(), &triangles)?;
     Ok(MeshContainer {
         fusion_uuid,
         vertices,
         triangles,
+        feature_edges,
+        corner_normals,
         attributes,
     })
 }
 
 /// Collect registry-declared attribute channels in registry order.
 ///
-/// The registry declares the channel; its value stream supplies the data. A
-/// missing value stream causes the decoder to skip the channel.
+/// The registry declares the channel; its named value and index streams supply
+/// the data. Every declared stream must exist.
 fn registry_attributes(
     message: &[u8],
     name_table: &[(String, u64)],
@@ -833,27 +1185,50 @@ fn registry_attributes(
             .and_then(|position| streams.get(position))
     };
     let mut attributes = Vec::new();
-    for (field, value) in protobuf_fields(message) {
-        let domain = match field {
+    for (field, value) in protobuf_fields(message)? {
+        let declared_domain = match field {
             REGISTRY_VERTEX_CHANNEL => MeshAttributeDomain::Vertex,
             REGISTRY_TRIANGLE_CHANNEL => MeshAttributeDomain::Triangle,
             _ => continue,
         };
         let ProtobufValue::Bytes(entry) = value else {
-            continue;
+            return Err(malformed(
+                "paramesh registry channel declaration is not a message",
+            ));
         };
-        let Some((streams, role, domain)) = registry_channel(entry, domain) else {
-            continue;
-        };
-        let Some(stream) = named(streams.values) else {
-            continue;
-        };
-        if streams.element_code == ELEMENT_TRIANGLE_DELTA {
-            require_layout(stream, None, 1, true)?;
+        let (streams, role, domain) = registry_channel(entry, declared_domain)?;
+        if declared_domain == MeshAttributeDomain::Triangle && streams.index.is_some() {
+            return Err(malformed(
+                "paramesh triangle channel declares a corner index stream",
+            ));
         }
-        let index_stream = streams.index.and_then(named);
+        let stream = named(streams.values)
+            .ok_or_else(|| malformed("paramesh channel declares an absent value stream"))?;
+        match streams.element_code {
+            ELEMENT_PAIR => require_layout(stream, StreamLayout::Float(2))?,
+            ELEMENT_QUAD => require_layout(stream, StreamLayout::Float(4))?,
+            ELEMENT_PACKED_DIRECTION => {
+                require_layout(stream, StreamLayout::PackedDirection)?;
+            }
+            ELEMENT_TRIANGLE_DELTA => {
+                if declared_domain != MeshAttributeDomain::Triangle {
+                    return Err(malformed(
+                        "paramesh delta-coded triangle elements use a non-triangle channel",
+                    ));
+                }
+                require_layout(stream, StreamLayout::TerminalDelta)?;
+            }
+            _ => {}
+        }
+        let index_stream = streams
+            .index
+            .map(|name| {
+                named(name)
+                    .ok_or_else(|| malformed("paramesh channel declares an absent index stream"))
+            })
+            .transpose()?;
         if let Some(index_stream) = index_stream {
-            require_layout(index_stream, None, 1, true)?;
+            require_layout(index_stream, StreamLayout::TerminalDelta)?;
         }
         let mut attribute = MeshAttribute {
             role,
@@ -864,6 +1239,11 @@ fn registry_attributes(
             values: stream.bytes.clone(),
             indices: None,
         };
+        if attribute.item_size.is_some() && attribute.count().is_none() {
+            return Err(malformed(
+                "paramesh channel value stream ends inside an element",
+            ));
+        }
         if let (Some(index_stream), Some(count)) = (index_stream, attribute.count()) {
             attribute.indices = Some(decode_index_positions(
                 &index_stream.bytes,
@@ -872,15 +1252,25 @@ fn registry_attributes(
                 corners,
             )?);
         }
-        // A vertex-domain channel stores one value per vertex. A conflicting
-        // element width leaves the item size unset. The mesh geometry remains
-        // available, and the report records the channel.
-        if attribute.domain == MeshAttributeDomain::Vertex
+        if attribute.item_size.is_some()
+            && attribute.domain == MeshAttributeDomain::Vertex
             && attribute
                 .count()
                 .is_none_or(|count| usize::try_from(count) != Ok(vertices))
         {
-            attribute.item_size = None;
+            return Err(malformed(
+                "paramesh vertex-channel element count differs from the vertex count",
+            ));
+        }
+        if attribute.item_size.is_some()
+            && attribute.domain == MeshAttributeDomain::Triangle
+            && attribute
+                .count()
+                .is_none_or(|count| usize::try_from(count).ok() != corners.checked_div(3))
+        {
+            return Err(malformed(
+                "paramesh triangle-channel element count differs from the triangle count",
+            ));
         }
         attributes.push(attribute);
     }
@@ -1022,6 +1412,51 @@ mod tests {
     /// A descriptor map for a delta-coded `i32` stream.
     fn delta_descriptor() -> Vec<u8> {
         vec![0x82, 0xa1, b'T', 1, 0xa1, b'd', 1]
+    }
+
+    /// A descriptor map for one octahedrally packed direction.
+    fn packed_direction_descriptor() -> Vec<u8> {
+        vec![0x83, 0xa1, b'D', 3, 0xa1, b'T', 3, 0xa1, b'U', 0xc3]
+    }
+
+    fn feature_edge_entry(stream: &str) -> Vec<u8> {
+        bytes_field(
+            REGISTRY_FEATURE_EDGES,
+            &bytes_field(FEATURE_EDGE_STREAM, stream.as_bytes()),
+        )
+    }
+
+    /// Encode a complete value sequence with terminal-delta framing.
+    fn terminal_delta_values(values: &[i32]) -> Vec<u8> {
+        if values.is_empty() {
+            return Vec::new();
+        }
+        let mut encoded = Vec::with_capacity(values.len() * 4);
+        for pair in values.windows(2) {
+            encoded.extend_from_slice(&(pair[1] - pair[0]).to_le_bytes());
+        }
+        encoded.extend_from_slice(
+            &u32::try_from(*values.last().expect("terminal value"))
+                .expect("nonnegative terminal value")
+                .to_le_bytes(),
+        );
+        encoded
+    }
+
+    fn packed_directions(values: &[[f32; 2]]) -> Vec<u8> {
+        values
+            .iter()
+            .flatten()
+            .flat_map(|value| value.to_le_bytes())
+            .collect()
+    }
+
+    fn assert_malformed(result: Result<MeshContainer, CodecError>) {
+        match result {
+            Err(CodecError::Malformed(_)) => {}
+            Err(error) => panic!("expected malformed error, got {error:?}"),
+            Ok(_) => panic!("expected malformed error, got a mesh"),
+        }
     }
 
     /// One container holding `v`, `t`, and every extra named stream in
@@ -1181,6 +1616,200 @@ mod tests {
         assert!(decode_index_positions(&out_of_range, 4, 3, 3).is_err());
     }
 
+    #[test]
+    fn octahedral_directions_cover_axes_and_the_negative_hemisphere() {
+        let cases = [
+            ([0.0, 0.0], [0.0, 0.0, 1.0]),
+            ([1.0, 0.0], [1.0, 0.0, 0.0]),
+            ([0.0, -1.0], [0.0, -1.0, 0.0]),
+            ([1.0, 1.0], [0.0, 0.0, -1.0]),
+            (
+                [-0.75, 0.75],
+                [
+                    -0.408_248_290_463_863_1,
+                    0.408_248_290_463_863_1,
+                    -0.816_496_580_927_726_1,
+                ],
+            ),
+        ];
+        for (packed, expected) in cases {
+            let actual = decode_packed_direction(packed).expect("packed direction");
+            for (actual, expected) in actual.into_iter().zip(expected) {
+                assert!((actual - expected).abs() < 1.0e-12);
+            }
+        }
+    }
+
+    #[test]
+    fn indexed_packed_directions_expand_vertex_defaults_and_corner_overrides() {
+        let registry = channel_entry(
+            REGISTRY_VERTEX_CHANNEL,
+            Some(0),
+            ELEMENT_PACKED_DIRECTION,
+            "r0",
+            Some("r0i"),
+        );
+        let mesh = decode_mesh_container(&container_with_registry(
+            &TRIANGLE_VERTICES,
+            &TRIANGLE_CORNERS,
+            &registry,
+            &[
+                (
+                    "r0",
+                    packed_direction_descriptor(),
+                    packed_directions(&[[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]),
+                ),
+                ("r0i", delta_descriptor(), terminal_delta_values(&[1])),
+            ],
+        ))
+        .expect("mesh container");
+        assert_eq!(
+            mesh.corner_normals,
+            [[0.0, 0.0, 1.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]]
+        );
+        assert_eq!(mesh.attributes[0].domain, MeshAttributeDomain::Corner);
+        assert_eq!(mesh.attributes[0].indices, Some(vec![1]));
+    }
+
+    #[test]
+    fn packed_directions_require_the_octahedral_descriptor_and_domain() {
+        let registry = channel_entry(
+            REGISTRY_VERTEX_CHANNEL,
+            Some(0),
+            ELEMENT_PACKED_DIRECTION,
+            "r0",
+            None,
+        );
+        let valid = packed_directions(&[[0.0, 0.0]; 3]);
+        assert_malformed(decode_mesh_container(&container_with_registry(
+            &TRIANGLE_VERTICES,
+            &TRIANGLE_CORNERS,
+            &registry,
+            &[("r0", float_descriptor(3), valid)],
+        )));
+
+        for invalid in [[f32::NAN, 0.0], [1.000_001, 0.0]] {
+            let mut values = [[0.0, 0.0]; 3];
+            values[0] = invalid;
+            assert_malformed(decode_mesh_container(&container_with_registry(
+                &TRIANGLE_VERTICES,
+                &TRIANGLE_CORNERS,
+                &registry,
+                &[(
+                    "r0",
+                    packed_direction_descriptor(),
+                    packed_directions(&values),
+                )],
+            )));
+        }
+
+        let registry = channel_entry(
+            REGISTRY_TRIANGLE_CHANNEL,
+            Some(0),
+            ELEMENT_PACKED_DIRECTION,
+            "r0",
+            None,
+        );
+        assert_malformed(decode_mesh_container(&container_with_registry(
+            &TRIANGLE_VERTICES,
+            &TRIANGLE_CORNERS,
+            &registry,
+            &[(
+                "r0",
+                packed_direction_descriptor(),
+                packed_directions(&[[0.0, 0.0]]),
+            )],
+        )));
+    }
+
+    #[test]
+    fn feature_edges_use_terminal_deltas_and_canonical_ir_order() {
+        let registry = feature_edge_entry("edges");
+        let mesh = decode_mesh_container(&container_with_registry(
+            &TRIANGLE_VERTICES,
+            &TRIANGLE_CORNERS,
+            &registry,
+            &[(
+                "edges",
+                delta_descriptor(),
+                terminal_delta_values(&[1, 2, 0, 1]),
+            )],
+        ))
+        .expect("mesh container");
+        assert_eq!(mesh.feature_edges, [[0, 1], [1, 2]]);
+    }
+
+    #[test]
+    fn an_empty_feature_edge_stream_is_an_empty_classification() {
+        let registry = feature_edge_entry("edges");
+        let mesh = decode_mesh_container(&container_with_registry(
+            &TRIANGLE_VERTICES,
+            &TRIANGLE_CORNERS,
+            &registry,
+            &[("edges", delta_descriptor(), Vec::new())],
+        ))
+        .expect("mesh container");
+        assert!(mesh.feature_edges.is_empty());
+    }
+
+    #[test]
+    fn feature_edges_must_be_complete_unique_topology_edges() {
+        let registry = feature_edge_entry("edges");
+        for endpoints in [
+            vec![0, 1, 2],
+            vec![1, 0],
+            vec![1, 1],
+            vec![0, 3],
+            vec![0, 1, 0, 1],
+        ] {
+            assert_malformed(decode_mesh_container(&container_with_registry(
+                &TRIANGLE_VERTICES,
+                &TRIANGLE_CORNERS,
+                &registry,
+                &[(
+                    "edges",
+                    delta_descriptor(),
+                    terminal_delta_values(&endpoints),
+                )],
+            )));
+        }
+
+        let four_vertices = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 2.0, 2.0, 0.0];
+        assert_malformed(decode_mesh_container(&container_with_registry(
+            &four_vertices,
+            &TRIANGLE_CORNERS,
+            &registry,
+            &[("edges", delta_descriptor(), terminal_delta_values(&[0, 3]))],
+        )));
+    }
+
+    #[test]
+    fn feature_edge_declarations_require_one_existing_delta_stream() {
+        let registry = feature_edge_entry("absent");
+        assert_malformed(decode_mesh_container(&container_with_registry(
+            &TRIANGLE_VERTICES,
+            &TRIANGLE_CORNERS,
+            &registry,
+            &[],
+        )));
+
+        let registry = [feature_edge_entry("edges"), feature_edge_entry("edges")].concat();
+        assert_malformed(decode_mesh_container(&container_with_registry(
+            &TRIANGLE_VERTICES,
+            &TRIANGLE_CORNERS,
+            &registry,
+            &[("edges", delta_descriptor(), Vec::new())],
+        )));
+
+        let registry = feature_edge_entry("edges");
+        assert_malformed(decode_mesh_container(&container_with_registry(
+            &TRIANGLE_VERTICES,
+            &TRIANGLE_CORNERS,
+            &registry,
+            &[("edges", float_descriptor(2), Vec::new())],
+        )));
+    }
+
     /// A triangle-domain code-7 channel keeps one raw four-byte value per
     /// triangle. Its scalar interpretation is outside this native layer.
     #[test]
@@ -1200,28 +1829,22 @@ mod tests {
         assert_eq!(attribute.count(), Some(1));
     }
 
-    /// A vertex-domain channel with a conflicting count leaves its item size
-    /// unset. The mesh geometry remains available, and the report records the
-    /// channel.
+    /// A known vertex-domain channel must carry exactly one value per vertex.
     #[test]
-    fn vertex_domain_channel_leaves_a_contradicted_count_unsettled() {
+    fn vertex_domain_channel_rejects_a_contradicted_count() {
         let registry = channel_entry(REGISTRY_VERTEX_CHANNEL, Some(3), ELEMENT_PAIR, "r0", None);
-        let mesh = decode_mesh_container(&container_with_registry(
+        assert_malformed(decode_mesh_container(&container_with_registry(
             &TRIANGLE_VERTICES,
             &TRIANGLE_CORNERS,
             &registry,
             &[("r0", float_descriptor(2), vec![0; 8 * 4])],
-        ))
-        .expect("mesh container");
-        assert_eq!(mesh.triangles.len(), 1);
-        assert_eq!(mesh.attributes[0].item_size, None);
-        assert_eq!(mesh.attributes[0].count(), None);
+        )));
     }
 
     /// The registry declares the channel; its value stream supplies the data.
-    /// A missing value stream causes the decoder to skip the channel.
+    /// A missing declared value stream makes the container malformed.
     #[test]
-    fn a_channel_naming_an_absent_stream_is_skipped() {
+    fn a_channel_naming_an_absent_stream_is_rejected() {
         let registry = channel_entry(
             REGISTRY_VERTEX_CHANNEL,
             Some(3),
@@ -1229,14 +1852,60 @@ mod tests {
             "absent",
             None,
         );
-        let mesh = decode_mesh_container(&container_with_registry(
+        assert_malformed(decode_mesh_container(&container_with_registry(
             &TRIANGLE_VERTICES,
             &TRIANGLE_CORNERS,
             &registry,
             &[],
-        ))
-        .expect("mesh container");
-        assert!(mesh.attributes.is_empty());
+        )));
+
+        let registry = channel_entry(
+            REGISTRY_VERTEX_CHANNEL,
+            Some(4),
+            ELEMENT_QUAD,
+            "r0",
+            Some("absent"),
+        );
+        assert_malformed(decode_mesh_container(&container_with_registry(
+            &TRIANGLE_VERTICES,
+            &TRIANGLE_CORNERS,
+            &registry,
+            &[("r0", float_descriptor(4), vec![0; 3 * 16])],
+        )));
+    }
+
+    #[test]
+    fn malformed_protobuf_cannot_silently_end_the_registry_walk() {
+        assert!(matches!(
+            protobuf_fields(&[0x80]),
+            Err(CodecError::Malformed(_))
+        ));
+        assert!(matches!(
+            protobuf_fields(&[0x0b]),
+            Err(CodecError::Malformed(_))
+        ));
+
+        let registry = varint_field(REGISTRY_VERTEX_CHANNEL, 0);
+        assert_malformed(decode_mesh_container(&container_with_registry(
+            &TRIANGLE_VERTICES,
+            &TRIANGLE_CORNERS,
+            &registry,
+            &[],
+        )));
+    }
+
+    #[test]
+    fn name_table_requires_unique_complete_stream_bindings() {
+        for table in [
+            vec![0x82, 0xa1, b'v', 2, 0xa1, b'v', 3],
+            vec![0x82, 0xa1, b'v', 2, 0xa1, b't', 2],
+            vec![0x81, 0xa1, b'v', 2, 0],
+        ] {
+            assert!(matches!(
+                message_pack_name_table(&table),
+                Err(CodecError::Malformed(_))
+            ));
+        }
     }
 
     /// Two triangles over four vertices. The delta range uniquely determines
