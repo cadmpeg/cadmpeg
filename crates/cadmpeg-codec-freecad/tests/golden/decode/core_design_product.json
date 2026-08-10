@@ -5058,15 +5058,35 @@
         },
         {
           "geometry": {
-            "direction": {
-              "u": 1.0,
-              "v": 0.0
+            "basis": {
+              "direction": {
+                "u": -1.0,
+                "v": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "u": 6.283185307179586,
+                "v": -10.0
+              }
             },
-            "kind": "line",
-            "origin": {
-              "u": -6.283185307179586,
-              "v": -10.0
-            }
+            "kind": "transformed",
+            "transform": [
+              [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
           },
           "id": "fcstd:model:pcurve#Cut:Shape:Cut.Shape.brp:23%3A3%3A1",
           "parameter_range": [
@@ -5220,15 +5240,35 @@
         },
         {
           "geometry": {
-            "direction": {
-              "u": -1.0,
-              "v": 0.0
+            "basis": {
+              "direction": {
+                "u": 1.0,
+                "v": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "u": 0.0,
+                "v": 0.0
+              }
             },
-            "kind": "line",
-            "origin": {
-              "u": -0.0,
-              "v": 0.0
-            }
+            "kind": "transformed",
+            "transform": [
+              [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
           },
           "id": "fcstd:model:pcurve#Cut:Shape:Cut.Shape.brp:34%3A3%3A1",
           "parameter_range": [
@@ -5238,15 +5278,35 @@
         },
         {
           "geometry": {
-            "direction": {
-              "u": -0.0,
-              "v": -1.0
+            "basis": {
+              "direction": {
+                "u": 0.0,
+                "v": -1.0
+              },
+              "kind": "line",
+              "origin": {
+                "u": 0.0,
+                "v": 0.0
+              }
             },
-            "kind": "line",
-            "origin": {
-              "u": -0.0,
-              "v": 0.0
-            }
+            "kind": "transformed",
+            "transform": [
+              [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
           },
           "id": "fcstd:model:pcurve#Cut:Shape:Cut.Shape.brp:39%3A2%3A1",
           "parameter_range": [
@@ -5256,15 +5316,35 @@
         },
         {
           "geometry": {
-            "direction": {
-              "u": -0.0,
-              "v": -1.0
+            "basis": {
+              "direction": {
+                "u": 0.0,
+                "v": -1.0
+              },
+              "kind": "line",
+              "origin": {
+                "u": 6.283185307179586,
+                "v": 0.0
+              }
             },
-            "kind": "line",
-            "origin": {
-              "u": -6.283185307179586,
-              "v": 0.0
-            }
+            "kind": "transformed",
+            "transform": [
+              [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
           },
           "id": "fcstd:model:pcurve#Cut:Shape:Cut.Shape.brp:39%3A2%3A2",
           "parameter_range": [
@@ -5382,15 +5462,35 @@
         },
         {
           "geometry": {
-            "direction": {
-              "u": -0.0,
-              "v": -1.0
+            "basis": {
+              "direction": {
+                "u": 0.0,
+                "v": -1.0
+              },
+              "kind": "line",
+              "origin": {
+                "u": 0.0,
+                "v": 0.0
+              }
             },
-            "kind": "line",
-            "origin": {
-              "u": -0.0,
-              "v": 0.0
-            }
+            "kind": "transformed",
+            "transform": [
+              [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
           },
           "id": "fcstd:model:pcurve#Cylinder:Shape:Cylinder.Shape.brp:2%3A2%3A1",
           "parameter_range": [
@@ -5400,15 +5500,35 @@
         },
         {
           "geometry": {
-            "direction": {
-              "u": -0.0,
-              "v": -1.0
+            "basis": {
+              "direction": {
+                "u": 0.0,
+                "v": -1.0
+              },
+              "kind": "line",
+              "origin": {
+                "u": 6.283185307179586,
+                "v": 0.0
+              }
             },
-            "kind": "line",
-            "origin": {
-              "u": -6.283185307179586,
-              "v": 0.0
-            }
+            "kind": "transformed",
+            "transform": [
+              [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
           },
           "id": "fcstd:model:pcurve#Cylinder:Shape:Cylinder.Shape.brp:2%3A2%3A2",
           "parameter_range": [
@@ -5441,15 +5561,35 @@
         },
         {
           "geometry": {
-            "direction": {
-              "u": -1.0,
-              "v": 0.0
+            "basis": {
+              "direction": {
+                "u": 1.0,
+                "v": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "u": 0.0,
+                "v": 0.0
+              }
             },
-            "kind": "line",
-            "origin": {
-              "u": -0.0,
-              "v": 0.0
-            }
+            "kind": "transformed",
+            "transform": [
+              [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
           },
           "id": "fcstd:model:pcurve#Cylinder:Shape:Cylinder.Shape.brp:3%3A3%3A1",
           "parameter_range": [
@@ -5459,15 +5599,35 @@
         },
         {
           "geometry": {
-            "direction": {
-              "u": -1.0,
-              "v": 0.0
+            "basis": {
+              "direction": {
+                "u": 1.0,
+                "v": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "u": 0.0,
+                "v": -16.0
+              }
             },
-            "kind": "line",
-            "origin": {
-              "u": -0.0,
-              "v": -16.0
-            }
+            "kind": "transformed",
+            "transform": [
+              [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
           },
           "id": "fcstd:model:pcurve#Cylinder:Shape:Cylinder.Shape.brp:3%3A4%3A1",
           "parameter_range": [

@@ -1873,7 +1873,7 @@ fn append_text_surface(
                     axis_direction: *axis_direction,
                     angular_interval: [0.0, std::f64::consts::TAU],
                     parameter_interval: None,
-                    transposed: false,
+                    transposed: true,
                     revision_form: None,
                 },
                 record_bounds: None,
@@ -1885,6 +1885,15 @@ fn append_text_surface(
             parameter_ranges,
             basis,
         } => {
+            let basis_parameters = brep::surface_parameter_affine(basis);
+            let parameter_ranges = [
+                parameter_ranges[0].map(|value| {
+                    value.mul_add(basis_parameters.u_scale, basis_parameters.u_offset)
+                }),
+                parameter_ranges[1].map(|value| {
+                    value.mul_add(basis_parameters.v_scale, basis_parameters.v_offset)
+                }),
+            ];
             let basis_id = SurfaceId(format!("{}:basis", id.0));
             let basis_geometry = append_text_surface(
                 basis,
@@ -1898,7 +1907,7 @@ fn append_text_surface(
                 surface: id.clone(),
                 definition: ProceduralSurfaceDefinition::Subset {
                     support: basis_id,
-                    parameter_ranges: *parameter_ranges,
+                    parameter_ranges,
                     u_sense: None,
                     v_sense: None,
                 },

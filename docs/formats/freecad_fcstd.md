@@ -214,7 +214,9 @@ the cross product of its axis and reference direction. If the persisted plane fr
 opposite V direction, the pcurve V parameter is negated. If a persisted cylinder, cone, sphere, or
 torus frame has the opposite circumferential direction, the pcurve U parameter is negated. A cone
 pcurve V parameter is also multiplied by the cosine of the cone half-angle to convert persisted
-slant distance to neutral axial distance.
+slant distance to neutral axial distance. A surface of revolution uses U as its rotation angle and
+V as its directrix parameter. A trimmed surface converts its persisted support-coordinate bounds
+and pcurves to zero-based local parameters while preserving each bound's direction.
 
 The B-rep edge record stores incidence but no radial order between three or more face uses. One
 coedge is self-radial. Two coedges reference each other. Three or more coedges remain self-radial;

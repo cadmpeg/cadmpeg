@@ -5419,6 +5419,45 @@ fn transfers_recursive_exact_parameter_curve_geometry() {
 }
 
 #[test]
+fn transfers_occt_revolution_surface_parameter_order() {
+    let surface = crate::brep::TextSurface::Revolution {
+        axis_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        axis_direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        directrix: Box::new(crate::brep::TextCurve::Circle {
+            center: cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0),
+            axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+            ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            radius: 1.0,
+        }),
+    };
+    let association = cadmpeg_ir::SourceObjectAssociation {
+        format: "fcstd".into(),
+        object_id: "fcstd:native:object#Surface".into(),
+        name: None,
+        color: None,
+        visible: None,
+        layer: None,
+        instance_path: Vec::new(),
+    };
+    let mut curves = crate::CurveTransfer::default();
+    let mut surfaces = crate::SurfaceTransfer::default();
+    crate::append_text_surface(
+        &surface,
+        cadmpeg_ir::ids::SurfaceId("fcstd:model:surface#revolution".into()),
+        &association,
+        &mut curves,
+        &mut surfaces,
+    );
+    assert!(matches!(
+        surfaces.procedural[0].definition,
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
+            transposed: true,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn transfers_binary_exact_curve_and_surface_carriers() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>

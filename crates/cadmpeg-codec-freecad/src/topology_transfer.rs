@@ -14,18 +14,19 @@ use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
 };
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
-use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::transform::{Transform, Transform2};
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::brep::{
-    ShapePayloadRecord, TextCurve2d, TextEdgeRepresentation, TextLocation, TextOrientation,
-    TextPolygon3d, TextPolygonOnTriangulation, TextShapeKind, TextShapeUse, TextSurface,
-    TextTShape, TextTShapeGeometry, TextTriangulation,
+    surface_parameter_affine, ShapePayloadRecord, SurfaceParameterAffine, TextCurve2d,
+    TextEdgeRepresentation, TextLocation, TextOrientation, TextPolygon3d,
+    TextPolygonOnTriangulation, TextShapeKind, TextShapeUse, TextSurface, TextTShape,
+    TextTShapeGeometry, TextTriangulation,
 };
 use crate::native::PropertyRecord;
 
@@ -234,18 +235,14 @@ impl<'a> Builder<'a> {
                 if !matches!(representation.kind, 2 | 3) {
                     continue;
                 }
-                let (u_scale, v_scale) = representation
+                let parameter_affine = representation
                     .surface
                     .and_then(|surface| self.tables.surfaces.get(surface - 1))
-                    .map_or((None, None), pcurve_parameter_scales);
-                let mut primary_geometry =
-                    pcurve_geometry(&self.tables.curve2ds[representation.primary - 1]);
-                if let Some(v_scale) = v_scale {
-                    scale_pcurve_v(&mut primary_geometry, v_scale);
-                }
-                if let Some(u_scale) = u_scale {
-                    scale_pcurve_u(&mut primary_geometry, u_scale);
-                }
+                    .map(surface_parameter_affine);
+                let primary_geometry = transformed_pcurve_geometry(
+                    pcurve_geometry(&self.tables.curve2ds[representation.primary - 1]),
+                    parameter_affine,
+                );
                 ir.model.pcurves.push(Pcurve {
                     id: self.pcurve_id(shape.index, representation_index, false),
                     geometry: primary_geometry,
@@ -255,14 +252,10 @@ impl<'a> Builder<'a> {
                     fit_tolerance: None,
                 });
                 if let Some(secondary) = representation.secondary {
-                    let mut secondary_geometry =
-                        pcurve_geometry(&self.tables.curve2ds[secondary - 1]);
-                    if let Some(v_scale) = v_scale {
-                        scale_pcurve_v(&mut secondary_geometry, v_scale);
-                    }
-                    if let Some(u_scale) = u_scale {
-                        scale_pcurve_u(&mut secondary_geometry, u_scale);
-                    }
+                    let secondary_geometry = transformed_pcurve_geometry(
+                        pcurve_geometry(&self.tables.curve2ds[secondary - 1]),
+                        parameter_affine,
+                    );
                     ir.model.pcurves.push(Pcurve {
                         id: self.pcurve_id(shape.index, representation_index, true),
                         geometry: secondary_geometry,
@@ -1152,26 +1145,32 @@ impl<'a> Builder<'a> {
     }
 }
 
-fn pcurve_parameter_scales(surface: &TextSurface) -> (Option<f64>, Option<f64>) {
-    match surface {
-        TextSurface::Plane {
-            v_reversed: true, ..
-        } => (None, Some(-1.0)),
-        TextSurface::Cylinder {
-            u_reversed: true, ..
-        }
-        | TextSurface::Sphere {
-            u_reversed: true, ..
-        }
-        | TextSurface::Torus {
-            u_reversed: true, ..
-        } => (Some(-1.0), None),
-        TextSurface::Cone {
-            half_angle,
-            u_reversed,
-            ..
-        } => (u_reversed.then_some(-1.0), Some(half_angle.cos())),
-        _ => (None, None),
+fn transformed_pcurve_geometry(
+    geometry: PcurveGeometry,
+    affine: Option<SurfaceParameterAffine>,
+) -> PcurveGeometry {
+    let Some(affine) = affine else {
+        return geometry;
+    };
+    if affine
+        == (SurfaceParameterAffine {
+            u_scale: 1.0,
+            u_offset: 0.0,
+            v_scale: 1.0,
+            v_offset: 0.0,
+        })
+    {
+        return geometry;
+    }
+    PcurveGeometry::Transformed {
+        basis: Box::new(geometry),
+        transform: Transform2 {
+            rows: [
+                [affine.u_scale, 0.0, affine.u_offset],
+                [0.0, affine.v_scale, affine.v_offset],
+                [0.0, 0.0, 1.0],
+            ],
+        },
     }
 }
 
@@ -1252,201 +1251,6 @@ pub(crate) fn pcurve_geometry(curve: &TextCurve2d) -> PcurveGeometry {
             distance: *distance,
             basis: Box::new(pcurve_geometry(basis)),
         },
-    }
-}
-
-fn scale_pcurve_v(geometry: &mut PcurveGeometry, scale: f64) {
-    let scale_point = |point: &mut Point2| point.v *= scale;
-    match geometry {
-        PcurveGeometry::Line { origin, direction } => {
-            scale_point(origin);
-            scale_point(direction);
-        }
-        PcurveGeometry::Circle {
-            center,
-            x_axis,
-            y_axis,
-            ..
-        }
-        | PcurveGeometry::Ellipse {
-            center,
-            x_axis,
-            y_axis,
-            ..
-        }
-        | PcurveGeometry::Hyperbola {
-            center,
-            x_axis,
-            y_axis,
-            ..
-        } => {
-            scale_point(center);
-            scale_point(x_axis);
-            scale_point(y_axis);
-        }
-        PcurveGeometry::Harmonic {
-            center,
-            cosine,
-            sine,
-        }
-        | PcurveGeometry::Hyperbolic {
-            center,
-            cosine,
-            sine,
-        } => {
-            scale_point(center);
-            scale_point(cosine);
-            scale_point(sine);
-        }
-        PcurveGeometry::Parabola {
-            vertex,
-            x_axis,
-            y_axis,
-            ..
-        } => {
-            scale_point(vertex);
-            scale_point(x_axis);
-            scale_point(y_axis);
-        }
-        PcurveGeometry::Nurbs { control_points, .. } => {
-            control_points.iter_mut().for_each(scale_point);
-        }
-        PcurveGeometry::PolarHarmonic {
-            axial_origin,
-            axial_cos,
-            axial_sin,
-            ..
-        } => {
-            *axial_origin *= scale;
-            *axial_cos *= scale;
-            *axial_sin *= scale;
-        }
-        PcurveGeometry::PolarNurbs {
-            axial_control_points,
-            ..
-        } => {
-            for value in axial_control_points {
-                *value *= scale;
-            }
-        }
-        PcurveGeometry::SphericalGreatCircle { plane_slope, .. } => {
-            debug_assert_eq!(scale.abs(), 1.0);
-            *plane_slope *= scale;
-        }
-        PcurveGeometry::Transformed { basis, transform } => {
-            if scale == 0.0 {
-                return;
-            }
-            scale_pcurve_v(basis, scale);
-            transform.rows[0][1] /= scale;
-            transform.rows[1][0] *= scale;
-            transform.rows[1][2] *= scale;
-        }
-        PcurveGeometry::Trimmed { basis, .. } | PcurveGeometry::Offset { basis, .. } => {
-            scale_pcurve_v(basis, scale);
-        }
-    }
-}
-
-fn scale_pcurve_u(geometry: &mut PcurveGeometry, scale: f64) {
-    let scale_point = |point: &mut Point2| point.u *= scale;
-    match geometry {
-        PcurveGeometry::Line { origin, direction } => {
-            scale_point(origin);
-            scale_point(direction);
-        }
-        PcurveGeometry::Circle {
-            center,
-            x_axis,
-            y_axis,
-            ..
-        }
-        | PcurveGeometry::Ellipse {
-            center,
-            x_axis,
-            y_axis,
-            ..
-        }
-        | PcurveGeometry::Hyperbola {
-            center,
-            x_axis,
-            y_axis,
-            ..
-        } => {
-            scale_point(center);
-            scale_point(x_axis);
-            scale_point(y_axis);
-        }
-        PcurveGeometry::Harmonic {
-            center,
-            cosine,
-            sine,
-        }
-        | PcurveGeometry::Hyperbolic {
-            center,
-            cosine,
-            sine,
-        } => {
-            scale_point(center);
-            scale_point(cosine);
-            scale_point(sine);
-        }
-        PcurveGeometry::Parabola {
-            vertex,
-            x_axis,
-            y_axis,
-            ..
-        } => {
-            scale_point(vertex);
-            scale_point(x_axis);
-            scale_point(y_axis);
-        }
-        PcurveGeometry::Nurbs { control_points, .. } => {
-            control_points.iter_mut().for_each(scale_point);
-        }
-        PcurveGeometry::PolarHarmonic {
-            radial_center,
-            radial_cos,
-            radial_sin,
-            ..
-        } => {
-            debug_assert_eq!(scale, -1.0);
-            radial_center.v = -radial_center.v;
-            radial_cos.v = -radial_cos.v;
-            radial_sin.v = -radial_sin.v;
-        }
-        PcurveGeometry::PolarNurbs {
-            radial_control_points,
-            ..
-        } => {
-            debug_assert_eq!(scale, -1.0);
-            for point in radial_control_points {
-                point.v = -point.v;
-            }
-        }
-        PcurveGeometry::SphericalGreatCircle {
-            azimuth_origin,
-            azimuth_rate,
-            plane_phase,
-            ..
-        } => {
-            debug_assert_eq!(scale, -1.0);
-            *azimuth_origin = -*azimuth_origin;
-            *azimuth_rate = -*azimuth_rate;
-            *plane_phase = -*plane_phase;
-        }
-        PcurveGeometry::Transformed { basis, transform } => {
-            if scale == 0.0 {
-                return;
-            }
-            scale_pcurve_u(basis, scale);
-            transform.rows[0][1] *= scale;
-            transform.rows[0][2] *= scale;
-            transform.rows[1][0] /= scale;
-        }
-        PcurveGeometry::Trimmed { basis, .. } | PcurveGeometry::Offset { basis, .. } => {
-            scale_pcurve_u(basis, scale);
-        }
     }
 }
 
@@ -1831,7 +1635,9 @@ mod tests {
             radius: 1.0,
             u_reversed: true,
         };
-        assert_eq!(pcurve_parameter_scales(&surface), (Some(-1.0), None));
+        let affine = surface_parameter_affine(&surface);
+        assert_eq!(affine.u_scale, -1.0);
+        assert_eq!(affine.v_scale, 1.0);
 
         let cone = TextSurface::Cone {
             origin: Point3::new(0.0, 0.0, 0.0),
@@ -1841,8 +1647,18 @@ mod tests {
             half_angle: std::f64::consts::FRAC_PI_3,
             u_reversed: true,
         };
-        let (u_scale, v_scale) = pcurve_parameter_scales(&cone);
-        assert_eq!(u_scale, Some(-1.0));
-        assert!((v_scale.expect("cone axial scale") - 0.5).abs() < 1.0e-15);
+        let affine = surface_parameter_affine(&cone);
+        assert_eq!(affine.u_scale, -1.0);
+        assert!((affine.v_scale - 0.5).abs() < 1.0e-15);
+
+        let trimmed = TextSurface::Trimmed {
+            parameter_ranges: [[2.0, 3.0], [4.0, 8.0]],
+            basis: Box::new(cone),
+        };
+        let affine = surface_parameter_affine(&trimmed);
+        assert_eq!(affine.u_scale, 1.0);
+        assert_eq!(affine.u_offset, -2.0);
+        assert!((affine.v_scale - 0.5).abs() < 1.0e-15);
+        assert!((affine.v_offset + 2.0).abs() < 1.0e-15);
     }
 }

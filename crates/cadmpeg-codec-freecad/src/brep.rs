@@ -454,6 +454,68 @@ pub enum TextSurface {
     },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct SurfaceParameterAffine {
+    pub(crate) u_scale: f64,
+    pub(crate) u_offset: f64,
+    pub(crate) v_scale: f64,
+    pub(crate) v_offset: f64,
+}
+
+pub(crate) fn surface_parameter_affine(surface: &TextSurface) -> SurfaceParameterAffine {
+    let identity = SurfaceParameterAffine {
+        u_scale: 1.0,
+        u_offset: 0.0,
+        v_scale: 1.0,
+        v_offset: 0.0,
+    };
+    match surface {
+        TextSurface::Plane {
+            v_reversed: true, ..
+        } => SurfaceParameterAffine {
+            v_scale: -1.0,
+            ..identity
+        },
+        TextSurface::Cylinder {
+            u_reversed: true, ..
+        }
+        | TextSurface::Sphere {
+            u_reversed: true, ..
+        }
+        | TextSurface::Torus {
+            u_reversed: true, ..
+        } => SurfaceParameterAffine {
+            u_scale: -1.0,
+            ..identity
+        },
+        TextSurface::Cone {
+            half_angle,
+            u_reversed,
+            ..
+        } => SurfaceParameterAffine {
+            u_scale: if *u_reversed { -1.0 } else { 1.0 },
+            v_scale: half_angle.cos(),
+            ..identity
+        },
+        TextSurface::Trimmed {
+            parameter_ranges,
+            basis,
+        } => {
+            let basis = surface_parameter_affine(basis);
+            let u_scale = basis.u_scale.abs();
+            let v_scale = basis.v_scale.abs();
+            SurfaceParameterAffine {
+                u_scale,
+                u_offset: -parameter_ranges[0][0] * u_scale,
+                v_scale,
+                v_offset: -parameter_ranges[1][0] * v_scale,
+            }
+        }
+        TextSurface::Offset { basis, .. } => surface_parameter_affine(basis),
+        _ => identity,
+    }
+}
+
 /// Bind every exact-shape property to and frame its payload.
 pub fn parse_payloads(
     properties: &[PropertyRecord],
