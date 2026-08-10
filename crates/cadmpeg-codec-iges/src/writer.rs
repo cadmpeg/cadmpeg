@@ -37,6 +37,10 @@ const ALLOWED_NATIVE_ARENAS: &[&str] = &[
     "transformations",
 ];
 const FRAME_REPAIR_DOT_LIMIT: f64 = 1.0e-6;
+const DEPENDENT_TOPOLOGY_STATUS: &str = "00010000";
+const BOUNDARY_PREFERENCE_MODEL_CURVES: i32 = 1;
+const CURVE_ON_SURFACE_CREATION_UNSPECIFIED: i32 = 0;
+const CURVE_ON_SURFACE_PREFERENCE_MODEL_CURVE: i32 = 2;
 
 /// Plan an IGES export, selecting replay only after checking the document
 /// baseline and retained source-image integrity.
@@ -1175,7 +1179,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                 type_code: 504,
                 form: 1,
                 label: "EDGES",
-                status: "00010001",
+                status: DEPENDENT_TOPOLOGY_STATUS,
                 parameters: parameters.into_bytes(),
                 transform: None,
             });
@@ -2389,7 +2393,7 @@ fn boundary_entity(
         .is_some_and(|coedge| !coedge.pcurves.is_empty());
     let representation = i32::from(has_pcurves);
     let mut parameters = format!(
-        "141,{representation},0,{},{}",
+        "141,{representation},{BOUNDARY_PREFERENCE_MODEL_CURVES},{},{}",
         reference_marker(surface_index),
         loop_.coedges.len()
     );
@@ -2573,7 +2577,7 @@ fn curve_on_surface_entity(
         label: "CURVSURF",
         status: "00010000",
         parameters: format!(
-            "142,0,{},{},{},3;",
+            "142,{CURVE_ON_SURFACE_CREATION_UNSPECIFIED},{},{},{},{CURVE_ON_SURFACE_PREFERENCE_MODEL_CURVE};",
             reference_marker(surface_index),
             reference_marker(parameter_curve),
             reference_marker(model_curve)

@@ -6484,7 +6484,7 @@ fn decode_preserves_ordered_type_141_pcurve_collections() {
 }
 
 #[test]
-fn decode_uses_model_curves_when_type_141_prefers_them() {
+fn decode_retains_agreeing_pcurves_when_type_141_prefers_model_curves() {
     let mut bytes = multi_pcurve_boundary_file();
     let original = b"141,1,3,";
     let start = bytes
@@ -6503,7 +6503,7 @@ fn decode_uses_model_curves_when_type_141_prefers_them() {
         .iter()
         .find(|coedge| coedge.id.0 == "iges:model:coedge#D11:0:0")
         .expect("model-preferred boundary coedge");
-    assert!(coedge.pcurves.is_empty());
+    assert_eq!(coedge.pcurves.len(), 2);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -11988,6 +11988,51 @@ fn encode_regenerates_decoded_parametric_bounded_sheet_without_source_bytes() {
     );
     let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn encode_declares_topology_preferences_and_hierarchy_consistently() {
+    let regenerate = |source: Vec<u8>| {
+        let decoded = IgesCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("source fixture decodes");
+        let plan = IgesCodec
+            .plan(EncodeInput {
+                ir: &decoded.ir,
+                fidelity: None,
+            })
+            .expect("fixture is semantically writable");
+        let mut written = Vec::new();
+        plan.write_to(&mut written).expect("write succeeds");
+        IgesCodec
+            .decode(&mut Cursor::new(written), &DecodeOptions::default())
+            .expect("generated IGES decodes")
+    };
+    let parameter = |ir: &CadIr, entity_type: i64, index: usize| {
+        ir.native.namespace("iges").unwrap().arenas["entities"]
+            .iter()
+            .find(|entity| entity.field("entity_type") == Some(entity_type.into()))
+            .and_then(|entity| entity.field("parameters"))
+            .and_then(|parameters| parameters.as_array().cloned())
+            .and_then(|parameters| parameters.get(index).cloned())
+            .and_then(|parameter| parameter["value"]["value"].as_i64())
+            .expect("generated entity parameter exists")
+    };
+
+    let bounded = regenerate(parametrically_bounded_plane_file());
+    assert_eq!(parameter(&bounded.ir, 141, 2), 1);
+
+    let trimmed = regenerate(trimmed_plane_file());
+    assert_eq!(parameter(&trimmed.ir, 142, 1), 0);
+    assert_eq!(parameter(&trimmed.ir, 142, 5), 2);
+
+    let brep = regenerate(explicit_tetrahedron_solid_file());
+    let edge_list = brep.ir.native.namespace("iges").unwrap().arenas["entities"]
+        .iter()
+        .find(|entity| entity.field("entity_type") == Some(504.into()))
+        .expect("generated B-rep has an edge list");
+    assert_eq!(edge_list.field("subordinate_status"), Some(1.into()));
+    assert_eq!(edge_list.field("hierarchy_status"), Some(0.into()));
 }
 
 #[test]

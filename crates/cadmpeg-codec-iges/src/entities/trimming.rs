@@ -26,8 +26,7 @@ struct BoundarySegment {
     model_curve: u32,
     pcurves: Vec<u32>,
     sense: Sense,
-    use_parameter_curves: bool,
-    require_carrier_agreement: bool,
+    parameter_curves_authoritative: bool,
 }
 
 #[derive(Clone)]
@@ -281,8 +280,7 @@ pub(super) fn project(
                     pcurves: pcurve.into_iter().collect(),
                     model_curve,
                     sense: Sense::Forward,
-                    use_parameter_curves: pcurve.is_some() && preference != 2,
-                    require_carrier_agreement: pcurve.is_some() && preference != 2,
+                    parameter_curves_authoritative: pcurve.is_some() && preference != 2,
                 }],
             },
         );
@@ -378,13 +376,11 @@ pub(super) fn project(
                 valid = false;
                 break;
             }
-            let use_parameter_curves = !pcurves.is_empty() && preference != 1;
             segments.push(BoundarySegment {
                 model_curve,
                 pcurves,
                 sense,
-                use_parameter_curves,
-                require_carrier_agreement: use_parameter_curves,
+                parameter_curves_authoritative: preference != 1,
             });
             index += 3 + pcurve_count;
         }
@@ -598,7 +594,6 @@ pub(super) fn project(
                 let pcurves = segment
                     .pcurves
                     .iter()
-                    .filter(|_| segment.use_parameter_curves)
                     .map(|sequence| {
                         pcurve_geometry(
                             ir,
@@ -609,15 +604,19 @@ pub(super) fn project(
                         )
                     })
                     .collect::<Option<Vec<_>>>();
-                let Some(pcurves) = pcurves else {
-                    losses.push(entity_loss(
-                        entry,
-                        "boundary parameter curve has no NURBS carrier",
-                    ));
-                    valid = false;
-                    break;
+                let mut pcurves = match pcurves {
+                    Some(pcurves) => pcurves,
+                    None if segment.parameter_curves_authoritative => {
+                        losses.push(entity_loss(
+                            entry,
+                            "boundary parameter curve has no NURBS carrier",
+                        ));
+                        valid = false;
+                        break;
+                    }
+                    None => Vec::new(),
                 };
-                if segment.require_carrier_agreement {
+                if !pcurves.is_empty() {
                     let (expected_start, expected_end) = if segment.sense == Sense::Forward {
                         (start, end)
                     } else {
@@ -632,12 +631,15 @@ pub(super) fn project(
                         agreement_tolerance,
                     );
                     if !agrees {
-                        losses.push(entity_loss(
-                            entry,
-                            "curve-on-surface carriers disagree beyond the minimum resolution",
-                        ));
-                        valid = false;
-                        break;
+                        if segment.parameter_curves_authoritative {
+                            losses.push(entity_loss(
+                                entry,
+                                "curve-on-surface carriers disagree beyond the minimum resolution",
+                            ));
+                            valid = false;
+                            break;
+                        }
+                        pcurves.clear();
                     }
                 }
                 items.push(BoundaryItem {

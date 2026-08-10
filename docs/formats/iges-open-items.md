@@ -124,14 +124,6 @@ from a conformant file.
 
 ## 7. Write path
 
-### WR-10. Fixed protocol constants with no IR source
-
-**Question.** What are the correct `PREF`, creation-method, and hierarchy values for generated records?
-
-**Known.** `writer.rs:2332` writes Type 141 `PREF` as `0`. `writer.rs:2515-2520` writes Type 142 as creation method `0` and `PREF` `3`, which declares the two representations equally authoritative although the writer generated the pcurve by composition and validated it only to 0.01 mm (WR-02). `writer.rs:1135` gives the Type 504 Edge List hierarchy `01` where every sibling topology entity uses `00` (`writer.rs:1092`, `:1311`, `:1351`, `:1386-1390`).
-
-**Need.** We need the correct value for each, and a reason recorded for the Type 504 difference.
-
 ### WR-11. Type 123 is missing from the export census
 
 **Question.** Which entity types does the export report count?
