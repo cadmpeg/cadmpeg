@@ -11269,6 +11269,14 @@ pub(crate) fn project_configuration_sketch_states(
             histories,
             scoped_lanes,
         );
+        crate::resolved_features::relation_geometry::project_relation_bindings(
+            &mut ir.model.sketch_constraints,
+            &ir.model.sketches,
+            &features,
+            &ir.model.sketch_entities,
+            &parameters,
+            scoped_lanes,
+        );
         for feature in features {
             let Some(state) = ir.model.configurations[configuration_index]
                 .feature_states

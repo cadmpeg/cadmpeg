@@ -5378,6 +5378,20 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         parameter("lower", "lower-scalar"),
         parameter("upper", "upper-scalar"),
     ];
+    let mut constraints = Vec::new();
+    project_relation_bindings(
+        &mut constraints,
+        &[],
+        std::slice::from_ref(&feature),
+        &entities,
+        &parameters,
+        std::slice::from_ref(&lane),
+    );
+    assert_eq!(constraints.len(), 2);
+    assert!(constraints.iter().all(|constraint| matches!(
+        &constraint.definition,
+        SketchConstraintDefinition::Native { .. }
+    )));
 
     project_relation_solved_line_geometry(
         &mut entities,
@@ -5406,7 +5420,6 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         .into_iter()
         .collect()
     );
-    let mut constraints = Vec::new();
     project_relation_bindings(
         &mut constraints,
         &[],

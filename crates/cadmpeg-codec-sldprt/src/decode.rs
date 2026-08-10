@@ -2404,6 +2404,14 @@ fn build_geometry_ir(
         &histories,
         &native.feature_input_lanes,
     );
+    crate::resolved_features::relation_geometry::project_relation_bindings(
+        &mut ir.model.sketch_constraints,
+        &ir.model.sketches,
+        &ir.model.features,
+        &ir.model.sketch_entities,
+        &ir.model.parameters,
+        &native.feature_input_lanes,
+    );
     crate::history::order_features_for_regeneration(&mut ir.model.features);
     assign_configuration_bodies(&mut ir, configuration_bodies);
     crate::history::project_configuration_sketch_states(
@@ -3208,6 +3216,14 @@ fn build_metadata_ir(
         &ir.model.surfaces,
         &histories,
         &lanes,
+    );
+    crate::resolved_features::relation_geometry::project_relation_bindings(
+        &mut ir.model.sketch_constraints,
+        &ir.model.sketches,
+        &ir.model.features,
+        &ir.model.sketch_entities,
+        &ir.model.parameters,
+        &sketch_lanes,
     );
     crate::resolved_features::projections::project_unbound_cosmetic_thread_faces(
         &mut ir.model.features,

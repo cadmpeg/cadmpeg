@@ -859,18 +859,21 @@ pub(crate) fn project_relation_bindings(
         .iter()
         .map(|parameter| (&parameter.id, parameter))
         .collect::<HashMap<_, _>>();
-    let mut projected_native_refs = constraints
-        .iter()
-        .filter_map(|constraint| constraint.native_ref.clone())
-        .collect::<HashSet<_>>();
-
     for lane in lanes {
         let lane_key = lane
             .id
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
         for relation in &lane.relation_instances {
-            if projected_native_refs.contains(&relation.id) {
+            let existing = constraints
+                .iter()
+                .position(|constraint| constraint.native_ref.as_deref() == Some(&relation.id));
+            if existing.is_some_and(|index| {
+                !matches!(
+                    &constraints[index].definition,
+                    SketchConstraintDefinition::Native { .. }
+                )
+            }) {
                 continue;
             }
             let Some(parameter_id) = relation_parameters.get(&relation.id) else {
@@ -932,8 +935,7 @@ pub(crate) fn project_relation_bindings(
             });
             let active = relation_constraint_is_inactive(parameter, &definition, sketch_entities)
                 .then_some(false);
-            projected_native_refs.insert(relation.id.clone());
-            constraints.push(SketchConstraint {
+            let projected = SketchConstraint {
                 id: SketchConstraintId(format!(
                     "sldprt:model:sketch-constraint#relation:{lane_key}:{}",
                     relation.offset
@@ -950,10 +952,28 @@ pub(crate) fn project_relation_bindings(
                 label_position: None,
                 metadata: None,
                 native_ref: Some(relation.id.clone()),
-            });
+            };
+            if let Some(index) = existing {
+                if !matches!(
+                    &projected.definition,
+                    SketchConstraintDefinition::Native { .. }
+                ) {
+                    constraints[index] = projected;
+                }
+            } else {
+                constraints.push(projected);
+            }
         }
         for marker in &lane.sketch_entities {
-            if projected_native_refs.contains(&marker.id) {
+            let existing = constraints
+                .iter()
+                .position(|constraint| constraint.native_ref.as_deref() == Some(&marker.id));
+            if existing.is_some_and(|index| {
+                !matches!(
+                    &constraints[index].definition,
+                    SketchConstraintDefinition::Native { .. }
+                )
+            }) {
                 continue;
             }
             let Some(sketch) = marker
@@ -972,10 +992,9 @@ pub(crate) fn project_relation_bindings(
             ) else {
                 continue;
             };
-            projected_native_refs.insert(marker.id.clone());
             let active =
                 marker_relation_is_inactive(marker, &definition, sketch_entities).then_some(false);
-            constraints.push(SketchConstraint {
+            let projected = SketchConstraint {
                 id: SketchConstraintId(format!(
                     "sldprt:model:sketch-constraint#marker:{lane_key}:{}",
                     marker.offset
@@ -992,7 +1011,17 @@ pub(crate) fn project_relation_bindings(
                 label_position: None,
                 metadata: None,
                 native_ref: Some(marker.id.clone()),
-            });
+            };
+            if let Some(index) = existing {
+                if !matches!(
+                    &projected.definition,
+                    SketchConstraintDefinition::Native { .. }
+                ) {
+                    constraints[index] = projected;
+                }
+            } else {
+                constraints.push(projected);
+            }
         }
     }
 }
