@@ -495,19 +495,30 @@ fn feature_ordinals<'a>(
                 if !declared_ready {
                     return false;
                 }
+                if is_body(&object.type_name) {
+                    return true;
+                }
 
                 properties_by_owner
                     .get(object.id.as_str())
                     .into_iter()
                     .flatten()
-                    .flat_map(|property| &property.links)
-                    .filter_map(|link| link.object.as_deref())
-                    .filter(|dependency| {
+                    .flat_map(|property| {
+                        property
+                            .links
+                            .iter()
+                            .map(move |link| (property.name.as_str(), link))
+                    })
+                    .filter_map(|(property_name, link)| {
+                        Some((property_name, link.object.as_deref()?))
+                    })
+                    .filter(|(property_name, dependency)| {
                         object_by_id.get(dependency).is_some_and(|dependency| {
-                            source_order[&feature_id(dependency)] < object.order
+                            matches!(*property_name, "BaseFeature" | "Originals" | "Profile")
+                                || source_order[&feature_id(dependency)] < object.order
                         })
                     })
-                    .all(|dependency| emitted.contains(dependency))
+                    .all(|(_, dependency)| emitted.contains(dependency))
             })
             .min_by_key(|object| object.order);
         let next = next.unwrap_or_else(|| {
@@ -2596,8 +2607,13 @@ fn extrusion_definition(
             + raw_direction.z * raw_direction.z)
             .sqrt();
         let mut direction = unit_vector(raw_direction)?;
-        let mut forward = scalar_named(properties, "LengthFwd").filter(|value| *value >= 0.0)?;
-        let reverse = scalar_named(properties, "LengthRev").filter(|value| *value >= 0.0)?;
+        let nonnegative_length = |name| match scalar_named(properties, name) {
+            Some(value) if value >= 0.0 => Some(value),
+            Some(_) => None,
+            None => Some(0.0),
+        };
+        let mut forward = nonnegative_length("LengthFwd")?;
+        let reverse = nonnegative_length("LengthRev")?;
         if forward == 0.0 && reverse == 0.0 {
             forward = magnitude;
         }
@@ -2850,13 +2866,12 @@ fn extrusion_definition(
         )
     } else {
         let direction = match &profile {
-            ProfileRef::Sketch(sketch_id) => {
-                sketches
-                    .iter()
-                    .find(|sketch| sketch.id == *sketch_id)?
-                    .resolved_placement()?
-                    .1
-            }
+            ProfileRef::Sketch(sketch_id) => sketches
+                .iter()
+                .find(|sketch| sketch.id == *sketch_id)
+                .and_then(Sketch::resolved_placement)
+                .map(|(_, normal, _)| normal)
+                .or(profile_normal)?,
             ProfileRef::Native(_) => profile_normal?,
             ProfileRef::Unresolved(_) => return None,
             _ => return None,

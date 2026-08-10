@@ -641,9 +641,10 @@ feature dependencies are the stable union of all declared object dependencies an
 link-property operands in source order. PartDesign body dependency records describe structural
 membership and do not duplicate the body's neutral child relations. A declared dependency can
 target a later declaration. Neutral feature ordinals use a stable dependency order and use source
-order as the tie-break rule. If the native graph contains a dependency or parent cycle, the native
-graph retains it. The neutral graph uses the stable maximal subset whose targets precede their
-consumers.
+order as the tie-break rule. Forward profile, base-feature, and pattern-seed links also precede
+their consumers. Body child lists are structural membership, not body inputs. If the native graph
+contains a dependency or parent cycle, the native graph retains it. The neutral graph uses the
+stable maximal subset whose targets precede their consumers.
 
 Part and PartDesign lofts retain ordered section profiles and closed state. Part sweeps and
 PartDesign additive or subtractive pipes retain the profile plus the complete native spine/path
@@ -757,8 +758,8 @@ directions, and non-positive intervals leave the operation attributable and nati
 Part extrusions retain their normalized direction, custom-vector, selected-edge, or profile-normal
 direction source, independent forward and reverse lengths and tapers, symmetric construction, and
 solid-versus-sheet result. Solid construction additionally retains the extensible face-maker class
-and mode and whether inner wires taper with or against outer wires. A zero pair of explicit lengths
-uses the persisted direction-vector magnitude. PartDesign pads and pockets distinguish blind,
+and mode and whether inner wires taper with or against outer wires. An absent or zero pair of
+explicit lengths uses the persisted direction-vector magnitude. PartDesign pads and pockets distinguish blind,
 through-all, first-intersection, last-intersection, face-selected, and shape-selected termination
 independently on both sides. Midplane construction mirrors either a length or a non-length
 termination, while signed blind lengths preserve the persisted side orientation. Features retain

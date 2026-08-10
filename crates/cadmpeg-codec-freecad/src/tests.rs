@@ -2048,11 +2048,11 @@ fn transfers_remaining_pipe_orientation_and_transformation_modes() {
 fn transfers_uniform_irregular_and_two_axis_patterns() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="5">
- <Object type="PartDesign::Feature" name="Seed" id="1"/>
  <Object type="PartDesign::LinearPattern" name="Uniform" id="2"/>
  <Object type="PartDesign::LinearPattern" name="Custom" id="3"/>
  <Object type="PartDesign::LinearPattern" name="TwoAxis" id="4"/>
  <Object type="PartDesign::PolarPattern" name="PolarCustom" id="5"/>
+ <Object type="PartDesign::Feature" name="Seed" id="1"/>
 </Objects>
 <ObjectData Count="5">
  <Object name="Seed"><Properties Count="0"/></Object>
@@ -5009,17 +5009,15 @@ fn derives_extrusion_direction_from_a_non_sketch_profile_frame() {
 fn transfers_part_extrusion_symmetric_direction_magnitude() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2">
- <Object type="Sketcher::SketchObject" name="Profile" id="1"/>
  <Object type="Part::Extrusion" name="Extrusion" id="2"/>
+ <Object type="Sketcher::SketchObject" name="Profile" id="1"/>
 </Objects>
 <ObjectData Count="2">
  <Object name="Profile"><Properties Count="0"/></Object>
- <Object name="Extrusion"><Properties Count="8">
+ <Object name="Extrusion"><Properties Count="6">
   <Property name="Base" type="App::PropertyLink"><Link value="Profile"/></Property>
   <Property name="Dir" type="App::PropertyVector"><Vector x="0" y="0" z="12"/></Property>
   <Property name="DirMode" type="App::PropertyEnumeration"><Integer value="2"/></Property>
-  <Property name="LengthFwd" type="App::PropertyLength"><Float value="0"/></Property>
-  <Property name="LengthRev" type="App::PropertyLength"><Float value="0"/></Property>
   <Property name="Symmetric" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Solid" type="App::PropertyBool"><Bool value="false"/></Property>
   <Property name="TaperAngle" type="App::PropertyAngle"><Float value="3"/></Property>
@@ -5061,11 +5059,11 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
 fn transfers_partdesign_mixed_extrusion_side_controls() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="5">
- <Object type="Sketcher::SketchObject" name="Profile" id="1"/>
  <Object type="Part::Box" name="Target" id="2"/>
  <Object type="PartDesign::Pad" name="Mixed" id="3"/>
  <Object type="PartDesign::Pocket" name="Symmetric" id="4"/>
  <Object type="PartDesign::Pad" name="LegacyTwoLengths" id="5"/>
+ <Object type="Sketcher::SketchObject" name="Profile" id="1"/>
 </Objects>
 <ObjectData Count="5">
  <Object name="Profile"><Properties Count="0"/></Object>
