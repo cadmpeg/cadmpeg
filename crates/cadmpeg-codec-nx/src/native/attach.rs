@@ -3201,45 +3201,62 @@ fn attach_feature_operations(
                             sketch: Some(sketch),
                         };
                     }
-                    let mut definition = non_boolean_feature_definition_with_parameters(
+                    let mut definition = non_modeling_history_definition(
                         &label.value,
-                        &operation_payload_strings,
-                        block_dimension_values,
-                        block_placement,
-                        HoleProjection {
-                            placements: simple_hole_placements
-                                .get(label.id.as_str())
-                                .cloned()
-                                .into_iter()
-                                .chain(counterbore_hole_placements.get(label.id.as_str()).cloned())
-                                .chain(blind_hole_placements.get(label.id.as_str()).cloned())
-                                .chain(
-                                    hole_packages
-                                        .placements
-                                        .get(label.id.as_str())
-                                        .cloned()
-                                        .unwrap_or_default(),
-                                )
-                                .collect(),
-                            diameter: simple_hole_diameters
-                                .get(label.id.as_str())
-                                .or_else(|| hole_packages.diameters.get(label.id.as_str()))
-                                .copied(),
-                            extent: blind_hole_depths
-                                .get(label.id.as_str())
-                                .copied()
-                                .map(|length| Termination::Blind { length }),
-                            counterbore: counterbore_dimensions.get(label.id.as_str()).copied(),
-                            chamfer: simple_hole_chamfers
-                                .get(label.id.as_str())
-                                .or_else(|| hole_packages.chamfers.get(label.id.as_str()))
-                                .copied(),
-                            grouped_simple_through: hole_packages
-                                .outputs
-                                .contains_key(label.id.as_str()),
-                        },
-                        native_parameters,
-                    );
+                        &label.object_indices,
+                        &outputs,
+                        body_reference_occurrences_by_operation
+                            .get(label.id.as_str())
+                            .map_or(0, Vec::len),
+                        operation_body_operands_by_operation
+                            .get(label.id.as_str())
+                            .map_or(0, Vec::len),
+                        operation_payload_string_records.len(),
+                        &source_properties,
+                    )
+                    .unwrap_or_else(|| {
+                        non_boolean_feature_definition_with_parameters(
+                            &label.value,
+                            &operation_payload_strings,
+                            block_dimension_values,
+                            block_placement,
+                            HoleProjection {
+                                placements: simple_hole_placements
+                                    .get(label.id.as_str())
+                                    .cloned()
+                                    .into_iter()
+                                    .chain(
+                                        counterbore_hole_placements.get(label.id.as_str()).cloned(),
+                                    )
+                                    .chain(blind_hole_placements.get(label.id.as_str()).cloned())
+                                    .chain(
+                                        hole_packages
+                                            .placements
+                                            .get(label.id.as_str())
+                                            .cloned()
+                                            .unwrap_or_default(),
+                                    )
+                                    .collect(),
+                                diameter: simple_hole_diameters
+                                    .get(label.id.as_str())
+                                    .or_else(|| hole_packages.diameters.get(label.id.as_str()))
+                                    .copied(),
+                                extent: blind_hole_depths
+                                    .get(label.id.as_str())
+                                    .copied()
+                                    .map(|length| Termination::Blind { length }),
+                                counterbore: counterbore_dimensions.get(label.id.as_str()).copied(),
+                                chamfer: simple_hole_chamfers
+                                    .get(label.id.as_str())
+                                    .or_else(|| hole_packages.chamfers.get(label.id.as_str()))
+                                    .copied(),
+                                grouped_simple_through: hole_packages
+                                    .outputs
+                                    .contains_key(label.id.as_str()),
+                            },
+                            native_parameters,
+                        )
+                    });
                     if let FeatureDefinition::Block { op, .. } = &mut definition {
                         *op = block_op;
                     }
@@ -5163,6 +5180,41 @@ fn non_boolean_feature_definition(
         },
         BTreeMap::new(),
     )
+}
+
+/// Project one operation as a history node only when its bounded record has
+/// no modeling relation or value lane.
+fn non_modeling_history_definition(
+    kind: &str,
+    object_indices: &[Option<u32>; 4],
+    outputs: &[BodyId],
+    body_reference_count: usize,
+    body_operand_count: usize,
+    payload_string_count: usize,
+    source_properties: &BTreeMap<String, String>,
+) -> Option<FeatureDefinition> {
+    let operation_identity_only = source_properties.keys().all(|key| {
+        matches!(
+            key.as_str(),
+            "operation_record" | "operation_terminal_frame"
+        ) || (key
+            .strip_prefix("object_index.")
+            .is_some_and(|slot| matches!(slot, "0" | "1" | "2" | "3")))
+    });
+    (kind == "EXTRACT_STRING"
+        && object_indices.iter().all(Option::is_none)
+        && outputs.is_empty()
+        && body_reference_count == 0
+        && body_operand_count == 0
+        && payload_string_count == 0
+        && source_properties.contains_key("operation_record")
+        && source_properties.contains_key("operation_terminal_frame")
+        && operation_identity_only)
+        .then_some(FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::History,
+            children: Vec::new(),
+            active_child: None,
+        })
 }
 
 /// Permutation-invariant hole properties derived from one complete body partition.
@@ -10406,6 +10458,108 @@ mod tests {
                 op: BooleanOp::Unresolved,
             }
         );
+    }
+
+    #[test]
+    fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
+        let object_indices = [None; 4];
+        let source_properties = BTreeMap::from([
+            ("object_index.0".to_string(), "null".to_string()),
+            ("object_index.1".to_string(), "null".to_string()),
+            ("object_index.2".to_string(), "null".to_string()),
+            ("object_index.3".to_string(), "null".to_string()),
+            ("operation_record".to_string(), "record".to_string()),
+            (
+                "operation_terminal_frame".to_string(),
+                "terminal".to_string(),
+            ),
+        ]);
+        assert!(matches!(
+            super::non_modeling_history_definition(
+                "EXTRACT_STRING",
+                &object_indices,
+                &[],
+                0,
+                0,
+                0,
+                &source_properties,
+            ),
+            Some(FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+                children,
+                active_child: None,
+            }) if children.is_empty()
+        ));
+
+        let rejected = [
+            (
+                [Some(7), None, None, None],
+                Vec::new(),
+                0,
+                0,
+                0,
+                source_properties.clone(),
+            ),
+            (
+                object_indices,
+                vec![BodyId("body".into())],
+                0,
+                0,
+                0,
+                source_properties.clone(),
+            ),
+            (
+                object_indices,
+                Vec::new(),
+                1,
+                0,
+                0,
+                source_properties.clone(),
+            ),
+            (
+                object_indices,
+                Vec::new(),
+                0,
+                1,
+                0,
+                source_properties.clone(),
+            ),
+            (
+                object_indices,
+                Vec::new(),
+                0,
+                0,
+                1,
+                source_properties.clone(),
+            ),
+        ];
+        for (object_indices, outputs, body_references, body_operands, strings, properties) in
+            rejected
+        {
+            assert!(super::non_modeling_history_definition(
+                "EXTRACT_STRING",
+                &object_indices,
+                &outputs,
+                body_references,
+                body_operands,
+                strings,
+                &properties,
+            )
+            .is_none());
+        }
+
+        let mut extra_property = source_properties.clone();
+        extra_property.insert("input_block.0".into(), "block".into());
+        assert!(super::non_modeling_history_definition(
+            "EXTRACT_STRING",
+            &object_indices,
+            &[],
+            0,
+            0,
+            0,
+            &extra_property,
+        )
+        .is_none());
     }
 
     #[test]
