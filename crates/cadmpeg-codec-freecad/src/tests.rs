@@ -922,6 +922,34 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
 }
 
 #[test]
+fn neutralizes_line_midpoint_coincidence() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="2">
+<Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="2" EndY="0"/></Geometry>
+<Geometry type="Part::GeomPoint"><Point X="1" Y="0"/></Geometry>
+</GeometryList></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="2">
+<Constrain Type="1" First="0" FirstPos="3" Second="1" SecondPos="1"/>
+<Constrain Type="1" First="0" FirstPos="2" Second="1" SecondPos="3"/>
+</ConstraintList></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("midpoint constraint");
+
+    assert!(matches!(
+        result.ir.model.sketch_constraints[0].definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::Midpoint { .. }
+    ));
+    assert_valid_document(&result.ir);
+}
+
+#[test]
 fn transfers_revolution_fillet_and_chamfer_semantics() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="6" Dependencies="1">

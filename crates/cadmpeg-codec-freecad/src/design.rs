@@ -1564,10 +1564,12 @@ fn parse_constraints(
                 _ => None,
             }
         };
+        let midpoint = || midpoint_constraint(type_code, &operands, entities);
         let definition = (type_code == 15 && all_resolved)
             .then(internal_alignment)
             .flatten()
             .or_else(grouped_geometry)
+            .or_else(midpoint)
             .or_else(|| neutral_constraint(type_code, &resolved, parameter.clone(), all_resolved))
             .unwrap_or_else(|| SketchConstraintDefinition::Native {
                 native_kind: constraint_kind(type_code).into(),
@@ -1616,6 +1618,42 @@ fn parse_constraints(
         });
     }
     Ok((constraints, parameters))
+}
+
+fn midpoint_constraint(
+    kind: i64,
+    operands: &[(i64, i64)],
+    entities: &[SketchEntity],
+) -> Option<SketchConstraintDefinition> {
+    if kind != 1 || operands.len() != 2 {
+        return None;
+    }
+    for (midpoint_index, point_index) in [(0, 1), (1, 0)] {
+        let (entity, position) = operands[midpoint_index];
+        if position != 3 {
+            continue;
+        }
+        let midpoint = resolve_operand(entity, position, entities)?;
+        let bounded = entities
+            .iter()
+            .find(|candidate| candidate.id == *locus_entity(&midpoint))?;
+        if !matches!(bounded.geometry, SketchGeometry::Line { .. }) {
+            continue;
+        }
+        let (entity, position) = operands[point_index];
+        let point = resolve_operand(entity, position, entities)?;
+        let point_entity = entities
+            .iter()
+            .find(|candidate| candidate.id == *locus_entity(&point))?;
+        if !matches!(point_entity.geometry, SketchGeometry::Point { .. }) {
+            continue;
+        }
+        return Some(SketchConstraintDefinition::Midpoint {
+            point,
+            entity: bounded.id.clone(),
+        });
+    }
+    None
 }
 
 fn bool_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Option<bool> {
@@ -1985,9 +2023,11 @@ fn resolve_operand(entity: i64, position: i64, entities: &[SketchEntity]) -> Opt
 
 fn sketch_locus(entity: &SketchEntity, position: i64) -> Option<SketchLocus> {
     let id = entity.id.clone();
+    if matches!(entity.geometry, SketchGeometry::Point { .. }) && matches!(position, 0..=3) {
+        return Some(SketchLocus::Entity(id));
+    }
     Some(match position {
         0 => SketchLocus::Entity(id),
-        1 if matches!(entity.geometry, SketchGeometry::Point { .. }) => SketchLocus::Entity(id),
         1 => SketchLocus::Start(id),
         2 => SketchLocus::End(id),
         3 => SketchLocus::Center(id),
