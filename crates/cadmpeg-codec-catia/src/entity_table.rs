@@ -956,12 +956,7 @@ fn u32_le(data: &[u8], at: usize) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        parse_definition_schema_selectors, parse_numeric_pair, parse_reference_signature,
-        parse_runs, value_packets, DefinitionSchemaSelector, EntityValuePacket, NumericPacketItem,
-        NumericPair, NumericPairSlot, ReferenceSignature, ReferenceSignatureInstruction,
-        ReferenceSignaturePrefix, ReferenceSignatureSymbol,
-    };
+    use super::*;
     use crate::value_block;
 
     fn record(prefix: &[u8], entity_id: u32) -> Vec<u8> {

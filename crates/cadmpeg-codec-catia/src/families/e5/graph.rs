@@ -1305,11 +1305,7 @@ fn solve_loop_chain(edge_ids: &[u32], edges: &BTreeMap<u32, E5Edge>) -> Option<V
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        curve_support_reference_closes, parse_jet_pcurve, parse_topology,
-        plane_digon_orientation_hint, solve_absolute_orientation, solve_loop_chain, E5BoundEntry,
-        E5Bounds, E5CurveSupport, E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology,
-    };
+    use super::*;
     use std::collections::BTreeMap;
 
     fn append_e5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload: &[u8]) {

@@ -348,10 +348,7 @@ fn f32_le(bytes: &[u8], at: usize) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        consolidated_records, consolidated_records_in_ranges, scan_vertex_records,
-        ConsolidatedFamily, ConsolidatedRecord,
-    };
+    use super::*;
 
     #[test]
     fn record_walk_does_not_rescan_a_wide_header_token() {

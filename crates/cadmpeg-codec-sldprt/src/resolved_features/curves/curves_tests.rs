@@ -6,15 +6,7 @@ use super::super::typed_relations::compact_legacy_object_line_endpoints;
 use super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
-use super::{
-    closed_marker_profiles_allowing_shared_endpoints, compact_bounded_curve_tangent,
-    compact_legacy_rectangle_line_endpoints, compact_line_chain_addresses,
-    compact_line_region_addresses, complete_ordered_compact_line_profile,
-    current_linked_semicircle_record, indexed_rectangle_from_line_cycle,
-    legacy_extended_rectangle_diagonal_endpoint, ordered_compact_line_profile,
-    ordered_rectangle_corners, resolve_two_center_semicircle_profile, tangent_bounded_curve,
-    unique_dimensioned_rectangle_markers,
-};
+use super::*;
 use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::math::Point2;

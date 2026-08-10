@@ -3,20 +3,7 @@
 use super::super::component_paths::{compact_edge_path_value, compact_edge_selection_set_value};
 use super::super::{CLASS_MARKER, LEGACY_SKETCH_MARKER};
 use super::selection_vector_tail;
-use super::{
-    compact_body_retention_mode, compact_body_selection_at, compact_body_selection_vector,
-    compact_body_state_ids, compact_edge_component_path_at, compact_edge_selection_at,
-    compact_edge_selections, compact_general_curve_ref_at,
-    compact_sketch_surface_component_path_at, compact_surface_selection_at,
-    component_face_reference_at, component_face_reference_in_record, component_profile_source_at,
-    component_reference_curve_path_at, component_vector_path_at, coordinate_marker_local_links,
-    cosmetic_thread_cylinder_marker_reference, cosmetic_thread_cylinder_reference_at,
-    cosmetic_thread_cylinder_references, cosmetic_thread_diameter_child_tail,
-    generated_surface_identities, history_features_with_object_sources,
-    inline_surface_reference_at, marker_local_links, mirror_pattern_component_path_at,
-    mirror_surface_component_path_at, operation_surface_selection_candidates,
-    surface_reference_matches_at, unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER,
-};
+use super::*;
 use crate::classification::FeatureClass;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,

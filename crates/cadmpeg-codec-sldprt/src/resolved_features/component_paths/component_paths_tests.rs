@@ -1,9 +1,6 @@
 //! Tests for the `component_paths` module.
 
-use super::{
-    component_path_feature, component_path_features, component_path_input_features,
-    component_path_terminal_feature, surface_selection_producer_features, ComponentPathEnd,
-};
+use super::*;
 use crate::records::{Feature, FeatureInputComponentPathEntry};
 use std::collections::BTreeMap;
 

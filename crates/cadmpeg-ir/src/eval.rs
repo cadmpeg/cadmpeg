@@ -4812,16 +4812,7 @@ fn offset2(base: Point2, terms: &[(f64, Point2)]) -> Point2 {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        curve_point, curve_second_derivative, curve_tangent, model_surface_partials_by_id,
-        model_surface_point_by_id, model_surface_second_partials_by_id,
-        nurbs_curve_parameter_near_point, nurbs_curve_point, nurbs_curve_speed_bound,
-        nurbs_surface_closest_parameter, nurbs_surface_isocurve, nurbs_surface_isoline,
-        nurbs_surface_parameter_segment_chord_bound, nurbs_surface_parameter_within_tolerance,
-        nurbs_surface_partials, nurbs_surface_point, nurbs_surface_second_partials, pcurve_tangent,
-        pcurve_uv, pcurve_uv_differential_inner, surface_partials, surface_second_partials,
-        IsolineDirection,
-    };
+    use super::*;
     use crate::geometry::{
         Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurface,
         ProceduralSurfaceDefinition, Surface, SurfaceGeometry, SurfaceParameterAxis,

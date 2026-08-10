@@ -935,11 +935,7 @@ fn nurbs_parameter_domain(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        check_procedural_support_consistency, edge_pcurve_parameter_ranges,
-        pcurve_parameter_domain, pcurve_parameter_ranges, pcurve_parameter_seeds_on_surface,
-        SurfacePcurveContext,
-    };
+    use super::*;
     use crate::document::CadIr;
     use crate::geometry::{
         Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsSurface, Pcurve,

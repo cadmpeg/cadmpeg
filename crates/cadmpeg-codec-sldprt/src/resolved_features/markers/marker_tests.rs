@@ -4,22 +4,7 @@ use super::super::selections::coordinate_marker_local_links;
 use super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
-use super::{
-    additional_linked_profile_point_coordinates, compact_geometry_locus_point_coordinates,
-    compact_legacy_code_two_profile_point_coordinates,
-    compact_legacy_embedded_geometry_coordinates, compact_legacy_linked_profile_point_coordinates,
-    compact_legacy_profile_vertex, current_geometry_locus_profile_vertex,
-    current_reverse_incidence_endpoint_offsets, extended_four_link_profile_point_coordinates,
-    extended_geometry_locus_single_link_point, extended_profile_point_coordinates,
-    geometry_locus_profile_vertex, indexed_profile_vertex, inline_arc_coordinates,
-    legacy_140_profile_point_variant_coordinates, legacy_declared_handle_coordinates,
-    legacy_extended_linked_profile_point_coordinates, legacy_extended_profile_curve_kind,
-    legacy_linked_coordinates, legacy_single_incidence_profile_point_coordinates,
-    linked_profile_point, marker_coordinates, marker_is_geometry_locus, marker_local_id,
-    marker_object_index, marker_spatial_coordinates,
-    packed_legacy_linked_profile_point_coordinates, relation_bindings, relation_bindings_scoped,
-    sketch_input_entities, terminal_extended_profile_point_coordinates,
-};
+use super::*;
 use crate::records::{
     FeatureInputClass, FeatureInputClassRole, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity, SketchInputKind,

@@ -2565,10 +2565,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        linetype_record, parse_group, parse_hatch_pattern, parse_light, parse_linetype,
-        parse_material, parse_text_style, Component, Uuid,
-    };
+    use super::*;
     use crate::chunks::ArchiveVersion;
 
     fn utf16(value: &str) -> Vec<u8> {

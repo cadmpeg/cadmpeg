@@ -2545,13 +2545,7 @@ pub(crate) fn rolling_ball_derivative(values: [f64; 10]) -> RollingBallJetDeriva
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        append_consolidated_line_profiles, append_freeform_surface_pools,
-        append_resolved_consolidated_surface_curves, attach_standalone_wires,
-        freeform_surface_carriers, pcurve_lift_reaches_endpoints,
-        rechart_equivalent_surface_pcurve, same_surface_locus, solve_planar_chart_rechart,
-        unique_endpoint_pair_match, unique_paired_surface_lift_match, ConsolidatedCarrierChart,
-    };
+    use super::*;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve,

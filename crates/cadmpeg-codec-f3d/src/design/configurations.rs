@@ -387,12 +387,7 @@ pub(crate) fn unresolved_configuration_member_count(native: &[DesignConfiguratio
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        bind_configuration_parameter_overrides, bind_configuration_suppressed_features,
-        project_configurations, unresolved_configuration_member_count,
-        unresolved_configuration_parameter_override_count, unresolved_configuration_rule_count,
-        unresolved_configuration_suppressed_feature_count, validate_configuration_payload,
-    };
+    use super::*;
     use crate::records::{DesignConfiguration, DesignConfigurationKind};
     use cadmpeg_ir::features::{
         DesignParameter as NeutralParameter, Feature, FeatureDefinition, FeatureId, ParameterId,

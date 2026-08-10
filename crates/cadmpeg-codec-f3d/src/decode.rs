@@ -4201,12 +4201,7 @@ fn apply_appearance_base_colors(ir: &mut CadIr) {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        apply_appearance_base_colors, bind_mesh_feature_definitions,
-        container_only_dimension_parameters, design_projection_gaps,
-        feature_definition_is_incomplete, incomplete_feature_families, mesh_attribute_channels,
-        unresolved_dimension_companion_count, DesignProjectionGaps, MeshProjection,
-    };
+    use super::*;
     use crate::native::F3dNative;
     use crate::records::{
         DesignBodyBinding, DesignDimensionLocusPair, DesignDimensionNullLocusPair,

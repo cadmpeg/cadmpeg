@@ -1,11 +1,7 @@
 //! Tests for the `dimensions` module.
 
 use super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER};
-use super::{
-    compact_radial_circle_index, dimensioned_arc_native_geometry, extended_radial_circle_index,
-    extended_terminal_repeated_radial_circle_index, project_relation_point_dimensioned_circles,
-    radial_dimension_radius, terminal_repeated_radial_circle_pairs, DimensionedCurveNative,
-};
+use super::*;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,

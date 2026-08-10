@@ -3996,14 +3996,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
 
 #[cfg(test)]
 mod design_loss_tests {
-    use super::{
-        append_design_losses, assign_configuration_bodies, mark_active_configuration,
-        multiply_projected_sketch_relation_records,
-        sketch_constraint_has_complete_neutral_semantics, snapshot_active_configuration,
-        spatial_sketch_constraint_has_complete_neutral_semantics,
-        sync_active_configuration_face_selections, unbound_feature_input_operation_objects,
-        unprojected_sketch_relation_records, Brep,
-    };
+    use super::*;
     use crate::container::{Block, CompoundStream, ContainerScan};
     use crate::native::SldprtNative;
     use crate::records::{

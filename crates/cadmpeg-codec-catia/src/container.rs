@@ -1462,11 +1462,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        identify_variant, outer_container_declarations, outer_container_for_extent,
-        parse_directory_region, parse_extents, reconstruct_logical_stream, summarize, Census,
-        ContainerScan, Descriptor, Extent, InnerDir,
-    };
+    use super::*;
     use crate::variant::Variant;
 
     fn append_e5_test_record(bytes: &mut Vec<u8>, id: u32) {
