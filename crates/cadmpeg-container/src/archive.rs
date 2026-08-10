@@ -160,13 +160,21 @@ impl<'a> ArchiveSnapshot<'a> {
         entry: &EntryRecord,
     ) -> Result<View<'a>, CodecError> {
         let end = entry.data_end()?;
+        let archive_start = u64::try_from(self.root.start())
+            .map_err(|_| CodecError::Malformed("ZIP root offset does not fit u64".into()))?;
+        let absolute_start = archive_start.checked_add(entry.data_start).ok_or_else(|| {
+            CodecError::Malformed(format!("ZIP data range overflows for {}", entry.name))
+        })?;
+        let absolute_end = archive_start.checked_add(end).ok_or_else(|| {
+            CodecError::Malformed(format!("ZIP data range overflows for {}", entry.name))
+        })?;
         match entry.compression {
             EntryCompression::Stored => {
                 let view = ctx.register_slice(
                     self.root,
                     ByteRange {
-                        start: entry.data_start,
-                        end,
+                        start: absolute_start,
+                        end: absolute_end,
                     },
                 )?;
                 if view.window().len() as u64 != entry.uncompressed_size {
@@ -184,10 +192,10 @@ impl<'a> ArchiveSnapshot<'a> {
                 Ok(view)
             }
             EntryCompression::Deflate | EntryCompression::Zstd => {
-                let start = usize::try_from(entry.data_start).map_err(|_| {
+                let start = usize::try_from(absolute_start).map_err(|_| {
                     CodecError::Malformed("ZIP data offset does not fit memory".into())
                 })?;
-                let end = usize::try_from(end).map_err(|_| {
+                let end = usize::try_from(absolute_end).map_err(|_| {
                     CodecError::Malformed("ZIP data offset does not fit memory".into())
                 })?;
                 let source = self.root.child(start, end).ok_or_else(|| {
@@ -720,5 +728,35 @@ mod tests {
                 .window(),
             b"Zstandard payload"
         );
+    }
+
+    #[test]
+    fn snapshot_opens_entries_from_a_nonzero_root_view() {
+        let archive = archive_bytes();
+        let mut bytes = b"prefix".to_vec();
+        let start = bytes.len();
+        bytes.extend_from_slice(&archive);
+        let end = bytes.len();
+        bytes.extend_from_slice(b"suffix");
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("outer bytes fit root policy");
+        let nested = root.child(start, end).expect("archive child range");
+        let snapshot = ArchiveSnapshot::new(nested).expect("nested archive snapshots");
+
+        for (name, expected) in [
+            ("stored.bin", b"stored".as_slice()),
+            ("deflated.bin", b"deflated payload".as_slice()),
+            ("zstd.bin", b"Zstandard payload".as_slice()),
+        ] {
+            let entry = snapshot.entry(name).expect("entry exists");
+            assert_eq!(
+                snapshot
+                    .open(&ctx, entry)
+                    .expect("nested entry opens")
+                    .window(),
+                expected
+            );
+        }
     }
 }

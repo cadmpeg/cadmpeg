@@ -24,11 +24,11 @@ use crate::kernel::ActiveCarrierState;
 use crate::native::{
     ActiveCarrierRecord, ActiveCarrierRecordState, DatabaseIssueRecord, DatabaseRecord,
     ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord, PropertyRecord,
-    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, ProteinEntryRecord,
-    ProteinRecord, ProteinRecordState, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
-    SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
-    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UfrxRecord, UfrxRecordState,
-    UnpairedSegmentRecord, VersionTupleRecord, INVENTOR_NATIVE_VERSION,
+    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, ProteinAssetRecord,
+    ProteinEntryRecord, ProteinRecord, ProteinRecordState, RevisionRecord, RseRecordRecord,
+    SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
+    SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UfrxRecord,
+    UfrxRecordState, UnpairedSegmentRecord, VersionTupleRecord, INVENTOR_NATIVE_VERSION,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
@@ -235,6 +235,35 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             )
         }
     };
+    let (protein_instances, protein_semantic_issue) = match &container.protein {
+        ProteinState::Package(package) => match crate::protein::decode_instances(ctx, package) {
+            Ok(instances) => (instances, None),
+            Err(error) => (Vec::new(), Some(error.to_string())),
+        },
+        ProteinState::Absent | ProteinState::Empty { .. } | ProteinState::Malformed { .. } => {
+            (Vec::new(), None)
+        }
+    };
+    let material_catalog = crate::materials::project_catalog(&protein_instances);
+    let protein_assets = protein_instances
+        .iter()
+        .flat_map(|instance| {
+            instance
+                .records
+                .iter()
+                .enumerate()
+                .map(|(ordinal, asset)| ProteinAssetRecord {
+                    id: format!(
+                        "inventor:protein:asset#{}-{ordinal}",
+                        sha256_hex(instance.entry_name.as_bytes())
+                    ),
+                    entry_name: instance.entry_name.clone(),
+                    ordinal: ordinal as u32,
+                    asset: asset.clone(),
+                })
+        })
+        .collect::<Vec<_>>();
+    ir.model.appearances = material_catalog.appearances;
     let (ufrx, external_references) = match &container.ufrx {
         UfrxState::Absent => (
             UfrxRecord {
@@ -775,6 +804,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .saturating_add(property_set_issues.len())
             .saturating_add(1)
             .saturating_add(protein_entries.len())
+            .saturating_add(protein_assets.len())
             .saturating_add(1)
             .saturating_add(external_references.len())
             .saturating_add(unpaired_segments.len())
@@ -795,6 +825,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     namespace.set_arena("property_set_issues", &property_set_issues)?;
     namespace.set_arena("protein", std::slice::from_ref(&protein))?;
     namespace.set_arena("protein_entries", &protein_entries)?;
+    namespace.set_arena("protein_assets", &protein_assets)?;
     namespace.set_arena("ufrx", std::slice::from_ref(&ufrx))?;
     namespace.set_arena("external_references", &external_references)?;
     namespace.set_arena("segment_pairs", &segment_pairs)?;
@@ -959,10 +990,33 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             ));
         }
         match &container.protein {
-            ProteinState::Package(_) => losses.push(LossNote::new(
-                LossKind::MaterialNotTransferred,
-                "The Protein package inventory is retained without material or appearance binding.",
-            )),
+            ProteinState::Package(_) => {
+                if let Some(detail) = &protein_semantic_issue {
+                    losses.push(LossNote::new(
+                        LossKind::MaterialNotTransferred,
+                        format!("The Protein asset catalog could not be decoded: {detail}"),
+                    ));
+                } else if !ir.model.appearances.is_empty() {
+                    losses.push(LossNote::new(
+                        LossKind::MaterialNotTransferred,
+                        "The Protein appearance catalog is decoded without a typed topology assignment.",
+                    ));
+                } else {
+                    losses.push(LossNote::new(
+                        LossKind::MaterialNotTransferred,
+                        "The Protein package contains no decoded appearance assets.",
+                    ));
+                }
+                if !material_catalog.duplicate_guids.is_empty() {
+                    losses.push(LossNote::new(
+                        LossKind::MaterialNotTransferred,
+                        format!(
+                            "The Protein catalog contains {} duplicate asset GUID(s); ambiguous texture joins were refused.",
+                            material_catalog.duplicate_guids.len()
+                        ),
+                    ));
+                }
+            }
             ProteinState::Malformed { .. } => losses.push(LossNote::new(
                 LossKind::DecodeDiagnostic,
                 "The Inventor Protein stream is malformed.",
@@ -1033,6 +1087,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     }
     source_fidelity.finalize();
     let asm_unknown_record_count = ir.native_unknowns("inventor")?.len();
+    let protein_appearance_count = ir.model.appearances.len();
     Ok(DecodeResult::new(
         ir,
         DecodeReport {
@@ -1055,6 +1110,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 ("properties".into(), properties.len()),
                 ("preview_assets".into(), preview_asset_count),
                 ("protein_entries".into(), protein_entries.len()),
+                ("protein_assets".into(), protein_assets.len()),
+                ("protein_appearances".into(), protein_appearance_count),
                 ("external_references".into(), external_references.len()),
                 (
                     "active_kernel_carriers".into(),

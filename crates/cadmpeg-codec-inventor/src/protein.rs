@@ -3,7 +3,7 @@
 
 use cadmpeg_container::compound::{CompoundSnapshot, CompoundStreamId};
 use cadmpeg_container::ArchiveSnapshot;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 #[derive(Debug)]
@@ -24,6 +24,12 @@ pub(crate) struct ProteinEnvelope<'a> {
     pub(crate) stream: CompoundStreamId,
     pub(crate) declared_len: u32,
     pub(crate) archive: ArchiveSnapshot<'a>,
+    pub(crate) payload: View<'a>,
+}
+
+pub(crate) struct ProteinInstanceRecords {
+    pub(crate) entry_name: String,
+    pub(crate) records: Vec<cadmpeg_protein::DecodedRecord>,
 }
 
 pub(crate) fn parse<'a>(
@@ -42,10 +48,12 @@ pub(crate) fn parse<'a>(
         Ok(ParsedProtein::Package {
             declared_len,
             archive,
+            payload,
         }) => ProteinState::Package(ProteinEnvelope {
             stream: stream.id(),
             declared_len,
             archive,
+            payload,
         }),
         Err(error) => ProteinState::Malformed {
             stream: stream.id(),
@@ -59,6 +67,7 @@ enum ParsedProtein<'a> {
     Package {
         declared_len: u32,
         archive: ArchiveSnapshot<'a>,
+        payload: View<'a>,
     },
 }
 
@@ -99,7 +108,44 @@ fn parse_stream<'a>(
     Ok(ParsedProtein::Package {
         declared_len,
         archive,
+        payload,
     })
+}
+
+pub(crate) fn decode_instances(
+    ctx: &DecodeContext<'_>,
+    package: &ProteinEnvelope<'_>,
+) -> Result<Vec<ProteinInstanceRecords>, CodecError> {
+    decode_instances_from(ctx, &package.archive, package.payload)
+}
+
+fn decode_instances_from(
+    ctx: &DecodeContext<'_>,
+    archive: &ArchiveSnapshot<'_>,
+    payload: View<'_>,
+) -> Result<Vec<ProteinInstanceRecords>, CodecError> {
+    if !cadmpeg_protein::has_schemas(payload.window()) {
+        return Ok(Vec::new());
+    }
+    let entries = archive
+        .entries()
+        .iter()
+        .filter(|entry| entry.name.ends_with("InstanceProperties.bin"))
+        .collect::<Vec<_>>();
+    ctx.charge_collection_items(
+        entries.len() as u64,
+        "admit Inventor Protein instance streams",
+    )?;
+    entries
+        .into_iter()
+        .map(|entry| {
+            let instance = archive.open(ctx, entry)?;
+            Ok(ProteinInstanceRecords {
+                entry_name: entry.name.clone(),
+                records: cadmpeg_protein::decode(payload.window(), instance.window())?,
+            })
+        })
+        .collect()
 }
 
 fn validate_entry_name(name: &str) -> Result<(), CodecError> {
@@ -161,6 +207,40 @@ mod tests {
         });
     }
 
+    #[test]
+    fn inventor_package_uses_shared_schema_instance_decoder() {
+        let schema = br#"<Schema><UID val="SimpleSchema"/><String id="comment"/></Schema>"#;
+        let mut record = Vec::new();
+        for value in ["SimpleSchema", "asset-guid", "Simple", ""] {
+            push_lp(&mut record, value);
+        }
+        push_lp(&mut record, &"x".repeat(160));
+        let instance = paged_instance(&record);
+        let zip = zip_entries(&[
+            ("Schemas/SimpleSchema.xml", schema),
+            ("AssetData/InstanceProperties.bin", &instance),
+        ]);
+        let mut bytes = (zip.len() as u32).to_le_bytes().to_vec();
+        bytes.extend_from_slice(&zip);
+        with_stream(&bytes, |ctx, root| {
+            let ParsedProtein::Package {
+                declared_len,
+                archive,
+                payload,
+            } = parse_stream(ctx, root).expect("synthetic Protein package parses")
+            else {
+                panic!("package state")
+            };
+            assert_eq!(declared_len as usize, payload.window().len());
+            let instances =
+                decode_instances_from(ctx, &archive, payload).expect("instances decode");
+            assert_eq!(instances.len(), 1);
+            assert_eq!(instances[0].records.len(), 1);
+            assert_eq!(instances[0].records[0].schema, "SimpleSchema");
+            assert_eq!(instances[0].records[0].guid, "asset-guid");
+        });
+    }
+
     fn with_stream(
         bytes: &[u8],
         test: impl FnOnce(&DecodeContext<'_>, cadmpeg_core::decode::View<'_>),
@@ -172,13 +252,51 @@ mod tests {
     }
 
     fn zip_fixture(name: &str) -> Vec<u8> {
+        zip_entries(&[(name, b"synthetic")])
+    }
+
+    fn zip_entries(entries: &[(&str, &[u8])]) -> Vec<u8> {
         let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        writer
-            .start_file(name, SimpleFileOptions::default())
-            .expect("start synthetic ZIP member");
-        writer
-            .write_all(b"synthetic")
-            .expect("write synthetic ZIP member");
+        for (name, bytes) in entries {
+            writer
+                .start_file(
+                    *name,
+                    SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored),
+                )
+                .expect("start synthetic ZIP member");
+            writer.write_all(bytes).expect("write synthetic ZIP member");
+        }
         writer.finish().expect("finish synthetic ZIP").into_inner()
+    }
+
+    fn push_lp(bytes: &mut Vec<u8>, value: &str) {
+        bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(value.as_bytes());
+    }
+
+    fn paged_instance(record: &[u8]) -> Vec<u8> {
+        const PAGE_SIZE: usize = 0x88;
+        const BODY_SIZE: usize = PAGE_SIZE - 8;
+        let mut bytes = (PAGE_SIZE as u32).to_le_bytes().to_vec();
+        bytes.resize(16, 0);
+        let mut chunks = record.chunks(BODY_SIZE).peekable();
+        let first = chunks.next().expect("record is nonempty");
+        bytes.extend_from_slice(&[0, 0, 0, 0, 0x80, 0, 1, 0]);
+        bytes.extend_from_slice(first);
+        bytes.resize(16 + PAGE_SIZE, 0);
+        while let Some(chunk) = chunks.next() {
+            if chunks.peek().is_some() {
+                bytes.extend_from_slice(&[0, 0, 0, 0, 0x80, 0, 0, 0]);
+            } else {
+                bytes.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+                bytes.extend_from_slice(&(chunk.len() as u16).to_le_bytes());
+                bytes.extend_from_slice(&[0, 0]);
+            }
+            bytes.extend_from_slice(chunk);
+            let page_bytes = bytes.len() - 16;
+            let next_page = 16 + page_bytes.div_ceil(PAGE_SIZE) * PAGE_SIZE;
+            bytes.resize(next_page, 0);
+        }
+        bytes
     }
 }

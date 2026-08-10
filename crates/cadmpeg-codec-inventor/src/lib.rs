@@ -9,6 +9,7 @@ mod database;
 mod decode;
 mod external_reference;
 mod kernel;
+mod materials;
 mod native;
 mod property_set;
 mod protein;

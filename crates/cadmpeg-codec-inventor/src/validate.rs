@@ -8,11 +8,11 @@ use cadmpeg_ir::{CadIr, Check, Finding, NativeUnknownRecord, Severity};
 use crate::native::{
     ActiveCarrierRecord, ActiveCarrierRecordState, DatabaseIssueRecord, DatabaseRecord,
     ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord, PropertyRecord,
-    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, ProteinEntryRecord,
-    ProteinRecord, ProteinRecordState, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
-    SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
-    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UfrxRecord, UfrxRecordState,
-    UnpairedSegmentRecord, INVENTOR_NATIVE_VERSION,
+    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, ProteinAssetRecord,
+    ProteinEntryRecord, ProteinRecord, ProteinRecordState, RevisionRecord, RseRecordRecord,
+    SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
+    SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UfrxRecord,
+    UfrxRecordState, UnpairedSegmentRecord, INVENTOR_NATIVE_VERSION,
 };
 
 const ARENAS: &[&str] = &[
@@ -32,6 +32,7 @@ const ARENAS: &[&str] = &[
     "property_set_issues",
     "property_sets",
     "protein",
+    "protein_assets",
     "protein_entries",
     "revisions",
     "rse_records",
@@ -117,6 +118,11 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     );
     validate_properties(&data, &mut findings);
     validate_protein(&data, &mut findings);
+    unique(
+        &mut findings,
+        data.protein_assets.iter().map(|record| record.id.as_str()),
+        "Protein asset id",
+    );
     validate_ufrx(&data, &mut findings);
     for issue in &data.structural_issues {
         findings.push(finding(
@@ -229,6 +235,7 @@ struct NativeData {
     properties: Vec<PropertyRecord>,
     property_issues: Vec<PropertySetIssueRecord>,
     protein: Vec<ProteinRecord>,
+    protein_assets: Vec<ProteinAssetRecord>,
     protein_entries: Vec<ProteinEntryRecord>,
     ufrx: Vec<UfrxRecord>,
     external_references: Vec<ExternalReferenceRecord>,
@@ -261,6 +268,7 @@ impl NativeData {
             properties: namespace.arena_as("properties")?,
             property_issues: namespace.arena_as("property_set_issues")?,
             protein: namespace.arena_as("protein")?,
+            protein_assets: namespace.arena_as("protein_assets")?,
             protein_entries: namespace.arena_as("protein_entries")?,
             ufrx: namespace.arena_as("ufrx")?,
             external_references: namespace.arena_as("external_references")?,

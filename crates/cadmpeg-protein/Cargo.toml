@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "cadmpeg-protein"
+description = "Decode schema-driven Autodesk Protein asset records."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/cadmpeg-protein"
+keywords = ["cad", "autodesk", "materials", "assets", "parser"]
+categories = ["encoding", "parser-implementations", "graphics"]
+
+[dependencies]
+cadmpeg-core.workspace = true
+flate2.workspace = true
+roxmltree.workspace = true
+serde.workspace = true
+zip.workspace = true
+
+[lints]
+workspace = true
