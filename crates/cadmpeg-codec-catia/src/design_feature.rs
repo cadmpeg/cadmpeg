@@ -10,7 +10,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
 use crate::native::{CatiaDesignObject, CatiaEntityRecord, CatiaNative, CatiaObjectRecord};
-use crate::object_graph::{PayloadField, PayloadSubtype};
+use crate::object_graph::{HeadToken, PayloadField, PayloadSubtype};
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct DesignFeatureTransfer {
@@ -537,19 +537,51 @@ fn native_operation_candidate<'a>(
     object: &'a CatiaDesignObject,
     records: &HashMap<&str, &'a CatiaObjectRecord>,
 ) -> Option<NativeOperationCandidate<'a>> {
-    let owner_class = object.owner_class.as_ref()?;
-    is_admitted_native_operation_class(&owner_class.name).then_some(())?;
     let owner_record_id = object.owner_record.as_deref()?;
     let owner_record = records.get(owner_record_id).copied()?;
-    (owner_record.class_name.as_deref() == Some(owner_class.name.as_str())
-        && owner_record.class_entry.as_deref() == Some(owner_class.entry.as_str())
+    // A compact 1A root does not carry separator roles, but its complete
+    // class/storage/null/owner lane is an exact self-owned object anchor.
+    // Accept it only when the selected record, owner slot, and design-object
+    // identity all agree; a class name in an arbitrary field is insufficient.
+    let self_owned_compact_root = object.owner_design_object.is_none()
+        && owner_record.design_object.as_deref() == Some(object.id.as_str())
         && owner_record.entity_id == Some(object.owner_entity_id)
-        && owner_record.design_object.as_deref() == object.owner_design_object.as_deref())
-    .then_some(NativeOperationCandidate {
-        object,
-        owner_record,
-        kind: owner_class.name.as_str(),
-    })
+        && owner_record.owner_entity_id() == Some(object.owner_entity_id)
+        && owner_record.class_ref.is_some()
+        && matches!(
+            owner_record.head.as_slice(),
+            [
+                HeadToken::Lead(0x1a),
+                HeadToken::Reference(_),
+                HeadToken::Reference(0),
+                HeadToken::NullHandle,
+                HeadToken::Reference(owner),
+            ] if *owner == object.owner_entity_id
+        );
+    let (owner_class_name, owner_class_entry) = object
+        .owner_class
+        .as_ref()
+        .map(|class| (class.name.as_str(), class.entry.as_str()))
+        .or_else(|| {
+            if !self_owned_compact_root {
+                return None;
+            }
+            Some((
+                owner_record.class_name.as_deref()?,
+                owner_record.class_entry.as_deref()?,
+            ))
+        })?;
+    is_admitted_native_operation_class(owner_class_name).then_some(())?;
+    (owner_record.class_name.as_deref() == Some(owner_class_name)
+        && owner_record.class_entry.as_deref() == Some(owner_class_entry)
+        && owner_record.entity_id == Some(object.owner_entity_id)
+        && (owner_record.design_object.as_deref() == object.owner_design_object.as_deref()
+            || self_owned_compact_root))
+        .then_some(NativeOperationCandidate {
+            object,
+            owner_record,
+            kind: owner_class_name,
+        })
 }
 
 fn is_admitted_native_operation_class(name: &str) -> bool {
@@ -1152,6 +1184,106 @@ mod tests {
             suffix_framing: None,
             suffix_schema_selection: None,
         }
+    }
+
+    #[test]
+    fn transfers_compact_self_owned_operation_root() {
+        let mut object = design_object("operation-object", None);
+        object.owner_entity_id = 1;
+        object.owner_record = Some("operation-record".to_string());
+
+        let mut record = object_record(
+            "operation-record",
+            Some("operation-object"),
+            Some(1),
+            Some(1),
+            Some("Prism_ThickThin2"),
+            Some("operation-entry"),
+        );
+        record.lead = 0x1a;
+        record.head = vec![
+            HeadToken::Lead(0x1a),
+            HeadToken::Reference(7),
+            HeadToken::Reference(0),
+            HeadToken::NullHandle,
+            HeadToken::Reference(1),
+        ];
+        record.class_ref = Some(7);
+
+        let native = CatiaNative {
+            design_objects: vec![object],
+            object_graphs: vec![CatiaObjectGraph {
+                id: "graph".to_string(),
+                byte_offset: 0,
+                byte_len: 0,
+                finjpl_segment: None,
+                outer_container: None,
+                catalog_byte_offset: None,
+                catalog: None,
+                records: vec![record],
+            }],
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty(Units::default());
+
+        let transfer = transfer_design_features(&mut ir, &native, None);
+
+        assert_eq!(ir.model.features.len(), 1);
+        assert_eq!(
+            transfer.native_operation_records,
+            HashSet::from(["operation-record".to_string()])
+        );
+        assert!(matches!(
+            ir.model.features[0].definition,
+            FeatureDefinition::Native { ref kind, .. } if kind == "Prism_ThickThin2"
+        ));
+    }
+
+    #[test]
+    fn does_not_promote_unclassified_self_owned_compact_root() {
+        let mut object = design_object("operation-object", None);
+        object.owner_entity_id = 1;
+        object.owner_record = Some("operation-record".to_string());
+
+        let mut record = object_record(
+            "operation-record",
+            Some("operation-object"),
+            Some(1),
+            Some(1),
+            Some("Prism_ThickThin2"),
+            Some("operation-entry"),
+        );
+        record.lead = 0x1a;
+        record.head = vec![
+            HeadToken::Lead(0x1a),
+            HeadToken::Reference(7),
+            HeadToken::Reference(0),
+            HeadToken::NullHandle,
+            HeadToken::Reference(1),
+            HeadToken::Literal(0),
+        ];
+        record.class_ref = Some(7);
+
+        let native = CatiaNative {
+            design_objects: vec![object],
+            object_graphs: vec![CatiaObjectGraph {
+                id: "graph".to_string(),
+                byte_offset: 0,
+                byte_len: 0,
+                finjpl_segment: None,
+                outer_container: None,
+                catalog_byte_offset: None,
+                catalog: None,
+                records: vec![record],
+            }],
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty(Units::default());
+
+        let transfer = transfer_design_features(&mut ir, &native, None);
+
+        assert!(ir.model.features.is_empty());
+        assert!(transfer.native_operation_records.is_empty());
     }
 
     fn parameter(id: &str, native_ref: &str) -> cadmpeg_ir::features::DesignParameter {
