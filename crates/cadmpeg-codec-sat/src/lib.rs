@@ -17,6 +17,7 @@
 //! the report carries geometry or an unsupported-branch finding.
 
 use cadmpeg_asm::asm_header;
+use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
 use cadmpeg_asm::ids::IdFormat;
 use cadmpeg_asm::{sab, sat};
@@ -283,64 +284,12 @@ fn build_result(
         ir.tolerances = Tolerances { linear, angular };
     }
 
-    ir.model.bodies = brep.bodies;
-    ir.model.regions = brep.regions;
-    ir.model.shells = brep.shells;
-    ir.model.faces = brep.faces;
-    ir.model.loops = brep.loops;
-    ir.model.coedges = brep.coedges;
-    ir.model.edges = brep.edges;
-    ir.model.vertices = brep.vertices;
-    ir.model.points = brep.points;
-    ir.model.surfaces = brep.surfaces;
-    ir.model.curves = brep.curves;
-    ir.model.pcurves = brep.pcurves;
-    ir.model.procedural_surfaces = brep.procedural_surfaces;
-    ir.model.procedural_curves = brep.procedural_curves;
-    ir.model.attributes = brep.attributes;
-    ctx.charge_entities(ir.model.entity_count() as u64, "admit ASM entities")?;
-
-    let namespace = ir.native.namespace_mut(FORMAT);
-    namespace.version = 1;
-    let store = |error: cadmpeg_ir::NativeConvertError| {
-        CodecError::Malformed(format!("native arena serialization failed: {error}"))
-    };
-    namespace
-        .set_arena("edge_continuities", &brep.edge_continuities)
-        .map_err(store)?;
-    namespace
-        .set_arena("edge_ownerships", &brep.edge_ownerships)
-        .map_err(store)?;
-    namespace
-        .set_arena("vertex_ownerships", &brep.vertex_ownerships)
-        .map_err(store)?;
-    namespace
-        .set_arena("face_sidedness", &brep.face_sidedness)
-        .map_err(store)?;
-    namespace
-        .set_arena("tolerant_vertex_tails", &brep.tolerant_vertex_tails)
-        .map_err(store)?;
-    namespace
-        .set_arena("tolerant_edge_tails", &brep.tolerant_edge_tails)
-        .map_err(store)?;
-    namespace
-        .set_arena(
-            "tolerant_coedge_parameters",
-            &brep.tolerant_coedge_parameters,
-        )
-        .map_err(store)?;
-    namespace
-        .set_arena("mesh_surface_sentinels", &brep.mesh_surface_sentinels)
-        .map_err(store)?;
-    namespace
-        .set_arena("wire_topologies", &brep.wire_topologies)
-        .map_err(store)?;
-    namespace
-        .set_arena("transform_hints", &brep.transform_hints)
-        .map_err(store)?;
-    namespace
-        .set_arena("body_native_keys", &brep.body_native_keys)
-        .map_err(store)?;
+    let AsmTransferRemainder {
+        body_keys: _,
+        unknowns,
+        stats,
+        annotation_records: _,
+    } = transfer_into_ir(ctx, &mut ir, FORMAT, 1, brep)?;
 
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
@@ -359,22 +308,22 @@ fn build_result(
             provenance: None,
         });
     }
-    if brep.stats.unknown_surface_faces > 0 {
+    if stats.unknown_surface_faces > 0 {
         losses.push(LossNote {
             code: LossKind::GeometryNotTransferred,
             severity: Severity::Warning,
             message: format!(
                 "{} face(s) rest on procedural surface constructions without a decoded carrier",
-                brep.stats.unknown_surface_faces
+                stats.unknown_surface_faces
             ),
             provenance: None,
         });
     }
     let mut coverage = BTreeMap::new();
-    coverage.insert("unknown_records".to_string(), brep.unknowns.len());
+    coverage.insert("unknown_records".to_string(), unknowns.len());
     coverage.insert(
         "unknown_surface_faces".to_string(),
-        brep.stats.unknown_surface_faces,
+        stats.unknown_surface_faces,
     );
     let report = DecodeReport {
         format: FORMAT.to_string(),
@@ -388,7 +337,7 @@ fn build_result(
 
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
     source_fidelity
-        .attach_native_unknown_records(&mut ir, FORMAT, brep.unknowns)
+        .attach_native_unknown_records(&mut ir, FORMAT, unknowns)
         .map_err(|error| {
             CodecError::Malformed(format!("unknown-record retention failed: {error}"))
         })?;

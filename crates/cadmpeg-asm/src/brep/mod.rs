@@ -22,6 +22,7 @@ mod emit;
 pub mod geometry;
 pub mod records;
 mod topology;
+pub mod transfer;
 
 use crate::asm_header;
 use crate::ids::IdFormat;
