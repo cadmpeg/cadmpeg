@@ -384,9 +384,11 @@ fn jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
 
 /// Locate the coherent E5 record stream in the outer-body preamble or a FINJPL segment.
 ///
-/// A candidate must contain at least ten stride-valid records. The preamble wins when
-/// coherent; otherwise the segment with the largest valid walk wins, with storage type
-/// `0x0000_008e` breaking ties.
+/// The candidate range is the complete preamble or complete FINJPL segment. A
+/// candidate must contain at least ten stride-valid records. The preamble wins
+/// when coherent; otherwise the segment with the largest valid walk wins, with
+/// storage type `0x0000_008e` breaking ties. An unresolved tie rejects E5
+/// selection.
 #[must_use]
 pub fn e5_record_stream(data: &[u8]) -> Option<Range<usize>> {
     let segments = finjpl_segments(data, 0, data.len());
@@ -409,59 +411,153 @@ fn e5_record_stream_in_segments(data: &[u8], segments: &[FinjplSegment]) -> Opti
         .position(|bytes| bytes == FINJPL_MARKER)
         .map_or(data.len(), |relative| directory_length + relative);
     let preamble = directory_length..first_finjpl;
-    if count_e5_records(&data[preamble.clone()]) >= 10 {
+    if coherent_e5_record_count(&data[preamble.clone()]) >= 10 {
         return Some(preamble);
     }
 
-    segments
+    let candidates = segments
         .iter()
         .filter(|segment| segment.range.start >= directory_length)
         .filter_map(|segment| {
-            let count = count_e5_records(&data[segment.range.clone()]);
+            let count = coherent_e5_record_count(&data[segment.range.clone()]);
             (count >= 10).then_some((
                 count,
                 segment.type_word == 0x0000_008e,
                 segment.range.clone(),
             ))
         })
-        .max_by_key(|(count, preferred, _)| (*count, *preferred))
-        .map(|(_, _, range)| range)
+        .collect::<Vec<_>>();
+    let best_count = candidates.iter().map(|(count, _, _)| *count).max()?;
+    let mut best = candidates
+        .into_iter()
+        .filter(|(count, _, _)| *count == best_count)
+        .collect::<Vec<_>>();
+    let preferred = best.iter().any(|(_, preferred, _)| *preferred);
+    if preferred {
+        best.retain(|(_, preferred, _)| *preferred);
+    }
+    (best.len() == 1).then(|| best.pop().expect("one candidate remains").2)
 }
 
-fn count_e5_records(data: &[u8]) -> usize {
-    let mut count = 0;
-    let mut position = 0;
-    while position + 13 <= data.len() {
-        let Some(relative) = data[position..]
+fn coherent_e5_record_count(data: &[u8]) -> usize {
+    e5_record_spans(data).len()
+}
+
+/// Return the longest declared-stride E5 walk in a bounded byte region.
+///
+/// A stream may place the unframed `05 08 01` coordinate roster between E5
+/// records. No other gap is part of the walk: accepting arbitrary bytes here
+/// would turn an incidental marker into a record and could select the wrong
+/// family before the route decoder sees the data.
+pub(crate) fn e5_record_spans(data: &[u8]) -> Vec<Range<usize>> {
+    let mut best = Vec::new();
+    let mut search = 0;
+    while search < data.len() {
+        let Some(relative) = data[search..]
             .windows(E5_MARKER.len())
             .position(|bytes| bytes == E5_MARKER)
         else {
             break;
         };
-        let record = position + relative;
-        let Some(size) = data
-            .get(record + 5..record + 7)
-            .map(|bytes| usize::from(u16::from_le_bytes([bytes[0], bytes[1]])))
+        let start = search + relative;
+        let (walk, consumed) = e5_record_walk(data, start);
+        if walk.len() > best.len() {
+            best = walk;
+        }
+        search = consumed.max(start.saturating_add(1));
+    }
+    best
+}
+
+/// Return every valid `E5 0D 03` frame in a bounded stream region.
+///
+/// The complete E5 carrier stream may interleave these frames with other
+/// framed E5 records. Route selection still uses [`e5_record_spans`] because
+/// it needs a contiguous declared-stride walk; carrier decoders need the
+/// complete frame inventory instead.
+pub(crate) fn all_e5_record_spans(data: &[u8]) -> Vec<Range<usize>> {
+    let mut spans = Vec::new();
+    let mut search = 0;
+    while search < data.len() {
+        let Some(relative) = data[search..]
+            .windows(E5_MARKER.len())
+            .position(|bytes| bytes == E5_MARKER)
         else {
             break;
         };
-        let Some(end) = record.checked_add(size + 13) else {
+        let start = search + relative;
+        let Some(end) = e5_record_end(data, start) else {
+            search = start.saturating_add(1);
+            continue;
+        };
+        spans.push(start..end);
+        search = end;
+    }
+    spans
+}
+
+fn e5_record_walk(data: &[u8], start: usize) -> (Vec<Range<usize>>, usize) {
+    let mut walk = Vec::new();
+    let mut position = start;
+    let mut consumed = start;
+    while let Some(end) = e5_record_end(data, position) {
+        walk.push(position..end);
+        position = end;
+        consumed = end;
+
+        if e5_marker_at(data, position) {
+            continue;
+        }
+        let Some(next) = skip_e5_vertex_rows(data, position) else {
             break;
         };
-        if end > data.len() {
+        consumed = next;
+        if !e5_marker_at(data, next) {
             break;
         }
-        count += 1;
-        position = end;
+        position = next;
     }
-    count
+    (walk, consumed)
+}
+
+fn e5_record_end(data: &[u8], position: usize) -> Option<usize> {
+    if !e5_marker_at(data, position) {
+        return None;
+    }
+    let header = data.get(position..position.checked_add(7)?)?;
+    let size = usize::from(u16::from_le_bytes([header[5], header[6]]));
+    let end = position.checked_add(size.checked_add(13)?)?;
+    (end <= data.len()).then_some(end)
+}
+
+fn skip_e5_vertex_rows(data: &[u8], mut position: usize) -> Option<usize> {
+    let start = position;
+    while vertex_row_at(data, position) {
+        position = position.checked_add(15)?;
+    }
+    (position != start).then_some(position)
+}
+
+fn e5_marker_at(data: &[u8], position: usize) -> bool {
+    let Some(end) = position.checked_add(E5_MARKER.len()) else {
+        return false;
+    };
+    data.get(position..end) == Some(E5_MARKER.as_slice())
+}
+
+fn vertex_row_at(data: &[u8], position: usize) -> bool {
+    let Some(row_end) = position.checked_add(15) else {
+        return false;
+    };
+    data.get(position..row_end)
+        .is_some_and(|row| row[..3] == [0x05, 0x08, 0x01])
 }
 
 /// Standard-nested BREP-spine markers used for variant identification.
 const EDGE_DELIMITER: &[u8; 8] = &[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
 const VERTEX_MARKER: &[u8; 3] = &[0x05, 0x08, 0x01];
 const A9_MARKER: &[u8; 2] = &[0xa9, 0x03];
-const E5_MARKER: &[u8; 3] = &[0xe5, 0x0d, 0x03];
+pub(crate) const E5_MARKER: &[u8; 3] = &[0xe5, 0x0d, 0x03];
 
 /// Codec-defined role labels for [`ContainerEntry::role`].
 pub mod role {
@@ -516,6 +612,8 @@ pub struct InnerDir {
 pub struct Census {
     /// Contiguous stride-8 FBB runs in the BREP stream.
     pub fbb_runs: usize,
+    /// Stride-8 FBB face rows in the BREP stream.
+    pub fbb_face_rows: usize,
     /// `10 24 04 ff ff 00 00 00` standard edge-table delimiters in the BREP stream.
     pub edge_delimiters: usize,
     /// `05 08 01` vertex-record signatures in the BREP stream.
@@ -541,6 +639,8 @@ pub struct ContainerScan<'a> {
     pub inner: Option<InnerDir>,
     /// Reconstructed BREP stream (largest `MainDataStream` + `SurfacicReps`).
     pub brep: Option<Vec<u8>>,
+    /// Reconstructed canonical `MainDataStream`, which owns the standard FBB spine.
+    pub main_data_stream: Option<Vec<u8>>,
     /// Exact JPEG previews extracted from summary-information framing.
     pub previews: Vec<PreviewImage>,
     /// Unique saved-by application version from summary information.
@@ -557,28 +657,79 @@ pub struct ContainerScan<'a> {
     pub variant: Variant,
 }
 
+/// Return the physical file regions that can carry consolidated A/B records.
+///
+/// Catalogued stream extents are the authoritative source boundaries. When a
+/// file has no outer directory, the bytes after the outer header and before a
+/// nested container (or the outer directory) are the unnamed outer-preamble
+/// source. The nested directory itself and all directory headers stay outside
+/// the inventory. Ranges remain separate even when they are adjacent: a
+/// record cannot establish an ordered relationship across two stream extents.
+pub(crate) fn consolidated_record_ranges(scan: &ContainerScan<'_>) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    let add_directory = |ranges: &mut Vec<Range<usize>>, directory: &InnerDir| {
+        for descriptor in &directory.descriptors {
+            for extent in &descriptor.extents {
+                let Some(start) = directory.inner.checked_add(extent.phys_off as usize) else {
+                    continue;
+                };
+                let Some(end) = start.checked_add(extent.phys_len as usize) else {
+                    continue;
+                };
+                if end <= scan.data.len() {
+                    ranges.push(start..end);
+                }
+            }
+        }
+    };
+
+    if let Some(outer) = scan.outer.as_ref() {
+        add_directory(&mut ranges, outer);
+    } else {
+        let outer_end = scan
+            .inner
+            .as_ref()
+            .map(|directory| directory.inner)
+            .or_else(|| outer_stream_directory_range(&scan.data).map(|range| range.start))
+            .unwrap_or(scan.data.len());
+        if OUTER_MAGIC.len() + 8 < outer_end {
+            ranges.push((OUTER_MAGIC.len() + 8)..outer_end);
+        }
+    }
+    if let Some(inner) = scan.inner.as_ref() {
+        add_directory(&mut ranges, inner);
+    }
+
+    if ranges.is_empty() && scan.data.len() > OUTER_MAGIC.len() + 8 {
+        ranges.push((OUTER_MAGIC.len() + 8)..scan.data.len());
+    }
+    ranges.sort_by_key(|range| (range.start, range.end));
+    ranges.dedup();
+    ranges
+}
+
 /// Whether a byte prefix is a `.CATPart`: the `V5_CFV2\0` outer magic is unique
 /// to Dassault's container and is a conclusive signal on its own.
 pub fn looks_like_catia(prefix: &[u8]) -> bool {
     prefix.starts_with(OUTER_MAGIC)
 }
 
-/// Count non-overlapping stride-8 runs of the FBB marker and total marker hits.
-/// Returns `run_count`. The number of maximal contiguous groups is the
-/// documented body count, but for variant detection the presence of any run is
-/// what matters, so this counts every stride-8 marker occurrence.
-fn count_stride8_fbb(body: &[u8]) -> usize {
-    let mut count = 0;
-    let mut i = 0;
-    while i + 4 <= body.len() {
-        if is_fbb_row(&body[i..]) {
-            count += 1;
-            i += 8;
+/// Return maximal contiguous stride-8 FBB groups in source order.
+pub(crate) fn fbb_run_ranges(body: &[u8]) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut position = 0;
+    while position + 8 <= body.len() {
+        if is_fbb_row(&body[position..]) {
+            let start = position;
+            while position + 8 <= body.len() && is_fbb_row(&body[position..]) {
+                position += 8;
+            }
+            ranges.push(start..position);
         } else {
-            i += 1;
+            position += 1;
         }
     }
-    count
+    ranges
 }
 
 /// A standard face-outer-bound row. Bit 7 of the leading `30` byte is a form
@@ -660,10 +811,13 @@ fn parse_directory_region(
     // real descriptor. The extent count sits at `desc_offset + 0x50`.
     let mut o = 0usize;
     while o + 4 <= dirbuf.len() {
-        let Some(k) = u32_be(dirbuf, o).map(|value| value as usize) else {
+        let Some(k) = u32_be(dirbuf, o).and_then(|value| usize::try_from(value).ok()) else {
             break;
         };
-        if (1..=64).contains(&k) && o + 4 + 20 * k <= dirbuf.len() {
+        let extents_end = k
+            .checked_mul(20)
+            .and_then(|extent_bytes| o.checked_add(4)?.checked_add(extent_bytes));
+        if k != 0 && extents_end.is_some_and(|end| end <= dirbuf.len()) {
             if let Some((extents, cum)) = parse_extents(dirbuf, o, k, physical_base, file_len) {
                 if cum > 0 && o >= 0x50 {
                     let ds = o - 0x50;
@@ -726,31 +880,67 @@ fn parse_extents(
     Some((extents, cum))
 }
 
-/// Read the UTF-16LE ASCII stream name from a descriptor header region: the
-/// longest run of printable ASCII characters each followed by a `0x00` high byte,
-/// searched in the window preceding the extent-count field.
+/// Read a descriptor's UTF-16LE ASCII stream name from one of its two framed
+/// name locations.
+///
+/// The descriptor tail is a two-byte UTF-16LE terminator followed by one zero
+/// padding byte. The name is the complete run of printable ASCII code units
+/// immediately before that tail. This end anchor keeps unrelated UTF-16 text
+/// elsewhere in the descriptor from becoming the stream name.
 fn descriptor_name(dirbuf: &[u8], ds: usize) -> String {
-    let start = ds.saturating_sub(40);
-    let window = &dirbuf[start..ds + 0x50.min(dirbuf.len() - ds)];
-    let mut best = String::new();
-    let mut i = 0;
-    while i + 1 < window.len() {
-        let mut chars = String::new();
-        let mut j = i;
-        while j + 1 < window.len() && (0x20..0x7f).contains(&window[j]) && window[j + 1] == 0 {
-            chars.push(window[j] as char);
-            j += 2;
-        }
-        if chars.len() >= 3 {
-            if chars.len() > best.len() {
-                best = chars;
+    if let Some(tail_start) = ds.checked_sub(3) {
+        if dirbuf.get(tail_start..ds) == Some(&[0, 0, 0]) {
+            let mut name_start = tail_start;
+            while name_start >= 2 {
+                let pair_start = name_start - 2;
+                if (0x20..0x7f).contains(&dirbuf[pair_start]) && dirbuf[pair_start + 1] == 0 {
+                    name_start = pair_start;
+                } else {
+                    break;
+                }
             }
-            i = j;
-        } else {
-            i += 1;
+            let name_bytes = &dirbuf[name_start..tail_start];
+            if name_bytes.len() >= 6 {
+                return name_bytes
+                    .chunks_exact(2)
+                    .map(|pair| pair[0] as char)
+                    .collect();
+            }
         }
     }
-    best
+
+    // Older directory headers place an unframed name at ds+0x10. Admit this
+    // form only when the name closes with a UTF-16LE terminator and the rest
+    // of the header before the extent count is zero.
+    let Some(header_name_start) = ds.checked_add(0x10) else {
+        return String::new();
+    };
+    let Some(header_end) = ds.checked_add(0x50) else {
+        return String::new();
+    };
+    let Some(header_name) = dirbuf.get(header_name_start..header_end) else {
+        return String::new();
+    };
+    let mut name_len = 0;
+    while name_len + 1 < header_name.len()
+        && (0x20..0x7f).contains(&header_name[name_len])
+        && header_name[name_len + 1] == 0
+    {
+        name_len += 2;
+    }
+    if name_len < 6
+        || header_name.get(name_len..name_len + 2) != Some(&[0, 0])
+        || header_name
+            .get(name_len + 2..)
+            .is_none_or(|rest| rest.iter().any(|byte| *byte != 0))
+    {
+        return String::new();
+    }
+
+    header_name[..name_len]
+        .chunks_exact(2)
+        .map(|pair| pair[0] as char)
+        .collect()
 }
 
 /// Concatenate a logical stream's physical extents in `log_off` order.
@@ -855,10 +1045,7 @@ fn parse_outer_container_declarations(
             continue;
         }
         let strings_start = start + 40;
-        let search_end = (strings_start + 192).min(data.len());
-        let Some(relative_terminal) =
-            memchr::memmem::find(&data[strings_start..search_end], TERMINAL)
-        else {
+        let Some(relative_terminal) = memchr::memmem::find(&data[strings_start..], TERMINAL) else {
             continue;
         };
         let terminal = strings_start + relative_terminal;
@@ -930,24 +1117,51 @@ fn declaration_class_pair(data: &[u8]) -> Option<(String, String)> {
     ))
 }
 
-/// Reconstruct the logical BREP buffer: the largest `MainDataStream` followed by
-/// the largest `SurfacicReps` ([spec §3.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#34-nested-container-stream-directory)). Both are required. A directory that
-/// catalogues the BREP body carries both a substantial `MainDataStream` and a
-/// `SurfacicReps`; the contiguous-body exception has neither and returns `None`.
+/// Reconstruct the logical BREP buffer: the uniquely largest canonical
+/// `MainDataStream` followed by the uniquely largest canonical `SurfacicReps`
+/// ([spec §3.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#34-nested-container-stream-directory)). Both are required. A directory that
+/// catalogues the BREP body carries both canonical streams; the contiguous-body
+/// exception has neither and returns `None`.
 pub fn brep_stream(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
-    let main = dir
-        .descriptors
-        .iter()
-        .filter(|d| d.name == "MainDataStream")
-        .max_by_key(|d| d.logical_length)?;
-    let surf = dir
-        .descriptors
-        .iter()
-        .filter(|d| d.name.contains("Surf"))
-        .max_by_key(|d| d.logical_length)?;
-    let mut out = reconstruct_logical_stream(data, main, dir.inner);
+    let mut out = main_data_stream(data, dir)?;
+    let surf = unique_largest_descriptor(
+        dir.descriptors
+            .iter()
+            .filter(|descriptor| descriptor.name == "SurfacicReps"),
+    )?;
     out.extend(reconstruct_logical_stream(data, surf, dir.inner));
     Some(out)
+}
+
+/// Reconstruct the unique canonical `MainDataStream`, which owns the FBB
+/// topology spine. The surface stream is deliberately excluded: its numeric
+/// payload may contain byte sequences that resemble FBB rows but cannot assign
+/// topology faces.
+pub(crate) fn main_data_stream(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
+    let main = unique_largest_descriptor(
+        dir.descriptors
+            .iter()
+            .filter(|descriptor| descriptor.name == "MainDataStream"),
+    )?;
+    Some(reconstruct_logical_stream(data, main, dir.inner))
+}
+
+fn unique_largest_descriptor<'a>(
+    descriptors: impl IntoIterator<Item = &'a Descriptor>,
+) -> Option<&'a Descriptor> {
+    let mut selected = None;
+    let mut selected_length = 0;
+    let mut equal_count = 0;
+    for descriptor in descriptors {
+        if selected.is_none() || descriptor.logical_length > selected_length {
+            selected = Some(descriptor);
+            selected_length = descriptor.logical_length;
+            equal_count = 1;
+        } else if descriptor.logical_length == selected_length {
+            equal_count += 1;
+        }
+    }
+    (equal_count == 1).then_some(selected).flatten()
 }
 
 fn find_subslice(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
@@ -1011,6 +1225,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let outer = parse_outer_stream_directory(&data);
     let inner = parse_stream_directory(&data);
     let brep = inner.as_ref().and_then(|dir| brep_stream(&data, dir));
+    let main_data_stream = inner.as_ref().and_then(|dir| main_data_stream(&data, dir));
     let finjpl_segments = finjpl_segments(&data, 0, data.len());
     let previews = preview_images_in_segments(&data, &finjpl_segments);
     let last_save_version = last_save_version_in_segments(&data, &finjpl_segments);
@@ -1024,8 +1239,13 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         e5_markers: count_subslice(&data, E5_MARKER),
         ..Default::default()
     };
-    if let Some(b) = &brep {
-        census.fbb_runs = count_stride8_fbb(b);
+    if let Some(b) = main_data_stream.as_deref() {
+        let fbb_ranges = fbb_run_ranges(b);
+        census.fbb_runs = fbb_ranges.len();
+        census.fbb_face_rows = fbb_ranges
+            .iter()
+            .map(|range| (range.end - range.start) / 8)
+            .sum();
         census.edge_delimiters = count_subslice(b, EDGE_DELIMITER);
         census.vertex_markers = count_subslice(b, VERTEX_MARKER);
     }
@@ -1044,6 +1264,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         outer,
         inner,
         brep,
+        main_data_stream,
         previews,
         last_save_version,
         external_references,
@@ -1201,9 +1422,12 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
 
     if scan.brep.is_some() {
         notes.push(format!(
-            "reconstructed BREP stream from MainDataStream + SurfacicReps: {} FBB run(s), {} \
-             vertex record(s), {} edge-table delimiter(s)",
-            scan.census.fbb_runs, scan.census.vertex_markers, scan.census.edge_delimiters
+            "reconstructed BREP stream from MainDataStream + SurfacicReps: {} FBB group(s) \
+             containing {} face row(s), {} vertex record(s), {} edge-table delimiter(s)",
+            scan.census.fbb_runs,
+            scan.census.fbb_face_rows,
+            scan.census.vertex_markers,
+            scan.census.edge_delimiters
         ));
     }
     if scan.census.a9_markers > 0 || scan.census.e5_markers > 0 {
@@ -1238,11 +1462,46 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        identify_variant, outer_container_declarations, outer_container_for_extent, parse_extents,
-        reconstruct_logical_stream, summarize, Census, ContainerScan, Descriptor, Extent, InnerDir,
-    };
+    use super::*;
     use crate::variant::Variant;
+
+    fn append_e5_test_record(bytes: &mut Vec<u8>, id: u32) {
+        append_e5_test_record_with_payload(bytes, id, &[]);
+    }
+
+    fn append_e5_test_record_with_payload(bytes: &mut Vec<u8>, id: u32, payload: &[u8]) {
+        bytes.extend_from_slice(super::E5_MARKER);
+        bytes.extend_from_slice(&[0xfe, 0x00]);
+        bytes.extend_from_slice(&(payload.len() as u16).to_le_bytes());
+        bytes.extend_from_slice(&[0x00, 0x00]);
+        bytes.extend_from_slice(&id.to_le_bytes());
+        bytes.extend_from_slice(payload);
+    }
+
+    fn outer_with_preamble(body: &[u8]) -> Vec<u8> {
+        let directory_length = 32usize;
+        let directory_offset = 512usize;
+        let mut bytes = vec![0u8; directory_length];
+        bytes[..super::OUTER_MAGIC.len()].copy_from_slice(super::OUTER_MAGIC);
+        bytes[8..12].copy_from_slice(&(directory_offset as u32).to_be_bytes());
+        bytes[12..16].copy_from_slice(&(directory_length as u32).to_be_bytes());
+        bytes.extend_from_slice(body);
+        bytes.resize(directory_offset + directory_length, 0);
+        bytes
+    }
+
+    fn test_descriptor(name: &str, physical_offset: u32, length: u32) -> Descriptor {
+        Descriptor {
+            name: name.to_string(),
+            desc_offset: 0,
+            logical_length: length,
+            extents: vec![Extent {
+                phys_off: physical_offset,
+                phys_len: length,
+                flags: 0,
+            }],
+        }
+    }
 
     #[test]
     fn coherent_e5_stream_overrides_nested_fbb_markers() {
@@ -1262,6 +1521,100 @@ mod tests {
     }
 
     #[test]
+    fn e5_stream_requires_declared_stride_or_coordinate_rows_between_records() {
+        let mut body = Vec::new();
+        for id in 0..10 {
+            append_e5_test_record(&mut body, id);
+            body.push(0x7f);
+        }
+        assert!(super::e5_record_stream(&outer_with_preamble(&body)).is_none());
+
+        let mut body = Vec::new();
+        for id in 0..10 {
+            append_e5_test_record(&mut body, id);
+            if id != 9 {
+                body.extend_from_slice(&[0x05, 0x08, 0x01]);
+                body.extend_from_slice(&[0; 12]);
+            }
+        }
+        assert!(super::e5_record_stream(&outer_with_preamble(&body)).is_some());
+    }
+
+    #[test]
+    fn e5_stream_ignores_markers_inside_framed_payloads() {
+        let mut false_record = Vec::new();
+        append_e5_test_record(&mut false_record, 100);
+        let mut body = Vec::new();
+        append_e5_test_record_with_payload(&mut body, 0, &false_record);
+        for id in 1..9 {
+            append_e5_test_record(&mut body, id);
+        }
+        assert!(super::e5_record_stream(&outer_with_preamble(&body)).is_none());
+    }
+
+    #[test]
+    fn all_e5_record_spans_cross_other_framed_records() {
+        let mut body = Vec::new();
+        append_e5_test_record(&mut body, 1);
+        body.extend_from_slice(&[0xe5, 0x0d, 0x13, 0xf4, 0x01, 0x09, 0, 0, 0]);
+        append_e5_test_record(&mut body, 2);
+        assert_eq!(super::all_e5_record_spans(&body).len(), 2);
+    }
+
+    #[test]
+    fn equal_unpreferred_e5_segment_walks_are_ambiguous() {
+        let mut body = Vec::new();
+        for segment in 0..2 {
+            body.extend_from_slice(super::FINJPL_MARKER);
+            body.extend_from_slice(&0x0000_0080u32.to_be_bytes());
+            for id in 0..10 {
+                append_e5_test_record(&mut body, segment * 10 + id);
+            }
+        }
+        assert!(super::e5_record_stream(&outer_with_preamble(&body)).is_none());
+    }
+
+    #[test]
+    fn brep_stream_requires_unique_canonical_descriptors() {
+        let data = (0..32u8).collect::<Vec<_>>();
+        let tied = InnerDir {
+            inner: 0,
+            descriptors: vec![
+                test_descriptor("MainDataStream", 0, 4),
+                test_descriptor("MainDataStream", 4, 4),
+                test_descriptor("SurfacicReps", 8, 2),
+            ],
+        };
+        assert!(super::brep_stream(&data, &tied).is_none());
+
+        let noncanonical = InnerDir {
+            inner: 0,
+            descriptors: vec![
+                test_descriptor("MainDataStream", 0, 4),
+                test_descriptor("SurfacicRepsAlias", 4, 4),
+            ],
+        };
+        assert!(super::brep_stream(&data, &noncanonical).is_none());
+
+        let unique = InnerDir {
+            inner: 0,
+            descriptors: vec![
+                test_descriptor("MainDataStream", 0, 4),
+                test_descriptor("MainDataStream", 4, 5),
+                test_descriptor("SurfacicReps", 9, 2),
+            ],
+        };
+        assert_eq!(
+            super::brep_stream(&data, &unique),
+            Some(data[4..9].iter().chain(&data[9..11]).copied().collect())
+        );
+        assert_eq!(
+            super::main_data_stream(&data, &unique),
+            Some(data[4..9].to_vec())
+        );
+    }
+
+    #[test]
     fn extent_parser_retains_the_raw_flags_word() {
         let mut directory = vec![0; 24];
         for (offset, value) in [(4, 40u32), (8, 8), (12, 8), (16, 0), (20, 0xa501_0080)] {
@@ -1272,6 +1625,85 @@ mod tests {
         assert_eq!(logical_length, 8);
         assert_eq!(extents[0].flags, 0xa501_0080);
         assert!(parse_extents(&directory, 0, 1, usize::MAX, usize::MAX).is_none());
+    }
+
+    #[test]
+    fn descriptor_name_is_anchored_to_the_descriptor_tail() {
+        let mut directory = vec![0u8; 0x80];
+        let ds = 0x40;
+        let name = b"MainDataStream";
+        let name_start = ds - 3 - name.len() * 2;
+        for (index, byte) in name.iter().enumerate() {
+            directory[name_start + index * 2] = *byte;
+        }
+        directory[ds - 3..ds].copy_from_slice(&[0, 0, 0]);
+
+        assert_eq!(super::descriptor_name(&directory, ds), "MainDataStream");
+    }
+
+    #[test]
+    fn descriptor_name_ignores_unrelated_utf16_runs_and_requires_the_tail() {
+        let mut directory = vec![0u8; 0x80];
+        for (index, byte) in b"UNRELATED_LONGER_RUN".iter().enumerate() {
+            directory[8 + index * 2] = *byte;
+        }
+        let ds = 0x40;
+        let name = b"Data";
+        let name_start = ds - 3 - name.len() * 2;
+        for (index, byte) in name.iter().enumerate() {
+            directory[name_start + index * 2] = *byte;
+        }
+        directory[ds - 3..ds].copy_from_slice(&[0, 0, 1]);
+        assert!(super::descriptor_name(&directory, ds).is_empty());
+
+        directory[ds - 3..ds].copy_from_slice(&[0, 0, 0]);
+        assert_eq!(super::descriptor_name(&directory, ds), "Data");
+    }
+
+    #[test]
+    fn descriptor_name_accepts_the_legacy_fixed_header_form() {
+        let mut directory = vec![0u8; 0x80];
+        let ds = 0x10;
+        let name = b"RootStorage";
+        let name_start = ds + 0x10;
+        for (index, byte) in name.iter().enumerate() {
+            directory[name_start + index * 2] = *byte;
+        }
+        directory[name_start + name.len() * 2..name_start + name.len() * 2 + 2]
+            .copy_from_slice(&[0, 0]);
+
+        assert_eq!(super::descriptor_name(&directory, ds), "RootStorage");
+    }
+
+    #[test]
+    fn directory_parser_accepts_a_structurally_bounded_extent_roster_above_64() {
+        let descriptor_start = 16;
+        let extent_count_offset = descriptor_start + 0x50;
+        let extent_count = 65usize;
+        let directory_end = extent_count_offset + 4 + extent_count * 20;
+        let mut directory = vec![0u8; directory_end];
+        directory[..super::DIR_MAGIC.len()].copy_from_slice(super::DIR_MAGIC);
+        directory[descriptor_start + 0x0c..descriptor_start + 0x10]
+            .copy_from_slice(&(extent_count as u32).to_be_bytes());
+        directory[extent_count_offset..extent_count_offset + 4]
+            .copy_from_slice(&(extent_count as u32).to_be_bytes());
+        for index in 0..extent_count {
+            let extent = extent_count_offset + 4 + index * 20;
+            directory[extent..extent + 4].copy_from_slice(&(index as u32).to_be_bytes());
+            directory[extent + 4..extent + 8].copy_from_slice(&1u32.to_be_bytes());
+            directory[extent + 8..extent + 12].copy_from_slice(&1u32.to_be_bytes());
+            directory[extent + 12..extent + 16].copy_from_slice(&(index as u32).to_be_bytes());
+        }
+
+        let parsed = parse_directory_region(&directory, 0, 0, directory.len())
+            .expect("bounded extent roster");
+        let descriptor = parsed
+            .descriptors
+            .iter()
+            .find(|descriptor| descriptor.desc_offset == descriptor_start)
+            .expect("descriptor at synthesized header");
+        assert_eq!(descriptor.logical_length, extent_count as u32);
+        assert_eq!(descriptor.extents.len(), extent_count);
     }
 
     #[test]
@@ -1350,6 +1782,7 @@ mod tests {
             }),
             inner: None,
             brep: None,
+            main_data_stream: None,
             previews: Vec::new(),
             last_save_version: None,
             external_references: Vec::new(),
@@ -1459,6 +1892,7 @@ mod tests {
             outer: Some(outer),
             inner: None,
             brep: None,
+            main_data_stream: None,
             previews: Vec::new(),
             last_save_version: None,
             external_references: Vec::new(),
@@ -1478,5 +1912,55 @@ mod tests {
         );
         assert_eq!(summary.entries[1].attributes["container_ordinal"], "2");
         assert_eq!(summary.entries[1].attributes["container_data_offset"], "0");
+    }
+
+    #[test]
+    fn outer_data_declaration_uses_the_terminal_marker_after_long_class_names() {
+        let long_class = "C".repeat(193);
+        let mut data = vec![0; 40];
+        data[8..12].copy_from_slice(b"\x01\x00\x03\x00");
+        data[12..16].copy_from_slice(&2u32.to_le_bytes());
+        data[16..24].copy_from_slice(b"\x01\x00\x6c\x00\x02\x00\x00\x00");
+        data[32..36].copy_from_slice(b"\x02\x00\x81\x20");
+        data.extend_from_slice(long_class.as_bytes());
+        data.extend_from_slice(b"\0CATProdCont\0\0");
+        data.extend_from_slice(b"\x03\x00\xf7\x00\x03\x00\x00\x00");
+        data.extend_from_slice(&0x4bbc_295cu32.to_be_bytes());
+        data.extend_from_slice(&0x0000_1048u32.to_be_bytes());
+        data.extend_from_slice(&0x62eb_7b6fu32.to_be_bytes());
+        data.extend_from_slice(&0x0000_1825u32.to_be_bytes());
+        let data_len = u32::try_from(data.len()).expect("bounded declaration");
+        let outer = InnerDir {
+            inner: 0,
+            descriptors: vec![
+                Descriptor {
+                    name: "Data".to_string(),
+                    desc_offset: 10,
+                    logical_length: data_len,
+                    extents: vec![Extent {
+                        phys_off: 0,
+                        phys_len: data_len,
+                        flags: 0,
+                    }],
+                },
+                Descriptor {
+                    name: "1048_62eb7b6f_1825".to_string(),
+                    desc_offset: 20,
+                    logical_length: 1,
+                    extents: vec![Extent {
+                        phys_off: data_len,
+                        phys_len: 1,
+                        flags: 0,
+                    }],
+                },
+            ],
+        };
+        data.push(0);
+
+        let declarations = outer_container_declarations(&data, &outer);
+
+        assert_eq!(declarations.len(), 1);
+        assert_eq!(declarations[0].class_name, long_class);
+        assert_eq!(declarations[0].base_class, "CATProdCont");
     }
 }

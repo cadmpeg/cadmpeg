@@ -127,17 +127,8 @@ const SECTION_SCOPED_IDENTIFIERS: [&str; 6] = [
 /// | component | what it locates | minted at |
 /// | --- | --- | --- |
 /// | key head, in a [`SECTION_SCOPED_IDENTIFIERS`] scope | the marker byte offset of the block the record was read from | `container::Section::ordinal` |
-/// | second component of `sldprt:metadata:*` | the record's byte offset inside that block's payload | `metadata::attribute` |
-///
-/// Every other key component is an index within its record — a configuration
-/// index, a feature index, a sketch-entity index — and carries no byte position,
-/// so it is compared exactly.
-///
-/// The second component moves for a reason of its own: a rewritten SW Objects
-/// payload omits the `moTransRefPlaneData_c` gap, which no field of the document
-/// records. `docs/formats/sldprt-open-items.md` CM-07 holds the byte evidence.
-/// Closing CM-07 would let the writer reproduce the payload byte for byte and
-/// this component could then compare exactly.
+/// Only the key head is normalized. Every remaining component, including a
+/// metadata record's payload offset, is compared exactly.
 fn byte_positions(id: &str) -> Vec<(String, u64)> {
     let Some(key) = identifier_key(id) else {
         return Vec::new();
@@ -148,20 +139,11 @@ fn byte_positions(id: &str) -> Vec<(String, u64)> {
     {
         return Vec::new();
     }
-    let (head, rest) = split_key(key);
+    let (head, _) = split_key(key);
     let Ok(section) = head.parse::<u64>() else {
         return Vec::new();
     };
-    let mut positions = vec![(String::from("section"), section)];
-    if id.starts_with("sldprt:metadata:") {
-        if let Some(offset) = rest
-            .map(split_key)
-            .and_then(|(offset, _)| offset.parse().ok())
-        {
-            positions.push((format!("record@{section}"), offset));
-        }
-    }
-    positions
+    vec![(String::from("section"), section)]
 }
 
 /// Rewrites one identifier, replacing each byte position it carries with that

@@ -9,9 +9,9 @@ use crate::records::{
     LostEdgeReference, SketchCurveGeometry,
 };
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::geometry::{
-    BlendRadiusLaw, Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,
+    BlendRadiusLaw, Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry,
     ProceduralCurve, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -23,6 +23,7 @@ use super::geometry::{
 };
 use super::records::{canonical_guid, native_stream};
 use crate::native::F3dNative;
+use crate::writer::generate::native_geometry::{native_support_pcurve, pcurve_support_geometry};
 use crate::writer::primitives::{
     finite_point, finite_vector, history_change_kind, normalized_face_sense_to_native,
 };
@@ -673,7 +674,7 @@ pub(crate) struct NurbsCurveEdit {
 
 #[derive(Clone)]
 pub(crate) struct NurbsPcurveEdit {
-    pub(crate) geometry: PcurveGeometry,
+    pub(crate) native_geometry: PcurveGeometry,
     pub(crate) periodic: Option<bool>,
     pub(crate) wrapper_reversed: Option<bool>,
     pub(crate) native_tail_flags: Option<[bool; 4]>,
@@ -2993,14 +2994,16 @@ pub(crate) fn validate_curve_edits(
 }
 
 pub(crate) fn validate_pcurve_edits(
-    baseline: &[Pcurve],
-    target: &[Pcurve],
+    baseline_model: &Model,
+    target_model: &Model,
 ) -> Result<BTreeMap<String, NurbsPcurveEdit>, CodecError> {
-    let baseline = baseline
+    let baseline = baseline_model
+        .pcurves
         .iter()
         .map(|pcurve| (pcurve.id.as_str(), pcurve))
         .collect::<BTreeMap<_, _>>();
-    let target = target
+    let target = target_model
+        .pcurves
         .iter()
         .map(|pcurve| (pcurve.id.as_str(), pcurve))
         .collect::<BTreeMap<_, _>>();
@@ -3012,7 +3015,15 @@ pub(crate) fn validate_pcurve_edits(
     let mut edits = BTreeMap::new();
     for (id, before) in baseline {
         let after = target[id];
-        if before == after {
+        let before_native = native_support_pcurve(
+            pcurve_support_geometry(baseline_model, &before.id)?,
+            &before.geometry,
+        )?;
+        let after_native = native_support_pcurve(
+            pcurve_support_geometry(target_model, &after.id)?,
+            &after.geometry,
+        )?;
+        if before == after && before_native == after_native {
             continue;
         }
         let (
@@ -3072,7 +3083,7 @@ pub(crate) fn validate_pcurve_edits(
         edits.insert(
             id.to_owned(),
             NurbsPcurveEdit {
-                geometry: after.geometry.clone(),
+                native_geometry: after_native,
                 periodic: (before_periodic != after_periodic).then_some(*after_periodic),
                 wrapper_reversed: (before.wrapper_reversed != after.wrapper_reversed)
                     .then_some(after.wrapper_reversed)

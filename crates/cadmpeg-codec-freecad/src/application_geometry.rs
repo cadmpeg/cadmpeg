@@ -23,6 +23,17 @@ pub(crate) fn transfer(
 ) -> Result<bool, CodecError> {
     let mut transferred = false;
     for property in properties {
+        let typed = property.type_name.contains("PropertyMeshKernel")
+            || property.type_name.contains("PropertyPointKernel");
+        if !typed {
+            continue;
+        }
+        if property.side_entries.len() > 1 {
+            return Err(CodecError::Malformed(format!(
+                "geometry property {} references more than one side entry",
+                property.id
+            )));
+        }
         let Some(entry_name) = property.side_entries.first() else {
             continue;
         };

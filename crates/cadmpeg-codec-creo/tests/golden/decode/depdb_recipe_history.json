@@ -103,6 +103,18 @@
                 84,
                 65,
                 10,
+                224,
+                0,
+                112,
+                95,
+                100,
+                101,
+                112,
+                95,
+                100,
+                98,
+                0,
+                227,
                 227,
                 75,
                 195,
@@ -160,8 +172,8 @@
                 0,
                 0
               ],
-              "id": "creo:depdb:recipe_row#106",
-              "offset": 106,
+              "id": "creo:depdb:recipe_row#118",
+              "offset": 118,
               "owner_feature_id": 8053,
               "root_schema_class": 917,
               "source_section": "DEPDB_DATA",
@@ -176,11 +188,11 @@
               "feature_id": 8051,
               "id": "creo:mdlstatus:feature_state#8051:0",
               "identifier_keyword": "ID",
-              "offset": 89,
+              "offset": 101,
               "parent_feature_id": null,
               "recipe": null,
               "root_schema_class": null,
-              "state_offset": 89,
+              "state_offset": 101,
               "state_ordinal": 0,
               "stored_name": "Körper ID 8051",
               "stored_name_bytes": [
@@ -209,11 +221,11 @@
               "feature_id": 8053,
               "id": "creo:mdlstatus:feature_state#8053:0",
               "identifier_keyword": null,
-              "offset": 106,
+              "offset": 118,
               "parent_feature_id": 8051,
               "recipe": "protextrude",
               "root_schema_class": 917,
-              "state_offset": 106,
+              "state_offset": 118,
               "state_ordinal": 0,
               "stored_name": null,
               "stored_name_bytes": null,
@@ -229,9 +241,9 @@
       "attributes": {
         "expanded_section_byte_count": "0",
         "expanded_section_count": "0",
-        "file_size": "139",
+        "file_size": "151",
         "layout": "DEPDB",
-        "section.0.length": "63",
+        "section.0.length": "75",
         "section.0.name": "DEPDB_DATA",
         "section.0.offset": "76",
         "section.0.raw_name": "DEPDB_DATA",
@@ -307,6 +319,8 @@
       "decoded_feature_entity_count": 0,
       "decoded_feature_entity_reference_count": 0,
       "decoded_feature_entity_table_count": 0,
+      "decoded_feature_equation_count": 0,
+      "decoded_feature_equation_table_count": 0,
       "decoded_feature_geometry_table_count": 0,
       "decoded_feature_loop_history_entry_count": 0,
       "decoded_feature_loop_restore_direction_count": 0,
@@ -404,6 +418,8 @@
       "transferred_feature_extrusion_surface_count": 0,
       "transferred_feature_extrusion_vertex_orbit_curve_count": 0,
       "transferred_feature_relation_constraint_count": 0,
+      "transferred_feature_result_edge_count": 0,
+      "transferred_feature_result_topology_count": 0,
       "transferred_feature_revolution_brep_count": 0,
       "transferred_feature_revolution_surface_count": 0,
       "transferred_feature_revolution_vertex_orbit_curve_count": 0,
@@ -560,7 +576,7 @@
       },
       {
         "code": "topology_not_transferred",
-        "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates.",
+        "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; multi-loop faces use strict containment in a placed or boundary-proven plane. Remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates.",
         "severity": "blocking"
       },
       {
@@ -584,28 +600,28 @@
   "source_fidelity": {
     "annotations": {
       "provenance": {
-        "creo:depdb:recipe_row#106": {
-          "offset": 106,
+        "creo:depdb:recipe_row#118": {
+          "offset": 118,
           "stream": 0,
           "tag": "depdb_recipe_row"
         },
         "creo:mdlstatus:feature_state#8051:0": {
-          "offset": 89,
+          "offset": 101,
           "stream": 0,
           "tag": "feature_operation_state"
         },
         "creo:mdlstatus:feature_state#8053:0": {
-          "offset": 106,
+          "offset": 118,
           "stream": 0,
           "tag": "feature_operation_state"
         },
         "creo:model:feature#8051": {
-          "offset": 89,
+          "offset": 101,
           "stream": 0,
           "tag": "feature_operation_name"
         },
         "creo:model:feature#8053": {
-          "offset": 106,
+          "offset": 118,
           "stream": 0,
           "tag": "feature_recipe"
         }

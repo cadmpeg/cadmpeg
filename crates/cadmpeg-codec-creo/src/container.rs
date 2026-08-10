@@ -52,7 +52,9 @@ const TOC_START: &[u8] = b"#UGC_TOC";
 /// End of the ASCII table of contents.
 const TOC_END: &[u8] = b"#END_OF_TOC_HEADER";
 /// JPEG SOI magic, marking the `THMB_IMG_MAIN` preview payload (never geometry).
-const JPEG_MAGIC: &[u8] = &[0xff, 0xd8, 0xff];
+pub(crate) const JPEG_MAGIC: &[u8] = &[0xff, 0xd8, 0xff];
+/// Unix `compress` payload prefix.
+pub(crate) const UNIX_COMPRESS_MAGIC: &[u8] = &[0x1f, 0x9d];
 
 /// ASCII names that appear in the header/TOC framing and look like section
 /// headers but are structural markers, not binary sections ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)).
@@ -632,7 +634,7 @@ fn expanded_sections(data: &[u8], sections: &[Section]) -> Vec<ExpandedSection> 
             let source_offset = section.offset.checked_add(header_length)?;
             let end = section.offset.checked_add(section.length)?;
             let payload = data.get(source_offset..end)?;
-            if !payload.starts_with(&[0x1f, 0x9d]) {
+            if !payload.starts_with(UNIX_COMPRESS_MAGIC) {
                 return None;
             }
             let expanded = crate::compress::decode(payload, expected_length)?;
@@ -644,6 +646,18 @@ fn expanded_sections(data: &[u8], sections: &[Section]) -> Vec<ExpandedSection> 
             })
         })
         .collect()
+}
+
+/// Find the expanded payload owned by one section.
+pub(crate) fn expanded_section_for<'a>(
+    scan: &'a ContainerScan<'_>,
+    section: &Section,
+) -> Option<&'a ExpandedSection> {
+    scan.framing.expanded_sections.iter().find(|expanded| {
+        expanded.name == section.name
+            && expanded.source_offset > section.offset
+            && expanded.source_offset < section.offset.saturating_add(section.length)
+    })
 }
 
 fn toc_lists_section(toc: &[u8], name: &[u8]) -> bool {
@@ -658,20 +672,36 @@ fn is_name_byte(b: u8) -> bool {
     b.is_ascii_alphanumeric() || matches!(b, b'_' | b':' | b'.' | b'-' | b'#')
 }
 
-/// Identify the layout family structurally ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). ND is signalled by `ND:`
-/// name decoration or a large section count; DEPDB by a `DEPDB_DATA` section
-/// with a sparse section list.
-fn identify_layout(sections: &[Section]) -> Layout {
+const DEPDB_ROOT_RECORD: &[u8] = b"\xe0\x00p_dep_db\0\xe3";
+
+/// Identify the layout family structurally ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). The
+/// `DEPDB_DATA` root record is authoritative because a persistence payload can
+/// contain embedded names with the `ND:` decoration. An undecorated file with
+/// neither a valid root record nor an outer `ND:` name remains unknown.
+fn identify_layout(data: &[u8], sections: &[Section]) -> Layout {
+    let has_depdb_root = sections.iter().any(|section| {
+        if section.name != "DEPDB_DATA" {
+            return false;
+        }
+        let Some(header_end) = section.offset.checked_add(section.raw_name.len() + 2) else {
+            return false;
+        };
+        let Some(section_end) = section.offset.checked_add(section.length) else {
+            return false;
+        };
+        data.get(header_end..section_end)
+            .is_some_and(|payload| payload.starts_with(DEPDB_ROOT_RECORD))
+    });
+    let has_depdb_section = sections.iter().any(|section| section.name == "DEPDB_DATA");
     let has_nd_decoration = sections.iter().any(|s| s.raw_name.starts_with("ND:"));
-    let has_depdb = sections.iter().any(|s| s.name == "DEPDB_DATA");
-    if has_nd_decoration {
+    if has_depdb_section {
+        if has_depdb_root {
+            Layout::Depdb
+        } else {
+            Layout::Unknown
+        }
+    } else if has_nd_decoration {
         Layout::Nd
-    } else if has_depdb && sections.len() <= 24 {
-        Layout::Depdb
-    } else if sections.len() >= 32 {
-        Layout::Nd
-    } else if has_depdb {
-        Layout::Depdb
     } else {
         Layout::Unknown
     }
@@ -1487,6 +1517,12 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
         dimensions.offset += section_offset;
         for row in &mut dimensions.rows {
             row.offset += section_offset;
+            if let Some(references) = &mut row.references {
+                references.offset += section_offset;
+                for reference in &mut references.rows {
+                    reference.offset += section_offset;
+                }
+            }
         }
     }
     if let Some(relations) = &mut definition.relations {
@@ -1580,6 +1616,26 @@ fn feature_row_definitions(rows: &[FeatureRow]) -> Vec<FeatureDefinition> {
         .collect::<Vec<_>>();
     definitions.sort_by_key(|definition| definition.offset);
     definitions
+}
+
+fn section_owner_ranges(sections: &[Section], feature_rows: &[FeatureRow]) -> Vec<(usize, usize)> {
+    let mut ranges = sections
+        .iter()
+        .filter(|section| section.name == "DEPDB_DATA")
+        .map(|section| {
+            (
+                section.offset,
+                section.offset.saturating_add(section.length),
+            )
+        })
+        .collect::<Vec<_>>();
+    ranges.extend(feature_rows.iter().map(|row| {
+        (
+            row.body_offset,
+            row.body_offset.saturating_add(row.body.len()),
+        )
+    }));
+    ranges
 }
 
 fn positional_replay_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefinition> {
@@ -1830,7 +1886,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         })
         .collect();
     let reference_ellipses = reference::ellipse_carriers(&reference_conics);
-    let layout = identify_layout(&sections);
+    let layout = identify_layout(&data, &sections);
     let model_geometry_sections = model_geometry_sections(&data, &sections);
     let census = geom_census(&data, &sections);
     let principal_unit = principal_unit(&data);
@@ -1966,30 +2022,8 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     );
     feature_definitions.extend(replay_definitions);
     feature_definitions.sort_by_key(|definition| definition.offset);
-    let mut section_owner_ranges = sections
-        .iter()
-        .filter(|section| section.name == "DEPDB_DATA")
-        .map(|section| {
-            (
-                section.offset,
-                section.offset.saturating_add(section.length),
-            )
-        })
-        .collect::<Vec<_>>();
-    if sections.iter().any(|section| section.name == "DEPDB_DATA") {
-        section_owner_ranges.extend(
-            feature_rows
-                .iter()
-                .filter(|row| row.root_schema_class == Some(926))
-                .map(|row| {
-                    (
-                        row.body_offset,
-                        row.body_offset.saturating_add(row.body.len()),
-                    )
-                }),
-        );
-    }
-    feature::bind_depdb_section_owners(
+    let section_owner_ranges = section_owner_ranges(&sections, &feature_rows);
+    feature::bind_section_owners(
         &mut feature_definitions,
         &feature_operations,
         &section_owner_ranges,
@@ -2140,10 +2174,26 @@ pub fn has_thumbnail(scan: &ContainerScan) -> bool {
         .sections
         .iter()
         .filter(|s| s.role == role::THUMBNAIL)
-        .any(|s| {
-            let region =
-                &scan.framing.data[s.offset..(s.offset + s.length).min(scan.framing.data.len())];
-            find(region, JPEG_MAGIC, 0).is_some()
+        .any(|section| {
+            let end = section
+                .offset
+                .saturating_add(section.length)
+                .min(scan.framing.data.len());
+            let raw = scan.framing.data.get(section.offset..end);
+            let raw_is_compressed = raw.is_some_and(|region| {
+                let payload_start = section.raw_name.len().saturating_add(2);
+                region
+                    .get(payload_start..)
+                    .is_some_and(|payload| payload.starts_with(UNIX_COMPRESS_MAGIC))
+            });
+            if raw_is_compressed {
+                expanded_section_for(scan, section)
+                    .is_some_and(|expanded| find(&expanded.data, JPEG_MAGIC, 0).is_some())
+            } else {
+                raw.is_some_and(|region| find(region, JPEG_MAGIC, 0).is_some())
+                    || expanded_section_for(scan, section)
+                        .is_some_and(|expanded| find(&expanded.data, JPEG_MAGIC, 0).is_some())
+            }
         })
 }
 
@@ -2159,11 +2209,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             if s.raw_name != s.name {
                 attributes.insert("raw_name".to_string(), s.raw_name.clone());
             }
-            let expanded = scan.framing.expanded_sections.iter().find(|expanded| {
-                expanded.name == s.name
-                    && expanded.source_offset > s.offset
-                    && expanded.source_offset < s.offset.saturating_add(s.length)
-            });
+            let expanded = expanded_section_for(scan, s);
             if let Some(expanded) = expanded {
                 attributes.insert(
                     "expanded_payload_size".to_string(),
@@ -2369,5 +2415,59 @@ mod feature_row_definition_tests {
         assert_eq!(definitions[0].id, 2);
         assert_eq!(definitions[0].owner_feature_id, None);
         assert_eq!(definitions[0].offset, 127);
+    }
+
+    #[test]
+    fn embedded_section_definition_uses_the_bounded_feature_row_for_chain_binding() {
+        let row = FeatureRow {
+            feature_id: 247,
+            header: [0xe3, 0xf6],
+            root_schema_class: Some(917),
+            stream_offset: 100,
+            body: b"prefix gsec2d_ptr\0\xe0\x0aname\0S2D0002\0\
+                    \xe0\x00gsec3d_ptr\0\xf1\xe3\
+                    \xe0\x01plane_id\0\x80\xf9\
+                    \xe0\x00p_saved_result\0"
+                .to_vec(),
+            body_offset: 120,
+            offset: 118,
+        };
+        let mut definitions = feature_row_definitions(std::slice::from_ref(&row));
+        let operation = |feature_id, recipe, offset| FeatureOperation {
+            feature_id,
+            kind: String::new(),
+            display_name_stored: false,
+            stored_name: None,
+            stored_name_bytes: None,
+            identifier_keyword: None,
+            stored_name_prefix: None,
+            recipe,
+            root_schema_class: None,
+            parent_feature_id: None,
+            offset,
+            state_offset: offset,
+        };
+
+        assert_eq!(definitions.len(), 1);
+        assert_eq!(definitions[0].owner_feature_id, None);
+        assert_eq!(
+            definitions[0]
+                .section_3d
+                .as_ref()
+                .and_then(|section| section.sketch_plane_entity_id),
+            Some(249)
+        );
+
+        feature::bind_section_owners(
+            &mut definitions,
+            &[
+                operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10),
+                operation(248, None, 20),
+            ],
+            &section_owner_ranges(&[], &[row]),
+        );
+
+        assert_eq!(definitions[0].id, 2);
+        assert_eq!(definitions[0].owner_feature_id, Some(247));
     }
 }

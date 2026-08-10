@@ -1,35 +1,6 @@
 //! Tests for the `transforms` module.
 
-use super::{
-    binary_relation_matches_evaluated_geometry, bind_circle_dimension_centers,
-    bind_circular_profile_by_dimension, bind_detached_relation_drivers, bind_pattern_inputs,
-    bind_sweep_adjacent_profiles, closed_marker_profiles, compact_line_reference_direction,
-    declared_line_reference_directions, dimensioned_circle_surface_transforms,
-    dimensioned_circle_transform, doubled_profile_distance_loci, fitted_marker_circle,
-    implicit_circle_marker, inferred_point_coordinates_by_index, input_owned_edge_selections,
-    legacy_terminal_profile_indexed_endpoints, line_endpoint_markers, line_reference_direction,
-    linear_pattern_display_directions, marker_entities, marker_owns_constraint, marker_point_locus,
-    marker_relation_is_inactive, owned_relation_parameters, profile_loci_by_marker,
-    project_compact_edge_selections, project_dimensioned_sketch_geometry,
-    project_dissected_sketches, project_marker_backed_sketches, project_marker_dimensioned_circles,
-    project_relation_bindings, project_relation_point_geometry,
-    project_relation_solved_line_geometry, project_relation_solved_point_geometry,
-    relation_constraint_is_inactive, relation_operand_loci, relation_operand_marker,
-    relation_owner_markers, relation_parameter_by_display_name, resolve_connected_marker_arcs,
-    resolved_marker_locus, select_marker_transforms_by_frame, single_marker_curve_entity,
-    single_marker_line_entity, sketch_frame_marker_transform, type_display_relation_parameters,
-    typed_marker_relation_definition, typed_marker_relation_definition_in_sketch,
-    typed_relation_definition, unique_axis_aligned_linked_loci, unique_compatible_marker_transform,
-    unique_linked_endpoint_locus, unique_marker_transform, unique_profile_axis_distance_locus,
-    unique_profile_axis_distance_pair, unique_profile_distance_loci_pair,
-    unique_profile_distance_locus, unique_profile_line_angle_entity,
-    unique_profile_line_angle_pair, unique_profile_line_distance_entity,
-    unique_profile_line_distance_pair, unique_profile_line_point_locus,
-    unique_profile_point_line_entity, unique_profile_point_line_pair,
-    unique_repaired_profile_line_angle_pair, unique_repaired_profile_line_distance_pair,
-    unique_repaired_profile_point_line_pair, MarkerTransform, COMPACT_EDGE_VECTOR_MARKER,
-    LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
-};
+use super::*;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
     FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName, FeatureInputOperand,
@@ -291,14 +262,24 @@ fn input_owned_edge_vectors_exclude_future_owned_cache_records() {
 }
 
 #[test]
-fn compact_d6_operand_indexes_coordinate_handles_in_byte_order() {
-    let mut first = marker("first", Some([0.0, 0.0]));
+fn compact_d6_operand_indexes_point_handles_in_byte_order() {
+    let mut first = marker("arc", Some([0.0, 0.0]));
     first.offset = 10;
     first.kind = SketchInputKind::Arc;
-    let mut second = marker("second", Some([1.0, 0.0]));
+    let mut second = marker("point", Some([1.0, 0.0]));
     second.offset = 20;
-    second.kind = SketchInputKind::LineOrCircle;
-    let markers = HashMap::from([(first.id.as_str(), &first), (second.id.as_str(), &second)]);
+    let mut third = marker("line", Some([2.0, 0.0]));
+    third.offset = 30;
+    third.kind = SketchInputKind::LineOrCircle;
+    let mut fourth = marker("constrained-point", Some([3.0, 0.0]));
+    fourth.offset = 40;
+    fourth.kind = SketchInputKind::ConstrainedPoint;
+    let markers = HashMap::from([
+        (first.id.as_str(), &first),
+        (second.id.as_str(), &second),
+        (third.id.as_str(), &third),
+        (fourth.id.as_str(), &fourth),
+    ]);
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
@@ -314,7 +295,7 @@ fn compact_d6_operand_indexes_coordinate_handles_in_byte_order() {
             offset: 0,
             reference_ref: "reference".into(),
             kind: FeatureInputOperandKind::D6,
-            entity_index: 1,
+            entity_index: 0,
             entity_ref: Some("stored-marker".into()),
         }],
     };
@@ -326,7 +307,22 @@ fn compact_d6_operand_indexes_coordinate_handles_in_byte_order() {
             &SketchId("sldprt:model:sketch#compact:lane:1".into()),
             &markers,
         ),
-        Some("second")
+        Some("point")
+    );
+    let mut constrained_operand = relation.operands[0].clone();
+    constrained_operand.entity_index = 1;
+    let constrained_relation = FeatureInputRelationInstance {
+        operands: vec![constrained_operand],
+        ..relation.clone()
+    };
+    assert_eq!(
+        relation_operand_marker(
+            &constrained_relation,
+            0,
+            &SketchId("sldprt:model:sketch#compact:lane:1".into()),
+            &markers,
+        ),
+        Some("constrained-point")
     );
     assert_eq!(
         relation_operand_marker(&relation, 0, &SketchId("sketch".into()), &markers),
@@ -428,7 +424,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     endpoint.ordinal = 2;
     endpoint.offset = 2;
     endpoint.links = point.links.clone();
-    let mut arc = marker("arc", Some([0.0, 0.0]));
+    let mut arc = marker("arc", None);
     arc.feature_ref = Some("sketch-native".into());
     arc.ordinal = 3;
     arc.offset = 3;
@@ -446,6 +442,10 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     arc_end.ordinal = 5;
     arc_end.offset = 5;
     arc_end.links = arc_start.links.clone();
+    let mut arc_center = marker("arc-center", Some([0.0, 0.0]));
+    arc_center.feature_ref = Some("sketch-native".into());
+    arc_center.ordinal = 6;
+    arc_center.offset = 6;
     let triangle_point = |id: &str, ordinal, offset, coordinates_m| {
         let mut point = marker(id, Some(coordinates_m));
         point.feature_ref = Some("sketch-native".into());
@@ -454,9 +454,9 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         point
     };
     let triangle_points = [
-        triangle_point("triangle-point-0", 6, 6, [0.010, 0.010]),
-        triangle_point("triangle-point-1", 7, 7, [0.020, 0.010]),
-        triangle_point("triangle-point-2", 8, 8, [0.015, 0.020]),
+        triangle_point("triangle-point-0", 7, 7, [0.010, 0.011]),
+        triangle_point("triangle-point-1", 8, 8, [0.020, 0.010]),
+        triangle_point("triangle-point-2", 9, 9, [0.015, 0.020]),
     ];
     let triangle_line = |id: &str, ordinal, offset, first: &str, second: &str| {
         let mut line = marker(id, Some([0.0, 0.0]));
@@ -477,13 +477,13 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         line
     };
     let triangle = [
-        triangle_line("triangle-0", 9, 9, "triangle-point-0", "triangle-point-1"),
-        triangle_line("triangle-1", 10, 10, "triangle-point-1", "triangle-point-2"),
-        triangle_line("triangle-2", 11, 11, "triangle-point-2", "triangle-point-0"),
+        triangle_line("triangle-0", 10, 10, "triangle-point-0", "triangle-point-1"),
+        triangle_line("triangle-1", 11, 11, "triangle-point-1", "triangle-point-2"),
+        triangle_line("triangle-2", 12, 12, "triangle-point-2", "triangle-point-0"),
     ];
     let mut display_handle = marker("display-handle", Some([0.030, 0.030]));
     display_handle.feature_ref = Some("sketch-native".into());
-    display_handle.ordinal = 12;
+    display_handle.ordinal = 13;
     display_handle.offset = 300;
     display_handle.kind = SketchInputKind::Arc;
     payload.resize(400, 0);
@@ -533,7 +533,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: Vec::new(),
-        sketch_entities: vec![point, curve, endpoint, arc, arc_start, arc_end]
+        sketch_entities: vec![point, curve, endpoint, arc, arc_start, arc_end, arc_center]
             .into_iter()
             .chain(triangle_points)
             .chain(triangle)
@@ -553,7 +553,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     );
 
     assert_eq!(sketches.len(), 1);
-    assert_eq!(entities.len(), 12);
+    assert_eq!(entities.len(), 13);
     assert!(matches!(
         entities[0].geometry,
         SketchGeometry::Point { position }
@@ -604,7 +604,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &lanes,
     );
     assert_eq!(sketches.len(), 1);
-    assert_eq!(entities.len(), 12);
+    assert_eq!(entities.len(), 13);
     assert!(matches!(
         &configured_features[1].definition,
         FeatureDefinition::Sketch {
@@ -637,7 +637,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     );
     assert_eq!(replacement_sketches.len(), 1);
     assert_eq!(replacement_sketches[0].id, expected_sketch);
-    assert_eq!(replacement_entities.len(), 12);
+    assert_eq!(replacement_entities.len(), 13);
     assert!(replacement_entities
         .iter()
         .all(|entity| entity.sketch == expected_sketch));
@@ -801,8 +801,7 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         native_ref: Some(format!("scalar-{ordinal}")),
         dependencies: Vec::new(),
     };
-    let mut center = marker("center", Some([0.0, 0.0]));
-    center.kind = SketchInputKind::LineOrCircle;
+    let center = marker("center", Some([0.0, 0.0]));
     let mut first = marker("first", Some([0.005, 0.0]));
     first.offset = 100;
     let mut second = marker("second", Some([0.0, 0.008]));
@@ -816,13 +815,11 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
     native_payload[23..31].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00]);
     native_payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
     native_payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
-    native_payload[56..60].copy_from_slice(&[1, 0, 1, 0]);
-    native_payload[60..64].copy_from_slice(&1u32.to_le_bytes());
-    native_payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
-    native_payload[72..76].copy_from_slice(&1i32.to_le_bytes());
-    for at in (78..94).step_by(4) {
-        native_payload[at..at + 4].copy_from_slice(&(-2i32).to_le_bytes());
-    }
+    native_payload[64..66].copy_from_slice(&1u16.to_le_bytes());
+    native_payload[66..68].copy_from_slice(&1u16.to_le_bytes());
+    native_payload[68..72].copy_from_slice(&1u32.to_le_bytes());
+    native_payload[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
+    native_payload[80..84].copy_from_slice(&1u32.to_le_bytes());
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
@@ -839,7 +836,19 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         references: Vec::new(),
         sketch_entities: vec![center, first, second],
     };
+    let carrier = SketchEntity {
+        id: SketchEntityId("carrier".into()),
+        sketch: sketch_id.clone(),
+        construction: false,
+        native_ref: Some("center".into()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Native {
+            native_kind: "sldprt:marker-geometry:0".into(),
+        },
+    };
     let mut entities = vec![
+        carrier,
         SketchEntity {
             id: SketchEntityId("first-entity".into()),
             sketch: sketch_id.clone(),
@@ -863,6 +872,26 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
             },
         },
     ];
+    assert_eq!(
+        crate::resolved_features::dimensions::extended_radial_circle_index(&lane.native_payload, 0,),
+        Some(1)
+    );
+
+    let mut invalid_lane = lane.clone();
+    let mut extra = marker("unowned-radial", Some([0.011, 0.0]));
+    extra.offset = 300;
+    invalid_lane.sketch_entities.push(extra);
+    let mut invalid_entities = entities.clone();
+    let mut invalid_sketches = sketches.clone();
+    project_marker_dimensioned_circles(
+        &mut invalid_entities,
+        &mut invalid_sketches,
+        std::slice::from_ref(&feature),
+        &[parameter(0, 10.0), parameter(1, 16.0)],
+        std::slice::from_ref(&invalid_lane),
+    );
+    assert_eq!(invalid_entities.len(), 3);
+    assert!(invalid_sketches[0].profiles.is_empty());
 
     project_marker_dimensioned_circles(
         &mut entities,
@@ -1157,6 +1186,50 @@ fn self_link_does_not_make_a_relation_operand_bearing() {
     assert_eq!(
         typed_marker_relation_definition(&relation, &markers, &HashMap::new()),
         None
+    );
+}
+
+#[test]
+fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
+    let mut relation = marker("relation", None);
+    relation.kind = SketchInputKind::Relation(SketchRelationKind::ArcAngle90);
+    relation.object_index = Some(7);
+    relation.links = vec![
+        SketchInputLink {
+            local_id: 7,
+            entity_ref: "ignored-arc".into(),
+        },
+        SketchInputLink {
+            local_id: 9,
+            entity_ref: "operand-arc".into(),
+        },
+    ];
+    let mut ignored_arc = marker("ignored-arc", None);
+    ignored_arc.kind = SketchInputKind::Arc;
+    let mut operand_arc = marker("operand-arc", None);
+    operand_arc.kind = SketchInputKind::Arc;
+    let markers = HashMap::from([
+        (relation.id.as_str(), &relation),
+        (ignored_arc.id.as_str(), &ignored_arc),
+        (operand_arc.id.as_str(), &operand_arc),
+    ]);
+    let loci = HashMap::from([
+        (
+            ignored_arc.id.clone(),
+            vec![SketchLocus::Entity(SketchEntityId("ignored-entity".into()))],
+        ),
+        (
+            operand_arc.id.clone(),
+            vec![SketchLocus::Entity(SketchEntityId("operand-entity".into()))],
+        ),
+    ]);
+
+    assert_eq!(
+        typed_marker_relation_definition(&relation, &markers, &loci),
+        Some(SketchConstraintDefinition::ArcAngle {
+            entity: SketchEntityId("operand-entity".into()),
+            angle: Angle(std::f64::consts::FRAC_PI_2),
+        })
     );
 }
 
@@ -1801,6 +1874,165 @@ fn unary_relation_uses_one_resolved_reverse_curve_owner() {
 }
 
 #[test]
+fn point_relation_ignores_auxiliary_relation_links() {
+    let mut relation = marker("relation", None);
+    relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    relation.links = vec![SketchInputLink {
+        local_id: 1,
+        entity_ref: "radius".into(),
+    }];
+    let mut radius = marker("radius", None);
+    radius.kind = SketchInputKind::Relation(SketchRelationKind::Radius);
+    let mut first = marker("first", Some([0.0, 1.0]));
+    first.offset = 1;
+    first.links = vec![SketchInputLink {
+        local_id: 4,
+        entity_ref: relation.id.clone(),
+    }];
+    let mut second = marker("second", Some([1.0, 1.0]));
+    second.offset = 2;
+    second.links = first.links.clone();
+    let markers = HashMap::from([
+        (relation.id.as_str(), &relation),
+        (radius.id.as_str(), &radius),
+        (first.id.as_str(), &first),
+        (second.id.as_str(), &second),
+    ]);
+    let loci = HashMap::from([
+        (
+            first.id.clone(),
+            vec![SketchLocus::Entity(SketchEntityId("first-point".into()))],
+        ),
+        (
+            second.id.clone(),
+            vec![SketchLocus::Entity(SketchEntityId("second-point".into()))],
+        ),
+    ]);
+
+    assert_eq!(
+        typed_marker_relation_definition(&relation, &markers, &loci),
+        Some(SketchConstraintDefinition::HorizontalPoints {
+            first: SketchLocus::Entity(SketchEntityId("first-point".into())),
+            second: SketchLocus::Entity(SketchEntityId("second-point".into())),
+        })
+    );
+}
+
+#[test]
+fn axis_relation_expands_intermediate_relation_handle() {
+    let mut first = marker("first-point", Some([0.0, 1.0]));
+    first.offset = 1;
+    let mut second = marker("second-point", Some([2.0, 1.0]));
+    second.offset = 2;
+    let mut distance = marker("distance-handle", None);
+    distance.kind = SketchInputKind::Relation(SketchRelationKind::Distance);
+    distance.local_id = Some(5);
+    distance.object_index = Some(4);
+    distance.links = vec![
+        SketchInputLink {
+            local_id: 5,
+            entity_ref: distance.id.clone(),
+        },
+        SketchInputLink {
+            local_id: 7,
+            entity_ref: second.id.clone(),
+        },
+    ];
+    let mut horizontal = marker("horizontal", None);
+    horizontal.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    horizontal.local_id = Some(13);
+    horizontal.object_index = Some(12);
+    horizontal.links = vec![
+        SketchInputLink {
+            local_id: 8,
+            entity_ref: first.id.clone(),
+        },
+        SketchInputLink {
+            local_id: 5,
+            entity_ref: distance.id.clone(),
+        },
+    ];
+    let markers = HashMap::from([
+        (first.id.as_str(), &first),
+        (second.id.as_str(), &second),
+        (distance.id.as_str(), &distance),
+        (horizontal.id.as_str(), &horizontal),
+    ]);
+    let loci = HashMap::from([
+        (
+            first.id.clone(),
+            vec![SketchLocus::Entity(SketchEntityId("first-point".into()))],
+        ),
+        (
+            second.id.clone(),
+            vec![SketchLocus::Entity(SketchEntityId("second-point".into()))],
+        ),
+    ]);
+
+    assert_eq!(
+        typed_marker_relation_definition(&horizontal, &markers, &loci),
+        Some(SketchConstraintDefinition::HorizontalPoints {
+            first: SketchLocus::Entity(SketchEntityId("first-point".into())),
+            second: SketchLocus::Entity(SketchEntityId("second-point".into())),
+        })
+    );
+
+    let sketch = SketchId("axis-sketch".into());
+    let entities = vec![
+        SketchEntity {
+            id: SketchEntityId("first-entity".into()),
+            sketch: sketch.clone(),
+            construction: true,
+            native_ref: Some(first.id.clone()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(0.0, 1.0),
+            },
+        },
+        SketchEntity {
+            id: SketchEntityId("second-entity".into()),
+            sketch: sketch.clone(),
+            construction: true,
+            native_ref: Some(second.id.clone()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(2.0, 1.0),
+            },
+        },
+    ];
+    assert_eq!(
+        typed_marker_relation_definition_in_sketch(
+            &horizontal,
+            &sketch,
+            &entities,
+            &markers,
+            &HashMap::new(),
+        ),
+        Some(SketchConstraintDefinition::HorizontalPoints {
+            first: SketchLocus::Entity(SketchEntityId("first-entity".into())),
+            second: SketchLocus::Entity(SketchEntityId("second-entity".into())),
+        })
+    );
+    let mut ambiguous_entities = entities.clone();
+    ambiguous_entities.push(SketchEntity {
+        id: SketchEntityId("second-duplicate".into()),
+        ..ambiguous_entities[1].clone()
+    });
+    assert!(matches!(
+        typed_marker_relation_definition_in_sketch(
+            &horizontal,
+            &sketch,
+            &ambiguous_entities,
+            &markers,
+            &HashMap::new(),
+        ),
+        Some(SketchConstraintDefinition::Native { .. })
+    ));
+}
+
+#[test]
 fn binary_relation_uses_two_resolved_reverse_curve_owners() {
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Parallel);
@@ -2056,6 +2288,121 @@ fn point_marker_materializing_a_circle_binds_its_center() {
 }
 
 #[test]
+fn point_operand_canonicalizes_shared_endpoint_loci() {
+    let sketch_id = SketchId("sketch".into());
+    let sketch = Sketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        profiles: Vec::new(),
+        native_ref: None,
+    };
+    let feature = Feature {
+        id: FeatureId("feature".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
+            sketch: Some(sketch_id.clone()),
+        },
+        native_ref: Some("feature-native".into()),
+    };
+    let first_id = SketchEntityId("a-first".into());
+    let second_id = SketchEntityId("z-second".into());
+    let first = SketchEntity {
+        id: first_id.clone(),
+        sketch: sketch_id.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: vec!["first-start".into(), "shared".into()],
+        geometry: SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(1.0, 0.0),
+        },
+    };
+    let second = SketchEntity {
+        id: second_id.clone(),
+        sketch: sketch_id.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: vec!["shared".into(), "second-end".into()],
+        geometry: SketchGeometry::Line {
+            start: Point2::new(1.0, 0.0),
+            end: Point2::new(1.0, 1.0),
+        },
+    };
+    let mut first_start = marker("first-start", Some([0.0, 0.0]));
+    first_start.offset = 1;
+    let mut shared = marker("shared", Some([0.001, 0.0]));
+    shared.offset = 2;
+    let mut second_end = marker("second-end", Some([0.001, 0.001]));
+    second_end.offset = 3;
+    let relation = FeatureInputRelationInstance {
+        id: "point-relation".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 4,
+        family: FeatureInputRelationFamily::CircleDiameter,
+        class_ref: "class".into(),
+        feature_ref: "feature-native".into(),
+        scalar_refs: Vec::new(),
+        parameter_scalar_ref: None,
+        display_scalar_ref: None,
+        operands: vec![FeatureInputOperand {
+            offset: 5,
+            reference_ref: "shared-reference".into(),
+            kind: FeatureInputOperandKind::Native(0x8ab6),
+            entity_index: 0,
+            entity_ref: Some("shared".into()),
+        }],
+    };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: vec![relation],
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: vec![first_start, shared, second_end],
+    };
+
+    let loci = profile_loci_by_marker(
+        &[feature],
+        std::slice::from_ref(&sketch),
+        &[first, second],
+        std::slice::from_ref(&lane),
+    );
+
+    assert_eq!(
+        loci["shared"],
+        vec![SketchLocus::End(first_id)],
+        "shared point markers use the canonical physical endpoint locus"
+    );
+}
+
+#[test]
 fn distance_fallback_requires_one_locus_in_the_complete_sketch() {
     let sketch = SketchId("sketch".into());
     let point = |id: &str, u: f64, v: f64| SketchEntity {
@@ -2108,26 +2455,14 @@ fn distance_fallback_requires_one_locus_in_the_complete_sketch() {
 }
 
 #[test]
-fn curve_operand_rejects_a_point_qualified_geometry_alias() {
+fn line_operand_rejects_a_circular_geometry_alias() {
     let sketch = SketchId("sketch".into());
-    let point_id = SketchEntityId("point".into());
     let line_id = SketchEntityId("line".into());
     let circle_id = SketchEntityId("circle".into());
     let entities = vec![
         SketchEntity {
-            id: point_id.clone(),
-            sketch: sketch.clone(),
-            construction: true,
-            native_ref: None,
-            geometry_ref: Some("curve-marker".into()),
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
-                position: Point2::new(0.5, 0.0),
-            },
-        },
-        SketchEntity {
             id: line_id.clone(),
-            sketch,
+            sketch: sketch.clone(),
             construction: false,
             native_ref: Some("line-marker".into()),
             geometry_ref: None,
@@ -2151,7 +2486,6 @@ fn curve_operand_rejects_a_point_qualified_geometry_alias() {
         },
     ];
     let loci = HashMap::from([
-        ("curve-marker".into(), vec![SketchLocus::Entity(point_id)]),
         (
             "line-marker".into(),
             vec![SketchLocus::Entity(line_id.clone())],
@@ -2163,20 +2497,12 @@ fn curve_operand_rejects_a_point_qualified_geometry_alias() {
     ]);
 
     assert_eq!(
-        single_marker_curve_entity("curve-marker", &HashMap::new(), &loci, &entities),
-        None
-    );
-    assert_eq!(
-        single_marker_curve_entity("line-marker", &HashMap::new(), &loci, &entities),
-        Some(line_id)
-    );
-    assert_eq!(
         single_marker_line_entity("circle-marker", &HashMap::new(), &loci, &entities),
         None
     );
     assert_eq!(
-        single_marker_curve_entity("circle-marker", &HashMap::new(), &loci, &entities),
-        Some(circle_id)
+        single_marker_line_entity("line-marker", &HashMap::new(), &loci, &entities),
+        Some(line_id)
     );
 }
 
@@ -2489,6 +2815,90 @@ fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
         &owner_relation,
         &definition,
         &owner_entities
+    ));
+}
+
+#[test]
+fn axis_relation_uses_unique_point_native_identity_when_loci_are_ambiguous() {
+    let sketch = SketchId("sketch".into());
+    let mut first = marker("first-point", Some([0.0, 0.01]));
+    first.kind = SketchInputKind::Point;
+    let mut second = marker("second-point", Some([0.02, 0.01]));
+    second.kind = SketchInputKind::Point;
+    let mut relation = marker("horizontal", None);
+    relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    relation.local_id = Some(7);
+    relation.object_index = Some(6);
+    relation.links = vec![
+        SketchInputLink {
+            local_id: 1,
+            entity_ref: first.id.clone(),
+        },
+        SketchInputLink {
+            local_id: 2,
+            entity_ref: second.id.clone(),
+        },
+    ];
+    let markers = HashMap::from([
+        (first.id.as_str(), &first),
+        (second.id.as_str(), &second),
+        (relation.id.as_str(), &relation),
+    ]);
+    let first_entity = SketchEntity {
+        id: SketchEntityId("first-entity".into()),
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref: Some(first.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(0.0, 10.0),
+        },
+    };
+    let second_entity = SketchEntity {
+        id: SketchEntityId("second-entity".into()),
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref: Some(second.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(20.0, 10.0),
+        },
+    };
+    let entities = vec![first_entity.clone(), second_entity.clone()];
+    let definition = typed_marker_relation_definition_in_sketch(
+        &relation,
+        &sketch,
+        &entities,
+        &markers,
+        &HashMap::new(),
+    )
+    .expect("typed horizontal point relation");
+    assert_eq!(
+        definition,
+        SketchConstraintDefinition::HorizontalPoints {
+            first: SketchLocus::Entity(first_entity.id.clone()),
+            second: SketchLocus::Entity(second_entity.id.clone()),
+        }
+    );
+    assert!(!marker_relation_is_inactive(
+        &relation,
+        &definition,
+        &entities
+    ));
+
+    let mut ambiguous_entities = entities.clone();
+    ambiguous_entities.push(first_entity);
+    assert!(matches!(
+        typed_marker_relation_definition_in_sketch(
+            &relation,
+            &sketch,
+            &ambiguous_entities,
+            &markers,
+            &HashMap::new(),
+        ),
+        Some(SketchConstraintDefinition::Native { .. })
     ));
 }
 
@@ -3664,8 +4074,15 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
     let unrelated = point("unrelated", 8.0, 9.0);
     let first = marker("first-marker", Some([0.001, 0.002]));
     let second = marker("second-marker", None);
+    let collision = marker("collision-marker", Some([8.0, 9.0]));
     let mut relation = marker("relation", None);
+    relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    relation.object_index = Some(7);
     relation.links = vec![
+        SketchInputLink {
+            local_id: 7,
+            entity_ref: collision.id.clone(),
+        },
         SketchInputLink {
             local_id: 1,
             entity_ref: first.id.clone(),
@@ -3675,7 +4092,11 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
             entity_ref: second.id.clone(),
         },
     ];
-    let markers = HashMap::from([(first.id.as_str(), &first), (second.id.as_str(), &second)]);
+    let markers = HashMap::from([
+        (first.id.as_str(), &first),
+        (second.id.as_str(), &second),
+        (collision.id.as_str(), &collision),
+    ]);
     let loci = HashMap::from([(
         first.id.clone(),
         vec![SketchLocus::Entity(first_entity.id.clone())],
@@ -3710,6 +4131,133 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
             true,
         ),
         None
+    );
+}
+
+#[test]
+fn fixed_relation_ignores_self_identifying_geometry_link() {
+    let mut relation = marker("fixed", None);
+    relation.kind = SketchInputKind::Relation(SketchRelationKind::Fixed);
+    relation.object_index = Some(7);
+    relation.links = vec![
+        SketchInputLink {
+            local_id: 7,
+            entity_ref: "collision".into(),
+        },
+        SketchInputLink {
+            local_id: 2,
+            entity_ref: "point".into(),
+        },
+    ];
+    let mut collision = marker("collision", Some([3.0, 4.0]));
+    collision.kind = SketchInputKind::Point;
+    let mut point = marker("point", Some([1.0, 2.0]));
+    point.kind = SketchInputKind::Point;
+    let markers = HashMap::from([
+        (relation.id.as_str(), &relation),
+        (collision.id.as_str(), &collision),
+        (point.id.as_str(), &point),
+    ]);
+    let point_id = SketchEntityId("point-entity".into());
+    let loci = HashMap::from([(
+        point.id.clone(),
+        vec![SketchLocus::Entity(point_id.clone())],
+    )]);
+    let point_entity = SketchEntity {
+        id: point_id.clone(),
+        sketch: SketchId("sketch".into()),
+        construction: false,
+        native_ref: Some(point.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(1.0, 2.0),
+        },
+    };
+
+    assert_eq!(
+        typed_marker_relation_definition_in_sketch(
+            &relation,
+            &SketchId("sketch".into()),
+            std::slice::from_ref(&point_entity),
+            &markers,
+            &loci,
+        ),
+        Some(SketchConstraintDefinition::Fixed { entity: point_id })
+    );
+}
+
+#[test]
+fn relation_line_identity_ignores_self_identifying_geometry_link() {
+    let sketch = SketchId("sketch".into());
+    let line_id = SketchEntityId("line".into());
+    let first_id = SketchEntityId("first".into());
+    let second_id = SketchEntityId("second".into());
+    let line = SketchEntity {
+        id: line_id.clone(),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(2.0, 0.0),
+        },
+    };
+    let point_entity = |id: SketchEntityId, position: Point2| SketchEntity {
+        id,
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point { position },
+    };
+    let first_entity = point_entity(first_id.clone(), Point2::new(0.0, 0.0));
+    let second_entity = point_entity(second_id.clone(), Point2::new(2.0, 0.0));
+    let mut relation = marker("relation", None);
+    relation.kind = SketchInputKind::Relation(SketchRelationKind::Distance);
+    relation.object_index = Some(7);
+    relation.links = vec![
+        SketchInputLink {
+            local_id: 7,
+            entity_ref: "collision".into(),
+        },
+        SketchInputLink {
+            local_id: 1,
+            entity_ref: "first-marker".into(),
+        },
+        SketchInputLink {
+            local_id: 2,
+            entity_ref: "second-marker".into(),
+        },
+    ];
+    let collision = marker("collision", Some([8.0, 9.0]));
+    let first_marker = marker("first-marker", Some([0.0, 0.0]));
+    let second_marker = marker("second-marker", Some([2.0, 0.0]));
+    let markers = HashMap::from([
+        (relation.id.as_str(), &relation),
+        (collision.id.as_str(), &collision),
+        (first_marker.id.as_str(), &first_marker),
+        (second_marker.id.as_str(), &second_marker),
+    ]);
+    let loci = HashMap::from([
+        (first_marker.id.clone(), vec![SketchLocus::Entity(first_id)]),
+        (
+            second_marker.id.clone(),
+            vec![SketchLocus::Entity(second_id)],
+        ),
+    ]);
+
+    assert_eq!(
+        single_marker_line_entity(
+            &relation.id,
+            &markers,
+            &loci,
+            &[line, first_entity, second_entity],
+        ),
+        Some(line_id)
     );
 }
 
@@ -4475,7 +5023,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     };
     bind_pattern_inputs(
         &mut features,
-        &[mirror_history],
+        std::slice::from_ref(&mirror_history),
         std::slice::from_ref(&mirror_lane),
     );
     assert_eq!(features[0].dependencies, [features[2].id.clone()]);
@@ -4491,6 +5039,52 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             && x == 12.0 && y == -25.0 && z == 0.0
             && nx == 0.0 && ny == 1.0 && nz == 0.0
     ));
+
+    features[0].dependencies.clear();
+    features[0].definition = FeatureDefinition::Pattern {
+        seeds: Vec::new(),
+        pattern: PatternKind::Mirror {
+            plane_origin: Point3::new(12.0, -25.0, 0.0),
+            plane_normal: Vector3::new(0.0, 1.0, 0.0),
+        },
+    };
+    bind_pattern_inputs(
+        &mut features,
+        std::slice::from_ref(&mirror_history),
+        std::slice::from_ref(&mirror_lane),
+    );
+    assert!(matches!(
+        features[0].definition,
+        FeatureDefinition::Pattern {
+            ref seeds,
+            pattern: PatternKind::Mirror { .. },
+        } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
+    ));
+    assert_eq!(features[0].dependencies, [features[2].id.clone()]);
+
+    mirror_lane.native_payload[frame..frame + 97].fill(0);
+    features[0].dependencies.clear();
+    features[0].definition = FeatureDefinition::Pattern {
+        seeds: Vec::new(),
+        pattern: PatternKind::Unresolved {
+            form: Some(cadmpeg_ir::features::PatternForm::Mirror),
+        },
+    };
+    bind_pattern_inputs(
+        &mut features,
+        std::slice::from_ref(&mirror_history),
+        std::slice::from_ref(&mirror_lane),
+    );
+    assert!(matches!(
+        features[0].definition,
+        FeatureDefinition::Pattern {
+            ref seeds,
+            pattern: PatternKind::Unresolved {
+                form: Some(cadmpeg_ir::features::PatternForm::Mirror),
+            },
+        } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
+    ));
+    assert_eq!(features[0].dependencies, [features[2].id.clone()]);
 
     let mut sweep_history = history;
     sweep_history.features[0].input_class = Some("moProfileFeature_c".into());
@@ -4755,6 +5349,20 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         parameter("lower", "lower-scalar"),
         parameter("upper", "upper-scalar"),
     ];
+    let mut constraints = Vec::new();
+    project_relation_bindings(
+        &mut constraints,
+        &[],
+        std::slice::from_ref(&feature),
+        &entities,
+        &parameters,
+        std::slice::from_ref(&lane),
+    );
+    assert_eq!(constraints.len(), 2);
+    assert!(constraints.iter().all(|constraint| matches!(
+        &constraint.definition,
+        SketchConstraintDefinition::Native { .. }
+    )));
 
     project_relation_solved_line_geometry(
         &mut entities,
@@ -4783,7 +5391,6 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         .into_iter()
         .collect()
     );
-    let mut constraints = Vec::new();
     project_relation_bindings(
         &mut constraints,
         &[],
@@ -4797,6 +5404,15 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         &constraint.definition,
         SketchConstraintDefinition::Distance { entities, .. } if entities.len() == 2
     )));
+    project_relation_bindings(
+        &mut constraints,
+        &[],
+        std::slice::from_ref(&feature),
+        &entities,
+        &parameters,
+        std::slice::from_ref(&lane),
+    );
+    assert_eq!(constraints.len(), 2);
 }
 
 #[test]
@@ -5403,6 +6019,44 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     assert_eq!(ownership.len(), 1);
     assert_eq!(ownership["driving-relation"].as_ref(), Some(&parameter.id));
 
+    let mut driving_scalar = scalar.clone();
+    driving_scalar.id = "driving-by-name".into();
+    driving_scalar.ordinal = 1;
+    driving_scalar.offset = 20;
+    driving_scalar.object_id = 2;
+    driving_scalar.name = "driving-name".into();
+    driving_scalar.role = FeatureInputScalarRole::Driving;
+    let driving_relation = FeatureInputRelationInstance {
+        id: "driving-by-name-relation".into(),
+        parameter_scalar_ref: Some(driving_scalar.id.clone()),
+        display_scalar_ref: None,
+        scalar_refs: vec![driving_scalar.id.clone()],
+        ..relation.clone()
+    };
+    let driving_parameter = DesignParameter {
+        id: ParameterId("driving-by-name-parameter".into()),
+        name: "D".into(),
+        native_ref: None,
+        ..parameter.clone()
+    };
+    let mut driving_name = lane.names[0].clone();
+    driving_name.id = driving_scalar.name.clone();
+    driving_name.value = driving_parameter.name.clone();
+    let ownership = owned_relation_parameters(
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&driving_parameter),
+        std::slice::from_ref(&FeatureInputLane {
+            names: vec![lane.names[0].clone(), driving_name],
+            scalars: vec![scalar.clone(), driving_scalar],
+            relation_instances: vec![driving_relation],
+            ..lane.clone()
+        }),
+    );
+    assert_eq!(
+        ownership["driving-by-name-relation"].as_ref(),
+        Some(&driving_parameter.id)
+    );
+
     let mut detached = scalar;
     detached.id = "driver".into();
     detached.role = FeatureInputScalarRole::Driving;
@@ -5486,23 +6140,23 @@ fn axis_aligned_sketch_frame_projects_native_plane_coordinates() {
         ..transform
     };
     assert_eq!(
-        select_marker_transforms_by_frame(&[other, transform], &sketch, 1.0e-8),
-        vec![transform]
+        marker_transforms_with_frame_fallback(&[other, transform], &sketch, 1.0e-8),
+        vec![other, transform]
     );
     let translated = MarkerTransform {
         translation: (17, 23),
         ..transform
     };
     assert_eq!(
-        select_marker_transforms_by_frame(&[other, translated], &sketch, 1.0e-8),
-        vec![translated]
+        marker_transforms_with_frame_fallback(&[other, translated], &sketch, 1.0e-8),
+        vec![other, translated]
     );
     assert_eq!(
-        select_marker_transforms_by_frame(&[other], &sketch, 1.0e-8),
+        marker_transforms_with_frame_fallback(&[other], &sketch, 1.0e-8),
         vec![other]
     );
     assert_eq!(
-        select_marker_transforms_by_frame(&[], &sketch, 1.0e-8),
+        marker_transforms_with_frame_fallback(&[], &sketch, 1.0e-8),
         vec![transform]
     );
 }
@@ -5673,6 +6327,14 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
     .expect("implicit circle pair");
     assert_eq!(resolved.id, "implicit-center");
     assert!((radius - 5.0).abs() < 1.0e-12);
+    assert!(implicit_circle_marker(
+        std::slice::from_ref(&implicit_lane),
+        "feature-native",
+        FeatureInputOperandKind::Native(0x8ab6),
+        0,
+        5.0,
+    )
+    .is_none());
 }
 
 #[test]
@@ -5980,6 +6642,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         Some(SketchConstraintDefinition::Native { entities, .. })
             if entities == vec![relation_point]
     ));
+
     let mut operandless_vertical = marker("operandless-vertical", None);
     operandless_vertical.kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
     assert_eq!(
@@ -6937,6 +7600,14 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
     );
+    let projected_len = entities.len();
+    project_relation_point_geometry(
+        &mut entities,
+        &[],
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&lane),
+    );
+    assert_eq!(entities.len(), projected_len);
     assert!(entities.iter().any(|entity| {
         entity.construction
             && entity.native_ref.as_deref() == Some("relation-point")
@@ -7014,6 +7685,158 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         Some(SketchLocus::End(SketchEntityId(
             "sldprt:model:sketch-entity#relation-line:lane:84".into(),
         )))
+    );
+}
+
+#[test]
+fn relation_point_coexists_with_nonpoint_native_carrier() {
+    let sketch = SketchId("sketch".into());
+    let feature = Feature {
+        id: FeatureId("feature".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
+            sketch: Some(sketch.clone()),
+        },
+        native_ref: Some("feature-native".into()),
+    };
+    let mut entities = [(0.0, 0.0), (1.0, 2.0), (4.0, 7.0)]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (u, v))| SketchEntity {
+            id: SketchEntityId(format!("anchor-{index}")),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(u, v),
+            },
+        })
+        .collect::<Vec<_>>();
+    let mut markers = [[0.0, 0.0], [0.002, 0.001], [0.007, 0.004]]
+        .into_iter()
+        .enumerate()
+        .map(|(index, coordinates)| {
+            let mut value = marker(&format!("anchor-{index}"), Some(coordinates));
+            value.offset = (index * 27) as u64;
+            value
+        })
+        .collect::<Vec<_>>();
+    let mut point_marker = marker("dimension-point", Some([0.005, 0.006]));
+    point_marker.offset = 81;
+    markers.push(point_marker.clone());
+    entities.push(SketchEntity {
+        id: SketchEntityId("dimension-carrier".into()),
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref: Some(point_marker.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Circle {
+            center: Point2::new(5.0, 6.0),
+            radius: Length(10.0),
+        },
+    });
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: vec![FeatureInputRelationInstance {
+            id: "relation".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 90,
+            family: FeatureInputRelationFamily::PointPointDistance,
+            class_ref: "class".into(),
+            feature_ref: "feature-native".into(),
+            scalar_refs: Vec::new(),
+            parameter_scalar_ref: None,
+            display_scalar_ref: None,
+            operands: vec![FeatureInputOperand {
+                offset: 91,
+                reference_ref: "reference".into(),
+                kind: FeatureInputOperandKind::D6,
+                entity_index: 0,
+                entity_ref: Some(point_marker.id.clone()),
+            }],
+        }],
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: markers,
+    };
+
+    project_relation_point_geometry(
+        &mut entities,
+        &[],
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&lane),
+    );
+
+    assert!(entities.iter().any(|entity| {
+        entity.native_ref.as_deref() == Some(point_marker.id.as_str())
+            && matches!(entity.geometry, SketchGeometry::Circle { .. })
+    }));
+    assert!(entities.iter().any(|entity| {
+        entity.native_ref.as_deref() == Some(point_marker.id.as_str())
+            && matches!(
+                entity.geometry,
+                SketchGeometry::Point { position } if position == Point2::new(6.0, 5.0)
+            )
+    }));
+    let loci = profile_loci_by_marker(
+        std::slice::from_ref(&feature),
+        &[],
+        &entities,
+        std::slice::from_ref(&lane),
+    );
+    let point_entity = entities
+        .iter()
+        .find(|entity| {
+            entity.construction
+                && entity.native_ref.as_deref() == Some(point_marker.id.as_str())
+                && matches!(entity.geometry, SketchGeometry::Point { .. })
+        })
+        .expect("relation point");
+    assert_eq!(
+        loci[point_marker.id.as_str()],
+        vec![SketchLocus::Center(SketchEntityId(
+            "dimension-carrier".into()
+        ))]
+    );
+    assert_eq!(
+        loci[&super::qualified_point_marker_key(&point_marker.id)],
+        vec![SketchLocus::Entity(point_entity.id.clone())]
+    );
+    let markers = lane
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    assert_eq!(
+        marker_entities(&point_marker.id, &markers, &loci),
+        vec![SketchEntityId("dimension-carrier".into())]
+    );
+    assert_eq!(
+        marker_point_locus(&point_marker.id, &markers, &loci),
+        Some(SketchLocus::Entity(point_entity.id.clone()))
     );
 }
 

@@ -14,20 +14,85 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Vertex};
 
-use super::{
-    bore_carrier_placements, compact_position_loci, cylindrical_face_axes_at_depth,
-    cylindrical_support_normal, direct_hole_position_feature, enrich_history_hole_constructions,
-    enrich_history_parameters, hole_position_feature, hole_position_sketch_source,
-    hole_temporary_axis, marker_pattern_bore_axes, plane_owned_bore_placements,
-    profiled_hole_construction, project_hole_axes, project_hole_position_sketches,
-    project_profiled_hole_constructions, project_spatial_hole_position_sketches,
-    project_topological_hole_constructions, HoleTopology,
-};
+use super::super::compact_reference_planes::CompactReferencePlaneIndex;
+use super::super::curves::{SketchPlaneFrame, SketchPlaneUAxisSource};
+use super::*;
 use crate::records::{
     FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputGeneratedSurfaceIdentity,
     FeatureInputLane, FeatureInputName, FeatureInputRelationFamily, FeatureInputScalar,
     FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
 };
+
+fn profile_reference_plane_payload(with_component_frame: bool) -> Vec<u8> {
+    let mut payload = b"moCompRefPlane_c".to_vec();
+    payload.extend([0; 11]);
+    payload.extend(2u32.to_le_bytes());
+    payload.extend(19u32.to_le_bytes());
+    payload.extend([0, 0, 3, 0]);
+    payload.extend([0; 27]);
+    payload.extend(1.0f64.to_le_bytes());
+    payload.extend([
+        0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0xf9, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
+        0x65,
+    ]);
+    payload.extend([0; 4]);
+    if with_component_frame {
+        let mut component = [0u8; 138];
+        component[..4].copy_from_slice(&2u32.to_le_bytes());
+        component[14] = 1;
+        for (index, value) in [
+            0.0f64, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let offset = 15 + index * 8;
+            component[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        component[122..126].copy_from_slice(&4u32.to_le_bytes());
+        component[126..130].copy_from_slice(&[0xff; 4]);
+        payload.extend(component);
+    }
+    payload
+}
+
+#[test]
+fn midplane_sketch_uses_component_basis_and_never_arbitrary_datum_axis() {
+    let plane_frame = SketchPlaneFrame::from_frame(
+        (
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, -1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ),
+        SketchPlaneUAxisSource::ConstructedMidPlane,
+    );
+    let frames = HashMap::from([(2, plane_frame)]);
+
+    let with_component = profile_reference_plane_payload(true);
+    let index = CompactReferencePlaneIndex::new(&with_component);
+    assert_eq!(
+        feature_input_sketch_frame(&with_component, &frames, &index, 0, 0, with_component.len(),),
+        Some((
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ))
+    );
+
+    let without_component = profile_reference_plane_payload(false);
+    let index = CompactReferencePlaneIndex::new(&without_component);
+    assert_eq!(
+        feature_input_sketch_frame(
+            &without_component,
+            &frames,
+            &index,
+            0,
+            0,
+            without_component.len(),
+        ),
+        None
+    );
+}
 
 fn model_hole() -> cadmpeg_ir::features::Feature {
     cadmpeg_ir::features::Feature {
@@ -277,7 +342,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
 }
 
 #[test]
-fn cylindrical_face_span_identifies_a_blind_bore_depth() {
+fn topological_hole_projection_uses_a_reversed_bore_span() {
     let surface = Surface {
         id: SurfaceId("surface".into()),
         geometry: SurfaceGeometry::Cylinder {
@@ -349,37 +414,6 @@ fn cylindrical_face_span_identifies_a_blind_bore_depth() {
             source_object: None,
         },
     ];
-
-    assert_eq!(
-        cylindrical_face_axes_at_depth(
-            2.0,
-            10.0,
-            &HoleTopology {
-                surfaces: std::slice::from_ref(&surface),
-                faces: std::slice::from_ref(&face),
-                loops: std::slice::from_ref(&loop_),
-                coedges: std::slice::from_ref(&coedge),
-                edges: std::slice::from_ref(&edge),
-                vertices: &vertices,
-                points: &points,
-            },
-        ),
-        vec![(Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0))]
-    );
-    assert!(cylindrical_face_axes_at_depth(
-        2.0,
-        9.0,
-        &HoleTopology {
-            surfaces: std::slice::from_ref(&surface),
-            faces: std::slice::from_ref(&face),
-            loops: std::slice::from_ref(&loop_),
-            coedges: std::slice::from_ref(&coedge),
-            edges: std::slice::from_ref(&edge),
-            vertices: &vertices,
-            points: &points,
-        },
-    )
-    .is_empty());
 
     let mut bore_face = face;
     bore_face.sense = Sense::Reversed;
@@ -580,6 +614,55 @@ fn closed_tapered_axial_profile_resolves_conical_hole() {
         (included_angle - 2.0 * ((terminal_radius - entry_radius) / 42.0_f64).atan()).abs()
             < 1.0e-12
     );
+}
+
+#[test]
+fn tapered_profile_reconstructs_missing_edges_from_endpoint_points() {
+    let mut profile = native_history().features.remove(0);
+    profile.parameters = [
+        ("entry".into(), "<MOD-DIAM>12.2".into()),
+        ("terminal".into(), "<MOD-DIAM>13.66623".into()),
+        ("depth".into(), "42".into()),
+    ]
+    .into_iter()
+    .collect();
+    let sketch = SketchId("profile".into());
+    let point = |ordinal: usize, position| SketchEntity {
+        id: SketchEntityId(format!("profile-point-{ordinal}")),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point { position },
+    };
+    let entities = [
+        point(0, Point2::new(0.0, 0.0)),
+        point(1, Point2::new(-42.0, 0.0)),
+        point(2, Point2::new(-42.0, 6.833_112_73)),
+        point(3, Point2::new(0.0, 6.1)),
+        profile_line(&sketch, 0, Point2::new(0.0, 0.0), Point2::new(-42.0, 0.0)),
+        profile_line(
+            &sketch,
+            1,
+            Point2::new(-42.0, 0.0),
+            Point2::new(-42.0, 6.833_112_73),
+        ),
+    ];
+
+    let construction =
+        profiled_hole_construction(&profile, &sketch, &entities).expect("endpoint proof");
+    assert_eq!(construction.diameter, Length(12.2));
+    assert_eq!(
+        construction.extent,
+        Termination::Blind {
+            length: Length(42.0)
+        }
+    );
+    assert_eq!(construction.kind, HoleKind::Simple);
+    assert_eq!(construction.bottom, Some(HoleBottom::Flat));
+    let Angle(taper_angle) = construction.taper_angle.expect("taper angle");
+    assert!((taper_angle - 2.0 * ((6.833_115 - 6.1) / 42.0_f64).atan()).abs() < 1.0e-12);
 }
 
 #[test]
@@ -1629,11 +1712,11 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
 }
 
 #[test]
-fn hole_axes_require_exact_output_cardinality() {
+fn hole_axes_do_not_claim_unowned_same_radius_surfaces() {
     let history = native_history();
     let lane = lane();
     let mut features = vec![model_hole()];
-    let mut surfaces = vec![cylinder(0, -5.0), cylinder(1, 5.0)];
+    let surfaces = vec![cylinder(0, -5.0), cylinder(1, 5.0)];
 
     project_hole_axes(
         &mut features,
@@ -1649,31 +1732,6 @@ fn hole_axes_require_exact_output_cardinality() {
         },
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-    );
-    let FeatureDefinition::Hole { placements, .. } = &features[0].definition else {
-        unreachable!();
-    };
-    assert_eq!(placements.len(), 2);
-
-    let FeatureDefinition::Hole { placements, .. } = &mut features[0].definition else {
-        unreachable!();
-    };
-    placements.clear();
-    surfaces.push(cylinder(2, 15.0));
-    project_hole_axes(
-        &mut features,
-        &[],
-        &HoleTopology {
-            surfaces: &surfaces,
-            faces: &[],
-            loops: &[],
-            coedges: &[],
-            edges: &[],
-            vertices: &[],
-            points: &[],
-        },
-        &[history],
-        &[lane],
     );
     let FeatureDefinition::Hole { placements, .. } = &features[0].definition else {
         unreachable!();

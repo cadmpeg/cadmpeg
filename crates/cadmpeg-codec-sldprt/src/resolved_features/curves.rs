@@ -3,8 +3,8 @@
 use super::compact_reference_planes::principal_sketch_frame;
 use super::endpoints::{
     compact_legacy_code_one_line_endpoint_indices, compact_legacy_curve_endpoint_indices,
-    marker_profile_curve_role, minor_arc_geometry, one_based_u16_endpoint_pair,
-    wide_indexed_curve_endpoint_indices,
+    marker_profile_curve_role, minor_arc_angles, minor_arc_geometry, one_based_u16_endpoint_pair,
+    unique_arc_center_marker, wide_indexed_curve_endpoint_indices,
 };
 use super::markers::{
     compact_legacy_marker_body, finite_coordinate_pair, marker_native_code, sketch_marker_prefix_at,
@@ -20,6 +20,63 @@ use cadmpeg_ir::features::{Angle, FeatureDefinition, Length};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry};
 use std::collections::{HashMap, HashSet};
+
+pub(super) const REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY: &str = "UAxisSource";
+pub(super) const CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE: &str = "constructed-mid-plane";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum SketchPlaneUAxisSource {
+    Native,
+    ConstructedMidPlane,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct SketchPlaneFrame {
+    pub(super) origin: Point3,
+    pub(super) normal: Vector3,
+    pub(super) u_axis: Vector3,
+    pub(super) u_axis_source: SketchPlaneUAxisSource,
+}
+
+impl SketchPlaneFrame {
+    pub(super) fn native((origin, normal, u_axis): (Point3, Vector3, Vector3)) -> Self {
+        Self {
+            origin,
+            normal,
+            u_axis,
+            u_axis_source: SketchPlaneUAxisSource::Native,
+        }
+    }
+
+    pub(super) fn from_frame(
+        (origin, normal, u_axis): (Point3, Vector3, Vector3),
+        u_axis_source: SketchPlaneUAxisSource,
+    ) -> Self {
+        Self {
+            origin,
+            normal,
+            u_axis,
+            u_axis_source,
+        }
+    }
+
+    pub(super) fn as_tuple(self) -> (Point3, Vector3, Vector3) {
+        (self.origin, self.normal, self.u_axis)
+    }
+}
+
+fn feature_u_axis_source(feature: &cadmpeg_ir::features::Feature) -> SketchPlaneUAxisSource {
+    if feature
+        .source_properties
+        .get(REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY)
+        .map(String::as_str)
+        == Some(CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE)
+    {
+        SketchPlaneUAxisSource::ConstructedMidPlane
+    } else {
+        SketchPlaneUAxisSource::Native
+    }
+}
 
 pub(super) fn current_linked_semicircle_record(payload: &[u8], offset: usize) -> bool {
     payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
@@ -348,12 +405,7 @@ pub(super) fn tangent_bounded_curve(
     }
     let first = (start.v - center.v).atan2(start.u - center.u);
     let second = (end.v - center.v).atan2(end.u - center.u);
-    let forward = (second - first).rem_euclid(std::f64::consts::TAU);
-    let (start_angle, end_angle) = if forward <= std::f64::consts::PI + tolerance {
-        (first, second)
-    } else {
-        (second, first)
-    };
+    let (start_angle, end_angle, _) = minor_arc_angles(first, second);
     Some(SketchGeometry::Arc {
         center,
         radius: Length(radius),
@@ -666,22 +718,13 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
     let point_records = entities
         .iter()
         .filter_map(|entity| match entity.geometry {
-            SketchGeometry::Point { position } => Some((
-                entity.sketch.clone(),
-                entity.native_ref.as_deref()?,
-                entity
-                    .native_ref
-                    .as_deref()?
-                    .rsplit_once(':')?
-                    .1
-                    .parse::<u64>()
-                    .ok()?,
-                position,
-            )),
+            SketchGeometry::Point { position } => {
+                Some((entity.sketch.clone(), entity.native_ref.clone()?, position))
+            }
             _ => None,
         })
         .collect::<Vec<_>>();
-    let roster_replacements = entities
+    let center_replacements = entities
         .iter()
         .enumerate()
         .filter_map(|(index, entity)| {
@@ -697,24 +740,18 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
             };
             let start = points.get(start_ref).copied()?;
             let end = points.get(end_ref).copied()?;
-            let start_offset = start_ref.rsplit_once(':')?.1.parse::<u64>().ok()?;
-            let end_offset = end_ref.rsplit_once(':')?.1.parse::<u64>().ok()?;
-            let (lower, upper) = if start_offset < end_offset {
-                (start_offset, end_offset)
-            } else {
-                (end_offset, start_offset)
-            };
-            let mut between = point_records.iter().filter(|(sketch, _, offset, _)| {
-                sketch == &entity.sketch && *offset > lower && *offset < upper
-            });
-            let (_, _, _, center) = between.next()?;
-            if between.next().is_some() {
-                return None;
-            }
-            minor_arc_geometry(start, end, *center, tolerance).map(|geometry| (index, geometry))
+            let candidates = point_records
+                .iter()
+                .filter(|(sketch, reference, _)| {
+                    sketch == &entity.sketch && reference != start_ref && reference != end_ref
+                })
+                .map(|(_, _, center)| *center)
+                .collect::<Vec<_>>();
+            let center = unique_arc_center_marker(start, end, &candidates, tolerance)?;
+            minor_arc_geometry(start, end, center, tolerance).map(|geometry| (index, geometry))
         })
         .collect::<Vec<_>>();
-    for (index, geometry) in roster_replacements {
+    for (index, geometry) in center_replacements {
         entities[index].geometry = geometry;
     }
     let arcs = entities
@@ -794,7 +831,6 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
     for (index, geometry) in replacements {
         entities[index].geometry = geometry;
     }
-    resolve_tangent_bridge_marker_arcs(entities, tolerance);
     for entity in entities {
         let SketchGeometry::Arc {
             center,
@@ -821,141 +857,6 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
             entity.endpoint_refs.reverse();
         }
     }
-}
-
-pub(super) fn resolve_tangent_bridge_marker_arcs(entities: &mut [SketchEntity], tolerance: f64) {
-    let points = entities
-        .iter()
-        .filter_map(|entity| match entity.geometry {
-            SketchGeometry::Point { position } => Some((entity.native_ref.as_deref()?, position)),
-            _ => None,
-        })
-        .collect::<HashMap<_, _>>();
-    let mut incidence = HashMap::<&str, Vec<usize>>::new();
-    for (index, entity) in entities.iter().enumerate() {
-        if entity.endpoint_refs.len() != 2 {
-            continue;
-        }
-        for endpoint in &entity.endpoint_refs {
-            incidence.entry(endpoint).or_default().push(index);
-        }
-    }
-    let replacements = entities
-        .iter()
-        .enumerate()
-        .filter_map(|(index, entity)| {
-            let SketchGeometry::Native { ref native_kind } = entity.geometry else {
-                return None;
-            };
-            if native_kind != "sldprt:marker-geometry:2" {
-                return None;
-            }
-            let [start_ref, end_ref] = entity.endpoint_refs.as_slice() else {
-                return None;
-            };
-            let start = points.get(start_ref.as_str()).copied()?;
-            let end = points.get(end_ref.as_str()).copied()?;
-            let adjacent_curve = |endpoint: &str| {
-                let [first, second] = incidence.get(endpoint)?.as_slice() else {
-                    return None;
-                };
-                let adjacent = if *first == index {
-                    *second
-                } else if *second == index {
-                    *first
-                } else {
-                    return None;
-                };
-                Some(adjacent)
-            };
-            let start_adjacent = adjacent_curve(start_ref)?;
-            let end_adjacent = adjacent_curve(end_ref)?;
-            if start_adjacent == end_adjacent {
-                return None;
-            }
-            let line_tangent = |adjacent: usize| match entities[adjacent].geometry {
-                SketchGeometry::Line { start, end } => Some([end.u - start.u, end.v - start.v]),
-                _ => None,
-            };
-            if let (Some(start_tangent), Some(end_tangent)) =
-                (line_tangent(start_adjacent), line_tangent(end_adjacent))
-            {
-                let from_start = tangent_bounded_curve(start, end, start_tangent, tolerance)?;
-                let from_end = tangent_bounded_curve(end, start, end_tangent, tolerance)?;
-                let (
-                    SketchGeometry::Arc {
-                        center: start_center,
-                        radius: start_radius,
-                        ..
-                    },
-                    SketchGeometry::Arc {
-                        center: end_center,
-                        radius: end_radius,
-                        ..
-                    },
-                ) = (&from_start, &from_end)
-                else {
-                    return None;
-                };
-                if quantize(*start_center, tolerance) == quantize(*end_center, tolerance)
-                    && same_dimension_length(start_radius.0, end_radius.0)
-                {
-                    return Some((index, from_start));
-                }
-                return None;
-            }
-            let SketchGeometry::Arc {
-                center: start_center,
-                ..
-            } = entities[start_adjacent].geometry
-            else {
-                return None;
-            };
-            let SketchGeometry::Arc {
-                center: end_center, ..
-            } = entities[end_adjacent].geometry
-            else {
-                return None;
-            };
-            tangent_bridge_arc_geometry(start, end, start_center, end_center, tolerance)
-                .map(|geometry| (index, geometry))
-        })
-        .collect::<Vec<_>>();
-    for (index, geometry) in replacements {
-        entities[index].geometry = geometry;
-    }
-}
-
-pub(super) fn tangent_bridge_arc_geometry(
-    start: Point2,
-    end: Point2,
-    start_neighbor_center: Point2,
-    end_neighbor_center: Point2,
-    tolerance: f64,
-) -> Option<SketchGeometry> {
-    let first = [
-        start.u - start_neighbor_center.u,
-        start.v - start_neighbor_center.v,
-    ];
-    let second = [end.u - end_neighbor_center.u, end.v - end_neighbor_center.v];
-    let cross = first[0] * second[1] - first[1] * second[0];
-    let scale = first[0]
-        .hypot(first[1])
-        .max(second[0].hypot(second[1]))
-        .max(1.0);
-    if !cross.is_finite() || cross.abs() <= tolerance * scale * scale {
-        return None;
-    }
-    let delta = [end.u - start.u, end.v - start.v];
-    let parameter = (delta[0] * second[1] - delta[1] * second[0]) / cross;
-    if !parameter.is_finite() {
-        return None;
-    }
-    let center = Point2::new(
-        start.u + parameter * first[0],
-        start.v + parameter * first[1],
-    );
-    minor_arc_geometry(start, end, center, tolerance)
 }
 
 pub(super) fn closed_marker_profiles(entities: &[SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
@@ -1128,7 +1029,7 @@ pub(super) fn fitted_marker_circle(points: &[Point2], tolerance: f64) -> Option<
 pub(super) fn sketch_plane_frames(
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
-) -> HashMap<u32, (Point3, Vector3, Vector3)> {
+) -> HashMap<u32, SketchPlaneFrame> {
     let source_by_feature = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -1148,13 +1049,16 @@ pub(super) fn sketch_plane_frames(
         .filter_map(|feature| {
             let frame = match feature.definition {
                 cadmpeg_ir::features::FeatureDefinition::DatumPrincipalPlane { plane } => {
-                    principal_sketch_frame(plane)
+                    SketchPlaneFrame::native(principal_sketch_frame(plane))
                 }
                 cadmpeg_ir::features::FeatureDefinition::DatumPlane {
                     origin,
                     normal,
                     u_axis,
-                } => (origin, normal, u_axis),
+                } => SketchPlaneFrame::from_frame(
+                    (origin, normal, u_axis),
+                    feature_u_axis_source(feature),
+                ),
                 _ => return None,
             };
             Some((feature.id.clone(), frame))
@@ -1172,18 +1076,17 @@ pub(super) fn sketch_plane_frames(
                 else {
                     return None;
                 };
-                let &(origin, normal, u_axis) = frames_by_feature.get(reference)?;
+                let frame = *frames_by_feature.get(reference)?;
                 Some((
                     feature.id.clone(),
-                    (
-                        Point3::new(
-                            origin.x + normal.x * distance.0,
-                            origin.y + normal.y * distance.0,
-                            origin.z + normal.z * distance.0,
+                    SketchPlaneFrame {
+                        origin: Point3::new(
+                            frame.origin.x + frame.normal.x * distance.0,
+                            frame.origin.y + frame.normal.y * distance.0,
+                            frame.origin.z + frame.normal.z * distance.0,
                         ),
-                        normal,
-                        u_axis,
-                    ),
+                        ..frame
+                    },
                 ))
             })
             .collect::<Vec<_>>();
@@ -1202,9 +1105,9 @@ pub(super) fn lane_sketch_plane_frames(
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
-) -> HashMap<u32, (Point3, Vector3, Vector3)> {
+) -> HashMap<u32, SketchPlaneFrame> {
     let mut frames = sketch_plane_frames(features, histories);
-    let mut lane_candidates = HashMap::<u32, Vec<(Point3, Vector3, Vector3)>>::new();
+    let mut lane_candidates = HashMap::<u32, Vec<SketchPlaneFrame>>::new();
     for native in histories.iter().flat_map(|history| &history.features) {
         let Some(source) = feature_object_name(native, lane).and_then(|name| name.object_id) else {
             continue;
@@ -1216,19 +1119,29 @@ pub(super) fn lane_sketch_plane_frames(
             continue;
         };
         let frame = match feature.definition {
-            FeatureDefinition::DatumPrincipalPlane { plane } => principal_sketch_frame(plane),
+            FeatureDefinition::DatumPrincipalPlane { plane } => {
+                SketchPlaneFrame::native(principal_sketch_frame(plane))
+            }
             FeatureDefinition::DatumPlane {
                 origin,
                 normal,
                 u_axis,
-            } => (origin, normal, u_axis),
+            } => SketchPlaneFrame::from_frame(
+                (origin, normal, u_axis),
+                feature_u_axis_source(feature),
+            ),
             _ => continue,
         };
         lane_candidates.entry(source).or_default().push(frame);
     }
     for (source, mut candidates) in lane_candidates {
-        candidates.sort_by_key(reference_plane_frame_key);
-        candidates.dedup_by_key(|frame| reference_plane_frame_key(frame));
+        candidates.sort_by_key(|frame| {
+            (
+                reference_plane_frame_key(&frame.as_tuple()),
+                frame.u_axis_source,
+            )
+        });
+        candidates.dedup_by_key(|frame| reference_plane_frame_key(&frame.as_tuple()));
         if let [frame] = candidates.as_slice() {
             frames.entry(source).or_insert(*frame);
         }

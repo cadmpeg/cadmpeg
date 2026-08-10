@@ -2066,7 +2066,7 @@ fn patch_nurbs_pcurve_record(
     record: &sab::Record,
     edit: &NurbsPcurveEdit,
 ) -> Result<(), CodecError> {
-    let geometry = &edit.geometry;
+    let geometry = &edit.native_geometry;
     let PcurveGeometry::Nurbs {
         degree,
         control_points,

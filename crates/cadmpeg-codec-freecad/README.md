@@ -36,8 +36,9 @@ The result holds the decoded `CadIr` and a `DecodeReport`. Read
 `report.losses` before trusting geometry. Set
 `DecodeOptions::container_only` for archive metadata without shape decoding.
 `FcstdCodec::inspect` returns ZIP entry structure and document version facts.
-Semantic decode targets `SchemaVersion=4` / `FileVersion=1` and refuses other
-persistence bands.
+Semantic decode accepts `SchemaVersion=2`, `3`, and `4`. Schema 2 uses the
+`Features`/`FeatureData` object envelope. Schemas 3 and 4 use the
+`Objects`/`ObjectData` envelope. An absent `FileVersion` has value zero.
 
 ## Encode
 

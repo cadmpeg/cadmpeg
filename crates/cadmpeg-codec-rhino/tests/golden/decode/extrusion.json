@@ -462,9 +462,29 @@
         "severity": "info"
       },
       {
+        "code": "integrity_failure",
+        "message": "container.integrity-failure: CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0xc79a8577",
+        "severity": "error"
+      },
+      {
         "code": "decode_diagnostic",
         "message": "container.scan-diagnostic: object at 177 has nil object UUID",
         "severity": "warning"
+      },
+      {
+        "code": "integrity_failure",
+        "message": "container.integrity-failure: 36f53175-72b8-4d47-bf1f-b4e6fc24f4b9: mesh-cache item CRC mismatch at offset 704",
+        "severity": "error"
+      },
+      {
+        "code": "integrity_failure",
+        "message": "container.integrity-failure: 36f53175-72b8-4d47-bf1f-b4e6fc24f4b9: extrusion mesh cache CRC mismatch at offset 683",
+        "severity": "error"
+      },
+      {
+        "code": "integrity_failure",
+        "message": "container.integrity-failure: 36f53175-72b8-4d47-bf1f-b4e6fc24f4b9: extrusion payload CRC mismatch at offset 257",
+        "severity": "error"
       }
     ],
     "notes": [

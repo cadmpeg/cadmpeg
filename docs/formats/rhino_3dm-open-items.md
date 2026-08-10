@@ -106,13 +106,17 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the field grammar and semantics to decode the suffix and to distinguish it from malformed trailing bytes.
 
-## 3. Legacy geometry
+## 3. Reopened closures audited on 2026-08-10
+
+The following items were removed by `b8c98b9c5` and were reopened by the QA pass. The commit changed the implementation and documentation, but did not establish the settled rule recorded in each item.
 
 ### LG-01. V1 geometry payloads
 
 **Question.** What grammar and semantics does each V1 geometry payload use?
 
-**Known.** `rhino_3dm.md` §1 "Rhino 3DM is" through `rhino_3dm.md` §1 "V1 uses a flat-chunk grammar and may omit the end marker. V2 and later use the" define V1 as a flat chunk stream. `rhino_3dm.md` §4.1 "For V1, CRC16 is selected by the legacy chunk cases: legacy geometry chunks," through `rhino_3dm.md` §4.1 "The stored CRC16 is little-endian. Test vectors are:" define the V1 geometry checksum rule. The specification does not define the geometry fields inside these chunks.
+**Known.** The current specification and `crates/cadmpeg-codec-rhino/src/legacy.rs` define several V1 point, curve, face, surface, boundary, and mesh paths. They do not establish the complete V1 geometry family or every field and variant.
+
+**Note.** Reopened. This is promotion to spec: partial decoder coverage was written as a complete V1 rule. Passing self-authored fixtures or matching the current decoder does not prove the missing V1 payload grammar.
 
 **Need.** We must know the payload grammar and semantics to decode V1 geometry as typed neutral geometry.
 
@@ -120,119 +124,182 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What grammar and semantics does each V2 geometry payload use?
 
-**Known.** `rhino_3dm.md` §1 "Rhino 3DM is" through `rhino_3dm.md` §1 "V1 uses a flat-chunk grammar and may omit the end marker. V2 and later use the" define V2 as a table sequence with four-byte chunk values. `rhino_3dm.md` §4.1 "For V2 and later, a long chunk with `TCODE_CRC` set ends with a four-byte" through `rhino_3dm.md` §4.1 "For V2 and later, a long chunk with `TCODE_CRC` set ends with a four-byte" define its CRC32 rule. The specification does not define the geometry fields inside these records.
+**Known.** The current specification states that V2 class payloads use the same point, curve, surface, mesh, Brep, and annotation grammar as later archives. The class wrapper and CRC framing are defined, but no independent evidence establishes that payload claim for every V2 class and version.
+
+**Note.** Reopened. This is promotion to spec. The broad V2 statement is an assertion derived from the current decoder shape, not evidence for every V2 payload. Agreement with the branch's fixtures is consistency with the guess.
 
 **Need.** We must know the payload grammar and semantics to decode V2 geometry as typed neutral geometry.
-
-## 4. Agreement with openNURBS
-
-### ON-01. Container checksum coverage
-
-**Question.** Which bytes does the stored CRC32 of a container chunk cover?
-
-**Known.** openNURBS accumulates a chunk checksum over the bytes that the writer puts at that chunk's own nesting level. `ON_BinaryArchive::BeginWrite3dmChunk` gives a child chunk its own accumulator, `ON_BinaryArchive::UpdateCRC` feeds only the current level, and `ON_BinaryArchive::EndRead3dmChunk` compares the stored value against the accumulation of that level (`opennurbs_archive.cpp`). A chunk header, a complete nested chunk, and the stored checksum bytes stay outside the covered range. A chunk that holds only nested children covers an empty range, and CRC32 of an empty range is zero. `rhino_3dm.md` §4.1 "For V2 and later, a long chunk with `TCODE_CRC` set ends with a four-byte" states the same rule.
-
-**Conflict.** `verify_checksum` in `crates/cadmpeg-codec-rhino/src/chunks.rs` passes the complete chunk body as one range. `verify_checksum_ranges`, in the same file, applies the rule above, and one caller uses it, in `brep.rs`. Thirteen decode call sites use the whole-body form: `container.rs`, `objects.rs`, `settings.rs`, `instances.rs`, two in `mesh.rs`, two in `subd.rs`, two in `extrusion.rs`, and two more in `brep.rs`. Measured against the 153 Rhino-authored `.3dm` files in the openNURBS `example_files` tree, 87 of the 93 accepted files report a checksum mismatch. The CRC32 algorithm agrees on both sides; both compute zlib CRC32.
-
-**Note.** Two further defects come from the same model. `checksum_warning` in `container.rs` binds `expected` to the value the codec computed and `actual` to the value the file stores, so the message names the file's own checksum as `got`. `container.rs` also skips the check when a `TCODE_OBJECT_RECORD` or `TCODE_LAYER_RECORD` child stores an all-zero checksum. Under the coverage rule above, zero is the value openNURBS writes for such a chunk, so this special case has no remaining work.
-
-**Need.** Each call site must give the ranges it wrote at its own level. Until then the warning that a genuine file produces carries no information, and a real corruption stays inside that noise.
-
-### ON-02. Angular dimension measurement
-
-**Question.** Which arc does the measurement of an angular dimension report?
-
-**Known.** `ON_DimAngular::Measurement` in `opennurbs_dimension.cpp` normalizes the first extension angle to zero and returns the counterclockwise sweep to the second extension angle. It computes the dimension-line angle and tests it, and both arms of that test return the same sweep, so the dimension-line point does not select the arc.
-
-**Conflict.** `angular_measurement` in `crates/cadmpeg-codec-rhino/src/dimensions.rs` returns TAU minus the counterclockwise sweep when the dimension-line direction is outside that sweep. A dimension placed on the reflex side then measures 270 degrees where openNURBS measures 90. The unit test `angular_measurement_selects_the_arc_containing_the_dimension_line` asserts the codec's result, and its name states the selection rule that openNURBS does not apply.
-
-**Need.** We must decide which value the neutral measurement carries. The uncertainty that remains is that Rhino's own display code is outside the public openNURBS tree, so an angular value that Rhino draws on screen can come from code we cannot read.
-
-### ON-03. Unit system `none`
-
-**Question.** What scale does a document with unit system `none` give to its geometry?
-
-**Known.** `rhino_3dm.md` §8.2 "The units/tolerances structure begins with an ordinary `i32` structure version," lists value 0 as `none` and value 255 as `unset`, and both are legal stored settings. openNURBS reads such a document and returns its geometry.
-
-**Conflict.** `unit_scale` in `crates/cadmpeg-codec-rhino/src/decode.rs` reads `millimeters_per_unit`, which `settings.rs` leaves empty for `none` and for `unset`. Every curve, mesh, and surface arm of `decode.rs` then takes the guard branch and records the loss "simple geometry retained because document units are unavailable". Five files in the openNURBS `example_files` tree carry unit system `none`, at archive versions 4 and 50. Three of the five raise that loss and transfer no geometry, and all five transfer zero object records.
-
-**Need.** A unitless document has a valid coordinate space with no millimetre binding. The decoder must transfer the geometry at scale 1.0 and record one document-level loss that says the unit system is unknown.
 
 ### ON-04. Strictness rules that openNURBS does not apply
 
 **Question.** Which of the codec's framing refusals must stay fatal?
 
-**Known.** Four rules refuse a file that openNURBS reads.
+**Known.** `chunks.rs` now demotes negative long values, accepts an EOF body at least the file-size width, and keeps the stored EOF size informational. `container.rs` warns when a table has no end marker. The specification still says every table has a short end marker, so the decoder and specification do not state the same rule.
 
-- `chunk_at` in `crates/cadmpeg-codec-rhino/src/chunks.rs` refuses any typecode with bit `0x4000` set outside a small allowed set. This catches `TCODE_ENDOFFILE_GOO` and the plug-in and user typecodes that carry that bit. openNURBS has no such rule; `opennurbs_archive.cpp` derives the chunk shape from the short bit and the declared value.
-- `chunk_at` treats a negative long value as fatal. `ON_BinaryArchive::PushBigChunk` builds its long-chunk predicate as `big_value >= 0`, so a negative value demotes the chunk to a bodyless one and reading continues.
-- `chunk_at` requires the `TCODE_ENDOFFILE` declared length to equal the file-size field width, and `parse_eof` treats a file-size mismatch as fatal. `ON_BinaryArchive::Read3dmEndMark` requires the length to be at least that width and records the stored size without comparing it to the input length.
-- `container.rs` refuses a table that has no `TCODE_ENDOFTABLE` marker. `ON_BinaryArchive::EndRead3dmTable` does not look for the marker.
-
-`rhino_3dm.md` §4 "Bit `0x00004000` is reserved and is zero in valid typecodes." and `rhino_3dm.md` §5 "The stored size includes the 32-byte header, all preceding chunks, the EOF" state the codec's side of the first and third rules.
-
-**Conflict.** Each rule turns a file that openNURBS reads into a complete decode failure. The specification states the same rule that the decoder applies. openNURBS applies a different one.
+**Note.** Reopened. The four-way decision was not closed as a specification-plus-decoder contract. The missing-table-marker path is recoverable in code but still described as required in `rhino_3dm.md` §7.
 
 **Need.** We must decide, for each rule, whether it stays fatal, becomes a warning with recovery, or is removed. The decision changes the specification and the decoder together.
-
-### ON-05. Latent legacy constants and version gates
-
-**Question.** Which legacy constants must change before V1 decoding goes past the header?
-
-**Known.** Four values disagree with openNURBS and are unreachable while V1 support stays header-only.
-
-- `chunk_at` sign-extends a four-byte chunk value with `reader.i32()? as i64`. `ON_IsUnsignedChunkTypecode` in `opennurbs_archive.cpp` selects zero extension for every long typecode and for four short typecodes.
-- `TCODE_SUMMARY` in `chunks.rs` is `0x0000_0002`. `opennurbs_3dm.h` defines `TCODE_SUMMARY` as `TCODE_INTERFACE | 0x0013`, which is `0x0200_0013`.
-- `crc16` in `chunks.rs` shifts each byte into the high half of the remainder, which is the plain CRC-CCITT form. `ON_CRC16` in `opennurbs_crc.cpp` puts the byte in the low half after the table lookup, which is the augmented form. openNURBS seeds a V1 chunk with 1, appends the stored bytes to the running remainder, and treats a final remainder of zero as agreement (`ON_BinaryArchive::EndRead3dmChunk`). The codec compares its remainder against the stored value. `rhino_3dm.md` §4.1 "CRC16 is non-reflected CRC-CCITT:" carries both forms at once: its pseudocode gives `0xbeef` for the message `123456789` at seed 0, which is the openNURBS value, and the test vector below it gives `0x31c3`, which is the codec's value.
-- `checksum_kind` in `chunks.rs` selects CRC16 for the V1 class-UUID chunk `0x0002_fffb`. `ON_BinaryArchive::PushBigChunk` selects it for `TCODE_OPENNURBS_OBJECT | TCODE_CRC | 0x7FFD`, which is `0x0002_fffd`.
-
-**Note.** `mesh_payload` in `writer.rs` selects the mesh minor version with `archive_version == 50`. `opennurbs_mesh.cpp` keys the same field on an archive version of 60 or above. The two agree because `RhinoArchiveVersion` in `lib.rs` holds only 50, 60, 70, and 80. Written as `< 60` the branch stays correct if that set grows.
-
-**Need.** We must correct the four values before a V1 decoder reads a payload, and we must resolve the two CRC16 forms in `rhino_3dm.md` §4.1 into one.
-
-### ON-06. V5 legacy dimension fields
-
-**Question.** What values do the V5 legacy dimension fields hold that the decoder supplies from a constant?
-
-**Known.** Four fields in `crates/cadmpeg-codec-rhino/src/dimensions.rs` and `annotations.rs` come from a constant or are dropped.
-
-- `horizontal_direction` is set to `[1.0, 0.0]`. `ON_DimLinear::Create` in `opennurbs_dimension.cpp` projects a reference horizontal vector into plane coordinates with `ON_Plane::ClosestPointTo` and stores the result.
-- `allow_text_scaling` is `minor < 1 || annotation.bool()?`, so an old record gets true. `ON_OBSOLETE_V5_Annotation::Read` in `opennurbs_internal_V2_annotation.cpp` sets `m_annotative_scale` to false before it reads, with the stated reason that text in old files must behave as it did in those files.
-- The V5 angular arm sets `first_extension_offset` and `second_extension_offset` to zero and keeps no stored value.
-- One `annotation_type` field of type `i32` carries the V5 enum on the legacy path and the V6 enum on the modern path. The numeric values collide. `ON_INTERNAL_OBSOLETE::V5_eAnnotationType` in `opennurbs_internal_defines.h` gives 4 to `dtDimDiameter` and 8 to `dtDimOrdinate`. `ON::AnnotationType` in `opennurbs_defines.h` gives 4 to `Radius` and 8 to `CenterMark`.
-
-**Need.** A consumer of the neutral dimension cannot tell a V5 diameter from a V6 radius while one field carries two enums. The other three fields must come from the record or from the openNURBS default.
-
-### ON-07. Empty-string write form
-
-**Question.** How does openNURBS write a string with no characters?
-
-**Known.** `ON_BinaryArchive::WriteUTF16String` in `opennurbs_archive.cpp` counts the UTF-16 elements, adds one for the terminator when the count is above zero, writes that count as a `u32`, and writes elements only when the count is above zero. An empty string therefore stores count 0 and no elements. `utf16` in `crates/cadmpeg-codec-rhino/src/writer.rs` always appends the terminator, so an empty string stores count 1 and one zero `u16`. The read side agrees with openNURBS on both forms: it is UTF-16LE and the count includes the terminator.
-
-**Need.** A written archive differs from a Rhino-written archive in every empty string field. The decoder is unaffected, so this is a byte-fidelity item.
-
-## 5. Transfer evidence
 
 ### TE-01. Object transfer on Rhino-authored files
 
 **Question.** Why does an object class fail on a Rhino-authored file where the committed fixture for the same class passes?
 
-**Known.** The openNURBS distribution ships 153 Rhino-authored `.3dm` files in its `example_files` tree, spanning V1 through V8. Measured against that set, the codec's object-record traversal agrees with the object walk of openNURBS' own `example_read` on 93 of 93 files that the codec decodes, and geometry transfer reaches 175 of 2,869 objects, which is 6.1 percent. Per stored archive version, as files and decoded objects over total objects: 3 gives 34 files and 0 of 2,477; 4 gives 14 files and 0 of 72; 50 gives 19 files and 79 of 198; 60 gives 11 files and 33 of 37; 70 gives 12 files and 36 of 46; 80 gives 3 files and 27 of 39. Every failure is counted as a loss.
+**Known.** The external witness runs the codec and openNURBS over the example corpus and checks archive-level object totals and supported-count floors. It does not identify the byte-level difference for each class that remains undecoded.
 
-On archive version 50 and above, 134 object records stay undecoded and keep their class. The census is `ON_Brep` 95, `ON_LineCurve` 9, `ON_Extrusion` 9, `ON_Text` 8, `ON_OBSOLETE_V5_Leader` 4, the Brep class `F06FC243-A32A-4608-9DD8-A7D2C4CE2A36` 4, `ON_PolylineCurve` 2, `ON_Mesh` 1, `ON_OBSOLETE_V5_TextObject` 1, and `ON_NurbsSurface` 1. The crate holds a decoder for the brep, curve, mesh, extrusion, and surface families, and the committed fixture for each of those families passes.
+**Note.** Reopened. The aggregate witness does not answer the item question. Treating corpus agreement with the current decoder as verification would be the consistency-as-verification failure this item was intended to prevent.
 
-The committed fixtures are minimal instances of what the decoder already expects. All 28 are between 32 and 2,794 bytes. The builders in `crates/cadmpeg-codec-rhino/src/archive_test_support.rs` write every long chunk with an eight-byte length and compute every CRC32 over the complete flat body, which are the two assumptions the decoder makes in `chunks.rs`.
-
-**Need.** We must find, for each class in the list, which byte-level difference separates a Rhino-authored record from the fixture. Until that is known, a passing fixture gives no information about a Rhino-authored file of the same class.
+**Need.** We must find, for each affected class, which byte-level difference separates a Rhino-authored record from the fixture.
 
 ### TE-02. Witness strategy and the support claim
 
 **Question.** Which files give an uncorrelated witness that the codec reads and writes 3DM?
 
-**Known.** The committed evidence is self-authored. Of the 28 fixtures under `crates/cadmpeg-codec-rhino/tests/golden/fixtures`, one comes from the codec's own writer, two are 32-byte refusal inputs, two are 216-byte header-only documents, and the rest come from the hand-authored builders in `archive_test_support.rs`. Nothing confirms that any of them is a 3DM file that Rhino would open.
+**Known.** The branch adds an external openNURBS transfer test over the example corpus and pins aggregate floors by archive version. It does not add the requested synthesized second fixture tier or remeasure the full support claim with a per-version transfer requirement.
 
-openNURBS supplies the uncorrelated witnesses. Its `example_files` tree holds 153 Rhino-authored files across V1 through V8. Its `example_read` program reads a file, lists the model geometry objects, and prints a chunk dump under `-chunkdump`, which makes it a differential oracle at the framing level and at the object level. Its `example_write` program runs and emits Rhino-readable files. `Internal_WriteExampleModel` in `example_write.cpp` passes an archive version to `ONX_Model::Write`, so a build selects the version.
+**Note.** Reopened. A test over the same corpus is useful regression evidence, but it does not supply the independent synthesized fixtures and support-boundary measurement required by this item.
 
-The encode goldens under `tests/golden/encode` hold 52 files. Fifty are the same refusal text, "not implemented yet: Rhino native records require explicit survival handling". The other two are the archive-version-50 and archive-version-80 outputs for `generated_point.3dm`, which the writer itself produced. The encode tree therefore pins one refusal path and one round trip of the writer's own output.
+**Need.** We need a second fixture tier that mirrors the example-file structure, plus a per-archive-version transfer measurement that defines the support claim.
 
-**Need.** We need a second fixture tier that mirrors the structure of `example_files`, synthesized rather than copied, and pinned by the per-archive-version object-transfer ratio in TE-01 so that a regression in that ratio fails a test. We must also re-measure the L8 support claim per archive version. Archive version 50 transfers 79 of 198 objects today, and L8 assumes that the whole document transfers.
+### NS-01. Brep mesh-side wrapper version byte
+
+**Question.** What is the first byte of a Brep mesh-side wrapper body?
+
+**Known.** `crates/cadmpeg-codec-rhino/src/brep.rs:733-780` now reads the first byte as face-zero presence, with no version field. `rhino_3dm.md` §19.4 "For Brep minor at least 1, each mesh-side wrapper" still documents a packed version byte `0x00` before the presence entries.
+
+**Note.** Reopened. The decoder change is consistent with the openNURBS rule, but the settled specification still records the removed byte. The closure is therefore incomplete and would mislead the next implementation pass.
+
+**Need.** The wrapper body starts at the presence byte of face 0. The decoder and `rhino_3dm.md` must state that rule, and cache degradation must remain a typed loss.
+
+### RS-01. Trailing bytes in a bounded chunk
+
+**Question.** What does a bounded chunk with unread trailing bytes mean?
+
+**Known.** `brep.rs` skips trailing bytes in some anonymous helpers, but `brep.rs:384-388`, `history.rs`, `mesh.rs`, and `instances.rs` still reject unread bytes at other bounded payload and record boundaries. The behavior is not a consistent bounded-chunk rule.
+
+**Note.** Reopened. The implementation only partially applies the openNURBS recovery behavior. A later suffix can still discard a complete geometry or instance record at the remaining fatal checks.
+
+**Need.** We must decide whether a bounded chunk may carry unread bytes and apply that decision consistently at every bounded reader.
+
+### RS-02. Exact minor-version equality
+
+**Question.** Which version fields must a decode site compare exactly?
+
+**Known.** The specification says major-1 array and element readers accept every nonnegative minor. Exact checks remain in `history.rs`, `mesh.rs`, `instances.rs`, `morph.rs`, `polyedge.rs`, and Brep nested readers. Later minor fields therefore still take incompatible paths at different sites.
+
+**Note.** Reopened. The broad promotion in `rhino_3dm.md` §4.2 "A reader consumes the fields defined for the payload major version" is not true of the current decoder. The version policy and suffix policy need a site-by-site rule with evidence.
+
+**Need.** A decode site must accept a minor version that is not less than the one whose fields it reads and then apply the trailing-byte rule of RS-01.
+
+### RS-04. Non-canonical boolean bytes
+
+**Question.** Which byte values does a stored `bool` field allow?
+
+**Known.** `chunks.rs:304-307` normalizes every nonzero byte to true for every archive version. It has no pre- or post-2017 archive gate for the later strict `ReadBool` behavior, and the specification states the same unconditional rule.
+
+**Note.** Reopened. The branch removed the old rejection but did not implement the source's archive-version distinction or distinguish raw character fields from strict Boolean fields.
+
+**Need.** The archive-version condition must gate the refusal, and a field read as a raw character must not use the strict Boolean rule.
+
+### RS-05. Enumeration values outside the known range
+
+**Question.** What must a reader do with an enumeration value that it does not know?
+
+**Known.** `objects.rs:1101-1123` warns and returns no color for an unknown selector. `brep.rs:366-375` normalizes an unknown `is_solid` value to unset, while `decode.rs:4251-4259` then derives a body kind. The specification calls value 3 `not-solid`, which the decoder does not preserve.
+
+**Note.** Reopened. The branch still mixes fallback, unset, and silent normalization. It does not apply one source-backed clamp-or-retain rule or emit a typed loss for each unknown enumeration.
+
+**Need.** An unknown enumeration value must clamp and record a typed loss, or stay as stored data. It must not discard the containing record.
+
+### RS-06. Redundant count and index agreement
+
+**Question.** Which stored counts and indices must agree before a record decodes?
+
+**Known.** Some positional checks were removed and some SubD count mismatches are cleared, but the implementation has no typed loss for those repairs and still has exact count, index, and unit checks in several geometry and instance paths. A repaired or discarded field is not distinguished in the loss census.
+
+**Note.** Reopened. Partial tolerance is not the requested rule. Each redundant field needs a source-backed repair or degradation policy and a typed loss where the IR no longer carries the stored value.
+
+**Need.** Each redundant field must repair or degrade and record a typed loss. Discarding a record loses data that the file holds.
+
+### IC-04. Quad triangulation diagonal
+
+**Question.** Which diagonal splits a quadrilateral mesh face?
+
+**Known.** `mesh.rs` now compares diagonal lengths and removes repeated vertices. `decode.rs:3026-3034` still marks an unscaled tessellation byte-exact, and `commit_mesh` records an n-gon loss but no loss for converting stored quadrilateral topology to triangles.
+
+**Note.** Reopened. The geometric split rule is implemented, but the IR conversion remains falsely byte-exact and does not expose the topology loss required by the item.
+
+**Need.** The split must match openNURBS, and the loss of quadrilateral topology must be recorded.
+
+## 4. Hostile sweep findings recorded on 2026-08-10
+
+### SW-01. Duplicate layer index resolution
+
+**Question.** Which layer record owns an archive layer index when the index occurs more than once?
+
+**Known.** `crates/cadmpeg-codec-rhino/src/settings.rs:1273-1317` retains every layer record and emits only a duplicate-index warning. `crates/cadmpeg-codec-rhino/src/objects.rs:1377-1390` builds a map with `layers.entry(layer.index).or_insert(layer)`, so the first record supplies object identity, color, visibility, and name.
+
+**Failure story.** If two layer records share an index and the later record carries the authoritative name or appearance, objects that reference the index resolve to the first record. Reordering the two records changes object identity without changing the reference. No ambiguity loss is emitted.
+
+**Note.** Confidence: high. Duplicate indexes may be malformed, but the scanner already accepts and reports them; the resolver has no source-backed owner rule.
+
+**Need.** We need the openNURBS duplicate-index behavior or an independent corpus case, then a deterministic owner rule with an ambiguity loss when the source does not identify one.
+
+### SW-02. Duplicate singleton metadata selection
+
+**Question.** Which metadata record owns a singleton property or setting when the file contains more than one?
+
+**Known.** `crates/cadmpeg-codec-rhino/src/settings.rs:1273-1303` assigns `writer_version` on each matching property in table iteration order. `settings.rs:1357-1432` assigns `units`, current layer, current material, current color, font, and dimstyle each time a matching setting is read. There is no duplicate check or ambiguity loss for these fields.
+
+**Failure story.** If two unit records disagree, the later record silently changes coordinate scaling. If two writer-version records disagree, the later record changes version gates. Reordering the records changes the decoded document without a stated ownership rule.
+
+**Note.** Confidence: medium-high. The normal table model treats these fields as singletons, but the decoder has no source-backed response to a duplicate and no diagnostic that identifies which value won.
+
+**Need.** We need independent reader behavior for duplicate singleton records, or a settled reject/first/last policy with a typed ambiguity diagnostic.
+
+### SW-03. Instance transform ownership inferred from topology
+
+**Question.** Which decoded entities from one instance-definition member receive the instance transform?
+
+**Known.** `crates/cadmpeg-codec-rhino/src/decode.rs:1940-1973` decodes one definition member and then calls `transform_new_entities`. At `decode.rs:1982-2107`, points referenced by new vertices, curves referenced by new edges, and surfaces referenced by new faces are classified as body-owned; other points, curves, and surfaces are transformed directly. Meshes and SubD entities are always transformed, and procedural curves and surfaces are omitted.
+
+**Failure story.** If one member emits a body plus an auxiliary curve or surface whose source ownership is not represented by topology, the topology heuristic decides whether it moves. A shared or cache-like entity can therefore be transformed as free geometry, left in body-local coordinates, or omitted based on the emitted IR shape rather than the source member identity. No ownership ambiguity loss is emitted.
+
+**Note.** Confidence: medium. The heuristic prevents double transformation for ordinary Brep topology, but no source field or independent witness establishes that topology attachment is the format's ownership rule for every member class.
+
+**Need.** We need an instance fixture with mixed body and free member entities, plus an independent reader result or source membership rule that identifies which entities move and which stay local.
+
+### SW-04. V1 vertex deduplication by first nearby point
+
+**Question.** Does V1 topology identify shared vertices by source references or by geometric proximity?
+
+**Known.** `crates/cadmpeg-codec-rhino/src/legacy.rs:578-612` builds IR vertices from endpoint coordinates and reuses the first existing vertex for which `same_point` succeeds. The comparison uses the maximum of the source tolerances and a fixed floor; it does not use a source vertex identifier.
+
+**Failure story.** If two distinct V1 vertex records lie within the selected tolerance but are topologically separate, the first endpoint inserted absorbs the second. Changing trim or face order changes the chosen IR vertex and can collapse a narrow edge or face.
+
+**Note.** Confidence: high. The code is an explicit first-match plausibility choice. The broad V1 grammar item LG-01 did not record this topology-selection rule.
+
+**Need.** We need a source-backed V1 vertex identity rule and a fixture with distinct nearby vertices to test whether tolerance permits merging or only validates coordinates.
+
+### SW-05. V1 seam-group curve selection
+
+**Question.** Which model-space curve owns a V1 seam or mate group when more than one trim stores one?
+
+**Known.** `crates/cadmpeg-codec-rhino/src/legacy.rs:527-539` unions seam and shell mates, then stores only the first explicit curve for each union root with `or_insert_with`. It uses that curve's endpoints for the shared edge.
+
+**Failure story.** If two trims in one union group contain different model-space curve copies, source order selects the edge geometry and endpoints. A stale or transformed second copy is silently discarded, with no consistency check or loss.
+
+**Note.** Confidence: medium. Seam and mate records may be required to carry equivalent curves, but the current code does not verify that rule and the V1 ledger did not record the first-wins selection.
+
+**Need.** We need the V1 seam/mate ownership rule and an independent pair of records with different curve copies to establish whether one is authoritative or disagreement is malformed.
+
+### SW-06. First-match selection of built-in userdata extensions
+
+**Question.** Which built-in userdata extension owns a dimension or hatch when duplicate class UUIDs occur?
+
+**Known.** `crates/cadmpeg-codec-rhino/src/dimensions.rs:945-985` selects the first matching angular or dimension extension with `.find`. `crates/cadmpeg-codec-rhino/src/hatch.rs:255-264` selects the first matching V5 hatch extension. Later matching records are ignored without a warning or loss.
+
+**Failure story.** If a dimension or hatch contains two extension records with different offsets, arrow data, or base-point data, changing userdata order changes the decoded presentation while the discarded record leaves no trace.
+
+**Note.** Confidence: medium. The extensions may be singleton by source convention, but no uniqueness rule is documented and the implementation does not detect duplicates.
+
+**Need.** We need the source uniqueness or precedence rule for these built-in userdata classes, plus an ambiguity loss when a file supplies more than one conflicting extension.

@@ -19,6 +19,7 @@ cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz f3d_container -- -runs=10
 cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz f3d_container -- -max_total_time=60
 cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz f3d_writer -- -runs=1000
 cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz f3d_roundtrip -- -runs=1000
+cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz iges_writer -- -runs=1000
 ```
 
 Pass one or more corpus directories between the target and `--`. The checked-in
@@ -56,15 +57,19 @@ decoding:
 - `rhino_container`
 - `iges_container`
 
-F3D native writing and replay:
+Native writing and replay:
 
 - `f3d_writer` parses IR, generates a source-less archive, inspects it, and
   decodes it.
 - `f3d_roundtrip` decodes an archive, replays it through the native writer, and
   decodes the result.
+- `iges_writer` selects IGES 5.1, 5.2, or 5.3 from its control byte; exercises
+  source-less planning, topology synthesis, unsupported-native rejection,
+  inspection, semantic re-decode, validation, and byte-exact replay.
 
 Focused parser coverage:
 
+- Kernel: `acis_header`
 - F3D: `f3d_asm_header`, `f3d_sab_frame`, `f3d_nurbs_surfaces`,
   `f3d_nurbs_curves`, `f3d_nurbs_pcurves`
 - SolidWorks: `sldprt_parasolid`, `sldprt_container_scan`, `sldprt_entity`,
@@ -79,6 +84,9 @@ Focused parser coverage:
 - NX: `nx_parasolid`, `nx_geometry_points`, `nx_geometry_surfaces`,
   `nx_geometry_curves`, `nx_nurbs_surfaces`, `nx_nurbs_curves`, `nx_om`,
   `nx_topology`, `nx_deltas`, `nx_intersection`
+- Inventor and shared containers: `inventor_codec`, `inventor_database`,
+  `inventor_rse_meta`, `inventor_rse_records`, `inventor_property_set`,
+  `inventor_protein_envelope`, `compound_snapshot`, `protein_decode`
 - Rhino: `rhino_chunks`, `rhino_object_record`, `rhino_nurbs`,
   `rhino_mesh_buffer`, `rhino_brep`, `rhino_subd`, `rhino_cage`, `rhino_hatch`,
   `rhino_polyedge`
@@ -102,6 +110,7 @@ IR and STEP:
 - `step_parser` parses arbitrary Part 21 exchange structures and resolves
   instance references.
 - `step_reader` exercises public STEP inspection on arbitrary bytes.
+- `step_decode` exercises public STEP semantic decoding on arbitrary bytes.
 - `step_geometry_degenerate` parses IR and exercises STEP export with any
   degenerate geometry present in the document.
 - `decode_pipeline_mutated` uses the first byte to mutate the remaining
@@ -134,7 +143,8 @@ cargo +nightly run --bin generate_iges_seeds
 `generate_all_seeds` writes container and IR seeds, then derives deterministic
 truncation, byte-flip, and oversized-length mutants. `generate_submodule_seeds`
 writes focused parser inputs. `generate_iges_seeds` writes valid IGES 5.3 point
-and trimmed-sheet seeds for `iges_container`.
+and trimmed-sheet seeds for `iges_container`. `generate_all_seeds` writes
+version-selecting IR seeds for `iges_writer`.
 
 Narrower maintenance generators:
 

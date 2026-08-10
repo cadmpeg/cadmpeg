@@ -9,6 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
@@ -26,7 +27,10 @@ use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::ids::{AttributeId, BodyId, FeatureResultTopologyId, LoopId, SurfaceId, UnknownId};
+use cadmpeg_ir::ids::{
+    AppearanceId, AttributeId, BodyId, CurveId, EdgeId, FaceId, FeatureResultTopologyId, LoopId,
+    SurfaceId, UnknownId,
+};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::semantic_annotations::{
     SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
@@ -42,6 +46,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use crate::container::EntryContent;
 use crate::decode::Scan;
 use crate::native::history::{active_feature_closure, BodyWriterHistory};
+use crate::native::segments::BooleanOffsetStoreResolution;
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 
 use super::catalogue::NATIVE_CATALOGUE;
@@ -94,6 +99,7 @@ pub(crate) fn attach(
         return Ok(());
     }
     attach_rm_face_colors(ir, model, scan, annotations);
+    attach_rm_appearances(ir, model, scan, annotations);
     let display_jt_tessellations = display_jt_tessellations(&DisplayJtTessellationInputs {
         meshes: &model.display_jt.display_jt_polygon_meshes,
         coordinates: &model.display_jt.display_jt_vertex_coordinates,
@@ -281,6 +287,7 @@ pub(crate) fn attach(
     attach_feature_operations(
         ir,
         &model.features,
+        &model.om.data_blocks,
         &model.om.expressions,
         &model.segments.segment_body_bindings,
         annotations,
@@ -334,6 +341,217 @@ fn attach_rm_face_colors(
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RmSourceColorBinding {
+    source_id: String,
+    color_definition: String,
+    source_offset: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RmFaceColorBinding {
+    face_id: String,
+    color_definition: String,
+    source_offset: u64,
+}
+
+fn attach_rm_appearances(
+    ir: &mut CadIr,
+    model: &crate::native::model::NativeModel,
+    scan: &Scan,
+    annotations: &mut AnnotationBuilder,
+) {
+    let source_bindings = resolve_rm_source_color_bindings(&model.om.rm_display_color_assignments);
+    let face_ids = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| face.id.0.clone())
+        .collect::<BTreeSet<_>>();
+    let face_bindings = resolve_rm_face_color_bindings(
+        &face_ids,
+        &model.om.rm_display_color_assignments,
+        &model.om.part_color_definitions,
+        &model.parasolid.parasolid_deltas_records,
+        &super::substrate::paired_delta_streams(scan),
+    );
+    if source_bindings.is_empty() && face_bindings.is_empty() {
+        return;
+    }
+    let definitions = model
+        .om
+        .part_color_definitions
+        .iter()
+        .map(|definition| (definition.id.as_str(), definition))
+        .collect::<BTreeMap<_, _>>();
+    let annotation_stream = annotations.stream("nx:container");
+    let mut appearances = BTreeMap::<String, AppearanceId>::new();
+    for binding in source_bindings {
+        let Some(definition) = definitions.get(binding.color_definition.as_str()) else {
+            continue;
+        };
+        let appearance_id = ensure_rm_color_appearance(
+            ir,
+            annotations,
+            &mut appearances,
+            definition,
+            annotation_stream,
+        );
+        let binding_id = format!(
+            "nx:appearance-binding:rmfastload-color#{}",
+            native_entity_key(&binding.source_id)
+        );
+        annotations
+            .note(&binding_id, annotation_stream, binding.source_offset)
+            .tag("RMFASTLOAD_COLOR_ASSIGNMENT");
+        annotations.derived(&binding_id, "target");
+        annotations.derived(&binding_id, "appearance");
+        ir.model.appearance_bindings.push(AppearanceBinding {
+            id: binding_id,
+            target: AppearanceTarget::Source {
+                source_id: binding.source_id.clone(),
+            },
+            appearance: appearance_id,
+            source_entity_id: Some(binding.source_id),
+            object_type: Some("RMFastLoad object ID".into()),
+            channels: BTreeMap::new(),
+        });
+    }
+    for binding in face_bindings {
+        let Some(definition) = definitions.get(binding.color_definition.as_str()) else {
+            continue;
+        };
+        let Some(existing_color) = ir
+            .model
+            .faces
+            .iter()
+            .find(|face| face.id.0 == binding.face_id)
+            .map(|face| face.color)
+        else {
+            continue;
+        };
+        let color = Color {
+            r: definition.rgb[0],
+            g: definition.rgb[1],
+            b: definition.rgb[2],
+            a: 1.0,
+        };
+        if existing_color.is_some_and(|existing| existing != color) {
+            continue;
+        }
+        let appearance_id = ensure_rm_color_appearance(
+            ir,
+            annotations,
+            &mut appearances,
+            definition,
+            annotation_stream,
+        );
+        let binding_id = format!(
+            "nx:appearance-binding:rmfastload-face-color#{}",
+            native_entity_key(&binding.face_id)
+        );
+        annotations
+            .note(&binding_id, annotation_stream, binding.source_offset)
+            .tag("RMFASTLOAD_FACE_COLOR_ASSIGNMENT");
+        annotations.derived(&binding_id, "target");
+        annotations.derived(&binding_id, "appearance");
+        ir.model.appearance_bindings.push(AppearanceBinding {
+            id: binding_id,
+            target: AppearanceTarget::Face(FaceId(binding.face_id.clone())),
+            appearance: appearance_id,
+            source_entity_id: Some(binding.face_id),
+            object_type: Some("Parasolid FACE".into()),
+            channels: BTreeMap::new(),
+        });
+    }
+}
+
+fn ensure_rm_color_appearance(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    appearances: &mut BTreeMap<String, AppearanceId>,
+    definition: &crate::native::om::PartColorDefinition,
+    annotation_stream: cadmpeg_ir::annotations::StreamHandle,
+) -> AppearanceId {
+    appearances
+        .entry(definition.id.clone())
+        .or_insert_with(|| {
+            let id = AppearanceId(format!(
+                "nx:appearance:rmfastload-color#{}",
+                native_entity_key(&definition.id)
+            ));
+            annotations
+                .note(&id.0, annotation_stream, definition.source_offset)
+                .tag("RMFASTLOAD_COLOR_APPEARANCE");
+            annotations.derived(&id.0, "name");
+            annotations.derived(&id.0, "schema");
+            annotations.derived(&id.0, "base_color");
+            ir.model.appearances.push(Appearance {
+                id: id.clone(),
+                name: Some(definition.name.clone()),
+                asset_guid: None,
+                library_id: None,
+                visual_guid: None,
+                physical_token: None,
+                schema: Some("UGS::COLOR_table".into()),
+                category: None,
+                base_color: Some(Color {
+                    r: definition.rgb[0],
+                    g: definition.rgb[1],
+                    b: definition.rgb[2],
+                    a: 1.0,
+                }),
+                properties: BTreeMap::new(),
+                textures: Vec::new(),
+            });
+            id
+        })
+        .clone()
+}
+
+fn native_entity_key(id: &str) -> String {
+    id.replace([':', '#'], "-")
+}
+
+fn resolve_rm_source_color_bindings(
+    assignments: &[super::om::RmDisplayColorAssignment],
+) -> Vec<RmSourceColorBinding> {
+    let mut definitions_by_source = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut first_offset_by_source = BTreeMap::<String, u64>::new();
+    for assignment in assignments {
+        let Some(source_id) = assignment.target_object_id.as_ref() else {
+            continue;
+        };
+        definitions_by_source
+            .entry(source_id.clone())
+            .or_default()
+            .insert(assignment.color_definition.clone());
+        first_offset_by_source
+            .entry(source_id.clone())
+            .and_modify(|offset| *offset = (*offset).min(assignment.source_offset))
+            .or_insert(assignment.source_offset);
+    }
+    definitions_by_source
+        .into_iter()
+        .filter_map(|(source_id, color_definitions)| {
+            let mut definitions = color_definitions.into_iter();
+            let color_definition = definitions.next()?;
+            if definitions.next().is_some() {
+                return None;
+            }
+            let source_offset = first_offset_by_source
+                .get(&source_id)
+                .copied()
+                .expect("every source has one assignment");
+            Some(RmSourceColorBinding {
+                source_id,
+                color_definition,
+                source_offset,
+            })
+        })
+        .collect()
+}
+
 fn resolve_rm_face_colors(
     face_ids: &BTreeSet<String>,
     assignments: &[super::om::RmDisplayColorAssignment],
@@ -341,6 +559,34 @@ fn resolve_rm_face_colors(
     records: &[super::parasolid::ParasolidDeltasRecord],
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
 ) -> Vec<(String, Color)> {
+    let definitions_by_id = definitions
+        .iter()
+        .map(|definition| (definition.id.as_str(), definition))
+        .collect::<BTreeMap<_, _>>();
+    resolve_rm_face_color_bindings(face_ids, assignments, definitions, records, delta_pairs)
+        .into_iter()
+        .filter_map(|binding| {
+            let definition = definitions_by_id.get(binding.color_definition.as_str())?;
+            Some((
+                binding.face_id,
+                Color {
+                    r: definition.rgb[0],
+                    g: definition.rgb[1],
+                    b: definition.rgb[2],
+                    a: 1.0,
+                },
+            ))
+        })
+        .collect()
+}
+
+fn resolve_rm_face_color_bindings(
+    face_ids: &BTreeSet<String>,
+    assignments: &[super::om::RmDisplayColorAssignment],
+    definitions: &[super::om::PartColorDefinition],
+    records: &[super::parasolid::ParasolidDeltasRecord],
+    delta_pairs: &BTreeMap<usize, Vec<usize>>,
+) -> Vec<RmFaceColorBinding> {
     let mut partitions_by_delta = BTreeMap::<u32, BTreeSet<u32>>::new();
     for (partition, deltas) in delta_pairs {
         for delta in deltas {
@@ -363,6 +609,18 @@ fn resolve_rm_face_colors(
             .or_default()
             .insert(assignment.color_definition.clone());
     }
+    let mut source_offsets_by_object = BTreeMap::<u32, u64>::new();
+    for assignment in assignments {
+        let crate::native::om::RmDisplayColorAssignmentEncoding::Linked { object_index, .. } =
+            &assignment.encoding
+        else {
+            continue;
+        };
+        source_offsets_by_object
+            .entry(*object_index)
+            .and_modify(|offset| *offset = (*offset).min(assignment.source_offset))
+            .or_insert(assignment.source_offset);
+    }
     let definitions_by_id = definitions
         .iter()
         .map(|definition| (definition.id.as_str(), definition))
@@ -384,7 +642,7 @@ fn resolve_rm_face_colors(
             continue;
         }
         let definition_id = definition_ids.first().expect("one definition id");
-        let Some(definition) = definitions_by_id.get(definition_id.as_str()) else {
+        let Some(_definition) = definitions_by_id.get(definition_id.as_str()) else {
             continue;
         };
         let candidates = face_records_by_node
@@ -405,17 +663,17 @@ fn resolve_rm_face_colors(
             continue;
         }
         let face_id = candidates.first().expect("one face id");
-        bindings.push((
-            face_id.clone(),
-            Color {
-                r: definition.rgb[0],
-                g: definition.rgb[1],
-                b: definition.rgb[2],
-                a: 1.0,
-            },
-        ));
+        let source_offset = source_offsets_by_object
+            .get(&object_index)
+            .copied()
+            .expect("every linked color object has an assignment");
+        bindings.push(RmFaceColorBinding {
+            face_id: face_id.clone(),
+            color_definition: definition_id.clone(),
+            source_offset,
+        });
     }
-    bindings.sort_by(|left, right| left.0.cmp(&right.0));
+    bindings.sort_by(|left, right| left.face_id.cmp(&right.face_id));
     bindings
 }
 
@@ -731,7 +989,6 @@ fn attach_initial_segment_bodies(
         .note(&id, stream, 0)
         .tag("FEATURE_HISTORY_INPUT");
     annotations.derived(&id, "definition");
-    annotations.derived(&id, "outputs");
     ir.model.features.push(Feature {
         id: id.clone(),
         ordinal: ir.model.features.len() as u64,
@@ -758,6 +1015,7 @@ fn attach_initial_segment_bodies(
 fn attach_feature_operations(
     ir: &mut CadIr,
     features: &crate::native::model::FeatureRecords,
+    data_blocks: &[crate::native::om::DataBlock],
     expressions: &[crate::native::om::Expression],
     body_bindings: &[crate::native::segments::SegmentBodyBinding],
     annotations: &mut AnnotationBuilder,
@@ -765,17 +1023,28 @@ fn attach_feature_operations(
     let labels = features.feature_operation_labels.as_slice();
     let booleans = features.feature_boolean_operations.as_slice();
     let body_references = features.feature_body_references.as_slice();
+    let body_segment_uses = features.feature_body_segment_uses.as_slice();
     let body_data_block_uses = features.feature_body_data_block_uses.as_slice();
     let body_reference_occurrences = features.feature_body_reference_occurrences.as_slice();
     let input_blocks = features.feature_input_blocks.as_slice();
     let input_block_identity_groups = features.feature_input_block_identity_groups.as_slice();
+    let input_column_row_uses = features.feature_input_column_row_uses.as_slice();
+    let input_column_targets = features.feature_input_column_targets.as_slice();
     let datum_csys_constructions = features.feature_datum_csys_constructions.as_slice();
     let datum_csys_column_row_uses = features.feature_datum_csys_column_row_uses.as_slice();
     let datum_csys_payloads = features.feature_datum_csys_payloads.as_slice();
+    let datum_csys_payload_scalar_pairs =
+        features.feature_datum_csys_payload_scalar_pairs.as_slice();
+    let datum_csys_payload_fixed_pairs = features.feature_datum_csys_payload_fixed_pairs.as_slice();
+    let datum_csys_payload_scalars = features.feature_datum_csys_payload_scalars.as_slice();
+    let datum_csys_descriptors = features.feature_datum_csys_descriptors.as_slice();
     let datum_csys_block_uses = features.feature_datum_csys_block_uses.as_slice();
     let datum_plane_headers = features.feature_datum_plane_headers.as_slice();
     let datum_plane_block_uses = features.feature_datum_plane_block_uses.as_slice();
     let datum_plane_payloads = features.feature_datum_plane_payloads.as_slice();
+    let datum_plane_payload_scalar_pairs =
+        features.feature_datum_plane_payload_scalar_pairs.as_slice();
+    let datum_plane_descriptors = features.feature_datum_plane_descriptors.as_slice();
     let datum_plane_csys_identity_uses = features.feature_datum_plane_csys_identity_uses.as_slice();
     let sketch_datum_csys_dependencies = features.feature_sketch_datum_csys_dependencies.as_slice();
     let sketch_references = features.feature_sketch_references.as_slice();
@@ -843,7 +1112,9 @@ fn attach_feature_operations(
     let sketch_coordinate_pairs = features.feature_sketch_payload_coordinate_pairs.as_slice();
     let sketch_fixed_pairs = features.feature_sketch_payload_fixed_pairs.as_slice();
     let sketch_mixed_pairs = features.feature_sketch_payload_mixed_pairs.as_slice();
+    let sketch_payload_scalars = features.feature_sketch_payload_scalars.as_slice();
     let sketch_fixed_points = features.feature_sketch_fixed_points.as_slice();
+    let sketch_points = features.feature_sketch_points.as_slice();
     let block_constructions = features.feature_block_constructions.as_slice();
     let block_construction_payloads = features.feature_block_construction_payloads.as_slice();
     let block_dimensions = features.feature_block_dimensions.as_slice();
@@ -892,10 +1163,24 @@ fn attach_feature_operations(
         .iter()
         .map(|reference| (reference.id.as_str(), reference))
         .collect::<BTreeMap<_, _>>();
-    let body_writer_references_by_operation = body_references
-        .iter()
-        .map(|reference| (reference.operation_label.as_str(), reference))
-        .collect::<BTreeMap<_, _>>();
+    let mut body_segment_uses_by_reference =
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureBodySegmentUse>>::new();
+    for use_ in body_segment_uses {
+        body_segment_uses_by_reference
+            .entry(use_.feature_body_reference.as_str())
+            .or_default()
+            .push(use_);
+    }
+    let mut body_data_block_uses_by_reference =
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureBodyDataBlockUse>>::new();
+    for use_ in body_data_block_uses {
+        body_data_block_uses_by_reference
+            .entry(use_.feature_body_reference.as_str())
+            .or_default()
+            .push(use_);
+    }
+    let body_writer_references_by_operation =
+        crate::native::features::unique_feature_body_references(body_references);
     let mut offset_store_bodies_by_operation = BTreeMap::<&str, Vec<(u32, String)>>::new();
     for body_use in body_data_block_uses {
         let Some(reference) = body_references_by_id.get(body_use.feature_body_reference.as_str())
@@ -907,20 +1192,13 @@ fn attach_feature_operations(
             .or_default()
             .push((reference.body_object_index, body_use.data_block.clone()));
     }
-    let offset_store_body_references = body_data_block_uses
-        .iter()
-        .map(|use_| use_.feature_body_reference.as_str())
-        .collect::<BTreeSet<_>>();
-    let body_references = body_references
-        .iter()
-        .filter(|reference| !offset_store_body_references.contains(reference.id.as_str()))
-        .map(|reference| {
-            (
-                reference.operation_label.as_str(),
-                reference.body_object_index,
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
+    let body_references = native_primary_body_references(
+        body_references,
+        body_data_block_uses,
+        body_segment_uses,
+        input_blocks,
+        data_blocks,
+    );
     let mut body_reference_occurrences_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBodyReferenceOccurrence>>::new();
     for reference in body_reference_occurrences {
@@ -934,7 +1212,7 @@ fn attach_feature_operations(
         .as_ref()
         .and_then(|id| ir.model.features.iter().find(|feature| feature.id == *id))
     {
-        body_writer_history.record_writer(None, &feature.outputs, &feature.id);
+        body_writer_history.record_writer(None, None, &feature.outputs, &feature.id);
     }
     let body_alias_roots =
         crate::native::segments::body_alias_roots(body_bindings).unwrap_or_default();
@@ -948,6 +1226,10 @@ fn attach_feature_operations(
             .or_default()
             .push(input);
     }
+    let input_column_row_uses_by_operation =
+        records_by_operation(input_column_row_uses, |use_| &use_.operation_label);
+    let input_column_targets_by_operation =
+        records_by_operation(input_column_targets, |target| &target.operation_label);
     let input_block_identity_group_by_input = input_block_identity_groups
         .iter()
         .flat_map(|group| {
@@ -963,6 +1245,18 @@ fn attach_feature_operations(
         .collect::<BTreeMap<_, _>>();
     let datum_csys_payloads_by_operation =
         records_by_operation(datum_csys_payloads, |payload| &payload.operation_label);
+    let datum_csys_payload_scalar_pairs_by_operation =
+        records_by_operation(datum_csys_payload_scalar_pairs, |pair| {
+            &pair.operation_label
+        });
+    let datum_csys_payload_fixed_pairs_by_operation =
+        records_by_operation(datum_csys_payload_fixed_pairs, |pair| &pair.operation_label);
+    let datum_csys_payload_scalars_by_operation =
+        records_by_operation(datum_csys_payload_scalars, |scalar| &scalar.operation_label);
+    let datum_csys_descriptors_by_operation =
+        records_by_operation(datum_csys_descriptors, |descriptor| {
+            &descriptor.operation_label
+        });
     let datum_csys_column_row_uses_by_operation =
         records_by_operation(datum_csys_column_row_uses, |use_| &use_.operation_label);
     let mut datum_csys_uses_by_input_operation =
@@ -981,6 +1275,14 @@ fn attach_feature_operations(
         .iter()
         .map(|payload| (payload.operation_label.as_str(), payload))
         .collect::<BTreeMap<_, _>>();
+    let datum_plane_payload_scalar_pairs_by_operation =
+        records_by_operation(datum_plane_payload_scalar_pairs, |pair| {
+            &pair.operation_label
+        });
+    let datum_plane_descriptors_by_operation =
+        records_by_operation(datum_plane_descriptors, |descriptor| {
+            &descriptor.operation_label
+        });
     let mut datum_plane_uses_by_input_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumPlaneBlockUse>>::new();
     for block_use in datum_plane_block_uses {
@@ -1335,20 +1637,47 @@ fn attach_feature_operations(
             let object_index = body_references.get(template.operation_label.as_str())?;
             Some((
                 template.operation_label.clone(),
-                feature_body_outputs(*object_index, &bodies_by_object_index),
+                feature_body_outputs(*object_index, body_bindings, &bodies_by_object_index),
             ))
         })
         .collect::<BTreeMap<_, _>>();
-    let simple_hole_operations =
-        simple_hole_operations(simple_hole_templates, simple_hole_construction_groups)
-            .unwrap_or_default();
-    let (hole_outputs, simple_hole_diameters) =
-        match hole_body_projection(ir, &simple_hole_operations, &explicit_simple_hole_outputs) {
-            Some(projection) => (projection.outputs, projection.diameters),
-            None => (explicit_simple_hole_outputs, BTreeMap::new()),
-        };
+    let simple_hole_operations = simple_hole_operations(
+        simple_hole_templates,
+        simple_hole_construction_groups,
+        &operation_positions,
+    )
+    .unwrap_or_default();
+    let mut hole_outputs = explicit_simple_hole_outputs;
+    let mut simple_hole_diameters = BTreeMap::new();
+    if let Some(projection) = hole_body_projection(ir, &simple_hole_operations, &hole_outputs) {
+        hole_outputs.extend(projection.outputs);
+        simple_hole_diameters.extend(projection.diameters);
+    }
+    let counterbore_operations =
+        counterbore_operations(simple_hole_templates, &operation_positions).unwrap_or_default();
+    let mut counterbore_dimensions = BTreeMap::new();
+    if let Some(projection) =
+        counterbore_body_projection(ir, &counterbore_operations, &hole_outputs)
+    {
+        hole_outputs.extend(projection.outputs);
+        simple_hole_diameters.extend(projection.diameters);
+        counterbore_dimensions.extend(projection.counterbores);
+    }
+    let blind_hole_operations =
+        blind_hole_operations(simple_hole_templates, &operation_positions).unwrap_or_default();
+    let mut blind_hole_depths = BTreeMap::new();
+    if let Some(projection) = blind_hole_body_projection(ir, &blind_hole_operations, &hole_outputs)
+    {
+        hole_outputs.extend(projection.outputs);
+        simple_hole_diameters.extend(projection.diameters);
+        blind_hole_depths = projection.blind_depths;
+    }
     let simple_hole_placements =
         hole_axis_placements_for_operations(ir, &simple_hole_operations, &hole_outputs);
+    let counterbore_hole_placements =
+        counterbore_axis_placements_for_operations(ir, &counterbore_operations, &hole_outputs);
+    let blind_hole_placements =
+        blind_hole_axis_placements_for_operations(ir, &blind_hole_operations, &hole_outputs);
     let simple_hole_chamfers = simple_hole_chamfers(ir, simple_hole_templates, &hole_outputs);
     let hole_packages = hole_package_projection(
         ir,
@@ -1451,12 +1780,58 @@ fn attach_feature_operations(
             .get(label.id.as_str())
             .expect("every operation label owns one neutral feature identity")
             .clone();
+        let boolean_offset_store_resolution = booleans.get(label.id.as_str()).map(|operation| {
+            crate::native::segments::boolean_offset_store_resolution(operation, data_blocks)
+        });
+        let boolean_definition = booleans
+            .get(label.id.as_str())
+            .zip(boolean_offset_store_resolution.as_ref())
+            .map(|(operation, resolution)| {
+                boolean_feature_definition(
+                    operation,
+                    &body_alias_roots,
+                    resolution,
+                    &bodies_by_object_index,
+                )
+            });
         let mut dependencies = Vec::new();
-        if let Some(operation) = booleans.get(label.id.as_str()) {
-            for body in &operation.tool_object_indices {
-                if let Some(writer) = body_writer_history.native_writer(canonical_body(*body)) {
+        if let (
+            Some(operation),
+            Some(resolution),
+            Some(FeatureDefinition::Combine { target, tools, .. }),
+        ) = (
+            booleans.get(label.id.as_str()),
+            boolean_offset_store_resolution.as_ref(),
+            boolean_definition.as_ref(),
+        ) {
+            if !matches!(resolution, BooleanOffsetStoreResolution::Unresolved) {
+                let offset_store_body_blocks = match resolution {
+                    BooleanOffsetStoreResolution::Complete(blocks) => Some(blocks),
+                    BooleanOffsetStoreResolution::None
+                    | BooleanOffsetStoreResolution::Unresolved => None,
+                };
+                if let Some(writer) = boolean_participant_writer(
+                    target,
+                    operation.target_object_index,
+                    offset_store_body_blocks,
+                    &body_alias_roots,
+                    &body_writer_history,
+                ) {
                     if !dependencies.contains(writer) {
                         dependencies.push(writer.clone());
+                    }
+                }
+                for body in &operation.tool_object_indices {
+                    if let Some(writer) = boolean_participant_writer(
+                        tools,
+                        *body,
+                        offset_store_body_blocks,
+                        &body_alias_roots,
+                        &body_writer_history,
+                    ) {
+                        if !dependencies.contains(writer) {
+                            dependencies.push(writer.clone());
+                        }
                     }
                 }
             }
@@ -1472,6 +1847,21 @@ fn attach_feature_operations(
                 if !dependencies.contains(writer) {
                     dependencies.push(writer.clone());
                 }
+            }
+        }
+        for operand in operation_body_operands_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            let Some(data_block) = operand.operand_data_block.as_deref() else {
+                continue;
+            };
+            let Some(writer) = body_writer_history.offset_store_writer(data_block) else {
+                continue;
+            };
+            if !dependencies.contains(writer) {
+                dependencies.push(writer.clone());
             }
         }
         for block_use in datum_plane_uses_by_input_operation
@@ -1608,7 +1998,7 @@ fn attach_feature_operations(
             body_references
                 .get(label.id.as_str())
                 .map_or_else(Vec::new, |body| {
-                    feature_body_outputs(*body, &bodies_by_object_index)
+                    feature_body_outputs(*body, body_bindings, &bodies_by_object_index)
                 })
         };
         if outputs.is_empty() {
@@ -1622,8 +2012,37 @@ fn attach_feature_operations(
             .get(label.id.as_str())
             .copied()
             .map(canonical_body);
+        let offset_store_primary_body = offset_store_bodies_by_operation
+            .get(label.id.as_str())
+            .and_then(|uses| match uses.as_slice() {
+                [(_, data_block)] => Some(data_block.as_str()),
+                _ => None,
+            });
         if let Some(body) = body_references.get(label.id.as_str()) {
             source_properties.insert("primary_body_object_index".to_string(), body.to_string());
+        }
+        if let Some(reference) = body_writer_references_by_operation.get(label.id.as_str()) {
+            source_properties.insert("primary_body_reference".to_string(), reference.id.clone());
+            if let Some(uses) = body_segment_uses_by_reference.get(reference.id.as_str()) {
+                if let [use_] = uses.as_slice() {
+                    source_properties
+                        .insert("primary_body_segment_use".to_string(), use_.id.clone());
+                    source_properties.insert(
+                        "primary_body_segment_binding".to_string(),
+                        use_.segment_body_binding.clone(),
+                    );
+                }
+            }
+            if let Some(uses) = body_data_block_uses_by_reference.get(reference.id.as_str()) {
+                if let [use_] = uses.as_slice() {
+                    source_properties
+                        .insert("primary_body_data_block_use".to_string(), use_.id.clone());
+                    source_properties.insert(
+                        "primary_body_data_block".to_string(),
+                        use_.data_block.clone(),
+                    );
+                }
+            }
         }
         for reference in body_reference_occurrences_by_operation
             .get(label.id.as_str())
@@ -1633,6 +2052,10 @@ fn attach_feature_operations(
             source_properties.insert(
                 format!("body_reference.{}", reference.ordinal),
                 reference.body_object_index.to_string(),
+            );
+            source_properties.insert(
+                format!("body_reference_occurrence.{}", reference.ordinal),
+                reference.id.clone(),
             );
         }
         if let Some(inputs) = sketch_construction_inputs_by_operation.get(label.id.as_str()) {
@@ -1849,11 +2272,77 @@ fn attach_feature_operations(
         {
             source_properties.insert(format!("datum_csys_payload.{ordinal}"), payload.id.clone());
         }
+        for (ordinal, pair) in datum_csys_payload_scalar_pairs_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("datum_csys_payload_scalar_pair.{ordinal}"),
+                pair.id.clone(),
+            );
+        }
+        for (ordinal, pair) in datum_csys_payload_fixed_pairs_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("datum_csys_payload_fixed_pair.{ordinal}"),
+                pair.id.clone(),
+            );
+        }
+        for (ordinal, scalar) in datum_csys_payload_scalars_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("datum_csys_payload_scalar.{ordinal}"),
+                scalar.id.clone(),
+            );
+        }
+        for (ordinal, descriptor) in datum_csys_descriptors_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("datum_csys_descriptor.{ordinal}"),
+                descriptor.id.clone(),
+            );
+        }
         if let Some(header) = datum_plane_headers_by_operation.get(label.id.as_str()) {
             source_properties.insert("datum_plane_header".to_string(), header.id.clone());
         }
         if let Some(payload) = datum_plane_payloads_by_operation.get(label.id.as_str()) {
             source_properties.insert("datum_plane_payload".to_string(), payload.id.clone());
+        }
+        for (ordinal, pair) in datum_plane_payload_scalar_pairs_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("datum_plane_payload_scalar_pair.{ordinal}"),
+                pair.id.clone(),
+            );
+        }
+        for (ordinal, descriptor) in datum_plane_descriptors_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("datum_plane_descriptor.{ordinal}"),
+                descriptor.id.clone(),
+            );
         }
         for (ordinal, identity_use) in datum_identity_uses_by_operation
             .get(label.id.as_str())
@@ -1934,6 +2423,10 @@ fn attach_feature_operations(
             .flatten()
         {
             source_properties.insert(
+                format!("input_block_record.{}", input.input_slot),
+                input.id.clone(),
+            );
+            source_properties.insert(
                 format!("input_block.{}", input.input_slot),
                 input.data_block.clone(),
             );
@@ -1944,11 +2437,31 @@ fn attach_feature_operations(
                 );
             }
         }
+        for (ordinal, use_) in input_column_row_uses_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(format!("input_column_row_use.{ordinal}"), use_.id.clone());
+        }
+        for (ordinal, target) in input_column_targets_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(format!("input_column_target.{ordinal}"), target.id.clone());
+        }
         for reference in sketch_references_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
+            source_properties.insert(
+                format!("sketch_reference_record.{}", reference.ordinal),
+                reference.id.clone(),
+            );
             source_properties.insert(
                 format!("sketch_reference.{}", reference.ordinal),
                 reference
@@ -1962,6 +2475,10 @@ fn attach_feature_operations(
             .into_iter()
             .flatten()
         {
+            source_properties.insert(
+                format!("projected_curve_reference_record.{}", reference.ordinal),
+                reference.id.clone(),
+            );
             source_properties.insert(
                 format!("projected_curve_reference.{}", reference.ordinal),
                 reference
@@ -2033,6 +2550,10 @@ fn attach_feature_operations(
             .into_iter()
             .flatten()
         {
+            source_properties.insert(
+                format!("pattern_reference_record.{}", reference.ordinal),
+                reference.id.clone(),
+            );
             source_properties.insert(
                 format!("pattern_reference.{}", reference.ordinal),
                 reference
@@ -2121,6 +2642,10 @@ fn attach_feature_operations(
             .flatten()
         {
             source_properties.insert(
+                format!("draft_construction_reference_record.{}", reference.ordinal),
+                reference.id.clone(),
+            );
+            source_properties.insert(
                 format!("draft_construction_reference.{}", reference.ordinal),
                 reference
                     .data_block
@@ -2207,6 +2732,13 @@ fn attach_feature_operations(
             .into_iter()
             .flatten()
         {
+            source_properties.insert(
+                format!(
+                    "surface_construction_reference_record.{}",
+                    reference.ordinal
+                ),
+                reference.id.clone(),
+            );
             source_properties.insert(
                 format!("surface_construction_reference.{}", reference.ordinal),
                 reference
@@ -2315,6 +2847,10 @@ fn attach_feature_operations(
             .flatten()
         {
             source_properties.insert(
+                format!("extrude_profile_reference_record.{}", reference.ordinal),
+                reference.id.clone(),
+            );
+            source_properties.insert(
                 format!("extrude_profile_reference.{}", reference.ordinal),
                 reference
                     .data_block
@@ -2340,6 +2876,22 @@ fn attach_feature_operations(
                     .clone()
                     .unwrap_or_else(|| operand.operand_object_index.to_string()),
             );
+            source_properties.insert(
+                format!(
+                    "operation_body_operand_record.{}.{}",
+                    operand.body_reference_ordinal, operand.ordinal
+                ),
+                operand.id.clone(),
+            );
+            for (binding_ordinal, binding) in operand.segment_body_bindings.iter().enumerate() {
+                source_properties.insert(
+                    format!(
+                        "operation_body_operand_segment_binding.{}.{}.{}",
+                        operand.body_reference_ordinal, operand.ordinal, binding_ordinal
+                    ),
+                    binding.clone(),
+                );
+            }
         }
         for binding in parameter_bindings_by_operation
             .get(label.id.as_str())
@@ -2381,28 +2933,72 @@ fn attach_feature_operations(
         let block_dimension_values = block_dimensions_by_operation
             .get(label.id.as_str())
             .map(|dimensions| dimensions.values);
-        let block_has_explicit_output = !outputs.is_empty();
         let block_projection = (label.value == "BLOCK")
             .then(|| block_placement(ir, block_dimension_values?, &outputs))
             .flatten();
+        let block_outputs_are_proven = !outputs.is_empty();
         if outputs.is_empty() {
             if let Some((body, _)) = &block_projection {
                 outputs.push(body.clone());
             }
         }
-        let block_op = if block_projection.is_some()
-            && matches!(outputs.as_slice(), [_])
-            && if block_has_explicit_output {
-                !body_writer_history.has_primary_writer(native_primary_body, &outputs)
-            } else {
-                !body_writer_history
-                    .has_output_writer_other_than(initial_body_id.as_ref(), &outputs)
-            } {
-            BooleanOp::NewBody
-        } else {
-            BooleanOp::Unresolved
-        };
-        if block_op == BooleanOp::NewBody && !block_has_explicit_output {
+        let sphere_projection = (label.value == "SPHERE")
+            .then(|| sphere_body_projection(ir, &outputs))
+            .flatten();
+        let inferred_sphere_outputs = outputs
+            .is_empty()
+            .then(|| {
+                sphere_projection
+                    .as_ref()
+                    .map(|(body, _, _)| vec![body.clone()])
+            })
+            .flatten();
+        let sphere_outputs = inferred_sphere_outputs
+            .as_deref()
+            .unwrap_or(outputs.as_slice());
+        let body_reference_count = body_reference_occurrences_by_operation
+            .get(label.id.as_str())
+            .map_or(0, Vec::len);
+        let block_op = new_body_boolean_op(&NewBodyEvidence {
+            has_complete_projection: block_projection.is_some(),
+            has_complete_primitive_construction: block_constructions_by_operation
+                .get(label.id.as_str())
+                .is_some_and(|construction| {
+                    block_construction_payloads_by_operation
+                        .get(label.id.as_str())
+                        .is_some_and(|payloads| {
+                            payloads.len() == 1 && payloads[0].construction == construction.id
+                        })
+                }),
+            outputs: &outputs,
+            outputs_are_proven: block_outputs_are_proven,
+            body_reference_count,
+            provisional_feature: initial_body_id.as_ref(),
+            native_primary_body,
+            offset_store_primary_body,
+            history: &body_writer_history,
+        });
+        let sphere_op = sphere_projection
+            .as_ref()
+            .map_or(BooleanOp::Unresolved, |_| {
+                new_body_boolean_op(&NewBodyEvidence {
+                    has_complete_projection: true,
+                    has_complete_primitive_construction: true,
+                    outputs: sphere_outputs,
+                    outputs_are_proven: true,
+                    body_reference_count,
+                    provisional_feature: initial_body_id.as_ref(),
+                    native_primary_body,
+                    offset_store_primary_body,
+                    history: &body_writer_history,
+                })
+            });
+        if sphere_op == BooleanOp::NewBody {
+            if let Some(inferred_outputs) = inferred_sphere_outputs {
+                outputs.extend(inferred_outputs);
+            }
+        }
+        if block_op == BooleanOp::NewBody || sphere_op == BooleanOp::NewBody {
             if let Some(initial_feature) = initial_body_id.as_ref().and_then(|id| {
                 ir.model
                     .features
@@ -2422,18 +3018,30 @@ fn attach_feature_operations(
             }
         }
         body_writer_history.extend_primary_dependencies(
+            initial_body_id.as_ref(),
             native_primary_body,
+            offset_store_primary_body,
             &outputs,
             &mut dependencies,
         );
         let block_placement = block_projection.map(|(_, placement)| placement);
+        let sphere_definition = sphere_projection.as_ref().and_then(|(_, center, radius)| {
+            (sphere_op == BooleanOp::NewBody).then_some(FeatureDefinition::Sphere {
+                center: *center,
+                radius: *radius,
+                op: sphere_op,
+            })
+        });
         let sew_projection = (label.value == "SEW")
             .then(|| {
                 sew_body_feature_definition(
-                    *body_references.get(label.id.as_str())?,
-                    segment_body_operands_by_operation
-                        .get(label.id.as_str())?
-                        .as_slice(),
+                    body_references.get(label.id.as_str()).copied(),
+                    offset_store_bodies_by_operation
+                        .get(label.id.as_str())
+                        .map_or([].as_slice(), Vec::as_slice),
+                    operation_body_operands_by_operation
+                        .get(label.id.as_str())
+                        .map_or([].as_slice(), Vec::as_slice),
                     &body_alias_roots,
                     &bodies_by_object_index,
                 )
@@ -2443,11 +3051,12 @@ fn attach_feature_operations(
             .then(|| {
                 body_references
                     .get(label.id.as_str())
-                    .zip(segment_body_operands_by_operation.get(label.id.as_str()))
-                    .and_then(|(primary, operands)| {
+                    .and_then(|primary| {
                         trim_body_feature_definition(
                             *primary,
-                            operands.as_slice(),
+                            operation_body_operands_by_operation
+                                .get(label.id.as_str())
+                                .map_or([].as_slice(), Vec::as_slice),
                             &body_alias_roots,
                             &bodies_by_object_index,
                         )
@@ -2545,6 +3154,9 @@ fn attach_feature_operations(
             .then(|| {
                 delete_body_feature_definition(
                     body_references.get(label.id.as_str()).copied(),
+                    offset_store_bodies_by_operation
+                        .get(label.id.as_str())
+                        .map_or([].as_slice(), Vec::as_slice),
                     &body_alias_roots,
                     &bodies_by_object_index,
                 )
@@ -2556,36 +3168,54 @@ fn attach_feature_operations(
         let native_parameters = native_feature_parameters(operation_parameter_uses, expressions);
         let sketch = (label.value == "SKETCH")
             .then(|| {
-                attach_solved_sketch_points(
+                attach_sketch_points(
                     ir,
                     label,
-                    sketch_point_uses_by_operation
-                        .get(label.id.as_str())
-                        .map_or([].as_slice(), Vec::as_slice),
-                    sketch_point_groups,
+                    &SketchPointSources {
+                        point_uses: sketch_point_uses_by_operation
+                            .get(label.id.as_str())
+                            .map_or([].as_slice(), Vec::as_slice),
+                        point_groups: sketch_point_groups,
+                        points: sketch_points,
+                        payload_scalars: sketch_payload_scalars,
+                    },
                     annotations,
                     stream,
                 )
             })
             .flatten();
-        let definition = booleans.get(label.id.as_str()).map_or_else(
-            || {
-                trim_body_projection
-                    .or(delete_projection)
-                    .or(sew_projection)
-                    .or(extrude_projection)
-                    .or(extract_projection)
-                    .or_else(|| blend_projection.map(|(definition, _)| definition))
-                    .or_else(|| thicken_projection.map(|(definition, _)| definition))
-                    .or_else(|| offset_projection.map(|(definition, _)| definition))
+        let definition = boolean_definition.unwrap_or_else(|| {
+            trim_body_projection
+                .or(delete_projection)
+                .or(sew_projection)
+                .or(extrude_projection)
+                .or(extract_projection)
+                .or_else(|| blend_projection.map(|(definition, _)| definition))
+                .or_else(|| thicken_projection.map(|(definition, _)| definition))
+                .or_else(|| offset_projection.map(|(definition, _)| definition))
+                .or(sphere_definition)
+                .unwrap_or_else(|| {
+                    if let Some(sketch) = sketch {
+                        return FeatureDefinition::Sketch {
+                            space: SketchSpace::Planar,
+                            sketch: Some(sketch),
+                        };
+                    }
+                    let mut definition = non_modeling_history_definition(
+                        &label.value,
+                        &label.object_indices,
+                        &outputs,
+                        body_reference_occurrences_by_operation
+                            .get(label.id.as_str())
+                            .map_or(0, Vec::len),
+                        operation_body_operands_by_operation
+                            .get(label.id.as_str())
+                            .map_or(0, Vec::len),
+                        operation_payload_string_records.len(),
+                        &source_properties,
+                    )
                     .unwrap_or_else(|| {
-                        if let Some(sketch) = sketch {
-                            return FeatureDefinition::Sketch {
-                                space: SketchSpace::Planar,
-                                sketch: Some(sketch),
-                            };
-                        }
-                        let mut definition = non_boolean_feature_definition_with_parameters(
+                        non_boolean_feature_definition_with_parameters(
                             &label.value,
                             &operation_payload_strings,
                             block_dimension_values,
@@ -2595,6 +3225,10 @@ fn attach_feature_operations(
                                     .get(label.id.as_str())
                                     .cloned()
                                     .into_iter()
+                                    .chain(
+                                        counterbore_hole_placements.get(label.id.as_str()).cloned(),
+                                    )
+                                    .chain(blind_hole_placements.get(label.id.as_str()).cloned())
                                     .chain(
                                         hole_packages
                                             .placements
@@ -2607,6 +3241,11 @@ fn attach_feature_operations(
                                     .get(label.id.as_str())
                                     .or_else(|| hole_packages.diameters.get(label.id.as_str()))
                                     .copied(),
+                                extent: blind_hole_depths
+                                    .get(label.id.as_str())
+                                    .copied()
+                                    .map(|length| Termination::Blind { length }),
+                                counterbore: counterbore_dimensions.get(label.id.as_str()).copied(),
                                 chamfer: simple_hole_chamfers
                                     .get(label.id.as_str())
                                     .or_else(|| hole_packages.chamfers.get(label.id.as_str()))
@@ -2616,17 +3255,14 @@ fn attach_feature_operations(
                                     .contains_key(label.id.as_str()),
                             },
                             native_parameters,
-                        );
-                        if let FeatureDefinition::Block { op, .. } = &mut definition {
-                            *op = block_op;
-                        }
-                        definition
-                    })
-            },
-            |operation| {
-                boolean_feature_definition(operation, &body_alias_roots, &bodies_by_object_index)
-            },
-        );
+                        )
+                    });
+                    if let FeatureDefinition::Block { op, .. } = &mut definition {
+                        *op = block_op;
+                    }
+                    definition
+                })
+        });
         annotations
             .note(&id, stream, label.source_offset)
             .tag("FEATURE_OPERATION");
@@ -2653,7 +3289,27 @@ fn attach_feature_operations(
             annotations.derived(&id, "source_content");
         }
         let native_output = (!deletes_body).then_some(native_primary_body).flatten();
-        body_writer_history.record_writer(native_output, &outputs, &id);
+        let offset_store_output = (!deletes_body)
+            .then_some(offset_store_primary_body)
+            .flatten();
+        body_writer_history.record_writer(native_output, offset_store_output, &outputs, &id);
+        if let Some(operation) = (!deletes_body)
+            .then(|| booleans.get(label.id.as_str()))
+            .flatten()
+        {
+            // A Boolean target writes its selected body image even when the
+            // operation has no separate primary-body field.
+            if !matches!(
+                boolean_offset_store_resolution.as_ref(),
+                Some(BooleanOffsetStoreResolution::Unresolved)
+            ) {
+                let (native_target, offset_store_target) = boolean_target_writer(
+                    &definition,
+                    canonical_body(operation.target_object_index),
+                );
+                body_writer_history.record_writer(native_target, offset_store_target, &[], &id);
+            }
+        }
         ir.model.features.push(Feature {
             id: id.clone(),
             ordinal: base_ordinal + ordinal as u64,
@@ -2697,6 +3353,17 @@ fn attach_feature_operations(
             }
         }
     }
+    if let Some(initial_body_id) = initial_body_id {
+        let has_outputs = ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.id == initial_body_id)
+            .is_some_and(|feature| !feature.outputs.is_empty());
+        if has_outputs {
+            annotations.derived(&initial_body_id, "outputs");
+        }
+    }
 }
 
 /// Select the exact native writer identity for one intermediate body result.
@@ -2713,21 +3380,92 @@ fn native_result_body_identity(
         })
 }
 
-fn attach_solved_sketch_points(
+/// Return primary body fields that are proven to use the segment-object
+/// namespace. An offset-store field may enter that namespace only when the
+/// feature extractor has also retained one unique segment alias use for the
+/// same field. Missing or ambiguous relations remain offset-store-local. An
+/// operation with zero or multiple body fields has no primary-body writer.
+fn native_primary_body_references<'a>(
+    references: &'a [crate::native::features::FeatureBodyReference],
+    data_block_uses: &[crate::native::features::FeatureBodyDataBlockUse],
+    segment_uses: &[crate::native::features::FeatureBodySegmentUse],
+    inputs: &[crate::native::features::FeatureInputBlock],
+    data_blocks: &[crate::native::om::DataBlock],
+) -> BTreeMap<&'a str, u32> {
+    let unique_references = crate::native::features::unique_feature_body_references(references);
+    let offset_store_references = data_block_uses
+        .iter()
+        .map(|use_| use_.feature_body_reference.as_str())
+        .collect::<BTreeSet<_>>();
+    let offset_store_operations =
+        crate::native::features::feature_input_store_operations(inputs, data_blocks);
+    let bridged_segment_references = segment_uses
+        .iter()
+        .map(|use_| use_.feature_body_reference.as_str())
+        .collect::<BTreeSet<_>>();
+    unique_references
+        .into_iter()
+        .filter(|(_, reference)| {
+            bridged_segment_references.contains(reference.id.as_str())
+                || (!offset_store_references.contains(reference.id.as_str())
+                    && !offset_store_operations.contains(reference.operation_label.as_str()))
+        })
+        .map(|(operation, reference)| (operation, reference.body_object_index))
+        .collect()
+}
+
+fn attach_sketch_points(
     ir: &mut CadIr,
     label: &crate::native::features::FeatureOperationLabel,
-    point_uses: &[&crate::native::features::FeatureSketchPointUse],
-    point_groups: &[crate::native::features::FeatureSketchPointGroup],
+    sources: &SketchPointSources<'_>,
     annotations: &mut AnnotationBuilder,
     stream: cadmpeg_ir::annotations::StreamHandle,
 ) -> Option<SketchId> {
-    if point_uses.is_empty() {
+    let operation_groups = sources
+        .point_groups
+        .iter()
+        .filter(|group| group.operation_label == label.id)
+        .collect::<Vec<_>>();
+    if operation_groups.is_empty() {
         return None;
     }
-    let groups = point_groups
-        .iter()
-        .map(|group| (group.id.as_str(), group))
-        .collect::<BTreeMap<_, _>>();
+    let mut groups_by_id =
+        BTreeMap::<&str, &crate::native::features::FeatureSketchPointGroup>::new();
+    for group in &operation_groups {
+        if groups_by_id.insert(group.id.as_str(), group).is_some() {
+            return None;
+        }
+    }
+    let mut point_uses_by_group =
+        BTreeMap::<&str, &crate::native::features::FeatureSketchPointUse>::new();
+    for point_use in sources.point_uses {
+        if point_use.operation_label != label.id
+            || point_uses_by_group
+                .insert(point_use.sketch_point_group.as_str(), point_use)
+                .is_some()
+        {
+            return None;
+        }
+    }
+    if point_uses_by_group
+        .keys()
+        .any(|group| !groups_by_id.contains_key(group))
+    {
+        return None;
+    }
+    let mut points_by_id = BTreeMap::<&str, &crate::native::features::FeatureSketchPoint>::new();
+    for point in sources.points {
+        if points_by_id.insert(point.id.as_str(), point).is_some() {
+            return None;
+        }
+    }
+    let mut scalars_by_id =
+        BTreeMap::<&str, &crate::native::features::FeatureSketchPayloadScalar>::new();
+    for scalar in sources.payload_scalars {
+        if scalars_by_id.insert(scalar.id.as_str(), scalar).is_some() {
+            return None;
+        }
+    }
     let operation_key = label
         .id
         .strip_prefix("nx:feature-history:operation-label#")
@@ -2735,10 +3473,8 @@ fn attach_solved_sketch_points(
     let sketch_id = SketchId(format!("nx:feature-history:sketch#{operation_key}"));
     let mut entities = Vec::new();
     let mut represented_groups = BTreeSet::new();
-    for point_use in point_uses {
-        let group = groups.get(point_use.sketch_point_group.as_str())?;
-        if group.operation_label != label.id
-            || !represented_groups.insert(group.id.as_str())
+    for group in operation_groups {
+        if !represented_groups.insert(group.id.as_str())
             || group
                 .coordinates
                 .iter()
@@ -2746,19 +3482,73 @@ fn attach_solved_sketch_points(
         {
             return None;
         }
+        let point_use = point_uses_by_group.get(group.id.as_str()).copied();
+        let source_offsets = if let Some(point_use) = point_use {
+            point_use.source_offsets.clone()
+        } else {
+            group
+                .points
+                .iter()
+                .map(|point_id| {
+                    let point = points_by_id.get(point_id.as_str()).copied()?;
+                    if point.operation_label != label.id
+                        || point.name != group.name
+                        || point
+                            .coordinates
+                            .iter()
+                            .zip(group.coordinates)
+                            .any(|(first, second)| first.to_bits() != second.to_bits())
+                    {
+                        return None;
+                    }
+                    let scalar_fields = point
+                        .scalar_fields
+                        .iter()
+                        .map(|scalar_id| scalars_by_id.get(scalar_id.as_str()).copied())
+                        .collect::<Option<Vec<_>>>()?;
+                    if scalar_fields.len() != 2
+                        || scalar_fields.iter().zip(group.coordinates).any(
+                            |(scalar, coordinate)| {
+                                scalar.operation_label != label.id
+                                    || scalar.value.to_bits() != coordinate.to_bits()
+                            },
+                        )
+                    {
+                        return None;
+                    }
+                    Some(
+                        scalar_fields
+                            .into_iter()
+                            .map(|scalar| scalar.source_offset)
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect::<Option<Vec<_>>>()?
+                .into_iter()
+                .flatten()
+                .collect()
+        };
+        let source_offset = source_offsets.iter().copied().min()?;
+        let native_ref =
+            point_use.map_or_else(|| group.id.clone(), |point_use| point_use.id.clone());
         let entity_key = point_use
-            .id
+            .map_or(group.id.as_str(), |point_use| point_use.id.as_str())
             .strip_prefix("nx:feature-history:sketch-point-use#")
-            .unwrap_or(point_use.id.as_str());
+            .or_else(|| {
+                group
+                    .id
+                    .strip_prefix("nx:feature-history:sketch-point-group#")
+            })
+            .unwrap_or(group.id.as_str());
         entities.push((
-            point_use.source_offsets.iter().copied().min()?,
+            source_offset,
             SketchEntity {
                 id: SketchEntityId(format!(
                     "nx:feature-history:sketch-entity#point-{entity_key}"
                 )),
                 sketch: sketch_id.clone(),
                 construction: false,
-                native_ref: Some(point_use.id.clone()),
+                native_ref: Some(native_ref),
                 geometry_ref: None,
                 endpoint_refs: Vec::new(),
                 geometry: SketchGeometry::Point {
@@ -2766,6 +3556,14 @@ fn attach_solved_sketch_points(
                 },
             },
         ));
+    }
+    entities.sort_by(|(first_offset, first), (second_offset, second)| {
+        first_offset
+            .cmp(second_offset)
+            .then_with(|| first.id.0.cmp(&second.id.0))
+    });
+    if entities.is_empty() {
+        return None;
     }
     for (source_offset, entity) in &entities {
         annotations
@@ -2789,6 +3587,13 @@ fn attach_solved_sketch_points(
         native_ref: Some(label.id.clone()),
     });
     Some(sketch_id)
+}
+
+struct SketchPointSources<'a> {
+    point_uses: &'a [&'a crate::native::features::FeatureSketchPointUse],
+    point_groups: &'a [crate::native::features::FeatureSketchPointGroup],
+    points: &'a [crate::native::features::FeatureSketchPoint],
+    payload_scalars: &'a [crate::native::features::FeatureSketchPayloadScalar],
 }
 
 fn records_by_operation<'a, T>(
@@ -4257,6 +5062,105 @@ fn block_placement(
     ))
 }
 
+/// Return the complete primitive witness for an NX `SPHERE` operation.
+///
+/// A spherical surface inside a larger result is not enough: a Boolean or a
+/// later feature can leave the same carrier in the output. The primitive
+/// projection therefore accepts only one connected solid body with exactly
+/// one face whose surface is a finite positive-radius sphere. With no native
+/// output relation, the candidate must also be unique across the model.
+fn sphere_body_projection(ir: &CadIr, outputs: &[BodyId]) -> Option<(BodyId, Point3, Length)> {
+    let body = match outputs {
+        [body] => body.clone(),
+        [] => {
+            let candidates = ir
+                .model
+                .bodies
+                .iter()
+                .filter_map(|body| {
+                    let faces = connected_solid_body_faces(ir, &body.id)?;
+                    let [face] = faces.as_slice() else {
+                        return None;
+                    };
+                    let surface = ir.model.surfaces.iter().find(|surface| {
+                        surface.id == face.surface
+                            && matches!(&surface.geometry, SurfaceGeometry::Sphere { .. })
+                    })?;
+                    Some((body.id.clone(), surface.id.clone()))
+                })
+                .collect::<Vec<_>>();
+            let [(body, _)] = candidates.as_slice() else {
+                return None;
+            };
+            body.clone()
+        }
+        _ => return None,
+    };
+    let faces = connected_solid_body_faces(ir, &body)?;
+    let [face] = faces.as_slice() else {
+        return None;
+    };
+    let surface = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == face.surface)?;
+    let SurfaceGeometry::Sphere { center, radius, .. } = &surface.geometry else {
+        return None;
+    };
+    ((*radius).is_finite()
+        && *radius > ir.tolerances.linear
+        && [center.x, center.y, center.z]
+            .into_iter()
+            .all(f64::is_finite))
+    .then_some((body, *center, Length(*radius)))
+}
+
+struct NewBodyEvidence<'a> {
+    has_complete_projection: bool,
+    has_complete_primitive_construction: bool,
+    outputs: &'a [BodyId],
+    outputs_are_proven: bool,
+    body_reference_count: usize,
+    provisional_feature: Option<&'a FeatureId>,
+    native_primary_body: Option<u32>,
+    offset_store_primary_body: Option<&'a str>,
+    history: &'a BodyWriterHistory,
+}
+
+fn new_body_boolean_op(evidence: &NewBodyEvidence<'_>) -> BooleanOp {
+    // A unique offset-store body field proves the operation's local writer
+    // namespace, but the fallback body selected for placement is not that
+    // writer. Likewise, multiple body fields have no primary role until the
+    // operation-specific relation identifies one. Do not let a placement
+    // fallback turn either case into a neutral body Boolean.
+    if evidence.body_reference_count > 1
+        && evidence.native_primary_body.is_none()
+        && evidence.offset_store_primary_body.is_none()
+        && !evidence.has_complete_primitive_construction
+    {
+        return BooleanOp::Unresolved;
+    }
+    let writer_outputs = if evidence.outputs_are_proven {
+        evidence.outputs
+    } else {
+        &[]
+    };
+    if evidence.has_complete_projection
+        && matches!(evidence.outputs, [_])
+        && !evidence.history.has_preceding_writer(
+            evidence.provisional_feature,
+            evidence.native_primary_body,
+            evidence.offset_store_primary_body,
+            writer_outputs,
+        )
+    {
+        BooleanOp::NewBody
+    } else {
+        BooleanOp::Unresolved
+    }
+}
+
 #[cfg(test)]
 fn non_boolean_feature_definition(
     kind: &str,
@@ -4278,13 +5182,56 @@ fn non_boolean_feature_definition(
     )
 }
 
+/// Project one operation as a history node only when its bounded record has
+/// no modeling relation or value lane.
+fn non_modeling_history_definition(
+    kind: &str,
+    object_indices: &[Option<u32>; 4],
+    outputs: &[BodyId],
+    body_reference_count: usize,
+    body_operand_count: usize,
+    payload_string_count: usize,
+    source_properties: &BTreeMap<String, String>,
+) -> Option<FeatureDefinition> {
+    let operation_identity_only = source_properties.keys().all(|key| {
+        matches!(
+            key.as_str(),
+            "operation_record" | "operation_terminal_frame"
+        ) || (key
+            .strip_prefix("object_index.")
+            .is_some_and(|slot| matches!(slot, "0" | "1" | "2" | "3")))
+    });
+    (kind == "EXTRACT_STRING"
+        && object_indices.iter().all(Option::is_none)
+        && outputs.is_empty()
+        && body_reference_count == 0
+        && body_operand_count == 0
+        && payload_string_count == 0
+        && source_properties.contains_key("operation_record")
+        && source_properties.contains_key("operation_terminal_frame")
+        && operation_identity_only)
+        .then_some(FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::History,
+            children: Vec::new(),
+            active_child: None,
+        })
+}
+
 /// Permutation-invariant hole properties derived from one complete body partition.
 #[derive(Default)]
 struct HoleProjection {
     pub(crate) placements: Vec<HolePlacement>,
     pub(crate) diameter: Option<Length>,
+    pub(crate) extent: Option<Termination>,
+    pub(crate) counterbore: Option<CounterboreDimensions>,
     pub(crate) chamfer: Option<HoleKind>,
     pub(crate) grouped_simple_through: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CounterboreDimensions {
+    diameter: Length,
+    depth: Length,
 }
 
 fn non_boolean_feature_definition_with_parameters(
@@ -4295,7 +5242,7 @@ fn non_boolean_feature_definition_with_parameters(
     hole: HoleProjection,
     native_parameters: BTreeMap<String, String>,
 ) -> FeatureDefinition {
-    let simple_hole_template = unique_simple_hole_template(payload_strings);
+    let hole_template = unique_simple_hole_template(payload_strings);
     if let ("BLOCK", Some(dimensions)) = (kind, block_dimensions) {
         return FeatureDefinition::Block {
             dimensions: Some(dimensions.map(Length)),
@@ -4317,7 +5264,7 @@ fn non_boolean_feature_definition_with_parameters(
         };
     }
     match kind {
-        "DATUM_PLANE" => FeatureDefinition::DatumPlaneUnresolved,
+        "DATUM_PLANE" | "EXTRACT_DATUM_PLANE" => FeatureDefinition::DatumPlaneUnresolved,
         "POINT" => FeatureDefinition::DatumPointUnresolved,
         "DATUM_CSYS" => FeatureDefinition::DatumCoordinateSystemUnresolved,
         "BLOCK" => FeatureDefinition::Block {
@@ -4371,46 +5318,126 @@ fn non_boolean_feature_definition_with_parameters(
             distance: None,
             method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
         },
-        "SIMPLE HOLE" => FeatureDefinition::Hole {
-            profile: None,
-            profile_filter: None,
-            face: None,
-            position: None,
-            direction: None,
-            placements: hole.placements,
-            kind: hole.chamfer.unwrap_or_else(|| {
-                if simple_hole_template.is_some() {
+        "SIMPLE HOLE" | "CBORE_HOLE" => {
+            let measured_chamfer = hole.chamfer;
+            let (template_kind, template_exit_kind, template_extent) = hole_template.map_or(
+                (
+                    if kind == "CBORE_HOLE" {
+                        HoleKind::Unresolved {
+                            form: None,
+                            counterbore_diameter: None,
+                            counterbore_depth: None,
+                            countersink_diameter: None,
+                            countersink_angle: None,
+                        }
+                    } else {
+                        HoleKind::Simple
+                    },
+                    None,
+                    None,
+                ),
+                |(_, form, extent, start_treatment, end_treatment)| {
+                    let kind = match start_treatment {
+                        crate::native::features::SimpleHoleEndTreatment::Chamfer => {
+                            HoleKind::Unresolved {
+                                form: Some(HoleForm::Chamfer),
+                                counterbore_diameter: None,
+                                counterbore_depth: None,
+                                countersink_diameter: None,
+                                countersink_angle: None,
+                            }
+                        }
+                        crate::native::features::SimpleHoleEndTreatment::None => match form {
+                            crate::native::features::SimpleHoleForm::Simple => HoleKind::Simple,
+                            crate::native::features::SimpleHoleForm::Counterbored => {
+                                HoleKind::Unresolved {
+                                    form: Some(HoleForm::Counterbore),
+                                    counterbore_diameter: None,
+                                    counterbore_depth: None,
+                                    countersink_diameter: None,
+                                    countersink_angle: None,
+                                }
+                            }
+                        },
+                    };
+                    let exit_kind = match end_treatment {
+                        crate::native::features::SimpleHoleEndTreatment::Chamfer => {
+                            Some(HoleKind::Unresolved {
+                                form: Some(HoleForm::Chamfer),
+                                counterbore_diameter: None,
+                                counterbore_depth: None,
+                                countersink_diameter: None,
+                                countersink_angle: None,
+                            })
+                        }
+                        crate::native::features::SimpleHoleEndTreatment::None => None,
+                    };
+                    let extent = match extent {
+                        crate::native::features::SimpleHoleExtent::Through => {
+                            Some(cadmpeg_ir::features::Termination::ThroughAll)
+                        }
+                        crate::native::features::SimpleHoleExtent::Blind => None,
+                    };
+                    (kind, exit_kind, extent)
+                },
+            );
+            let template_kind = match (
+                hole.counterbore,
+                matches!(
+                    &template_kind,
                     HoleKind::Unresolved {
-                        form: Some(HoleForm::Chamfer),
-                        counterbore_diameter: None,
-                        counterbore_depth: None,
-                        countersink_diameter: None,
-                        countersink_angle: None,
+                        form: Some(HoleForm::Counterbore),
+                        ..
                     }
-                } else {
-                    HoleKind::Simple
-                }
-            }),
-            exit_kind: hole.chamfer.or_else(|| {
-                simple_hole_template
-                    .is_some()
-                    .then_some(HoleKind::Unresolved {
-                        form: Some(HoleForm::Chamfer),
-                        counterbore_diameter: None,
-                        counterbore_depth: None,
-                        countersink_diameter: None,
-                        countersink_angle: None,
-                    })
-            }),
-            diameter: hole.diameter,
-            extent: simple_hole_template
-                .is_some()
-                .then_some(cadmpeg_ir::features::Termination::ThroughAll),
-            bottom: None,
-            taper_angle: None,
-            specification: None,
-            allow_multi_profile_faces: None,
-        },
+                ),
+            ) {
+                (Some(dimensions), true) => HoleKind::Counterbore {
+                    diameter: dimensions.diameter,
+                    depth: dimensions.depth,
+                },
+                _ => template_kind,
+            };
+            FeatureDefinition::Hole {
+                profile: None,
+                profile_filter: None,
+                face: None,
+                position: None,
+                direction: None,
+                placements: hole.placements,
+                kind: match (measured_chamfer, hole_template) {
+                    (
+                        Some(chamfer),
+                        Some((
+                            _,
+                            crate::native::features::SimpleHoleForm::Simple,
+                            crate::native::features::SimpleHoleExtent::Through,
+                            crate::native::features::SimpleHoleEndTreatment::Chamfer,
+                            crate::native::features::SimpleHoleEndTreatment::Chamfer,
+                        )),
+                    ) => chamfer,
+                    _ => template_kind,
+                },
+                exit_kind: match (measured_chamfer, hole_template) {
+                    (
+                        Some(chamfer),
+                        Some((
+                            _,
+                            crate::native::features::SimpleHoleForm::Simple,
+                            crate::native::features::SimpleHoleExtent::Through,
+                            crate::native::features::SimpleHoleEndTreatment::Chamfer,
+                            crate::native::features::SimpleHoleEndTreatment::Chamfer,
+                        )),
+                    ) => Some(chamfer),
+                    _ => template_exit_kind,
+                },
+                diameter: hole.diameter,
+                extent: hole.extent.or(template_extent),
+                bottom: None,
+                taper_angle: None,
+                specification: None,
+                allow_multi_profile_faces: None,
+            }
+        }
         "HOLE PACKAGE" => FeatureDefinition::Hole {
             profile: None,
             profile_filter: None,
@@ -4538,20 +5565,62 @@ fn native_feature_parameters(
 fn simple_hole_operations(
     templates: &[crate::native::features::FeatureSimpleHoleTemplate],
     groups: &[crate::native::features::FeatureSimpleHoleConstructionGroup],
+    operation_positions: &BTreeMap<&str, usize>,
 ) -> Option<Vec<String>> {
-    let template_operations = templates
+    let template_counts = templates
+        .iter()
+        .fold(BTreeMap::new(), |mut counts, template| {
+            *counts
+                .entry(template.operation_label.as_str())
+                .or_insert(0usize) += 1;
+            counts
+        });
+    let mut ordered_templates = templates
         .iter()
         .filter(|template| {
             template.form == crate::native::features::SimpleHoleForm::Simple
                 && template.extent == crate::native::features::SimpleHoleExtent::Through
         })
+        .collect::<Vec<_>>();
+    let template_operations = ordered_templates
+        .iter()
         .map(|template| template.operation_label.as_str())
         .collect::<BTreeSet<_>>();
-    if template_operations.len() != templates.len() || template_operations.is_empty() {
+    if template_operations.is_empty()
+        || ordered_templates
+            .iter()
+            .any(|template| template_counts.get(template.operation_label.as_str()) != Some(&1))
+    {
         return None;
     }
-    Some(match groups {
-        [] => templates
+    if ordered_templates
+        .iter()
+        .any(|template| !operation_positions.contains_key(template.operation_label.as_str()))
+    {
+        return None;
+    }
+    ordered_templates.sort_by(|first, second| {
+        operation_positions
+            .get(first.operation_label.as_str())
+            .cmp(&operation_positions.get(second.operation_label.as_str()))
+            .then_with(|| first.operation_label.cmp(&second.operation_label))
+    });
+    let matching_groups = groups
+        .iter()
+        .filter(|group| {
+            let group_operations = group
+                .operation_labels
+                .iter()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>();
+            group_operations == template_operations
+        })
+        .collect::<Vec<_>>();
+    if matching_groups.len() > 1 {
+        return None;
+    }
+    Some(match matching_groups.as_slice() {
+        [] => ordered_templates
             .iter()
             .map(|template| template.operation_label.clone())
             .collect::<Vec<_>>(),
@@ -4563,13 +5632,104 @@ fn simple_hole_operations(
                 .collect::<BTreeSet<_>>();
             if group_operations.len() != group.operation_labels.len()
                 || template_operations != group_operations
+                || group
+                    .operation_labels
+                    .iter()
+                    .any(|operation| !operation_positions.contains_key(operation.as_str()))
+                || group.operation_labels.windows(2).any(|pair| {
+                    operation_positions[pair[0].as_str()] >= operation_positions[pair[1].as_str()]
+                })
             {
                 return None;
             }
             group.operation_labels.clone()
         }
-        _ => return None,
+        _ => unreachable!(),
     })
+}
+
+/// Return simple blind-hole operations in feature-history order. A blind
+/// operation with competing typed templates is not assignable to one body
+/// witness and remains native-only.
+fn blind_hole_operations(
+    templates: &[crate::native::features::FeatureSimpleHoleTemplate],
+    operation_positions: &BTreeMap<&str, usize>,
+) -> Option<Vec<String>> {
+    let template_counts = templates
+        .iter()
+        .fold(BTreeMap::new(), |mut counts, template| {
+            *counts
+                .entry(template.operation_label.as_str())
+                .or_insert(0usize) += 1;
+            counts
+        });
+    let mut operations = templates
+        .iter()
+        .filter(|template| {
+            template.form == crate::native::features::SimpleHoleForm::Simple
+                && template.extent == crate::native::features::SimpleHoleExtent::Blind
+        })
+        .filter(|template| template_counts.get(template.operation_label.as_str()) == Some(&1))
+        .map(|template| template.operation_label.clone())
+        .collect::<Vec<_>>();
+    if operations.is_empty()
+        || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
+        || operations
+            .iter()
+            .any(|operation| !operation_positions.contains_key(operation.as_str()))
+    {
+        return None;
+    }
+    operations.sort_by(|first, second| {
+        operation_positions
+            .get(first.as_str())
+            .cmp(&operation_positions.get(second.as_str()))
+            .then_with(|| first.cmp(second))
+    });
+    Some(operations)
+}
+
+/// Return counterbored through-hole operations in feature-history order.
+/// Counterbore construction groups are not inferred from the scalar lanes:
+/// each operation must have its own unambiguous body and topology witness.
+fn counterbore_operations(
+    templates: &[crate::native::features::FeatureSimpleHoleTemplate],
+    operation_positions: &BTreeMap<&str, usize>,
+) -> Option<Vec<String>> {
+    let template_counts = templates
+        .iter()
+        .fold(BTreeMap::new(), |mut counts, template| {
+            *counts
+                .entry(template.operation_label.as_str())
+                .or_insert(0usize) += 1;
+            counts
+        });
+    let mut operations = templates
+        .iter()
+        .filter(|template| {
+            template.form == crate::native::features::SimpleHoleForm::Counterbored
+                && template.extent == crate::native::features::SimpleHoleExtent::Through
+                && template.start_treatment == crate::native::features::SimpleHoleEndTreatment::None
+                && template.end_treatment == crate::native::features::SimpleHoleEndTreatment::None
+        })
+        .filter(|template| template_counts.get(template.operation_label.as_str()) == Some(&1))
+        .map(|template| template.operation_label.clone())
+        .collect::<Vec<_>>();
+    if operations.is_empty()
+        || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
+        || operations
+            .iter()
+            .any(|operation| !operation_positions.contains_key(operation.as_str()))
+    {
+        return None;
+    }
+    operations.sort_by(|first, second| {
+        operation_positions
+            .get(first.as_str())
+            .cmp(&operation_positions.get(second.as_str()))
+            .then_with(|| first.cmp(second))
+    });
+    Some(operations)
 }
 
 #[derive(Default)]
@@ -4723,6 +5883,8 @@ fn hole_package_projection(
 struct HoleBodyProjection {
     outputs: BTreeMap<String, Vec<BodyId>>,
     diameters: BTreeMap<String, Length>,
+    blind_depths: BTreeMap<String, Length>,
+    counterbores: BTreeMap<String, CounterboreDimensions>,
 }
 
 fn hole_body_projection(
@@ -4761,6 +5923,85 @@ fn hole_body_projection(
     Some(HoleBodyProjection {
         outputs: projected_outputs,
         diameters,
+        blind_depths: BTreeMap::new(),
+        counterbores: BTreeMap::new(),
+    })
+}
+
+fn counterbore_body_projection(
+    ir: &CadIr,
+    operations: &[String],
+    outputs: &BTreeMap<String, Vec<BodyId>>,
+) -> Option<HoleBodyProjection> {
+    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
+    {
+        return None;
+    }
+    let operations_by_body = hole_operations_by_body(ir, operations, outputs)?;
+    let mut projected_outputs = BTreeMap::new();
+    let mut diameters = BTreeMap::new();
+    let mut counterbores = BTreeMap::new();
+    for (body, operations) in operations_by_body {
+        let [operation] = operations.as_slice() else {
+            // A counterbore pair has no serialized operation-to-pair relation
+            // once multiple operations share one result body. Do not assign
+            // geometry to history order.
+            return None;
+        };
+        let body_faces = connected_solid_body_faces(ir, &body)?;
+        let witnesses = counterbore_cylinders(ir, &body_faces)?;
+        let [witness] = witnesses.as_slice() else {
+            return None;
+        };
+        projected_outputs.insert(operation.clone(), vec![body.clone()]);
+        diameters.insert(operation.clone(), Length(witness.bore_radius * 2.0));
+        counterbores.insert(
+            operation.clone(),
+            CounterboreDimensions {
+                diameter: Length(witness.counterbore_radius * 2.0),
+                depth: Length(witness.depth),
+            },
+        );
+    }
+    Some(HoleBodyProjection {
+        outputs: projected_outputs,
+        diameters,
+        blind_depths: BTreeMap::new(),
+        counterbores,
+    })
+}
+
+fn blind_hole_body_projection(
+    ir: &CadIr,
+    operations: &[String],
+    outputs: &BTreeMap<String, Vec<BodyId>>,
+) -> Option<HoleBodyProjection> {
+    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
+    {
+        return None;
+    }
+    let operations_by_body = hole_operations_by_body(ir, operations, outputs)?;
+    let mut projected_outputs = BTreeMap::new();
+    let mut diameters = BTreeMap::new();
+    let mut blind_depths = BTreeMap::new();
+    for (body, operations) in operations_by_body {
+        let [operation] = operations.as_slice() else {
+            return None;
+        };
+        let body_faces = connected_solid_body_faces(ir, &body)?;
+        let witnesses = blind_bore_cylinders(ir, &body_faces)?;
+        let [witness] = witnesses.as_slice() else {
+            return None;
+        };
+        projected_outputs.insert(operation.clone(), vec![body.clone()]);
+        diameters.insert(operation.clone(), Length(witness.bore_radius * 2.0));
+        blind_depths.insert(operation.clone(), Length(witness.depth));
+    }
+    Some(HoleBodyProjection {
+        outputs: projected_outputs,
+        diameters,
+        blind_depths,
+        counterbores: BTreeMap::new(),
     })
 }
 
@@ -4791,6 +6032,80 @@ fn hole_axis_placements_for_operations(
             continue;
         }
         placements.insert(operation.clone(), body_placements.remove(0));
+    }
+    placements
+}
+
+fn counterbore_axis_placements_for_operations(
+    ir: &CadIr,
+    operations: &[String],
+    outputs: &BTreeMap<String, Vec<BodyId>>,
+) -> BTreeMap<String, HolePlacement> {
+    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
+    {
+        return BTreeMap::new();
+    }
+    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
+        return BTreeMap::new();
+    };
+    let mut placements = BTreeMap::new();
+    for (body, operations) in operations_by_body {
+        let [operation] = operations.as_slice() else {
+            return BTreeMap::new();
+        };
+        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
+            return BTreeMap::new();
+        };
+        let Some(witnesses) = counterbore_cylinders(ir, &body_faces) else {
+            return BTreeMap::new();
+        };
+        let [witness] = witnesses.as_slice() else {
+            return BTreeMap::new();
+        };
+        placements.insert(
+            operation.clone(),
+            HolePlacement::Axis {
+                origin: witness.line_origin,
+                axis: witness.axis,
+            },
+        );
+    }
+    placements
+}
+
+fn blind_hole_axis_placements_for_operations(
+    ir: &CadIr,
+    operations: &[String],
+    outputs: &BTreeMap<String, Vec<BodyId>>,
+) -> BTreeMap<String, HolePlacement> {
+    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
+    {
+        return BTreeMap::new();
+    }
+    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
+        return BTreeMap::new();
+    };
+    let mut placements = BTreeMap::new();
+    for (body, operations) in operations_by_body {
+        let [operation] = operations.as_slice() else {
+            return BTreeMap::new();
+        };
+        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
+            return BTreeMap::new();
+        };
+        let Some(witnesses) = blind_bore_cylinders(ir, &body_faces) else {
+            return BTreeMap::new();
+        };
+        let [witness] = witnesses.as_slice() else {
+            return BTreeMap::new();
+        };
+        placements.insert(
+            operation.clone(),
+            HolePlacement::Directed {
+                position: witness.position,
+                direction: witness.direction,
+            },
+        );
     }
     placements
 }
@@ -4846,6 +6161,560 @@ fn hole_placement_key(placement: &HolePlacement) -> [u64; 6] {
     ]
 }
 
+#[derive(Clone, Debug)]
+struct CylindricalFaceWitness {
+    line_origin: Point3,
+    axis: Vector3,
+    radius: f64,
+    stations: [f64; 2],
+    loop_ids: [LoopId; 2],
+}
+
+#[derive(Clone, Copy)]
+struct CounterboreCylinderWitness {
+    line_origin: Point3,
+    axis: Vector3,
+    bore_radius: f64,
+    counterbore_radius: f64,
+    depth: f64,
+}
+
+#[derive(Clone, Copy)]
+struct BlindBoreCylinderWitness {
+    position: Point3,
+    direction: Vector3,
+    bore_radius: f64,
+    depth: f64,
+}
+
+fn canonical_axis(axis: Vector3, angular_tolerance: f64) -> Option<Vector3> {
+    let mut axis = unit_vector(axis)?;
+    let leading = [axis.x, axis.y, axis.z]
+        .into_iter()
+        .find(|component| component.abs() > angular_tolerance)?;
+    if leading < 0.0 {
+        axis = Vector3::new(-axis.x, -axis.y, -axis.z);
+    }
+    Some(axis)
+}
+
+fn circular_loop_geometry(
+    loop_id: &LoopId,
+    coedges_by_loop: &BTreeMap<&LoopId, Vec<&Coedge>>,
+    edges: &BTreeMap<&EdgeId, Option<&CurveId>>,
+    curves: &BTreeMap<&CurveId, &CurveGeometry>,
+    linear_tolerance: f64,
+    angular_tolerance: f64,
+) -> Option<(Point3, Vector3, f64)> {
+    let coedges = coedges_by_loop.get(loop_id)?;
+    if coedges.is_empty() {
+        return None;
+    }
+    let mut witness: Option<(Point3, Vector3, f64)> = None;
+    for coedge in coedges {
+        let curve_id = edges.get(&coedge.edge).copied().flatten()?;
+        let CurveGeometry::Circle {
+            center,
+            axis,
+            radius,
+            ..
+        } = curves.get(curve_id)?
+        else {
+            return None;
+        };
+        let axis = canonical_axis(*axis, angular_tolerance)?;
+        if ![center.x, center.y, center.z, *radius]
+            .into_iter()
+            .all(f64::is_finite)
+            || *radius <= 0.0
+        {
+            return None;
+        }
+        if let Some((previous_center, previous_axis, previous_radius)) = witness {
+            if (radius - previous_radius).abs() > linear_tolerance
+                || (1.0 - dot_vector(axis, previous_axis).abs()) > angular_tolerance
+                || Vector3::new(
+                    center.x - previous_center.x,
+                    center.y - previous_center.y,
+                    center.z - previous_center.z,
+                )
+                .norm()
+                    > linear_tolerance
+            {
+                return None;
+            }
+        }
+        witness = Some((*center, axis, *radius));
+    }
+    witness
+}
+
+fn loop_edge_ids(
+    loop_id: &LoopId,
+    coedges_by_loop: &BTreeMap<&LoopId, Vec<&Coedge>>,
+) -> Option<BTreeSet<EdgeId>> {
+    let coedges = coedges_by_loop.get(loop_id)?;
+    (!coedges.is_empty()).then(|| {
+        coedges
+            .iter()
+            .map(|coedge| coedge.edge.clone())
+            .collect::<BTreeSet<_>>()
+    })
+}
+
+fn cylindrical_face_witnesses(
+    ir: &CadIr,
+    body_faces: &[&Face],
+) -> Option<Vec<CylindricalFaceWitness>> {
+    let surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, &surface.geometry))
+        .collect::<BTreeMap<_, _>>();
+    let edges = ir
+        .model
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge.curve.as_ref()))
+        .collect::<BTreeMap<_, _>>();
+    let curves = ir
+        .model
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, &curve.geometry))
+        .collect::<BTreeMap<_, _>>();
+    let mut coedges_by_loop = BTreeMap::<&LoopId, Vec<&Coedge>>::new();
+    for coedge in &ir.model.coedges {
+        coedges_by_loop
+            .entry(&coedge.owner_loop)
+            .or_default()
+            .push(coedge);
+    }
+    let linear_tolerance = ir.tolerances.linear.max(1e-9);
+    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let mut witnesses = Vec::new();
+    for face in body_faces
+        .iter()
+        .copied()
+        .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
+    {
+        let Some(SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            radius,
+            ..
+        }) = surfaces.get(&face.surface)
+        else {
+            continue;
+        };
+        if ![origin.x, origin.y, origin.z, *radius]
+            .into_iter()
+            .all(f64::is_finite)
+            || *radius <= 0.0
+        {
+            return None;
+        }
+        let axis = canonical_axis(*axis, angular_tolerance)?;
+        let axial_offset = dot_vector(Vector3::new(origin.x, origin.y, origin.z), axis);
+        let line_origin = Point3::new(
+            origin.x - axial_offset * axis.x,
+            origin.y - axial_offset * axis.y,
+            origin.z - axial_offset * axis.z,
+        );
+        let [first_loop, second_loop] = face.loops.as_slice() else {
+            return None;
+        };
+        let mut stations = Vec::with_capacity(2);
+        for loop_id in &face.loops {
+            let (center, circle_axis, circle_radius) = circular_loop_geometry(
+                loop_id,
+                &coedges_by_loop,
+                &edges,
+                &curves,
+                linear_tolerance,
+                angular_tolerance,
+            )?;
+            if (circle_radius - *radius).abs() > linear_tolerance
+                || (1.0 - dot_vector(axis, circle_axis).abs()) > angular_tolerance
+                || cross_vector(
+                    Vector3::new(
+                        center.x - origin.x,
+                        center.y - origin.y,
+                        center.z - origin.z,
+                    ),
+                    axis,
+                )
+                .norm()
+                    > linear_tolerance
+            {
+                return None;
+            }
+            let station = dot_vector(Vector3::new(center.x, center.y, center.z), axis);
+            if !station.is_finite() {
+                return None;
+            }
+            stations.push(station);
+        }
+        let [first, second] = stations.as_slice() else {
+            return None;
+        };
+        if (first - second).abs() <= linear_tolerance {
+            return None;
+        }
+        witnesses.push(CylindricalFaceWitness {
+            line_origin,
+            axis,
+            radius: *radius,
+            stations: [*first, *second],
+            loop_ids: [first_loop.clone(), second_loop.clone()],
+        });
+    }
+    Some(witnesses)
+}
+
+fn plane_annulus_witness(
+    ir: &CadIr,
+    body_faces: &[&Face],
+    small: &CylindricalFaceWitness,
+    small_station_ordinal: usize,
+    large: &CylindricalFaceWitness,
+    large_station_ordinal: usize,
+) -> bool {
+    let line_origin = small.line_origin;
+    let axis = small.axis;
+    let station = small.stations[small_station_ordinal];
+    let inner_radius = small.radius;
+    let outer_radius = large.radius;
+    let inner_loop = &small.loop_ids[small_station_ordinal];
+    let outer_loop = &large.loop_ids[large_station_ordinal];
+    let surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, &surface.geometry))
+        .collect::<BTreeMap<_, _>>();
+    let edges = ir
+        .model
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge.curve.as_ref()))
+        .collect::<BTreeMap<_, _>>();
+    let curves = ir
+        .model
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, &curve.geometry))
+        .collect::<BTreeMap<_, _>>();
+    let mut coedges_by_loop = BTreeMap::<&LoopId, Vec<&Coedge>>::new();
+    for coedge in &ir.model.coedges {
+        coedges_by_loop
+            .entry(&coedge.owner_loop)
+            .or_default()
+            .push(coedge);
+    }
+    let linear_tolerance = ir.tolerances.linear.max(1e-9);
+    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let mut matches = 0;
+    for face in body_faces {
+        if face.loops.len() != 2 {
+            continue;
+        }
+        let Some(SurfaceGeometry::Plane { origin, normal, .. }) = surfaces.get(&face.surface)
+        else {
+            continue;
+        };
+        let Some(normal) = canonical_axis(*normal, angular_tolerance) else {
+            continue;
+        };
+        if (1.0 - dot_vector(normal, axis).abs()) > angular_tolerance
+            || (dot_vector(
+                Vector3::new(
+                    origin.x - line_origin.x,
+                    origin.y - line_origin.y,
+                    origin.z - line_origin.z,
+                ),
+                axis,
+            ) - station)
+                .abs()
+                > linear_tolerance
+        {
+            continue;
+        }
+        let mut boundaries = Vec::with_capacity(2);
+        let mut valid = true;
+        for loop_id in &face.loops {
+            let Some((center, circle_axis, radius)) = circular_loop_geometry(
+                loop_id,
+                &coedges_by_loop,
+                &edges,
+                &curves,
+                linear_tolerance,
+                angular_tolerance,
+            ) else {
+                valid = false;
+                break;
+            };
+            if (1.0 - dot_vector(circle_axis, normal).abs()) > angular_tolerance
+                || (dot_vector(
+                    Vector3::new(
+                        center.x - origin.x,
+                        center.y - origin.y,
+                        center.z - origin.z,
+                    ),
+                    normal,
+                ))
+                .abs()
+                    > linear_tolerance
+                || cross_vector(
+                    Vector3::new(
+                        center.x - line_origin.x,
+                        center.y - line_origin.y,
+                        center.z - line_origin.z,
+                    ),
+                    axis,
+                )
+                .norm()
+                    > linear_tolerance
+                || (dot_vector(Vector3::new(center.x, center.y, center.z), axis) - station).abs()
+                    > linear_tolerance
+            {
+                valid = false;
+                break;
+            }
+            boundaries.push((radius, loop_id.clone()));
+        }
+        if !valid {
+            continue;
+        }
+        boundaries.sort_by(|(first, _), (second, _)| first.total_cmp(second));
+        let [(inner, inner_boundary), (outer, outer_boundary)] = boundaries.as_slice() else {
+            continue;
+        };
+        if (inner - inner_radius).abs() <= linear_tolerance
+            && (outer - outer_radius).abs() <= linear_tolerance
+            && loop_edge_ids(inner_boundary, &coedges_by_loop)
+                == loop_edge_ids(inner_loop, &coedges_by_loop)
+            && loop_edge_ids(outer_boundary, &coedges_by_loop)
+                == loop_edge_ids(outer_loop, &coedges_by_loop)
+        {
+            matches += 1;
+        }
+    }
+    matches == 1
+}
+
+fn counterbore_cylinders(
+    ir: &CadIr,
+    body_faces: &[&Face],
+) -> Option<Vec<CounterboreCylinderWitness>> {
+    let cylinders = cylindrical_face_witnesses(ir, body_faces)?;
+    if cylinders.is_empty() || cylinders.len() % 2 != 0 {
+        return None;
+    }
+    let linear_tolerance = ir.tolerances.linear.max(1e-9);
+    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let mut candidates = vec![Vec::<(usize, CounterboreCylinderWitness)>::new(); cylinders.len()];
+    for (first_index, first) in cylinders.iter().enumerate() {
+        for (second_index, second) in cylinders.iter().enumerate().skip(first_index + 1) {
+            let (small, large) = if first.radius < second.radius {
+                (first, second)
+            } else {
+                (second, first)
+            };
+            if large.radius - small.radius <= linear_tolerance
+                || (1.0 - dot_vector(small.axis, large.axis).abs()) > angular_tolerance
+                || cross_vector(
+                    Vector3::new(
+                        large.line_origin.x - small.line_origin.x,
+                        large.line_origin.y - small.line_origin.y,
+                        large.line_origin.z - small.line_origin.z,
+                    ),
+                    small.axis,
+                )
+                .norm()
+                    > linear_tolerance
+            {
+                continue;
+            }
+            let mut common = Vec::new();
+            for (small_ordinal, small_station) in small.stations.iter().enumerate() {
+                for (large_ordinal, large_station) in large.stations.iter().enumerate() {
+                    if (small_station - large_station).abs() <= linear_tolerance {
+                        common.push((small_ordinal, large_ordinal, *small_station));
+                    }
+                }
+            }
+            let [(small_shared, large_shared, shared_station)] = common.as_slice() else {
+                continue;
+            };
+            let small_other = small.stations[1 - small_shared];
+            let large_other = large.stations[1 - large_shared];
+            let depth = (large_other - shared_station).abs();
+            if depth <= linear_tolerance
+                || (small_other - shared_station).abs() <= linear_tolerance
+                || !plane_annulus_witness(
+                    ir,
+                    body_faces,
+                    small,
+                    *small_shared,
+                    large,
+                    *large_shared,
+                )
+            {
+                continue;
+            }
+            let witness = CounterboreCylinderWitness {
+                line_origin: small.line_origin,
+                axis: small.axis,
+                bore_radius: small.radius,
+                counterbore_radius: large.radius,
+                depth,
+            };
+            candidates[first_index].push((second_index, witness));
+            candidates[second_index].push((first_index, witness));
+        }
+    }
+    if candidates.iter().any(|candidates| candidates.len() != 1) {
+        return None;
+    }
+    let mut witnesses = Vec::with_capacity(cylinders.len() / 2);
+    let mut used = vec![false; cylinders.len()];
+    for first_index in 0..cylinders.len() {
+        if used[first_index] {
+            continue;
+        }
+        let (second_index, witness) = candidates[first_index][0];
+        if used[second_index]
+            || candidates[second_index][0].0 != first_index
+            || first_index == second_index
+        {
+            return None;
+        }
+        used[first_index] = true;
+        used[second_index] = true;
+        witnesses.push(witness);
+    }
+    Some(witnesses)
+}
+
+/// Identify one blind bore from its unique planar termination. The cylinder
+/// boundary and cap loop must share the exact edge identities; a radius or
+/// station match alone is not a topology relation.
+fn blind_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<BlindBoreCylinderWitness>> {
+    let cylinders = cylindrical_face_witnesses(ir, body_faces)?;
+    let [cylinder] = cylinders.as_slice() else {
+        return None;
+    };
+    let surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, &surface.geometry))
+        .collect::<BTreeMap<_, _>>();
+    let edges = ir
+        .model
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge.curve.as_ref()))
+        .collect::<BTreeMap<_, _>>();
+    let curves = ir
+        .model
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, &curve.geometry))
+        .collect::<BTreeMap<_, _>>();
+    let mut coedges_by_loop = BTreeMap::<&LoopId, Vec<&Coedge>>::new();
+    for coedge in &ir.model.coedges {
+        coedges_by_loop
+            .entry(&coedge.owner_loop)
+            .or_default()
+            .push(coedge);
+    }
+    let linear_tolerance = ir.tolerances.linear.max(1e-9);
+    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let mut cap_stations = Vec::new();
+    for (station_ordinal, station) in cylinder.stations.iter().enumerate() {
+        let cylinder_loop = &cylinder.loop_ids[station_ordinal];
+        let cylinder_edges = loop_edge_ids(cylinder_loop, &coedges_by_loop)?;
+        for face in body_faces {
+            let [cap_loop] = face.loops.as_slice() else {
+                continue;
+            };
+            if loop_edge_ids(cap_loop, &coedges_by_loop) != Some(cylinder_edges.clone()) {
+                continue;
+            }
+            let Some(SurfaceGeometry::Plane { origin, normal, .. }) = surfaces.get(&face.surface)
+            else {
+                continue;
+            };
+            let Some(normal) = canonical_axis(*normal, angular_tolerance) else {
+                continue;
+            };
+            let Some((center, circle_axis, circle_radius)) = circular_loop_geometry(
+                cap_loop,
+                &coedges_by_loop,
+                &edges,
+                &curves,
+                linear_tolerance,
+                angular_tolerance,
+            ) else {
+                continue;
+            };
+            if (circle_radius - cylinder.radius).abs() > linear_tolerance
+                || (1.0 - dot_vector(circle_axis, normal).abs()) > angular_tolerance
+                || (1.0 - dot_vector(normal, cylinder.axis).abs()) > angular_tolerance
+                || cross_vector(
+                    Vector3::new(
+                        center.x - cylinder.line_origin.x,
+                        center.y - cylinder.line_origin.y,
+                        center.z - cylinder.line_origin.z,
+                    ),
+                    cylinder.axis,
+                )
+                .norm()
+                    > linear_tolerance
+                || (dot_vector(Vector3::new(center.x, center.y, center.z), cylinder.axis)
+                    - *station)
+                    .abs()
+                    > linear_tolerance
+                || (dot_vector(Vector3::new(origin.x, origin.y, origin.z), cylinder.axis)
+                    - *station)
+                    .abs()
+                    > linear_tolerance
+            {
+                continue;
+            }
+            cap_stations.push((station_ordinal, *station));
+        }
+    }
+    let [(cap_ordinal, cap_station)] = cap_stations.as_slice() else {
+        return None;
+    };
+    let entry_ordinal = 1 - *cap_ordinal;
+    let entry_station = cylinder.stations[entry_ordinal];
+    let depth = (*cap_station - entry_station).abs();
+    if !depth.is_finite() || depth <= linear_tolerance {
+        return None;
+    }
+    let position = Point3::new(
+        cylinder.line_origin.x + entry_station * cylinder.axis.x,
+        cylinder.line_origin.y + entry_station * cylinder.axis.y,
+        cylinder.line_origin.z + entry_station * cylinder.axis.z,
+    );
+    let direction = if *cap_station > entry_station {
+        cylinder.axis
+    } else {
+        Vector3::new(-cylinder.axis.x, -cylinder.axis.y, -cylinder.axis.z)
+    };
+    Some(vec![BlindBoreCylinderWitness {
+        position,
+        direction,
+        bore_radius: cylinder.radius,
+        depth,
+    }])
+}
+
 /// Resolve hole operations to their explicit output bodies, or to the one
 /// connected solid when NX omits every operation-output relation.
 fn hole_operations_by_body(
@@ -4891,95 +6760,12 @@ fn hole_operations_by_body(
 }
 
 fn through_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<(Point3, Vector3, f64)>> {
-    let surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, &surface.geometry))
-        .collect::<BTreeMap<_, _>>();
-    let edges = ir
-        .model
-        .edges
-        .iter()
-        .map(|edge| (&edge.id, edge.curve.as_ref()))
-        .collect::<BTreeMap<_, _>>();
-    let curves = ir
-        .model
-        .curves
-        .iter()
-        .map(|curve| (&curve.id, &curve.geometry))
-        .collect::<BTreeMap<_, _>>();
-    let mut coedges_by_loop = BTreeMap::<&LoopId, Vec<&Coedge>>::new();
-    for coedge in &ir.model.coedges {
-        coedges_by_loop
-            .entry(&coedge.owner_loop)
-            .or_default()
-            .push(coedge);
-    }
-    let linear_tolerance = ir.tolerances.linear.max(1e-9);
-    let angular_tolerance = ir.tolerances.angular.max(1e-12);
-    body_faces
-        .iter()
-        .copied()
-        .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
-        .filter_map(|face| match surfaces.get(&face.surface)? {
-            SurfaceGeometry::Cylinder {
-                origin,
-                axis,
-                radius,
-                ..
-            } if radius.is_finite() && *radius > 0.0 => Some((face, *origin, *axis, *radius)),
-            _ => None,
-        })
-        .map(|(face, origin, axis, radius)| {
-            let mut loop_offsets = Vec::with_capacity(2);
-            for loop_id in &face.loops {
-                let coedges = coedges_by_loop.get(loop_id)?;
-                if coedges.is_empty() {
-                    return None;
-                }
-                let mut loop_offset = None::<f64>;
-                for coedge in coedges {
-                    let curve_id = edges.get(&coedge.edge).copied().flatten()?;
-                    let CurveGeometry::Circle {
-                        center,
-                        axis: circle_axis,
-                        radius: circle_radius,
-                        ..
-                    } = curves.get(curve_id)?
-                    else {
-                        return None;
-                    };
-                    if (circle_radius - radius).abs() > linear_tolerance
-                        || (1.0 - dot_vector(axis, *circle_axis).abs()) > angular_tolerance
-                    {
-                        return None;
-                    }
-                    let delta = Vector3::new(
-                        center.x - origin.x,
-                        center.y - origin.y,
-                        center.z - origin.z,
-                    );
-                    if cross_vector(delta, axis).norm() > linear_tolerance {
-                        return None;
-                    }
-                    let offset = dot_vector(delta, axis);
-                    if loop_offset.is_some_and(|value| (value - offset).abs() > linear_tolerance) {
-                        return None;
-                    }
-                    loop_offset = Some(offset);
-                }
-                loop_offsets.push(loop_offset?);
-            }
-            let [first, second] = loop_offsets.as_slice() else {
-                return None;
-            };
-            if (first - second).abs() <= linear_tolerance {
-                return None;
-            }
-            Some((origin, axis, radius))
-        })
-        .collect()
+    Some(
+        cylindrical_face_witnesses(ir, body_faces)?
+            .into_iter()
+            .map(|witness| (witness.line_origin, witness.axis, witness.radius))
+            .collect(),
+    )
 }
 
 /// Derive identical entry and exit chamfer treatments only when every simple
@@ -4990,6 +6776,14 @@ fn simple_hole_chamfers(
     templates: &[crate::native::features::FeatureSimpleHoleTemplate],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> BTreeMap<String, HoleKind> {
+    let template_counts = templates
+        .iter()
+        .fold(BTreeMap::new(), |mut counts, template| {
+            *counts
+                .entry(template.operation_label.as_str())
+                .or_insert(0usize) += 1;
+            counts
+        });
     let operations = templates
         .iter()
         .filter(|template| {
@@ -5000,9 +6794,10 @@ fn simple_hole_chamfers(
                 && template.end_treatment
                     == crate::native::features::SimpleHoleEndTreatment::Chamfer
         })
+        .filter(|template| template_counts.get(template.operation_label.as_str()) == Some(&1))
         .map(|template| template.operation_label.clone())
         .collect::<BTreeSet<_>>();
-    if operations.len() != templates.len() || operations.is_empty() {
+    if operations.is_empty() {
         return BTreeMap::new();
     }
     let operations = operations.into_iter().collect::<Vec<_>>();
@@ -5172,32 +6967,118 @@ fn unique_simple_hole_template(
     crate::native::features::parse_simple_hole_template(candidate)
 }
 
-/// Resolve a complete object-index selection only when every alias root owns one
-/// decoded body image. Retain the complete feature-input-local identities when
-/// current topology cannot represent a consumed historical body, and fall back
-/// to the native expression when even the alias namespace is incomplete.
-struct FeatureBodySelection {
-    selection: BodySelection,
-    alias_roots: Option<Vec<u32>>,
+/// Identity namespace used to prove that two Boolean selections are disjoint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum FeatureBodyIdentity {
+    Segment(u32),
+    OffsetStore(String),
 }
 
+fn offset_store_identity(data_block: &str) -> Option<&str> {
+    data_block
+        .strip_prefix("nx:om-data-blocks-")
+        .and_then(|data_block| data_block.split_once(":block#"))
+        .map(|(store, _)| store)
+}
+
+struct FeatureBodySelection {
+    selection: BodySelection,
+    identity_keys: Option<Vec<FeatureBodyIdentity>>,
+}
+
+/// Resolve a complete object-index selection only when every alias root owns one
+/// decoded body image. Retain the complete feature-input-local identities when
+/// current topology cannot represent a consumed historical body. An offset-store
+/// selection uses the exact data-block identities from its feature-history
+/// section, but never crosses into the segment-body identity namespace.
 fn feature_body_selection(
     object_indices: &[u32],
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
     native: String,
 ) -> FeatureBodySelection {
+    feature_body_selection_with_offset_blocks(
+        object_indices,
+        body_alias_roots,
+        &BTreeMap::new(),
+        bodies_by_object_index,
+        native,
+    )
+}
+
+fn feature_body_selection_with_offset_blocks(
+    object_indices: &[u32],
+    body_alias_roots: &BTreeMap<u32, u32>,
+    offset_store_body_blocks: &BTreeMap<u32, String>,
+    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
+    native: String,
+) -> FeatureBodySelection {
     let mut roots = Vec::new();
+    let mut offset_blocks = Vec::new();
     for index in object_indices {
-        let Some(root) = body_alias_roots.get(index) else {
-            return FeatureBodySelection {
-                selection: BodySelection::Native(native),
-                alias_roots: None,
-            };
-        };
-        if !roots.contains(root) {
-            roots.push(*root);
+        match (
+            body_alias_roots.get(index),
+            offset_store_body_blocks.get(index),
+        ) {
+            (Some(_), Some(_)) => {
+                // The same integer in both stores has no operation-local
+                // namespace proof; integer equality cannot choose a body.
+                return FeatureBodySelection {
+                    selection: BodySelection::Native(native),
+                    identity_keys: None,
+                };
+            }
+            (Some(root), None) => {
+                if !roots.contains(root) {
+                    roots.push(*root);
+                }
+            }
+            (None, Some(data_block)) => {
+                if !offset_blocks.contains(data_block) {
+                    offset_blocks.push(data_block.clone());
+                }
+            }
+            (None, None) => {
+                return FeatureBodySelection {
+                    selection: BodySelection::Native(native),
+                    identity_keys: None,
+                };
+            }
         }
+    }
+    if !roots.is_empty() && !offset_blocks.is_empty() {
+        return FeatureBodySelection {
+            selection: BodySelection::Native(native),
+            identity_keys: None,
+        };
+    }
+    let offset_store = offset_blocks
+        .first()
+        .and_then(|block| offset_store_identity(block));
+    if !offset_blocks.is_empty()
+        && (offset_store.is_none()
+            || offset_blocks
+                .iter()
+                .any(|block| offset_store_identity(block) != offset_store))
+    {
+        return FeatureBodySelection {
+            selection: BodySelection::Native(native),
+            identity_keys: None,
+        };
+    }
+    if !offset_blocks.is_empty() {
+        return FeatureBodySelection {
+            selection: BodySelection::Local {
+                bodies: offset_blocks.clone(),
+                native,
+            },
+            identity_keys: Some(
+                offset_blocks
+                    .into_iter()
+                    .map(FeatureBodyIdentity::OffsetStore)
+                    .collect(),
+            ),
+        };
     }
     let resolved = roots
         .iter()
@@ -5213,7 +7094,12 @@ fn feature_body_selection(
     {
         return FeatureBodySelection {
             selection: BodySelection::Resolved { bodies, native },
-            alias_roots: Some(roots),
+            identity_keys: Some(
+                roots
+                    .into_iter()
+                    .map(FeatureBodyIdentity::Segment)
+                    .collect(),
+            ),
         };
     }
     FeatureBodySelection {
@@ -5224,7 +7110,12 @@ fn feature_body_selection(
                 .collect(),
             native,
         },
-        alias_roots: Some(roots),
+        identity_keys: Some(
+            roots
+                .into_iter()
+                .map(FeatureBodyIdentity::Segment)
+                .collect(),
+        ),
     }
 }
 
@@ -5271,11 +7162,21 @@ fn atomic_disjoint_body_selections(
     left: FeatureBodySelection,
     right: FeatureBodySelection,
 ) -> (BodySelection, BodySelection) {
-    let complete = left.alias_roots.as_ref().is_some_and(|left| {
-        right
-            .alias_roots
-            .as_ref()
-            .is_some_and(|right| !left.iter().any(|root| right.contains(root)))
+    let complete = left.identity_keys.as_ref().is_some_and(|left| {
+        right.identity_keys.as_ref().is_some_and(|right| {
+            let same_namespace =
+                left.first()
+                    .zip(right.first())
+                    .is_none_or(|(left, right)| match (left, right) {
+                        (FeatureBodyIdentity::Segment(_), FeatureBodyIdentity::Segment(_)) => true,
+                        (
+                            FeatureBodyIdentity::OffsetStore(left),
+                            FeatureBodyIdentity::OffsetStore(right),
+                        ) => offset_store_identity(left) == offset_store_identity(right),
+                        _ => false,
+                    });
+            same_namespace && !left.iter().any(|key| right.contains(key))
+        })
     });
     let left = left.selection;
     let right = right.selection;
@@ -5298,33 +7199,104 @@ fn atomic_disjoint_body_selections(
     (native(left), native(right))
 }
 
+/// Resolve one Boolean participant through the namespace selected by the
+/// complete Boolean definition. Native integer identity is used only when the
+/// definition did not establish one exact offset-store selection.
+fn boolean_participant_writer<'a>(
+    selection: &BodySelection,
+    object_index: u32,
+    offset_store_body_blocks: Option<&BTreeMap<u32, String>>,
+    body_alias_roots: &BTreeMap<u32, u32>,
+    history: &'a BodyWriterHistory,
+) -> Option<&'a FeatureId> {
+    let offset_store_selection = matches!(
+        selection,
+        BodySelection::Local { bodies, .. }
+            if !bodies.is_empty()
+                && bodies
+                    .iter()
+                    .all(|body| offset_store_identity(body).is_some())
+    );
+    if offset_store_selection {
+        return offset_store_body_blocks
+            .and_then(|blocks| blocks.get(&object_index))
+            .and_then(|data_block| history.offset_store_writer(data_block));
+    }
+    history.native_writer(
+        body_alias_roots
+            .get(&object_index)
+            .copied()
+            .unwrap_or(object_index),
+    )
+}
+
+/// Register a Boolean's target in the namespace established by its complete
+/// target selection. An offset-store target must not create a native writer
+/// for the same integer object index.
+fn boolean_target_writer(
+    definition: &FeatureDefinition,
+    native_body: u32,
+) -> (Option<u32>, Option<&str>) {
+    if let FeatureDefinition::Combine {
+        target: BodySelection::Local { bodies, .. },
+        ..
+    } = definition
+    {
+        if let [body] = bodies.as_slice() {
+            if offset_store_identity(body).is_some() {
+                return (None, Some(body.as_str()));
+            }
+        }
+    }
+    (Some(native_body), None)
+}
+
 pub(crate) fn boolean_feature_definition(
     operation: &crate::native::features::FeatureBooleanOperation,
     body_alias_roots: &BTreeMap<u32, u32>,
+    offset_store_resolution: &BooleanOffsetStoreResolution,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> FeatureDefinition {
-    let (target, tools) = atomic_disjoint_body_selections(
-        feature_body_selection(
-            &[operation.target_object_index],
-            body_alias_roots,
-            bodies_by_object_index,
-            format!("nx:om-object-index#{}", operation.target_object_index),
-        ),
-        feature_body_selection(
-            &operation.tool_object_indices,
-            body_alias_roots,
-            bodies_by_object_index,
-            format!(
-                "nx:om-object-indices#{}",
-                operation
-                    .tool_object_indices
-                    .iter()
-                    .map(u32::to_string)
-                    .collect::<Vec<_>>()
-                    .join(",")
-            ),
-        ),
+    let empty_offset_store_body_blocks = BTreeMap::new();
+    let native_target = format!("nx:om-object-index#{}", operation.target_object_index);
+    let native_tools = format!(
+        "nx:om-object-indices#{}",
+        operation
+            .tool_object_indices
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(",")
     );
+    let (target, tools) = match offset_store_resolution {
+        BooleanOffsetStoreResolution::Unresolved => (
+            BodySelection::Native(native_target),
+            BodySelection::Native(native_tools),
+        ),
+        BooleanOffsetStoreResolution::None | BooleanOffsetStoreResolution::Complete(_) => {
+            let offset_store_body_blocks = match offset_store_resolution {
+                BooleanOffsetStoreResolution::Complete(blocks) => blocks,
+                BooleanOffsetStoreResolution::None => &empty_offset_store_body_blocks,
+                BooleanOffsetStoreResolution::Unresolved => unreachable!("matched above"),
+            };
+            atomic_disjoint_body_selections(
+                feature_body_selection_with_offset_blocks(
+                    &[operation.target_object_index],
+                    body_alias_roots,
+                    offset_store_body_blocks,
+                    bodies_by_object_index,
+                    native_target.clone(),
+                ),
+                feature_body_selection_with_offset_blocks(
+                    &operation.tool_object_indices,
+                    body_alias_roots,
+                    offset_store_body_blocks,
+                    bodies_by_object_index,
+                    native_tools.clone(),
+                ),
+            )
+        }
+    };
     FeatureDefinition::Combine {
         target,
         tools,
@@ -5342,27 +7314,37 @@ pub(crate) fn boolean_feature_definition(
 /// object family and remain native until that family is decoded.
 fn delete_body_feature_definition(
     body_object_index: Option<u32>,
+    offset_store_bodies: &[(u32, String)],
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Option<FeatureDefinition> {
-    let body = body_object_index?;
-    let selection = feature_body_selection(
-        &[body],
-        body_alias_roots,
-        bodies_by_object_index,
-        format!("nx:om-object-index#{body}"),
-    )
-    .selection;
+    let bodies = match (body_object_index, offset_store_bodies) {
+        (Some(body), []) => {
+            let selection = feature_body_selection(
+                &[body],
+                body_alias_roots,
+                bodies_by_object_index,
+                format!("nx:om-object-index#{body}"),
+            )
+            .selection;
+            match selection {
+                BodySelection::Native(native) => BodySelection::Local {
+                    bodies: vec![format!("nx:om-body-object#{body}")],
+                    native,
+                },
+                selection => selection,
+            }
+        }
+        (None, [(object_index, data_block)]) => BodySelection::Local {
+            bodies: vec![data_block.clone()],
+            native: format!("nx:om-object-index#{object_index}"),
+        },
+        _ => return None,
+    };
     Some(FeatureDefinition::DeleteBody {
         // A typed DELETE primary-body field names one exact feature input. It
         // needs no cross-selection alias proof when it has no segment binding.
-        bodies: match selection {
-            BodySelection::Native(native) => BodySelection::Local {
-                bodies: vec![format!("nx:om-body-object#{body}")],
-                native,
-            },
-            selection => selection,
-        },
+        bodies,
         mode: BodyRetentionMode::DeleteSelected,
     })
 }
@@ -5435,31 +7417,82 @@ fn offset_store_trim_body_feature_definition(
 }
 
 fn sew_body_feature_definition(
-    primary_body_object_index: u32,
+    primary_segment_body_object_index: Option<u32>,
+    offset_store_bodies: &[(u32, String)],
     operands: &[&crate::native::features::FeatureOperationBodyOperand],
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Option<FeatureDefinition> {
-    (!operands.is_empty()).then(|| {
-        let object_indices = std::iter::once(primary_body_object_index)
-            .chain(operands.iter().map(|operand| operand.operand_object_index))
-            .collect::<Vec<_>>();
-        FeatureDefinition::SewBodies {
-            bodies: feature_body_set_selection(
+    if operands.is_empty() {
+        return None;
+    }
+    let primary_offset_store_body = match offset_store_bodies {
+        [(object_index, data_block)] => Some((*object_index, data_block.as_str())),
+        _ => None,
+    };
+    let primary_body_object_index = primary_segment_body_object_index
+        .or_else(|| primary_offset_store_body.map(|(object_index, _)| object_index))?;
+    let object_indices = std::iter::once(primary_body_object_index)
+        .chain(operands.iter().map(|operand| operand.operand_object_index))
+        .collect::<Vec<_>>();
+    let native = format!(
+        "nx:om-object-indices#{}",
+        object_indices
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+    let bodies = if primary_segment_body_object_index.is_some() {
+        if operands
+            .iter()
+            .all(|operand| !operand.segment_body_bindings.is_empty())
+        {
+            feature_body_set_selection(
                 &object_indices,
                 body_alias_roots,
                 bodies_by_object_index,
-                format!(
-                    "nx:om-object-indices#{}",
-                    object_indices
-                        .iter()
-                        .map(u32::to_string)
-                        .collect::<Vec<_>>()
-                        .join(",")
-                ),
-            ),
-            gap_tolerance: None,
+                native.clone(),
+            )
+        } else {
+            BodySelection::Native(native.clone())
         }
+    } else if let Some((primary_object_index, primary_data_block)) = primary_offset_store_body {
+        let primary_store = primary_data_block
+            .rsplit_once(":block#")
+            .map(|(store, _)| store);
+        let operand_data_blocks = operands
+            .iter()
+            .map(|operand| operand.operand_data_block.as_deref())
+            .collect::<Option<Vec<_>>>();
+        let offset_store_participants = operand_data_blocks.as_ref().filter(|blocks| {
+            operands
+                .iter()
+                .all(|operand| operand.body_object_index == primary_object_index)
+                && blocks.iter().all(|block| {
+                    block
+                        .rsplit_once(":block#")
+                        .is_some_and(|(store, _)| Some(store) == primary_store)
+                })
+                && blocks.iter().collect::<BTreeSet<_>>().len() == blocks.len()
+                && !blocks.contains(&primary_data_block)
+        });
+        if let Some(blocks) = offset_store_participants {
+            BodySelection::Local {
+                bodies: std::iter::once(primary_data_block.to_string())
+                    .chain(blocks.iter().map(|block| (*block).to_string()))
+                    .collect(),
+                native: native.clone(),
+            }
+        } else {
+            BodySelection::Native(native.clone())
+        }
+    } else {
+        BodySelection::Native(native)
+    };
+    Some(FeatureDefinition::SewBodies {
+        bodies,
+        gap_tolerance: None,
     })
 }
 
@@ -5474,25 +7507,36 @@ fn trim_body_feature_definition(
         .map(|operand| operand.operand_object_index)
         .collect::<Vec<_>>();
     (!tool_object_indices.is_empty()).then(|| {
+        let native_target = format!("nx:om-object-index#{target_object_index}");
+        let native_tools = format!(
+            "nx:om-object-indices#{}",
+            tool_object_indices
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        if operands.iter().any(|operand| {
+            operand.operand_data_block.is_some() || operand.segment_body_bindings.is_empty()
+        }) {
+            return FeatureDefinition::TrimBodies {
+                targets: BodySelection::Native(native_target),
+                tools: BodySelection::Native(native_tools),
+                keep: BodyTrimSide::Unresolved,
+            };
+        }
         let (targets, tools) = atomic_disjoint_body_selections(
             feature_body_selection(
                 &[target_object_index],
                 body_alias_roots,
                 bodies_by_object_index,
-                format!("nx:om-object-index#{target_object_index}"),
+                native_target,
             ),
             feature_body_selection(
                 &tool_object_indices,
                 body_alias_roots,
                 bodies_by_object_index,
-                format!(
-                    "nx:om-object-indices#{}",
-                    tool_object_indices
-                        .iter()
-                        .map(u32::to_string)
-                        .collect::<Vec<_>>()
-                        .join(",")
-                ),
+                native_tools,
             ),
         );
         FeatureDefinition::TrimBodies {
@@ -5505,12 +7549,18 @@ fn trim_body_feature_definition(
 
 fn feature_body_outputs(
     object_index: u32,
+    segment_bindings: &[crate::native::segments::SegmentBodyBinding],
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Vec<BodyId> {
-    bodies_by_object_index
-        .get(&object_index)
-        .cloned()
-        .unwrap_or_default()
+    if crate::native::segments::unique_segment_body_binding(object_index, segment_bindings)
+        .is_none()
+    {
+        return Vec::new();
+    }
+    let Some([body]) = bodies_by_object_index.get(&object_index).map(Vec::as_slice) else {
+        return Vec::new();
+    };
+    vec![body.clone()]
 }
 
 pub(crate) fn attach_expression_parameters(
@@ -5926,6 +7976,21 @@ mod tests {
             )]
         );
 
+        assert_eq!(
+            resolve_rm_face_color_bindings(
+                &face_ids,
+                std::slice::from_ref(&assignment),
+                std::slice::from_ref(&definition),
+                std::slice::from_ref(&record),
+                &pairs,
+            ),
+            vec![RmFaceColorBinding {
+                face_id: "nx:s0:face#99".into(),
+                color_definition: definition.id.clone(),
+                source_offset: 20,
+            }]
+        );
+
         let mut target_assignment = assignment.clone();
         target_assignment.encoding = crate::native::om::RmDisplayColorAssignmentEncoding::Target {
             target_index: 7,
@@ -5967,6 +8032,55 @@ mod tests {
         .is_empty());
     }
 
+    #[test]
+    fn rm_source_color_bindings_require_one_palette_per_source_identity() {
+        let assignment = |id: &str, source_id: Option<&str>, color_definition: &str, offset| {
+            crate::native::om::RmDisplayColorAssignment {
+                id: id.into(),
+                ordinal: 0,
+                encoding: crate::native::om::RmDisplayColorAssignmentEncoding::Target {
+                    target_index: 7,
+                    raw_target_index: vec![7],
+                    target_index_source_offset: offset,
+                    indices: [1, 2, 3],
+                    raw_indices: [vec![1], vec![2], vec![3]],
+                    index_source_offsets: [offset + 1, offset + 2, offset + 3],
+                    mode: 4,
+                },
+                target_object_id: source_id.map(str::to_owned),
+                color_index: 201,
+                color_definition: color_definition.into(),
+                raw_color_index: vec![0x80, 201],
+                source_entry: "/Root/FastLoad/RMFastLoad".into(),
+                source_offset: offset,
+                row_source_offset: offset,
+            }
+        };
+        let assignments = [
+            assignment("assignment-b", Some("source-a"), "color-a", 20),
+            assignment("assignment-a", Some("source-a"), "color-a", 10),
+            assignment("assignment-c", Some("source-b"), "color-a", 30),
+            assignment("assignment-d", Some("source-c"), "color-a", 40),
+            assignment("assignment-e", Some("source-c"), "color-b", 50),
+            assignment("assignment-f", None, "color-a", 60),
+        ];
+        assert_eq!(
+            resolve_rm_source_color_bindings(&assignments),
+            vec![
+                RmSourceColorBinding {
+                    source_id: "source-a".into(),
+                    color_definition: "color-a".into(),
+                    source_offset: 10,
+                },
+                RmSourceColorBinding {
+                    source_id: "source-b".into(),
+                    color_definition: "color-a".into(),
+                    source_offset: 30,
+                },
+            ]
+        );
+    }
+
     fn hole_diameters_for_operations(
         ir: &CadIr,
         operations: &[String],
@@ -5983,10 +8097,92 @@ mod tests {
         groups: &[crate::native::features::FeatureSimpleHoleConstructionGroup],
         outputs: &BTreeMap<String, Vec<BodyId>>,
     ) -> BTreeMap<String, Length> {
-        let Some(operations) = simple_hole_operations(templates, groups) else {
+        let operation_positions = templates
+            .iter()
+            .enumerate()
+            .map(|(position, template)| (template.operation_label.as_str(), position))
+            .collect::<BTreeMap<_, _>>();
+        let Some(operations) = simple_hole_operations(templates, groups, &operation_positions)
+        else {
             return BTreeMap::new();
         };
         hole_diameters_for_operations(ir, &operations, outputs)
+    }
+
+    #[test]
+    fn ungrouped_simple_holes_follow_authoritative_history_order() {
+        use crate::native::features::{
+            FeatureSimpleHoleConstructionGroup, FeatureSimpleHoleTemplate, SimpleHoleEndTreatment,
+            SimpleHoleExtent, SimpleHoleFamily, SimpleHoleForm,
+        };
+
+        let template = |operation_label: &str| FeatureSimpleHoleTemplate {
+            id: format!("template-{operation_label}"),
+            operation_label: operation_label.to_string(),
+            payload_string: format!("payload-{operation_label}"),
+            family: SimpleHoleFamily::GeneralHole,
+            form: SimpleHoleForm::Simple,
+            extent: SimpleHoleExtent::Through,
+            start_treatment: SimpleHoleEndTreatment::Chamfer,
+            end_treatment: SimpleHoleEndTreatment::Chamfer,
+        };
+        let templates = vec![template("operation#newer"), template("operation#older")];
+        let operation_positions =
+            BTreeMap::from([("operation#older", 0usize), ("operation#newer", 1usize)]);
+        assert_eq!(
+            simple_hole_operations(&templates, &[], &operation_positions),
+            Some(vec!["operation#older".into(), "operation#newer".into()])
+        );
+
+        let unordered_group = FeatureSimpleHoleConstructionGroup {
+            id: "group".into(),
+            first_data_blocks: ["a".into(), "b".into()],
+            second_data_blocks: ["c".into(), "d".into()],
+            operation_labels: vec!["operation#newer".into(), "operation#older".into()],
+            scalar_lanes: vec!["lane-newer".into(), "lane-older".into()],
+            block_references: vec!["blocks-newer".into(), "blocks-older".into()],
+        };
+        assert!(
+            simple_hole_operations(&templates, &[unordered_group], &operation_positions,).is_none()
+        );
+
+        let mut blind_template = template("operation#blind");
+        blind_template.extent = SimpleHoleExtent::Blind;
+        blind_template.start_treatment = SimpleHoleEndTreatment::None;
+        blind_template.end_treatment = SimpleHoleEndTreatment::None;
+        let mixed_templates = vec![
+            templates[0].clone(),
+            blind_template.clone(),
+            templates[1].clone(),
+        ];
+        let mixed_positions = BTreeMap::from([
+            ("operation#older", 0usize),
+            ("operation#newer", 1usize),
+            ("operation#blind", 2usize),
+        ]);
+        assert_eq!(
+            simple_hole_operations(&mixed_templates, &[], &mixed_positions),
+            Some(vec!["operation#older".into(), "operation#newer".into()])
+        );
+        assert_eq!(
+            blind_hole_operations(&mixed_templates, &mixed_positions),
+            Some(vec!["operation#blind".into()])
+        );
+        let duplicate_group = FeatureSimpleHoleConstructionGroup {
+            id: "duplicate-group".into(),
+            first_data_blocks: ["a".into(), "b".into()],
+            second_data_blocks: ["c".into(), "d".into()],
+            operation_labels: vec![
+                "operation#older".into(),
+                "operation#newer".into(),
+                "operation#older".into(),
+            ],
+            scalar_lanes: vec!["lane-a".into(), "lane-b".into()],
+            block_references: vec!["refs-a".into(), "refs-b".into()],
+        };
+        assert!(
+            simple_hole_operations(&templates, &[duplicate_group], &operation_positions,).is_none()
+        );
     }
 
     #[test]
@@ -6049,8 +8245,8 @@ mod tests {
         let projection = super::hole_package_projection(
             &cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default()),
             &templates,
-            &[group],
-            &[use_],
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&use_),
             &outputs,
             &diameters,
             &chamfers,
@@ -6062,6 +8258,20 @@ mod tests {
         assert_eq!(projection.outputs["package"], [body]);
         assert_eq!(projection.diameters["package"], Length(5.1));
         assert_eq!(projection.chamfers["package"], chamfer);
+
+        let mut mismatched_outputs = outputs;
+        mismatched_outputs.insert("simple-b".into(), vec![BodyId("other-body".into())]);
+        let projection = super::hole_package_projection(
+            &cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default()),
+            &templates,
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&use_),
+            &mismatched_outputs,
+            &diameters,
+            &chamfers,
+        );
+        assert!(projection.internal_operations.is_empty());
+        assert!(projection.outputs.is_empty());
     }
 
     #[test]
@@ -6561,11 +8771,15 @@ mod tests {
         let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
         let mut annotations = AnnotationBuilder::new();
         let stream = annotations.stream("nx:container");
-        let sketch = super::attach_solved_sketch_points(
+        let sketch = super::attach_sketch_points(
             &mut ir,
             &label,
-            &[&point_use],
-            std::slice::from_ref(&group),
+            &super::SketchPointSources {
+                point_uses: &[&point_use],
+                point_groups: std::slice::from_ref(&group),
+                points: &[],
+                payload_scalars: &[],
+            },
             &mut annotations,
             stream,
         )
@@ -6581,17 +8795,94 @@ mod tests {
         let mut rejected_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
         let mut rejected_annotations = AnnotationBuilder::new();
         let rejected_stream = rejected_annotations.stream("nx:container");
-        assert!(super::attach_solved_sketch_points(
+        assert!(super::attach_sketch_points(
             &mut rejected_ir,
             &label,
-            &[&point_use, &point_use],
-            &[group],
+            &super::SketchPointSources {
+                point_uses: &[&point_use, &point_use],
+                point_groups: &[group],
+                points: &[],
+                payload_scalars: &[],
+            },
             &mut rejected_annotations,
             rejected_stream,
         )
         .is_none());
         assert!(rejected_ir.model.sketches.is_empty());
         assert!(rejected_ir.model.sketch_entities.is_empty());
+    }
+
+    #[test]
+    fn named_sketch_points_project_without_an_external_named_point() {
+        let label = crate::native::features::FeatureOperationLabel {
+            id: "nx:feature-history:operation-label#section-8".to_string(),
+            section_link: "section".to_string(),
+            ordinal: 8,
+            value: "SKETCH".to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: Default::default(),
+            source_offset: 40,
+        };
+        let point = crate::native::features::FeatureSketchPoint {
+            id: "point".to_string(),
+            operation_label: label.id.clone(),
+            named_record: "named-record".to_string(),
+            name: "Point1".to_string(),
+            scalar_fields: ["scalar-1".to_string(), "scalar-2".to_string()],
+            coordinates: [12.5, -3.0],
+        };
+        let group = crate::native::features::FeatureSketchPointGroup {
+            id: "point-group".to_string(),
+            operation_label: label.id.clone(),
+            name: point.name.clone(),
+            points: vec![point.id.clone()],
+            coordinates: point.coordinates,
+        };
+        let scalar = |id: &str, ordinal: u32, value: f64, source_offset: u64| {
+            crate::native::features::FeatureSketchPayloadScalar {
+                id: id.to_string(),
+                operation_label: label.id.clone(),
+                construction_payload: "payload".to_string(),
+                ordinal,
+                field_code: 100,
+                value,
+                raw_value: [0; 8],
+                payload_offset: ordinal as u64,
+                source_offset,
+            }
+        };
+        let scalars = [
+            scalar("scalar-1", 0, 12.5, 51),
+            scalar("scalar-2", 1, -3.0, 59),
+        ];
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut annotations = AnnotationBuilder::new();
+        let stream = annotations.stream("nx:container");
+        let sketch = super::attach_sketch_points(
+            &mut ir,
+            &label,
+            &super::SketchPointSources {
+                point_uses: &[],
+                point_groups: std::slice::from_ref(&group),
+                points: std::slice::from_ref(&point),
+                payload_scalars: &scalars,
+            },
+            &mut annotations,
+            stream,
+        )
+        .expect("a complete named payload point projects a sketch");
+        assert_eq!(ir.model.sketches[0].id, sketch);
+        assert_eq!(ir.model.sketch_entities.len(), 1);
+        assert_eq!(
+            ir.model.sketch_entities[0].native_ref.as_deref(),
+            Some("point-group")
+        );
+        assert!(matches!(
+            ir.model.sketch_entities[0].geometry,
+            SketchGeometry::Point {
+                position: Point2 { u: 12.5, v: -3.0 }
+            }
+        ));
     }
 
     #[test]
@@ -7035,6 +9326,19 @@ mod tests {
             }
         );
         let bindings = BTreeMap::from([(94, vec![first.clone()])]);
+        let segment_binding = |id: &str, stream_ordinal, body_object_index, alias| {
+            crate::native::segments::SegmentBodyBinding {
+                id: id.to_string(),
+                stream_link: format!("stream-link#{stream_ordinal}"),
+                stream_ordinal,
+                stream_kind: "partition".to_string(),
+                body_object_index,
+                body_alias_object_index: alias,
+                stream_role: 0,
+                source_offset: 0,
+            }
+        };
+        let segment_bindings = [segment_binding("binding#0", 0, 94, 150)];
         assert_eq!(
             super::feature_body_selection(
                 &[94],
@@ -7048,8 +9352,149 @@ mod tests {
                 native: "nx:om-object-index#94".to_string(),
             }
         );
-        assert_eq!(super::feature_body_outputs(94, &bindings), vec![first]);
-        assert!(super::feature_body_outputs(123, &bindings).is_empty());
+        assert_eq!(
+            super::feature_body_outputs(94, &segment_bindings, &bindings),
+            vec![first]
+        );
+        let ambiguous_body_bindings = BTreeMap::from([(
+            94,
+            vec![
+                BodyId("nx:s2:body#3".to_string()),
+                BodyId("nx:s2:body#4".to_string()),
+            ],
+        )]);
+        assert!(
+            super::feature_body_outputs(94, &segment_bindings, &ambiguous_body_bindings).is_empty()
+        );
+        assert!(super::feature_body_outputs(123, &segment_bindings, &bindings).is_empty());
+        let ambiguous_bindings = [
+            segment_binding("binding#0", 0, 94, 150),
+            segment_binding("binding#1", 1, 94, 151),
+        ];
+        assert!(super::feature_body_outputs(94, &ambiguous_bindings, &bindings).is_empty());
+    }
+
+    #[test]
+    fn native_primary_body_references_retain_only_proven_body_namespaces() {
+        use crate::native::features::{
+            FeatureBodyDataBlockUse, FeatureBodyReference, FeatureBodySegmentUse, FeatureInputBlock,
+        };
+        use crate::native::om::{DataBlock, DataBlockRole};
+
+        let reference = |id: &str, operation_label: &str, body_object_index| FeatureBodyReference {
+            id: id.to_string(),
+            operation_label: operation_label.to_string(),
+            body_object_index,
+            raw_body_object_index: vec![body_object_index as u8],
+            source_offset: 0,
+        };
+        let references = [
+            reference("reference#segment", "operation#segment", 10),
+            reference("reference#exact", "operation#exact", 99),
+            reference("reference#missing", "operation#missing", 100),
+            reference("reference#ambiguous", "operation#ambiguous", 101),
+            reference("reference#duplicate-a", "operation#duplicate", 102),
+            reference("reference#duplicate-b", "operation#duplicate", 103),
+        ];
+        let input =
+            |id: &str, operation_label: &str, slot: u8, data_block: &str| FeatureInputBlock {
+                id: id.to_string(),
+                operation_label: operation_label.to_string(),
+                input_slot: slot,
+                object_index: u32::from(slot),
+                raw_object_index: vec![slot],
+                data_block: data_block.to_string(),
+                source_offset: 0,
+            };
+        let blocks = [
+            DataBlock {
+                id: "block#exact-input".to_string(),
+                section_ordinal: 2,
+                block_ordinal: 3,
+                role: DataBlockRole::Column,
+                section_offset: 0,
+                byte_len: 0,
+                sha256: String::new(),
+                source_entry: String::new(),
+                source_offset: 0,
+            },
+            DataBlock {
+                id: "block#missing-input".to_string(),
+                section_ordinal: 2,
+                block_ordinal: 4,
+                role: DataBlockRole::Column,
+                section_offset: 0,
+                byte_len: 0,
+                sha256: String::new(),
+                source_entry: String::new(),
+                source_offset: 0,
+            },
+            DataBlock {
+                id: "block#ambiguous-input-1".to_string(),
+                section_ordinal: 2,
+                block_ordinal: 5,
+                role: DataBlockRole::Column,
+                section_offset: 0,
+                byte_len: 0,
+                sha256: String::new(),
+                source_entry: String::new(),
+                source_offset: 0,
+            },
+            DataBlock {
+                id: "block#ambiguous-input-2".to_string(),
+                section_ordinal: 3,
+                block_ordinal: 6,
+                role: DataBlockRole::Column,
+                section_offset: 0,
+                byte_len: 0,
+                sha256: String::new(),
+                source_entry: String::new(),
+                source_offset: 0,
+            },
+        ];
+        let data_block_uses = [FeatureBodyDataBlockUse {
+            id: "data-block-use#exact".to_string(),
+            feature_body_reference: references[1].id.clone(),
+            data_block: "block#exact-output".to_string(),
+        }];
+        let inputs = [
+            input("input#exact", "operation#exact", 0, "block#exact-input"),
+            input(
+                "input#missing",
+                "operation#missing",
+                0,
+                "block#missing-input",
+            ),
+            input(
+                "input#ambiguous-1",
+                "operation#ambiguous",
+                0,
+                "block#ambiguous-input-1",
+            ),
+            input(
+                "input#ambiguous-2",
+                "operation#ambiguous",
+                1,
+                "block#ambiguous-input-2",
+            ),
+        ];
+
+        let native = super::native_primary_body_references(
+            &references,
+            &data_block_uses,
+            &[FeatureBodySegmentUse {
+                id: "segment-use#exact".to_string(),
+                feature_body_reference: references[1].id.clone(),
+                segment_body_binding: "binding#exact".to_string(),
+            }],
+            &inputs,
+            &blocks,
+        );
+        assert_eq!(native.get("operation#segment"), Some(&10));
+        assert_eq!(native.get("operation#exact"), Some(&99));
+        assert!(!native.contains_key("operation#missing"));
+        assert!(!native.contains_key("operation#ambiguous"));
+        assert!(!native.contains_key("operation#duplicate"));
     }
 
     #[test]
@@ -7144,6 +9589,7 @@ mod tests {
         let definition = super::boolean_feature_definition(
             &operation,
             &BTreeMap::from([(94, 94), (122, 122)]),
+            &BooleanOffsetStoreResolution::None,
             &BTreeMap::from([(94, vec![body.clone()])]),
         );
 
@@ -7181,6 +9627,294 @@ mod tests {
     }
 
     #[test]
+    fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
+        use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
+        use std::collections::BTreeMap;
+
+        let operation = crate::native::features::FeatureBooleanOperation {
+            id: "boolean#offset".to_string(),
+            operation_label: "operation#offset".to_string(),
+            kind: crate::native::features::FeatureBooleanKind::Unite,
+            target_object_index: 401,
+            raw_target_object_index: Vec::new(),
+            target_source_offset: 0,
+            tool_object_indices: vec![402, 403],
+            raw_tool_object_indices: vec![Vec::new(), Vec::new()],
+            tool_source_offsets: vec![1, 2],
+            source_offset: 0,
+        };
+        let blocks = BTreeMap::from([
+            (401, "nx:om-data-blocks-3:block#401".to_string()),
+            (402, "nx:om-data-blocks-3:block#402".to_string()),
+            (403, "nx:om-data-blocks-3:block#403".to_string()),
+        ]);
+
+        assert_eq!(
+            super::boolean_feature_definition(
+                &operation,
+                &BTreeMap::new(),
+                &BooleanOffsetStoreResolution::Complete(blocks.clone()),
+                &BTreeMap::new(),
+            ),
+            FeatureDefinition::Combine {
+                target: BodySelection::Local {
+                    bodies: vec!["nx:om-data-blocks-3:block#401".to_string()],
+                    native: "nx:om-object-index#401".to_string(),
+                },
+                tools: BodySelection::Local {
+                    bodies: vec![
+                        "nx:om-data-blocks-3:block#402".to_string(),
+                        "nx:om-data-blocks-3:block#403".to_string(),
+                    ],
+                    native: "nx:om-object-indices#402,403".to_string(),
+                },
+                op: BooleanOp::Join,
+                keep_tools: false,
+            }
+        );
+    }
+
+    #[test]
+    fn nx_boolean_writers_follow_selected_identity_namespace() {
+        use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition, FeatureId};
+        use std::collections::BTreeMap;
+
+        let operation = crate::native::features::FeatureBooleanOperation {
+            id: "boolean#writer-namespace".to_string(),
+            operation_label: "nx:feature-history:operation-label#section-7".to_string(),
+            kind: crate::native::features::FeatureBooleanKind::Unite,
+            target_object_index: 401,
+            raw_target_object_index: Vec::new(),
+            target_source_offset: 0,
+            tool_object_indices: vec![402],
+            raw_tool_object_indices: vec![Vec::new()],
+            tool_source_offsets: vec![1],
+            source_offset: 0,
+        };
+        let blocks = BTreeMap::from([
+            (401, "nx:om-data-blocks-3:block#401".to_string()),
+            (402, "nx:om-data-blocks-3:block#402".to_string()),
+        ]);
+        let definition = super::boolean_feature_definition(
+            &operation,
+            &BTreeMap::new(),
+            &BooleanOffsetStoreResolution::Complete(blocks.clone()),
+            &BTreeMap::new(),
+        );
+        let FeatureDefinition::Combine { target, tools, .. } = &definition else {
+            panic!("Boolean definition");
+        };
+
+        let native_prior = FeatureId("native-prior".to_string());
+        let offset_prior = FeatureId("offset-prior".to_string());
+        let mut history = super::BodyWriterHistory::default();
+        history.record_writer(Some(401), None, &[], &native_prior);
+        history.record_writer(None, Some(&blocks[&401]), &[], &offset_prior);
+        history.record_writer(None, Some(&blocks[&402]), &[], &offset_prior);
+
+        assert_eq!(
+            super::boolean_participant_writer(
+                target,
+                401,
+                Some(&blocks),
+                &BTreeMap::new(),
+                &history,
+            ),
+            Some(&offset_prior)
+        );
+        assert_eq!(
+            super::boolean_participant_writer(
+                tools,
+                402,
+                Some(&blocks),
+                &BTreeMap::new(),
+                &history,
+            ),
+            Some(&offset_prior)
+        );
+        assert_eq!(
+            super::boolean_target_writer(&definition, 401),
+            (None, Some("nx:om-data-blocks-3:block#401"))
+        );
+
+        let native_definition = FeatureDefinition::Combine {
+            target: BodySelection::Native("nx:om-object-index#401".to_string()),
+            tools: BodySelection::Native("nx:om-object-indices#402".to_string()),
+            op: BooleanOp::Join,
+            keep_tools: false,
+        };
+        assert_eq!(
+            super::boolean_target_writer(&native_definition, 401),
+            (Some(401), None)
+        );
+    }
+
+    #[test]
+    fn nx_boolean_offset_store_resolution_requires_one_unique_store() {
+        use crate::native::features::FeatureBooleanKind;
+        use crate::native::om::{DataBlock, DataBlockRole};
+        use std::collections::BTreeMap;
+
+        let operation = crate::native::features::FeatureBooleanOperation {
+            id: "boolean#offset-store".to_string(),
+            operation_label: "nx:feature-history:operation-label#section-7".to_string(),
+            kind: FeatureBooleanKind::Unite,
+            target_object_index: 401,
+            raw_target_object_index: Vec::new(),
+            target_source_offset: 0,
+            tool_object_indices: vec![402, 403],
+            raw_tool_object_indices: vec![Vec::new(), Vec::new()],
+            tool_source_offsets: vec![1, 2],
+            source_offset: 0,
+        };
+        let block = |section_ordinal, block_ordinal| DataBlock {
+            id: format!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
+            section_ordinal,
+            block_ordinal,
+            role: DataBlockRole::Column,
+            section_offset: 0,
+            byte_len: 0,
+            sha256: String::new(),
+            source_entry: String::new(),
+            source_offset: 0,
+        };
+        let same_store = vec![block(3, 401), block(3, 402), block(3, 403)];
+        assert_eq!(
+            crate::native::segments::boolean_offset_store_resolution(&operation, &same_store),
+            crate::native::segments::BooleanOffsetStoreResolution::Complete(BTreeMap::from([
+                (401, "nx:om-data-blocks-3:block#401".to_string()),
+                (402, "nx:om-data-blocks-3:block#402".to_string()),
+                (403, "nx:om-data-blocks-3:block#403".to_string()),
+            ]))
+        );
+        let mixed_store = vec![block(3, 401), block(4, 402), block(4, 403)];
+        assert!(matches!(
+            crate::native::segments::boolean_offset_store_resolution(&operation, &mixed_store),
+            crate::native::segments::BooleanOffsetStoreResolution::Unresolved
+        ));
+        assert!(matches!(
+            crate::native::segments::boolean_offset_store_resolution(&operation, &[]),
+            crate::native::segments::BooleanOffsetStoreResolution::None
+        ));
+        let mut control = block(3, 0);
+        control.role = DataBlockRole::Control;
+        let control_operation = crate::native::features::FeatureBooleanOperation {
+            target_object_index: 0,
+            tool_object_indices: vec![401, 402],
+            ..operation.clone()
+        };
+        assert!(matches!(
+            crate::native::segments::boolean_offset_store_resolution(
+                &control_operation,
+                &[control, block(3, 401), block(3, 402)],
+            ),
+            crate::native::segments::BooleanOffsetStoreResolution::Unresolved
+        ));
+    }
+
+    #[test]
+    fn nx_boolean_does_not_mix_segment_and_offset_store_identity_namespaces() {
+        use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
+        use cadmpeg_ir::ids::BodyId;
+        use std::collections::BTreeMap;
+
+        let operation = crate::native::features::FeatureBooleanOperation {
+            id: "boolean#mixed-namespaces".to_string(),
+            operation_label: "operation#mixed-namespaces".to_string(),
+            kind: crate::native::features::FeatureBooleanKind::Subtract,
+            target_object_index: 94,
+            raw_target_object_index: vec![94],
+            target_source_offset: 0,
+            tool_object_indices: vec![122],
+            raw_tool_object_indices: vec![vec![122]],
+            tool_source_offsets: vec![1],
+            source_offset: 0,
+        };
+        let body = BodyId("nx:s18:body#3".to_string());
+        let blocks = BTreeMap::from([(122, "nx:om-data-blocks-3:block#122".to_string())]);
+
+        assert_eq!(
+            super::boolean_feature_definition(
+                &operation,
+                &BTreeMap::from([(94, 94)]),
+                &BooleanOffsetStoreResolution::Complete(blocks.clone()),
+                &BTreeMap::from([(94, vec![body])]),
+            ),
+            FeatureDefinition::Combine {
+                target: BodySelection::Native("nx:om-object-index#94".to_string()),
+                tools: BodySelection::Native("nx:om-object-indices#122".to_string()),
+                op: BooleanOp::Cut,
+                keep_tools: false,
+            }
+        );
+        assert_eq!(
+            super::boolean_feature_definition(
+                &operation,
+                &BTreeMap::from([(94, 94), (122, 122)]),
+                &BooleanOffsetStoreResolution::Unresolved,
+                &BTreeMap::from([(94, vec![BodyId("nx:s18:body#3".to_string())])]),
+            ),
+            FeatureDefinition::Combine {
+                target: BodySelection::Native("nx:om-object-index#94".to_string()),
+                tools: BodySelection::Native("nx:om-object-indices#122".to_string()),
+                op: BooleanOp::Cut,
+                keep_tools: false,
+            }
+        );
+
+        let colliding_blocks = BTreeMap::from([
+            (94, "nx:om-data-blocks-3:block#94".to_string()),
+            (122, "nx:om-data-blocks-3:block#122".to_string()),
+        ]);
+        assert_eq!(
+            super::boolean_feature_definition(
+                &operation,
+                &BTreeMap::from([(94, 94)]),
+                &BooleanOffsetStoreResolution::Complete(colliding_blocks.clone()),
+                &BTreeMap::from([(94, vec![BodyId("nx:s18:body#3".to_string())])]),
+            ),
+            FeatureDefinition::Combine {
+                target: BodySelection::Native("nx:om-object-index#94".to_string()),
+                tools: BodySelection::Native("nx:om-object-indices#122".to_string()),
+                op: BooleanOp::Cut,
+                keep_tools: false,
+            }
+        );
+
+        let mixed_store_blocks = BTreeMap::from([
+            (401, "nx:om-data-blocks-3:block#401".to_string()),
+            (402, "nx:om-data-blocks-4:block#402".to_string()),
+            (403, "nx:om-data-blocks-4:block#403".to_string()),
+        ]);
+        let mixed_store_operation = crate::native::features::FeatureBooleanOperation {
+            id: "boolean#mixed-stores".to_string(),
+            operation_label: "operation#mixed-stores".to_string(),
+            kind: crate::native::features::FeatureBooleanKind::Unite,
+            target_object_index: 401,
+            raw_target_object_index: Vec::new(),
+            target_source_offset: 0,
+            tool_object_indices: vec![402, 403],
+            raw_tool_object_indices: vec![Vec::new(), Vec::new()],
+            tool_source_offsets: vec![1, 2],
+            source_offset: 0,
+        };
+        assert_eq!(
+            super::boolean_feature_definition(
+                &mixed_store_operation,
+                &BTreeMap::new(),
+                &BooleanOffsetStoreResolution::Complete(mixed_store_blocks.clone()),
+                &BTreeMap::new(),
+            ),
+            FeatureDefinition::Combine {
+                target: BodySelection::Native("nx:om-object-index#401".to_string()),
+                tools: BodySelection::Native("nx:om-object-indices#402,403".to_string()),
+                op: BooleanOp::Join,
+                keep_tools: false,
+            }
+        );
+    }
+
+    #[test]
     fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
         use cadmpeg_ir::ids::BodyId;
@@ -7204,7 +9938,13 @@ mod tests {
         let roots = BTreeMap::from([(10, 10), (20, 20), (30, 30)]);
 
         assert_eq!(
-            super::sew_body_feature_definition(10, &references, &roots, &BTreeMap::new()),
+            super::sew_body_feature_definition(
+                Some(10),
+                &[],
+                &references,
+                &roots,
+                &BTreeMap::new(),
+            ),
             Some(FeatureDefinition::SewBodies {
                 bodies: BodySelection::Local {
                     bodies: vec![
@@ -7219,7 +9959,8 @@ mod tests {
         );
         assert!(matches!(
             super::sew_body_feature_definition(
-                736,
+                Some(736),
+                &[],
                 &references,
                 &roots,
                 &BTreeMap::new(),
@@ -7239,7 +9980,7 @@ mod tests {
             (30, vec![BodyId("second-tool".to_string())]),
         ]);
         assert_eq!(
-            super::sew_body_feature_definition(10, &references, &roots, &resolved),
+            super::sew_body_feature_definition(Some(10), &[], &references, &roots, &resolved,),
             Some(FeatureDefinition::SewBodies {
                 bodies: BodySelection::Resolved {
                     bodies: vec![
@@ -7253,13 +9994,19 @@ mod tests {
             })
         );
         assert_eq!(
-            super::sew_body_feature_definition(10, &[], &roots, &BTreeMap::new()),
+            super::sew_body_feature_definition(Some(10), &[], &[], &roots, &BTreeMap::new(),),
             None
         );
 
         let alias_roots = BTreeMap::from([(10, 10), (20, 20), (30, 20)]);
         assert_eq!(
-            super::sew_body_feature_definition(10, &references, &alias_roots, &BTreeMap::new()),
+            super::sew_body_feature_definition(
+                Some(10),
+                &[],
+                &references,
+                &alias_roots,
+                &BTreeMap::new(),
+            ),
             Some(FeatureDefinition::SewBodies {
                 bodies: BodySelection::Local {
                     bodies: vec![
@@ -7271,6 +10018,63 @@ mod tests {
                 gap_tolerance: None,
             })
         );
+
+        let offset_operand = |ordinal: u32, object_index: u32, data_block: &str| {
+            crate::native::features::FeatureOperationBodyOperand {
+                id: format!("offset-operand#{ordinal}"),
+                operation_label: "operation#0".to_string(),
+                body_object_index: 72,
+                body_reference_ordinal: 0,
+                ordinal,
+                operand_object_index: object_index,
+                raw_operand_object_index: vec![object_index as u8],
+                operand_data_block: Some(data_block.to_string()),
+                segment_body_bindings: Vec::new(),
+                source_offset: u64::from(ordinal),
+            }
+        };
+        let offset_operands = [
+            offset_operand(0, 71, "nx:om-data-blocks-4:block#71"),
+            offset_operand(1, 70, "nx:om-data-blocks-4:block#70"),
+        ];
+        let offset_references = offset_operands.iter().collect::<Vec<_>>();
+        assert_eq!(
+            super::sew_body_feature_definition(
+                None,
+                &[(72, "nx:om-data-blocks-4:block#72".to_string())],
+                &offset_references,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+            ),
+            Some(FeatureDefinition::SewBodies {
+                bodies: BodySelection::Local {
+                    bodies: vec![
+                        "nx:om-data-blocks-4:block#72".to_string(),
+                        "nx:om-data-blocks-4:block#71".to_string(),
+                        "nx:om-data-blocks-4:block#70".to_string(),
+                    ],
+                    native: "nx:om-object-indices#72,71,70".to_string(),
+                },
+                gap_tolerance: None,
+            })
+        );
+        let mut mixed_operands = offset_operands.clone();
+        mixed_operands[1].operand_data_block = None;
+        mixed_operands[1].segment_body_bindings = vec!["segment-binding".to_string()];
+        let mixed_references = mixed_operands.iter().collect::<Vec<_>>();
+        assert!(matches!(
+            super::sew_body_feature_definition(
+                None,
+                &[(72, "nx:om-data-blocks-4:block#72".to_string())],
+                &mixed_references,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+            ),
+            Some(FeatureDefinition::SewBodies {
+                bodies: BodySelection::Native(native),
+                ..
+            }) if native == "nx:om-object-indices#72,71,70"
+        ));
     }
 
     #[test]
@@ -7280,7 +10084,7 @@ mod tests {
 
         let roots = BTreeMap::from([(20, 20)]);
         assert_eq!(
-            super::delete_body_feature_definition(Some(20), &roots, &BTreeMap::new()),
+            super::delete_body_feature_definition(Some(20), &[], &roots, &BTreeMap::new()),
             Some(FeatureDefinition::DeleteBody {
                 bodies: BodySelection::Local {
                     bodies: vec!["nx:om-body-object#20".to_string()],
@@ -7290,7 +10094,7 @@ mod tests {
             })
         );
         assert_eq!(
-            super::delete_body_feature_definition(Some(72), &roots, &BTreeMap::new()),
+            super::delete_body_feature_definition(Some(72), &[], &roots, &BTreeMap::new()),
             Some(FeatureDefinition::DeleteBody {
                 bodies: BodySelection::Local {
                     bodies: vec!["nx:om-body-object#72".to_string()],
@@ -7300,9 +10104,34 @@ mod tests {
             })
         );
         assert_eq!(
-            super::delete_body_feature_definition(None, &roots, &BTreeMap::new()),
+            super::delete_body_feature_definition(None, &[], &roots, &BTreeMap::new()),
             None
         );
+        assert_eq!(
+            super::delete_body_feature_definition(
+                None,
+                &[(72, "nx:om-data-blocks-4:block#72".to_string())],
+                &roots,
+                &BTreeMap::new(),
+            ),
+            Some(FeatureDefinition::DeleteBody {
+                bodies: BodySelection::Local {
+                    bodies: vec!["nx:om-data-blocks-4:block#72".to_string()],
+                    native: "nx:om-object-index#72".to_string(),
+                },
+                mode: BodyRetentionMode::DeleteSelected,
+            })
+        );
+        assert!(super::delete_body_feature_definition(
+            None,
+            &[
+                (72, "nx:om-data-blocks-4:block#72".to_string()),
+                (73, "nx:om-data-blocks-4:block#73".to_string()),
+            ],
+            &roots,
+            &BTreeMap::new(),
+        )
+        .is_none());
     }
 
     #[test]
@@ -7451,6 +10280,24 @@ mod tests {
                 ..
             }) if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20"
         ));
+
+        let mut mixed_operand = operands[0].clone();
+        mixed_operand.operand_data_block = Some("nx:om-data-blocks-2:block#20".to_string());
+        mixed_operand.segment_body_bindings.clear();
+        let mixed_references = vec![&mixed_operand];
+        assert!(matches!(
+            super::trim_body_feature_definition(
+                10,
+                &mixed_references,
+                &roots,
+                &BTreeMap::new(),
+            ),
+            Some(FeatureDefinition::TrimBodies {
+                targets: BodySelection::Native(target),
+                tools: BodySelection::Native(tools),
+                ..
+            }) if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20"
+        ));
     }
 
     #[test]
@@ -7497,6 +10344,42 @@ mod tests {
             super::non_boolean_feature_definition("SIMPLE HOLE", &["unrelated"], None, None, None,),
             cadmpeg_ir::features::FeatureDefinition::Hole { extent: None, .. }
         ));
+        assert!(matches!(
+            super::non_boolean_feature_definition(
+                "CBORE_HOLE",
+                &["Hole_GeneralHole_Counterbored_Through"],
+                None,
+                None,
+                None,
+            ),
+            cadmpeg_ir::features::FeatureDefinition::Hole {
+                kind: cadmpeg_ir::features::HoleKind::Unresolved {
+                    form: Some(cadmpeg_ir::features::HoleForm::Counterbore),
+                    counterbore_diameter: None,
+                    counterbore_depth: None,
+                    countersink_diameter: None,
+                    countersink_angle: None,
+                },
+                exit_kind: None,
+                extent: Some(cadmpeg_ir::features::Termination::ThroughAll),
+                ..
+            }
+        ));
+        assert!(matches!(
+            super::non_boolean_feature_definition(
+                "SIMPLE HOLE",
+                &["Hole_GeneralHole_Simple_Blind"],
+                None,
+                None,
+                None,
+            ),
+            cadmpeg_ir::features::FeatureDefinition::Hole {
+                kind: cadmpeg_ir::features::HoleKind::Simple,
+                exit_kind: None,
+                extent: None,
+                ..
+            }
+        ));
         for competing in [
             "Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer",
             "Hole_Unknown",
@@ -7522,6 +10405,10 @@ mod tests {
         }
         assert!(matches!(
             super::non_boolean_feature_definition("DATUM_PLANE", &[], None, None, None),
+            cadmpeg_ir::features::FeatureDefinition::DatumPlaneUnresolved
+        ));
+        assert!(matches!(
+            super::non_boolean_feature_definition("EXTRACT_DATUM_PLANE", &[], None, None, None,),
             cadmpeg_ir::features::FeatureDefinition::DatumPlaneUnresolved
         ));
         assert!(matches!(
@@ -7571,6 +10458,108 @@ mod tests {
                 op: BooleanOp::Unresolved,
             }
         );
+    }
+
+    #[test]
+    fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
+        let object_indices = [None; 4];
+        let source_properties = BTreeMap::from([
+            ("object_index.0".to_string(), "null".to_string()),
+            ("object_index.1".to_string(), "null".to_string()),
+            ("object_index.2".to_string(), "null".to_string()),
+            ("object_index.3".to_string(), "null".to_string()),
+            ("operation_record".to_string(), "record".to_string()),
+            (
+                "operation_terminal_frame".to_string(),
+                "terminal".to_string(),
+            ),
+        ]);
+        assert!(matches!(
+            super::non_modeling_history_definition(
+                "EXTRACT_STRING",
+                &object_indices,
+                &[],
+                0,
+                0,
+                0,
+                &source_properties,
+            ),
+            Some(FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+                children,
+                active_child: None,
+            }) if children.is_empty()
+        ));
+
+        let rejected = [
+            (
+                [Some(7), None, None, None],
+                Vec::new(),
+                0,
+                0,
+                0,
+                source_properties.clone(),
+            ),
+            (
+                object_indices,
+                vec![BodyId("body".into())],
+                0,
+                0,
+                0,
+                source_properties.clone(),
+            ),
+            (
+                object_indices,
+                Vec::new(),
+                1,
+                0,
+                0,
+                source_properties.clone(),
+            ),
+            (
+                object_indices,
+                Vec::new(),
+                0,
+                1,
+                0,
+                source_properties.clone(),
+            ),
+            (
+                object_indices,
+                Vec::new(),
+                0,
+                0,
+                1,
+                source_properties.clone(),
+            ),
+        ];
+        for (object_indices, outputs, body_references, body_operands, strings, properties) in
+            rejected
+        {
+            assert!(super::non_modeling_history_definition(
+                "EXTRACT_STRING",
+                &object_indices,
+                &outputs,
+                body_references,
+                body_operands,
+                strings,
+                &properties,
+            )
+            .is_none());
+        }
+
+        let mut extra_property = source_properties.clone();
+        extra_property.insert("input_block.0".into(), "block".into());
+        assert!(super::non_modeling_history_definition(
+            "EXTRACT_STRING",
+            &object_indices,
+            &[],
+            0,
+            0,
+            0,
+            &extra_property,
+        )
+        .is_none());
     }
 
     #[test]
@@ -7983,6 +10972,182 @@ mod tests {
         assert_eq!(
             placement(&disconnected, dimensions, std::slice::from_ref(&output),),
             None
+        );
+    }
+
+    #[test]
+    fn nx_sphere_projection_requires_one_complete_spherical_body() {
+        let mut ir = cadmpeg_ir::examples::unit_cube();
+        let body = ir.model.bodies[0].id.clone();
+        let face = ir.model.faces[0].id.clone();
+        let surface = ir.model.faces[0].surface.clone();
+        ir.model.shells[0].faces = vec![face];
+        ir.model
+            .faces
+            .retain(|candidate| candidate.id == ir.model.shells[0].faces[0]);
+        ir.model
+            .surfaces
+            .retain(|candidate| candidate.id == surface);
+        ir.model.surfaces[0].geometry = SurfaceGeometry::Sphere {
+            center: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 12.0,
+        };
+
+        assert_eq!(
+            super::sphere_body_projection(&ir, &[]),
+            Some((body.clone(), Point3::new(1.0, 2.0, 3.0), Length(12.0)))
+        );
+        assert_eq!(
+            super::sphere_body_projection(&ir, std::slice::from_ref(&body)),
+            Some((body.clone(), Point3::new(1.0, 2.0, 3.0), Length(12.0)))
+        );
+
+        let mut second_body = ir.model.bodies[0].clone();
+        second_body.id = BodyId("second-body".into());
+        second_body.regions = vec![cadmpeg_ir::ids::RegionId("second-region".into())];
+        let mut second_region = ir.model.regions[0].clone();
+        second_region.id = cadmpeg_ir::ids::RegionId("second-region".into());
+        second_region.body = second_body.id.clone();
+        second_region.shells = vec![cadmpeg_ir::ids::ShellId("second-shell".into())];
+        let mut second_shell = ir.model.shells[0].clone();
+        second_shell.id = cadmpeg_ir::ids::ShellId("second-shell".into());
+        second_shell.region = second_region.id.clone();
+        second_shell.faces = vec![cadmpeg_ir::ids::FaceId("second-face".into())];
+        let mut second_face = ir.model.faces[0].clone();
+        second_face.id = cadmpeg_ir::ids::FaceId("second-face".into());
+        second_face.shell = second_shell.id.clone();
+        second_face.surface = cadmpeg_ir::ids::SurfaceId("second-surface".into());
+        let mut second_surface = ir.model.surfaces[0].clone();
+        second_surface.id = second_face.surface.clone();
+        ir.model.bodies.push(second_body);
+        ir.model.regions.push(second_region);
+        ir.model.shells.push(second_shell);
+        ir.model.faces.push(second_face);
+        ir.model.surfaces.push(second_surface);
+
+        assert!(super::sphere_body_projection(&ir, &[]).is_none());
+        assert!(
+            super::sphere_body_projection(&ir, &[body, BodyId("second-body".into())]).is_none()
+        );
+    }
+
+    #[test]
+    fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
+        let body = BodyId("body".into());
+        let provisional = FeatureId("initial-bodies".into());
+        let mut history = BodyWriterHistory::default();
+        history.record_writer(None, None, std::slice::from_ref(&body), &provisional);
+
+        assert_eq!(
+            super::new_body_boolean_op(&super::NewBodyEvidence {
+                has_complete_projection: true,
+                has_complete_primitive_construction: false,
+                outputs: std::slice::from_ref(&body),
+                outputs_are_proven: true,
+                body_reference_count: 0,
+                provisional_feature: Some(&provisional),
+                native_primary_body: None,
+                offset_store_primary_body: None,
+                history: &history,
+            }),
+            BooleanOp::NewBody
+        );
+
+        let prior = FeatureId("prior-feature".into());
+        history.record_writer(Some(7), None, std::slice::from_ref(&body), &prior);
+        assert_eq!(
+            super::new_body_boolean_op(&super::NewBodyEvidence {
+                has_complete_projection: true,
+                has_complete_primitive_construction: false,
+                outputs: std::slice::from_ref(&body),
+                outputs_are_proven: true,
+                body_reference_count: 1,
+                provisional_feature: Some(&provisional),
+                native_primary_body: Some(7),
+                offset_store_primary_body: None,
+                history: &history,
+            }),
+            BooleanOp::Unresolved
+        );
+        assert_eq!(
+            super::new_body_boolean_op(&super::NewBodyEvidence {
+                has_complete_projection: false,
+                has_complete_primitive_construction: false,
+                outputs: std::slice::from_ref(&body),
+                outputs_are_proven: false,
+                body_reference_count: 0,
+                provisional_feature: Some(&provisional),
+                native_primary_body: None,
+                offset_store_primary_body: None,
+                history: &history,
+            }),
+            BooleanOp::Unresolved
+        );
+
+        let offset_prior = FeatureId("offset-prior-feature".into());
+        let mut offset_history = BodyWriterHistory::default();
+        offset_history.record_writer(None, Some("store:block#7"), &[], &offset_prior);
+        assert_eq!(
+            super::new_body_boolean_op(&super::NewBodyEvidence {
+                has_complete_projection: true,
+                has_complete_primitive_construction: false,
+                outputs: std::slice::from_ref(&body),
+                outputs_are_proven: false,
+                body_reference_count: 1,
+                provisional_feature: Some(&provisional),
+                native_primary_body: None,
+                offset_store_primary_body: Some("store:block#7"),
+                history: &offset_history,
+            }),
+            BooleanOp::Unresolved
+        );
+
+        let offset_without_prior = BodyWriterHistory::default();
+        assert_eq!(
+            super::new_body_boolean_op(&super::NewBodyEvidence {
+                has_complete_projection: true,
+                has_complete_primitive_construction: false,
+                outputs: std::slice::from_ref(&body),
+                outputs_are_proven: false,
+                body_reference_count: 1,
+                provisional_feature: Some(&provisional),
+                native_primary_body: None,
+                offset_store_primary_body: Some("store:block#8"),
+                history: &offset_without_prior,
+            }),
+            BooleanOp::NewBody
+        );
+
+        assert_eq!(
+            super::new_body_boolean_op(&super::NewBodyEvidence {
+                has_complete_projection: true,
+                has_complete_primitive_construction: false,
+                outputs: std::slice::from_ref(&body),
+                outputs_are_proven: false,
+                body_reference_count: 2,
+                provisional_feature: Some(&provisional),
+                native_primary_body: None,
+                offset_store_primary_body: None,
+                history: &offset_without_prior,
+            }),
+            BooleanOp::Unresolved
+        );
+
+        assert_eq!(
+            super::new_body_boolean_op(&super::NewBodyEvidence {
+                has_complete_projection: true,
+                has_complete_primitive_construction: true,
+                outputs: std::slice::from_ref(&body),
+                outputs_are_proven: false,
+                body_reference_count: 2,
+                provisional_feature: Some(&provisional),
+                native_primary_body: None,
+                offset_store_primary_body: None,
+                history: &offset_without_prior,
+            }),
+            BooleanOp::NewBody
         );
     }
 
@@ -8624,6 +11789,599 @@ mod tests {
         };
         *radius = 3.0;
         assert!(simple_hole_diameters(&mismatched, &templates, &[group], &outputs,).is_empty());
+    }
+
+    #[test]
+    fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
+        use crate::native::features::{
+            FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily,
+            SimpleHoleForm,
+        };
+        use cadmpeg_ir::document::{CadIr, Model, IR_VERSION};
+        use cadmpeg_ir::features::{
+            FeatureDefinition, HoleKind, HolePlacement, Length, Termination,
+        };
+        use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
+        use cadmpeg_ir::ids::{
+            BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId,
+            VertexId,
+        };
+        use cadmpeg_ir::math::{Point3, Vector3};
+        use cadmpeg_ir::native::Native;
+        use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
+        use cadmpeg_ir::units::{Tolerances, Units};
+
+        let operation = "blind".to_string();
+        let template = FeatureSimpleHoleTemplate {
+            id: "template-blind".into(),
+            operation_label: operation.clone(),
+            payload_string: "payload-blind".into(),
+            family: SimpleHoleFamily::GeneralHole,
+            form: SimpleHoleForm::Simple,
+            extent: SimpleHoleExtent::Blind,
+            start_treatment: SimpleHoleEndTreatment::None,
+            end_treatment: SimpleHoleEndTreatment::None,
+        };
+        let mut model = Model::default();
+        let cylinder_surface = SurfaceId("blind-cylinder-surface".into());
+        let cap_surface = SurfaceId("blind-cap-surface".into());
+        model.surfaces.push(Surface {
+            id: cylinder_surface.clone(),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+            source_object: None,
+        });
+        model.surfaces.push(Surface {
+            id: cap_surface.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 3.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        let (entry_loop, cylinder_cap_loop, cap_face_loop) = {
+            let mut add_circle_loop =
+                |loop_name: &str, edge_name: &str, center: Point3, radius: f64| {
+                    let loop_id = LoopId(loop_name.into());
+                    let edge_id = EdgeId(edge_name.into());
+                    let curve_id = CurveId(format!("{edge_name}-curve"));
+                    if !model.edges.iter().any(|edge| edge.id == edge_id) {
+                        model.curves.push(Curve {
+                            id: curve_id.clone(),
+                            geometry: CurveGeometry::Circle {
+                                center,
+                                axis: Vector3::new(0.0, 0.0, 1.0),
+                                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                                radius,
+                            },
+                            source_object: None,
+                        });
+                        model.edges.push(Edge {
+                            id: edge_id.clone(),
+                            curve: Some(curve_id),
+                            start: VertexId("vertex".into()),
+                            end: VertexId("vertex".into()),
+                            param_range: None,
+                            tolerance: None,
+                        });
+                    }
+                    let coedge_id = CoedgeId(format!("{loop_name}-coedge"));
+                    model.coedges.push(Coedge {
+                        id: coedge_id.clone(),
+                        owner_loop: loop_id.clone(),
+                        edge: edge_id,
+                        next: coedge_id.clone(),
+                        previous: coedge_id.clone(),
+                        radial_next: coedge_id,
+                        sense: Sense::Forward,
+                        pcurves: Vec::new(),
+                        use_curve: None,
+                        use_curve_parameter_range: None,
+                    });
+                    loop_id
+                };
+            (
+                add_circle_loop(
+                    "blind-entry-loop",
+                    "blind-entry-edge",
+                    Point3::new(0.0, 0.0, 0.0),
+                    2.0,
+                ),
+                add_circle_loop(
+                    "blind-cylinder-cap-loop",
+                    "blind-cap-edge",
+                    Point3::new(0.0, 0.0, 3.0),
+                    2.0,
+                ),
+                add_circle_loop(
+                    "blind-cap-face-loop",
+                    "blind-cap-edge",
+                    Point3::new(0.0, 0.0, 3.0),
+                    2.0,
+                ),
+            )
+        };
+        let cylinder_face = FaceId("blind-cylinder-face".into());
+        let cap_face = FaceId("blind-cap-face".into());
+        model.faces.push(Face {
+            id: cylinder_face.clone(),
+            shell: ShellId("blind-shell".into()),
+            surface: cylinder_surface,
+            sense: Sense::Reversed,
+            loops: vec![entry_loop, cylinder_cap_loop],
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+        model.faces.push(Face {
+            id: cap_face.clone(),
+            shell: ShellId("blind-shell".into()),
+            surface: cap_surface,
+            sense: Sense::Forward,
+            loops: vec![cap_face_loop],
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+        let body = BodyId("blind-body".into());
+        model.bodies.push(Body {
+            id: body.clone(),
+            kind: BodyKind::Solid,
+            regions: vec![RegionId("blind-region".into())],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        model.regions.push(Region {
+            id: RegionId("blind-region".into()),
+            body: body.clone(),
+            shells: vec![ShellId("blind-shell".into())],
+        });
+        model.shells.push(Shell {
+            id: ShellId("blind-shell".into()),
+            region: RegionId("blind-region".into()),
+            faces: vec![cylinder_face, cap_face],
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+        let ir = CadIr {
+            ir_version: IR_VERSION.into(),
+            source: None,
+            units: Units::default(),
+            tolerances: Tolerances::default(),
+            model,
+            native: Native::default(),
+        };
+        let operation_positions = BTreeMap::from([("blind", 0usize)]);
+        assert_eq!(
+            super::blind_hole_operations(std::slice::from_ref(&template), &operation_positions),
+            Some(vec![operation.clone()]),
+        );
+        let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
+        let projection =
+            super::blind_hole_body_projection(&ir, std::slice::from_ref(&operation), &outputs)
+                .expect("complete blind-bore witness");
+        assert_eq!(projection.outputs, outputs);
+        assert_eq!(
+            projection.diameters,
+            BTreeMap::from([(operation.clone(), Length(4.0))])
+        );
+        assert_eq!(
+            projection.blind_depths,
+            BTreeMap::from([(operation.clone(), Length(3.0))])
+        );
+        assert_eq!(
+            super::blind_hole_axis_placements_for_operations(
+                &ir,
+                std::slice::from_ref(&operation),
+                &outputs,
+            ),
+            BTreeMap::from([(
+                operation.clone(),
+                HolePlacement::Directed {
+                    position: Point3::new(0.0, 0.0, 0.0),
+                    direction: Vector3::new(0.0, 0.0, 1.0),
+                },
+            )])
+        );
+        let definition = super::non_boolean_feature_definition_with_parameters(
+            "SIMPLE HOLE",
+            &["Hole_GeneralHole_Simple_Blind"],
+            None,
+            None,
+            super::HoleProjection {
+                placements: vec![HolePlacement::Directed {
+                    position: Point3::new(0.0, 0.0, 0.0),
+                    direction: Vector3::new(0.0, 0.0, 1.0),
+                }],
+                diameter: Some(Length(4.0)),
+                extent: Some(Termination::Blind {
+                    length: Length(3.0),
+                }),
+                ..super::HoleProjection::default()
+            },
+            BTreeMap::new(),
+        );
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Hole {
+                kind: HoleKind::Simple,
+                diameter: Some(Length(4.0)),
+                extent: Some(Termination::Blind { length: Length(3.0) }),
+                placements,
+                ..
+            } if placements == [HolePlacement::Directed {
+                position: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(0.0, 0.0, 1.0),
+            }]
+        ));
+
+        let mut missing_cap = ir.clone();
+        missing_cap.model.shells[0]
+            .faces
+            .retain(|face| face != &FaceId("blind-cap-face".into()));
+        assert!(super::blind_hole_body_projection(
+            &missing_cap,
+            std::slice::from_ref(&operation),
+            &outputs,
+        )
+        .is_none());
+        let mut duplicate_cap = ir.clone();
+        duplicate_cap.model.faces.push(Face {
+            id: FaceId("blind-duplicate-cap-face".into()),
+            shell: ShellId("blind-shell".into()),
+            surface: SurfaceId("blind-cap-surface".into()),
+            sense: Sense::Forward,
+            loops: vec![LoopId("blind-cap-face-loop".into())],
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+        duplicate_cap.model.shells[0]
+            .faces
+            .push(FaceId("blind-duplicate-cap-face".into()));
+        assert!(super::blind_hole_body_projection(
+            &duplicate_cap,
+            std::slice::from_ref(&operation),
+            &outputs,
+        )
+        .is_none());
+        let mut sheet = ir.clone();
+        sheet.model.bodies[0].kind = BodyKind::Sheet;
+        assert!(super::blind_hole_body_projection(
+            &sheet,
+            std::slice::from_ref(&operation),
+            &outputs,
+        )
+        .is_none());
+        assert!(super::blind_hole_body_projection(
+            &ir,
+            &[operation.clone(), "second-operation".into()],
+            &BTreeMap::from([
+                (operation, vec![body.clone()]),
+                ("second-operation".into(), vec![body]),
+            ]),
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
+        use crate::native::features::{
+            FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily,
+            SimpleHoleForm,
+        };
+        use cadmpeg_ir::document::{CadIr, Model, IR_VERSION};
+        use cadmpeg_ir::features::{FeatureDefinition, HoleKind, HolePlacement, Length};
+        use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
+        use cadmpeg_ir::ids::{
+            BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId,
+            VertexId,
+        };
+        use cadmpeg_ir::math::{Point3, Vector3};
+        use cadmpeg_ir::native::Native;
+        use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
+        use cadmpeg_ir::units::{Tolerances, Units};
+
+        let operation = "counterbore".to_string();
+        let template = FeatureSimpleHoleTemplate {
+            id: "template-counterbore".into(),
+            operation_label: operation.clone(),
+            payload_string: "payload-counterbore".into(),
+            family: SimpleHoleFamily::GeneralHole,
+            form: SimpleHoleForm::Counterbored,
+            extent: SimpleHoleExtent::Through,
+            start_treatment: SimpleHoleEndTreatment::None,
+            end_treatment: SimpleHoleEndTreatment::None,
+        };
+        assert_eq!(
+            super::counterbore_operations(
+                std::slice::from_ref(&template),
+                &BTreeMap::from([("counterbore", 0usize)]),
+            ),
+            Some(vec![operation.clone()]),
+        );
+        let competing_template = FeatureSimpleHoleTemplate {
+            form: SimpleHoleForm::Simple,
+            ..template.clone()
+        };
+        assert!(super::counterbore_operations(
+            &[template.clone(), competing_template],
+            &BTreeMap::from([("counterbore", 0usize)]),
+        )
+        .is_none());
+        let mut model = Model::default();
+        let mut add_circle_loop =
+            |name: &str, shared_edge: Option<&str>, center: Point3, radius: f64| {
+                let loop_id = LoopId(format!("{name}-loop"));
+                let edge_name = shared_edge.unwrap_or(name);
+                let curve_id = CurveId(format!("{edge_name}-curve"));
+                let edge_id = EdgeId(format!("{edge_name}-edge"));
+                let coedge_id = CoedgeId(format!("{name}-coedge"));
+                if !model.edges.iter().any(|edge| edge.id == edge_id) {
+                    model.curves.push(Curve {
+                        id: curve_id.clone(),
+                        geometry: CurveGeometry::Circle {
+                            center,
+                            axis: Vector3::new(0.0, 0.0, 1.0),
+                            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                            radius,
+                        },
+                        source_object: None,
+                    });
+                    model.edges.push(Edge {
+                        id: edge_id.clone(),
+                        curve: Some(curve_id),
+                        start: VertexId("vertex".into()),
+                        end: VertexId("vertex".into()),
+                        param_range: None,
+                        tolerance: None,
+                    });
+                }
+                model.coedges.push(Coedge {
+                    id: coedge_id.clone(),
+                    owner_loop: loop_id.clone(),
+                    edge: edge_id,
+                    next: coedge_id.clone(),
+                    previous: coedge_id.clone(),
+                    radial_next: coedge_id,
+                    sense: Sense::Forward,
+                    pcurves: Vec::new(),
+                    use_curve: None,
+                    use_curve_parameter_range: None,
+                });
+                loop_id
+            };
+        let mut add_face = |id: &str, surface: SurfaceId, sense: Sense, loops: Vec<LoopId>| {
+            model.faces.push(Face {
+                id: FaceId(id.into()),
+                shell: ShellId("shell".into()),
+                surface,
+                sense,
+                loops,
+                name: None,
+                color: None,
+                tolerance: None,
+            });
+        };
+        let bore_surface = SurfaceId("bore-surface".into());
+        model.surfaces.push(Surface {
+            id: bore_surface.clone(),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+            source_object: None,
+        });
+        let bore_loops = vec![
+            add_circle_loop("bore-entry", None, Point3::new(0.0, 0.0, 0.0), 2.0),
+            add_circle_loop(
+                "bore-shoulder",
+                Some("bore-shoulder"),
+                Point3::new(0.0, 0.0, 10.0),
+                2.0,
+            ),
+        ];
+        add_face("bore-face", bore_surface, Sense::Reversed, bore_loops);
+
+        let counterbore_surface = SurfaceId("counterbore-surface".into());
+        model.surfaces.push(Surface {
+            id: counterbore_surface.clone(),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 10.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 4.0,
+            },
+            source_object: None,
+        });
+        let counterbore_loops = vec![
+            add_circle_loop(
+                "counterbore-shoulder",
+                Some("counterbore-shoulder"),
+                Point3::new(0.0, 0.0, 10.0),
+                4.0,
+            ),
+            add_circle_loop("counterbore-entry", None, Point3::new(0.0, 0.0, 12.0), 4.0),
+        ];
+        add_face(
+            "counterbore-face",
+            counterbore_surface,
+            Sense::Reversed,
+            counterbore_loops,
+        );
+
+        let shoulder_surface = SurfaceId("shoulder-surface".into());
+        model.surfaces.push(Surface {
+            id: shoulder_surface.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 10.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        let shoulder_loops = vec![
+            add_circle_loop(
+                "shoulder-inner",
+                Some("bore-shoulder"),
+                Point3::new(0.0, 0.0, 10.0),
+                2.0,
+            ),
+            add_circle_loop(
+                "shoulder-outer",
+                Some("counterbore-shoulder"),
+                Point3::new(0.0, 0.0, 10.0),
+                4.0,
+            ),
+        ];
+        add_face(
+            "shoulder-face",
+            shoulder_surface,
+            Sense::Forward,
+            shoulder_loops,
+        );
+
+        let body = BodyId("body".into());
+        model.bodies.push(Body {
+            id: body.clone(),
+            kind: BodyKind::Solid,
+            regions: vec![RegionId("region".into())],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        model.regions.push(Region {
+            id: RegionId("region".into()),
+            body: body.clone(),
+            shells: vec![ShellId("shell".into())],
+        });
+        model.shells.push(Shell {
+            id: ShellId("shell".into()),
+            region: RegionId("region".into()),
+            faces: vec![
+                FaceId("bore-face".into()),
+                FaceId("counterbore-face".into()),
+                FaceId("shoulder-face".into()),
+            ],
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+        let ir = CadIr {
+            ir_version: IR_VERSION.into(),
+            source: None,
+            units: Units::default(),
+            tolerances: Tolerances::default(),
+            model,
+            native: Native::default(),
+        };
+        let operations = vec![operation.clone()];
+        let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
+        let body_faces = super::connected_solid_body_faces(&ir, &body).expect("solid body faces");
+        assert_eq!(body_faces.len(), 3);
+        let cylinders = super::cylindrical_face_witnesses(&ir, &body_faces).unwrap();
+        assert_eq!(cylinders.len(), 2);
+        assert!(super::plane_annulus_witness(
+            &ir,
+            &body_faces,
+            &cylinders[0],
+            1,
+            &cylinders[1],
+            0,
+        ));
+        assert!(super::counterbore_cylinders(&ir, &body_faces).is_some());
+        let projection = super::counterbore_body_projection(&ir, &operations, &outputs)
+            .expect("coaxial counterbore witness");
+        assert_eq!(projection.outputs, outputs);
+        assert_eq!(
+            projection.diameters,
+            BTreeMap::from([(operation.clone(), Length(4.0))])
+        );
+        assert_eq!(
+            projection.counterbores,
+            BTreeMap::from([(
+                operation.clone(),
+                super::CounterboreDimensions {
+                    diameter: Length(8.0),
+                    depth: Length(2.0),
+                },
+            )])
+        );
+        let inferred = super::counterbore_body_projection(&ir, &operations, &BTreeMap::new())
+            .expect("unique connected solid counterbore witness");
+        assert_eq!(inferred.outputs, outputs);
+        assert_eq!(inferred.counterbores, projection.counterbores);
+        assert_eq!(
+            super::counterbore_axis_placements_for_operations(&ir, &operations, &outputs),
+            BTreeMap::from([(
+                operation.clone(),
+                HolePlacement::Axis {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+            )])
+        );
+        let definition = super::non_boolean_feature_definition_with_parameters(
+            "CBORE_HOLE",
+            &["Hole_GeneralHole_Counterbored_Through"],
+            None,
+            None,
+            super::HoleProjection {
+                placements: vec![HolePlacement::Axis {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                }],
+                diameter: Some(Length(4.0)),
+                counterbore: projection.counterbores.get(&operation).copied(),
+                ..super::HoleProjection::default()
+            },
+            BTreeMap::new(),
+        );
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Hole {
+                kind: HoleKind::Counterbore {
+                    diameter: Length(8.0),
+                    depth: Length(2.0),
+                },
+                diameter: Some(Length(4.0)),
+                extent: Some(cadmpeg_ir::features::Termination::ThroughAll),
+                placements,
+                ..
+            } if placements == [HolePlacement::Axis {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+            }]
+        ));
+
+        let mut missing_shoulder = ir.clone();
+        missing_shoulder.model.shells[0]
+            .faces
+            .retain(|face| face != &FaceId("shoulder-face".into()));
+        assert!(
+            super::counterbore_body_projection(&missing_shoulder, &operations, &outputs).is_none()
+        );
+        let mut sheet = ir.clone();
+        sheet.model.bodies[0].kind = BodyKind::Sheet;
+        assert!(super::counterbore_body_projection(&sheet, &operations, &outputs).is_none());
+        assert!(super::counterbore_body_projection(
+            &ir,
+            &[operation.clone(), "second-operation".into()],
+            &BTreeMap::from([
+                (operation, vec![body.clone()]),
+                ("second-operation".into(), vec![body]),
+            ]),
+        )
+        .is_none());
     }
 
     #[test]
@@ -9399,6 +13157,24 @@ mod tests {
             Some("SDL/TYSA_DENSITY.units")
         );
 
+        let generic_definition = ParasolidAttributeDefinition {
+            name: "CLASS".into(),
+            field_names_xmt: 25,
+            ..definition.clone()
+        };
+        assert_eq!(
+            super::parasolid_topology_attribute_field_name(
+                &reference,
+                "double-use",
+                std::slice::from_ref(&class_use),
+                std::slice::from_ref(&generic_definition),
+                std::slice::from_ref(&field_use),
+                &[],
+            )
+            .as_deref(),
+            Some("CLASS.field_0.parasolid_type_2")
+        );
+
         let named_definition = ParasolidAttributeDefinition {
             name: "PVM/25_1".into(),
             field_names_xmt: 25,
@@ -9438,6 +13214,98 @@ mod tests {
             &[],
         )
         .is_none());
+    }
+
+    #[test]
+    fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
+        use crate::native::parasolid::{
+            ParasolidAttributeDefinition, ParasolidAttributeFieldUse,
+            ParasolidAttributeFieldValueKind, ParasolidTopologyAttributeClassUse,
+            ParasolidTopologyAttributeListReference,
+        };
+
+        let reference = ParasolidTopologyAttributeListReference {
+            id: "topology-reference".into(),
+            stream_ordinal: 3,
+            topology_type: 14,
+            topology_xmt: 60,
+            attribute_list_xmt: 50,
+            attribute_list_record: Some("entity".into()),
+            inflated_offset: 300,
+        };
+        let definition = ParasolidAttributeDefinition {
+            id: "definition".into(),
+            stream_ordinal: 3,
+            xmt: 34,
+            next_definition_xmt: 1,
+            identifier_xmt: 35,
+            identifier_inflated_offset: 90,
+            name: "SDL/TYSA_BLEND_ID".into(),
+            type_id: 8004,
+            action_codes: [0; 8],
+            field_names_xmt: 1,
+            legal_owner_flags: [0; 16],
+            field_count: 2,
+            field_codes: vec![3, 2],
+            inflated_offset: 100,
+        };
+        let class_use = ParasolidTopologyAttributeClassUse {
+            id: "topology-class-use".into(),
+            topology_attribute_reference: reference.id.clone(),
+            entity_51_record: "entity".into(),
+            attribute_class_use: "attribute-class-use".into(),
+            definition_xmt: definition.xmt,
+            attribute_definition: definition.id.clone(),
+        };
+        let text_field = ParasolidAttributeFieldUse {
+            id: "text-field-use".into(),
+            stream_ordinal: 3,
+            attribute_class_use: class_use.attribute_class_use.clone(),
+            entity_51_record: class_use.entity_51_record.clone(),
+            attribute_definition: definition.id.clone(),
+            field_ordinal: 0,
+            field_code: 3,
+            reference_ordinal: 5,
+            value_kind: ParasolidAttributeFieldValueKind::String,
+            value_use: "text-use".into(),
+            value_record: "text-record".into(),
+            inflated_offset: 200,
+        };
+        let numeric_field = ParasolidAttributeFieldUse {
+            id: "numeric-field-use".into(),
+            field_ordinal: 1,
+            field_code: 2,
+            reference_ordinal: 6,
+            value_kind: ParasolidAttributeFieldValueKind::Doubles,
+            value_use: "numeric-use".into(),
+            value_record: "numeric-record".into(),
+            ..text_field.clone()
+        };
+
+        assert_eq!(
+            super::parasolid_topology_attribute_field_name(
+                &reference,
+                "text-use",
+                std::slice::from_ref(&class_use),
+                std::slice::from_ref(&definition),
+                std::slice::from_ref(&text_field),
+                &[],
+            )
+            .as_deref(),
+            Some("SDL/TYSA_BLEND_ID.field_0.parasolid_type_3")
+        );
+        assert_eq!(
+            super::parasolid_topology_attribute_field_name(
+                &reference,
+                "numeric-use",
+                std::slice::from_ref(&class_use),
+                std::slice::from_ref(&definition),
+                std::slice::from_ref(&numeric_field),
+                &[],
+            )
+            .as_deref(),
+            Some("SDL/TYSA_BLEND_ID.field_1.parasolid_type_2")
+        );
     }
 
     #[test]

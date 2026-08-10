@@ -52,7 +52,7 @@ pub(crate) fn parse_consolidated_pcurve(
     let support_id = compact_int(data, &mut at)?;
     let degree = compact_int(data, &mut at)?;
     let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
-    if degree != 5 || !(2..=4096).contains(&count) {
+    if degree != 5 || count < 2 {
         return None;
     }
     let extrapolation_sites = match *data.get(at)? {
@@ -70,6 +70,10 @@ pub(crate) fn parse_consolidated_pcurve(
         }
         _ => return None,
     };
+    let knot_bytes = count.checked_mul(8)?;
+    if at.checked_add(knot_bytes.checked_add(20)?)? > end {
+        return None;
+    }
     let read = |at: &mut usize| -> Option<Vec<f64>> {
         let mut values = Vec::with_capacity(count);
         for _ in 0..count {
@@ -82,8 +86,14 @@ pub(crate) fn parse_consolidated_pcurve(
     if usize::try_from(compact_int(data, &mut at)?).ok()? != count {
         return None;
     }
-    at += 1;
-    data.get(..at)?;
+    at = at.checked_add(1)?;
+    if at > end {
+        return None;
+    }
+    let remaining_array_bytes = count.checked_mul(8)?.checked_mul(6)?;
+    if at.checked_add(remaining_array_bytes.checked_add(18)?)? > end {
+        return None;
+    }
     let u = read(&mut at)?;
     let v = read(&mut at)?;
     let du = read(&mut at)?;
@@ -163,95 +173,122 @@ pub struct ConsolidatedRecord {
     pub payload: Range<usize>,
 }
 
-/// Inventory length-closed consolidated A/B records while suppressing candidates
-/// nested inside the payload of an already accepted frame.
+/// Return whether a record slice is one physically contiguous frame run.
+///
+/// A record census may contain independently discovered frames separated by
+/// bytes whose grammar is not known. Those frames remain useful for individual
+/// typed decoding, but they cannot establish an ordered multi-frame owner
+/// relationship. Every semantic window must prove this invariant locally.
+pub(crate) fn records_are_contiguous(records: &[ConsolidatedRecord]) -> bool {
+    records
+        .windows(2)
+        .all(|pair| pair[0].range.end == pair[1].range.start)
+}
+
+/// Inventory length-closed consolidated A/B records in one bounded source.
+///
+/// This convenience form is for a byte slice that is already one record
+/// source, such as a synthesized stream fixture. Container decode paths use
+/// [`consolidated_records_in_ranges`] so directory and unrelated-file bytes
+/// cannot seed the inventory.
 #[must_use]
 pub fn consolidated_records(data: &[u8]) -> Vec<ConsolidatedRecord> {
-    let flags = [0x03, 0x13, 0x83];
+    consolidated_records_in_ranges(data, std::iter::once(0..data.len()))
+}
+
+/// Inventory length-closed consolidated A/B records in disjoint physical
+/// source extents.
+///
+/// The record grammar is length-closed, but it does not define a marker that
+/// identifies the first record in an arbitrary file image. Callers therefore
+/// supply the physical extents that contain record sources. A record that
+/// crosses an extent boundary is not a complete record in that source and is
+/// withheld. The returned records retain their file-relative byte ranges.
+#[must_use]
+pub(crate) fn consolidated_records_in_ranges(
+    data: &[u8],
+    ranges: impl IntoIterator<Item = Range<usize>>,
+) -> Vec<ConsolidatedRecord> {
     let mut records = Vec::new();
-    let mut active_payload: Option<Range<usize>> = None;
-    let mut pos = 0;
-    while pos < data.len().saturating_sub(4) {
-        if let Some(payload) = active_payload
-            .as_ref()
-            .filter(|payload| payload.contains(&pos))
-        {
-            pos = payload.end;
+    for range in ranges {
+        let start = range.start.min(data.len());
+        let end = range.end.min(data.len());
+        if start >= end {
             continue;
         }
-        let (family, width, token_at, length) = if let Some(width) = data[pos]
-            .checked_sub(0xa4)
-            .filter(|width| (1..=3).contains(width))
-        {
-            let Some(length) = u32_le(data, pos + 3).and_then(|v| usize::try_from(v).ok()) else {
+        let mut pos = start;
+        while pos < end {
+            let Some(record) = parse_consolidated_record(data, pos, end) else {
                 pos += 1;
                 continue;
             };
-            (ConsolidatedFamily::A, width, pos + 7, length)
-        } else if let Some(width) = data[pos]
-            .checked_sub(0xb1)
-            .filter(|width| (1..=3).contains(width))
-        {
-            (
-                ConsolidatedFamily::B,
-                width,
-                pos + 4,
-                usize::from(data[pos + 3]),
-            )
-        } else {
-            pos += 1;
-            continue;
-        };
-        let Some(&flag) = data.get(pos + 1) else {
-            pos += 1;
-            continue;
-        };
-        let Some(&class) = data.get(pos + 2) else {
-            pos += 1;
-            continue;
-        };
-        if !flags.contains(&flag) {
-            pos += 1;
-            continue;
+            pos = record.range.end;
+            records.push(record);
         }
-        let width_usize = usize::from(width);
-        let Some(payload_start) = token_at.checked_add(width_usize) else {
-            pos += 1;
-            continue;
-        };
-        let Some(end) = payload_start.checked_add(length) else {
-            pos += 1;
-            continue;
-        };
-        if end > data.len() {
-            pos += 1;
-            continue;
-        }
-        let header_token = data[token_at..payload_start]
-            .iter()
-            .enumerate()
-            .fold(0u32, |value, (shift, byte)| {
-                value | (u32::from(*byte) << (8 * shift))
-            });
-        let record = ConsolidatedRecord {
-            family,
-            width,
-            flag,
-            class,
-            header_token,
-            range: pos..end,
-            payload: payload_start..end,
-        };
-        active_payload = Some(record.payload.clone());
-        records.push(record);
-        pos += 1;
     }
     records
 }
 
-pub(crate) fn a_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> {
-    consolidated_records(data)
-        .into_iter()
+fn parse_consolidated_record(
+    data: &[u8],
+    pos: usize,
+    source_end: usize,
+) -> Option<ConsolidatedRecord> {
+    let flags = [0x03, 0x13, 0x83];
+    let (family, width, token_at, length) = if let Some(width) = data
+        .get(pos)
+        .and_then(|byte| byte.checked_sub(0xa4))
+        .filter(|width| (1..=3).contains(width))
+    {
+        let length =
+            u32_le(data, pos.checked_add(3)?).and_then(|value| usize::try_from(value).ok())?;
+        (ConsolidatedFamily::A, width, pos.checked_add(7)?, length)
+    } else {
+        let width = data
+            .get(pos)
+            .and_then(|byte| byte.checked_sub(0xb1))
+            .filter(|width| (1..=3).contains(width))?;
+        (
+            ConsolidatedFamily::B,
+            width,
+            pos.checked_add(4)?,
+            usize::from(*data.get(pos.checked_add(3)?)?),
+        )
+    };
+    let flag = *data.get(pos.checked_add(1)?)?;
+    let class = *data.get(pos.checked_add(2)?)?;
+    if !flags.contains(&flag) {
+        return None;
+    }
+    let payload_start = token_at.checked_add(usize::from(width))?;
+    let end = payload_start.checked_add(length)?;
+    if end > source_end {
+        return None;
+    }
+    let header_token = data
+        .get(token_at..payload_start)?
+        .iter()
+        .enumerate()
+        .fold(0u32, |value, (shift, byte)| {
+            value | (u32::from(*byte) << (8 * shift))
+        });
+    Some(ConsolidatedRecord {
+        family,
+        width,
+        flag,
+        class,
+        header_token,
+        range: pos..end,
+        payload: payload_start..end,
+    })
+}
+
+pub(crate) fn a_family_frames_from_records(
+    records: &[ConsolidatedRecord],
+    class: u8,
+) -> Vec<ConsolidatedFrame> {
+    records
+        .iter()
         .filter(|record| record.family == ConsolidatedFamily::A && record.class == class)
         .map(|record| ConsolidatedFrame {
             pos: record.range.start,
@@ -262,9 +299,12 @@ pub(crate) fn a_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> 
         .collect()
 }
 
-pub(crate) fn b_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> {
-    consolidated_records(data)
-        .into_iter()
+pub(crate) fn b_family_frames_from_records(
+    records: &[ConsolidatedRecord],
+    class: u8,
+) -> Vec<ConsolidatedFrame> {
+    records
+        .iter()
         .filter(|record| record.family == ConsolidatedFamily::B && record.class == class)
         .map(|record| ConsolidatedFrame {
             pos: record.range.start,
@@ -273,6 +313,12 @@ pub(crate) fn b_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> 
             header_token: record.header_token,
         })
         .collect()
+}
+
+#[cfg(test)]
+pub(crate) fn b_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> {
+    let records = consolidated_records(data);
+    b_family_frames_from_records(&records, class)
 }
 
 /// Scan every `05 08 01` coordinate row in `bytes`, returning the decoded
@@ -285,7 +331,7 @@ pub fn scan_vertex_records(bytes: &[u8]) -> Vec<Point3> {
             let x = f32_le(bytes, p + 3);
             let y = f32_le(bytes, p + 7);
             let z = f32_le(bytes, p + 11);
-            if finite_in_range(x) && finite_in_range(y) && finite_in_range(z) {
+            if x.is_finite() && y.is_finite() && z.is_finite() {
                 out.push(Point3::new(x as f64, y as f64, z as f64));
             }
             p += 15;
@@ -300,6 +346,86 @@ fn f32_le(bytes: &[u8], at: usize) -> f32 {
     cadmpeg_core::le::f32_at(bytes, at).unwrap_or(f32::NAN)
 }
 
-fn finite_in_range(v: f32) -> bool {
-    v.is_finite() && v.abs() < 1e4
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn record_walk_does_not_rescan_a_wide_header_token() {
+        let mut bytes = vec![0xa7, 0x03, 0x20];
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        bytes.extend_from_slice(&[0xa5, 0x03, 0x20]);
+        bytes.extend_from_slice(&[0; 8]);
+
+        let records = consolidated_records(&bytes);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].family, ConsolidatedFamily::A);
+        assert_eq!(records[0].range, 0..18);
+    }
+
+    #[test]
+    fn bounded_record_walk_does_not_cross_an_extent_boundary() {
+        let mut bytes = vec![0xa5, 0x03, 0x20];
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        bytes.extend_from_slice(&[0x05, 0, 0, 0, 0, 0, 0, 0]);
+        bytes.extend_from_slice(&[0xb2, 0x03, 0x20, 0x01, 0x05, 0]);
+
+        let records = consolidated_records_in_ranges(&bytes, [0..12, 12..bytes.len()]);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].range, 15..21);
+        assert_eq!(records[0].family, ConsolidatedFamily::B);
+    }
+
+    #[test]
+    fn bounded_record_walk_ignores_unselected_file_regions() {
+        let mut bytes = vec![0xa5, 0x03, 0x20];
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&[0x05, 0]);
+        bytes.extend_from_slice(&[0xa5, 0x03, 0x20]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&[0x05, 0]);
+
+        let records = consolidated_records_in_ranges(&bytes, std::iter::once(9..bytes.len()));
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].range, 9..18);
+    }
+
+    #[test]
+    fn record_runs_require_physical_adjacency() {
+        let first = ConsolidatedRecord {
+            family: ConsolidatedFamily::A,
+            width: 1,
+            flag: 0x03,
+            class: 0x20,
+            header_token: 0,
+            range: 0..4,
+            payload: 3..4,
+        };
+        let adjacent = ConsolidatedRecord {
+            range: 4..8,
+            ..first.clone()
+        };
+        let separated = ConsolidatedRecord {
+            range: 5..9,
+            ..first.clone()
+        };
+
+        assert!(super::records_are_contiguous(&[first.clone(), adjacent]));
+        assert!(!super::records_are_contiguous(&[first, separated]));
+    }
+
+    #[test]
+    fn vertex_scanner_accepts_finite_coordinates_without_model_size_cutoff() {
+        let mut bytes = vec![0x05, 0x08, 0x01];
+        for value in [2_000_000.0_f32, -2_000_000.0, 2_000_000.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+
+        let [point] = scan_vertex_records(&bytes)
+            .try_into()
+            .expect("one vertex row");
+        assert_eq!(point.x, 2_000_000.0);
+        assert_eq!(point.y, -2_000_000.0);
+        assert_eq!(point.z, 2_000_000.0);
+    }
 }

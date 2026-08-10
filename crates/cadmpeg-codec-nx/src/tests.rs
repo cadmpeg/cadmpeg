@@ -611,6 +611,21 @@ fn topology_accepts_fixed_record_envelope_escape() {
 }
 
 #[test]
+fn topology_prefers_escaped_body_shape_over_direct_extended_xmt() {
+    let mut stream = topology_partition_stream();
+    let shell = stream
+        .windows(4)
+        .position(|window| window == [0, 13, 0, 3])
+        .expect("shell record");
+    stream.insert(shell + 2, 0xff);
+
+    let graph = crate::topology::Graph::parse(&stream);
+    assert_eq!(graph.get(13, 3).map(|node| node.pos), Some(shell));
+    assert_eq!(graph.body_shape_shells().len(), 1);
+    assert_eq!(graph.body_shape_face_count(), 1);
+}
+
+#[test]
 fn topology_iterates_each_record_family_in_physical_order() {
     let mut stream = Vec::new();
     for (xmt, x) in [(77, 0.01), (3, 0.02)] {
@@ -649,6 +664,80 @@ fn decode_synthesizes_vertex_for_closed_null_vertex_fin() {
 }
 
 #[test]
+fn decode_aliases_partner_closed_null_vertex_fin_to_edge_start() {
+    let mut stream = topology_partition_stream();
+    let fin = stream
+        .windows(4)
+        .position(|window| window == [0, 17, 0, 7])
+        .expect("fin record");
+    put_ref(&mut stream, fin + 12, 1);
+    put_ref(&mut stream, fin + 14, 20);
+
+    let mut partner = record(17, 23);
+    put_ref(&mut partner, 2, 20);
+    put_ref(&mut partner, 6, 1); // radial partner is not a loop member
+    put_ref(&mut partner, 8, 20); // self-forward closed endpoint
+    put_ref(&mut partner, 10, 20); // self-backward closed endpoint
+    put_ref(&mut partner, 12, 1); // null vertex
+    put_ref(&mut partner, 14, 7); // partner fin
+    put_ref(&mut partner, 16, 8); // same edge
+    put_ref(&mut partner, 18, 9); // same curve
+    partner[22] = b'+';
+    stream.extend(partner);
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+
+    let edge = result.ir.model.edges.first().expect("closed edge");
+    assert_eq!(edge.start, edge.end);
+    assert!(edge.start.0.contains("closed-edge"));
+    assert_eq!(result.ir.model.loops.len(), 1);
+    assert_eq!(result.ir.model.coedges.len(), 1);
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_does_not_alias_unresolved_edge_end_to_start_vertex() {
+    let mut stream = topology_partition_stream();
+    let first_fin = stream
+        .windows(4)
+        .position(|window| window == [0, 17, 0, 7])
+        .expect("first fin record");
+    put_ref(&mut stream, first_fin + 8, 20);
+    put_ref(&mut stream, first_fin + 10, 20);
+    put_ref(&mut stream, first_fin + 14, 20);
+
+    let mut second_fin = record(17, 23);
+    put_ref(&mut second_fin, 2, 20);
+    put_ref(&mut second_fin, 6, 5);
+    put_ref(&mut second_fin, 8, 7);
+    put_ref(&mut second_fin, 10, 7);
+    put_ref(&mut second_fin, 12, 21);
+    put_ref(&mut second_fin, 14, 7);
+    put_ref(&mut second_fin, 16, 8);
+    put_ref(&mut second_fin, 18, 9);
+    second_fin[22] = b'+';
+    stream.extend(second_fin);
+
+    let mut unresolved_vertex = record(18, 28);
+    put_ref(&mut unresolved_vertex, 2, 21);
+    put_ref(&mut unresolved_vertex, 16, 99);
+    put_f64(&mut unresolved_vertex, 18, 0.000_1);
+    stream.extend(unresolved_vertex);
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result.ir.model.edges.is_empty());
+    assert!(result.ir.model.coedges.is_empty());
+    assert!(result.ir.model.loops.is_empty());
+}
+
+#[test]
 fn topology_invalid_candidate_cannot_shadow_later_valid_record() {
     let mut stream = record(14, 39);
     put_ref(&mut stream, 2, 4);
@@ -669,7 +758,7 @@ fn decode_retains_topology_owned_point_at_origin() {
         .expect("point record");
     put_vec3(&mut stream, point + 16, [0.0, 0.0, 0.0]);
 
-    assert!(crate::geometry::points(&stream).is_empty());
+    assert_eq!(crate::geometry::points(&stream).len(), 1);
     let graph = crate::topology::Graph::parse(&stream);
     assert_eq!(
         graph
@@ -1429,8 +1518,9 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     let construction = ProceduralCurveId("synthetic:boundary-intersection".into());
     ir.model.curves.push(Curve {
         id: curve.clone(),
-        geometry: CurveGeometry::Procedural {
-            construction: construction.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(10.0, 0.0, 0.0),
         },
         source_object: None,
     });
@@ -1497,7 +1587,10 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     else {
         unreachable!()
     };
-    assert_eq!(ir.model.procedural_curves[0].cache_fit_tolerance, None);
+    assert_eq!(
+        ir.model.procedural_curves[0].cache_fit_tolerance,
+        Some(1.0e-8)
+    );
     assert_eq!(parameterization.parameter_range, [0.0, 1.0]);
     assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
@@ -1535,30 +1628,130 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                 < 1.0e-8
         );
     }
-    let ProceduralCurveDefinition::TolerantIntersection {
-        parameterization: Some(parameterization),
-        ..
-    } = &mut ir.model.procedural_curves[0].definition
-    else {
-        unreachable!()
+}
+
+#[test]
+fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
+    use cadmpeg_ir::geometry::{
+        Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve, Surface,
     };
-    parameterization.pcurves[1] = PcurveGeometry::Line {
-        origin: Point2::new(0.0, 1.0),
-        direction: Point2::new(1.0, 0.0),
+    use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, SurfaceId, VertexId};
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::topology::{Edge, Point, Vertex};
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let first_support = SurfaceId("nx:test:boundary-plane-a".into());
+    let second_support = SurfaceId("nx:test:boundary-plane-b".into());
+    ir.model.surfaces.extend([
+        Surface {
+            id: first_support.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 1.0, 0.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+        Surface {
+            id: second_support.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+    ]);
+    let curve = CurveId("nx:test:boundary-line".into());
+    ir.model.curves.push(Curve {
+        id: curve.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(10.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    let points = [
+        (
+            PointId("nx:test:boundary-point-0".into()),
+            Point3::new(0.0, 0.0, 0.0),
+        ),
+        (
+            PointId("nx:test:boundary-point-1".into()),
+            Point3::new(10.0, 0.0, 0.0),
+        ),
+    ];
+    ir.model
+        .points
+        .extend(points.iter().map(|(id, position)| Point {
+            id: id.clone(),
+            position: *position,
+            source_object: None,
+        }));
+    let vertices = [
+        VertexId("nx:test:boundary-vertex-0".into()),
+        VertexId("nx:test:boundary-vertex-1".into()),
+    ];
+    ir.model.vertices.extend([
+        Vertex {
+            id: vertices[0].clone(),
+            point: points[0].0.clone(),
+            tolerance: None,
+        },
+        Vertex {
+            id: vertices[1].clone(),
+            point: points[1].0.clone(),
+            tolerance: None,
+        },
+    ]);
+    ir.model.edges.push(Edge {
+        id: EdgeId("nx:test:boundary-edge".into()),
+        curve: Some(curve.clone()),
+        start: vertices[0].clone(),
+        end: vertices[1].clone(),
+        param_range: None,
+        tolerance: Some(1.0e-8),
+    });
+    ir.model.procedural_curves.push(ProceduralCurve {
+        id: ProceduralCurveId("nx:test:serialized-boundary".into()),
+        curve,
+        definition: ProceduralCurveDefinition::Intersection {
+            context: IntcurveSupportContext {
+                sides: [
+                    IntcurveSupportSide {
+                        surface: Some(first_support.clone()),
+                        pcurve: None,
+                        pcurve_parameter_range: None,
+                    },
+                    IntcurveSupportSide {
+                        surface: Some(second_support.clone()),
+                        pcurve: None,
+                        pcurve_parameter_range: None,
+                    },
+                ],
+                parameter_range: [0.0, 1.0],
+                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+            },
+            discontinuity_flag: false,
+        },
+        cache_fit_tolerance: Some(0.25),
+    });
+
+    crate::decode::complete_exact_boundary_intersection_pcurves(
+        &mut ir,
+        &mut cadmpeg_ir::AnnotationBuilder::new(),
+    );
+
+    let procedural = ir
+        .model
+        .procedural_curves
+        .last()
+        .expect("boundary construction");
+    assert_eq!(procedural.cache_fit_tolerance, Some(0.25));
+    let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+        panic!("intersection construction");
     };
-    assert!(cadmpeg_ir::eval::model_curve_point_by_id(
-        &cadmpeg_ir::index::ModelIndex::new(&ir),
-        &ir.model.procedural_curves[0].curve,
-        0.5,
-    )
-    .is_none());
-    assert!(cadmpeg_ir::eval::model_curve_parameter_near_point(
-        &ir,
-        &ir.model.procedural_curves[0].curve,
-        Point3::new(5.0, 0.0, 0.0),
-        0.5,
-    )
-    .is_none());
+    assert!(context.sides.iter().all(|side| side.pcurve.is_some()));
 }
 
 #[test]
@@ -2101,7 +2294,7 @@ fn decode_emits_connected_primitive_brep() {
 }
 
 #[test]
-fn decode_reports_missing_assembly_placements_only_for_external_references() {
+fn decode_does_not_report_assembly_placements_for_inline_external_metadata() {
     let file = prt_with_named_payloads(&[
         (
             "/Root/UG_PART/UG_PART",
@@ -2116,10 +2309,32 @@ fn decode_reports_missing_assembly_placements_only_for_external_references() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
 
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.code == LossKind::AssemblyPlacementsNotTransferred));
+}
+
+#[test]
+fn decode_reports_external_assembly_boundary_without_inline_geometry() {
+    let file = prt_with_named_payloads(&[(
+        "/Root/UG_PART/ExternalReferences",
+        external_reference_stream(),
+    )]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+
     assert!(result.report.losses.iter().any(|loss| {
-        loss.code == LossKind::AssemblyPlacementsNotTransferred
-            && loss.message.contains("Assembly occurrence placements")
+        loss.code == LossKind::AssemblyComponentsExternal
+            && loss.message.contains("No inline Parasolid geometry")
     }));
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.code == LossKind::AssemblyPlacementsNotTransferred));
 }
 
 #[test]
@@ -2356,7 +2571,7 @@ fn intersection_construction_recovers_one_missing_term_from_unique_edge_endpoint
         .position(|window| window == [0, 38, 0, 12])
         .expect("intersection record");
     put_ref(&mut stream, intersection + 25, 1);
-    let scan = crate::intersection::scan(&stream);
+    let scan = crate::intersection::scan(&stream, crate::intersection::ChartPointLayout::Xyz3);
     assert_eq!(scan.constructions.len(), 1);
     assert_eq!(scan.curves.len(), 1);
     assert_eq!(
@@ -2379,7 +2594,7 @@ fn intersection_construction_rejects_missing_term_without_topology_endpoint_matc
         .expect("chart record");
     put_f64(&mut stream, chart + 60, 0.005);
 
-    let scan = crate::intersection::scan(&stream);
+    let scan = crate::intersection::scan(&stream, crate::intersection::ChartPointLayout::Xyz3);
     assert_eq!(scan.constructions.len(), 1);
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_start_term, 1);
@@ -2398,7 +2613,7 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
 
     let mut chart = charted_intersection_curve_topology_partition_stream();
     append_record(&mut chart, &[0, 40, 0, 0, 0, 2, 0, 20], 108);
-    let scan = crate::intersection::scan(&chart);
+    let scan = crate::intersection::scan(&chart, crate::intersection::ChartPointLayout::Xyz3);
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_chart, 1);
     assert_eq!(
@@ -2416,7 +2631,7 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
     let mut term = base_term.clone();
     append_record(&mut term, &[0, 41, 0, 0, 0, 1, 0, 21], 34);
     assert_eq!(crate::intersection::term_use_records(&term).len(), 1);
-    let scan = crate::intersection::scan(&term);
+    let scan = crate::intersection::scan(&term, crate::intersection::ChartPointLayout::Xyz3);
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_start_term, 1);
     assert_eq!(
@@ -2433,7 +2648,10 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
     let mut uv = charted_intersection_curve_topology_partition_stream();
     append_record(&mut uv, &[0, 204, 0, 0, 0, 4, 0, 23], 41);
     assert!(crate::intersection::support_uv_records(&uv).is_empty());
-    let [curve] = crate::intersection::scan(&uv).curves.try_into().unwrap();
+    let [curve] = crate::intersection::scan(&uv, crate::intersection::ChartPointLayout::Xyz3)
+        .curves
+        .try_into()
+        .unwrap();
     assert_eq!(curve.support_uv, [None, None]);
 
     let mut blend_bound = blend_bound_charted_intersection_curve_stream();
@@ -2452,7 +2670,7 @@ fn intersection_rejection_census_requires_resolved_supports() {
     put_ref(&mut stream, intersection + 21, 999);
     put_ref(&mut stream, intersection + 23, 997);
 
-    let scan = crate::intersection::scan(&stream);
+    let scan = crate::intersection::scan(&stream, crate::intersection::ChartPointLayout::Xyz3);
     assert!(scan.constructions.is_empty());
     assert!(scan.curves.is_empty());
     assert_eq!(
@@ -2472,7 +2690,7 @@ fn uncharted_intersection_requires_exact_topology_bounds() {
         put_ref(&mut stream, intersection + offset, 1);
     }
 
-    let scan = crate::intersection::scan(&stream);
+    let scan = crate::intersection::scan(&stream, crate::intersection::ChartPointLayout::Xyz3);
     let [uncharted] = scan.uncharted.as_slice() else {
         panic!("one bounded uncharted intersection");
     };
@@ -2485,7 +2703,11 @@ fn uncharted_intersection_requires_exact_topology_bounds() {
         .position(|window| window == [0, 16, 0, 8])
         .expect("edge record");
     stream[edge + 10..edge + 18].copy_from_slice(&f64::NAN.to_be_bytes());
-    assert!(crate::intersection::scan(&stream).uncharted.is_empty());
+    assert!(
+        crate::intersection::scan(&stream, crate::intersection::ChartPointLayout::Xyz3)
+            .uncharted
+            .is_empty()
+    );
 }
 
 #[test]
@@ -2497,18 +2719,68 @@ fn intersection_chart_accepts_one_matching_parameter_complement() {
         .expect("ext11 chart");
     let complement = ext11[ext11_start..ext11_start + 236].to_vec();
 
-    let mut stream = charted_intersection_curve_topology_partition_stream();
+    let base = charted_intersection_curve_topology_partition_stream();
+    let mut stream = base.clone();
     stream.extend_from_slice(&complement);
-    let [curve] = crate::intersection::scan(&stream)
-        .curves
-        .try_into()
-        .expect("complemented curve");
+    let [curve] =
+        crate::intersection::scan_with_auxiliary_replacements(&stream, &base, &[&complement])
+            .curves
+            .try_into()
+            .expect("complemented curve");
     assert_eq!(curve.parameters, [2.0, 5.0]);
 
-    stream.extend_from_slice(&complement);
-    let scan = crate::intersection::scan(&stream);
+    let base_chart = crate::intersection::chart_source_records(
+        &base,
+        crate::intersection::ChartPointLayout::Xyz3,
+    )[0]
+    .pos;
+    let (_, base_chart_end) = crate::intersection::chart_source_record_at(
+        &base,
+        base_chart,
+        crate::intersection::ChartPointLayout::Xyz3,
+    )
+    .expect("base chart bounds");
+    let duplicate_chart = base[base_chart..base_chart_end].to_vec();
+    let mut duplicate_stream = base.clone();
+    duplicate_stream.extend_from_slice(&duplicate_chart);
+    let scan = crate::intersection::scan(
+        &duplicate_stream,
+        crate::intersection::ChartPointLayout::Xyz3,
+    );
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_chart, 1);
+}
+
+#[test]
+fn intersection_chart_accepts_encoded_count_without_arbitrary_ceiling() {
+    let count = 1025usize;
+    let mut chart = record(40, 60 + count * 24);
+    chart[2..6].copy_from_slice(&(count as u32).to_be_bytes());
+    put_ref(&mut chart, 6, 20);
+    put_f64(&mut chart, 8, 0.0);
+    put_f64(&mut chart, 16, 1.0);
+    chart[24..28].copy_from_slice(&(count as u32).to_be_bytes());
+    put_f64(&mut chart, 28, 0.00001);
+    put_f64(&mut chart, 36, 0.001);
+    put_f64(&mut chart, 44, -31_415_800_000_000.0);
+    put_f64(&mut chart, 52, -31_415_800_000_000.0);
+    for index in 0..count {
+        put_vec3(
+            &mut chart,
+            60 + index * 24,
+            [index as f64 * 0.001, 0.0, 0.0],
+        );
+    }
+
+    let [chart] = crate::intersection::chart_source_records(
+        &chart,
+        crate::intersection::ChartPointLayout::Xyz3,
+    )
+    .try_into()
+    .expect("one wide chart");
+    assert_eq!(chart.count, count as u32);
+    assert_eq!(chart.chart_count, count as u32);
+    assert_eq!(chart.points.len(), count);
 }
 
 #[test]
@@ -3230,6 +3502,94 @@ fn deltas_intersection_normalizes_before_partition_style_decode() {
 
 #[test]
 fn deltas_walks_complete_single_byte_intersection_data_records() {
+    let mut stream = crate::topology::TYPE_38_SCHEMA_HEADER.to_vec();
+    stream.extend_from_slice(&12u16.to_be_bytes());
+    stream.extend_from_slice(&7u32.to_be_bytes());
+    for reference in [1u16, 1, 1, 1, 1] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream.push(b'-');
+    for reference in [6u16, 7] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    for reference in [15u16, 14, 13] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(0);
+    }
+    stream.extend_from_slice(&[0, 1, 1]);
+    let schema_end = stream.len();
+    stream.extend_from_slice(&[0xa5; 100]);
+
+    let record_offset = stream.len();
+    stream.extend_from_slice(&[0x5a]);
+    stream.extend_from_slice(&12u16.to_be_bytes());
+    stream.extend_from_slice(&7u32.to_be_bytes());
+    for reference in [1u16, 2, 3, 4, 5] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+    }
+    stream.push(b'+');
+    for reference in [6u16, 6, 1, 1, 1, 1] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+    }
+    let record_end = stream.len();
+    stream.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.records.len(), 1);
+    assert_eq!(census.records[0].kind, 90);
+    assert_eq!(
+        crate::deltas::record_family_name(&census.records[0]),
+        Some("INTERSECTION_DATA")
+    );
+    assert_eq!(census.records[0].xmt, 12);
+    assert_eq!(census.records[0].offset, record_offset);
+    assert_eq!(
+        census.records[0].references,
+        [1, 2, 3, 4, 5, 6, 6, 1, 1, 1, 1]
+    );
+    assert_eq!(
+        census.records[0].canonical_bytes,
+        stream[record_offset..record_end]
+    );
+    assert_eq!(census.full_counts["INTERSECTION_DATA"], 1);
+    assert_eq!(
+        census.bytes_decoded,
+        schema_end + (record_end - record_offset)
+    );
+    let curves = crate::topology::intersection_data_curves(&stream);
+    assert_eq!(curves.len(), 1);
+    assert_eq!(curves[0].references, [6, 6, 1, 1, 1, 1]);
+
+    let residual = crate::deltas::semantic_residual(&stream);
+    assert!(residual[record_offset..record_end]
+        .iter()
+        .all(|byte| *byte == 0xff));
+    let prefix_len = crate::topology::TYPE_38_SCHEMA_HEADER.len() - 1;
+    let appended_start = residual.len() - prefix_len - (record_end - record_offset);
+    assert_eq!(
+        &residual[appended_start..appended_start + prefix_len],
+        &crate::topology::TYPE_38_SCHEMA_HEADER[..prefix_len]
+    );
+    assert_eq!(
+        &residual[appended_start + prefix_len..],
+        &stream[record_offset..record_end]
+    );
+}
+
+#[test]
+fn semantic_residual_does_not_reemit_historical_intersection_data() {
+    let mut stream = deltas_intersection_curve_stream();
+    stream.extend_from_slice(&deltas_body_revision(2));
+
+    let residual = crate::deltas::semantic_residual(&stream);
+
+    assert_eq!(residual.len(), stream.len());
+}
+
+#[test]
+fn deltas_rejects_single_byte_intersection_data_before_its_schema_anchor() {
     let mut stream = vec![0x5a];
     stream.extend_from_slice(&12u16.to_be_bytes());
     stream.extend_from_slice(&7u32.to_be_bytes());
@@ -3240,28 +3600,11 @@ fn deltas_walks_complete_single_byte_intersection_data_records() {
     for reference in [6u16, 6, 1, 1, 1, 1] {
         stream.extend_from_slice(&reference.to_be_bytes());
     }
-    let record_len = stream.len();
-    stream.extend_from_slice(&[0xfe, 0xdc]);
 
     let census = crate::deltas::walk(&stream);
-    assert_eq!(census.records.len(), 1);
-    assert_eq!(census.records[0].kind, 90);
-    assert_eq!(census.records[0].xmt, 12);
-    assert_eq!(
-        census.records[0].references,
-        [1, 1, 1, 1, 1, 6, 6, 1, 1, 1, 1]
-    );
-    assert_eq!(census.records[0].canonical_bytes, stream[..record_len]);
-    assert_eq!(census.full_counts["INTERSECTION_DATA"], 1);
-    assert_eq!(census.bytes_decoded, record_len);
-    assert_eq!(
-        crate::topology::intersection_data_curves(&stream)[0].references,
-        [6, 6, 1, 1, 1, 1]
-    );
-
-    let residual = crate::deltas::semantic_residual(&stream);
-    assert!(residual[..record_len].iter().all(|byte| *byte == 0xff));
-    assert!(residual.ends_with(&stream[..record_len]));
+    assert!(census.records.iter().all(|record| record.kind != 90));
+    assert!(!census.full_counts.contains_key("INTERSECTION_DATA"));
+    assert!(crate::topology::intersection_data_curves(&stream).is_empty());
 }
 
 #[test]
@@ -3332,11 +3675,19 @@ fn deltas_rejects_denormal_point_payload_coincidences() {
 
 #[test]
 fn deltas_walks_complete_intersection_auxiliary_records() {
-    let source = charted_intersection_curve_topology_partition_stream();
+    let source = ext11_charted_intersection_curve_stream();
     let blend_source = blend_bound_charted_intersection_curve_stream();
-    let chart_pos = crate::intersection::chart_source_records(&source)[0].pos;
-    let (_, chart_end) =
-        crate::intersection::chart_source_record_at(&source, chart_pos).expect("chart");
+    let chart_pos = crate::intersection::chart_source_records(
+        &source,
+        crate::intersection::ChartPointLayout::Ext11,
+    )[0]
+    .pos;
+    let (_, chart_end) = crate::intersection::chart_source_record_at(
+        &source,
+        chart_pos,
+        crate::intersection::ChartPointLayout::Ext11,
+    )
+    .expect("chart");
     let term_pos = crate::intersection::term_use_records(&source)[0].pos;
     let (_, term_end) = crate::intersection::term_use_at(&source, term_pos).expect("term use");
     let support_uv_pos = crate::intersection::support_uv_records(&source)[0].pos;
@@ -3971,6 +4322,13 @@ fn deltas_body_revision(node_id: u32) -> Vec<u8> {
     revision
 }
 
+fn deltas_point(xmt: u16, x: f64) -> Vec<u8> {
+    let mut point = status_framed_deltas_point_stream();
+    point[2..4].copy_from_slice(&xmt.to_be_bytes());
+    point[20..28].copy_from_slice(&x.to_be_bytes());
+    point
+}
+
 #[test]
 fn final_body_revision_scopes_deltas_overlay_events() {
     let mut partition = record(29, 40);
@@ -3988,6 +4346,66 @@ fn final_body_revision_scopes_deltas_overlay_events() {
     current_delete.extend_from_slice(&known_tombstone);
     let merged = crate::deltas::merge_full_records(&partition, &current_delete);
     assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_none());
+}
+
+#[test]
+fn body_revision_scopes_keep_each_monotonic_sequence_current() {
+    let mut deltas = deltas_body_revision(1);
+    deltas.extend(deltas_point(50, 0.001));
+    deltas.extend(deltas_body_revision(2));
+    deltas.extend(deltas_point(50, 0.002));
+    deltas.extend(deltas_body_revision(1));
+    deltas.extend(deltas_point(51, 0.003));
+    deltas.extend(deltas_body_revision(2));
+    deltas.extend(deltas_point(51, 0.004));
+
+    let merged = crate::deltas::merge_full_records(&[], &deltas);
+    let graph = crate::topology::Graph::parse(&merged);
+    assert!(graph.get(29, 50).is_some());
+    assert!(graph.get(29, 51).is_some());
+    let points = crate::geometry::points(&merged);
+    assert!(points
+        .iter()
+        .any(|point| (point.position.x - 2.0).abs() <= 1e-12));
+    assert!(points
+        .iter()
+        .any(|point| (point.position.x - 4.0).abs() <= 1e-12));
+    assert!(!points
+        .iter()
+        .any(|point| (point.position.x - 1.0).abs() <= 1e-12));
+    assert!(!points
+        .iter()
+        .any(|point| (point.position.x - 3.0).abs() <= 1e-12));
+}
+
+#[test]
+fn body_revision_scopes_accept_reverse_serialized_counter_direction() {
+    let mut deltas = deltas_body_revision(4);
+    deltas.extend(deltas_point(50, 0.001));
+    deltas.extend(deltas_body_revision(3));
+    deltas.extend(deltas_point(50, 0.002));
+    deltas.extend(deltas_body_revision(4));
+    deltas.extend(deltas_point(51, 0.003));
+    deltas.extend(deltas_body_revision(3));
+    deltas.extend(deltas_point(51, 0.004));
+
+    let merged = crate::deltas::merge_full_records(&[], &deltas);
+    let graph = crate::topology::Graph::parse(&merged);
+    assert!(graph.get(29, 50).is_some());
+    assert!(graph.get(29, 51).is_some());
+    let points = crate::geometry::points(&merged);
+    assert!(points
+        .iter()
+        .any(|point| (point.position.x - 2.0).abs() <= 1e-12));
+    assert!(points
+        .iter()
+        .any(|point| (point.position.x - 4.0).abs() <= 1e-12));
+    assert!(!points
+        .iter()
+        .any(|point| (point.position.x - 1.0).abs() <= 1e-12));
+    assert!(!points
+        .iter()
+        .any(|point| (point.position.x - 3.0).abs() <= 1e-12));
 }
 
 #[test]
@@ -4010,6 +4428,29 @@ fn unmatched_tombstones_are_scoped_to_the_final_body_revision() {
 }
 
 #[test]
+fn unmatched_tombstones_are_scoped_per_body_revision_sequence() {
+    let partition = topology_partition_stream();
+    let historical_first = [0, 29, 0, 98, 0, 1];
+    let historical_second = [0, 29, 0, 99, 0, 1];
+    let mut deltas = deltas_body_revision(1);
+    deltas.extend_from_slice(&historical_first);
+    deltas.extend_from_slice(&deltas_body_revision(2));
+    deltas.extend_from_slice(&historical_first);
+    deltas.extend_from_slice(&deltas_body_revision(1));
+    deltas.extend_from_slice(&historical_second);
+    deltas.extend_from_slice(&deltas_body_revision(2));
+
+    assert_eq!(
+        crate::deltas::unmatched_terminal_tombstones(&partition, &deltas),
+        1
+    );
+    assert_eq!(
+        crate::deltas::unmatched_terminal_tombstones_by_family(&partition, &deltas).get("POINT"),
+        Some(&1)
+    );
+}
+
+#[test]
 fn semantic_residual_masks_historical_body_revisions() {
     let mut deltas = deltas_body_revision(1);
     let historical_len = deltas.len();
@@ -4022,6 +4463,51 @@ fn semantic_residual_masks_historical_body_revisions() {
         .iter()
         .all(|byte| *byte == 0xff));
     assert!(residual.ends_with(&[0, 38, 0x11, 0x22, 0x33]));
+}
+
+#[test]
+fn semantic_residual_masks_historical_interleaved_body_sequences() {
+    let mut first_historical = status_framed_deltas_intersection_stream();
+    first_historical[4..8].copy_from_slice(&1u32.to_be_bytes());
+    let mut first_current = status_framed_deltas_intersection_stream();
+    first_current[4..8].copy_from_slice(&2u32.to_be_bytes());
+    let mut second_historical = status_framed_deltas_intersection_stream();
+    second_historical[2..4].copy_from_slice(&13u16.to_be_bytes());
+    second_historical[4..8].copy_from_slice(&3u32.to_be_bytes());
+    let mut second_current = second_historical.clone();
+    second_current[4..8].copy_from_slice(&4u32.to_be_bytes());
+
+    let mut deltas = deltas_body_revision(1);
+    deltas.extend_from_slice(&first_historical);
+    deltas.extend_from_slice(&deltas_body_revision(2));
+    deltas.extend_from_slice(&first_current);
+    deltas.extend_from_slice(&deltas_body_revision(1));
+    deltas.extend_from_slice(&second_historical);
+    deltas.extend_from_slice(&deltas_body_revision(2));
+    deltas.extend_from_slice(&second_current);
+
+    let census = crate::deltas::walk(&deltas);
+    let first_current_offset = census.body_revisions[1].offset;
+    let second_sequence_offset = census.body_revisions[2].offset;
+    let second_current_offset = census.body_revisions[3].offset;
+    let residual = crate::deltas::semantic_residual(&deltas);
+    assert!(residual[..first_current_offset]
+        .iter()
+        .all(|byte| *byte == 0xff));
+    assert!(residual[second_sequence_offset..second_current_offset]
+        .iter()
+        .all(|byte| *byte == 0xff));
+    let mut expected = crate::deltas::walk(&first_current).records[0]
+        .canonical_bytes
+        .clone();
+    expected.extend_from_slice(&crate::deltas::walk(&second_current).records[0].canonical_bytes);
+    assert!(residual.ends_with(&expected));
+    assert!(!residual
+        .windows(first_historical.len())
+        .any(|window| window == first_historical));
+    assert!(!residual
+        .windows(second_historical.len())
+        .any(|window| window == second_historical));
 }
 
 #[test]
@@ -4066,6 +4552,24 @@ fn deltas_tombstone_decodes_compact_and_extended_xmt_identities() {
 
     assert_eq!(crate::deltas::walk(&compact).tombstones[0].xmt, 11);
     assert_eq!(crate::deltas::walk(&extended).tombstones[0].xmt, 40_000);
+}
+
+#[test]
+fn deltas_tombstone_is_self_delimiting_before_opaque_bytes() {
+    let mut stream = vec![0, 29, 0, 11, 0, 1];
+    stream.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.tombstones.len(), 1);
+    assert_eq!(census.tombstones[0].xmt, 11);
+    assert_eq!(census.bytes_decoded, 6);
+    assert_eq!(
+        crate::deltas::semantic_residual(&stream),
+        vec![0xff; 6]
+            .into_iter()
+            .chain([0xfe, 0xdc])
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -4733,7 +5237,8 @@ fn decode_accepts_intersection_terms_within_chart_tolerance() {
 #[test]
 fn decode_emits_ext11_deltas_intersection_chart() {
     let stream = ext11_charted_intersection_curve_stream();
-    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let partition = charted_intersection_curve_topology_partition_stream();
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let curve_id = &result.ir.model.procedural_curves[0].curve;
@@ -4754,7 +5259,9 @@ fn decode_emits_ext11_deltas_intersection_chart() {
 #[test]
 fn decode_assigns_ext11_uv_lanes_by_unique_surface_evaluation() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
-    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let partition =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
@@ -4780,7 +5287,9 @@ fn decode_assigns_ext11_uv_lanes_by_unique_surface_evaluation() {
 #[test]
 fn ext11_uv_assignment_eliminates_the_complementary_support_lane() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
-    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let partition =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let surfaces = [
         result.ir.model.surfaces[0].id.clone(),
@@ -4809,11 +5318,60 @@ fn ext11_uv_assignment_eliminates_the_complementary_support_lane() {
 
 #[test]
 fn topology_selects_one_candidate_at_an_ambiguous_record_offset() {
-    let mut stream = vec![0; 40];
+    let mut stream = vec![0; 26];
     stream[..7].copy_from_slice(&[0, 12, 0xff, 0xfe, 0x00, 0x02, 0x01]);
+    let mut successor = record(12, 24);
+    put_ref(&mut successor, 2, 3);
+    stream.extend_from_slice(&successor);
     let graph = crate::topology::Graph::parse(&stream);
-    assert_eq!(graph.of_kind(12).count(), 1);
+    assert_eq!(graph.of_kind(12).count(), 2);
     assert_eq!(graph.at_pos(0).map(|node| node.xmt), Some(65_536));
+    assert_eq!(graph.at_pos(26).map(|node| node.xmt), Some(3));
+}
+
+#[test]
+fn topology_disambiguates_direct_large_index_from_escaped_compact_record() {
+    let mut stream = vec![0; 25];
+    stream[..6].copy_from_slice(&[0, 17, 0xff, 0x7f, 0x00, 0x01]);
+    for index in 0..8 {
+        put_ref(&mut stream, 6 + index * 2, 2);
+    }
+    stream[22..24].copy_from_slice(b"++");
+    stream[24] = b'+';
+
+    let mut successor = record(17, 23);
+    put_ref(&mut successor, 2, 7);
+    for index in 0..9 {
+        put_ref(&mut successor, 4 + index * 2, 2);
+    }
+    successor[22] = b'+';
+    stream.extend_from_slice(&successor);
+
+    let graph = crate::topology::Graph::parse(&stream);
+    assert_eq!(graph.at_pos(0).map(|node| node.xmt), Some(32_896));
+    assert_eq!(graph.at_pos(0).map(crate::topology::Node::end), Some(25));
+    assert_eq!(graph.at_pos(25).map(|node| node.xmt), Some(7));
+
+    let mut ambiguous = stream[..25].to_vec();
+    ambiguous.extend_from_slice(&[0; 5]);
+    assert!(crate::topology::Graph::parse(&ambiguous)
+        .at_pos(0)
+        .is_none());
+}
+
+#[test]
+fn topology_rejects_duplicate_fixed_record_identity() {
+    let mut first = record(29, 40);
+    put_ref(&mut first, 2, 11);
+    put_vec3(&mut first, 16, [0.01, 0.02, 0.03]);
+    let mut duplicate = record(29, 40);
+    put_ref(&mut duplicate, 2, 11);
+    put_vec3(&mut duplicate, 16, [0.04, 0.05, 0.06]);
+    first.extend(duplicate);
+
+    let graph = crate::topology::Graph::parse(&first);
+    assert!(graph.get(29, 11).is_none());
+    assert!(graph.of_kind(29).next().is_none());
 }
 
 #[test]
@@ -4856,6 +5414,277 @@ fn nurbs_carriers_reject_nonfinite_millimeter_control_points() {
     put_f64(&mut curve, payload + 15, f64::MAX);
     put_f64(&mut curve, payload + 31, f64::MIN_POSITIVE);
     assert!(crate::nurbs::pcurves(&curve).is_empty());
+}
+
+#[test]
+fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
+    let mut surface = bspline_partition_stream();
+    let surface_descriptor = surface
+        .windows(4)
+        .position(|window| window == [0, 126, 0, 20])
+        .expect("surface descriptor");
+    surface[surface_descriptor + 4] = 1;
+    surface[surface_descriptor + 5] = 0;
+    surface[surface_descriptor + 18] = 2;
+    surface[surface_descriptor + 19] = 3;
+    let [surface] = crate::nurbs::surfaces(&surface)
+        .try_into()
+        .expect("one surface");
+    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
+        panic!("expected NURBS surface");
+    };
+    assert!(surface.u_periodic);
+    assert!(!surface.v_periodic);
+
+    let mut open_surface = bspline_partition_stream();
+    let surface_descriptor = open_surface
+        .windows(4)
+        .position(|window| window == [0, 126, 0, 20])
+        .expect("surface descriptor");
+    open_surface[surface_descriptor + 4] = 0;
+    open_surface[surface_descriptor + 18] = 6;
+    let [open_surface] = crate::nurbs::surfaces(&open_surface)
+        .try_into()
+        .expect("one surface");
+    let SurfaceGeometry::Nurbs(open_surface) = open_surface.geometry else {
+        panic!("expected NURBS surface");
+    };
+    assert!(!open_surface.u_periodic);
+
+    let mut curve = bspline_partition_stream();
+    let curve_descriptor = curve
+        .windows(4)
+        .position(|window| window == [0, 136, 0, 40])
+        .expect("curve descriptor");
+    curve[curve_descriptor + 16] = 2;
+    curve[curve_descriptor + 17] = 1;
+    let [curve] = crate::nurbs::curves(&curve).try_into().expect("one curve");
+    let CurveGeometry::Nurbs(curve) = curve.geometry else {
+        panic!("expected NURBS curve");
+    };
+    assert!(curve.periodic);
+
+    let mut open_curve = bspline_partition_stream();
+    let curve_descriptor = open_curve
+        .windows(4)
+        .position(|window| window == [0, 136, 0, 40])
+        .expect("curve descriptor");
+    open_curve[curve_descriptor + 16] = 6;
+    open_curve[curve_descriptor + 17] = 0;
+    let [open_curve] = crate::nurbs::curves(&open_curve)
+        .try_into()
+        .expect("one curve");
+    let CurveGeometry::Nurbs(open_curve) = open_curve.geometry else {
+        panic!("expected NURBS curve");
+    };
+    assert!(!open_curve.periodic);
+
+    let mut pcurve = bspline_partition_stream();
+    let pcurve_descriptor = pcurve
+        .windows(4)
+        .position(|window| window == [0, 136, 0, 40])
+        .expect("pcurve descriptor");
+    put_ref(&mut pcurve, pcurve_descriptor + 10, 2);
+    pcurve[pcurve_descriptor + 16] = 6;
+    pcurve[pcurve_descriptor + 17] = 0;
+    let payload = pcurve
+        .windows(4)
+        .position(|window| window == [0, 135, 0, 41])
+        .expect("pcurve payload");
+    for (index, value) in [0.0, 0.0, 1.0, 0.02, 0.0, 1.0].into_iter().enumerate() {
+        put_f64(&mut pcurve, payload + 15 + index * 8, value);
+    }
+    let [pcurve] = crate::nurbs::pcurves(&pcurve)
+        .try_into()
+        .expect("one pcurve");
+    let PcurveGeometry::Nurbs { periodic, .. } = pcurve.geometry else {
+        panic!("expected NURBS pcurve");
+    };
+    assert!(!periodic);
+}
+
+#[test]
+fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
+    fn curve_stream(degree: u16, poles: u16) -> Vec<u8> {
+        assert!(poles > degree);
+        let distinct = usize::from(poles) + 1;
+        let mut stream = Vec::new();
+
+        let mut wrapper = record(134, 23);
+        put_ref(&mut wrapper, 2, 50);
+        wrapper[18] = b'+';
+        put_ref(&mut wrapper, 19, 40);
+        put_ref(&mut wrapper, 21, 41);
+        stream.extend(wrapper);
+
+        let mut descriptor = record(136, 27);
+        put_ref(&mut descriptor, 2, 40);
+        put_ref(&mut descriptor, 4, degree);
+        put_ref(&mut descriptor, 8, poles);
+        put_ref(&mut descriptor, 10, 3);
+        put_ref(&mut descriptor, 14, distinct as u16);
+        descriptor[16] = 2;
+        descriptor[20] = 2;
+        put_ref(&mut descriptor, 23, 42);
+        put_ref(&mut descriptor, 25, 43);
+        stream.extend(descriptor);
+
+        let value_count = usize::from(poles) * 3;
+        let mut payload = record(135, 15 + value_count * 8);
+        put_ref(&mut payload, 2, 41);
+        payload[9..13].copy_from_slice(&(value_count as u32).to_be_bytes());
+        put_ref(&mut payload, 13, 1);
+        for pole in 0..usize::from(poles) {
+            let at = 15 + pole * 24;
+            put_f64(&mut payload, at, pole as f64 * 0.01);
+            put_f64(&mut payload, at + 8, 0.0);
+            put_f64(&mut payload, at + 16, 0.0);
+        }
+        stream.extend(payload);
+
+        let mut multiplicities = record(127, 8 + distinct * 2);
+        multiplicities[4..6].copy_from_slice(&(distinct as u16).to_be_bytes());
+        put_ref(&mut multiplicities, 6, 42);
+        put_ref(&mut multiplicities, 8, degree + 1);
+        for index in 1..distinct {
+            put_ref(&mut multiplicities, 8 + index * 2, 1);
+        }
+        stream.extend(multiplicities);
+
+        let mut knots = record(128, 8 + distinct * 8);
+        knots[4..6].copy_from_slice(&(distinct as u16).to_be_bytes());
+        put_ref(&mut knots, 6, 43);
+        for index in 0..distinct {
+            put_f64(&mut knots, 8 + index * 8, index as f64);
+        }
+        stream.extend(knots);
+        stream
+    }
+
+    fn surface_stream(u_degree: u16, u_poles: u16, v_degree: u16, v_poles: u16) -> Vec<u8> {
+        assert!(u_poles > u_degree && v_poles > v_degree);
+        let u_distinct = usize::from(u_poles) + 1;
+        let v_distinct = usize::from(v_poles) + 1;
+        let poles = usize::from(u_poles) * usize::from(v_poles);
+        let mut stream = Vec::new();
+
+        let mut wrapper = record(124, 23);
+        put_ref(&mut wrapper, 2, 10);
+        wrapper[18] = b'+';
+        put_ref(&mut wrapper, 19, 20);
+        put_ref(&mut wrapper, 21, 21);
+        stream.extend(wrapper);
+
+        let mut descriptor = record(126, 48);
+        put_ref(&mut descriptor, 2, 20);
+        put_ref(&mut descriptor, 6, u_degree);
+        put_ref(&mut descriptor, 8, v_degree);
+        put_ref(&mut descriptor, 12, u_poles);
+        put_ref(&mut descriptor, 16, v_poles);
+        descriptor[18] = 2;
+        descriptor[19] = 2;
+        descriptor[20..24].copy_from_slice(&(u_distinct as u32).to_be_bytes());
+        descriptor[24..28].copy_from_slice(&(v_distinct as u32).to_be_bytes());
+        put_ref(&mut descriptor, 36, 30);
+        put_ref(&mut descriptor, 38, 31);
+        put_ref(&mut descriptor, 40, 32);
+        put_ref(&mut descriptor, 42, 33);
+        put_ref(&mut descriptor, 44, 125);
+        put_ref(&mut descriptor, 46, 21);
+        stream.extend(descriptor);
+
+        let value_count = poles * 3;
+        let mut payload = record(125, 97 + value_count * 8);
+        put_ref(&mut payload, 2, 21);
+        payload[90] = b'+';
+        payload[91..95].copy_from_slice(&(value_count as u32).to_be_bytes());
+        put_ref(&mut payload, 95, 1);
+        for v in 0..usize::from(v_poles) {
+            for u in 0..usize::from(u_poles) {
+                let at = 97 + (v * usize::from(u_poles) + u) * 24;
+                put_f64(&mut payload, at, u as f64 * 0.001);
+                put_f64(&mut payload, at + 8, v as f64 * 0.001);
+                put_f64(&mut payload, at + 16, 0.0);
+            }
+        }
+        stream.extend(payload);
+
+        for (reference, degree, distinct) in
+            [(30, u_degree, u_distinct), (31, v_degree, v_distinct)]
+        {
+            let mut multiplicities = record(127, 8 + distinct * 2);
+            multiplicities[4..6].copy_from_slice(&(distinct as u16).to_be_bytes());
+            put_ref(&mut multiplicities, 6, reference);
+            put_ref(&mut multiplicities, 8, degree + 1);
+            for index in 1..distinct {
+                put_ref(&mut multiplicities, 8 + index * 2, 1);
+            }
+            stream.extend(multiplicities);
+        }
+        for (reference, distinct) in [(32, u_distinct), (33, v_distinct)] {
+            let mut knots = record(128, 8 + distinct * 8);
+            knots[4..6].copy_from_slice(&(distinct as u16).to_be_bytes());
+            put_ref(&mut knots, 6, reference);
+            for index in 0..distinct {
+                put_f64(&mut knots, 8 + index * 8, index as f64);
+            }
+            stream.extend(knots);
+        }
+        stream
+    }
+
+    let [high_degree] = crate::nurbs::curves(&curve_stream(11, 12))
+        .try_into()
+        .expect("one high-degree curve");
+    let CurveGeometry::Nurbs(high_degree) = high_degree.geometry else {
+        panic!("expected high-degree NURBS curve");
+    };
+    assert_eq!(high_degree.degree, 11);
+    assert_eq!(high_degree.control_points.len(), 12);
+    assert_eq!(high_degree.knots.len(), 24);
+
+    let [wide_curve] = crate::nurbs::curves(&curve_stream(1, 5000))
+        .try_into()
+        .expect("one wide curve");
+    let CurveGeometry::Nurbs(wide_curve) = wide_curve.geometry else {
+        panic!("expected wide NURBS curve");
+    };
+    assert_eq!(wide_curve.control_points.len(), 5000);
+    assert_eq!(wide_curve.knots.len(), 5002);
+
+    let [wide_surface] = crate::nurbs::surfaces(&surface_stream(1, 2001, 1, 2))
+        .try_into()
+        .expect("one wide surface");
+    let SurfaceGeometry::Nurbs(wide_surface) = wide_surface.geometry else {
+        panic!("expected wide NURBS surface");
+    };
+    assert_eq!(wide_surface.control_points.len(), 4002);
+    assert_eq!(wide_surface.u_knots.len(), 2003);
+    assert_eq!(wide_surface.v_knots.len(), 4);
+
+    let mut wide_curve_pole_count = curve_stream(1, 12);
+    let curve_descriptor = wide_curve_pole_count
+        .windows(4)
+        .position(|window| window == [0, 136, 0, 40])
+        .expect("curve descriptor");
+    wide_curve_pole_count[curve_descriptor + 6] = 1;
+    assert!(crate::nurbs::curves(&wide_curve_pole_count).is_empty());
+
+    let mut wide_curve_distinct_count = curve_stream(1, 12);
+    wide_curve_distinct_count[curve_descriptor + 12] = 1;
+    assert!(crate::nurbs::curves(&wide_curve_distinct_count).is_empty());
+
+    let mut wide_surface_pole_count = surface_stream(1, 2, 1, 2);
+    let surface_descriptor = wide_surface_pole_count
+        .windows(4)
+        .position(|window| window == [0, 126, 0, 20])
+        .expect("surface descriptor");
+    wide_surface_pole_count[surface_descriptor + 10] = 1;
+    assert!(crate::nurbs::surfaces(&wide_surface_pole_count).is_empty());
+
+    let mut wide_surface_distinct_count = surface_stream(1, 2, 1, 2);
+    wide_surface_distinct_count[surface_descriptor + 20] = 1;
+    assert!(crate::nurbs::surfaces(&wide_surface_distinct_count).is_empty());
 }
 
 #[test]
@@ -4969,13 +5798,57 @@ fn intersection_chart_rejects_nonfinite_millimeter_tolerance() {
         .position(|window| window == [0, 40])
         .expect("chart record");
     put_f64(&mut stream, chart + 28, f64::MAX);
-    assert!(crate::intersection::curves(&stream).is_empty());
+    assert!(
+        crate::intersection::curves(&stream, crate::intersection::ChartPointLayout::Xyz3)
+            .is_empty()
+    );
+}
+
+#[test]
+fn intersection_chart_layout_is_selected_by_stream_kind() {
+    let ext11 = ext11_charted_intersection_curve_stream();
+    assert!(crate::intersection::chart_source_records(
+        &ext11,
+        crate::intersection::ChartPointLayout::Xyz3,
+    )
+    .is_empty());
+    let [chart] = crate::intersection::chart_source_records(
+        &ext11,
+        crate::intersection::ChartPointLayout::Ext11,
+    )
+    .try_into()
+    .expect("one ext11 chart");
+    assert_eq!(
+        chart.point_layout,
+        crate::intersection::ChartPointLayout::Ext11
+    );
+    assert_eq!(chart.native_parameters, Some(vec![2.0, 5.0]));
+}
+
+#[test]
+fn intersection_chart_accepts_finite_model_coordinates_without_magnitude_bound() {
+    let mut stream = charted_intersection_curve_topology_partition_stream();
+    let chart = stream
+        .windows(2)
+        .position(|window| window == [0, 40])
+        .expect("chart record");
+    put_vec3(&mut stream, chart + 60, [1_000.0, 0.0, 0.0]);
+    put_vec3(&mut stream, chart + 84, [1_000.01, 0.0, 0.0]);
+    let [chart] = crate::intersection::chart_source_records(
+        &stream,
+        crate::intersection::ChartPointLayout::Xyz3,
+    )
+    .try_into()
+    .expect("one large-coordinate chart");
+    assert_eq!(chart.points[0].x, 1_000_000.0);
+    assert_eq!(chart.points[1].x, 1_000_010.0);
 }
 
 #[test]
 fn decode_replaces_ambiguous_ext11_uv_lanes_from_analytic_supports() {
     let stream = two_support_ext11_charted_intersection_curve_stream(true);
-    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let partition = two_support_charted_intersection_curve_stream();
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
@@ -4990,7 +5863,9 @@ fn decode_replaces_ambiguous_ext11_uv_lanes_from_analytic_supports() {
 #[test]
 fn decode_completes_one_non_sentinel_ext11_uv_lane_analytically() {
     let stream = partial_ext11_charted_intersection_curve_stream();
-    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let partition =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
@@ -5101,7 +5976,9 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
 #[test]
 fn ext11_uv_completion_runs_after_support_incidence_resolution() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
-    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let partition =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural_id = result.ir.model.procedural_curves[0].id.clone();
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
@@ -5140,7 +6017,9 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
 #[test]
 fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
-    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let partition =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural_id = result.ir.model.procedural_curves[0].id.clone();
     let ProceduralCurveDefinition::Intersection { context, .. } =
@@ -5179,7 +6058,9 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
     use cadmpeg_ir::ids::{ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
-    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let partition =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let spine_id = result.ir.model.procedural_curves[0].id.clone();
     let spine_curve = result.ir.model.procedural_curves[0].curve.clone();
@@ -5320,7 +6201,9 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
 #[test]
 fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
-    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let partition =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural_id = result.ir.model.procedural_curves[0].id.clone();
     let ProceduralCurveDefinition::Intersection { context, .. } =
@@ -5368,7 +6251,9 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
 #[test]
 fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
-    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let partition =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural_id = result.ir.model.procedural_curves[0].id.clone();
     let ProceduralCurveDefinition::Intersection { context, .. } =
@@ -5520,13 +6405,17 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
     let expected = Point2::new(0.37, 0.61);
     let point = cadmpeg_ir::eval::nurbs_surface_point(&surface, expected.u, expected.v).unwrap();
 
-    let actual = crate::decode::nurbs_parameters(&surface, point, None).unwrap();
+    let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter(&surface, point, None).unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-10);
     assert!((actual.v - expected.v).abs() < 1.0e-10);
 
-    let after_invalid_seed =
-        crate::decode::nurbs_parameters(&surface, point, Some(Point2::new(f64::NAN, 0.5))).unwrap();
+    let after_invalid_seed = cadmpeg_ir::eval::nurbs_surface_closest_parameter(
+        &surface,
+        point,
+        Some(Point2::new(f64::NAN, 0.5)),
+    )
+    .unwrap();
     assert!((after_invalid_seed.u - expected.u).abs() < 1.0e-10);
     assert!((after_invalid_seed.v - expected.v).abs() < 1.0e-10);
 }
@@ -5899,8 +6788,12 @@ fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
     let expected = Point2::new(0.125, 0.3);
     let point = cadmpeg_ir::eval::nurbs_surface_point(&surface, expected.u, expected.v).unwrap();
 
-    let actual =
-        crate::decode::nurbs_parameters(&surface, point, Some(Point2::new(0.875, 0.3))).unwrap();
+    let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter(
+        &surface,
+        point,
+        Some(Point2::new(0.875, 0.3)),
+    )
+    .unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-10);
     assert!((actual.v - expected.v).abs() < 1.0e-10);
@@ -5930,8 +6823,12 @@ fn nurbs_parameter_solver_preserves_close_equal_branches() {
     let expected = Point2::new(0.5001, 0.3);
     let point = cadmpeg_ir::eval::nurbs_surface_point(&surface, expected.u, expected.v).unwrap();
 
-    let actual =
-        crate::decode::nurbs_parameters(&surface, point, Some(Point2::new(0.50011, 0.3))).unwrap();
+    let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter(
+        &surface,
+        point,
+        Some(Point2::new(0.50011, 0.3)),
+    )
+    .unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-10);
     assert!((actual.v - expected.v).abs() < 1.0e-10);
@@ -6795,6 +7692,45 @@ fn decode_emits_both_intersection_support_pcurves() {
 }
 
 #[test]
+fn decode_discards_serialized_support_uv_lane_that_misses_chart() {
+    let stream =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
+        &result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("typed intersection");
+    };
+    assert!(context.sides[0].pcurve.is_some());
+    let Some(PcurveGeometry::Nurbs { control_points, .. }) = context.sides[1].pcurve.as_ref()
+    else {
+        panic!("completed second support pcurve");
+    };
+    assert_eq!(control_points.first(), Some(&Point2::new(0.0, 0.0)));
+    assert_eq!(control_points.last(), Some(&Point2::new(0.0, 10.0)));
+    assert!(control_points.iter().all(|point| point.u == 0.0));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn intersection_support_order_follows_type_38_values_marker() {
+    let mut stream = two_support_charted_intersection_curve_stream();
+    let uv = stream
+        .windows(8)
+        .position(|window| window == [0, 204, 0, 0, 0, 8, 0, 23])
+        .expect("support UV record");
+    stream[uv + 8] = 3;
+
+    let scan = crate::intersection::scan(&stream, crate::intersection::ChartPointLayout::Xyz3);
+    let [curve] = scan.curves.as_slice() else {
+        panic!("one charted intersection");
+    };
+    assert_eq!(curve.supports, [13, 6]);
+}
+
+#[test]
 fn decode_retains_uncharted_intersection_without_inventing_a_range() {
     let mut stream = two_support_charted_intersection_curve_stream();
     let intersection = stream
@@ -6837,7 +7773,7 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
 }
 
 #[test]
-fn terminal_plane_intersection_establishes_exact_bidirectional_charts() {
+fn terminal_plane_intersection_without_a_direct_carrier_remains_unresolved() {
     let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
     let intersection = stream
         .windows(4)
@@ -6858,29 +7794,12 @@ fn terminal_plane_intersection_establishes_exact_bidirectional_charts() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural = &result.ir.model.procedural_curves[0];
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
-        parameterization: Some(parameterization),
+        parameterization: None,
         ..
     } = &procedural.definition
     else {
-        panic!("charted tolerant intersection");
+        panic!("unresolved tolerant intersection");
     };
-    assert_eq!(parameterization.parameter_range, [0.0, 1.0]);
-    for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-        let point = cadmpeg_ir::eval::model_curve_point_by_id(
-            &cadmpeg_ir::index::ModelIndex::new(&result.ir),
-            &procedural.curve,
-            parameter,
-        )
-        .expect("exact plane intersection evaluates");
-        let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
-            &result.ir,
-            &procedural.curve,
-            point,
-            parameter,
-        )
-        .expect("exact plane intersection inverts");
-        assert!((inverse - parameter).abs() < 1.0e-10);
-    }
     let edge = result
         .ir
         .model
@@ -6888,12 +7807,12 @@ fn terminal_plane_intersection_establishes_exact_bidirectional_charts() {
         .iter()
         .find(|edge| edge.curve.as_ref() == Some(&procedural.curve))
         .expect("carrying edge");
-    assert_eq!(edge.param_range, Some([0.0, 1.0]));
+    assert_eq!(edge.param_range, None);
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
 #[test]
-fn terminal_cylinder_generator_establishes_exact_bidirectional_charts() {
+fn terminal_cylinder_generator_without_a_direct_carrier_remains_unresolved() {
     let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
     let intersection = stream
         .windows(4)
@@ -6916,35 +7835,12 @@ fn terminal_cylinder_generator_establishes_exact_bidirectional_charts() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural = &result.ir.model.procedural_curves[0];
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
-        parameterization: Some(parameterization),
+        parameterization: None,
         ..
     } = &procedural.definition
     else {
-        panic!("charted tolerant intersection");
+        panic!("unresolved tolerant intersection");
     };
-    assert!(parameterization.pcurves.iter().any(|pcurve| {
-        matches!(
-            pcurve,
-            PcurveGeometry::Line { direction, .. }
-                if direction.u == 0.0 && direction.v != 0.0
-        )
-    }));
-    for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-        let point = cadmpeg_ir::eval::model_curve_point_by_id(
-            &cadmpeg_ir::index::ModelIndex::new(&result.ir),
-            &procedural.curve,
-            parameter,
-        )
-        .expect("exact generator evaluates");
-        let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
-            &result.ir,
-            &procedural.curve,
-            point,
-            parameter,
-        )
-        .expect("exact generator inverts");
-        assert!((inverse - parameter).abs() < 1.0e-10);
-    }
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 
     let second_point = stream
@@ -6964,7 +7860,7 @@ fn terminal_cylinder_generator_establishes_exact_bidirectional_charts() {
 }
 
 #[test]
-fn terminal_cone_generator_establishes_exact_bidirectional_charts() {
+fn terminal_cone_generator_without_a_direct_carrier_remains_unresolved() {
     let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
     let intersection = stream
         .windows(4)
@@ -6991,34 +7887,17 @@ fn terminal_cone_generator_establishes_exact_bidirectional_charts() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural = &result.ir.model.procedural_curves[0];
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
-        parameterization: Some(parameterization),
+        parameterization: None,
         ..
     } = &procedural.definition
     else {
-        panic!("charted tolerant intersection");
+        panic!("unresolved tolerant intersection");
     };
-    assert_eq!(parameterization.parameter_range, [0.0, 1.0]);
-    for parameter in [0.0, 0.5, 1.0] {
-        let point = cadmpeg_ir::eval::model_curve_point_by_id(
-            &cadmpeg_ir::index::ModelIndex::new(&result.ir),
-            &procedural.curve,
-            parameter,
-        )
-        .expect("exact cone generator evaluates");
-        let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
-            &result.ir,
-            &procedural.curve,
-            point,
-            parameter,
-        )
-        .expect("exact cone generator inverts");
-        assert!((inverse - parameter).abs() < 1.0e-10);
-    }
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
 #[test]
-fn terminal_sphere_and_torus_meridians_establish_exact_bidirectional_charts() {
+fn terminal_sphere_and_torus_meridians_without_a_direct_carrier_remain_unresolved() {
     let terminal_stream = || {
         let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
         let intersection = stream
@@ -7052,59 +7931,28 @@ fn terminal_sphere_and_torus_meridians_establish_exact_bidirectional_charts() {
     for (family, record) in [("sphere", sphere), ("torus", torus)] {
         let mut stream = terminal_stream();
         stream.extend(record);
-        let mut result = NxCodec
+        let result = NxCodec
             .decode(
                 &mut Cursor::new(prt_with_partition(&stream)),
                 &DecodeOptions::default(),
             )
             .unwrap();
-        if family == "torus" {
-            let ProceduralCurveDefinition::TolerantIntersection {
-                parameterization: Some(parameterization),
-                ..
-            } = &mut result.ir.model.procedural_curves[0].definition
-            else {
-                panic!("exact torus meridian");
-            };
-            for pcurve in &mut parameterization.pcurves {
-                if let PcurveGeometry::Line { origin, direction } = pcurve {
-                    if direction.u == 0.0 && direction.v != 0.0 {
-                        origin.v += std::f64::consts::TAU;
-                    }
-                }
-            }
-        }
         let procedural = &result.ir.model.procedural_curves[0];
         let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
-            parameterization: Some(parameterization),
+            parameterization: None,
             ..
         } = &procedural.definition
         else {
-            panic!("exact {family} meridian");
+            panic!("unresolved {family} meridian");
         };
-        assert!(parameterization.pcurves.iter().any(|pcurve| {
-            matches!(
-                pcurve,
-                PcurveGeometry::Line { direction, .. }
-                    if direction.u == 0.0 && direction.v != 0.0
-            )
-        }));
-        for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-            let point = cadmpeg_ir::eval::model_curve_point_by_id(
-                &cadmpeg_ir::index::ModelIndex::new(&result.ir),
-                &procedural.curve,
-                parameter,
-            )
-            .unwrap_or_else(|| panic!("{family} meridian evaluates"));
-            let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
-                &result.ir,
-                &procedural.curve,
-                point,
-                parameter,
-            )
-            .unwrap_or_else(|| panic!("{family} meridian inverts at {parameter}"));
-            assert!((inverse - parameter).abs() < 1.0e-8);
-        }
+        let edge = result
+            .ir
+            .model
+            .edges
+            .iter()
+            .find(|edge| edge.curve.as_ref() == Some(&procedural.curve))
+            .expect("carrying edge");
+        assert_eq!(edge.param_range, None);
         assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
     }
 }
@@ -7601,27 +8449,28 @@ fn decode_tracks_geometry_envelope_escape_shift() {
 }
 
 #[test]
-fn cylinder_gate_rejects_denormal_radius() {
-    // A coincidental byte alignment can present a unit axis and a model-scale
-    // origin alongside a denormal (near-zero) double at the radius slot; the radius
-    // floor must reject it rather than emit a fabricated zero-radius cylinder.
+fn analytic_scanner_accepts_positive_subnormal_radius() {
     let mut cy = record(0x33, 99);
+    put_ref(&mut cy, 2, 2);
+    cy[18] = b'+';
     put_vec3(&mut cy, 19, [0.003_175, 0.0, 0.0]);
     put_vec3(&mut cy, 43, [0.0, 0.0, 1.0]);
     put_f64(&mut cy, 67, f64::from_bits(1)); // smallest positive subnormal
     put_vec3(&mut cy, 75, [1.0, 0.0, 0.0]);
-    assert!(crate::geometry::surfaces(&cy).is_empty());
+    assert_eq!(crate::geometry::surfaces(&cy).len(), 1);
 }
 
 #[test]
 fn graph_owned_analytic_geometry_has_no_scanner_magnitude_limit() {
     let mut cylinder = record(0x33, 99);
+    put_ref(&mut cylinder, 2, 2);
+    cylinder[18] = b'+';
     put_vec3(&mut cylinder, 19, [1_001.0, 0.0, 0.0]);
     put_vec3(&mut cylinder, 43, [0.0, 0.0, 1.0]);
     put_f64(&mut cylinder, 67, f64::from_bits(1));
     put_vec3(&mut cylinder, 75, [1.0, 0.0, 0.0]);
 
-    assert!(crate::geometry::surfaces(&cylinder).is_empty());
+    assert_eq!(crate::geometry::surfaces(&cylinder).len(), 1);
     let geometry =
         crate::geometry::decode_surface_record(&cylinder, 0x33, 0).expect("graph-owned cylinder");
     let SurfaceGeometry::Cylinder { origin, radius, .. } = geometry else {
@@ -7637,6 +8486,8 @@ fn graph_owned_analytic_geometry_has_no_scanner_magnitude_limit() {
 #[test]
 fn ellipse_requires_ordered_serialized_radii() {
     let mut ellipse = record(0x20, 107);
+    put_ref(&mut ellipse, 2, 2);
+    ellipse[18] = b'+';
     put_vec3(&mut ellipse, 19, [0.0, 0.0, 0.0]);
     put_vec3(&mut ellipse, 43, [0.0, 0.0, 1.0]);
     put_vec3(&mut ellipse, 67, [1.0, 0.0, 0.0]);
@@ -7659,7 +8510,7 @@ fn graph_owned_point_has_no_scanner_magnitude_limit() {
         .expect("point record");
     put_vec3(&mut stream, point + 16, [1_001.0, f64::from_bits(1), 0.0]);
 
-    assert!(crate::geometry::points(&stream).is_empty());
+    assert_eq!(crate::geometry::points(&stream).len(), 1);
     let graph = crate::topology::Graph::parse(&stream);
     assert_eq!(
         graph
@@ -7687,6 +8538,8 @@ fn decoded_tolerance_has_no_model_magnitude_limit() {
 #[test]
 fn analytic_frame_gate_rejects_nonorthogonal_reference_direction() {
     let mut plane = record(0x32, 91);
+    put_ref(&mut plane, 2, 2);
+    plane[18] = b'+';
     put_vec3(&mut plane, 19, [0.0, 0.0, 0.0]);
     put_vec3(&mut plane, 43, [0.0, 0.0, 1.0]);
     put_vec3(&mut plane, 67, [0.0, 0.0, 1.0]);
@@ -7697,8 +8550,30 @@ fn analytic_frame_gate_rejects_nonorthogonal_reference_direction() {
 }
 
 #[test]
+fn analytic_scanner_does_not_rescan_a_complete_invalid_frame() {
+    let mut stream = vec![0; 91];
+    stream[1] = 0x32;
+    put_ref(&mut stream, 2, 2);
+    stream[18] = b'+';
+
+    // A valid LINE-looking record begins inside the complete PLANE frame. The
+    // outer plane remains invalid because its normal reads the line origin.
+    stream[24] = 0;
+    stream[25] = 0x1e;
+    put_ref(&mut stream, 26, 3);
+    stream[42] = b'+';
+    put_vec3(&mut stream, 43, [0.0, 0.0, 0.0]);
+    put_vec3(&mut stream, 67, [1.0, 0.0, 0.0]);
+
+    assert!(crate::geometry::surfaces(&stream).is_empty());
+    assert!(crate::geometry::curves(&stream).is_empty());
+}
+
+#[test]
 fn cone_gate_rejects_nonfinite_or_degenerate_half_angle() {
     let mut cone = record(0x34, 115);
+    put_ref(&mut cone, 2, 2);
+    cone[18] = b'+';
     put_vec3(&mut cone, 19, [0.0, 0.0, 0.0]);
     put_vec3(&mut cone, 43, [0.0, 0.0, 1.0]);
     put_f64(&mut cone, 67, 0.0);
@@ -7716,44 +8591,70 @@ fn cone_gate_rejects_nonfinite_or_degenerate_half_angle() {
 
 #[test]
 fn analytic_scanners_include_extended_reference_shifts_in_record_ownership() {
-    let mut surfaces = vec![0; 182];
+    let mut surfaces = vec![0; 184];
     surfaces[1] = 0x32;
+    surfaces[2..6].copy_from_slice(&encoded_xmt(32_768));
+    surfaces[20] = b'+';
     put_vec3(&mut surfaces, 21, [0.0, 0.0, 0.0]);
     put_vec3(&mut surfaces, 45, [0.0, 0.0, 1.0]);
     put_vec3(&mut surfaces, 69, [1.0, 0.0, 0.0]);
-    surfaces[91] = 0;
-    surfaces[92] = 0x32;
-    put_vec3(&mut surfaces, 110, [0.0, 0.0, 0.0]);
-    put_vec3(&mut surfaces, 134, [0.0, 0.0, 1.0]);
-    put_vec3(&mut surfaces, 158, [1.0, 0.0, 0.0]);
-    assert_eq!(crate::geometry::surfaces(&surfaces).len(), 1);
+    surfaces[93] = 0;
+    surfaces[94] = 0x32;
+    put_ref(&mut surfaces, 95, 3);
+    surfaces[111] = b'+';
+    put_vec3(&mut surfaces, 112, [0.0, 0.0, 0.0]);
+    put_vec3(&mut surfaces, 136, [0.0, 0.0, 1.0]);
+    put_vec3(&mut surfaces, 160, [1.0, 0.0, 0.0]);
+    assert_eq!(crate::geometry::surfaces(&surfaces).len(), 2);
 
-    let mut curves = vec![0; 134];
+    let mut curves = vec![0; 136];
     curves[1] = 0x1e;
+    curves[2..6].copy_from_slice(&encoded_xmt(32_768));
+    curves[20] = b'+';
     put_vec3(&mut curves, 21, [0.0, 0.0, 0.0]);
     put_vec3(&mut curves, 45, [1.0, 0.0, 0.0]);
-    curves[67] = 0;
-    curves[68] = 0x1e;
-    put_vec3(&mut curves, 86, [0.0, 0.0, 0.0]);
-    put_vec3(&mut curves, 110, [1.0, 0.0, 0.0]);
-    assert_eq!(crate::geometry::curves(&curves).len(), 1);
+    curves[69] = 0;
+    curves[70] = 0x1e;
+    put_ref(&mut curves, 71, 3);
+    curves[87] = b'+';
+    put_vec3(&mut curves, 88, [0.0, 0.0, 0.0]);
+    put_vec3(&mut curves, 112, [1.0, 0.0, 0.0]);
+    assert_eq!(crate::geometry::curves(&curves).len(), 2);
+}
+
+#[test]
+fn analytic_scanner_resolves_envelope_escape_framing() {
+    let mut plane = vec![0; 92];
+    plane[1] = 0x32;
+    plane[2] = 0xff;
+    put_ref(&mut plane, 3, 2);
+    plane[19] = b'+';
+    put_vec3(&mut plane, 20, [0.0, 0.0, 0.0]);
+    put_vec3(&mut plane, 44, [0.0, 0.0, 1.0]);
+    put_vec3(&mut plane, 68, [1.0, 0.0, 0.0]);
+
+    assert_eq!(crate::geometry::surfaces(&plane).len(), 1);
 }
 
 #[test]
 fn analytic_record_ownership_is_shared_across_carrier_families() {
     let mut stream = vec![0; 158];
     stream[1] = 0x1e;
-    put_vec3(&mut stream, 21, [0.0, 0.0, 0.0]);
-    put_vec3(&mut stream, 45, [1.0, 0.0, 0.0]);
+    put_ref(&mut stream, 2, 2);
+    stream[18] = b'+';
+    put_vec3(&mut stream, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut stream, 43, [1.0, 0.0, 0.0]);
 
     stream[67] = 0;
     stream[68] = 0x32;
+    put_ref(&mut stream, 69, 3);
+    stream[85] = b'+';
     put_vec3(&mut stream, 86, [0.0, 0.0, 0.0]);
     put_vec3(&mut stream, 110, [0.0, 0.0, 1.0]);
     put_vec3(&mut stream, 134, [1.0, 0.0, 0.0]);
 
     assert_eq!(crate::geometry::curves(&stream).len(), 1);
-    assert!(crate::geometry::surfaces(&stream).is_empty());
+    assert_eq!(crate::geometry::surfaces(&stream).len(), 1);
     assert!(crate::geometry::points(&stream).is_empty());
 }
 
@@ -7899,6 +8800,46 @@ fn container_reads_rmfastload_active_ids() {
 }
 
 #[test]
+fn container_reads_rmfastload_table_from_product_boundary_without_range_floor() {
+    let mut payload = b"UGS::Solid::Topol".to_vec();
+    append_rmfastload_table(&mut payload, [0, u32::MAX, 7]);
+    let file = prt_with_named_payloads(&[("/Root/FastLoad/RMFastLoad", payload)]);
+    let container = container::scan_bytes(file).unwrap();
+    let (_, table) = container
+        .rmfastload_object_id_table()
+        .expect("product-bounded RMFastLoad table");
+    assert_eq!(table.object_ids.len(), 3);
+    assert_eq!(
+        table
+            .object_ids
+            .iter()
+            .map(|object_id| object_id.value)
+            .collect::<Vec<_>>(),
+        [0, u32::MAX, 7]
+    );
+}
+
+#[test]
+fn container_bounds_rmfastload_table_at_its_first_product_record() {
+    let mut payload = b"UGS::Solid::Topol".to_vec();
+    append_rmfastload_table(&mut payload, [1, 2, 3]);
+    append_rmfastload_table(&mut payload, [4, 5]);
+    let file = prt_with_named_payloads(&[("/Root/FastLoad/RMFastLoad", payload)]);
+    let container = container::scan_bytes(file).unwrap();
+    let (_, table) = container
+        .rmfastload_object_id_table()
+        .expect("first product-bounded table");
+    assert_eq!(
+        table
+            .object_ids
+            .iter()
+            .map(|object_id| object_id.value)
+            .collect::<Vec<_>>(),
+        [1, 2, 3]
+    );
+}
+
+#[test]
 fn decode_retains_every_rmfastload_active_body() {
     let mut cur = Cursor::new(prt_with_two_active_bodies_and_rmfastload());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
@@ -7911,6 +8852,40 @@ fn decode_retains_every_rmfastload_active_body() {
             .source
             .as_ref()
             .and_then(|source| source.attributes.get("rmfastload_active_body_count"))
+            .map(String::as_str),
+        Some("2")
+    );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("sub-body partition")));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_resolves_all_terminal_feature_bodies_without_active_selection() {
+    let file = prt_with_two_terminal_bodies();
+    assert_eq!(extract_streams(&file).len(), 2);
+    let mut cur = Cursor::new(file);
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert_eq!(result.ir.model.bodies.len(), 2);
+    assert_eq!(
+        result
+            .ir
+            .source
+            .as_ref()
+            .and_then(|source| source.attributes.get("active_body_selector"))
+            .map(String::as_str),
+        Some("terminal_feature_body_lineage")
+    );
+    assert_eq!(
+        result
+            .ir
+            .source
+            .as_ref()
+            .and_then(|source| source.attributes.get("feature_terminal_body_count"))
             .map(String::as_str),
         Some("2")
     );
@@ -8299,6 +9274,341 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     assert!(!losses[5].message.contains("sketch"));
 }
 
+#[test]
+fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let body = ir.model.bodies[0].id.clone();
+    ir.model.features.extend([
+        Feature {
+            id: FeatureId("test:feature#active".into()),
+            ordinal: 0,
+            name: Some("active".into()),
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: vec![body],
+            definition: FeatureDefinition::DatumPoint {
+                position: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            },
+            native_ref: None,
+        },
+        Feature {
+            id: FeatureId("test:feature#inactive".into()),
+            ordinal: 1,
+            name: Some("inactive".into()),
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::DatumPoint {
+                position: cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+            },
+            native_ref: None,
+        },
+        Feature {
+            id: FeatureId("test:feature#inactive-native".into()),
+            ordinal: 2,
+            name: Some("inactive-native".into()),
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "DELETE".into(),
+                parameters: Default::default(),
+                properties: Default::default(),
+            },
+            native_ref: None,
+        },
+        Feature {
+            id: FeatureId("test:feature#inactive-datum-csys".into()),
+            ordinal: 3,
+            name: Some("inactive-datum-csys".into()),
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::DatumCoordinateSystemUnresolved,
+            native_ref: None,
+        },
+        Feature {
+            id: FeatureId("test:feature#inactive-sketch".into()),
+            ordinal: 4,
+            name: Some("inactive-sketch".into()),
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Unresolved,
+                sketch: None,
+            },
+            native_ref: None,
+        },
+    ]);
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
+    use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let body = ir.model.bodies[0].id.clone();
+    ir.model.features.extend([
+        Feature {
+            id: FeatureId("test:feature#retained-input".into()),
+            ordinal: 0,
+            name: Some("Retained history input".into()),
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: vec![body.clone()],
+            definition: FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Resolved {
+                    bodies: vec![body],
+                    native: "nx:segment-body-bindings".into(),
+                },
+            },
+            native_ref: None,
+        },
+        Feature {
+            id: FeatureId("test:feature#unresolved".into()),
+            ordinal: 1,
+            name: Some("unresolved".into()),
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "DELETE".into(),
+                parameters: Default::default(),
+                properties: Default::default(),
+            },
+            native_ref: None,
+        },
+    ]);
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+
+    assert_eq!(losses.len(), 2);
+    assert!(losses[0]
+        .message
+        .contains("Suppression state remains unresolved for 1 NX feature history operation"));
+    assert!(losses[1].message.contains("DELETE (1)"));
+}
+
+#[test]
+fn design_intent_losses_accept_output_free_local_body_operations() {
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternKind};
+
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut source_properties = std::collections::BTreeMap::new();
+    source_properties.insert(
+        "primary_body_reference".to_string(),
+        "reference".to_string(),
+    );
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#local-pattern".into()),
+        ordinal: 0,
+        name: Some("Pattern Geometry".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties,
+        source_tag: Some("Pattern Geometry".into()),
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::Unresolved { form: None },
+        },
+        native_ref: None,
+    });
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0]
+        .message
+        .contains("incomplete neutral construction fields"));
+    assert!(losses[0].message.contains("pattern (1)"));
+}
+
+#[test]
+fn design_intent_losses_accept_pattern_construction_without_body_reference() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternKind};
+
+    let feature = Feature {
+        id: FeatureId("test:feature#pattern-construction".into()),
+        ordinal: 0,
+        name: Some("Pattern Geometry".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: Some("Pattern Geometry".into()),
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::Unresolved { form: None },
+        },
+        native_ref: None,
+    };
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.features.push(feature);
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0]
+        .message
+        .contains("incomplete neutral construction fields"));
+    assert!(losses[0].message.contains("pattern (1)"));
+
+    ir.model.features[0]
+        .source_properties
+        .insert("body_reference.0".into(), "42".into());
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0]
+        .message
+        .contains("output lineage is missing, duplicated"));
+}
+
+#[test]
+fn design_intent_losses_accept_unbound_trim_surface_construction() {
+    use cadmpeg_ir::features::{
+        FaceSelection, Feature, FeatureDefinition, FeatureId, PathRef, TrimRegion,
+    };
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#construction-trim".into()),
+        ordinal: 0,
+        name: Some("TRIMMED_SH".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: Some("TRIMMED_SH".into()),
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::TrimSurface {
+            faces: FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId("face".into())]),
+            tool: PathRef::Edges(vec![cadmpeg_ir::ids::EdgeId("edge".into())]),
+            keep: TrimRegion::Inside,
+        },
+        native_ref: None,
+    });
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.is_empty());
+
+    ir.model.features[0]
+        .source_properties
+        .insert("body_reference.0".into(), "42".into());
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0]
+        .message
+        .contains("output lineage is missing, duplicated"));
+}
+
+#[test]
+fn output_free_local_body_construction_requires_unbound_primary_body() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternKind};
+
+    let mut source_properties = std::collections::BTreeMap::new();
+    source_properties.insert(
+        "primary_body_reference".to_string(),
+        "reference".to_string(),
+    );
+    let mut feature = Feature {
+        id: FeatureId("test:feature#local-pattern".into()),
+        ordinal: 0,
+        name: Some("Pattern Geometry".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties,
+        source_tag: Some("Pattern Geometry".into()),
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::Unresolved { form: None },
+        },
+        native_ref: None,
+    };
+
+    assert!(crate::decode::output_free_local_body_construction(&feature));
+
+    feature.source_properties.remove("primary_body_reference");
+    feature
+        .source_properties
+        .insert("body_reference.0".to_string(), "42".to_string());
+    assert!(!crate::decode::output_free_local_body_construction(
+        &feature
+    ));
+
+    feature.source_properties.insert(
+        "primary_body_reference".to_string(),
+        "reference".to_string(),
+    );
+    feature.source_properties.insert(
+        "primary_body_segment_use".to_string(),
+        "segment-use".to_string(),
+    );
+    assert!(!crate::decode::output_free_local_body_construction(
+        &feature
+    ));
+}
+
 #[path = "integration_tests.rs"]
 mod integration_tests;
 
@@ -8543,6 +9853,7 @@ mod golden {
         "feature_operation_body_reference_lanes",
         "feature_operation_body_scalar_triples",
         "feature_operation_labels",
+        "feature_operation_object_relations",
         "feature_operation_records",
         "feature_operation_common_frames",
         "feature_operation_terminal_discriminators",
@@ -8854,7 +10165,6 @@ mod golden {
 
         // Lone partition streams, each wrapped with `prt_with_partition`.
         let partitions: Vec<(&'static str, Vec<u8>)> = vec![
-            ("topology_partition_stream", topology_partition_stream()),
             (
                 "topology_with_missing_tolerances",
                 topology_with_missing_tolerances(),
@@ -8915,22 +10225,6 @@ mod golden {
             (
                 "charted_intersection_with_approximated_term_stream",
                 charted_intersection_with_approximated_term_stream(),
-            ),
-            (
-                "ext11_charted_intersection_curve_stream",
-                ext11_charted_intersection_curve_stream(),
-            ),
-            (
-                "two_support_ext11_charted_intersection_curve_stream",
-                two_support_ext11_charted_intersection_curve_stream(false),
-            ),
-            (
-                "two_support_ext11_charted_intersection_curve_stream_ambiguous",
-                two_support_ext11_charted_intersection_curve_stream(true),
-            ),
-            (
-                "partial_ext11_charted_intersection_curve_stream",
-                partial_ext11_charted_intersection_curve_stream(),
             ),
             (
                 "two_support_charted_intersection_curve_stream",
@@ -9150,6 +10444,36 @@ mod golden {
             f.push((name, prt_with_streams(&[&partition, &delta])));
         }
 
+        let ext11_pairs = [
+            (
+                "ext11_charted_intersection_curve_stream",
+                charted_intersection_curve_topology_partition_stream(),
+                ext11_charted_intersection_curve_stream(),
+            ),
+            (
+                "two_support_ext11_charted_intersection_curve_stream",
+                two_support_charted_intersection_curve_stream_with_second_plane_axis([
+                    0.0, 0.0, 1.0,
+                ]),
+                two_support_ext11_charted_intersection_curve_stream(false),
+            ),
+            (
+                "two_support_ext11_charted_intersection_curve_stream_ambiguous",
+                two_support_charted_intersection_curve_stream(),
+                two_support_ext11_charted_intersection_curve_stream(true),
+            ),
+            (
+                "partial_ext11_charted_intersection_curve_stream",
+                two_support_charted_intersection_curve_stream_with_second_plane_axis([
+                    0.0, 0.0, 1.0,
+                ]),
+                partial_ext11_charted_intersection_curve_stream(),
+            ),
+        ];
+        for (name, partition, ext11) in ext11_pairs {
+            f.push((name, prt_with_ext11_intersection(&partition, &ext11)));
+        }
+
         f
     }
 
@@ -9330,7 +10654,7 @@ mod golden {
 
     /// The catalogue is the single source of truth for arena names: every arena
     /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (229), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
+    /// (230), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
     /// equality is the relationship the fixtures confirm — every arena a fixture
     /// can populate is a catalogue arena, and every catalogue arena is a name
     /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
@@ -9341,13 +10665,13 @@ mod golden {
 
         use crate::native::catalogue::CATALOGUE;
 
-        assert_eq!(CATALOGUE.len(), 229, "one catalogue row per model field");
+        assert_eq!(CATALOGUE.len(), 230, "one catalogue row per model field");
         assert_eq!(
             CATALOGUE
                 .iter()
                 .filter(|row| row.phase == Phase::GroupA)
                 .count(),
-            107,
+            108,
             "group A family count"
         );
         assert_eq!(

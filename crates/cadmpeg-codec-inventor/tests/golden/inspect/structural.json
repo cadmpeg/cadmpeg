@@ -1,0 +1,31 @@
+{
+  "container_kind": "cfb",
+  "entries": [
+    {
+      "attributes": {
+        "directory_id": "1"
+      },
+      "compressed_size": 0,
+      "compression": "storage",
+      "name": "RSeStorage",
+      "role": "rse-storage",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "2",
+        "start_sector": "4294967294"
+      },
+      "compressed_size": 0,
+      "compression": "stored",
+      "name": "RSeStorage/RSeSegInfo",
+      "role": "rse-segment-registry",
+      "uncompressed_size": 0
+    }
+  ],
+  "format": "inventor",
+  "notes": [
+    "CFB v3 with 0 RSe segment pair(s) and 0 versioned database(s)"
+  ]
+}

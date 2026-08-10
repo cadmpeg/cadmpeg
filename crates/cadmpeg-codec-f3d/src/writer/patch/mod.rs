@@ -129,7 +129,7 @@ pub fn write_semantic(
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
-    let pcurve_edits = validate_pcurve_edits(&baseline.ir.model.pcurves, &target.model.pcurves)?;
+    let pcurve_edits = validate_pcurve_edits(&baseline.ir.model, &target.model)?;
     let edited_surfaces =
         validate_surface_edits(&baseline.ir.model.surfaces, &target.model.surfaces)?;
     let nurbs_surface_edits = target

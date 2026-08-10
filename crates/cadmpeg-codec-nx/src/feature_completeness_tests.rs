@@ -1881,6 +1881,40 @@ fn nx_exact_empty_base_feature_is_a_complete_replay_boundary() {
 }
 
 #[test]
+fn nx_master_snapshot_base_feature_is_an_output_free_replay_boundary() {
+    use std::collections::BTreeMap;
+
+    use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
+
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#snapshot".into()),
+        ordinal: 0,
+        name: Some("MASTER SNAPSHOT BODY".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::from([(
+            String::from("operation_record"),
+            String::from("record"),
+        )]),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::BaseFeature {
+            bodies: BodySelection::Unresolved,
+        },
+        native_ref: None,
+    });
+
+    let mut losses = Vec::new();
+    super::append_design_intent_losses(&ir, &mut losses);
+
+    assert!(losses.is_empty());
+}
+
+#[test]
 fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
     use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId, Length};
 

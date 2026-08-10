@@ -257,6 +257,21 @@ fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
             .block_count,
         3
     );
+    let third = [
+        0x50, 0x59, 0x66, 0x58, 0x00, 0x30, 0x4c, 0x93, 0x33, 0x33, 0x33, 0x33, 0x07,
+    ];
+    assert!(super::offset_store_named_point(&[&first, &second, &third]).is_none());
+    let next_name = [
+        0x66, 0x32, 0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'8', 0x00,
+    ];
+    assert!(super::offset_store_named_point(&[&first, &second, &next_name]).is_none());
+    let next_point = [0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'8', 0x00];
+    assert_eq!(
+        super::offset_store_named_point(&[&first, &second, &next_point])
+            .unwrap()
+            .block_count,
+        2
+    );
     let mut zero = first;
     zero[7] = b'0';
     assert!(super::offset_store_named_point(&[&zero, &second]).is_none());
@@ -1079,6 +1094,81 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
 }
 
 #[test]
+fn om_operation_object_relation_requires_complete_canonical_endpoints() {
+    let label = super::OperationLabel {
+        header_offset: 100,
+        offset: 100,
+        value: "EXTRUDE",
+        object_indices: [None; 4],
+        object_index_offsets: [0; 4],
+    };
+    let payload = [
+        0x01, 0x02, 0x17, 0x81, 0x23, 0x97, 0x75, 0x01, 0x02, 0x11, 0x86, 0x45, 0xff, 0x01, 0x02,
+        0x10, 0x81, 0x23, 0xff,
+    ];
+    let record = super::OperationRecord {
+        offset: 50,
+        bytes: &payload,
+        payload_offset: 100,
+        payload: &payload,
+        label,
+    };
+    assert_eq!(
+        super::operation_object_relations(record),
+        [super::OperationObjectRelation {
+            offset: 100,
+            link_tag: 0x17,
+            first_object_index: 0x123,
+            raw_first_object_index: vec![0x81, 0x23],
+            first_object_index_offset: 103,
+            second_object_index: 0x645,
+            raw_second_object_index: vec![0x86, 0x45],
+            second_object_index_offset: 110,
+            end_offset: 113,
+        }]
+    );
+
+    let mut noncanonical_first = payload;
+    noncanonical_first[3] = 0x80;
+    assert!(super::operation_object_relations(super::OperationRecord {
+        bytes: &noncanonical_first,
+        payload: &noncanonical_first,
+        ..record
+    })
+    .is_empty());
+
+    let mut truncated = payload[..13].to_vec();
+    truncated.pop();
+    assert!(super::operation_object_relations(super::OperationRecord {
+        bytes: &truncated,
+        payload: &truncated,
+        ..record
+    })
+    .is_empty());
+
+    let direct_body = [0x01, 0x02, 0x10, 0x81, 0x23, 0xff];
+    assert!(super::operation_object_relations(super::OperationRecord {
+        bytes: &direct_body,
+        payload: &direct_body,
+        ..record
+    })
+    .is_empty());
+
+    let nested = [
+        0x01, 0x02, 0x11, 0x80, 0xa9, 0x97, 0x75, 0x01, 0x02, 0x11, 0x86, 0x93, 0xff,
+    ];
+    let nested_relations = super::operation_object_relations(super::OperationRecord {
+        bytes: &nested,
+        payload: &nested,
+        ..record
+    });
+    assert_eq!(nested_relations.len(), 1);
+    assert_eq!(nested_relations[0].link_tag, 0x11);
+    assert_eq!(nested_relations[0].first_object_index, 0xa9);
+    assert_eq!(nested_relations[0].second_object_index, 0x693);
+}
+
+#[test]
 fn om_operation_terminal_frame_requires_one_canonical_common_frame() {
     let label = super::OperationLabel {
         header_offset: 100,
@@ -1417,6 +1507,42 @@ fn om_size_frame_uses_validated_internal_record_area_pointer() {
     let mut invalid = bytes;
     invalid[offset + 12] = 1;
     assert_eq!(super::sections(&invalid)[0].record_area, None);
+}
+
+#[test]
+fn om_registry_uses_the_bounded_record_area_as_its_registry_end() {
+    let mut bytes = size_framed_om_section();
+    bytes.extend(std::iter::repeat_n(0xa5, 4097));
+    bytes.extend_from_slice(&[
+        (b"m_lateField".len() + 1) as u8,
+        b'm',
+        b'_',
+        b'l',
+        b'a',
+        b't',
+        b'e',
+        b'F',
+        b'i',
+        b'e',
+        b'l',
+        b'd',
+        0x82,
+    ]);
+    let pointer_offset = bytes.len();
+    let record_area_offset = pointer_offset + 20;
+    bytes.extend_from_slice(&(record_area_offset as u32).to_le_bytes());
+    bytes.resize(record_area_offset, 0);
+    bytes.extend_from_slice(&[13, 0, 0, 0, 14, 0, 0, 0, 44, 0, 0, 0]);
+    bytes.extend_from_slice(b"\x05\x01\x0eNX 2027.3102\0");
+    let payload_len = u32::try_from(bytes.len() - 16).expect("synthetic section fits");
+    bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
+
+    let section = super::sections(&bytes).remove(0);
+    assert_eq!(
+        section.fields.last().expect("late field").name,
+        "m_lateField"
+    );
+    assert_eq!(section.record_area_offset, Some(record_area_offset));
 }
 
 #[test]
@@ -3418,20 +3544,31 @@ fn om_counted_record_references_require_a_complete_in_bounds_run() {
 }
 
 #[test]
-fn om_record_reference_stream_requires_dense_suffix() {
+fn om_record_references_require_adjacent_persistent_tagged_pairs() {
     let mut dense = b"ordinary-prefix".to_vec();
     for value in 1..=8u32 {
         dense.push(0xe0);
         dense.extend_from_slice(&value.to_be_bytes());
         dense.extend_from_slice(&(0xc000_0000 | value).to_be_bytes());
     }
-    let references = super::dense_reference_suffix(&dense, 100);
+    let references = super::record_references(&dense, 100);
     assert_eq!(references.len(), 16);
     assert_eq!(references[0].offset, 115);
 
-    let mut sparse = dense;
-    sparse.extend_from_slice(&[0x55; 9]);
-    assert!(super::dense_reference_suffix(&sparse, 0).is_empty());
+    let mut unpaired = dense;
+    unpaired.extend_from_slice(&[0xc0, 0, 0, 2]);
+    assert_eq!(
+        super::record_references(&unpaired, 0)
+            .into_iter()
+            .filter(|reference| reference.kind == super::ReferenceKind::Tagged28)
+            .count(),
+        8
+    );
+
+    let lone_tagged = [0xc0, 0, 0, 1];
+    assert!(super::record_references(&lone_tagged, 0)
+        .into_iter()
+        .all(|reference| reference.kind != super::ReferenceKind::Tagged28));
 }
 
 #[test]

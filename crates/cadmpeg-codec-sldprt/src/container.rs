@@ -7,10 +7,11 @@
 //! invariants, validates block CRC-32 values, inflates payloads, decodes stored
 //! section names, and extracts embedded Parasolid streams.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
 use cadmpeg_core::le::u32_at as u32_le;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::hash::sha256_hex;
@@ -145,6 +146,10 @@ pub struct DirectoryEntry {
     pub size: u32,
     /// Decoded section name.
     pub name: String,
+    /// Per-entry descriptor bytes at frame offset +26.
+    pub descriptor: [u8; 14],
+    /// File-level directory trailer following the encoded name.
+    pub trailer: [u8; 6],
 }
 
 /// One cache-cell section-index entry.
@@ -267,15 +272,24 @@ impl ContainerScan<'_> {
 /// The outer header magic length (`file_id` + `version`).
 const OUTER_HEADER_LEN: usize = 8;
 const COMPOUND_FILE_MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+const WRAPPED_PAYLOAD_MAGIC: [u8; 16] = [
+    0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef, 0x99,
+];
 
 /// Test whether a prefix contains the container marker after its outer header.
 ///
 /// This structural check does not validate block framing or CRC-32.
 pub fn looks_like_sldprt(prefix: &[u8]) -> bool {
-    if prefix.starts_with(&COMPOUND_FILE_MAGIC)
-        && contains_utf16le_ascii(prefix, b"ISolidWorksInformation")
-    {
-        return true;
+    if prefix.starts_with(&COMPOUND_FILE_MAGIC) {
+        return CompoundPrefixProbe::inspect(prefix)
+            .paths()
+            .is_some_and(|paths| {
+                paths.iter().any(|path| {
+                    path.rsplit('/')
+                        .next()
+                        .is_some_and(|name| name.eq_ignore_ascii_case("ISolidWorksInformation"))
+                })
+            });
     }
     if prefix.len() < OUTER_HEADER_LEN + MARKER.len() {
         return false;
@@ -290,25 +304,18 @@ pub fn looks_like_compound_file(prefix: &[u8]) -> bool {
     prefix.starts_with(&COMPOUND_FILE_MAGIC)
 }
 
-fn contains_utf16le_ascii(haystack: &[u8], text: &[u8]) -> bool {
-    let mut encoded = Vec::with_capacity(text.len() * 2);
-    for byte in text {
-        encoded.extend_from_slice(&[*byte, 0]);
-    }
-    contains(haystack, &encoded)
-}
-
 /// Scan an in-memory `.sldprt` image.
 ///
 /// Truncated input produces a scan containing every structure that could be
 /// validated; missing outer-header bytes yield version zero.
 pub fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
     if bytes.starts_with(&COMPOUND_FILE_MAGIC) {
-        let compound_streams = crate::compound::streams(bytes)
-            .unwrap_or_default()
-            .into_iter()
-            .map(compound_stream)
-            .collect();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let compound_streams = DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .ok()
+            .and_then(|(ctx, root)| compound_streams(&ctx, root).ok())
+            .unwrap_or_default();
         return ContainerScan {
             source_image: bytes,
             version: 0,
@@ -355,19 +362,25 @@ pub fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
     }
 }
 
-fn compound_stream(stream: crate::compound::Stream) -> CompoundStream {
-    let located_streams = crate::parasolid::extract_streams_with_offsets(&stream.bytes);
+fn compound_stream(
+    path: String,
+    directory_id: u32,
+    start_sector: u32,
+    bytes: Vec<u8>,
+    decoded_bytes: Option<Vec<u8>>,
+) -> CompoundStream {
+    let located_streams = crate::parasolid::extract_streams_with_offsets(&bytes);
     let ps_stream_offsets = located_streams.iter().map(|(offset, _)| *offset).collect();
     let ps_streams = located_streams
         .into_iter()
         .map(|(_, payload)| payload)
         .collect();
     CompoundStream {
-        path: stream.path,
-        directory_id: stream.directory_id,
-        start_sector: stream.start_sector,
-        payload: stream.bytes,
-        decoded_payload: stream.decoded_bytes,
+        path,
+        directory_id,
+        start_sector,
+        payload: bytes,
+        decoded_payload: decoded_bytes,
         ps_streams,
         ps_stream_offsets,
     }
@@ -378,11 +391,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
     if !root.window().starts_with(&COMPOUND_FILE_MAGIC) {
         return Ok(scan_bytes(root.window()));
     }
-    let compound_streams = crate::compound::streams_budgeted(ctx, root)?
-        .unwrap_or_default()
-        .into_iter()
-        .map(compound_stream)
-        .collect();
+    let compound_streams = compound_streams(ctx, root)?;
     Ok(ContainerScan {
         source_image: root.window(),
         version: 0,
@@ -391,6 +400,94 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         cache_cells: Vec::new(),
         compound_streams,
     })
+}
+
+fn compound_streams<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+) -> Result<Vec<CompoundStream>, CodecError> {
+    let snapshot = CompoundSnapshot::new(ctx, root)?;
+    snapshot
+        .entries()
+        .iter()
+        .filter_map(|entry| match entry {
+            CompoundEntry::Stream(stream) => Some(stream),
+            CompoundEntry::Storage(_) => None,
+        })
+        .map(|entry| {
+            let view = snapshot.open(ctx, entry)?;
+            let payload = ctx.copy_retained(
+                view.window(),
+                "retain SolidWorks CFB stream",
+                Some(view.location()),
+            )?;
+            let decoded = decode_wrapped_payload_budgeted(ctx, view)?;
+            Ok(compound_stream(
+                entry.path().to_owned(),
+                entry.id().directory_id(),
+                entry.start_sector(),
+                payload,
+                decoded,
+            ))
+        })
+        .collect()
+}
+
+fn decode_wrapped_payload_budgeted<'a>(
+    ctx: &DecodeContext<'a>,
+    source: View<'a>,
+) -> Result<Option<Vec<u8>>, CodecError> {
+    let payload = source.window();
+    if payload.get(..16) != Some(&WRAPPED_PAYLOAD_MAGIC) {
+        return Ok(None);
+    }
+    let Some(uncompressed_size) = u32_le(payload, 16).map(u64::from) else {
+        return Ok(None);
+    };
+    let Some(compressed_size) = u32_le(payload, 20).and_then(|size| usize::try_from(size).ok())
+    else {
+        return Ok(None);
+    };
+    if uncompressed_size == 0 || compressed_size == 0 {
+        return Ok(None);
+    }
+    let Some(member_end) = 24usize.checked_add(compressed_size) else {
+        return Ok(None);
+    };
+    let Some(member) = payload.get(24..member_end) else {
+        return Ok(None);
+    };
+    let mut decoder = flate2::read::ZlibDecoder::new(member);
+    let mut writer = ctx.begin_expand(source, ExpandSpec::Exact(uncompressed_size))?;
+    let mut chunk = [0_u8; 16 * 1024];
+    loop {
+        let Ok(read) = decoder.read(&mut chunk) else {
+            return Ok(None);
+        };
+        if read == 0 {
+            break;
+        }
+        if let Err(error) = writer.write(&chunk[..read]) {
+            return match error {
+                CodecError::ResourceLimit(_) => Err(error),
+                _ => Ok(None),
+            };
+        }
+    }
+    if decoder.total_in() as usize != compressed_size {
+        return Ok(None);
+    }
+    let decoded = match writer.finalize() {
+        Ok(decoded) => decoded,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
+    };
+    ctx.copy_retained(
+        decoded.window(),
+        "retain decoded SolidWorks CFB stream",
+        Some(source.location()),
+    )
+    .map(Some)
 }
 
 /// A block plus the preamble length needed to advance past it.
@@ -554,11 +651,18 @@ fn try_directory_entry(bytes: &[u8], off: usize) -> Option<DirectoryEntry> {
     let name_start = off + 40; // 26 + 14-byte descriptor
     let raw = bytes.get(name_start..name_start + name_len as usize)?;
     let name = nibble_swap_name(raw)?;
+    let descriptor = bytes.get(off + 26..off + 40)?.try_into().ok()?;
+    let trailer = bytes
+        .get(name_start + name_len as usize..name_start + name_len as usize + 6)?
+        .try_into()
+        .ok()?;
     Some(DirectoryEntry {
         offset: off,
         type_id,
         size,
         name,
+        descriptor,
+        trailer,
     })
 }
 
@@ -653,7 +757,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             name, size, sch.schema
         )),
         None => notes.push(
-            "no Parasolid partition/deltas stream located; B-rep decode will be container-only"
+            "no unique active Parasolid partition located; available B-rep sites remain decodable"
                 .to_string(),
         ),
     }
@@ -675,7 +779,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     }
 }
 
-fn active_parasolid_summary(
+pub(crate) fn active_parasolid_summary(
     scan: &ContainerScan,
 ) -> Option<(String, usize, crate::parasolid::StreamHeader)> {
     if let Some((block, header)) = select_active_parasolid(scan) {
@@ -688,67 +792,94 @@ fn active_parasolid_summary(
             header,
         ));
     }
-    scan.compound_streams
+    let candidates = scan
+        .compound_streams
         .iter()
         .flat_map(|stream| {
             stream.ps_streams.iter().filter_map(move |payload| {
                 let header = crate::parasolid::stream_header(payload)?;
-                crate::parasolid::is_body_stream(&header).then_some((
-                    stream.path.clone(),
-                    payload.len(),
-                    header,
-                ))
+                let path = stream.path.to_ascii_lowercase();
+                let description = header.description.to_ascii_lowercase();
+                (crate::parasolid::is_body_stream(&header)
+                    && !path.contains("ghost")
+                    && !description.contains("ghost")
+                    && (path.contains("partition") || description.contains("partition"))
+                    && !path.contains("deltas")
+                    && !description.contains("deltas"))
+                .then_some((stream.path.clone(), payload.len(), header))
             })
         })
-        .max_by_key(|(_, size, _)| *size)
+        .collect::<Vec<_>>();
+    (candidates.len() == 1)
+        .then(|| candidates.into_iter().next())
+        .flatten()
 }
 
 /// Test whether either outer envelope carries a framed Parasolid body stream.
 pub fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
-    active_parasolid_summary(scan).is_some()
+    scan.blocks
+        .iter()
+        .flat_map(|block| &block.ps_streams)
+        .chain(
+            scan.compound_streams
+                .iter()
+                .flat_map(|stream| &stream.ps_streams),
+        )
+        .filter_map(|payload| crate::parasolid::stream_header(payload))
+        .any(|header| crate::parasolid::is_body_stream(&header))
 }
 
-/// Select the highest-ranked Parasolid B-rep block.
+/// Select the unique Parasolid partition block for the active configuration.
 ///
-/// Ranking favors larger partition streams, then deltas streams. Ghost and
-/// `ResolvedFeatures` sections receive a penalty. The return value includes the
-/// parsed stream header.
+/// An explicit active configuration index is authoritative. Without one, the
+/// block envelope must contain exactly one non-ghost partition candidate.
 pub fn select_active_parasolid<'a>(
     scan: &'a ContainerScan<'_>,
 ) -> Option<(&'a Block, crate::parasolid::StreamHeader)> {
     let active_configuration = active_configuration_index(scan);
-    let mut best: Option<(i64, &Block, crate::parasolid::StreamHeader)> = None;
-    for b in &scan.blocks {
-        let Some(ps) = &b.ps_stream else { continue };
-        let Some(sch) = crate::parasolid::stream_header(ps) else {
-            continue;
-        };
-        let name = b.section.as_deref().unwrap_or("").to_ascii_lowercase();
-        let desc = sch.description.to_ascii_lowercase();
-
-        // Larger real streams score higher; the ghost stub and feature lane are
-        // demoted below any genuine partition/deltas body.
-        let mut score = (ps.len() / 64) as i64;
-        if name.contains("ghost") || desc.contains("ghost") {
-            score -= 1_000_000;
-        }
-        if name.contains("resolvedfeatures") {
-            score -= 1_000_000;
-        }
-        if name.contains("partition") {
-            score += 100_000;
-            if active_configuration.is_some_and(|index| configuration_index(&name) == Some(index)) {
-                score += 1_000_000;
-            }
-        } else if name.contains("deltas") || desc.contains("deltas") {
-            score += 50_000;
-        }
-
-        if best.as_ref().is_none_or(|(s, _, _)| score > *s) {
-            best = Some((score, b, sch));
-        }
-    }
-    best.map(|(_, b, sch)| (b, sch))
+    let candidates = scan
+        .blocks
+        .iter()
+        .flat_map(|block| {
+            let section = block.section.as_deref().unwrap_or("").to_ascii_lowercase();
+            let section_is_partition = section.contains("partition")
+                && !section.contains("ghost")
+                && !section.contains("deltas")
+                && !section.contains("resolvedfeatures");
+            let section_is_admissible = !section.contains("ghost")
+                && !section.contains("deltas")
+                && !section.contains("resolvedfeatures");
+            let body_streams = block
+                .ps_streams
+                .iter()
+                .filter_map(|payload| {
+                    let header = crate::parasolid::stream_header(payload)?;
+                    crate::parasolid::is_body_stream(&header).then_some(header)
+                })
+                .collect::<Vec<_>>();
+            let sole_body_stream = body_streams.len() == 1;
+            body_streams
+                .into_iter()
+                .filter(move |header| {
+                    let description = header.description.to_ascii_lowercase();
+                    section_is_admissible
+                        && !description.contains("ghost")
+                        && !description.contains("deltas")
+                        && (description.contains("partition")
+                            || sole_body_stream && section_is_partition)
+                })
+                .map(move |header| (block, header))
+                .collect::<Vec<_>>()
+        })
+        .filter(|(block, _)| {
+            active_configuration.is_none_or(|active| {
+                block.section.as_deref().and_then(configuration_index) == Some(active)
+            })
+        })
+        .collect::<Vec<_>>();
+    (candidates.len() == 1)
+        .then(|| candidates.into_iter().next())
+        .flatten()
 }
 
 pub(crate) fn configuration_index(section: &str) -> Option<usize> {
@@ -761,56 +892,49 @@ pub(crate) fn configuration_index(section: &str) -> Option<usize> {
 }
 
 pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> {
-    let active = scan.blocks.iter().find_map(|block| {
-        let text = std::str::from_utf8(&block.payload).ok()?;
-        let document = roxmltree::Document::parse(text).ok()?;
-        let root = document.root_element();
-        (root.tag_name().name() == "swSolidWorks")
-            .then(|| {
-                root.descendants()
-                    .find(|node| node.has_tag_name("swModel"))?
-                    .attribute("swConfigurationName")
-            })
-            .flatten()
-            .map(str::to_string)
-    })?;
-    let (position, explicit_index, configuration_count) = scan.blocks.iter().find_map(|block| {
-        let text = std::str::from_utf8(&block.payload).ok()?;
-        let document = roxmltree::Document::parse(text).ok()?;
-        let root = document.root_element();
-        root.tag_name().name().contains("Keywords").then_some(())?;
-        let configurations = root
-            .children()
-            .filter(|node| node.has_tag_name("Configuration"))
-            .collect::<Vec<_>>();
-        let position = configurations
-            .iter()
-            .position(|node| node.attribute("Name") == Some(active.as_str()))?;
-        let explicit_index = configurations[position]
-            .attribute("SourceIndex")
-            .and_then(|value| value.parse().ok());
-        Some((position, explicit_index, configurations.len()))
-    })?;
-    if explicit_index.is_some() {
-        return explicit_index;
-    }
-    let mut partitions = scan
+    let active_names = scan
         .blocks
         .iter()
-        .filter(|block| {
-            block
-                .section
-                .as_deref()
-                .is_some_and(|section| section.to_ascii_lowercase().ends_with("-partition"))
+        .filter_map(|block| std::str::from_utf8(&block.payload).ok())
+        .filter_map(|text| roxmltree::Document::parse(text).ok())
+        .filter(|document| document.root_element().has_tag_name("swSolidWorks"))
+        .flat_map(|document| {
+            document
+                .descendants()
+                .filter(|node| node.has_tag_name("swModel"))
+                .filter_map(|node| node.attribute("swConfigurationName").map(str::to_string))
+                .collect::<Vec<_>>()
         })
-        .filter_map(|block| configuration_index(block.section.as_deref()?))
+        .collect::<BTreeSet<_>>();
+    let active = (active_names.len() == 1).then(|| active_names.first().cloned())??;
+    let indices = scan
+        .blocks
+        .iter()
+        .filter_map(|block| std::str::from_utf8(&block.payload).ok())
+        .filter_map(|text| roxmltree::Document::parse(text).ok())
+        .filter(|document| {
+            document
+                .root_element()
+                .tag_name()
+                .name()
+                .contains("Keywords")
+        })
+        .flat_map(|document| {
+            document
+                .root_element()
+                .children()
+                .filter(|node| {
+                    node.has_tag_name("Configuration")
+                        && node.attribute("Name") == Some(active.as_str())
+                })
+                .map(|node| {
+                    node.attribute("SourceIndex")
+                        .and_then(|value| value.parse::<usize>().ok())
+                })
+                .collect::<Vec<_>>()
+        })
         .collect::<Vec<_>>();
-    partitions.sort_unstable();
-    partitions.dedup();
-    if partitions.len() == configuration_count {
-        return partitions.get(position).copied();
-    }
-    partitions.contains(&position).then_some(position)
+    (indices.len() == 1).then(|| indices[0]).flatten()
 }
 
 #[cfg(test)]

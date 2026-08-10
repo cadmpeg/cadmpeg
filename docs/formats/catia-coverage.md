@@ -24,15 +24,15 @@ current scores require those matrices and representative fixtures.
 
 ## Cumulative gates
 
-| Level | Required evidence | Current result | Remaining gate |
-| --- | --- | --- | --- |
-| L0 | `V5_CFV2` detection; part-kind and layout classification; bounded metadata; exact preview extraction when stored | Pass in implementation | Representative release-band fixtures and explicit preview-present/absent coverage |
-| L1 | Nested-stream, directory, segment, extent, and record navigation; layout dispatch; external-reference and embedded-asset enumeration; named undecoded content | Claimed across recognized layouts | Close the release/layout envelope and verify every admitted container combination |
-| L2 | Placed points; analytic curves and surfaces; NURBS; correct units, parameterization, and model-space placement throughout one envelope | Claimed for `standard_nested`; incomplete for the other layouts | Close every admitted carrier branch, persistent carrier binding, parameter chart, placement, and unit path |
-| L3 | Connected bodies through vertices with exact ownership, orientation, trimming, placement, and transforms; structurally valid topology throughout one envelope | Incomplete | Resolve every admitted face group, endpoint registry, edge incidence, loop orientation, body/shell ownership, and cross-group membership case without topology gauges standing in for source semantics |
-| L4 | Ordered feature operations with complete profiles, directions, extents, outputs, dependencies, and solved sketch geometry | Incomplete | Decode construction order and dependencies, sketch membership and geometry, and complete operands for every admitted operation family |
-| L5 | Every admitted carrier and topology case; typed mainstream bodies throughout; body and face colors with source ownership and precedence | Incomplete | Close L2/L3 matrices, appearance bindings, and precedence, then demonstrate zero shape-domain loss across the envelope |
-| L6 | Complete sketch constraints, dimensions, parameters, expressions, configurations, feature semantics, and re-derivable history | Incomplete | Complete relation and constraint incidence, parameter values and types, feature families, configuration state, and history replay coherence |
+| Level | Required evidence                                                                                                                                             | Current result                                                  | Remaining gate                                                                                                                                                                                         |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| L0    | `V5_CFV2` detection; part-kind and layout classification; bounded metadata; exact preview extraction when stored                                              | Pass in implementation                                          | Representative release-band fixtures and explicit preview-present/absent coverage                                                                                                                      |
+| L1    | Nested-stream, directory, segment, extent, and record navigation; layout dispatch; external-reference and embedded-asset enumeration; named undecoded content | Claimed across recognized layouts                               | Close the release/layout envelope and verify every admitted container combination                                                                                                                      |
+| L2    | Placed points; analytic curves and surfaces; NURBS; correct units, parameterization, and model-space placement throughout one envelope                        | Claimed for `standard_nested`; incomplete for the other layouts | Close every admitted carrier branch, persistent carrier binding, parameter chart, placement, and unit path                                                                                             |
+| L3    | Connected bodies through vertices with exact ownership, orientation, trimming, placement, and transforms; structurally valid topology throughout one envelope | Incomplete                                                      | Resolve every admitted face group, endpoint registry, edge incidence, loop orientation, body/shell ownership, and cross-group membership case without topology gauges standing in for source semantics |
+| L4    | Ordered feature operations with complete profiles, directions, extents, outputs, dependencies, and solved sketch geometry                                     | Incomplete                                                      | Decode construction order and dependencies, sketch membership and geometry, and complete operands for every admitted operation family                                                                  |
+| L5    | Every admitted carrier and topology case; typed mainstream bodies throughout; body and face colors with source ownership and precedence                       | Incomplete                                                      | Close L2/L3 matrices, appearance bindings, and precedence, then demonstrate zero shape-domain loss across the envelope                                                                                 |
+| L6    | Complete sketch constraints, dimensions, parameters, expressions, configurations, feature semantics, and re-derivable history                                 | Incomplete                                                      | Complete relation and constraint incidence, parameter values and types, feature families, configuration state, and history replay coherence                                                            |
 
 ## Implemented slices above the score
 
@@ -105,7 +105,12 @@ current scores require those matrices and representative fixtures.
   ordinal, selected catalog entry, and value. Each design object retains its
   chain-value entity identities in field order. Finite and unset evaluations,
   atoms, controls, separators, and nested schema selectors are counted
-  independently.
+  independently. A chain with a non-empty first definition, a canonical
+  scalar or unset second role, and an evaluation value transfers one typed
+  parameter in source order. Its name comes from the first definition and its
+  type from the second; exact selector, role, and evaluation-opcode offsets
+  remain properties. Unsupported value states, roles, and conflicting
+  candidates remain native.
 - Relation-expression coverage partitions distinct expressions referenced by
   formulas, compound relation-program instances, either incidence, and neither
   incidence. An expression selected by both incidence forms is counted once in
@@ -156,7 +161,9 @@ current scores require those matrices and representative fixtures.
   Every transferred numeric
   parameter retains its canonical
   `LENGTH`, `ANGLE`, `Real`, or `Integer` value type independently of whether
-  an evaluated value exists.
+  an evaluated value exists. Complete lead-`2` parameters also retain the
+  second selector's exact value in `properties["catia_binding"]`, including
+  an empty value, without assigning a feature or configuration role.
 - Complete native numeric-pair payloads retain their two prefix atoms and two
   source-ordered nullable binary64 slots with exact bits and payload-relative
   offsets. The fixed type, layout, and value atoms and exact two-slot framing
@@ -205,9 +212,10 @@ current scores require those matrices and representative fixtures.
   transfer as values of either type.
   Legacy named scalar packets also transfer with either a finite or unset
   evaluation when a unique acyclic descriptor chain resolves their literal
-  numeric type. A uniquely bound zero-input legacy relation replaces a finite
-  scalar literal when its typed evaluation agrees exactly and supplies the
-  expression of an unset parameter when its result type agrees.
+  numeric type. A uniquely bound local-input legacy relation replaces a finite
+  parameter value when its typed evaluation agrees exactly, records its input
+  dependencies, and supplies the expression of an unset parameter when its
+  result type agrees.
   Arithmetic evaluation retains length and angle exponents through intermediate
   products, quotients, extrema, linear and cubic interpolation, trigonometric
   calls, absolute values, and square roots. Typed comparisons, Boolean literals,
@@ -232,8 +240,16 @@ current scores require those matrices and representative fixtures.
   retained separately with their source object and paired source entity.
   Coverage partitions payload and storage occurrences, classified and
   unclassified source entities, and ranges with zero, one, or multiple total
-  incoming occurrences. An incoming occurrence and design-field containment do
+  incoming occurrences. An incoming occurrence and design-field containment alone do
   not establish constraint identity, ownership, operands, or sketch incidence.
+  A complete range transfers as one opaque sketch constraint only when exactly
+  one total incoming incidence selects it, the source incidence resolves to the
+  same graph's paired entity and object record, and that source object's
+  complete owner chain reaches one transferred Sketch before another
+  transferred feature. The source object record is retained as one unresolved
+  native operand. The transfer assigns no neutral sketch entity, locus,
+  parameter, driving state, or dimensional role; exact selector, framing,
+  evaluation, and opcode-offset properties remain available on the constraint.
   Exact `Configuration` records retain the first reference's payload-relative
   byte offset, selected value-schema ordinal, entry, and name, and retain the
   second reference as an independently resolved, terminal-null, or unresolved
@@ -257,16 +273,43 @@ current scores require those matrices and representative fixtures.
   one sketch identity and one unresolved sketch history node. The transfer
   does not assign placement, geometry, profiles, or constraints. A `PRTSketch`
   or `Sketch` field class alone does not establish a sketch instance.
+- An exact ordered owner-record reference from a transferred `Sketch` can
+  retain one native sketch entity when its selected child owner group resolves
+  to one child design object containing exactly one complete `2DPoint` field
+  with its paired entity record. The entity keeps the source field identity and
+  class as native geometry. Coordinates, placement, construction state,
+  profiles, and constraints remain unresolved under DI-15 through DI-22.
 - A transferred typed parameter receives a feature owner only when its exact
   entity record selects an object record whose complete design-object owner
   chain resolves to exactly one transferred feature identity. A missing
   object, non-reflexive cycle, or ambiguous feature identity leaves the
   parameter at document scope.
+- Exact feature-owned parameters receive feature-local ordinals in serialized
+  object-record order, with the entity-record position as a deterministic
+  tie-breaker. This records parameter order and ownership only; it does not
+  assign a parameter to an operation role such as profile, direction, extent,
+  or output.
+- Opaque native operation definitions expose exact feature-owned parameter
+  expressions in their source-name keyed `parameters` map when every source
+  name is non-empty and unique within that feature. A name collision omits the
+  complete map rather than merging or renaming inputs. The map records generic
+  feature inputs only; it does not assign operation roles.
+- A transferred feature receives a structural `parent` only when its exact
+  `owner_design_object` incidence selects another design object that also
+  transfers as a feature. Self-links and owner cycles do not create neutral
+  history links. Structural parent transfer does not assign operation
+  dependencies.
 - Design objects consisting entirely of one exact empty principal-plane
   declaration class transfer the corresponding built-in reference-plane
   history node with the design object's first-field byte offset as its source
   history ordinal. Schema fields named `PRTSketch` or `Sketch` do not establish
   sketch instances.
+- Exact separator-form owner declarations for the admitted native operation
+  classes `EdgeFillet`, `Prism_ThickThin1`, `Prism_ThickThin2`,
+  `Revol_ThickThin1`, and `Sweep_ThickThin1` transfer opaque native operation
+  nodes with source order, identity, and structural parent linkage. Their
+  operands, profiles, directions, extents, outputs, dependencies, and typed
+  parameter roles remain unresolved; this slice does not raise the CATIA score.
 - Several non-primary envelopes transfer connected topology or exact analytic,
   NURBS, and procedural carrier subsets. These are extras until every
   cumulative gate in one closed envelope passes.
@@ -291,6 +334,19 @@ current scores require those matrices and representative fixtures.
   from one, two, or three bytes by landing on the complete counted vertex
   table. A two-handle row is a complete boundary segment; longer rows retain
   flanking endpoint ports around their interior trim handles.
+- E5 plane carriers solve their in-plane frame from endpoint UV values and
+  referenced vertex positions. A full-rank endpoint set uses the unique
+  orthonormal least-squares frame within `2e-3` mm. A rank-one diameter set
+  uses the known normal supplied by the adjacent analytic carrier to complete
+  the perpendicular axis; the simultaneous sign gauge requires the first
+  nonzero component of the `u_axis` to be positive. A missing or ambiguous
+  normal, non-finite endpoint, non-orthonormal fit, or residual above the
+  tolerance leaves the plane carrier unresolved.
+- E5 curve-support sides admit direct p-curves and finite acyclic chains of
+  intersection-support wrappers. Missing sides and wrapper cycles reject the
+  graph. When a wrapper side does not resolve directly, the two radial loop
+  occurrences supply the ordered support sides only after endpoint and
+  parameter-range agreement.
 - Zero-entity face-local support occurrences with complete lifted endpoint
   tapes form radial endpoint-pair candidates when two occurrences have one
   reciprocal unordered model-space endpoint match and the surrounding
@@ -319,6 +375,11 @@ current scores require those matrices and representative fixtures.
   carriers, or seam centers remain unbound atomically.
 - Every consolidated line profile transfers its placed signed-distance
   analytic line carrier and stored parameter interval.
+- Complete consolidated class-`0x27` carriers retain all selector-specific
+  scalar layouts in the native namespace. Direction-bearing `e4` and `c4`
+  carriers transfer a plane frame and bind pcurve sides only through unique
+  endpoint lifts to object-stream vertices. Directionless `ec` carriers remain
+  native-retained until their axis and tail roles resolve.
 - Complete `b2 03 16` rational clamped curves, `a5 13 16` degree-five clamped
   curves, and `b2 03 0f` bounded spatial circles transfer as standalone wire
   edges when they are the complete geometric population and no surface graph
@@ -453,12 +514,29 @@ current scores require those matrices and representative fixtures.
   endpoint-pair candidate. The midpoint disambiguates repeated endpoint pairs;
   the candidate does not establish curve coincidence or a physical edge. Every
   in-range odd-lane typed reference retains its selected global record identity
-  atomically for the loop.
+  atomically for the loop. When every bound support occurrence belongs to one
+  radial pair and every pair endpoint belongs to one complete endpoint clique,
+  the decoder atomically lowers the closed relation set into one connected
+  neutral body, region, shell, face, loop, coedge, edge, vertex, point, and
+  pcurve graph. Edge orientation is solved from the bounded model-carrier
+  endpoints; each alternate face occurrence keeps its oriented use curve and
+  coedge sense. A complete terminal ownership root supplies the body and shell
+  identities. Without that root, the graph uses deterministic derived body,
+  region, and shell identities. Allocation namespaces and native physical-edge
+  identity remain native records. Any incomplete, ambiguous, or inadmissible
+  relation candidate retains the atomic wire fallback. A direct carrier that
+  cannot be evaluated or oriented remains a reachable unknown carrier; the
+  topology candidate commits only when the complete graph remains admissible.
   A closed loop transfers as an independent wire body when every member has a
   transferred model-space curve, every member has a lifted model-space endpoint
   pair, and the oriented endpoint tape closes within the format tolerance. The
   wire contains one edge per face-local support occurrence and one vertex at
-  each cyclic join. This transfer does not assign source physical-edge
+  each cyclic join. A complete model-carrier parameter pair transfers to the
+  edge parameter range in loop direction; an opposite packed sense reverses
+  that range through an oriented direct carrier or a reversible helix
+  construction. Other procedural carriers without a reversible construction,
+  and incomplete or non-finite pairs, leave the range absent without discarding
+  the edge. This transfer does not assign source physical-edge
   identity, radial use, endpoint-incidence identity, or source body and shell
   ownership when no complete terminal ownership root covers the transferred
   loops; those native bindings remain unresolved.
@@ -477,7 +555,10 @@ current scores require those matrices and representative fixtures.
   reference-resolved subset assigns the first reference as carrier and remaining
   references as loops only when every target closes under that grammar. Decode
   coverage counts controls and uncounted framing independently for typed and
-  reference-resolved faces, including when no topology graph closes.
+  reference-resolved faces, including when no topology graph closes. A loop
+  named by more than one resolved face invalidates those face bindings; the
+  affected faces remain outside the connected graph while independent
+  face-loop components may transfer.
   Counted object-stream loops require an exact edge-count lane and complete
   control tail: the loop control, three signed controls per edge, and the
   optional finite binary64/binary32 numeric extension. The resolved graph
@@ -489,6 +570,13 @@ current scores require those matrices and representative fixtures.
   triple supply the source-native edge- and pcurve-occurrence senses; transfer
   requires the oriented edge occurrences to close cyclically and retains
   pcurve direction in each coedge use.
+  A transferred face with one closed loop derives `outer`. A planar face with
+  multiple loops derives one `outer` and `inner` for the remaining loops only
+  when every occurrence has a finite line pcurve whose lifted endpoints agree
+  with the serialized edge endpoints, one unique largest polygon strictly
+  contains every other polygon, and no boundary is degenerate or touching.
+  Curved, non-planar, disjoint, overlapping, nested-hole, and ambiguous
+  arrangements retain `unspecified` boundary roles.
   Object-stream edges require exactly five references and one admitted terminal
   control, with no residual bytes. The resolved graph retains the support,
   ordered vertex and parameter-incidence identities, and exact terminal control;
@@ -523,7 +611,9 @@ current scores require those matrices and representative fixtures.
   Object-stream class-`1d` pcurves require the complete sphere great-circle
   grammar, exact redundant chart relations, and a support resolving to the
   exact class-`2a` sphere chart. They transfer as analytic spherical
-  great-circle pcurves and exact model-space circles.
+  great-circle pcurves and exact model-space circles. Their edge class-`06`
+  stations bind loop endpoints and vertex-incidence coordinates; chart-bound
+  stations are the endpoint fallback when no valid edge span exists.
   Class-`24` support curves and class-`14` fixed-direction curve offsets feed
   class-`2c` extrusion carriers and class-`30` surface offsets. A transferred
   class-`2c` carrier retains its directrix construction and may trim it to a
@@ -546,8 +636,20 @@ current scores require those matrices and representative fixtures.
   Exact circular-helix constructions retain degree-1 sampled caches whose first
   and last knots are bit-identical to the analytic angular interval, so their
   edge ranges remain inside the canonical cache domain.
-  Loop-to-oriented-use, oriented-use-to-incidence, physical endpoint identity,
-  and body/shell binding remain unresolved.
+  Each transferred standard-nested loop retains an ordered vertex use for every
+  boundary edge occurrence. The vertex use points to the boundary traversal
+  endpoint and anchors after the corresponding coedge; the endpoint identity is
+  the same topology vertex identity used by the emitted edge.
+  Each transferred E5 loop retains an ordered vertex use for every oriented
+  edge occurrence. The loop solver selects the traversed endpoint from the
+  edge's stored vertex identity and member sense, and the use anchors after the
+  corresponding coedge.
+  Each transferred object-stream loop retains an ordered vertex use for every
+  oriented edge occurrence. The vertex use selects the traversed endpoint from
+  the solved edge sense and anchors it after the corresponding coedge; the
+  endpoint identity is the same topology vertex identity used by the edge.
+  Loop-to-oriented-use and oriented-use-to-incidence source relations remain
+  unresolved.
 
 ## Evidence required to raise a score
 

@@ -7,29 +7,38 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, Pcurve, PcurveGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition,
+    Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
+    RegionId, ShellId, SurfaceId, VertexId,
 };
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
-use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::transform::{Transform, Transform2};
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::brep::{
-    ShapePayloadRecord, TextCurve2d, TextEdgeRepresentation, TextLocation, TextOrientation,
-    TextPolygon3d, TextPolygonOnTriangulation, TextShapeKind, TextShapeUse, TextSurface,
-    TextTShape, TextTShapeGeometry, TextTriangulation,
+    surface_parameter_affine, ShapePayloadRecord, SurfaceParameterAffine, TextCurve2d,
+    TextEdgeRepresentation, TextLocation, TextOrientation, TextPolygon3d,
+    TextPolygonOnTriangulation, TextShapeKind, TextShapeUse, TextSurface, TextTShape,
+    TextTShapeGeometry, TextTriangulation,
 };
 use crate::native::PropertyRecord;
 
 type IndexedPolygon = (Vec<Point3>, Option<Vec<f64>>, f64);
+
+pub(crate) struct TopologyOccurrence {
+    pub(crate) property: String,
+    pub(crate) indexed_name: &'static str,
+    pub(crate) source_index: usize,
+    pub(crate) topology_id: String,
+}
 
 /// Transfer text or binary shape-set topology with placements applied once.
 pub(crate) fn transfer(
@@ -37,7 +46,8 @@ pub(crate) fn transfer(
     ir: &mut CadIr,
     payloads: &[ShapePayloadRecord],
     properties: &[PropertyRecord],
-) -> Result<(), CodecError> {
+) -> Result<Vec<TopologyOccurrence>, CodecError> {
+    let mut occurrences = Vec::new();
     for payload in payloads {
         let Some(tables) = Tables::from_payload(payload) else {
             continue;
@@ -55,6 +65,7 @@ pub(crate) fn transfer(
             builder.append_body(ctx, ir, root)?;
         }
         builder.emit_unowned_triangulations(ir);
+        occurrences.extend(builder.occurrences);
     }
     close_radial_rings(&mut ir.model.coedges);
     let referenced_pcurves = ir
@@ -67,7 +78,7 @@ pub(crate) fn transfer(
     ir.model
         .pcurves
         .retain(|pcurve| referenced_pcurves.contains(&pcurve.id));
-    Ok(())
+    Ok(occurrences)
 }
 
 #[derive(Clone, Copy)]
@@ -125,20 +136,24 @@ struct BodyRoot {
     shape: usize,
     transform: Transform,
     reversed: bool,
+    root_ordinal: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct OccurrenceKey {
-    shape: usize,
-    transform: [u64; 16],
-}
+struct OccurrenceKey(String);
 
 impl OccurrenceKey {
     fn new(shape: usize, transform: Transform) -> Self {
-        Self {
-            shape,
-            transform: transform_bits(transform),
-        }
+        Self(occurrence_label(shape, transform))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct SourceOccurrenceKey(String);
+
+impl SourceOccurrenceKey {
+    fn new(shape: usize, transform: Transform) -> Self {
+        Self(format!("{}@{}", shape, exact_transform_digest(transform)))
     }
 }
 
@@ -151,12 +166,16 @@ struct Builder<'a> {
     emitted_surfaces: HashSet<SurfaceId>,
     emitted_triangulations: HashSet<usize>,
     body_scope: Transform,
+    root_discriminator: Option<usize>,
     current_body: Option<BodyId>,
     source_object: String,
+    source_indices: HashMap<(TextShapeKind, SourceOccurrenceKey), usize>,
+    occurrences: Vec<TopologyOccurrence>,
 }
 
 impl<'a> Builder<'a> {
     fn new(payload: &'a ShapePayloadRecord, tables: Tables<'a>, source_object: String) -> Self {
+        let source_indices = source_topology_indices(tables);
         Self {
             payload,
             tables,
@@ -166,8 +185,11 @@ impl<'a> Builder<'a> {
             emitted_surfaces: HashSet::new(),
             emitted_triangulations: HashSet::new(),
             body_scope: Transform::identity(),
+            root_discriminator: None,
             current_body: None,
             source_object,
+            source_indices,
+            occurrences: Vec::new(),
         }
     }
 
@@ -183,6 +205,25 @@ impl<'a> Builder<'a> {
         }
     }
 
+    fn bind_topology(
+        &mut self,
+        kind: TextShapeKind,
+        shape: usize,
+        local: Transform,
+        topology_id: String,
+    ) {
+        let key = SourceOccurrenceKey::new(shape, self.body_scope.compose(local));
+        let Some(source_index) = self.source_indices.get(&(kind, key)).copied() else {
+            return;
+        };
+        self.occurrences.push(TopologyOccurrence {
+            property: self.payload.property.clone(),
+            indexed_name: indexed_name(kind),
+            source_index,
+            topology_id,
+        });
+    }
+
     fn emit_pcurves(&self, ir: &mut CadIr) {
         for shape in self.tables.tshapes {
             let TextTShapeGeometry::Edge {
@@ -195,50 +236,41 @@ impl<'a> Builder<'a> {
                 if !matches!(representation.kind, 2 | 3) {
                     continue;
                 }
-                let (u_scale, v_scale) = representation
+                let parameter_affine = representation
                     .surface
                     .and_then(|surface| self.tables.surfaces.get(surface - 1))
-                    .map_or((None, None), |surface| match surface {
-                        TextSurface::Plane {
-                            v_reversed: true, ..
-                        } => (None, Some(-1.0)),
-                        TextSurface::Cylinder {
-                            u_reversed: true, ..
-                        } => (Some(-1.0), None),
-                        TextSurface::Cone { half_angle, .. } => (None, Some(half_angle.cos())),
-                        _ => (None, None),
-                    });
-                let mut primary_geometry =
-                    pcurve_geometry(&self.tables.curve2ds[representation.primary - 1]);
-                if let Some(v_scale) = v_scale {
-                    scale_pcurve_v(&mut primary_geometry, v_scale);
-                }
-                if let Some(u_scale) = u_scale {
-                    scale_pcurve_u(&mut primary_geometry, u_scale);
-                }
+                    .map(surface_parameter_affine);
+                let primary_geometry = transformed_pcurve_geometry(
+                    pcurve_geometry(&self.tables.curve2ds[representation.primary - 1]),
+                    parameter_affine,
+                );
+                let primary_range = normalize_pcurve_parameter_range(
+                    &primary_geometry,
+                    representation.parameter_range,
+                );
                 ir.model.pcurves.push(Pcurve {
                     id: self.pcurve_id(shape.index, representation_index, false),
                     geometry: primary_geometry,
                     wrapper_reversed: None,
                     native_tail_flags: None,
-                    parameter_range: representation.parameter_range,
+                    parameter_range: primary_range,
                     fit_tolerance: None,
                 });
                 if let Some(secondary) = representation.secondary {
-                    let mut secondary_geometry =
-                        pcurve_geometry(&self.tables.curve2ds[secondary - 1]);
-                    if let Some(v_scale) = v_scale {
-                        scale_pcurve_v(&mut secondary_geometry, v_scale);
-                    }
-                    if let Some(u_scale) = u_scale {
-                        scale_pcurve_u(&mut secondary_geometry, u_scale);
-                    }
+                    let secondary_geometry = transformed_pcurve_geometry(
+                        pcurve_geometry(&self.tables.curve2ds[secondary - 1]),
+                        parameter_affine,
+                    );
+                    let secondary_range = normalize_pcurve_parameter_range(
+                        &secondary_geometry,
+                        representation.parameter_range,
+                    );
                     ir.model.pcurves.push(Pcurve {
                         id: self.pcurve_id(shape.index, representation_index, true),
                         geometry: secondary_geometry,
                         wrapper_reversed: None,
                         native_tail_flags: None,
-                        parameter_range: representation.parameter_range,
+                        parameter_range: secondary_range,
                         fit_tolerance: None,
                     });
                 }
@@ -297,15 +329,19 @@ impl<'a> Builder<'a> {
     }
 
     fn body_roots(&self) -> Result<Vec<BodyRoot>, CodecError> {
+        let has_multiple_roots = self.tables.roots.len() > 1;
         self.tables
             .roots
             .iter()
-            .map(|root| {
+            .enumerate()
+            .map(|(index, root)| {
                 self.shape(root.shape)?;
+                let transform = self.tables.location(root.location);
                 Ok(BodyRoot {
                     shape: root.shape,
-                    transform: self.tables.location(root.location),
+                    transform,
                     reversed: is_reversed(root.orientation),
+                    root_ordinal: has_multiple_roots.then_some(index + 1),
                 })
             })
             .collect()
@@ -318,6 +354,9 @@ impl<'a> Builder<'a> {
         root: BodyRoot,
     ) -> Result<(), CodecError> {
         self.body_scope = root.transform;
+        self.root_discriminator = root.root_ordinal;
+        self.vertices.clear();
+        self.edges.clear();
         let root_shape = self.shape(root.shape)?;
         let root_kind = root_shape.kind;
         if root_kind == TextShapeKind::Edge && root_shape.children.is_empty() {
@@ -341,7 +380,7 @@ impl<'a> Builder<'a> {
             }
             return Ok(());
         }
-        let body_key = occurrence_label(root.shape, root.transform);
+        let body_key = self.topology_label(root.shape, Transform::identity());
         let body_id = BodyId(crate::native::model_id("body", &self.payload.id, &body_key));
         self.current_body = Some(body_id.clone());
         let kind = match root_kind {
@@ -374,6 +413,12 @@ impl<'a> Builder<'a> {
             color: None,
             visible: None,
         });
+        if matches!(
+            root_kind,
+            TextShapeKind::Compound | TextShapeKind::CompSolid
+        ) {
+            self.bind_topology(root_kind, root.shape, Transform::identity(), body_id.0);
+        }
         Ok(())
     }
 
@@ -419,10 +464,10 @@ impl<'a> Builder<'a> {
                 .iter()
                 .filter(|child| self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Shell)
             {
-                shells.push(self.append_shell(ir, &region_id, child, transform, reversed)?);
+                shells.extend(self.append_shell(ir, &region_id, child, transform, reversed)?);
             }
         } else {
-            shells.push(self.append_shell_shape(
+            shells.extend(self.append_shell_shape(
                 ir,
                 &region_id,
                 shape_index,
@@ -436,6 +481,14 @@ impl<'a> Builder<'a> {
                 body: body.clone(),
                 shells,
             });
+            if shape.kind == TextShapeKind::Solid {
+                self.bind_topology(
+                    TextShapeKind::Solid,
+                    shape_index,
+                    transform,
+                    region_id.0.clone(),
+                );
+            }
             output.push(region_id);
         }
         Ok(())
@@ -448,7 +501,7 @@ impl<'a> Builder<'a> {
         shell_use: &TextShapeUse,
         parent: Transform,
         reversed: bool,
-    ) -> Result<ShellId, CodecError> {
+    ) -> Result<Vec<ShellId>, CodecError> {
         let transform = parent.compose(self.tables.location(shell_use.location));
         self.append_shell_shape(
             ir,
@@ -466,24 +519,60 @@ impl<'a> Builder<'a> {
         shape_index: usize,
         transform: Transform,
         reversed: bool,
-    ) -> Result<ShellId, CodecError> {
+    ) -> Result<Vec<ShellId>, CodecError> {
         let shape = self.shape(shape_index)?.clone();
         let key = self.topology_label(shape_index, transform);
         let shell_id = ShellId(crate::native::model_id("shell", &self.payload.id, &key));
+        if shape.kind == TextShapeKind::Shell {
+            let face_uses = shape
+                .children
+                .iter()
+                .filter(|child| self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Face)
+                .collect::<Vec<_>>();
+            let components = self.face_components(&face_uses, transform)?;
+            let mut shell_ids = Vec::with_capacity(components.len());
+            for (component_index, component) in components.iter().enumerate() {
+                let component_id = if component_index == 0 {
+                    shell_id.clone()
+                } else {
+                    ShellId(crate::native::model_id(
+                        "shell",
+                        &self.payload.id,
+                        format!("{key}:component:{}", component_index + 1),
+                    ))
+                };
+                let mut faces = Vec::with_capacity(component.len());
+                for &face_index in component {
+                    if let Some(face) = self.append_face(
+                        ir,
+                        &component_id,
+                        face_uses[face_index],
+                        transform,
+                        reversed,
+                    )? {
+                        faces.push(face);
+                    }
+                }
+                ir.model.shells.push(Shell {
+                    id: component_id.clone(),
+                    region: region.clone(),
+                    faces,
+                    wire_edges: Vec::new(),
+                    free_vertices: Vec::new(),
+                });
+                self.bind_topology(
+                    TextShapeKind::Shell,
+                    shape_index,
+                    transform,
+                    component_id.0.clone(),
+                );
+                shell_ids.push(component_id);
+            }
+            return Ok(shell_ids);
+        }
         let mut faces = Vec::new();
         let mut wire_edges = Vec::new();
         match shape.kind {
-            TextShapeKind::Shell => {
-                for child in &shape.children {
-                    if self.shape(child.shape)?.kind == TextShapeKind::Face {
-                        if let Some(face) =
-                            self.append_face(ir, &shell_id, child, transform, reversed)?
-                        {
-                            faces.push(face);
-                        }
-                    }
-                }
-            }
             TextShapeKind::Face => {
                 let shape_use = TextShapeUse {
                     shape: shape_index,
@@ -529,7 +618,7 @@ impl<'a> Builder<'a> {
                     wire_edges,
                     free_vertices: vec![vertex],
                 });
-                return Ok(shell_id);
+                return Ok(vec![shell_id]);
             }
             _ => {}
         }
@@ -540,7 +629,59 @@ impl<'a> Builder<'a> {
             wire_edges,
             free_vertices: Vec::new(),
         });
-        Ok(shell_id)
+        if shape.kind == TextShapeKind::Wire {
+            self.bind_topology(shape.kind, shape_index, transform, shell_id.0.clone());
+        }
+        Ok(vec![shell_id])
+    }
+
+    fn face_components(
+        &self,
+        face_uses: &[&TextShapeUse],
+        parent: Transform,
+    ) -> Result<Vec<Vec<usize>>, CodecError> {
+        if face_uses.is_empty() {
+            return Ok(vec![Vec::new()]);
+        }
+        let mut connectivity = Vec::with_capacity(face_uses.len());
+        for face_use in face_uses {
+            let face_transform = parent.compose(self.tables.location(face_use.location));
+            let face = self.shape(face_use.shape)?;
+            let mut keys = HashSet::new();
+            for wire_use in face
+                .children
+                .iter()
+                .filter(|child| self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Wire)
+            {
+                let wire_transform =
+                    face_transform.compose(self.tables.location(wire_use.location));
+                let wire = self.shape(wire_use.shape)?;
+                for edge_use in wire.children.iter().filter(|child| {
+                    self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Edge
+                }) {
+                    let edge_transform =
+                        wire_transform.compose(self.tables.location(edge_use.location));
+                    let edge_key =
+                        OccurrenceKey::new(edge_use.shape, self.body_scope.compose(edge_transform));
+                    keys.insert(format!("edge:{}", edge_key.0));
+                    let edge = self.shape(edge_use.shape)?;
+                    for vertex_use in edge.children.iter().filter(|child| {
+                        self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Vertex
+                    }) {
+                        let vertex_transform =
+                            edge_transform.compose(self.tables.location(vertex_use.location));
+                        let vertex_key = OccurrenceKey::new(
+                            vertex_use.shape,
+                            self.body_scope.compose(vertex_transform),
+                        );
+                        keys.insert(format!("vertex:{}", vertex_key.0));
+                    }
+                }
+            }
+            connectivity.push(keys);
+        }
+
+        Ok(connected_components(&connectivity))
     }
 
     fn append_face(
@@ -716,6 +857,12 @@ impl<'a> Builder<'a> {
                 boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 vertex_uses: Vec::new(),
             });
+            self.bind_topology(
+                TextShapeKind::Wire,
+                wire_use.shape,
+                wire_transform,
+                loop_id.0.clone(),
+            );
             loops.push(loop_id);
         }
         ir.model.faces.push(Face {
@@ -728,6 +875,12 @@ impl<'a> Builder<'a> {
             color: None,
             tolerance: positive_tolerance(tolerance),
         });
+        self.bind_topology(
+            TextShapeKind::Face,
+            face_use.shape,
+            face_transform,
+            face_id.0.clone(),
+        );
         Ok(Some(face_id))
     }
 
@@ -739,8 +892,9 @@ impl<'a> Builder<'a> {
     ) -> Result<EdgeId, CodecError> {
         let transform = parent.compose(self.tables.location(edge_use.location));
         let key = OccurrenceKey::new(edge_use.shape, self.body_scope.compose(transform));
-        if let Some(id) = self.edges.get(&key) {
-            return Ok(id.clone());
+        if let Some(id) = self.edges.get(&key).cloned() {
+            self.bind_topology(TextShapeKind::Edge, edge_use.shape, transform, id.0.clone());
+            return Ok(id);
         }
         let shape = self.shape(edge_use.shape)?.clone();
         let TextTShapeGeometry::Edge {
@@ -755,23 +909,9 @@ impl<'a> Builder<'a> {
                 edge_use.shape
             )));
         };
-        let endpoint_use = |orientation| {
-            shape
-                .children
-                .iter()
-                .find(|child| child.orientation == orientation)
-                .or_else(|| shape.children.first())
-                .cloned()
-        };
-        let Some(start_use) = endpoint_use(TextOrientation::Forward) else {
-            return Err(CodecError::Malformed(format!(
-                "edge TShape {} has no vertex",
-                edge_use.shape
-            )));
-        };
-        let end_use = endpoint_use(TextOrientation::Reversed).unwrap_or_else(|| start_use.clone());
-        let start = self.ensure_vertex(ir, &start_use, transform)?;
-        let end = self.ensure_vertex(ir, &end_use, transform)?;
+        let (start_use, end_use) = edge_endpoint_uses(edge_use.shape, &shape.children)?;
+        let start = self.ensure_vertex(ir, start_use, transform)?;
+        let end = self.ensure_vertex(ir, end_use, transform)?;
         let id = EdgeId(crate::native::model_id(
             "edge",
             &self.payload.id,
@@ -803,6 +943,12 @@ impl<'a> Builder<'a> {
                         .and_then(|parameters| Some([*parameters.first()?, *parameters.last()?]))
                 })
             });
+        let param_range = curve
+            .as_ref()
+            .and_then(|curve| ir.model.curves.iter().find(|item| item.id == *curve))
+            .map_or(param_range, |curve| {
+                normalize_occt_curve_range(&curve.geometry, param_range)
+            });
         ir.model.edges.push(Edge {
             id: id.clone(),
             curve,
@@ -811,6 +957,7 @@ impl<'a> Builder<'a> {
             param_range,
             tolerance: positive_tolerance(tolerance),
         });
+        self.bind_topology(TextShapeKind::Edge, edge_use.shape, transform, id.0.clone());
         self.edges.insert(key, id.clone());
         Ok(id)
     }
@@ -923,8 +1070,14 @@ impl<'a> Builder<'a> {
     ) -> Result<VertexId, CodecError> {
         let transform = parent.compose(self.tables.location(vertex_use.location));
         let key = OccurrenceKey::new(vertex_use.shape, self.body_scope.compose(transform));
-        if let Some(id) = self.vertices.get(&key) {
-            return Ok(id.clone());
+        if let Some(id) = self.vertices.get(&key).cloned() {
+            self.bind_topology(
+                TextShapeKind::Vertex,
+                vertex_use.shape,
+                transform,
+                id.0.clone(),
+            );
+            return Ok(id);
         }
         let shape = self.shape(vertex_use.shape)?;
         let TextTShapeGeometry::Vertex {
@@ -957,6 +1110,12 @@ impl<'a> Builder<'a> {
             point: point_id,
             tolerance: positive_tolerance(tolerance * similarity(transform)?.scale),
         });
+        self.bind_topology(
+            TextShapeKind::Vertex,
+            vertex_use.shape,
+            transform,
+            vertex_id.0.clone(),
+        );
         self.vertices.insert(key, vertex_id.clone());
         Ok(vertex_id)
     }
@@ -1028,11 +1187,28 @@ impl<'a> Builder<'a> {
                     CodecError::Malformed(format!("missing surface table entry {source}"))
                 })?
                 .clone();
+            let has_procedural_construction = ir
+                .model
+                .procedural_surfaces
+                .iter()
+                .any(|surface| surface.surface == base_id);
             ir.model.surfaces.push(Surface {
                 id: id.clone(),
                 geometry: transform_surface(&base.geometry, transform)?,
                 source_object: base.source_object,
             });
+            if has_procedural_construction {
+                ir.model.procedural_surfaces.push(ProceduralSurface {
+                    id: ProceduralSurfaceId(format!("{}:construction", id.0)),
+                    surface: id.clone(),
+                    definition: ProceduralSurfaceDefinition::Replica {
+                        source: base_id,
+                        transform,
+                    },
+                    record_bounds: None,
+                    cache_fit_tolerance: None,
+                });
+            }
         }
         Ok(id)
     }
@@ -1045,7 +1221,9 @@ impl<'a> Builder<'a> {
         surface_transform: Transform,
     ) -> Option<(PcurveId, Option<[f64; 2]>)> {
         let TextTShapeGeometry::Edge {
-            representations, ..
+            degenerated,
+            representations,
+            ..
         } = &self.tables.tshapes[edge_use.shape - 1].geometry
         else {
             return None;
@@ -1063,13 +1241,20 @@ impl<'a> Builder<'a> {
             })
             .map(|(index, representation)| {
                 let reversed = is_reversed(edge_use.orientation);
+                let secondary = representation.secondary.is_some() && reversed;
+                let curve_index = if secondary {
+                    representation
+                        .secondary
+                        .expect("secondary representation exists")
+                } else {
+                    representation.primary
+                };
+                let geometry = pcurve_geometry(&self.tables.curve2ds[curve_index - 1]);
+                let parameter_range =
+                    normalize_pcurve_parameter_range(&geometry, representation.parameter_range);
                 (
-                    self.pcurve_id(
-                        edge_use.shape,
-                        index,
-                        representation.secondary.is_some() && reversed,
-                    ),
-                    representation.parameter_range,
+                    self.pcurve_id(edge_use.shape, index, secondary),
+                    bounded_pcurve_range(*degenerated, parameter_range),
                 )
             })
     }
@@ -1082,7 +1267,108 @@ impl<'a> Builder<'a> {
     }
 
     fn topology_label(&self, shape: usize, local: Transform) -> String {
-        occurrence_label(shape, self.body_scope.compose(local))
+        let label = occurrence_label(shape, self.body_scope.compose(local));
+        self.root_discriminator
+            .map_or(label.clone(), |ordinal| format!("{label}~root{ordinal}"))
+    }
+}
+
+fn bounded_pcurve_range(degenerated: bool, range: Option<[f64; 2]>) -> Option<[f64; 2]> {
+    (!degenerated)
+        .then_some(range)
+        .flatten()
+        .filter(|range| range[0] < range[1])
+}
+
+fn normalize_pcurve_parameter_range(
+    geometry: &PcurveGeometry,
+    range: Option<[f64; 2]>,
+) -> Option<[f64; 2]> {
+    let mut range = range?;
+    let domain = match geometry {
+        PcurveGeometry::Nurbs { degree, knots, .. } => {
+            let degree = usize::try_from(*degree).ok()?;
+            [
+                *knots.get(degree)?,
+                *knots.get(knots.len().checked_sub(degree + 1)?)?,
+            ]
+        }
+        PcurveGeometry::Trimmed {
+            parameter_range, ..
+        } => *parameter_range,
+        PcurveGeometry::Offset { basis, .. } | PcurveGeometry::Transformed { basis, .. } => {
+            return normalize_pcurve_parameter_range(basis, Some(range));
+        }
+        _ => return Some(range),
+    };
+    let scale = range
+        .into_iter()
+        .chain(domain)
+        .fold(1.0_f64, |scale, value| scale.max(value.abs()));
+    let tolerance = scale * 1.0e-9;
+    for value in &mut range {
+        if (*value - domain[0]).abs() <= tolerance {
+            *value = domain[0];
+        } else if (*value - domain[1]).abs() <= tolerance {
+            *value = domain[1];
+        }
+    }
+    Some(range)
+}
+
+fn connected_components(connectivity: &[HashSet<String>]) -> Vec<Vec<usize>> {
+    let mut assigned = vec![false; connectivity.len()];
+    let mut components = Vec::new();
+    for seed in 0..connectivity.len() {
+        if assigned[seed] {
+            continue;
+        }
+        assigned[seed] = true;
+        let mut component = Vec::new();
+        let mut stack = vec![seed];
+        while let Some(current) = stack.pop() {
+            component.push(current);
+            for candidate in 0..connectivity.len() {
+                if !assigned[candidate]
+                    && !connectivity[current].is_disjoint(&connectivity[candidate])
+                {
+                    assigned[candidate] = true;
+                    stack.push(candidate);
+                }
+            }
+        }
+        component.sort_unstable();
+        components.push(component);
+    }
+    components
+}
+
+fn transformed_pcurve_geometry(
+    geometry: PcurveGeometry,
+    affine: Option<SurfaceParameterAffine>,
+) -> PcurveGeometry {
+    let Some(affine) = affine else {
+        return geometry;
+    };
+    if affine
+        == (SurfaceParameterAffine {
+            u_scale: 1.0,
+            u_offset: 0.0,
+            v_scale: 1.0,
+            v_offset: 0.0,
+        })
+    {
+        return geometry;
+    }
+    PcurveGeometry::Transformed {
+        basis: Box::new(geometry),
+        transform: Transform2 {
+            rows: [
+                [affine.u_scale, 0.0, affine.u_offset],
+                [0.0, affine.v_scale, affine.v_offset],
+                [0.0, 0.0, 1.0],
+            ],
+        },
     }
 }
 
@@ -1156,189 +1442,13 @@ pub(crate) fn pcurve_geometry(curve: &TextCurve2d) -> PcurveGeometry {
             basis,
         } => PcurveGeometry::Trimmed {
             parameter_range: *parameter_range,
+            same_sense: true,
             basis: Box::new(pcurve_geometry(basis)),
         },
         TextCurve2d::Offset { distance, basis } => PcurveGeometry::Offset {
             distance: *distance,
             basis: Box::new(pcurve_geometry(basis)),
         },
-    }
-}
-
-fn scale_pcurve_v(geometry: &mut PcurveGeometry, scale: f64) {
-    let scale_point = |point: &mut Point2| point.v *= scale;
-    match geometry {
-        PcurveGeometry::Line { origin, direction } => {
-            scale_point(origin);
-            scale_point(direction);
-        }
-        PcurveGeometry::Circle {
-            center,
-            x_axis,
-            y_axis,
-            ..
-        }
-        | PcurveGeometry::Ellipse {
-            center,
-            x_axis,
-            y_axis,
-            ..
-        }
-        | PcurveGeometry::Hyperbola {
-            center,
-            x_axis,
-            y_axis,
-            ..
-        } => {
-            scale_point(center);
-            scale_point(x_axis);
-            scale_point(y_axis);
-        }
-        PcurveGeometry::Harmonic {
-            center,
-            cosine,
-            sine,
-        }
-        | PcurveGeometry::Hyperbolic {
-            center,
-            cosine,
-            sine,
-        } => {
-            scale_point(center);
-            scale_point(cosine);
-            scale_point(sine);
-        }
-        PcurveGeometry::Parabola {
-            vertex,
-            x_axis,
-            y_axis,
-            ..
-        } => {
-            scale_point(vertex);
-            scale_point(x_axis);
-            scale_point(y_axis);
-        }
-        PcurveGeometry::Nurbs { control_points, .. } => {
-            control_points.iter_mut().for_each(scale_point);
-        }
-        PcurveGeometry::PolarHarmonic {
-            axial_origin,
-            axial_cos,
-            axial_sin,
-            ..
-        } => {
-            *axial_origin *= scale;
-            *axial_cos *= scale;
-            *axial_sin *= scale;
-        }
-        PcurveGeometry::PolarNurbs {
-            axial_control_points,
-            ..
-        } => {
-            for value in axial_control_points {
-                *value *= scale;
-            }
-        }
-        PcurveGeometry::SphericalGreatCircle { plane_slope, .. } => {
-            debug_assert_eq!(scale.abs(), 1.0);
-            *plane_slope *= scale;
-        }
-        PcurveGeometry::Trimmed { basis, .. } | PcurveGeometry::Offset { basis, .. } => {
-            scale_pcurve_v(basis, scale);
-        }
-    }
-}
-
-fn scale_pcurve_u(geometry: &mut PcurveGeometry, scale: f64) {
-    let scale_point = |point: &mut Point2| point.u *= scale;
-    match geometry {
-        PcurveGeometry::Line { origin, direction } => {
-            scale_point(origin);
-            scale_point(direction);
-        }
-        PcurveGeometry::Circle {
-            center,
-            x_axis,
-            y_axis,
-            ..
-        }
-        | PcurveGeometry::Ellipse {
-            center,
-            x_axis,
-            y_axis,
-            ..
-        }
-        | PcurveGeometry::Hyperbola {
-            center,
-            x_axis,
-            y_axis,
-            ..
-        } => {
-            scale_point(center);
-            scale_point(x_axis);
-            scale_point(y_axis);
-        }
-        PcurveGeometry::Harmonic {
-            center,
-            cosine,
-            sine,
-        }
-        | PcurveGeometry::Hyperbolic {
-            center,
-            cosine,
-            sine,
-        } => {
-            scale_point(center);
-            scale_point(cosine);
-            scale_point(sine);
-        }
-        PcurveGeometry::Parabola {
-            vertex,
-            x_axis,
-            y_axis,
-            ..
-        } => {
-            scale_point(vertex);
-            scale_point(x_axis);
-            scale_point(y_axis);
-        }
-        PcurveGeometry::Nurbs { control_points, .. } => {
-            control_points.iter_mut().for_each(scale_point);
-        }
-        PcurveGeometry::PolarHarmonic {
-            radial_center,
-            radial_cos,
-            radial_sin,
-            ..
-        } => {
-            debug_assert_eq!(scale, -1.0);
-            radial_center.v = -radial_center.v;
-            radial_cos.v = -radial_cos.v;
-            radial_sin.v = -radial_sin.v;
-        }
-        PcurveGeometry::PolarNurbs {
-            radial_control_points,
-            ..
-        } => {
-            debug_assert_eq!(scale, -1.0);
-            for point in radial_control_points {
-                point.v = -point.v;
-            }
-        }
-        PcurveGeometry::SphericalGreatCircle {
-            azimuth_origin,
-            azimuth_rate,
-            plane_phase,
-            ..
-        } => {
-            debug_assert_eq!(scale, -1.0);
-            *azimuth_origin = -*azimuth_origin;
-            *azimuth_rate = -*azimuth_rate;
-            *plane_phase = -*plane_phase;
-        }
-        PcurveGeometry::Trimmed { basis, .. } | PcurveGeometry::Offset { basis, .. } => {
-            scale_pcurve_u(basis, scale);
-        }
     }
 }
 
@@ -1430,7 +1540,99 @@ fn occurrence_label(shape: usize, transform: Transform) -> String {
     }
 }
 
+fn source_topology_indices(
+    tables: Tables<'_>,
+) -> HashMap<(TextShapeKind, SourceOccurrenceKey), usize> {
+    let mut indices = HashMap::new();
+    for target in [
+        TextShapeKind::Vertex,
+        TextShapeKind::Edge,
+        TextShapeKind::Wire,
+        TextShapeKind::Face,
+        TextShapeKind::Shell,
+        TextShapeKind::Solid,
+        TextShapeKind::CompSolid,
+        TextShapeKind::Compound,
+    ] {
+        for root in tables.roots {
+            let mut seen = HashSet::new();
+            let mut next_index = 1;
+            let mut stack = vec![(root.clone(), Transform::identity())];
+            while let Some((shape_use, parent)) = stack.pop() {
+                let transform = parent.compose(tables.location(shape_use.location));
+                let shape = &tables.tshapes[shape_use.shape - 1];
+                if shape.kind == target {
+                    let key = SourceOccurrenceKey::new(shape_use.shape, transform);
+                    if seen.insert(key.clone()) {
+                        indices.entry((target, key)).or_insert_with(|| {
+                            let index = next_index;
+                            next_index += 1;
+                            index
+                        });
+                    }
+                    continue;
+                }
+                if topology_rank(shape.kind) < topology_rank(target) {
+                    stack.extend(
+                        shape
+                            .children
+                            .iter()
+                            .rev()
+                            .cloned()
+                            .map(|child| (child, transform)),
+                    );
+                }
+            }
+        }
+    }
+    indices
+}
+
+fn topology_rank(kind: TextShapeKind) -> u8 {
+    match kind {
+        TextShapeKind::Compound => 0,
+        TextShapeKind::CompSolid => 1,
+        TextShapeKind::Solid => 2,
+        TextShapeKind::Shell => 3,
+        TextShapeKind::Face => 4,
+        TextShapeKind::Wire => 5,
+        TextShapeKind::Edge => 6,
+        TextShapeKind::Vertex => 7,
+    }
+}
+
+fn indexed_name(kind: TextShapeKind) -> &'static str {
+    match kind {
+        TextShapeKind::Vertex => "Vertex",
+        TextShapeKind::Edge => "Edge",
+        TextShapeKind::Wire => "Wire",
+        TextShapeKind::Face => "Face",
+        TextShapeKind::Shell => "Shell",
+        TextShapeKind::Solid => "Solid",
+        TextShapeKind::CompSolid => "CompSolid",
+        TextShapeKind::Compound => "Compound",
+    }
+}
+
 fn transform_digest(transform: Transform) -> String {
+    let mut bytes = Vec::with_capacity(16 * 8);
+    for row in transform.rows {
+        for value in row {
+            // TopLoc locations can encode the same placement through different
+            // factor chains. Matrix composition then leaves sub-picometre
+            // roundoff even though OCCT treats the occurrences as identical.
+            // Canonicalize with one decimal digit of margin around the codec's
+            // transform-equivalence tolerance so shared topology receives one
+            // occurrence identity even when roundoff crosses zero.
+            let rounded = (value * 1.0e11).round() / 1.0e11;
+            let canonical = if rounded == 0.0 { 0.0 } else { rounded };
+            bytes.extend_from_slice(&canonical.to_bits().to_le_bytes());
+        }
+    }
+    sha256_hex(&bytes)[..16].to_owned()
+}
+
+fn exact_transform_digest(transform: Transform) -> String {
     let mut bytes = Vec::with_capacity(16 * 8);
     for row in transform.rows {
         for value in row {
@@ -1438,14 +1640,6 @@ fn transform_digest(transform: Transform) -> String {
         }
     }
     sha256_hex(&bytes)[..16].to_owned()
-}
-
-fn transform_bits(transform: Transform) -> [u64; 16] {
-    let mut output = [0; 16];
-    for (target, value) in output.iter_mut().zip(transform.rows.into_iter().flatten()) {
-        *target = value.to_bits();
-    }
-    output
 }
 
 fn is_identity(transform: Transform) -> bool {
@@ -1478,13 +1672,285 @@ fn close_radial_rings(coedges: &mut [Coedge]) {
         by_edge.entry(coedge.edge.clone()).or_default().push(index);
     }
     for indices in by_edge.values() {
-        for (position, index) in indices.iter().enumerate() {
-            let next = indices[(position + 1) % indices.len()];
-            coedges[*index].radial_next = coedges[next].id.clone();
+        if let [first, second] = indices.as_slice() {
+            coedges[*first].radial_next = coedges[*second].id.clone();
+            coedges[*second].radial_next = coedges[*first].id.clone();
         }
+    }
+}
+
+fn edge_endpoint_uses(
+    edge: usize,
+    children: &[TextShapeUse],
+) -> Result<(&TextShapeUse, &TextShapeUse), CodecError> {
+    let start = children
+        .iter()
+        .rfind(|child| child.orientation == TextOrientation::Forward);
+    let end = children
+        .iter()
+        .rfind(|child| child.orientation == TextOrientation::Reversed);
+    start.zip(end).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "edge TShape {edge} does not have both forward and reversed endpoint uses"
+        ))
+    })
+}
+
+pub(crate) fn normalize_occt_curve_range(
+    geometry: &CurveGeometry,
+    range: Option<[f64; 2]>,
+) -> Option<[f64; 2]> {
+    match geometry {
+        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
+            let [start, end] = range?;
+            let sweep = end - start;
+            let tau = std::f64::consts::TAU;
+            if !start.is_finite() || !end.is_finite() || (sweep - tau).abs() <= 1.0e-9 {
+                return Some([start, end]);
+            }
+            let canonical_start = start.rem_euclid(tau);
+            let canonical_start = if (tau - canonical_start).abs() <= 1.0e-12 {
+                0.0
+            } else {
+                canonical_start
+            };
+            Some([canonical_start, canonical_start + sweep])
+        }
+        CurveGeometry::Parabola { focal_distance, .. } => {
+            if !focal_distance.is_finite() || *focal_distance <= 0.0 {
+                return range;
+            }
+            range.map(|[start, end]| {
+                let scale = 2.0 * focal_distance;
+                [start / scale, end / scale]
+            })
+        }
+        CurveGeometry::Transformed { basis, .. } => normalize_occt_curve_range(basis, range),
+        _ => range,
     }
 }
 
 fn dot(left: Vector3, right: Vector3) -> f64 {
     left.x * right.x + left.y * right.y + left.z * right.z
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn occurrence_keys_canonicalize_equivalent_transform_roundoff() {
+        let mut positive = Transform::identity();
+        positive.rows[0][3] = 0.5e-12;
+        let mut negative = Transform::identity();
+        negative.rows[0][3] = -0.5e-12;
+
+        assert_eq!(
+            OccurrenceKey::new(7, positive),
+            OccurrenceKey::new(7, negative)
+        );
+        assert_eq!(
+            OccurrenceKey::new(7, positive).0,
+            occurrence_label(7, positive)
+        );
+        assert_ne!(
+            SourceOccurrenceKey::new(7, positive),
+            SourceOccurrenceKey::new(7, negative)
+        );
+
+        let mut composed = Transform::identity();
+        composed.rows[0][3] = 258.75;
+        composed.rows[2][3] = -1.4e-14;
+        let mut direct = Transform::identity();
+        direct.rows[0][3] = 258.75;
+
+        assert_eq!(
+            OccurrenceKey::new(14, composed),
+            OccurrenceKey::new(14, direct)
+        );
+        assert_ne!(
+            SourceOccurrenceKey::new(14, composed),
+            SourceOccurrenceKey::new(14, direct)
+        );
+
+        direct.rows[2][3] = 1.0e-8;
+        assert_ne!(
+            OccurrenceKey::new(14, composed),
+            OccurrenceKey::new(14, direct)
+        );
+    }
+
+    #[test]
+    fn endpoint_selection_matches_the_last_oriented_direct_children() {
+        let children = [
+            TextShapeUse {
+                shape: 1,
+                orientation: TextOrientation::Forward,
+                location: 0,
+            },
+            TextShapeUse {
+                shape: 2,
+                orientation: TextOrientation::Internal,
+                location: 0,
+            },
+            TextShapeUse {
+                shape: 3,
+                orientation: TextOrientation::Forward,
+                location: 0,
+            },
+            TextShapeUse {
+                shape: 4,
+                orientation: TextOrientation::Reversed,
+                location: 0,
+            },
+        ];
+        let (start, end) = edge_endpoint_uses(9, &children).expect("endpoint uses");
+        assert_eq!(start.shape, 3);
+        assert_eq!(end.shape, 4);
+
+        assert!(matches!(
+            edge_endpoint_uses(9, &children[..3]),
+            Err(CodecError::Malformed(_))
+        ));
+    }
+
+    #[test]
+    fn non_manifold_incidence_does_not_invent_a_radial_order() {
+        let edge = EdgeId("edge".into());
+        let mut coedges = (0..3)
+            .map(|index| {
+                let id = CoedgeId(format!("coedge-{index}"));
+                Coedge {
+                    id: id.clone(),
+                    owner_loop: LoopId(format!("loop-{index}")),
+                    edge: edge.clone(),
+                    next: id.clone(),
+                    previous: id.clone(),
+                    radial_next: id,
+                    sense: Sense::Forward,
+                    use_curve: None,
+                    use_curve_parameter_range: None,
+                    pcurves: Vec::new(),
+                }
+            })
+            .collect::<Vec<_>>();
+        close_radial_rings(&mut coedges);
+        assert!(coedges.iter().all(|coedge| coedge.radial_next == coedge.id));
+    }
+
+    #[test]
+    fn occt_parabola_ranges_convert_to_step_parameters() {
+        let geometry = CurveGeometry::Parabola {
+            vertex: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: Vector3::new(1.0, 0.0, 0.0),
+            focal_distance: 4.0,
+        };
+        assert_eq!(
+            normalize_occt_curve_range(&geometry, Some([-2.0, 4.0])),
+            Some([-0.25, 0.5])
+        );
+        assert_eq!(normalize_occt_curve_range(&geometry, None), None);
+    }
+
+    #[test]
+    fn periodic_ranges_wrap_the_start_and_preserve_the_sweep() {
+        let geometry = CurveGeometry::Circle {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 1.0,
+        };
+        let [start, end] =
+            normalize_occt_curve_range(&geometry, Some([-1.0e-15, std::f64::consts::FRAC_PI_2]))
+                .expect("periodic range");
+        assert_eq!(start, 0.0);
+        assert!((end - start - (std::f64::consts::FRAC_PI_2 + 1.0e-15)).abs() < 1.0e-15);
+    }
+
+    #[test]
+    fn collapsed_pcurve_ranges_are_unbounded() {
+        assert_eq!(bounded_pcurve_range(false, Some([2.0, 2.0])), None);
+        assert_eq!(bounded_pcurve_range(true, Some([1.0, 3.0])), None);
+        assert_eq!(
+            bounded_pcurve_range(false, Some([1.0, 3.0])),
+            Some([1.0, 3.0])
+        );
+    }
+
+    #[test]
+    fn adjacent_pcurve_domain_rounding_is_canonicalized() {
+        let geometry = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![2.0, 2.0, 4.0, 4.0],
+            control_points: vec![
+                cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            ],
+            weights: None,
+            periodic: false,
+        };
+
+        assert_eq!(
+            normalize_pcurve_parameter_range(&geometry, Some([2.0 - 1.0e-11, 4.0 + 1.0e-11])),
+            Some([2.0, 4.0])
+        );
+        assert_eq!(
+            normalize_pcurve_parameter_range(&geometry, Some([1.0, 5.0])),
+            Some([1.0, 5.0])
+        );
+    }
+
+    #[test]
+    fn face_connectivity_partitions_transitively_without_reordering() {
+        let sets = [
+            HashSet::from(["edge-a".to_owned()]),
+            HashSet::from(["edge-b".to_owned()]),
+            HashSet::from(["edge-a".to_owned(), "edge-c".to_owned()]),
+            HashSet::from(["edge-c".to_owned()]),
+            HashSet::new(),
+        ];
+
+        assert_eq!(
+            connected_components(&sets),
+            vec![vec![0, 2, 3], vec![1], vec![4]]
+        );
+        assert!(connected_components(&[]).is_empty());
+    }
+
+    #[test]
+    fn indirect_analytic_frames_reverse_the_pcurve_u_parameter() {
+        let surface = TextSurface::Sphere {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 1.0,
+            u_reversed: true,
+        };
+        let affine = surface_parameter_affine(&surface);
+        assert_eq!(affine.u_scale, -1.0);
+        assert_eq!(affine.v_scale, 1.0);
+
+        let cone = TextSurface::Cone {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 1.0,
+            half_angle: std::f64::consts::FRAC_PI_3,
+            u_reversed: true,
+        };
+        let affine = surface_parameter_affine(&cone);
+        assert_eq!(affine.u_scale, -1.0);
+        assert!((affine.v_scale - 0.5).abs() < 1.0e-15);
+
+        let trimmed = TextSurface::Trimmed {
+            parameter_ranges: [[2.0, 3.0], [4.0, 8.0]],
+            basis: Box::new(cone),
+        };
+        let affine = surface_parameter_affine(&trimmed);
+        assert_eq!(affine.u_scale, 1.0);
+        assert_eq!(affine.u_offset, -2.0);
+        assert!((affine.v_scale - 0.5).abs() < 1.0e-15);
+        assert!((affine.v_offset + 2.0).abs() < 1.0e-15);
+    }
 }

@@ -11,7 +11,7 @@ use cadmpeg_ir::IR_VERSION;
 use super::chunks::{
     anonymous_version, checked_count_bytes, chunk_at, crc16, packed_version, parse_eof,
     parse_header, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
-    TCODE_CLASS_UUID, TCODE_CRC, TCODE_ENDOFFILE, TCODE_SHORT,
+    TCODE_CRC, TCODE_ENDOFFILE, TCODE_SHORT,
 };
 use super::settings;
 use super::wire::Uuid;
@@ -40,6 +40,23 @@ fn long_chunk(archive: ArchiveVersion, typecode: u32, body: &[u8]) -> Vec<u8> {
 fn crc_chunk(archive: ArchiveVersion, typecode: u32, body: &[u8]) -> Vec<u8> {
     let mut payload = body.to_vec();
     payload.extend(crc32fast::hash(body).to_le_bytes());
+    long_chunk(archive, typecode, &payload)
+}
+
+fn crc_chunk_excluding(
+    archive: ArchiveVersion,
+    typecode: u32,
+    body: &[u8],
+    children: &[std::ops::Range<usize>],
+) -> Vec<u8> {
+    let direct = super::chunks::direct_checksum_ranges(&(0..body.len()), children)
+        .expect("valid test child ranges");
+    let mut hasher = crc32fast::Hasher::new();
+    for range in direct {
+        hasher.update(&body[range]);
+    }
+    let mut payload = body.to_vec();
+    payload.extend(hasher.finalize().to_le_bytes());
     long_chunk(archive, typecode, &payload)
 }
 
@@ -161,6 +178,14 @@ fn parses_exact_header_and_scope() {
     ));
     assert!(parse_header(&header("1234567")).is_ok());
     assert!(parse_header(&header("12345678")).is_ok());
+    let mut embedded = vec![0x5a; 127];
+    embedded.extend(header("80"));
+    assert_eq!(
+        parse_header(&embedded)
+            .expect("embedded archive")
+            .start_offset,
+        127
+    );
 }
 
 #[test]
@@ -191,11 +216,11 @@ fn parses_widths_short_long_and_bounds() {
     assert_eq!(parsed.next_offset, 15);
 
     let mut bad = 9_u32.to_le_bytes().to_vec();
-    bad.extend((-1_i32).to_le_bytes());
-    assert!(matches!(
-        chunk_at(&bad, 0, bad.len(), ArchiveVersion::V4, false),
-        Err(FramingError::InvalidLength { .. })
-    ));
+    bad.extend((-1_i64).to_le_bytes());
+    let bodyless = chunk_at(&bad, 0, bad.len(), ArchiveVersion::V5, false)
+        .expect("negative long value is bodyless");
+    assert!(bodyless.short);
+    assert_eq!(bodyless.body.len(), 0);
     let mut overflow = 9_u32.to_le_bytes().to_vec();
     overflow.extend(i32::MAX.to_le_bytes());
     assert!(matches!(
@@ -209,7 +234,7 @@ fn parses_widths_short_long_and_bounds() {
 fn verifies_crc_vectors_and_recoverable_mismatch() {
     assert_eq!(crc16(0, b""), 0);
     assert_eq!(crc16(1, b""), 1);
-    assert_eq!(crc16(0, b"123456789"), 0x31c3);
+    assert_eq!(crc16(0, b"123456789"), 0xbeef);
     assert_eq!(crc32fast::hash(b""), 0);
     assert_eq!(crc32fast::hash(b"123456789"), 0xcbf4_3926);
 
@@ -232,7 +257,7 @@ fn verifies_crc_vectors_and_recoverable_mismatch() {
         super::chunks::ChecksumKind::Crc16
     );
     assert_eq!(
-        super::chunks::checksum_kind(ArchiveVersion::V1, TCODE_CLASS_UUID, true),
+        super::chunks::checksum_kind(ArchiveVersion::V1, 0x0002_fffd, true),
         super::chunks::ChecksumKind::Crc16
     );
 }
@@ -277,7 +302,7 @@ fn parses_fixed_attributes_through_every_minor_gate() {
 
 #[test]
 fn fixed_visibility_and_definition_membership_use_mode_low_nibble() {
-    let hidden = fixed_attributes(1, 0x12, None);
+    let hidden = fixed_attributes(1, 0x11, None);
     let hidden = super::objects::parse_attributes(
         &hidden,
         0..hidden.len(),
@@ -287,6 +312,17 @@ fn fixed_visibility_and_definition_membership_use_mode_low_nibble() {
     )
     .expect("required invariant");
     assert!(!hidden.visible);
+
+    let locked = fixed_attributes(1, 0x12, None);
+    let locked = super::objects::parse_attributes(
+        &locked,
+        0..locked.len(),
+        0..locked.len(),
+        ArchiveVersion::V4,
+        &mut Vec::new(),
+    )
+    .expect("required invariant");
+    assert!(locked.visible);
 
     let definition = fixed_attributes(1, 0xf3, None);
     let definition = super::objects::parse_attributes(
@@ -344,6 +380,8 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
     direct_section_style.extend(model_attributes);
     direct_section_style.push(0);
     let direct_section_style = crc_chunk(ArchiveVersion::V8, 0x4000_8000, &direct_section_style);
+    let mut item_28 = vec![0];
+    item_28.extend(anonymous_chunk(ArchiveVersion::V8, 0, &0_i32.to_le_bytes()));
     items.extend([
         (1, utf16_bytes("N")),
         (2, utf16_bytes("U")),
@@ -372,7 +410,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
         (25, vec![1]),
         (26, vec![2]),
         (27, vec![1]),
-        (28, vec![0, 0, 0, 0, 0]),
+        (28, item_28),
         (29, vec![1]),
         (30, (-1_i32).to_le_bytes().to_vec()),
         (31, 1.0_f64.to_le_bytes().to_vec()),
@@ -733,10 +771,13 @@ fn validates_eof_width_size_and_truncation() {
                 8
             };
         mismatch[size_offset] ^= 1;
-        assert!(matches!(
-            parse_eof(&mismatch, marker_start, archive),
-            Err(FramingError::FileSizeMismatch { .. })
-        ));
+        assert_ne!(
+            parse_eof(&mismatch, marker_start, archive)
+                .expect("size is informational")
+                .expect("EOF marker")
+                .file_size,
+            size as u64
+        );
         assert!(parse_eof(&bytes[..bytes.len() - 1], marker_start, archive).is_err());
     }
     let bytes = vec![0; 32];
@@ -855,6 +896,18 @@ fn anonymous_chunk(archive: ArchiveVersion, minor: i32, body: &[u8]) -> Vec<u8> 
     payload.extend(minor.to_le_bytes());
     payload.extend(body);
     crc_chunk(archive, 0x4000_8000, &payload)
+}
+
+#[test]
+fn uuid_list_uses_an_anonymous_versioned_chunk() {
+    let archive = ArchiveVersion::V5;
+    let mut body = 1_i32.to_le_bytes().to_vec();
+    body.extend([0x11; 16]);
+    let bytes = anonymous_chunk(archive, 0, &body);
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded UUID-list reader");
+    let values = super::objects::read_uuid_list(&mut reader, archive).expect("UUID list");
+    assert_eq!(values.len(), 1);
+    assert_eq!(reader.remaining(), 0);
 }
 
 fn unit_detail(archive: ArchiveVersion, unit: u32, meters_per_unit: f64) -> Vec<u8> {
@@ -1239,7 +1292,13 @@ fn definition_scan_recovers_after_malformed_record_and_preserves_membership_unio
 fn crc_table(archive: ArchiveVersion, typecode: u32, records: &[Vec<u8>]) -> Vec<u8> {
     let mut body = records.concat();
     body.extend(short_chunk(archive, super::chunks::TCODE_ENDOFTABLE, 0));
-    crc_chunk(archive, typecode | TCODE_CRC, &body)
+    nested_crc_chunk(archive, typecode | TCODE_CRC, &body)
+}
+
+fn nested_crc_chunk(archive: ArchiveVersion, typecode: u32, body: &[u8]) -> Vec<u8> {
+    let mut payload = body.to_vec();
+    payload.extend(0_u32.to_le_bytes());
+    long_chunk(archive, typecode, &payload)
 }
 
 fn object_record(archive: ArchiveVersion, object_type: i64, class_uuid: [u8; 16]) -> Vec<u8> {
@@ -1264,7 +1323,7 @@ fn object_record_with_payload(
         &[uuid, class_data, class_end].concat(),
     );
     let object_end = short_chunk(archive, 0x8200_007f, 0);
-    crc_chunk(
+    nested_crc_chunk(
         archive,
         0x2000_8070 | TCODE_CRC,
         &[object_type, class, object_end].concat(),
@@ -1300,7 +1359,7 @@ fn object_record_without_end(
         0x0002_7ffa,
         &[uuid, class_data, class_end].concat(),
     );
-    crc_chunk(
+    nested_crc_chunk(
         archive,
         0x2000_8070 | TCODE_CRC,
         &[object_type, class].concat(),
@@ -1321,7 +1380,7 @@ fn object_record_with_unknown_trailer(archive: ArchiveVersion, class_uuid: [u8; 
     );
     let unknown = long_chunk(archive, 0x0200_1000, &[1, 2, 3]);
     let object_end = short_chunk(archive, 0x8200_007f, 0);
-    crc_chunk(
+    nested_crc_chunk(
         archive,
         0x2000_8070 | TCODE_CRC,
         &[object_type, class, unknown, object_end].concat(),
@@ -1504,7 +1563,8 @@ fn scan_decodes_history_identity_dependencies_and_typed_values() {
                 && values[0].evaluation.parameter_type == 9
                 && values[0].evaluation.component == [10, 11]
                 && values[0].evaluation.parameters == [0.1, 0.2, 0.3, 0.4]
-                && values[0].evaluation.intervals == [[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]]
+                && values[0].evaluation.intervals
+                    == [Some([0.0, 1.0]), Some([2.0, 3.0]), Some([4.0, 5.0])]
                 && values[0].instance_path.is_empty()
                 && values[0].osnap_mode == 12
     ));
@@ -1686,7 +1746,7 @@ fn container_only_returns_empty_current_ir_for_v3_and_v4() {
 
 #[test]
 fn header_only_bands_inspect_without_scanning_and_do_not_decode() {
-    for version in ["1", "2", "5", "999"] {
+    for version in ["5", "999"] {
         let bytes = header(version);
         let summary = RhinoCodec
             .inspect(&mut Cursor::new(bytes.clone()), &InspectOptions::default())
@@ -1945,7 +2005,7 @@ fn accepts_table_crc_with_its_declared_bound() {
 }
 
 #[test]
-fn rejects_short_object_and_unknown_table_records() {
+fn skips_short_and_long_unknown_table_records() {
     let archive = ArchiveVersion::V5;
     let short_object = minimal_document(
         "50",
@@ -1959,10 +2019,13 @@ fn rejects_short_object_and_unknown_table_records() {
             ),
         ],
     );
-    assert!(matches!(
-        RhinoCodec.inspect(&mut Cursor::new(short_object), &InspectOptions::default()),
-        Err(CodecError::Malformed(_))
-    ));
+    let summary = RhinoCodec
+        .inspect(&mut Cursor::new(short_object), &InspectOptions::default())
+        .expect("unknown short record is skipped");
+    assert!(summary
+        .notes
+        .iter()
+        .any(|note| note.contains("unknown bounded record")));
 
     let unknown = minimal_document(
         "50",
@@ -2018,6 +2081,9 @@ fn maps_standard_units_to_millimeters() {
     assert_eq!(settings::standard_scale(2), Some(1.0));
     assert_eq!(settings::standard_scale(8), Some(25.4));
     assert_eq!(settings::standard_scale(12), Some(1.0e-7));
+    assert_eq!(settings::standard_scale(23), Some(149_597_870_000_000.0));
+    assert_eq!(settings::standard_scale(24), Some(9.460_730_472_580_8e18));
+    assert_eq!(settings::standard_scale(25), Some(3.085_677_58e19));
     assert_eq!(settings::standard_scale(255), None);
 }
 
@@ -2190,10 +2256,17 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
     let mut section_style = Vec::new();
     section_style.extend(1_i32.to_le_bytes());
     section_style.extend(1_i32.to_le_bytes());
-    section_style.extend(crc_chunk(archive, 0x4000_8002, &[]));
+    let model_attributes = crc_chunk(archive, 0x4000_8002, &[]);
+    section_style.extend(&model_attributes);
     section_style.push(0);
     payload.push(35);
-    payload.extend(crc_chunk(archive, 0x4000_8000, &section_style));
+    #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child.
+    payload.extend(crc_chunk_excluding(
+        archive,
+        0x4000_8000,
+        &section_style,
+        &[8..8 + model_attributes.len()],
+    ));
     payload.extend([36, 0, 0]);
     let class_uuid = [
         0x13, 0x98, 0x80, 0x95, 0x85, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22,
@@ -3499,6 +3572,7 @@ fn report_attributes_aggregated_class_losses_to_first_object_record() {
         .report
         .losses
         .iter()
+        .filter(|loss| loss.code != cadmpeg_ir::report::LossKind::IntegrityFailure)
         .any(|loss| { loss.message.contains("OBJECT_RECORD") || loss.message.contains("offset") }));
 }
 

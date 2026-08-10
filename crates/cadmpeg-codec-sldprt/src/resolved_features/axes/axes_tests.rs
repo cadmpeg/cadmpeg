@@ -5,12 +5,7 @@ use super::super::endpoints::roster_curve_endpoint_markers;
 use super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
-use super::{
-    bounded_profile_axis_endpoints, common_generated_surface_axis,
-    enrich_history_revolution_inputs, profile_roster_construction_axis,
-    profile_roster_origin_axis_endpoints, profile_roster_principal_axis_endpoints,
-    revolution_line_reference_inputs, revolution_temporary_axis,
-};
+use super::*;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputLane, FeatureInputName, SketchInputEntity,
     SketchInputKind, SketchRelationKind,
@@ -20,6 +15,30 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchId};
 use std::collections::{BTreeMap, HashSet};
+
+#[test]
+fn compact_line_reference_rejects_conflicting_eight_and_nine_scalar_directions() {
+    const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
+    let mut payload = vec![0; 112];
+    payload[..8].copy_from_slice(&HANDLES);
+    payload[12..16].copy_from_slice(&7000u32.to_le_bytes());
+    for (offset, value) in [
+        (24, 0.1f64),
+        (32, 0.2),
+        (40, 0.3),
+        (48, 0.4),
+        (56, 0.5),
+        (64, 1.0),
+        (72, 0.0),
+        (80, 0.0),
+        (88, 1.0),
+    ] {
+        payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+
+    assert!(compact_line_reference_directions(&payload, 0, payload.len(), &[]).is_empty());
+}
+
 #[test]
 fn revolution_line_reference_inputs_decode_profile_owner_and_placed_axis() {
     let mut payload = vec![0; 240];

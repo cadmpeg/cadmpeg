@@ -1,0 +1,96 @@
+{
+  "container_kind": "cfb",
+  "entries": [
+    {
+      "attributes": {
+        "directory_id": "1"
+      },
+      "compressed_size": 0,
+      "compression": "storage",
+      "name": "RSeStorage",
+      "role": "rse-storage",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "directory_id": "2"
+      },
+      "compressed_size": 0,
+      "compression": "storage",
+      "name": "RSeStorage/V1",
+      "role": "storage",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "4",
+        "start_sector": "4"
+      },
+      "compressed_size": 108,
+      "compression": "stored",
+      "name": "RSeStorage/V1/RSeDb",
+      "role": "rse-database",
+      "uncompressed_size": 108
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "bulk_form": "0x0104",
+        "directory_id": "6",
+        "inner_framing": "zlib",
+        "start_sector": "7"
+      },
+      "compressed_size": 159,
+      "compression": "stored",
+      "name": "RSeStorage/Bseg",
+      "role": "rse-segment-bulk",
+      "uncompressed_size": 159
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "7",
+        "display_name": "PmBRepSegment",
+        "expanded_size": "218",
+        "inner_framing": "zlib",
+        "meta_stream_version": "8",
+        "segment_kind": "pm_brep",
+        "start_sector": "10"
+      },
+      "compressed_size": 219,
+      "compression": "stored",
+      "name": "RSeStorage/Mseg",
+      "role": "rse-segment-metadata",
+      "uncompressed_size": 219
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "3",
+        "start_sector": "0"
+      },
+      "compressed_size": 255,
+      "compression": "stored",
+      "name": "RSeStorage/RSeSegInfo",
+      "role": "rse-segment-registry",
+      "uncompressed_size": 255
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "5",
+        "start_sector": "6"
+      },
+      "compressed_size": 8,
+      "compression": "stored",
+      "name": "RSeStorage/RSeDbRevisionInfo",
+      "role": "rse-revision-table",
+      "uncompressed_size": 8
+    }
+  ],
+  "format": "inventor",
+  "notes": [
+    "CFB v3 with 1 RSe segment pair(s) and 1 versioned database(s)"
+  ]
+}

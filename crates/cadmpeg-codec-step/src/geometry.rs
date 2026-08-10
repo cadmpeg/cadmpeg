@@ -10,7 +10,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::transform::{Transform, Transform2};
 
 use crate::writer::{real, refs, Emitter, Ref};
 
@@ -113,10 +113,36 @@ fn direction2(e: &mut Emitter, v: Point2) -> Ref {
     e.emit_interned("DIRECTION", &format!("'',({},{})", real(x), real(y)))
 }
 
+fn similarity_transform_2d(transform: &Transform2) -> bool {
+    if !transform.is_affine() {
+        return false;
+    }
+    let first = Point2::new(transform.rows[0][0], transform.rows[1][0]);
+    let second = Point2::new(transform.rows[0][1], transform.rows[1][1]);
+    let scale = first.u.hypot(first.v);
+    let tolerance = 1.0e-10 * scale.max(1.0);
+    scale > 1.0e-12
+        && (second.u.hypot(second.v) - scale).abs() <= tolerance
+        && (first.u * second.u + first.v * second.v).abs() <= tolerance * scale
+}
+
 fn axis2_placement_2d(e: &mut Emitter, location: Point2, x_axis: Point2) -> Ref {
     let location = point2(e, location);
     let direction = direction2(e, x_axis);
     e.emit("AXIS2_PLACEMENT_2D", &format!("'',{location},{direction}"))
+}
+
+fn transformation_operator_2d(e: &mut Emitter, transform: Transform2) -> Ref {
+    let origin = point2(e, Point2::new(transform.rows[0][2], transform.rows[1][2]));
+    let x = Point2::new(transform.rows[0][0], transform.rows[1][0]);
+    let y = Point2::new(transform.rows[0][1], transform.rows[1][1]);
+    let scale = x.u.hypot(x.v);
+    let x = direction2(e, x);
+    let y = direction2(e, y);
+    e.emit(
+        "CARTESIAN_TRANSFORMATION_OPERATOR_2D",
+        &format!("'',{x},{y},{origin},{}", real(scale)),
+    )
 }
 
 /// Emit a two-dimensional curve for use inside a `PCURVE` representation.
@@ -221,15 +247,25 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
                 )
             }
         }
+        PcurveGeometry::Transformed { basis, transform } => {
+            if !similarity_transform_2d(transform) {
+                return None;
+            }
+            let basis = pcurve(e, basis)?;
+            let operator = transformation_operator_2d(e, *transform);
+            e.emit("CURVE_REPLICA", &format!("'',{basis},{operator}"))
+        }
         PcurveGeometry::Trimmed {
             parameter_range,
+            same_sense,
             basis,
         } => {
             let basis = pcurve(e, basis)?;
+            let sense = if *same_sense { ".T." } else { ".F." };
             e.emit(
                 "TRIMMED_CURVE",
                 &format!(
-                    "'',{basis},({}),({}),.T.,.PARAMETER.",
+                    "'',{basis},({}),({}),{sense},.PARAMETER.",
                     real(parameter_range[0]),
                     real(parameter_range[1])
                 ),
@@ -275,7 +311,7 @@ pub fn placement(e: &mut Emitter, origin: Point3, axis: Vector3, ref_dir: Vector
     e.emit("AXIS2_PLACEMENT_3D", &format!("'',{o},{a},{r}"))
 }
 
-fn transformation_operator(e: &mut Emitter, transform: Transform) -> Ref {
+pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> Ref {
     let origin = point(
         e,
         Point3::new(

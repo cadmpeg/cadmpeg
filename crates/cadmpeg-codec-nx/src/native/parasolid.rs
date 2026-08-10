@@ -498,7 +498,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                 });
         }
         for record in census.records {
-            let family = crate::deltas::family_name(record.kind)
+            let family = crate::deltas::record_family_name(&record)
                 .expect("the deltas walker admits only named record families");
             events.records.push(ParasolidDeltasRecord {
                 id: format!(
@@ -1325,7 +1325,10 @@ pub fn parasolid_chart_records(streams: &[Stream]) -> Vec<ParasolidChartRecord> 
         if !stream.kind.is_parasolid() {
             continue;
         }
-        for chart in crate::intersection::chart_source_records(&stream.inflated) {
+        let Some(point_layout) = stream.kind.chart_point_layout() else {
+            continue;
+        };
+        for chart in crate::intersection::chart_source_records(&stream.inflated, point_layout) {
             records.push(ParasolidChartRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:chart-record#{}-{}",
@@ -2702,18 +2705,13 @@ pub fn parasolid_attribute_field_uses(
     uses
 }
 
-/// Whether a concrete attribute instance or field-name reference lacks its exact relation.
-pub fn parasolid_attribute_definitions_have_untransferred_fields(
+/// Whether a concrete topology-owned attribute field lacks its exact value relation.
+pub fn parasolid_topology_attribute_fields_have_untransferred_values(
     definitions: &[ParasolidAttributeDefinition],
-    field_names: &[ParasolidAttributeFieldNames],
     entities: &[ParasolidEntity51Record],
     field_uses: &[ParasolidAttributeFieldUse],
     topology_class_uses: &[ParasolidTopologyAttributeClassUse],
 ) -> bool {
-    let resolved_names = field_names
-        .iter()
-        .map(|names| names.attribute_definition.as_str())
-        .collect::<BTreeSet<_>>();
     let mut definitions_by_id = BTreeMap::<&str, Vec<&ParasolidAttributeDefinition>>::new();
     for definition in definitions {
         definitions_by_id
@@ -2748,9 +2746,6 @@ pub fn parasolid_attribute_definitions_have_untransferred_fields(
         else {
             return true;
         };
-        if definition.field_names_xmt != 1 && !resolved_names.contains(definition.id.as_str()) {
-            return true;
-        }
         definition
             .field_codes
             .iter()
@@ -3634,69 +3629,70 @@ mod tests {
         };
 
         // An unused declaration carries no value-loss evidence.
-        assert!(!parasolid_attribute_definitions_have_untransferred_fields(
-            &[definition(1, vec![4])],
-            &[],
-            &[],
-            &[],
-            &[],
-        ));
+        assert!(
+            !parasolid_topology_attribute_fields_have_untransferred_values(
+                &[definition(1, vec![4])],
+                &[],
+                &[],
+                &[],
+            )
+        );
         // A non-null instance reference must have exactly one resolved field use.
-        assert!(parasolid_attribute_definitions_have_untransferred_fields(
-            &[definition(1, vec![4])],
-            &[],
-            std::slice::from_ref(&entity),
-            &[],
-            std::slice::from_ref(&topology_class_use),
-        ));
-        assert!(!parasolid_attribute_definitions_have_untransferred_fields(
-            &[definition(1, vec![4])],
-            &[],
-            std::slice::from_ref(&entity),
-            std::slice::from_ref(&field_use),
-            std::slice::from_ref(&topology_class_use),
-        ));
+        assert!(
+            parasolid_topology_attribute_fields_have_untransferred_values(
+                &[definition(1, vec![4])],
+                std::slice::from_ref(&entity),
+                &[],
+                std::slice::from_ref(&topology_class_use),
+            )
+        );
+        assert!(
+            !parasolid_topology_attribute_fields_have_untransferred_values(
+                &[definition(1, vec![4])],
+                std::slice::from_ref(&entity),
+                std::slice::from_ref(&field_use),
+                std::slice::from_ref(&topology_class_use),
+            )
+        );
         // Null values and always-empty pointer fields require no value relation.
         let mut null_entity = entity.clone();
         null_entity.trailing_references[0] = 1;
-        assert!(!parasolid_attribute_definitions_have_untransferred_fields(
-            &[definition(1, vec![4])],
-            &[],
-            &[null_entity],
-            &[],
-            std::slice::from_ref(&topology_class_use),
-        ));
-        assert!(!parasolid_attribute_definitions_have_untransferred_fields(
-            &[definition(1, vec![9])],
-            &[],
-            std::slice::from_ref(&entity),
-            &[],
-            std::slice::from_ref(&topology_class_use),
-        ));
+        assert!(
+            !parasolid_topology_attribute_fields_have_untransferred_values(
+                &[definition(1, vec![4])],
+                &[null_entity],
+                &[],
+                std::slice::from_ref(&topology_class_use),
+            )
+        );
+        assert!(
+            !parasolid_topology_attribute_fields_have_untransferred_values(
+                &[definition(1, vec![9])],
+                std::slice::from_ref(&entity),
+                &[],
+                std::slice::from_ref(&topology_class_use),
+            )
+        );
 
-        let named_definition = definition(22, vec![]);
-        let names = ParasolidAttributeFieldNames {
-            id: "names".into(),
-            stream_ordinal: 0,
-            attribute_definition: named_definition.id.clone(),
-            field_names_record: "record".into(),
-            value_records: vec!["string".into()],
-            names: vec!["field".into()],
-        };
-        assert!(parasolid_attribute_definitions_have_untransferred_fields(
-            std::slice::from_ref(&named_definition),
-            &[],
-            std::slice::from_ref(&entity),
-            &[],
-            std::slice::from_ref(&topology_class_use),
-        ));
-        assert!(!parasolid_attribute_definitions_have_untransferred_fields(
-            &[named_definition],
-            &[names],
-            std::slice::from_ref(&entity),
-            &[],
-            std::slice::from_ref(&topology_class_use),
-        ));
+        let named_definition = definition(22, vec![4]);
+        // An unresolved optional field-name list uses the specification's
+        // deterministic ordinal/code fallback and does not lose the value.
+        assert!(
+            !parasolid_topology_attribute_fields_have_untransferred_values(
+                std::slice::from_ref(&named_definition),
+                std::slice::from_ref(&entity),
+                std::slice::from_ref(&field_use),
+                std::slice::from_ref(&topology_class_use),
+            )
+        );
+        assert!(
+            parasolid_topology_attribute_fields_have_untransferred_values(
+                &[named_definition],
+                std::slice::from_ref(&entity),
+                &[],
+                std::slice::from_ref(&topology_class_use),
+            )
+        );
     }
 
     #[test]
@@ -4126,67 +4122,72 @@ mod tests {
     }
 
     #[test]
-    fn decode_emits_offset_surface_construction() {
-        let stream = offset_surface_topology_partition_stream();
-        let mut cur = Cursor::new(prt_with_partition(&stream));
-        let result = NxCodec
-            .decode(&mut cur, &DecodeOptions::default())
-            .expect("required invariant");
+    fn decode_preserves_offset_status_without_assigning_parameter_sense() {
+        for (discriminator, true_offset) in [('V', true), ('I', false), ('U', true)] {
+            let mut stream = offset_surface_topology_partition_stream();
+            let offset_record = stream.len() - 31;
+            stream[offset_record + 19] = discriminator as u8;
+            stream[offset_record + 20] = u8::from(true_offset);
+            let mut cur = Cursor::new(prt_with_partition(&stream));
+            let result = NxCodec
+                .decode(&mut cur, &DecodeOptions::default())
+                .expect("required invariant");
 
-        let procedural = result
-            .ir
-            .model
-            .procedural_surfaces
-            .first()
-            .expect("offset surface");
-        let ProceduralSurfaceDefinition::Offset {
-            support,
-            distance,
-            u_sense,
-            v_sense,
-            extension_flags,
-            ..
-        } = &procedural.definition
-        else {
-            panic!("offset definition");
-        };
-        assert_eq!(*distance, 2.5);
-        assert_eq!(*u_sense, Some(0));
-        assert_eq!(*v_sense, Some(0));
-        assert!(extension_flags.is_empty());
-        assert_ne!(procedural.surface, *support);
-        assert_eq!(result.ir.model.faces[0].surface, procedural.surface);
-        let records = result
-            .ir
-            .native
-            .namespace("nx")
-            .expect("required invariant")
-            .arena_as::<super::ParasolidOffsetSurfaceRecord>("parasolid_offset_surface_records")
-            .expect("required invariant");
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].discriminator, 'V');
-        assert!(records[0].true_offset);
-        assert_eq!(records[0].support_xmt, 6);
-        assert_eq!(records[0].distance, 2.5);
-        let carrier = result
-            .ir
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == procedural.surface)
-            .expect("offset carrier");
-        assert_eq!(
-            carrier
-                .source_object
-                .as_ref()
-                .map(|source| &source.object_id),
-            Some(&records[0].id)
-        );
-        assert!(matches!(
-            &carrier.geometry,
-            SurfaceGeometry::Procedural { construction } if construction == &procedural.id
-        ));
-        assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+            let procedural = result
+                .ir
+                .model
+                .procedural_surfaces
+                .first()
+                .expect("offset surface");
+            let ProceduralSurfaceDefinition::Offset {
+                support,
+                distance,
+                u_sense,
+                v_sense,
+                extension_flags,
+                ..
+            } = &procedural.definition
+            else {
+                panic!("offset definition");
+            };
+            assert_eq!(*distance, 2.5);
+            assert_eq!(*u_sense, None);
+            assert_eq!(*v_sense, None);
+            assert!(extension_flags.is_empty());
+            assert_ne!(procedural.surface, *support);
+            assert_eq!(result.ir.model.faces[0].surface, procedural.surface);
+            let records = result
+                .ir
+                .native
+                .namespace("nx")
+                .expect("required invariant")
+                .arena_as::<super::ParasolidOffsetSurfaceRecord>("parasolid_offset_surface_records")
+                .expect("required invariant");
+            assert_eq!(records.len(), 1);
+            assert_eq!(records[0].discriminator, discriminator);
+            assert_eq!(records[0].true_offset, true_offset);
+            assert_eq!(records[0].support_xmt, 6);
+            assert_eq!(records[0].distance, 2.5);
+            let carrier = result
+                .ir
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == procedural.surface)
+                .expect("offset carrier");
+            assert_eq!(
+                carrier
+                    .source_object
+                    .as_ref()
+                    .map(|source| &source.object_id),
+                Some(&records[0].id)
+            );
+            assert!(matches!(
+                &carrier.geometry,
+                SurfaceGeometry::Procedural { construction } if construction == &procedural.id
+            ));
+            assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+        }
     }
 
     #[test]

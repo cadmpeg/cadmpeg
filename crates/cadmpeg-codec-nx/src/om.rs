@@ -827,7 +827,7 @@ pub struct OffsetStoreNamedPoint {
     pub values: [f64; 2],
     /// Exact shifted-binary64 encodings in scalar order.
     pub raw_values: [[u8; 8]; 2],
-    /// Scalar marker offsets in the concatenated two-block payload.
+    /// Scalar marker offsets in the concatenated payload.
     pub value_offsets: [usize; 2],
     /// Minimal number of consecutive blocks containing both scalar frames.
     pub block_count: usize,
@@ -836,20 +836,30 @@ pub struct OffsetStoreNamedPoint {
 /// Decode the minimal consecutive-block span beginning with a named two-scalar point.
 pub fn offset_store_named_point(blocks: &[&[u8]]) -> Option<OffsetStoreNamedPoint> {
     let mut bytes = Vec::new();
+    let mut candidate = None;
     for (block_ordinal, block) in blocks.iter().enumerate() {
+        // A later type-free name starts the next bounded data-block object.
+        if !bytes.is_empty()
+            && construction_payload_named_fields(block)
+                .first()
+                .is_some_and(|name| name.payload_leading)
+        {
+            return candidate;
+        }
         bytes.extend_from_slice(block);
         let names = construction_payload_named_fields(&bytes);
-        let [name] = names.as_slice() else {
-            return None;
-        };
+        let name = names.first()?;
         if !name.payload_leading || parse_positive_decimal_suffix(name.value, "Point").is_none() {
+            return None;
+        }
+        if names.len() > 1 {
             return None;
         }
         let scalars = construction_payload_scalar_fields(&bytes);
         match scalars.as_slice() {
             [] | [_] => {}
             [first_scalar, second_scalar] => {
-                return Some(OffsetStoreNamedPoint {
+                candidate.get_or_insert_with(|| OffsetStoreNamedPoint {
                     name: name.value.to_string(),
                     values: [first_scalar.value, second_scalar.value],
                     raw_values: [first_scalar.raw_value, second_scalar.raw_value],
@@ -860,7 +870,7 @@ pub fn offset_store_named_point(blocks: &[&[u8]]) -> Option<OffsetStoreNamedPoin
             _ => return None,
         }
     }
-    None
+    candidate
 }
 
 fn parse_positive_decimal_suffix(value: &str, prefix: &str) -> Option<u32> {
@@ -1851,6 +1861,32 @@ pub struct OperationBodyReference {
     pub object_index: u32,
     /// Exact serialized variable-width object-index token.
     pub raw_object_index: Vec<u8>,
+}
+
+/// One exact nested object-relation frame in a bounded operation record.
+///
+/// The two object indices are retained in wire order. Their semantic roles
+/// depend on the owning operation and are deliberately not inferred here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationObjectRelation {
+    /// Absolute offset of the opening `01 02` marker.
+    pub offset: usize,
+    /// Byte between the opening marker and the first object index.
+    pub link_tag: u8,
+    /// First object index in serialized order.
+    pub first_object_index: u32,
+    /// Exact serialized first object-index token.
+    pub raw_first_object_index: Vec<u8>,
+    /// Absolute offset of the first object-index token.
+    pub first_object_index_offset: usize,
+    /// Second object index in serialized order.
+    pub second_object_index: u32,
+    /// Exact serialized second object-index token.
+    pub raw_second_object_index: Vec<u8>,
+    /// Absolute offset of the second object-index token.
+    pub second_object_index_offset: usize,
+    /// Exclusive absolute end offset after the frame terminator.
+    pub end_offset: usize,
 }
 
 /// Object-index reference in one bounded offset-only OM data block.
@@ -4979,6 +5015,61 @@ pub fn operation_body_references(record: OperationRecord<'_>) -> Vec<OperationBo
     matches
 }
 
+/// Decode every exact nested `01 02 tag index 97 75 01 02 11 index ff` frame.
+///
+/// Both indices are non-null and canonical. The fixed middle sequence is a
+/// structural relation marker; this parser does not assign endpoint roles.
+pub fn operation_object_relations(record: OperationRecord<'_>) -> Vec<OperationObjectRelation> {
+    const MIDDLE: &[u8] = &[0x97, 0x75, 0x01, 0x02, 0x11];
+    let mut relations = Vec::new();
+    for marker in record
+        .payload
+        .windows(2)
+        .enumerate()
+        .filter_map(|(offset, window)| (window == [0x01, 0x02]).then_some(offset))
+    {
+        let Some(link_tag) = record.payload.get(marker + 2).copied() else {
+            continue;
+        };
+        let first_token = marker + 3;
+        let Some((Some(first_object_index), first_end)) =
+            feature_object_index(record.payload, first_token)
+        else {
+            continue;
+        };
+        let raw_first_object_index = &record.payload[first_token..first_end];
+        if !canonical_feature_object_index(Some(first_object_index), raw_first_object_index)
+            || record.payload.get(first_end..first_end + MIDDLE.len()) != Some(MIDDLE)
+        {
+            continue;
+        }
+        let second_token = first_end + MIDDLE.len();
+        let Some((Some(second_object_index), second_end)) =
+            feature_object_index(record.payload, second_token)
+        else {
+            continue;
+        };
+        let raw_second_object_index = &record.payload[second_token..second_end];
+        if !canonical_feature_object_index(Some(second_object_index), raw_second_object_index)
+            || record.payload.get(second_end) != Some(&0xff)
+        {
+            continue;
+        }
+        relations.push(OperationObjectRelation {
+            offset: record.payload_offset + marker,
+            link_tag,
+            first_object_index,
+            raw_first_object_index: raw_first_object_index.to_vec(),
+            first_object_index_offset: record.payload_offset + first_token,
+            second_object_index,
+            raw_second_object_index: raw_second_object_index.to_vec(),
+            second_object_index_offset: record.payload_offset + second_token,
+            end_offset: record.payload_offset + second_end + 1,
+        });
+    }
+    relations
+}
+
 fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)> {
     let prefix = *bytes.get(at)?;
     match prefix {
@@ -5285,17 +5376,27 @@ pub fn counted_record_references(
     references
 }
 
-/// Decode self-identifying persistent handles plus context-gated tagged refs.
+/// Decode self-identifying persistent handles and exact adjacent handle pairs.
 pub fn record_references(bytes: &[u8], base_offset: usize) -> Vec<ReferenceValue> {
-    let mut out = references(bytes, base_offset)
-        .into_iter()
+    let parsed = references(bytes, base_offset);
+    let mut out = parsed
+        .iter()
+        .copied()
         .filter(|reference| reference.kind == ReferenceKind::PersistentHandle)
         .collect::<Vec<_>>();
-    out.extend(
-        dense_reference_suffix(bytes, base_offset)
-            .into_iter()
-            .filter(|reference| reference.kind == ReferenceKind::Tagged28),
-    );
+    out.extend(parsed.windows(2).filter_map(|pair| {
+        let [persistent, tagged] = pair else {
+            unreachable!("a two-element window always has two references");
+        };
+        let adjacent = persistent
+            .offset
+            .checked_add(5)
+            .is_some_and(|offset| tagged.offset == offset);
+        (persistent.kind == ReferenceKind::PersistentHandle
+            && tagged.kind == ReferenceKind::Tagged28
+            && adjacent)
+            .then_some(*tagged)
+    }));
     out.sort_by_key(|reference| reference.offset);
     out
 }
@@ -5332,44 +5433,6 @@ pub fn references(bytes: &[u8], base_offset: usize) -> Vec<ReferenceValue> {
         at += 1;
     }
     out
-}
-
-/// Decode a dense tagged-reference suffix from one bounded OM record.
-///
-/// Sparse marker-shaped words can be ordinary per-class field data. A suffix
-/// is a reference stream only when it contains at least eight persistent
-/// handles and complete reference tokens cover at least 90% of its bytes.
-pub fn dense_reference_suffix(bytes: &[u8], base_offset: usize) -> Vec<ReferenceValue> {
-    let references = references(bytes, 0);
-    for (index, first) in references.iter().enumerate() {
-        let suffix = &references[index..];
-        let persistent = suffix
-            .iter()
-            .filter(|reference| reference.kind == ReferenceKind::PersistentHandle)
-            .count();
-        if persistent < 8 {
-            continue;
-        }
-        let covered = suffix
-            .iter()
-            .map(|reference| match reference.kind {
-                ReferenceKind::PersistentHandle => 5,
-                ReferenceKind::Tagged28 => 4,
-                ReferenceKind::RecordOrdinal16 => 3,
-            })
-            .sum::<usize>();
-        let span = bytes.len().saturating_sub(first.offset);
-        if covered * 10 >= span * 9 {
-            return suffix
-                .iter()
-                .map(|reference| ReferenceValue {
-                    offset: base_offset + reference.offset,
-                    ..*reference
-                })
-                .collect();
-        }
-    }
-    Vec::new()
 }
 
 /// Decode `66 32 03` printable-string values wholly contained in `bytes`.
@@ -5550,11 +5613,16 @@ pub fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
         let field_start = types.last().map_or(offset + 16, |definition| {
             definition.offset + definition.name.len() + 2
         });
-        let fields = field_definitions(bytes, field_start, end);
-        let schema_end = fields.last().map_or(field_start, |definition| {
-            definition.offset + definition.name.len() + 2
-        });
-        let record_area_offset = section_record_area_offset(bytes, offset, schema_end, end);
+        let record_area_pointer = section_record_area_pointer(bytes, offset, field_start, end);
+        let (fields, record_area_offset) =
+            if let Some((record_area_offset, pointer_offset)) = record_area_pointer {
+                (
+                    all_field_definitions(bytes, field_start, pointer_offset),
+                    Some(record_area_offset),
+                )
+            } else {
+                (field_definitions(bytes, field_start, end), None)
+            };
         out.push(Section {
             offset,
             byte_len: end - offset,
@@ -5568,24 +5636,24 @@ pub fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
     out
 }
 
-fn section_record_area_offset(
+fn section_record_area_pointer(
     bytes: &[u8],
     section_offset: usize,
-    schema_end: usize,
+    schema_start: usize,
     section_end: usize,
-) -> Option<usize> {
-    let search_end = schema_end.saturating_add(4096).min(section_end);
-    let mut matches = (schema_end..search_end.saturating_sub(3)).filter_map(|at| {
+) -> Option<(usize, usize)> {
+    let mut matches = (schema_start..section_end.saturating_sub(3)).filter_map(|at| {
         let relative = usize::try_from(u32_at(bytes, at)?).ok()?;
         let target = section_offset.checked_add(relative)?;
-        (target >= at + 4 && target + 15 <= section_end).then_some(())?;
-        is_product_record(bytes.get(target + 12..section_end)?).then_some(target)
+        (target >= at.checked_add(4)? && target.checked_add(15)? <= section_end).then_some(())?;
+        is_product_record(bytes.get(target.checked_add(12)?..section_end)?).then_some((target, at))
     });
     let first = matches.next()?;
     matches.next().is_none().then_some(first)
 }
 
-fn is_product_record(bytes: &[u8]) -> bool {
+/// Validate one self-framed NX product record.
+pub(crate) fn is_product_record(bytes: &[u8]) -> bool {
     if !matches!(bytes.get(..2), Some([0x04 | 0x05, 0x01])) {
         return false;
     }

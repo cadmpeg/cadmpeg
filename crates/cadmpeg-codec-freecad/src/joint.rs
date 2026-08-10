@@ -185,7 +185,12 @@ pub(crate) fn transfer_neutral(
                             )
                         }),
                         object: reference.object.clone(),
-                        subelements: reference.subelements.clone(),
+                        subelements: reference
+                            .subelements
+                            .iter()
+                            .filter(|subelement| !subelement.is_empty())
+                            .cloned()
+                            .collect(),
                     })
                     .collect(),
                 frames: record

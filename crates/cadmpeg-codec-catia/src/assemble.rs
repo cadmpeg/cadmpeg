@@ -257,27 +257,76 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
     pcurve_origin: Point2,
     pcurve_direction: Point2,
 ) -> Option<[f64; 2]> {
+    let finite_point = |point: Point3| [point.x, point.y, point.z].into_iter().all(f64::is_finite);
+    let finite_vector = |vector: Vector3| {
+        [vector.x, vector.y, vector.z]
+            .into_iter()
+            .all(f64::is_finite)
+    };
+    if !finite_point(center)
+        || !finite_point(start)
+        || !finite_point(end)
+        || !finite_vector(axis)
+        || !finite_vector(ref_direction)
+        || !pcurve_origin.u.is_finite()
+        || !pcurve_origin.v.is_finite()
+        || !pcurve_direction.u.is_finite()
+        || !pcurve_direction.v.is_finite()
+        || !radius.is_finite()
+        || radius <= 0.0
+    {
+        return None;
+    }
     let tangent = axis.cross(ref_direction);
+    if !finite_vector(tangent)
+        || tangent.x.hypot(tangent.y).hypot(tangent.z) == 0.0
+        || ref_direction
+            .x
+            .hypot(ref_direction.y)
+            .hypot(ref_direction.z)
+            == 0.0
+    {
+        return None;
+    }
     let angle = |point: Point3| {
         let offset = point.vector_from(center);
         offset.dot(tangent).atan2(offset.dot(ref_direction))
     };
     let start = angle(start);
-    let short_end = unwrap_angle(angle(end), start);
+    let end = angle(end);
+    if !start.is_finite() || !end.is_finite() {
+        return None;
+    }
+    let short_end = unwrap_angle(end, start);
+    if !short_end.is_finite() {
+        return None;
+    }
     let delta = short_end - start;
-    if delta == 0.0 {
+    if !delta.is_finite() || delta == 0.0 {
         return None;
     }
     let long_end = short_end - delta.signum() * std::f64::consts::TAU;
-    let surface_midpoint = cadmpeg_ir::eval::surface_point(
-        surface,
+    if !long_end.is_finite() {
+        return None;
+    }
+    let midpoint_uv = Point2::new(
         pcurve_origin.u + 0.5 * pcurve_direction.u,
         pcurve_origin.v + 0.5 * pcurve_direction.v,
-    )?;
+    );
+    if !midpoint_uv.u.is_finite() || !midpoint_uv.v.is_finite() {
+        return None;
+    }
+    let surface_midpoint = cadmpeg_ir::eval::surface_point(surface, midpoint_uv.u, midpoint_uv.v)?;
+    if !finite_point(surface_midpoint) {
+        return None;
+    }
     let candidates = [short_end, long_end]
         .into_iter()
         .filter(|end| {
             let parameter = 0.5 * (start + end);
+            if !parameter.is_finite() {
+                return false;
+            }
             let circle_midpoint = Point3::new(
                 center.x
                     + radius * (parameter.cos() * ref_direction.x + parameter.sin() * tangent.x),
@@ -286,17 +335,27 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
                 center.z
                     + radius * (parameter.cos() * ref_direction.z + parameter.sin() * tangent.z),
             );
-            circle_midpoint.distance_squared(surface_midpoint).sqrt() <= 2e-3
+            if !finite_point(circle_midpoint) {
+                return false;
+            }
+            let distance_squared = circle_midpoint.distance_squared(surface_midpoint);
+            distance_squared.is_finite() && distance_squared.sqrt() <= 2e-3
         })
         .collect::<Vec<_>>();
-    <[f64; 1]>::try_from(candidates)
-        .ok()
-        .map(|[end]| [start, end])
+    let [end] = <[f64; 1]>::try_from(candidates).ok()?;
+    (end.is_finite() && end != start).then_some([start, end])
 }
 
 pub(crate) fn unit_vector(vector: Vector3) -> Option<Vector3> {
     let norm = vector.x.hypot(vector.y).hypot(vector.z);
-    (norm.is_finite() && norm != 0.0).then(|| vector.scale(1.0 / norm))
+    if !norm.is_finite() || norm == 0.0 {
+        return None;
+    }
+    let unit = vector.scale(1.0 / norm);
+    [unit.x, unit.y, unit.z]
+        .into_iter()
+        .all(f64::is_finite)
+        .then_some(unit)
 }
 
 /// Counts of each typed analytic surface kind decoded.
@@ -326,10 +385,11 @@ impl TypedCounts {
     }
 }
 
-/// Counts of typed surface records that still lack an exact neutral carrier.
-pub(crate) struct UnresolvedSurfaceCounts {
+/// Counts used to account for decoded geometry and topology populations.
+pub(crate) struct GeometryReportCounts {
     pub(crate) face_local_freeform: usize,
     pub(crate) unbound_revolution: usize,
+    pub(crate) admitted_standard_face_rows: usize,
 }
 
 pub(crate) fn source_meta(scan: &ContainerScan) -> SourceMeta {
@@ -351,6 +411,10 @@ pub(crate) fn source_meta(scan: &ContainerScan) -> SourceMeta {
         attributes.insert("brep_stream_len".to_string(), brep.len().to_string());
         attributes.insert("brep_stream_sha256".to_string(), sha256_hex(brep));
         attributes.insert("fbb_runs".to_string(), scan.census.fbb_runs.to_string());
+        attributes.insert(
+            "fbb_face_rows".to_string(),
+            scan.census.fbb_face_rows.to_string(),
+        );
         attributes.insert(
             "vertex_records".to_string(),
             scan.census.vertex_markers.to_string(),
@@ -413,7 +477,7 @@ pub(crate) fn build_geometry_report(
     typed: &TypedCounts,
     plane_faces: usize,
     analytic_record_count: usize,
-    unresolved_surfaces: &UnresolvedSurfaceCounts,
+    report_counts: &GeometryReportCounts,
     topology_failure: Option<&str>,
 ) -> DecodeReport {
     let mut losses = Vec::new();
@@ -442,9 +506,25 @@ pub(crate) fn build_geometry_report(
             code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
             severity: Severity::Blocking,
             message: format!(
-                "The B-rep boundary graph was not emitted: {} face outer-bound run(s) were \
-                 detected, but {topology_failure}.",
+                "The B-rep boundary graph was not emitted: {} face outer-bound row(s) in {} \
+                 group(s) were detected, but {topology_failure}.",
+                scan.census.fbb_face_rows, scan.census.fbb_runs,
+            ),
+            provenance: None,
+        });
+    }
+    let withheld_face_rows = scan
+        .census
+        .fbb_face_rows
+        .saturating_sub(report_counts.admitted_standard_face_rows);
+    if topology_failure.is_none() && scan.census.fbb_runs > 1 && withheld_face_rows > 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
+            severity: Severity::Blocking,
+            message: format!(
+                "{withheld_face_rows} candidate FBB face row(s) in {} marker group(s) were not admitted to the standard topology population; only {} row(s) have a source-closed edge, vertex, trim, and topology binding, and cross-group ownership remains unresolved.",
                 scan.census.fbb_runs,
+                report_counts.admitted_standard_face_rows,
             ),
             provenance: None,
         });
@@ -474,19 +554,19 @@ pub(crate) fn build_geometry_report(
             provenance: None,
         });
     }
-    if unresolved_surfaces.face_local_freeform > 0 {
+    if report_counts.face_local_freeform > 0 {
         losses.push(LossNote {
             code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
             severity: Severity::Warning,
             message: format!(
                 "{} face-local free-form carrier record(s) retain their tag, bounds, and \
                  orientation, but their aliased surface geometry is not yet transferred.",
-                unresolved_surfaces.face_local_freeform,
+                report_counts.face_local_freeform,
             ),
             provenance: None,
         });
     }
-    if unresolved_surfaces.unbound_revolution > 0 {
+    if report_counts.unbound_revolution > 0 {
         losses.push(LossNote {
             code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
             severity: Severity::Warning,
@@ -494,7 +574,7 @@ pub(crate) fn build_geometry_report(
                 "{} consolidated surface-of-revolution record(s) retain their profile identity, \
                  orthonormal axis frame, angular chart, and profile interval, but the profile \
                  identities are not yet bound to directrix curves.",
-                unresolved_surfaces.unbound_revolution,
+                report_counts.unbound_revolution,
             ),
             provenance: None,
         });
@@ -675,7 +755,13 @@ pub(crate) fn rational_pcurve_arc(
     range: [f64; 2],
 ) -> Option<PcurveGeometry> {
     let span = range[1] - range[0];
-    if !radius.is_finite() || radius <= 0.0 || !span.is_finite() || span == 0.0 {
+    if !center.into_iter().all(f64::is_finite)
+        || !range.into_iter().all(f64::is_finite)
+        || range[0] >= range[1]
+        || !radius.is_finite()
+        || radius <= 0.0
+        || !span.is_finite()
+    {
         return None;
     }
     let segment_count = (span.abs() / std::f64::consts::FRAC_PI_2).ceil();
@@ -717,6 +803,15 @@ pub(crate) fn rational_pcurve_arc(
         }
     }
     knots.extend([range[1]; 3]);
+    if !knots.iter().copied().all(f64::is_finite)
+        || !control_points
+            .iter()
+            .copied()
+            .all(|point| [point.u, point.v].into_iter().all(f64::is_finite))
+        || !weights.iter().copied().all(f64::is_finite)
+    {
+        return None;
+    }
     Some(PcurveGeometry::Nurbs {
         degree: 2,
         knots,
@@ -789,6 +884,13 @@ mod route_tests {
     }
 
     #[test]
+    fn rational_pcurve_arc_rejects_nonfinite_construction() {
+        assert!(rational_pcurve_arc([f64::NAN, 0.0], 1.0, [0.0, 1.0]).is_none());
+        assert!(rational_pcurve_arc([0.0, 0.0], f64::MAX, [0.0, 1.0]).is_none());
+        assert!(rational_pcurve_arc([0.0, 0.0], 1.0, [1.0, 0.0]).is_none());
+    }
+
+    #[test]
     fn surface_circle_branch_preserves_tiny_nonzero_sweep() {
         let sweep = 1e-200_f64;
         let surface = SurfaceGeometry::Plane {
@@ -812,6 +914,65 @@ mod route_tests {
     }
 
     #[test]
+    fn surface_circle_branch_rejects_nonfinite_or_degenerate_inputs() {
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let args = || {
+            (
+                Point3::new(0.0, 0.0, 0.0),
+                1.0,
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point2::new(1.0, 0.0),
+                Point2::new(0.0, 1.0),
+            )
+        };
+        let (center, radius, axis, ref_direction, start, end, pcurve_origin, pcurve_direction) =
+            args();
+        assert!(circle_parameter_range_from_surface_branch(
+            &surface,
+            Point3::new(f64::NAN, center.y, center.z),
+            radius,
+            axis,
+            ref_direction,
+            start,
+            end,
+            pcurve_origin,
+            pcurve_direction,
+        )
+        .is_none());
+        assert!(circle_parameter_range_from_surface_branch(
+            &surface,
+            center,
+            0.0,
+            axis,
+            ref_direction,
+            start,
+            end,
+            pcurve_origin,
+            pcurve_direction,
+        )
+        .is_none());
+        assert!(circle_parameter_range_from_surface_branch(
+            &surface,
+            center,
+            radius,
+            axis,
+            axis,
+            start,
+            end,
+            pcurve_origin,
+            pcurve_direction,
+        )
+        .is_none());
+    }
+
+    #[test]
     fn angle_unwrap_preserves_tiny_principal_differences() {
         let tiny = 1e-200;
         assert_eq!(crate::assemble::unwrap_angle(tiny, 0.0), tiny);
@@ -830,6 +991,14 @@ mod route_tests {
         );
         assert_eq!(
             crate::assemble::unit_vector(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0)),
+            None
+        );
+        assert_eq!(
+            crate::assemble::unit_vector(cadmpeg_ir::math::Vector3::new(
+                f64::from_bits(1),
+                0.0,
+                0.0,
+            )),
             None
         );
     }

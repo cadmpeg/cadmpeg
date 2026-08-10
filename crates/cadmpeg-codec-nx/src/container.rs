@@ -400,6 +400,7 @@ impl Container<'_> {
 
     /// Decode the counted object-id table from `/Root/FastLoad/RMFastLoad`.
     pub fn rmfastload_object_id_table(&self) -> Option<(&DirEntry, RmFastLoadObjectIdTable)> {
+        const REGISTRY_MARKER: &[u8] = b"UGS::Solid::Topol";
         let entry = self
             .entries
             .iter()
@@ -408,49 +409,48 @@ impl Container<'_> {
         let (offset, size) = entry.file_span?;
         let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
         let bytes = self.data.get(offset..offset.checked_add(size)?)?;
-        let registry_offset = find(bytes, b"UGS::Solid::Topol")?;
-        for count_offset in registry_offset..bytes.len().saturating_sub(4) {
-            let Some(count) = u32_le(bytes, count_offset).map(|value| value as usize) else {
-                continue;
-            };
-            if !(50..=70_000).contains(&count) {
-                continue;
-            }
-            let Some(raw_ids) = bytes.get(count_offset + 4..count_offset + 4 + count * 4) else {
-                continue;
-            };
-            if !raw_ids.chunks_exact(4).all(|word| {
+        let registry_offset = find(bytes, REGISTRY_MARKER)?;
+        let search_start = registry_offset.checked_add(REGISTRY_MARKER.len())?;
+        // A suffix of the table can form a smaller span ending at the same
+        // product record. The first complete span is the table boundary.
+        let (count_offset, count, ids_start, ids_end) =
+            (search_start..bytes.len().saturating_sub(3)).find_map(|count_offset| {
+                let count = usize::try_from(u32_le(bytes, count_offset)?).ok()?;
+                let id_bytes = count.checked_mul(4)?;
+                let ids_start = count_offset.checked_add(4)?;
+                let ids_end = ids_start.checked_add(id_bytes)?;
+                crate::om::is_product_record(bytes.get(ids_end..)?).then_some((
+                    count_offset,
+                    count,
+                    ids_start,
+                    ids_end,
+                ))
+            })?;
+        let raw_ids = bytes.get(ids_start..ids_end)?;
+        let object_ids: Vec<_> = raw_ids
+            .chunks_exact(4)
+            .enumerate()
+            .map(|(ordinal, word)| {
                 let raw = <[u8; 4]>::try_from(word)
                     .expect("invariant: chunks_exact(4) yields four-byte slices");
-                (1..70_000).contains(&u32::from_le_bytes(raw))
-            }) {
-                continue;
-            }
-            let object_ids: Vec<_> = raw_ids
-                .chunks_exact(4)
-                .enumerate()
-                .map(|(ordinal, word)| {
-                    let raw = <[u8; 4]>::try_from(word)
-                        .expect("invariant: chunks_exact(4) yields four-byte slices");
-                    RmFastLoadObjectId {
-                        value: u32::from_le_bytes(raw),
-                        offset: count_offset + 4 + ordinal * 4,
-                        raw,
-                    }
-                })
-                .collect();
-            let raw_count = bytes.get(count_offset..count_offset + 4)?.try_into().ok()?;
-            return Some((
-                entry,
-                RmFastLoadObjectIdTable {
-                    registry_offset,
-                    count_offset,
-                    raw_count,
-                    object_ids,
-                },
-            ));
-        }
-        None
+                RmFastLoadObjectId {
+                    value: u32::from_le_bytes(raw),
+                    offset: ids_start + ordinal * 4,
+                    raw,
+                }
+            })
+            .collect();
+        let raw_count = bytes.get(count_offset..ids_start)?.try_into().ok()?;
+        debug_assert_eq!(object_ids.len(), count);
+        Some((
+            entry,
+            RmFastLoadObjectIdTable {
+                registry_offset,
+                count_offset,
+                raw_count,
+                object_ids,
+            },
+        ))
     }
 }
 

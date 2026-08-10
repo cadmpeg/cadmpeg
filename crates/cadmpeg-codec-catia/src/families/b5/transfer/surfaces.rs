@@ -600,16 +600,14 @@ pub(super) fn emit_surfaces(
             "30_offset_surface",
             Exactness::Derived,
         );
-        annotations.derived(&procedural_id, "definition.u_sense");
-        annotations.derived(&procedural_id, "definition.v_sense");
         ir.model.procedural_surfaces.push(ProceduralSurface {
             id: procedural_id,
             surface: surface.clone(),
             definition: ProceduralSurfaceDefinition::Offset {
                 support: support.clone(),
                 distance: offset.distance,
-                u_sense: Some(0),
-                v_sense: Some(0),
+                u_sense: None,
+                v_sense: None,
                 extension_flags: Vec::new(),
                 revision_form: None,
             },

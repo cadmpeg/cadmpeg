@@ -23,6 +23,8 @@ pub enum TargetOptions {
     Step(cadmpeg_codec_step::StepWriteOptions),
     /// Rhino archive version.
     Rhino(cadmpeg_codec_rhino::RhinoArchiveVersion),
+    /// IGES specification version.
+    Iges(cadmpeg_codec_iges::IgesWriteOptions),
 }
 
 type EncoderFactory = fn(TargetOptions) -> Result<Box<dyn Encoder>, CodecError>;
@@ -97,6 +99,15 @@ impl Registry {
                     true,
                 ),
                 descriptor(
+                    "inventor",
+                    "Autodesk Inventor",
+                    &["ipt", "iam"],
+                    Some(Box::new(cadmpeg_codec_inventor::InventorCodec)),
+                    None,
+                    Some(cadmpeg_codec_inventor::validate_native),
+                    false,
+                ),
+                descriptor(
                     "sldprt",
                     "SolidWorks Part",
                     &["sldprt"],
@@ -155,9 +166,9 @@ impl Registry {
                     "IGES",
                     &["iges", "igs"],
                     Some(Box::new(cadmpeg_codec_iges::IgesCodec)),
+                    Some(iges),
                     None,
-                    None,
-                    false,
+                    true,
                 ),
                 descriptor(
                     "sat",
@@ -271,7 +282,7 @@ fn descriptor(
         extensions,
         detection_priority: 0,
         capabilities: Capabilities {
-            geometry_export: matches!(id, "fcstd" | "f3d" | "sldprt" | "rhino" | "step"),
+            geometry_export: matches!(id, "fcstd" | "f3d" | "sldprt" | "rhino" | "step" | "iges"),
             fidelity_replay,
         },
         codec,
@@ -332,6 +343,19 @@ fn rhino(options: TargetOptions) -> Result<Box<dyn Encoder>, CodecError> {
     Ok(Box::new(cadmpeg_codec_rhino::RhinoEncoder::new(version)))
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "EncoderFactory uses one by-value TargetOptions signature for every format."
+)]
+fn iges(options: TargetOptions) -> Result<Box<dyn Encoder>, CodecError> {
+    match options {
+        TargetOptions::Iges(options) => Ok(Box::new(cadmpeg_codec_iges::IgesEncoder::new(options))),
+        _ => Err(CodecError::Malformed(
+            "IGES encoder requires IGES target options".into(),
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -339,7 +363,7 @@ mod tests {
     #[test]
     fn every_exportable_format_has_one_encoder_factory() {
         let registry = Registry::with_builtins();
-        for id in ["cadir", "step", "fcstd", "f3d", "sldprt", "rhino"] {
+        for id in ["cadir", "step", "fcstd", "f3d", "sldprt", "rhino", "iges"] {
             assert!(registry
                 .descriptor(id)
                 .is_some_and(|value| value.encoder.is_some()));
@@ -366,5 +390,29 @@ mod tests {
     #[test]
     fn step_is_registered_as_a_reader() {
         assert!(Registry::with_builtins().by_id("step").is_some());
+    }
+
+    #[test]
+    fn inventor_is_registered_as_a_read_only_family_codec() {
+        let registry = Registry::with_builtins();
+        let descriptor = registry
+            .descriptor("inventor")
+            .expect("Inventor descriptor exists");
+        assert_eq!(descriptor.extensions, ["ipt", "iam"]);
+        assert!(descriptor.codec.is_some());
+        assert!(descriptor.encoder.is_none());
+        assert!(descriptor.native_validator.is_some());
+    }
+
+    #[test]
+    fn iges_is_registered_as_a_reader_and_writer() {
+        let registry = Registry::with_builtins();
+        assert!(registry.by_id("iges").is_some());
+        assert!(registry
+            .encoder(
+                "iges",
+                TargetOptions::Iges(cadmpeg_codec_iges::IgesWriteOptions::default())
+            )
+            .is_some());
     }
 }

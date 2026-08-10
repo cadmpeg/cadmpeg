@@ -257,7 +257,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .iter()
         .map(|row| row.arena)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(crate::native::F3D_FAMILIES.len(), 68);
+    assert_eq!(crate::native::F3D_FAMILIES.len(), 69);
     assert_eq!(
         catalogue_names,
         crate::native::F3D_ARENA_NAMES
@@ -1076,7 +1076,7 @@ fn synthetic_geometry_with_mesh_surface_smbh() -> Vec<u8> {
 /// Add a generated inline 2D `nubs` pcurve to the first coedge of the base
 /// topology fixture. The new record is appended at `RecordTable` index 19.
 fn synthetic_geometry_with_pcurve_smbh() -> Vec<u8> {
-    synthetic_geometry_with_pcurve_block_smbh(generated_pcurve_block())
+    synthetic_geometry_with_pcurve_block_smbh(generated_planar_pcurve_block())
 }
 
 fn synthetic_geometry_with_wrapped_ref_pcurve_smbh() -> Vec<u8> {
@@ -1151,6 +1151,16 @@ fn synthetic_inline_pcurve_with_referenced_support_smbh() -> Vec<u8> {
 }
 
 fn replace_generated_face_with_nurbs_surface(mut bytes: Vec<u8>) -> Vec<u8> {
+    let planar_pcurve = generated_planar_pcurve_block();
+    if let Some(offset) = bytes
+        .windows(planar_pcurve.len())
+        .position(|window| window == planar_pcurve)
+    {
+        bytes.splice(
+            offset..offset + planar_pcurve.len(),
+            generated_pcurve_block(),
+        );
+    }
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
@@ -1213,7 +1223,7 @@ fn synthetic_geometry_with_additional_out_of_scope_pcurve_cache_smbh() -> Vec<u8
 }
 
 fn synthetic_geometry_with_rational_pcurve_smbh() -> Vec<u8> {
-    synthetic_geometry_with_pcurve_block_smbh(generated_rational_pcurve_block())
+    synthetic_geometry_with_pcurve_block_smbh(generated_planar_rational_pcurve_block())
 }
 
 fn synthetic_geometry_with_pcurve_block_smbh(block: Vec<u8>) -> Vec<u8> {
@@ -1226,9 +1236,8 @@ fn synthetic_geometry_with_pcurve_block_smbh(block: Vec<u8>) -> Vec<u8> {
     let pcurve_ref_tag = record.iter().rposition(|b| *b == 0x0c).unwrap();
     record[pcurve_ref_tag + 1..pcurve_ref_tag + 9].copy_from_slice(&19i64.to_le_bytes());
 
-    // Move the coedge's edge endpoints onto the pcurve's surface image so the
-    // fixture stays geometrically consistent: the plane maps `(u, v)` to
-    // `(u, v, 0)` mm, and the block runs `(0.25, 0.5) -> (0.75, 1.5)`.
+    // Move the coedge's edge endpoints onto the pcurve's neutral surface image.
+    // The native plane chart stores neutral `(u, v)` as `(u / 10, v / -10)`.
     for (index, position_cm) in [(16usize, [0.025, 0.05, 0.0]), (17, [0.075, 0.15, 0.0])] {
         let point = &records[index];
         let record = &mut bytes[point.offset..point.offset + point.len];
@@ -1295,7 +1304,7 @@ fn synthetic_geometry_with_ref_pcurve_smbh() -> Vec<u8> {
     t_long(&mut records, -1);
     t_ref(&mut records, -1);
     records.extend_from_slice(&generated_curve_block());
-    records.extend_from_slice(&generated_pcurve_block());
+    records.extend_from_slice(&generated_planar_pcurve_block());
     t_end(&mut records);
     bytes.splice(delta..delta, records);
     bytes
@@ -3540,6 +3549,12 @@ fn synthetic_geometry_with_degenerate_curve_smbh() -> Vec<u8> {
 }
 
 fn generated_pcurve_block() -> Vec<u8> {
+    generated_pcurve_block_with_points([[0.25, 0.5], [0.75, 1.5]])
+}
+fn generated_planar_pcurve_block() -> Vec<u8> {
+    generated_pcurve_block_with_points([[0.025, -0.05], [0.075, -0.15]])
+}
+fn generated_pcurve_block_with_points(points: [[f64; 2]; 2]) -> Vec<u8> {
     let mut b = Vec::new();
     b.extend_from_slice(b"\x0d\x04nubs");
     push_tagged_i64(&mut b, 0x04, 1);
@@ -3549,14 +3564,19 @@ fn generated_pcurve_block() -> Vec<u8> {
         push_tagged_f64(&mut b, k);
         push_tagged_i64(&mut b, 0x04, m);
     }
-    for [u, v] in [[0.25, 0.5], [0.75, 1.5]] {
+    for [u, v] in points {
         push_tagged_f64(&mut b, u);
         push_tagged_f64(&mut b, v);
     }
     b
 }
-
 fn generated_rational_pcurve_block() -> Vec<u8> {
+    generated_rational_pcurve_block_with_points([[0.25, 0.5], [0.75, 1.5]])
+}
+fn generated_planar_rational_pcurve_block() -> Vec<u8> {
+    generated_rational_pcurve_block_with_points([[0.025, -0.05], [0.075, -0.15]])
+}
+fn generated_rational_pcurve_block_with_points(points: [[f64; 2]; 2]) -> Vec<u8> {
     let mut b = Vec::new();
     b.extend_from_slice(b"\x0d\x05nurbs");
     push_tagged_i64(&mut b, 0x04, 1);
@@ -3566,7 +3586,7 @@ fn generated_rational_pcurve_block() -> Vec<u8> {
         push_tagged_f64(&mut b, k);
         push_tagged_i64(&mut b, 0x04, m);
     }
-    for ([u, v], weight) in [([0.25, 0.5], 1.0), ([0.75, 1.5], 0.5)] {
+    for ([u, v], weight) in points.into_iter().zip([1.0, 0.5]) {
         push_tagged_f64(&mut b, u);
         push_tagged_f64(&mut b, v);
         push_tagged_f64(&mut b, weight);
@@ -14131,7 +14151,7 @@ fn asm_header_parses_documented_fields() {
 /// stay in it.
 #[test]
 fn asm_header_flag_bits_one_to_seven_hold_the_format_revision() {
-    let header = |flags: u64| asm_header::AsmHeader {
+    let header = |flags: u64| cadmpeg_asm::kernel_header::KernelHeader {
         width: 8,
         save_format_version: Some(22500),
         record_count: None,
@@ -22900,6 +22920,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     let ProceduralCurveDefinition::Subset {
         source,
         parameter_range,
+        sense: _,
     } = &result.ir.model.procedural_curves[0].definition
     else {
         panic!("expected subset construction")
@@ -22972,6 +22993,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     let ProceduralCurveDefinition::Subset {
         source,
         parameter_range,
+        sense: _,
     } = &round_trip.ir.model.procedural_curves[0].definition
     else {
         panic!("expected round-trip subset")

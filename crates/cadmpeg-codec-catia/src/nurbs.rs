@@ -5,25 +5,109 @@
 //! B-spline conversion, tensor-product NURBS isocurve extraction, circular
 //! interval canonicalization, and exact circular-helix fitting.
 
-use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition};
-use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition,
+};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+
+fn finite_point2(point: Point2) -> bool {
+    [point.u, point.v].into_iter().all(f64::is_finite)
+}
+
+fn finite_point3(point: Point3) -> bool {
+    [point.x, point.y, point.z].into_iter().all(f64::is_finite)
+}
+
+fn finite_vector3(vector: Vector3) -> bool {
+    [vector.x, vector.y, vector.z]
+        .into_iter()
+        .all(f64::is_finite)
+}
+
+fn valid_nurbs_curve(nurbs: &NurbsCurve) -> bool {
+    let Some(degree) = usize::try_from(nurbs.degree).ok() else {
+        return false;
+    };
+    let Some(expected_knot_count) = nurbs
+        .control_points
+        .len()
+        .checked_add(degree)
+        .and_then(|count| count.checked_add(1))
+    else {
+        return false;
+    };
+    degree > 0
+        && nurbs.control_points.len() > degree
+        && nurbs.knots.len() == expected_knot_count
+        && nurbs.knots.iter().copied().all(f64::is_finite)
+        && nurbs.knots.windows(2).all(|pair| pair[0] <= pair[1])
+        && nurbs.control_points.iter().copied().all(finite_point3)
+        && nurbs.weights.as_ref().is_none_or(|weights| {
+            weights.len() == nurbs.control_points.len()
+                && weights
+                    .iter()
+                    .copied()
+                    .all(|weight| weight.is_finite() && weight != 0.0)
+        })
+}
+
+fn valid_pcurve_nurbs(
+    degree: u32,
+    knots: &[f64],
+    control_points: &[Point2],
+    weights: Option<&[f64]>,
+) -> bool {
+    let Some(degree) = usize::try_from(degree).ok() else {
+        return false;
+    };
+    let Some(expected_knot_count) = control_points
+        .len()
+        .checked_add(degree)
+        .and_then(|count| count.checked_add(1))
+    else {
+        return false;
+    };
+    degree > 0
+        && control_points.len() > degree
+        && knots.len() == expected_knot_count
+        && knots.iter().copied().all(f64::is_finite)
+        && knots.windows(2).all(|pair| pair[0] <= pair[1])
+        && control_points.iter().copied().all(finite_point2)
+        && weights.is_none_or(|weights| {
+            weights.len() == control_points.len()
+                && weights
+                    .iter()
+                    .copied()
+                    .all(|weight| weight.is_finite() && weight > 0.0)
+        })
+}
 
 /// Reverse a line or NURBS pcurve over an unchanged increasing parameter range.
 pub(crate) fn reverse_pcurve_geometry(
     geometry: &PcurveGeometry,
     range: [f64; 2],
 ) -> Option<PcurveGeometry> {
-    if !range.into_iter().all(f64::is_finite) || range[0] >= range[1] {
+    if !range.into_iter().all(f64::is_finite)
+        || range[0] >= range[1]
+        || !(range[1] - range[0]).is_finite()
+    {
         return None;
     }
     match geometry {
-        PcurveGeometry::Line { origin, direction } => Some(PcurveGeometry::Line {
-            origin: Point2::new(
-                origin.u + (range[0] + range[1]) * direction.u,
-                origin.v + (range[0] + range[1]) * direction.v,
-            ),
-            direction: Point2::new(-direction.u, -direction.v),
-        }),
+        PcurveGeometry::Line { origin, direction } => {
+            if !finite_point2(*origin) || !finite_point2(*direction) {
+                return None;
+            }
+            let sum = range[0] + range[1];
+            if !sum.is_finite() {
+                return None;
+            }
+            let origin = Point2::new(origin.u + sum * direction.u, origin.v + sum * direction.v);
+            finite_point2(origin).then_some(PcurveGeometry::Line {
+                origin,
+                direction: Point2::new(-direction.u, -direction.v),
+            })
+        }
         PcurveGeometry::Nurbs {
             degree,
             knots,
@@ -31,7 +115,13 @@ pub(crate) fn reverse_pcurve_geometry(
             weights,
             periodic,
         } => {
+            if !valid_pcurve_nurbs(*degree, knots, control_points, weights.as_deref()) {
+                return None;
+            }
             let sum = range[0] + range[1];
+            if !sum.is_finite() {
+                return None;
+            }
             let mut reversed_knots = knots
                 .iter()
                 .rev()
@@ -41,6 +131,9 @@ pub(crate) fn reverse_pcurve_geometry(
                 if *knot == -0.0 {
                     *knot = 0.0;
                 }
+            }
+            if reversed_knots.iter().copied().any(|knot| !knot.is_finite()) {
+                return None;
             }
             Some(PcurveGeometry::Nurbs {
                 degree: *degree,
@@ -54,6 +147,222 @@ pub(crate) fn reverse_pcurve_geometry(
         }
         _ => None,
     }
+}
+
+/// Reverse a supported model-space curve over an increasing native range.
+pub(crate) fn reverse_curve_geometry(
+    geometry: &CurveGeometry,
+    range: [f64; 2],
+) -> Option<(CurveGeometry, [f64; 2])> {
+    if !range.into_iter().all(f64::is_finite)
+        || range[0] > range[1]
+        || !(range[1] - range[0]).is_finite()
+    {
+        return None;
+    }
+    match geometry {
+        CurveGeometry::Line { origin, direction } => {
+            if !finite_point3(*origin)
+                || ![direction.x, direction.y, direction.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+            {
+                return None;
+            }
+            let length = range[1] - range[0];
+            let origin = (*origin).translated(*direction, range[1]);
+            let direction = direction.scale(-1.0);
+            if !finite_point3(origin)
+                || ![direction.x, direction.y, direction.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+            {
+                return None;
+            }
+            Some((CurveGeometry::Line { origin, direction }, [0.0, length]))
+        }
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            if !finite_point3(*center)
+                || ![
+                    axis.x,
+                    axis.y,
+                    axis.z,
+                    ref_direction.x,
+                    ref_direction.y,
+                    ref_direction.z,
+                ]
+                .into_iter()
+                .all(f64::is_finite)
+                || !radius.is_finite()
+            {
+                return None;
+            }
+            let sweep = range[1] - range[0];
+            let tangent = (*axis).cross(*ref_direction);
+            let end = range[1];
+            let ref_direction = (*ref_direction).scale(end.cos()) + tangent.scale(end.sin());
+            if ![ref_direction.x, ref_direction.y, ref_direction.z]
+                .into_iter()
+                .all(f64::is_finite)
+            {
+                return None;
+            }
+            Some((
+                CurveGeometry::Circle {
+                    center: *center,
+                    axis: (*axis).scale(-1.0),
+                    ref_direction,
+                    radius: *radius,
+                },
+                [0.0, sweep],
+            ))
+        }
+        CurveGeometry::Nurbs(nurbs) => {
+            if !valid_nurbs_curve(nurbs) {
+                return None;
+            }
+            let sum = range[0] + range[1];
+            if !sum.is_finite() {
+                return None;
+            }
+            let knots = nurbs
+                .knots
+                .iter()
+                .rev()
+                .map(|knot| sum - knot)
+                .collect::<Vec<_>>();
+            if knots.iter().copied().any(|knot| !knot.is_finite()) {
+                return None;
+            }
+            Some((
+                CurveGeometry::Nurbs(NurbsCurve {
+                    degree: nurbs.degree,
+                    knots,
+                    control_points: nurbs.control_points.iter().rev().copied().collect(),
+                    weights: nurbs
+                        .weights
+                        .as_ref()
+                        .map(|weights| weights.iter().rev().copied().collect()),
+                    periodic: nurbs.periodic,
+                }),
+                range,
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// Normalize the parameter interval for a model-space carrier.
+pub(crate) fn canonical_model_curve_range(
+    geometry: &CurveGeometry,
+    range: [f64; 2],
+) -> Option<[f64; 2]> {
+    if !range.into_iter().all(f64::is_finite) || range[0] > range[1] {
+        return None;
+    }
+    match geometry {
+        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
+            canonical_periodic_range(range)
+        }
+        CurveGeometry::Nurbs(nurbs) => {
+            let [lower, upper] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?;
+            let tolerance = 1.0e-9_f64.max((upper - lower).abs() * 1.0e-9);
+            if nurbs.periodic {
+                (range[1] - range[0] <= upper - lower + tolerance).then_some(range)
+            } else if range[0] >= lower && range[1] <= upper {
+                Some(range)
+            } else {
+                ((range[0] - lower).abs().max((range[1] - upper).abs()) <= tolerance)
+                    .then_some([lower, upper])
+            }
+        }
+        _ => Some(range),
+    }
+}
+
+/// Reverse a cone-helix construction over its complete angular domain.
+///
+/// The construction uses the angle itself as the curve parameter. Reversing
+/// the interval therefore changes the radial frame, axial rise, and handedness
+/// while preserving the same increasing parameter range. Other procedural
+/// curve families require family-specific support-side mappings and are not
+/// admitted here.
+pub(crate) fn reverse_helix_definition(
+    definition: &ProceduralCurveDefinition,
+    range: [f64; 2],
+) -> Option<(ProceduralCurveDefinition, [f64; 2])> {
+    let ProceduralCurveDefinition::Helix {
+        angle_range,
+        center,
+        major,
+        minor,
+        pitch,
+        apex_factor,
+        axis,
+    } = definition
+    else {
+        return None;
+    };
+    if range != *angle_range
+        || !range.into_iter().all(f64::is_finite)
+        || range[0] >= range[1]
+        || ![center.x, center.y, center.z]
+            .into_iter()
+            .chain(
+                [major, minor, pitch, axis]
+                    .into_iter()
+                    .flat_map(|vector| [vector.x, vector.y, vector.z]),
+            )
+            .chain([*apex_factor])
+            .all(f64::is_finite)
+    {
+        return None;
+    }
+    let revolutions = (range[1] - range[0]) / std::f64::consts::TAU;
+    let radial_scale_at_end = 1.0 + *apex_factor * revolutions;
+    if !revolutions.is_finite() || !radial_scale_at_end.is_finite() || radial_scale_at_end == 0.0 {
+        return None;
+    }
+    let angle_sum = range[0] + range[1];
+    if !angle_sum.is_finite() {
+        return None;
+    }
+    let major_at_end = major.scale(angle_sum.cos()) + minor.scale(angle_sum.sin());
+    let minor_at_end = major.scale(angle_sum.sin()) - minor.scale(angle_sum.cos());
+    let major = major_at_end.scale(radial_scale_at_end);
+    let minor = minor_at_end.scale(radial_scale_at_end);
+    let center = center.translated(*pitch, revolutions);
+    let pitch = pitch.scale(-1.0);
+    let apex_factor = -*apex_factor / radial_scale_at_end;
+    let axis = axis.scale(-1.0);
+    if ![center.x, center.y, center.z, apex_factor]
+        .into_iter()
+        .chain(
+            [major, minor, pitch, axis]
+                .into_iter()
+                .flat_map(|vector| [vector.x, vector.y, vector.z]),
+        )
+        .all(f64::is_finite)
+    {
+        return None;
+    }
+    Some((
+        ProceduralCurveDefinition::Helix {
+            angle_range: *angle_range,
+            center,
+            major,
+            minor,
+            pitch,
+            apex_factor,
+            axis,
+        },
+        range,
+    ))
 }
 
 /// Normalize an increasing circular interval to the canonical one-turn domain.
@@ -90,24 +399,28 @@ pub(crate) fn circular_helix_cache(
         minor,
         pitch,
         apex_factor,
-        ..
+        axis,
     } = construction
     else {
         return None;
     };
+    let axis_norm = axis.x.hypot(axis.y).hypot(axis.z);
     let radius = major.x.hypot(major.y).hypot(major.z);
     let minor_radius = minor.x.hypot(minor.y).hypot(minor.z);
-    let frame_finite = [center.x, center.y, center.z]
-        .into_iter()
-        .chain(
-            [major, minor, pitch]
-                .into_iter()
-                .flat_map(|vector| [vector.x, vector.y, vector.z]),
-        )
-        .all(f64::is_finite);
-    let normalized_dot = (major.x / radius) * (minor.x / minor_radius)
-        + (major.y / radius) * (minor.y / minor_radius)
-        + (major.z / radius) * (minor.z / minor_radius);
+    let pitch_norm = pitch.x.hypot(pitch.y).hypot(pitch.z);
+    let frame_finite = finite_point3(*center)
+        && finite_vector3(*major)
+        && finite_vector3(*minor)
+        && finite_vector3(*pitch)
+        && finite_vector3(*axis);
+    let normalized_dot = |left: &Vector3, right: &Vector3| {
+        (left.x / left.x.hypot(left.y).hypot(left.z))
+            * (right.x / right.x.hypot(right.y).hypot(right.z))
+            + (left.y / left.x.hypot(left.y).hypot(left.z))
+                * (right.y / right.x.hypot(right.y).hypot(right.z))
+            + (left.z / left.x.hypot(left.y).hypot(left.z))
+                * (right.z / right.x.hypot(right.y).hypot(right.z))
+    };
     if !requested_tolerance.is_finite()
         || requested_tolerance <= 0.0
         || !frame_finite
@@ -115,10 +428,32 @@ pub(crate) fn circular_helix_cache(
         || radius <= 0.0
         || !minor_radius.is_finite()
         || minor_radius <= 0.0
+        || !axis_norm.is_finite()
+        || (axis_norm - 1.0).abs() > 1e-9
+        || !pitch_norm.is_finite()
         || (radius - minor_radius).abs() > 1e-9 * radius.max(minor_radius)
-        || !normalized_dot.is_finite()
-        || normalized_dot.abs() > 1e-9
+        || !angle_range.iter().copied().all(f64::is_finite)
+        || angle_range[0] >= angle_range[1]
         || *apex_factor != 0.0
+    {
+        return None;
+    }
+    let normalized_dot_major_minor = normalized_dot(major, minor);
+    let normalized_dot_major_axis = normalized_dot(major, axis);
+    let normalized_dot_minor_axis = normalized_dot(minor, axis);
+    let normalized_dot_pitch_axis = if pitch_norm == 0.0 {
+        1.0
+    } else {
+        normalized_dot(pitch, axis)
+    };
+    if !normalized_dot_major_minor.is_finite()
+        || normalized_dot_major_minor.abs() > 1e-9
+        || !normalized_dot_major_axis.is_finite()
+        || normalized_dot_major_axis.abs() > 1e-9
+        || !normalized_dot_minor_axis.is_finite()
+        || normalized_dot_minor_axis.abs() > 1e-9
+        || !normalized_dot_pitch_axis.is_finite()
+        || normalized_dot_pitch_axis.abs() < 1.0 - 1e-9
     {
         return None;
     }
@@ -132,6 +467,9 @@ pub(crate) fn circular_helix_cache(
     } else {
         2.0 * (1.0 - relative_tolerance).clamp(-1.0, 1.0).acos()
     };
+    if !max_step.is_finite() || max_step <= 0.0 {
+        return None;
+    }
     let segment_count = (sweep / max_step).ceil().max(1.0);
     if !segment_count.is_finite() || segment_count > crate::MAX_EXACT_ARC_SPANS as f64 {
         return None;
@@ -145,22 +483,38 @@ pub(crate) fn circular_helix_cache(
             } else {
                 angle_range[0] + index as f64 * step
             };
+            if !parameter.is_finite() {
+                return None;
+            }
             Some((parameter, circular_helix_point(construction, parameter)?))
         })
         .collect::<Option<Vec<_>>>()?;
+    if !samples
+        .windows(2)
+        .all(|pair| pair[0].0.is_finite() && pair[0].0 < pair[1].0)
+    {
+        return None;
+    }
     let fit_tolerance = 2.0 * radius * (step * 0.25).sin().powi(2);
     let mut knots = Vec::with_capacity(samples.len() + 2);
     knots.push(angle_range[0]);
     knots.extend(samples.iter().map(|(parameter, _)| *parameter));
     knots.push(angle_range[1]);
+    let curve = NurbsCurve {
+        degree: 1,
+        knots,
+        control_points: samples.into_iter().map(|(_, point)| point).collect(),
+        weights: None,
+        periodic: false,
+    };
+    if !fit_tolerance.is_finite()
+        || !valid_nurbs_curve(&curve)
+        || !curve.knots.windows(2).all(|pair| pair[0] <= pair[1])
+    {
+        return None;
+    }
     Some(CircularHelixCache {
-        curve: NurbsCurve {
-            degree: 1,
-            knots,
-            control_points: samples.into_iter().map(|(_, point)| point).collect(),
-            weights: None,
-            periodic: false,
-        },
+        curve,
         fit_tolerance,
     })
 }
@@ -177,12 +531,22 @@ fn circular_helix_point(construction: &ProceduralCurveDefinition, angle: f64) ->
     else {
         return None;
     };
+    if !angle.is_finite()
+        || !angle_range.iter().copied().all(f64::is_finite)
+        || angle_range[0] >= angle_range[1]
+    {
+        return None;
+    }
     let revolution_fraction = (angle - angle_range[0]) / std::f64::consts::TAU;
-    Some(Point3::new(
+    if !revolution_fraction.is_finite() {
+        return None;
+    }
+    let point = Point3::new(
         center.x + major.x * angle.cos() + minor.x * angle.sin() + pitch.x * revolution_fraction,
         center.y + major.y * angle.cos() + minor.y * angle.sin() + pitch.y * revolution_fraction,
         center.z + major.z * angle.cos() + minor.z * angle.sin() + pitch.z * revolution_fraction,
-    ))
+    );
+    finite_point3(point).then_some(point)
 }
 
 /// Convert degree-5 position/first/second-derivative knot jets into an exact
@@ -220,6 +584,10 @@ fn quintic_jet_bspline_nd<const N: usize>(
         || points.len() != knots.len()
         || first.len() != knots.len()
         || second.len() != knots.len()
+        || !knots.iter().copied().all(f64::is_finite)
+        || !points.iter().flatten().copied().all(f64::is_finite)
+        || !first.iter().flatten().copied().all(f64::is_finite)
+        || !second.iter().flatten().copied().all(f64::is_finite)
     {
         return None;
     }
@@ -250,6 +618,11 @@ fn quintic_jet_bspline_nd<const N: usize>(
         ]);
         full_knots.extend([knots[index + 1]; 6]);
     }
+    if !full_knots.iter().copied().all(f64::is_finite)
+        || !controls.iter().flatten().copied().all(f64::is_finite)
+    {
+        return None;
+    }
     Some((full_knots, controls))
 }
 
@@ -260,28 +633,45 @@ pub(crate) fn nurbs_surface_isocurve(
     parameter: f64,
     fix_u: bool,
 ) -> Option<NurbsCurve> {
+    if !parameter.is_finite()
+        || !surface.u_knots.iter().copied().all(f64::is_finite)
+        || !surface.v_knots.iter().copied().all(f64::is_finite)
+        || !surface.control_points.iter().copied().all(finite_point3)
+        || surface.weights.as_ref().is_some_and(|weights| {
+            weights.len() != surface.control_points.len()
+                || weights
+                    .iter()
+                    .copied()
+                    .any(|weight| !weight.is_finite() || weight == 0.0)
+        })
+    {
+        return None;
+    }
     let u_count = usize::try_from(surface.u_count).ok()?;
     let v_count = usize::try_from(surface.v_count).ok()?;
+    let expected_control_count = u_count.checked_mul(v_count)?;
+    if surface.control_points.len() != expected_control_count {
+        return None;
+    }
+    let u_degree = usize::try_from(surface.u_degree).ok()?;
+    let v_degree = usize::try_from(surface.v_degree).ok()?;
+    if surface.u_knots.len() != u_count.checked_add(u_degree)?.checked_add(1)?
+        || surface.v_knots.len() != v_count.checked_add(v_degree)?.checked_add(1)?
+        || surface.u_knots.windows(2).any(|pair| pair[0] > pair[1])
+        || surface.v_knots.windows(2).any(|pair| pair[0] > pair[1])
+    {
+        return None;
+    }
     let (fixed_basis, varying_count, degree, knots) = if fix_u {
         (
-            nurbs_basis_values(
-                &surface.u_knots,
-                usize::try_from(surface.u_degree).ok()?,
-                parameter,
-                u_count,
-            )?,
+            nurbs_basis_values(&surface.u_knots, u_degree, parameter, u_count)?,
             v_count,
             surface.v_degree,
             surface.v_knots.clone(),
         )
     } else {
         (
-            nurbs_basis_values(
-                &surface.v_knots,
-                usize::try_from(surface.v_degree).ok()?,
-                parameter,
-                v_count,
-            )?,
+            nurbs_basis_values(&surface.v_knots, v_degree, parameter, v_count)?,
             u_count,
             surface.u_degree,
             surface.u_knots.clone(),
@@ -299,27 +689,38 @@ pub(crate) fn nurbs_surface_isocurve(
                 varying.checked_mul(v_count)?.checked_add(fixed)?
             };
             let point = surface.control_points.get(index)?;
-            let weight = surface
-                .weights
-                .as_ref()
-                .and_then(|values| values.get(index))
-                .copied()
-                .unwrap_or(1.0);
+            let weight = match surface.weights.as_ref() {
+                Some(values) => *values.get(index)?,
+                None => 1.0,
+            };
             let factor = basis * weight;
             numerator[0] += factor * point.x;
             numerator[1] += factor * point.y;
             numerator[2] += factor * point.z;
             denominator += factor;
         }
-        if !denominator.is_finite() || denominator == 0.0 {
+        if !denominator.is_finite()
+            || denominator == 0.0
+            || !numerator.into_iter().all(f64::is_finite)
+        {
             return None;
         }
-        control_points.push(Point3::new(
+        let point = Point3::new(
             numerator[0] / denominator,
             numerator[1] / denominator,
             numerator[2] / denominator,
-        ));
+        );
+        if !finite_point3(point) {
+            return None;
+        }
+        control_points.push(point);
         weights.push(denominator);
+    }
+    if !knots.iter().copied().all(f64::is_finite)
+        || !control_points.iter().copied().all(finite_point3)
+        || !weights.iter().copied().all(f64::is_finite)
+    {
+        return None;
     }
     Some(NurbsCurve {
         degree,
@@ -341,6 +742,12 @@ fn nurbs_basis_values(
     count: usize,
 ) -> Option<Vec<f64>> {
     if knots.len() != count.checked_add(degree)?.checked_add(1)? || count == 0 {
+        return None;
+    }
+    if !parameter.is_finite()
+        || !knots.iter().copied().all(f64::is_finite)
+        || knots.windows(2).any(|pair| pair[0] > pair[1])
+    {
         return None;
     }
     let mut basis = vec![0.0; count + degree];
@@ -392,11 +799,30 @@ pub(crate) fn pole_count(multiplicities: &[u32], degree: u32) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::eval::pcurve_uv;
-    use cadmpeg_ir::geometry::{NurbsSurface, PcurveGeometry, ProceduralCurveDefinition};
+    use cadmpeg_ir::eval::{curve_point, pcurve_uv};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition,
+    };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
-    use super::{circular_helix_cache, nurbs_surface_isocurve, reverse_pcurve_geometry};
+    use super::*;
+
+    #[test]
+    fn canonical_nurbs_range_clamps_rounding_at_the_domain_boundary() {
+        let geometry = CurveGeometry::Nurbs(NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            weights: None,
+            periodic: false,
+        });
+
+        assert_eq!(
+            canonical_model_curve_range(&geometry, [-1.0e-12, 1.0 + 1.0e-12]),
+            Some([0.0, 1.0])
+        );
+        assert_eq!(canonical_model_curve_range(&geometry, [-1.0e-4, 1.0]), None);
+    }
 
     #[test]
     fn reversed_surface_pcurve_preserves_domain_and_swaps_endpoints() {
@@ -412,6 +838,94 @@ mod tests {
             assert!((actual.u - expected.u).abs() < 1e-12);
             assert!((actual.v - expected.v).abs() < 1e-12);
         }
+    }
+
+    #[test]
+    fn reversed_model_carriers_preserve_endpoint_geometry() {
+        let line = CurveGeometry::Line {
+            origin: Point3::new(2.0, -1.0, 4.0),
+            direction: Vector3::new(3.0, 4.0, -2.0),
+        };
+        let circle = CurveGeometry::Circle {
+            center: Point3::new(2.0, -1.0, 4.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 3.0,
+        };
+        for (geometry, range) in [(line, [5.0, 9.0]), (circle, [0.25, 2.0])] {
+            let (reversed, reversed_range) =
+                reverse_curve_geometry(&geometry, range).expect("reversible model curve");
+            for (parameter, source_parameter) in
+                [(reversed_range[0], range[1]), (reversed_range[1], range[0])]
+            {
+                let actual = curve_point(&reversed, parameter).expect("reversed endpoint");
+                let expected = curve_point(&geometry, source_parameter).expect("source endpoint");
+                assert!(actual.distance(expected) < 1e-12);
+            }
+        }
+    }
+
+    #[test]
+    fn reversed_nurbs_preserves_active_subrange() {
+        let geometry = CurveGeometry::Nurbs(NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            weights: None,
+            periodic: false,
+        });
+        let range = [0.2, 0.8];
+        let (reversed, reversed_range) =
+            reverse_curve_geometry(&geometry, range).expect("reversible NURBS");
+        for parameter in [range[0], 0.5, range[1]] {
+            let actual = curve_point(&reversed, parameter).expect("reversed NURBS point");
+            let expected = curve_point(&geometry, range[0] + range[1] - parameter)
+                .expect("source NURBS point");
+            assert!(actual.distance(expected) < 1e-12);
+        }
+        assert_eq!(reversed_range, range);
+    }
+
+    #[test]
+    fn reversed_helix_preserves_conical_path() {
+        let range = [0.25, 2.0];
+        let definition = ProceduralCurveDefinition::Helix {
+            angle_range: range,
+            center: Point3::new(1.0, -2.0, 3.0),
+            major: Vector3::new(2.0, 0.0, 0.0),
+            minor: Vector3::new(0.0, 2.0, 0.0),
+            pitch: Vector3::new(0.0, 0.0, 3.0),
+            apex_factor: 0.4,
+            axis: Vector3::new(0.0, 0.0, 1.0),
+        };
+        let (reversed, reversed_range) =
+            reverse_helix_definition(&definition, range).expect("reversible helix");
+        let evaluate = |definition: &ProceduralCurveDefinition, angle: f64| {
+            let ProceduralCurveDefinition::Helix {
+                angle_range,
+                center,
+                major,
+                minor,
+                pitch,
+                apex_factor,
+                ..
+            } = definition
+            else {
+                panic!("helix definition")
+            };
+            let fraction = (angle - angle_range[0]) / std::f64::consts::TAU;
+            let scale = 1.0 + apex_factor * fraction;
+            center
+                .translated(*major, scale * angle.cos())
+                .translated(*minor, scale * angle.sin())
+                .translated(*pitch, fraction)
+        };
+        for angle in [range[0], 0.75, range[1]] {
+            let actual = evaluate(&reversed, angle);
+            let expected = evaluate(&definition, range[0] + range[1] - angle);
+            assert!(actual.distance(expected) < 1e-12);
+        }
+        assert_eq!(reversed_range, range);
     }
 
     #[test]
@@ -444,6 +958,43 @@ mod tests {
     }
 
     #[test]
+    fn surface_isocurve_rejects_invalid_weight_shape_and_output() {
+        let surface = |control_points, weights| NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points,
+            weights,
+            u_periodic: false,
+            v_periodic: false,
+        };
+        assert!(nurbs_surface_isocurve(
+            &surface(vec![Point3::new(0.0, 0.0, 0.0); 4], Some(vec![1.0; 3]),),
+            0.5,
+            true,
+        )
+        .is_none());
+        assert!(nurbs_surface_isocurve(
+            &surface(
+                vec![Point3::new(f64::MAX, 0.0, 0.0); 4],
+                Some(vec![1.0e200; 4]),
+            ),
+            0.5,
+            true,
+        )
+        .is_none());
+        assert!(nurbs_surface_isocurve(
+            &surface(vec![Point3::new(0.0, 0.0, 0.0); 4], Some(vec![0.0; 4])),
+            0.5,
+            true,
+        )
+        .is_none());
+    }
+
+    #[test]
     fn circular_helix_cache_preserves_exact_interval_endpoints() {
         let range = [0.125, 1.570_797_917_999_999_6];
         let definition = ProceduralCurveDefinition::Helix {
@@ -459,6 +1010,13 @@ mod tests {
         let cache = circular_helix_cache(&definition, 1.0e-4).expect("valid helix");
         assert_eq!(cache.curve.knots[1], range[0]);
         assert_eq!(cache.curve.knots[cache.curve.knots.len() - 2], range[1]);
+        assert!(cache.fit_tolerance.is_finite());
+        assert!(cache
+            .curve
+            .control_points
+            .iter()
+            .copied()
+            .all(super::finite_point3));
     }
 
     #[test]
@@ -484,5 +1042,102 @@ mod tests {
         assert!(
             circular_helix_cache(&definition(Vector3::new(radius, 0.0, 0.0)), 1.0e-4).is_none()
         );
+    }
+
+    #[test]
+    fn circular_helix_cache_rejects_invalid_frame_and_output() {
+        let definition = ProceduralCurveDefinition::Helix {
+            angle_range: [0.0, 1.0],
+            center: Point3::new(0.0, 0.0, 0.0),
+            major: Vector3::new(1.0, 0.0, 0.0),
+            minor: Vector3::new(0.0, 1.0, 0.0),
+            pitch: Vector3::new(0.0, 0.0, 1.0),
+            apex_factor: 0.0,
+            axis: Vector3::new(0.0, 0.0, 1.0),
+        };
+        let mut non_axial_pitch = definition.clone();
+        if let ProceduralCurveDefinition::Helix { pitch, .. } = &mut non_axial_pitch {
+            *pitch = Vector3::new(1.0, 0.0, 0.0);
+        }
+        assert!(circular_helix_cache(&non_axial_pitch, 1.0e-4).is_none());
+
+        let overflowing_fit = ProceduralCurveDefinition::Helix {
+            angle_range: [0.0, 1.0],
+            center: Point3::new(0.0, 0.0, 0.0),
+            major: Vector3::new(f64::MAX, 0.0, 0.0),
+            minor: Vector3::new(0.0, f64::MAX, 0.0),
+            pitch: Vector3::new(0.0, 0.0, 0.0),
+            apex_factor: 0.0,
+            axis: Vector3::new(0.0, 0.0, 1.0),
+        };
+        assert!(circular_helix_cache(&overflowing_fit, f64::MAX).is_none());
+    }
+
+    #[test]
+    fn quintic_jet_rejects_nonfinite_control_net() {
+        assert!(quintic_jet_bspline(
+            5,
+            &[0.0, 10.0],
+            &[[0.0, 0.0], [1.0, 0.0]],
+            &[[f64::MAX, 0.0], [f64::MAX, 0.0]],
+            &[[0.0, 0.0], [0.0, 0.0]],
+        )
+        .is_none());
+        assert!(quintic_jet_bspline(
+            5,
+            &[0.0, 1.0],
+            &[[f64::NAN, 0.0], [1.0, 0.0]],
+            &[[1.0, 0.0], [1.0, 0.0]],
+            &[[0.0, 0.0], [0.0, 0.0]],
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn reversing_geometry_rejects_nonfinite_reconstruction() {
+        let pcurve_line = PcurveGeometry::Line {
+            origin: Point2::new(0.0, 0.0),
+            direction: Point2::new(1.0, 0.0),
+        };
+        assert!(reverse_pcurve_geometry(&pcurve_line, [f64::MAX / 2.0, f64::MAX]).is_none());
+
+        let model_line = CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(2.0, 0.0, 0.0),
+        };
+        assert!(reverse_curve_geometry(&model_line, [0.0, f64::MAX]).is_none());
+
+        let pcurve_nurbs = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![-f64::MAX, 0.0, 1.0, 1.0],
+            control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            weights: None,
+            periodic: false,
+        };
+        assert!(reverse_pcurve_geometry(&pcurve_nurbs, [0.0, f64::MAX]).is_none());
+
+        let nonfinite_line = PcurveGeometry::Line {
+            origin: Point2::new(f64::NAN, 0.0),
+            direction: Point2::new(1.0, 0.0),
+        };
+        assert!(reverse_pcurve_geometry(&nonfinite_line, [0.0, 1.0]).is_none());
+
+        let malformed_pcurve = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            weights: Some(vec![1.0]),
+            periodic: false,
+        };
+        assert!(reverse_pcurve_geometry(&malformed_pcurve, [0.0, 1.0]).is_none());
+
+        let zero_weight_curve = CurveGeometry::Nurbs(NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            weights: Some(vec![1.0, 0.0]),
+            periodic: false,
+        });
+        assert!(reverse_curve_geometry(&zero_weight_curve, [0.0, 1.0]).is_none());
     }
 }

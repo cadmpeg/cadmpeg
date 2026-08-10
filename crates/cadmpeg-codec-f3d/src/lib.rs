@@ -95,7 +95,6 @@ pub mod materials;
 mod metastream;
 mod native;
 mod paramesh;
-mod protein;
 pub mod records;
 mod tsm;
 pub mod validate;

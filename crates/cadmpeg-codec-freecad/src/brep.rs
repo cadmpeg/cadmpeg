@@ -96,7 +96,7 @@ pub struct TextFacts {
 }
 
 /// Topological shape family.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TextShapeKind {
     Vertex,
@@ -410,6 +410,7 @@ pub enum TextSurface {
         ref_direction: Vector3,
         radius: f64,
         half_angle: f64,
+        u_reversed: bool,
     },
     /// Sphere.
     Sphere {
@@ -417,6 +418,7 @@ pub enum TextSurface {
         axis: Vector3,
         ref_direction: Vector3,
         radius: f64,
+        u_reversed: bool,
     },
     /// Torus.
     Torus {
@@ -425,6 +427,7 @@ pub enum TextSurface {
         ref_direction: Vector3,
         major_radius: f64,
         minor_radius: f64,
+        u_reversed: bool,
     },
     /// Rational or non-rational tensor-product B-spline surface.
     Nurbs(NurbsSurface),
@@ -449,6 +452,68 @@ pub enum TextSurface {
         distance: f64,
         basis: Box<TextSurface>,
     },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct SurfaceParameterAffine {
+    pub(crate) u_scale: f64,
+    pub(crate) u_offset: f64,
+    pub(crate) v_scale: f64,
+    pub(crate) v_offset: f64,
+}
+
+pub(crate) fn surface_parameter_affine(surface: &TextSurface) -> SurfaceParameterAffine {
+    let identity = SurfaceParameterAffine {
+        u_scale: 1.0,
+        u_offset: 0.0,
+        v_scale: 1.0,
+        v_offset: 0.0,
+    };
+    match surface {
+        TextSurface::Plane {
+            v_reversed: true, ..
+        } => SurfaceParameterAffine {
+            v_scale: -1.0,
+            ..identity
+        },
+        TextSurface::Cylinder {
+            u_reversed: true, ..
+        }
+        | TextSurface::Sphere {
+            u_reversed: true, ..
+        }
+        | TextSurface::Torus {
+            u_reversed: true, ..
+        } => SurfaceParameterAffine {
+            u_scale: -1.0,
+            ..identity
+        },
+        TextSurface::Cone {
+            half_angle,
+            u_reversed,
+            ..
+        } => SurfaceParameterAffine {
+            u_scale: if *u_reversed { -1.0 } else { 1.0 },
+            v_scale: half_angle.cos(),
+            ..identity
+        },
+        TextSurface::Trimmed {
+            parameter_ranges,
+            basis,
+        } => {
+            let basis = surface_parameter_affine(basis);
+            let u_scale = basis.u_scale.abs();
+            let v_scale = basis.v_scale.abs();
+            SurfaceParameterAffine {
+                u_scale,
+                u_offset: -parameter_ranges[0][0] * u_scale,
+                v_scale,
+                v_offset: -parameter_ranges[1][0] * v_scale,
+            }
+        }
+        TextSurface::Offset { basis, .. } => surface_parameter_affine(basis),
+        _ => identity,
+    }
 }
 
 /// Bind every exact-shape property to and frame its payload.
@@ -1495,38 +1560,41 @@ fn parse_binary_surface(
             let origin = cursor.point3("binary cone origin")?;
             let axis = cursor.vector3("binary cone axis")?;
             let ref_direction = cursor.vector3("binary cone reference direction")?;
-            cursor.vector3("binary cone v direction")?;
+            let y_direction = cursor.vector3("binary cone v direction")?;
             TextSurface::Cone {
                 origin,
                 axis,
                 ref_direction,
                 radius: cursor.f64("binary cone reference radius")?,
                 half_angle: cursor.f64("binary cone half angle")?,
+                u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
             }
         }
         4 => {
             let center = cursor.point3("binary sphere center")?;
             let axis = cursor.vector3("binary sphere axis")?;
             let ref_direction = cursor.vector3("binary sphere reference direction")?;
-            cursor.vector3("binary sphere v direction")?;
+            let y_direction = cursor.vector3("binary sphere v direction")?;
             TextSurface::Sphere {
                 center,
                 axis,
                 ref_direction,
                 radius: cursor.f64("binary sphere radius")?,
+                u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
             }
         }
         5 => {
             let center = cursor.point3("binary torus center")?;
             let axis = cursor.vector3("binary torus axis")?;
             let ref_direction = cursor.vector3("binary torus reference direction")?;
-            cursor.vector3("binary torus v direction")?;
+            let y_direction = cursor.vector3("binary torus v direction")?;
             TextSurface::Torus {
                 center,
                 axis,
                 ref_direction,
                 major_radius: cursor.f64("binary torus major radius")?,
                 minor_radius: cursor.f64("binary torus minor radius")?,
+                u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
             }
         }
         6 => TextSurface::Extrusion {
@@ -1605,7 +1673,7 @@ fn parse_binary_surface(
                     weights.push(cursor.f64("binary B-spline surface weight")?);
                 }
             }
-            TextSurface::Nurbs(NurbsSurface {
+            TextSurface::Nurbs(normalize_periodic_surface(NurbsSurface {
                 u_degree,
                 v_degree,
                 u_knots: cursor.expanded_knots(u_knot_count, "binary B-spline u knots")?,
@@ -1620,7 +1688,7 @@ fn parse_binary_surface(
                 weights,
                 u_periodic,
                 v_periodic,
-            })
+            })?)
         }
         10 => TextSurface::Trimmed {
             parameter_ranges: [
@@ -1761,6 +1829,8 @@ fn parse_binary_curve(
                 }
             }
             let knots = cursor.expanded_knots(knot_count, "binary B-spline")?;
+            let (knots, padding) = normalize_periodic_knots(knots, degree, periodic)?;
+            append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
             TextCurve::Nurbs(NurbsCurve {
                 degree,
                 knots,
@@ -1874,21 +1944,9 @@ fn parse_binary_curve2d(
                     weights.push(cursor.f64("binary B-spline weight")?);
                 }
             }
-            let mut knots = Vec::new();
-            for _ in 0..knot_count {
-                let knot = cursor.f64("binary B-spline knot")?;
-                let multiplicity = cursor.count("binary B-spline multiplicity")?;
-                if knots
-                    .len()
-                    .checked_add(multiplicity)
-                    .is_none_or(|len| len > 1_000_000)
-                {
-                    return Err(CodecError::Malformed(
-                        "binary B-spline expanded knot-count limit exceeded".into(),
-                    ));
-                }
-                knots.extend(std::iter::repeat_n(knot, multiplicity));
-            }
+            let knots = cursor.expanded_knots(knot_count, "binary B-spline")?;
+            let (knots, padding) = normalize_periodic_knots(knots, degree, periodic)?;
+            append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
             TextCurve2d::Nurbs(NurbsCurve2d {
                 degree,
                 knots,
@@ -2301,9 +2359,12 @@ fn parse_nurbs_curve2d(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve2d, Cod
             weights.push(cursor.real("2D B-spline weight")?);
         }
     }
+    let knots = parse_knots(cursor, knot_count, degree, "2D B-spline")?;
+    let (knots, padding) = normalize_periodic_knots(knots, degree as u32, periodic)?;
+    append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
     Ok(NurbsCurve2d {
         degree: degree as u32,
-        knots: parse_knots(cursor, knot_count, degree, "2D B-spline")?,
+        knots,
         control_points,
         weights,
         periodic,
@@ -3145,12 +3206,14 @@ fn parse_analytic_surface(
             ref_direction,
             radius: cursor.real("cone radius")?,
             half_angle: cursor.real("cone half angle")?,
+            u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
         },
         4 => TextSurface::Sphere {
             center: origin,
             axis,
             ref_direction,
             radius: cursor.real("sphere radius")?,
+            u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
         },
         5 => TextSurface::Torus {
             center: origin,
@@ -3158,6 +3221,7 @@ fn parse_analytic_surface(
             ref_direction,
             major_radius: cursor.real("torus major radius")?,
             minor_radius: cursor.real("torus minor radius")?,
+            u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
         },
         _ => unreachable!("analytic surface kind was range checked"),
     })
@@ -3203,7 +3267,7 @@ fn parse_nurbs_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, Cod
     }
     let u_knots = parse_knots(cursor, u_knot_count, u_degree, "B-spline u")?;
     let v_knots = parse_knots(cursor, v_knot_count, v_degree, "B-spline v")?;
-    Ok(NurbsSurface {
+    normalize_periodic_surface(NurbsSurface {
         u_degree: u_degree as u32,
         v_degree: v_degree as u32,
         u_knots,
@@ -3270,6 +3334,154 @@ fn parse_knots(
         knots.resize(expanded, knot);
     }
     Ok(knots)
+}
+
+fn normalize_periodic_knots(
+    knots: Vec<f64>,
+    degree: u32,
+    periodic: bool,
+) -> Result<(Vec<f64>, usize), CodecError> {
+    if !periodic {
+        return Ok((knots, 0));
+    }
+    let degree = usize::try_from(degree)
+        .map_err(|_| CodecError::Malformed("periodic B-spline degree exceeds usize".into()))?;
+    let Some(&first) = knots.first() else {
+        return Err(CodecError::Malformed(
+            "periodic B-spline has no knots".into(),
+        ));
+    };
+    let last = *knots.last().expect("nonempty periodic knot vector");
+    let first_multiplicity = knots.iter().take_while(|knot| **knot == first).count();
+    let last_multiplicity = knots.iter().rev().take_while(|knot| **knot == last).count();
+    if first_multiplicity == 0
+        || first_multiplicity > degree
+        || last_multiplicity != first_multiplicity
+        || !first.is_finite()
+        || !last.is_finite()
+        || first >= last
+    {
+        return Err(CodecError::Malformed(
+            "periodic B-spline endpoint knots are invalid".into(),
+        ));
+    }
+    let padding = degree + 1 - first_multiplicity;
+    let before_last = knots.len().checked_sub(last_multiplicity).ok_or_else(|| {
+        CodecError::Malformed("periodic B-spline knot cardinality underflow".into())
+    })?;
+    if before_last < padding || knots.len() - first_multiplicity < padding {
+        return Err(CodecError::Malformed(
+            "periodic B-spline has insufficient interior knots".into(),
+        ));
+    }
+    let period = last - first;
+    let mut normalized =
+        Vec::with_capacity(knots.len().checked_add(2 * padding).ok_or_else(|| {
+            CodecError::Malformed("periodic B-spline knot limit exceeded".into())
+        })?);
+    normalized.extend(
+        knots[before_last - padding..before_last]
+            .iter()
+            .map(|knot| knot - period),
+    );
+    normalized.extend_from_slice(&knots);
+    normalized.extend(
+        knots[first_multiplicity..first_multiplicity + padding]
+            .iter()
+            .map(|knot| knot + period),
+    );
+    Ok((normalized, padding))
+}
+
+fn append_periodic_curve_poles<T: Clone>(
+    control_points: &mut Vec<T>,
+    weights: Option<&mut Vec<f64>>,
+    padding: usize,
+) -> Result<(), CodecError> {
+    if padding == 0 {
+        return Ok(());
+    }
+    if control_points.len() < padding {
+        return Err(CodecError::Malformed(
+            "periodic B-spline has insufficient poles".into(),
+        ));
+    }
+    control_points.extend_from_within(..padding);
+    if let Some(weights) = weights {
+        if weights.len() < padding {
+            return Err(CodecError::Malformed(
+                "periodic B-spline has insufficient weights".into(),
+            ));
+        }
+        weights.extend_from_within(..padding);
+    }
+    Ok(())
+}
+
+fn normalize_periodic_surface(mut surface: NurbsSurface) -> Result<NurbsSurface, CodecError> {
+    let (u_knots, u_padding) = normalize_periodic_knots(
+        std::mem::take(&mut surface.u_knots),
+        surface.u_degree,
+        surface.u_periodic,
+    )?;
+    let (v_knots, v_padding) = normalize_periodic_knots(
+        std::mem::take(&mut surface.v_knots),
+        surface.v_degree,
+        surface.v_periodic,
+    )?;
+    let old_u = usize::try_from(surface.u_count)
+        .map_err(|_| CodecError::Malformed("B-spline u pole count exceeds usize".into()))?;
+    let old_v = usize::try_from(surface.v_count)
+        .map_err(|_| CodecError::Malformed("B-spline v pole count exceeds usize".into()))?;
+    if old_u == 0 || old_v == 0 {
+        return Err(CodecError::Malformed(
+            "periodic B-spline pole grid is empty".into(),
+        ));
+    }
+    let new_u = old_u
+        .checked_add(u_padding)
+        .ok_or_else(|| CodecError::Malformed("periodic B-spline u pole limit exceeded".into()))?;
+    let new_v = old_v
+        .checked_add(v_padding)
+        .ok_or_else(|| CodecError::Malformed("periodic B-spline v pole limit exceeded".into()))?;
+    let new_count = new_u
+        .checked_mul(new_v)
+        .filter(|count| *count <= 2_000_000)
+        .ok_or_else(|| CodecError::Malformed("periodic B-spline pole limit exceeded".into()))?;
+    if surface.control_points.len() != old_u.saturating_mul(old_v)
+        || surface
+            .weights
+            .as_ref()
+            .is_some_and(|weights| weights.len() != surface.control_points.len())
+    {
+        return Err(CodecError::Malformed(
+            "periodic B-spline pole grid is invalid".into(),
+        ));
+    }
+    if u_padding != 0 || v_padding != 0 {
+        let old_points = std::mem::take(&mut surface.control_points);
+        let old_weights = surface.weights.take();
+        let mut points = Vec::with_capacity(new_count);
+        let mut weights = old_weights.as_ref().map(|_| Vec::with_capacity(new_count));
+        for u in 0..new_u {
+            for v in 0..new_v {
+                let source = (u % old_u) * old_v + v % old_v;
+                points.push(old_points[source]);
+                if let (Some(source_weights), Some(target_weights)) = (&old_weights, &mut weights) {
+                    target_weights.push(source_weights[source]);
+                }
+            }
+        }
+        surface.control_points = points;
+        surface.weights = weights;
+    }
+    surface.u_knots = u_knots;
+    surface.v_knots = v_knots;
+    surface.u_count = u32::try_from(new_u)
+        .map_err(|_| CodecError::Malformed("periodic B-spline u pole count exceeds u32".into()))?;
+    surface.v_count = u32::try_from(new_v)
+        .map_err(|_| CodecError::Malformed("periodic B-spline v pole count exceeds u32".into()))?;
+    Ok(surface)
 }
 
 fn parse_curves(
@@ -3420,6 +3632,8 @@ fn parse_nurbs_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecEr
         }
     }
     let knots = parse_knots(cursor, knot_count, degree, "B-spline")?;
+    let (knots, padding) = normalize_periodic_knots(knots, degree as u32, periodic)?;
+    append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
     Ok(NurbsCurve {
         degree: degree as u32,
         knots,
@@ -3556,6 +3770,46 @@ impl<'a> TokenCursor<'a> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn expands_occt_periodic_knots_and_cyclic_surface_poles() {
+        let surface = NurbsSurface {
+            u_degree: 3,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 6,
+            v_count: 2,
+            control_points: (0..6)
+                .flat_map(|u| {
+                    [
+                        Point3::new(f64::from(u), 0.0, 0.0),
+                        Point3::new(f64::from(u), 1.0, 0.0),
+                    ]
+                })
+                .collect(),
+            weights: None,
+            u_periodic: true,
+            v_periodic: false,
+        };
+
+        let normalized = normalize_periodic_surface(surface).expect("periodic surface");
+        assert_eq!(normalized.u_count, 7);
+        assert_eq!(
+            normalized.u_knots,
+            [-0.5, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.5]
+        );
+        assert_eq!(normalized.control_points.len(), 14);
+        assert_eq!(normalized.control_points[12], normalized.control_points[0]);
+        assert_eq!(normalized.control_points[13], normalized.control_points[1]);
+        let start = cadmpeg_ir::eval::nurbs_surface_point(&normalized, 0.0, 0.5)
+            .expect("periodic start point");
+        let end = cadmpeg_ir::eval::nurbs_surface_point(&normalized, 1.0, 0.5)
+            .expect("periodic end point");
+        assert!((start.x - end.x).abs() <= 1.0e-12);
+        assert!((start.y - end.y).abs() <= 1.0e-12);
+        assert!((start.z - end.z).abs() <= 1.0e-12);
+    }
+
     fn text_brep(curves: &str, curve_count: usize, surfaces: &str, surface_count: usize) -> String {
         format!(
             "CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves {curve_count}\n{curves}\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces {surface_count}\n{surfaces}\nTriangulations 0\nTShapes 0\n*"
@@ -3577,6 +3831,53 @@ mod tests {
         assert_eq!(record.secondary, Some(2));
         assert_eq!(record.continuity.as_deref(), Some("CN"));
         assert!(cursor.is_empty());
+    }
+
+    #[test]
+    fn retains_indirect_analytic_surface_parameter_frames() {
+        let tokens = [
+            "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "2", "0.5",
+        ];
+        let mut cursor = TokenCursor::new(&tokens);
+        let cone = parse_analytic_surface(3, &mut cursor).expect("indirect cone");
+        assert!(matches!(
+            cone,
+            TextSurface::Cone {
+                radius: 2.0,
+                half_angle: 0.5,
+                u_reversed: true,
+                ..
+            }
+        ));
+
+        let tokens = [
+            "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "2",
+        ];
+        let mut cursor = TokenCursor::new(&tokens);
+        let sphere = parse_analytic_surface(4, &mut cursor).expect("indirect sphere");
+        assert!(matches!(
+            sphere,
+            TextSurface::Sphere {
+                radius: 2.0,
+                u_reversed: true,
+                ..
+            }
+        ));
+
+        let tokens = [
+            "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "4", "1",
+        ];
+        let mut cursor = TokenCursor::new(&tokens);
+        let torus = parse_analytic_surface(5, &mut cursor).expect("indirect torus");
+        assert!(matches!(
+            torus,
+            TextSurface::Torus {
+                major_radius: 4.0,
+                minor_radius: 1.0,
+                u_reversed: true,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -3825,6 +4126,22 @@ mod tests {
         };
         assert_eq!(*parameter_range, [0.0, 314.0 / 50.0]);
         assert!(matches!(basis.as_ref(), TextCurve2d::Offset { .. }));
+    }
+
+    #[test]
+    fn expands_periodic_parameter_curve_knots_and_poles() {
+        let input = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 1\n7 1 1 6 6 2 0 0 1 1 0 1 1 1 1 0 1 1 -1 0 1 -1 -1 1 0 6 6.283185307179586 6\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
+        let facts = parse_text(input.as_bytes()).expect("periodic parameter curve");
+        let TextCurve2d::Nurbs(nurbs) = &facts.curve2ds[0] else {
+            panic!("expected periodic NURBS")
+        };
+
+        assert_eq!(nurbs.control_points.len(), 7);
+        assert_eq!(nurbs.weights.as_ref().map(Vec::len), Some(7));
+        assert_eq!(nurbs.knots.len(), 14);
+        assert_eq!(nurbs.control_points.first(), nurbs.control_points.last());
+        assert_eq!(nurbs.weights.as_ref().map(|weights| weights[0]), Some(1.0));
+        assert_eq!(nurbs.weights.as_ref().map(|weights| weights[6]), Some(1.0));
     }
 
     #[test]

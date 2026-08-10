@@ -1,31 +1,42 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP boundary-representation ownership and orientation decoding.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, DraftError, ModelDraft};
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::eval::{
+    model_surface_partials_by_id, model_surface_point_by_id, nurbs_curve_parameter_domain,
+    pcurve_tangent, pcurve_uv,
+};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, Pcurve, PcurveGeometry, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
 };
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::index::ModelIndex;
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Region, Sense, Shell,
     Vertex, VertexUse,
 };
+use cadmpeg_ir::transform::Transform2;
+use cadmpeg_ir::units::COINCIDENCE_TOLERANCE;
 
 use crate::parse::{Exchange, RawRecord, Value};
 
+use super::geometry::surface_parameter_periods;
 use super::index::CarrierIndex;
 
 pub(super) struct TopologyResult {
-    pub typed_records: BTreeSet<u64>,
+    pub typed_records: HashSet<u64>,
     pub warnings: Vec<String>,
     pub losses: Vec<LossNote>,
     pub body_by_root: BTreeMap<u64, Vec<BodyId>>,
+    shape_representation_relationships: BTreeMap<u64, Vec<u64>>,
     pub body_by_shell: BTreeMap<u64, BTreeSet<BodyId>>,
     pub faces_by_source: BTreeMap<u64, Vec<FaceId>>,
     pub edges_by_source: BTreeMap<u64, Vec<EdgeId>>,
@@ -41,20 +52,140 @@ fn topology_commit_error(context: &str, error: &DraftError) -> String {
     }
 }
 
-/// Returns the STEP representation families that produce a neutral topology body.
-pub(super) fn is_body_representation(record: &RawRecord) -> bool {
-    [
-        "SHELL_BASED_SURFACE_MODEL",
-        "FACE_BASED_SURFACE_MODEL",
-        "FACETED_BREP",
-        "MANIFOLD_SOLID_BREP",
-        "BREP_WITH_VOIDS",
-        "SHELL_BASED_WIREFRAME_MODEL",
-        "EDGE_BASED_WIREFRAME_MODEL",
-        "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION",
-    ]
-    .iter()
-    .any(|name| has_type(record, name))
+/// Resolve the bodies represented by a representation item graph.
+///
+/// A representation can contain a body root directly or contain mapped items
+/// whose representation map points at another representation.  Keep this
+/// traversal shared by topology classification and product placement so both
+/// consumers apply the same graph and cycle rules.
+pub(super) fn representation_bodies(
+    representation: u64,
+    exchange: &Exchange,
+    topology: &TopologyResult,
+    cache: &mut BTreeMap<u64, Vec<BodyId>>,
+    active: &mut BTreeSet<u64>,
+    depth: usize,
+) -> Vec<BodyId> {
+    if let Some(bodies) = cache.get(&representation) {
+        return bodies.clone();
+    }
+    if depth >= super::MAX_RECORD_GRAPH_DEPTH {
+        return Vec::new();
+    }
+    if let Some(bodies) = topology.body_by_root.get(&representation) {
+        let bodies = bodies.clone();
+        cache.insert(representation, bodies.clone());
+        return bodies;
+    }
+    if !active.insert(representation) {
+        return Vec::new();
+    }
+    let mut body_ids = BTreeSet::new();
+    if let Some(items) = exchange
+        .records
+        .get(&representation)
+        .and_then(representation_items)
+    {
+        for item in items {
+            let Some(record) = exchange.records.get(&item) else {
+                continue;
+            };
+            if let Some(bodies) = topology.body_by_root.get(&item) {
+                body_ids.extend(bodies.iter().cloned());
+                continue;
+            }
+            if !has_type(record, "MAPPED_ITEM") {
+                continue;
+            }
+            let Some(mapped_representation) = mapped_representation(record, exchange) else {
+                continue;
+            };
+            body_ids.extend(representation_bodies(
+                mapped_representation,
+                exchange,
+                topology,
+                cache,
+                active,
+                depth + 1,
+            ));
+        }
+    }
+    for related in topology
+        .shape_representation_relationships
+        .get(&representation)
+        .into_iter()
+        .flatten()
+        .copied()
+    {
+        body_ids.extend(representation_bodies(
+            related,
+            exchange,
+            topology,
+            cache,
+            active,
+            depth + 1,
+        ));
+    }
+    let bodies = body_ids.into_iter().collect::<Vec<_>>();
+    active.remove(&representation);
+    cache.insert(representation, bodies.clone());
+    bodies
+}
+
+/// A product shape can use a placement-only `SHAPE_REPRESENTATION` and link
+/// it to the body-producing representation with `SHAPE_REPRESENTATION_RELATIONSHIP`.
+/// The relationship is undirected for body reachability; retain both endpoints
+/// in one indexed graph so resolution does not rescan the exchange per call.
+fn shape_representation_relationships(exchange: &Exchange) -> BTreeMap<u64, Vec<u64>> {
+    let mut related = BTreeMap::<u64, Vec<u64>>::new();
+    for record in exchange.records.values() {
+        let Some(relationship) = record.partial("SHAPE_REPRESENTATION_RELATIONSHIP") else {
+            continue;
+        };
+        let mut references = relationship
+            .parameters
+            .iter()
+            .filter_map(ValueExt::reference);
+        let (first, second) = match (references.next(), references.next()) {
+            (Some(first), Some(second)) => (first, second),
+            _ => {
+                let Some(base) = record.partial("REPRESENTATION_RELATIONSHIP") else {
+                    continue;
+                };
+                let mut references = base.parameters.iter().filter_map(ValueExt::reference);
+                let Some(first) = references.next() else {
+                    continue;
+                };
+                let Some(second) = references.next() else {
+                    continue;
+                };
+                (first, second)
+            }
+        };
+        related.entry(first).or_default().push(second);
+        related.entry(second).or_default().push(first);
+    }
+    for representations in related.values_mut() {
+        representations.sort_unstable();
+        representations.dedup();
+    }
+    related
+}
+
+fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
+    named_refs(record, "REPRESENTATION", 1).or_else(|| {
+        record
+            .simple_name()
+            .and_then(|name| named_refs(record, name, 1))
+    })
+}
+
+fn mapped_representation(record: &RawRecord, exchange: &Exchange) -> Option<u64> {
+    let map = named_reference(record, "MAPPED_ITEM", 1, 0)?;
+    exchange
+        .records
+        .get(&map)
+        .and_then(|map| named_reference(map, "REPRESENTATION_MAP", 1, 1))
 }
 
 pub(super) fn decode(
@@ -64,10 +195,11 @@ pub(super) fn decode(
 ) -> TopologyResult {
     let mut commit_session = CommitSession::new(ir);
     let mut result = TopologyResult {
-        typed_records: BTreeSet::new(),
+        typed_records: HashSet::new(),
         warnings: Vec::new(),
         losses: Vec::new(),
         body_by_root: BTreeMap::new(),
+        shape_representation_relationships: shape_representation_relationships(exchange),
         body_by_shell: BTreeMap::new(),
         faces_by_source: BTreeMap::new(),
         edges_by_source: BTreeMap::new(),
@@ -119,7 +251,7 @@ pub(super) fn decode(
         .records
         .iter()
         .filter_map(|(&id, record)| {
-            record.parameter(1).and_then(refs).map(|items| {
+            representation_items(record).map(|items| {
                 items
                     .into_iter()
                     .filter(|model| {
@@ -167,7 +299,9 @@ pub(super) fn decode(
                     .entry(model)
                     .or_default()
                     .push(built.body_id.clone());
-                result.typed_records.append(&mut built.typed);
+                result
+                    .typed_records
+                    .extend(std::mem::take(&mut built.typed));
             }
         }
         if committed == 0 {
@@ -216,7 +350,9 @@ pub(super) fn decode(
                     .entry(model)
                     .or_default()
                     .push(built.body_id.clone());
-                result.typed_records.append(&mut built.typed);
+                result
+                    .typed_records
+                    .extend(std::mem::take(&mut built.typed));
             }
         }
         if committed == 0 {
@@ -236,14 +372,22 @@ pub(super) fn decode(
         .iter()
         .map(|pcurve| pcurve.id.clone())
         .collect::<BTreeSet<_>>();
-    let mut built_roots = BTreeMap::<RootKey, RootBuilt>::new();
-    for (id, record) in exchange.entities_any(&[
+    let topology_root_types = [
         "SHELL_BASED_SURFACE_MODEL",
         "FACE_BASED_SURFACE_MODEL",
         "FACETED_BREP",
         "MANIFOLD_SOLID_BREP",
         "BREP_WITH_VOIDS",
-    ]) {
+    ];
+    let distinct_root_count = exchange
+        .entities_any(&topology_root_types)
+        .filter_map(|(_, record)| root_key(record, exchange, &shells))
+        .collect::<BTreeSet<_>>()
+        .len();
+    let scope_distinct_roots = distinct_root_count > 1;
+    let mut built_roots = BTreeMap::<RootKey, RootBuilt>::new();
+    let mut representation_cache = BTreeMap::new();
+    for (id, record) in exchange.entities_any(&topology_root_types) {
         let Some(key) = root_key(record, exchange, &shells) else {
             result.warnings.push(format!(
                 "STEP topology root #{id} does not resolve to a complete connected topology graph",
@@ -262,14 +406,17 @@ pub(super) fn decode(
             }
             continue;
         }
-        let scope_root = key
-            .shell_keys
-            .iter()
-            .any(|(shell, _)| result.body_by_shell.contains_key(shell));
+        // A STEP file can define independent topology roots that reuse a
+        // global edge or vertex without reusing the shell record. CADIR
+        // identities are global, so every distinct root receives an owner
+        // scope when more than one root is present. This preserves each root
+        // without making the result depend on source record order.
+        let scope_root = scope_distinct_roots;
         let outcome = build(
             id,
             record,
             exchange,
+            ir,
             &vertices,
             &edges,
             &oriented,
@@ -284,7 +431,7 @@ pub(super) fn decode(
         let mut body_ids = Vec::new();
         let mut body_by_shell = BTreeMap::<u64, BTreeSet<BodyId>>::new();
         for mut built in outcome.built {
-            drop_committed_surfaces(&mut built.draft, &commit_session);
+            drop_committed_surfaces(&mut built.draft, &commit_session, ir);
             if let Err(error) = commit_session.commit_model(built.draft, ir) {
                 result.warnings.push(topology_commit_error(
                     &format!("STEP topology root #{id}"),
@@ -303,7 +450,9 @@ pub(super) fn decode(
                         .insert(built.body_id.clone());
                 }
                 body_ids.push(built.body_id.clone());
-                result.typed_records.append(&mut built.typed);
+                result
+                    .typed_records
+                    .extend(std::mem::take(&mut built.typed));
             }
         }
         if body_ids.is_empty() {
@@ -380,7 +529,9 @@ pub(super) fn decode(
             ));
         } else {
             result.body_by_root.insert(id, vec![built.body_id.clone()]);
-            result.typed_records.append(&mut built.typed);
+            result
+                .typed_records
+                .extend(std::mem::take(&mut built.typed));
         }
     }
     for (id, record) in exchange.entities_any(&[
@@ -388,21 +539,21 @@ pub(super) fn decode(
         "ADVANCED_BREP_SHAPE_REPRESENTATION",
         "GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION",
     ]) {
-        if !matches!(
-            record.simple_name(),
-            Some(
-                "SHAPE_REPRESENTATION"
-                    | "ADVANCED_BREP_SHAPE_REPRESENTATION"
-                    | "GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION"
-            )
-        ) {
+        let Some(representation_type) = most_specific(
+            record,
+            &[
+                "ADVANCED_BREP_SHAPE_REPRESENTATION",
+                "GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION",
+                "SHAPE_REPRESENTATION",
+            ],
+        ) else {
             continue;
-        }
+        };
         let omitted = geometric_set_omissions(record, exchange, carrier_index);
         if !omitted.is_empty() {
             result.warnings.push(format!(
                 "{} #{id} omitted unsupported or unresolved member(s): {}",
-                record.simple_name().unwrap_or("representation"),
+                representation_type,
                 omitted
                     .iter()
                     .map(|member| format!("#{member}"))
@@ -420,24 +571,33 @@ pub(super) fn decode(
     }
     for (id, record) in exchange.entities_any(&[
         "MANIFOLD_SURFACE_SHAPE_REPRESENTATION",
+        "ADVANCED_BREP_REPRESENTATION",
         "ADVANCED_BREP_SHAPE_REPRESENTATION",
         "SHAPE_REPRESENTATION",
     ]) {
-        if !matches!(
-            record.simple_name(),
-            Some(
-                "MANIFOLD_SURFACE_SHAPE_REPRESENTATION"
-                    | "ADVANCED_BREP_SHAPE_REPRESENTATION"
-                    | "SHAPE_REPRESENTATION"
-            )
-        ) {
+        if most_specific(
+            record,
+            &[
+                "MANIFOLD_SURFACE_SHAPE_REPRESENTATION",
+                "ADVANCED_BREP_REPRESENTATION",
+                "ADVANCED_BREP_SHAPE_REPRESENTATION",
+                "SHAPE_REPRESENTATION",
+            ],
+        )
+        .is_none()
+        {
             continue;
         }
-        if record.parameter(1).and_then(refs).is_some_and(|items| {
-            items
-                .iter()
-                .any(|item| result.body_by_root.contains_key(item))
-        }) {
+        let has_body = !representation_bodies(
+            id,
+            exchange,
+            &result,
+            &mut representation_cache,
+            &mut BTreeSet::new(),
+            0,
+        )
+        .is_empty();
+        if has_body {
             result.typed_records.insert(id);
         }
     }
@@ -482,14 +642,17 @@ fn geometric_set_omissions(
     exchange: &Exchange,
     carrier_index: &CarrierIndex,
 ) -> Vec<u64> {
-    let Some(set_ids) = representation.parameter(1).and_then(refs) else {
+    let Some(set_ids) = representation_items(representation) else {
         return Vec::new();
     };
     set_ids
         .into_iter()
         .filter_map(|set_id| exchange.records.get(&set_id))
-        .filter(|set| has_type(set, "GEOMETRIC_SET") || has_type(set, "GEOMETRIC_CURVE_SET"))
-        .flat_map(|set| set.parameter(1).and_then(refs).unwrap_or_default())
+        .filter_map(|set| {
+            let set_type = most_specific(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"])?;
+            Some(named_refs(set, set_type, 1).unwrap_or_default())
+        })
+        .flatten()
         .filter(|member| {
             !carrier_index.points.contains_key(member)
                 && !carrier_index.curves.contains_key(member)
@@ -613,7 +776,7 @@ fn build_wire_set(
     } else {
         String::new()
     };
-    let mut typed = BTreeSet::from([id, set_id]);
+    let mut typed = HashSet::from([id, set_id]);
     if set_type == "CONNECTED_EDGE_SUB_SET"
         && !validate_subset_parent(set, set_type, exchange, warnings)
     {
@@ -761,7 +924,7 @@ fn build_shell_wire_set(
     warnings: &mut Vec<String>,
 ) -> Option<Built> {
     let shell_record = exchange.records.get(&shell_id)?;
-    let mut typed = BTreeSet::from([id, shell_id]);
+    let mut typed = HashSet::from([id, shell_id]);
     let mut edge_uses = Vec::new();
     let mut used_vertices = BTreeSet::new();
     let mut free_vertices = BTreeSet::new();
@@ -897,9 +1060,9 @@ fn mark_standalone_geometric_set(
     representation: &RawRecord,
     exchange: &Exchange,
     carrier_index: &CarrierIndex,
-    typed: &mut BTreeSet<u64>,
+    typed: &mut HashSet<u64>,
 ) -> bool {
-    let Some(set_ids) = representation.parameter(1).and_then(refs) else {
+    let Some(set_ids) = representation_items(representation) else {
         return false;
     };
     let mut decoded = false;
@@ -907,13 +1070,10 @@ fn mark_standalone_geometric_set(
         let Some(set) = exchange.records.get(&set_id) else {
             continue;
         };
-        if !matches!(
-            set.simple_name(),
-            Some("GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET")
-        ) {
+        let Some(set_type) = most_specific(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
             continue;
-        }
-        let Some(items) = set.parameter(1).and_then(refs) else {
+        };
+        let Some(items) = named_refs(set, set_type, 1) else {
             continue;
         };
         let has_decoded_member = items.into_iter().any(|item| {
@@ -939,8 +1099,8 @@ fn build_geometric_set(
     carrier_index: &CarrierIndex,
     warnings: &mut Vec<String>,
 ) -> Option<Built> {
-    let set_ids = refs(representation.parameter(1)?)?;
-    let mut typed = BTreeSet::from([id]);
+    let set_ids = representation_items(representation)?;
+    let mut typed = HashSet::from([id]);
     let mut surfaces = Vec::new();
     for set_id in set_ids {
         let Some(set) = exchange.records.get(&set_id) else {
@@ -1039,6 +1199,7 @@ struct OrientedDef {
     edge: u64,
     forward: bool,
     pcurve: Option<u64>,
+    seam_edge: bool,
 }
 
 fn vertex_defs(exchange: &Exchange) -> BTreeMap<u64, VertexDef> {
@@ -1211,6 +1372,7 @@ fn oriented_defs(exchange: &Exchange) -> BTreeMap<u64, OrientedDef> {
                 OrientedDef {
                     edge: oriented_edge_reference(r)?,
                     forward: oriented_edge_forward(r)?,
+                    seam_edge: most_specific(r, &["SEAM_EDGE"]).is_some(),
                     pcurve: r
                         .partials
                         .iter()
@@ -1388,32 +1550,34 @@ fn edge_same_sense(record: &RawRecord) -> Option<bool> {
 }
 
 struct Built {
-    typed: BTreeSet<u64>,
+    typed: HashSet<u64>,
     draft: ModelDraft,
     body_id: BodyId,
     shell_sources: BTreeSet<u64>,
 }
 
-fn drop_committed_surfaces(draft: &mut ModelDraft, session: &CommitSession) {
+fn drop_committed_surfaces(draft: &mut ModelDraft, session: &CommitSession, ir: &CadIr) {
     // Implicit surfaces can be staged by multiple roots. The session is the
     // authority on which ones a prior root committed; a pre-loop snapshot is
     // wrong because commits add surfaces while the loop is running.
     draft
         .model_mut()
         .surfaces
-        .retain(|surface| !session.contains(surface.id.as_str()));
+        .retain(|surface| !session.contains(ir, surface.id.as_str()));
 }
 
 #[cfg(test)]
 mod tests {
-    use super::drop_committed_surfaces;
+    use super::*;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::draft::{CommitSession, ModelDraft};
-    use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
-    use cadmpeg_ir::ids::SurfaceId;
-    use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::topology::Vertex;
+    use cadmpeg_ir::geometry::{NurbsSurface, Pcurve, PcurveGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::ids::{BodyId, CoedgeId, PcurveId, RegionId, SurfaceId};
+    use cadmpeg_ir::index::ModelIndex;
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::topology::{Body, BodyKind, Region, Vertex};
     use cadmpeg_ir::units::Units;
+    use std::collections::HashSet;
 
     fn surface_draft(id: &str) -> ModelDraft {
         let mut draft = ModelDraft::new();
@@ -1442,7 +1606,7 @@ mod tests {
             .commit_model(surface_draft(committed_id), &mut ir)
             .expect("first root commit");
         let mut second_root = surface_draft(committed_id);
-        drop_committed_surfaces(&mut second_root, &session);
+        drop_committed_surfaces(&mut second_root, &session, &ir);
         assert!(second_root.model().surfaces.is_empty());
 
         let mut rejected_root = surface_draft(rejected_id);
@@ -1456,8 +1620,211 @@ mod tests {
         assert!(session.commit_model(rejected_root, &mut ir).is_err());
 
         let mut later_root = surface_draft(rejected_id);
-        drop_committed_surfaces(&mut later_root, &session);
+        drop_committed_surfaces(&mut later_root, &session, &ir);
         assert_eq!(later_root.model().surfaces.len(), 1);
+    }
+
+    #[test]
+    fn pcurve_fit_keeps_exact_points_at_a_degenerate_surface_boundary() {
+        let surface_id = SurfaceId("step:data:surface#boundary".into());
+        let surface_geometry = SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        });
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: surface_geometry.clone(),
+            source_object: None,
+        });
+        let index = ModelIndex::new(&ir);
+        let pcurve = PcurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+        };
+
+        let fit = pcurve_endpoint_fit(
+            &index,
+            &surface_id,
+            &pcurve,
+            &surface_geometry,
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+        )
+        .expect("surface points should be evaluable at the boundary");
+
+        assert_eq!(fit.start_parameter, 0.0);
+        assert_eq!(fit.end_parameter, 1.0);
+        assert!(fit.score <= f64::EPSILON);
+    }
+
+    #[test]
+    fn synthesized_pcurve_chart_rejects_a_collapsed_bowed_axis() {
+        let bowed = PcurveGeometry::Nurbs {
+            degree: 2,
+            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            control_points: vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 1.0),
+                Point2::new(0.0, 2.0),
+            ],
+            weights: None,
+            periodic: false,
+        };
+
+        assert!(endpoint_parameter_transform(
+            &bowed,
+            [Point2::new(0.0, 0.0), Point2::new(0.0, 2.0)],
+            [[1.0, 0.0], [1.0, 2.0]],
+            [false, false],
+        )
+        .is_none());
+
+        let isoparametric = PcurveGeometry::Trimmed {
+            basis: Box::new(PcurveGeometry::Line {
+                origin: Point2::new(0.0, 0.0),
+                direction: Point2::new(0.0, 1.0),
+            }),
+            parameter_range: [0.0, 1.0],
+            same_sense: true,
+        };
+        assert!(endpoint_parameter_transform(
+            &isoparametric,
+            [Point2::new(0.0, 0.0), Point2::new(0.0, 1.0)],
+            [[3.0, 4.0], [3.0, 5.0]],
+            [false, false],
+        )
+        .is_some());
+    }
+
+    #[test]
+    fn selected_pcurve_variants_are_use_scoped() {
+        let source_id = PcurveId("step:data:pcurve#shared".into());
+        let source_geometry = PcurveGeometry::Line {
+            origin: Point2::new(0.0, 0.0),
+            direction: Point2::new(1.0, 0.0),
+        };
+        let selected_geometry = PcurveGeometry::Line {
+            origin: Point2::new(4.0, 0.0),
+            direction: Point2::new(1.0, 0.0),
+        };
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.pcurves.push(Pcurve {
+            id: source_id.clone(),
+            geometry: source_geometry.clone(),
+            wrapper_reversed: None,
+            native_tail_flags: None,
+            parameter_range: None,
+            fit_tolerance: None,
+        });
+        let selected = SelectedPcurve {
+            id: source_id.clone(),
+            geometry: selected_geometry.clone(),
+            parameter_range: Some([0.0, 1.0]),
+        };
+
+        let (first, first_variant) =
+            materialize_pcurve_variant(&ir, &selected, &CoedgeId("step:data:coedge#first".into()));
+        let (second, second_variant) =
+            materialize_pcurve_variant(&ir, &selected, &CoedgeId("step:data:coedge#second".into()));
+
+        assert_ne!(first, source_id);
+        assert_ne!(second, source_id);
+        assert_ne!(first, second);
+        assert_eq!(ir.model.pcurves[0].geometry, source_geometry);
+        assert_eq!(
+            first_variant.expect("first pcurve variant").geometry,
+            selected_geometry
+        );
+        assert_eq!(
+            second_variant.expect("second pcurve variant").geometry,
+            selected_geometry
+        );
+    }
+
+    #[test]
+    fn periodic_surface_line_seeds_cover_both_parameter_axes() {
+        let surface_id = SurfaceId("step:data:surface#periodic-seeds".into());
+        let surface_geometry = SurfaceGeometry::Torus {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 2.0,
+            minor_radius: 1.0,
+        };
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: surface_geometry.clone(),
+            source_object: None,
+        });
+        let index = ModelIndex::new(&ir);
+
+        for direction in [Point2::new(1.0, 0.0), Point2::new(0.0, 1.0)] {
+            let geometry = PcurveGeometry::Line {
+                origin: Point2::new(0.0, 0.0),
+                direction,
+            };
+            let seeds = pcurve_selection_seeds(&index, &surface_id, &geometry, &surface_geometry);
+            assert!(seeds
+                .iter()
+                .any(|seed| { (*seed - std::f64::consts::PI).abs() <= 1.0e-12 }));
+        }
+    }
+
+    #[test]
+    fn shared_surface_carrier_is_staged_once() {
+        let surface = Surface {
+            id: SurfaceId("step:data:surface#shared".into()),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        };
+        let body_id = BodyId("step:data:body#shared-surface".into());
+        let region_id = RegionId("step:data:region#shared-surface".into());
+        let built = super::staged_topology(
+            HashSet::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            vec![surface.clone(), surface],
+            Vec::new(),
+            Region {
+                id: region_id.clone(),
+                body: body_id.clone(),
+                shells: Vec::new(),
+            },
+            Body {
+                id: body_id,
+                kind: BodyKind::Sheet,
+                regions: vec![region_id],
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+        )
+        .expect("duplicate references to one source surface must stage");
+
+        assert_eq!(built.draft.model().surfaces.len(), 1);
     }
 }
 
@@ -1466,7 +1833,7 @@ mod tests {
     reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
 )]
 fn staged_topology(
-    typed: BTreeSet<u64>,
+    typed: HashSet<u64>,
     vertices: Vec<Vertex>,
     edges: Vec<Edge>,
     coedges: Vec<Coedge>,
@@ -1493,8 +1860,11 @@ fn staged_topology(
     for face in faces {
         draft.insert(face).ok()?;
     }
+    let mut surface_ids = BTreeSet::new();
     for surface in surfaces {
-        draft.insert(surface).ok()?;
+        if surface_ids.insert(surface.id.0.clone()) {
+            draft.insert(surface).ok()?;
+        }
     }
     for shell in shells {
         draft.insert(shell).ok()?;
@@ -1512,6 +1882,7 @@ fn staged_topology(
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct RootKey {
+    root_kind: &'static str,
     shell_keys: Vec<(u64, Option<bool>)>,
 }
 
@@ -1557,6 +1928,16 @@ fn root_key(
     exchange: &Exchange,
     shell_definitions: &BTreeMap<u64, ShellDef>,
 ) -> Option<RootKey> {
+    let root_kind = most_specific(
+        root,
+        &[
+            "BREP_WITH_VOIDS",
+            "FACETED_BREP",
+            "MANIFOLD_SOLID_BREP",
+            "FACE_BASED_SURFACE_MODEL",
+            "SHELL_BASED_SURFACE_MODEL",
+        ],
+    )?;
     let mut shell_keys = Vec::new();
     let mut resolved = 0;
     for shell in root_shell_steps(root, exchange)? {
@@ -1577,7 +1958,10 @@ fn root_key(
         return None;
     }
     shell_keys.sort_unstable();
-    Some(RootKey { shell_keys })
+    Some(RootKey {
+        root_kind,
+        shell_keys,
+    })
 }
 
 #[allow(
@@ -1588,6 +1972,7 @@ fn build(
     id: u64,
     root: &RawRecord,
     exchange: &Exchange,
+    ir: &mut CadIr,
     vdefs: &BTreeMap<u64, VertexDef>,
     edefs: &BTreeMap<u64, EdgeDef>,
     odefs: &BTreeMap<u64, OrientedDef>,
@@ -1615,10 +2000,12 @@ fn build(
         let body = BodyId(format!("step:data:body#{id}"));
         let region = RegionId(format!("step:data:region#{id}"));
         let mut failure = None;
+        let scope_shell_carriers = shell_steps.len() > 1 || scope_root;
         let built = build_one(
             id,
             root,
             exchange,
+            ir,
             vdefs,
             edefs,
             odefs,
@@ -1628,8 +2015,8 @@ fn build(
             &shell_steps,
             body,
             &region,
-            shell_steps.len() > 1 || scope_root,
-            scope_root,
+            scope_shell_carriers,
+            scope_shell_carriers,
             scope_root,
             warnings,
             losses,
@@ -1680,6 +2067,7 @@ fn build(
             id,
             root,
             exchange,
+            ir,
             vdefs,
             edefs,
             odefs,
@@ -1716,6 +2104,7 @@ fn build_one(
     id: u64,
     root: &RawRecord,
     exchange: &Exchange,
+    ir: &mut CadIr,
     vdefs: &BTreeMap<u64, VertexDef>,
     edefs: &BTreeMap<u64, EdgeDef>,
     odefs: &BTreeMap<u64, OrientedDef>,
@@ -1735,13 +2124,14 @@ fn build_one(
     let solid = has_type(root, "MANIFOLD_SOLID_BREP")
         || has_type(root, "BREP_WITH_VOIDS")
         || has_type(root, "FACETED_BREP");
-    let mut typed = BTreeSet::from([id]);
+    let mut typed = HashSet::from([id]);
     let mut vertices = Vec::new();
     let mut edges = Vec::new();
     let mut coedges = Vec::new();
     let mut loops = Vec::new();
     let mut faces = Vec::new();
     let mut surfaces = Vec::new();
+    let mut pcurve_variants = Vec::new();
     let mut shells = Vec::new();
     let mut region = Region {
         id: rid.clone(),
@@ -1790,7 +2180,7 @@ fn build_one(
             shell_step,
             "shell record",
         )?;
-        let face_steps = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
+        let (shell_type, face_steps) = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
             let set_type = require_carrier(
                 connected_face_set_type(sr),
                 failure,
@@ -1802,12 +2192,13 @@ fn build_one(
             {
                 typed.remove(&shell_step);
             }
-            require_carrier(
+            let members = require_carrier(
                 connected_set_members(sr, set_type),
                 failure,
                 shell_step,
                 "connected face set member list",
-            )?
+            )?;
+            (set_type, members)
         } else {
             let shell_type = require_carrier(
                 most_specific(sr, &["OPEN_SHELL", "CLOSED_SHELL"]),
@@ -1815,12 +2206,13 @@ fn build_one(
                 shell_step,
                 "shell type",
             )?;
-            require_carrier(
+            let members = require_carrier(
                 named_refs(sr, shell_type, 1),
                 failure,
                 shell_step,
                 "shell face list",
-            )?
+            )?;
+            (shell_type, members)
         };
         if face_steps.is_empty() {
             note_failure(failure, shell_step, "shell face list");
@@ -1888,7 +2280,18 @@ fn build_one(
             let surface_step = face_info.surface;
             let face_same_sense = face_info.same_sense;
             let fid = FaceId(format!("step:data:face#{face_step}{face_suffix}"));
+            let name = face_info.name.as_ref().and_then(|value| {
+                super::decode_text(
+                    exchange,
+                    value,
+                    losses,
+                    face_step,
+                    "face name",
+                    LossKind::MetadataNotTransferred,
+                )
+            });
             let mut loop_ids = vec![];
+            let mut outer_bound_count = 0;
             for bound_step in face_info.bounds {
                 let br = require_carrier(
                     exchange.records.get(&bound_step),
@@ -1900,11 +2303,14 @@ fn build_one(
                     note_failure(failure, bound_step, "face bound carrier");
                     return None;
                 }
-                let bound_type = if has_type(br, "FACE_BOUND") {
-                    "FACE_BOUND"
-                } else {
-                    "FACE_OUTER_BOUND"
+                let is_outer_bound = has_type(br, "FACE_OUTER_BOUND");
+                let Some(bound_type) = face_bound_attribute_type(br) else {
+                    note_failure(failure, bound_step, "face bound attributes");
+                    return None;
                 };
+                if is_outer_bound {
+                    outer_bound_count += 1;
+                }
                 let loop_step = require_carrier(
                     named_reference(br, bound_type, 1, 0),
                     failure,
@@ -1937,8 +2343,10 @@ fn build_one(
                     loops.push(Loop {
                         id: lid.clone(),
                         face: fid.clone(),
-                        boundary_role: if has_type(br, "FACE_OUTER_BOUND") {
+                        boundary_role: if is_outer_bound && outer_bound_count == 1 {
                             LoopBoundaryRole::Outer
+                        } else if is_outer_bound {
+                            LoopBoundaryRole::Unspecified
                         } else {
                             LoopBoundaryRole::Inner
                         },
@@ -1955,17 +2363,12 @@ fn build_one(
                             pcurves: Vec::new(),
                         }],
                     });
-                    loop_ids.push((has_type(br, "FACE_OUTER_BOUND"), lid));
+                    loop_ids.push((is_outer_bound && outer_bound_count == 1, lid));
                     used_v.insert((shell_step, vertex_step));
                     typed.extend([bound_step, loop_step]);
                     continue;
                 }
                 if has_type(lr, "POLY_LOOP") {
-                    let bound_type = if has_type(br, "FACE_BOUND") {
-                        "FACE_BOUND"
-                    } else {
-                        "FACE_OUTER_BOUND"
-                    };
                     let bound_forward = require_carrier(
                         named_logical(br, bound_type, 2, 0),
                         failure,
@@ -2048,15 +2451,17 @@ fn build_one(
                     loops.push(Loop {
                         id: lid.clone(),
                         face: fid.clone(),
-                        boundary_role: if has_type(br, "FACE_OUTER_BOUND") {
+                        boundary_role: if is_outer_bound && outer_bound_count == 1 {
                             LoopBoundaryRole::Outer
+                        } else if is_outer_bound {
+                            LoopBoundaryRole::Unspecified
                         } else {
                             LoopBoundaryRole::Inner
                         },
                         coedges: coedge_ids,
                         vertex_uses: Vec::new(),
                     });
-                    loop_ids.push((has_type(br, "FACE_OUTER_BOUND"), lid));
+                    loop_ids.push((is_outer_bound && outer_bound_count == 1, lid));
                     typed.insert(bound_step);
                     continue;
                 }
@@ -2064,11 +2469,6 @@ fn build_one(
                     note_failure(failure, loop_step, "edge loop carrier");
                     return None;
                 }
-                let bound_type = if has_type(br, "FACE_BOUND") {
-                    "FACE_BOUND"
-                } else {
-                    "FACE_OUTER_BOUND"
-                };
                 let bound_forward = require_carrier(
                     named_logical(br, bound_type, 2, 0),
                     failure,
@@ -2103,20 +2503,42 @@ fn build_one(
                     )?;
                     let edge =
                         require_carrier(edefs.get(&o.edge), failure, o.edge, "edge definition")?;
-                    let explicit_pcurve = surface_step.and_then(|surface_step| {
-                        o.pcurve.and_then(|pcurve_step| {
+                    let cid = CoedgeId(format!(
+                        "step:data:coedge#{use_step}-face-{face_step}{face_suffix}"
+                    ));
+                    let pcurves: Vec<(PcurveId, Option<[f64; 2]>)> = if o.seam_edge {
+                        let explicit_pcurve = surface_step.and_then(|surface_step| {
+                            let pcurve_step = o.pcurve?;
                             let pcurve = exchange.records.get(&pcurve_step)?;
+                            let pcurve_id = PcurveId(format!("step:data:pcurve#{pcurve_step}"));
+                            let edge_curve = edge.curve?;
+                            let associated = associated_pcurves(
+                                edge_curve,
+                                surface_step,
+                                exchange,
+                                decoded_pcurves,
+                            );
                             (has_type(pcurve, "PCURVE")
                                 && entity_parameter(pcurve, "PCURVE", 1)?.reference()?
                                     == surface_step
-                                && decoded_pcurves
-                                    .contains(&PcurveId(format!("step:data:pcurve#{pcurve_step}"))))
-                            .then_some(PcurveId(format!("step:data:pcurve#{pcurve_step}")))
-                        })
-                    });
-                    let associated = explicit_pcurve.into_iter().collect::<Vec<_>>();
-                    let associated = if associated.is_empty() {
-                        match (surface_step, edge.curve) {
+                                && associated.contains(&pcurve_id))
+                            .then_some(pcurve_id)
+                        });
+                        if let Some(pcurve) = explicit_pcurve {
+                            vec![(pcurve, None)]
+                        } else {
+                            losses.push(LossNote {
+                                code: LossKind::ReferenceGraphNotClosed,
+                                severity: Severity::Warning,
+                                message: format!(
+                                    "SEAM_EDGE #{use_step} has no decoded pcurve reference that belongs to its edge curve and face surface; the coedge has no pcurve"
+                                ),
+                                provenance: None,
+                            });
+                            Vec::new()
+                        }
+                    } else {
+                        let associated = match (surface_step, edge.curve) {
                             (Some(surface_step), Some(curve)) => {
                                 associated_pcurves(curve, surface_step, exchange, decoded_pcurves)
                             }
@@ -2132,33 +2554,67 @@ fn build_one(
                                 });
                                 Vec::new()
                             }
+                        };
+                        match associated.as_slice() {
+                            [] => associated
+                                .into_iter()
+                                .map(|pcurve| (pcurve, None))
+                                .collect(),
+                            candidates => {
+                                let selected = surface_step.and_then(|surface| {
+                                    select_associated_pcurve(
+                                        ir,
+                                        surface,
+                                        edge,
+                                        vdefs,
+                                        point_positions,
+                                        candidates,
+                                    )
+                                });
+                                if let Some(selected) = selected {
+                                    let (pcurve, variant) =
+                                        materialize_pcurve_variant(ir, &selected, &cid);
+                                    if let Some(variant) = variant {
+                                        pcurve_variants.push(variant);
+                                    }
+                                    vec![(pcurve, selected.parameter_range)]
+                                } else {
+                                    let n = candidates.len();
+                                    let (code, severity, message) =
+                                        match (edge.curve, surface_step, n) {
+                                            (Some(curve), Some(surface), 1) => (
+                                                LossKind::PcurveOmitted,
+                                                Severity::Error,
+                                                format!(
+                                                    "curve #{curve} has one optional pcurve on surface #{surface} whose mapped endpoints are not continuous with the edge vertices; the pcurve is omitted"
+                                                ),
+                                            ),
+                                            (Some(curve), Some(surface), _) => (
+                                                LossKind::ReferenceGraphNotClosed,
+                                                Severity::Warning,
+                                                format!(
+                                                    "curve #{curve} associates {n} pcurves with surface #{surface}; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
+                                                ),
+                                            ),
+                                            _ => (
+                                                LossKind::ReferenceGraphNotClosed,
+                                                Severity::Warning,
+                                                format!(
+                                                    "coedge use #{use_step} has {n} pcurve candidates but its source surface or curve carrier is unresolved; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
+                                                ),
+                                            ),
+                                        };
+                                    losses.push(LossNote {
+                                        code,
+                                        severity,
+                                        message,
+                                        provenance: None,
+                                    });
+                                    Vec::new()
+                                }
+                            }
                         }
-                    } else {
-                        associated
                     };
-                    let pcurves = match associated.len() {
-                        0 | 1 => associated,
-                        n => {
-                            let message = match (edge.curve, surface_step) {
-                                (Some(curve), Some(surface)) => format!(
-                                    "curve #{curve} associates {n} pcurves with surface #{surface}; no UV-continuity rule selects one, so the coedge has no pcurve"
-                                ),
-                                _ => format!(
-                                    "coedge use #{use_step} has {n} pcurve candidates but its source surface or curve carrier is unresolved; no UV-continuity rule selects one, so the coedge has no pcurve"
-                                ),
-                            };
-                            losses.push(LossNote {
-                                code: LossKind::ReferenceGraphNotClosed,
-                                severity: Severity::Warning,
-                                message,
-                                provenance: None,
-                            });
-                            Vec::new()
-                        }
-                    };
-                    let cid = CoedgeId(format!(
-                        "step:data:coedge#{use_step}-face-{face_step}{face_suffix}"
-                    ));
                     coedge_ids.push(cid.clone());
                     coedges.push(Coedge {
                         id: cid,
@@ -2174,10 +2630,10 @@ fn build_one(
                         },
                         pcurves: pcurves
                             .into_iter()
-                            .map(|pcurve| PcurveUse {
+                            .map(|(pcurve, parameter_range)| PcurveUse {
                                 pcurve,
                                 isoparametric: None,
-                                parameter_range: None,
+                                parameter_range,
                             })
                             .collect(),
                         use_curve: None,
@@ -2209,27 +2665,33 @@ fn build_one(
                 loops.push(Loop {
                     id: lid.clone(),
                     face: fid.clone(),
-                    boundary_role: if has_type(br, "FACE_OUTER_BOUND") {
+                    boundary_role: if is_outer_bound && outer_bound_count == 1 {
                         LoopBoundaryRole::Outer
+                    } else if is_outer_bound {
+                        LoopBoundaryRole::Unspecified
                     } else {
                         LoopBoundaryRole::Inner
                     },
                     coedges: coedge_ids,
                     vertex_uses: Vec::new(),
                 });
-                loop_ids.push((has_type(br, "FACE_OUTER_BOUND"), lid));
+                loop_ids.push((is_outer_bound && outer_bound_count == 1, lid));
                 typed.extend([bound_step, loop_step]);
             }
-            let outer_count = loop_ids.iter().filter(|(outer, _)| *outer).count();
-            if outer_count > 1 {
-                losses.push(LossNote {
-                    code: LossKind::TopologyGaugeSubstituted,
-                    severity: Severity::Warning,
-                    message: format!(
-                        "face #{face_step} has {outer_count} FACE_OUTER_BOUND loops; retaining all explicit outer roles"
+            if outer_bound_count > 1 {
+                let note = LossNote::new(
+                    LossKind::SourceTopologyInvalid,
+                    format!(
+                        "face #{face_step} violates the STEP face-bound rule with {outer_bound_count} FACE_OUTER_BOUND loops; retaining the first outer role and marking the remaining {} roles unspecified",
+                        outer_bound_count - 1
                     ),
-                    provenance: None,
-                });
+                );
+                losses.push(note.with_provenance(cadmpeg_ir::LossProvenance {
+                    format: "step".into(),
+                    stream: String::new(),
+                    offset: fr.span.start as u64,
+                    tag: Some("face".into()),
+                }));
             }
             loop_ids.sort_by_key(|(outer, _)| !outer);
             let loop_ids = loop_ids.into_iter().map(|(_, id)| id).collect();
@@ -2244,21 +2706,94 @@ fn build_one(
                     Sense::Reversed
                 },
                 loops: loop_ids,
-                name: None,
+                name,
                 color: None,
                 tolerance: None,
             });
             face_ids.push(fid);
             typed.insert(face_step);
         }
-        shells.push(Shell {
-            id: sid.clone(),
-            region: rid.clone(),
-            faces: face_ids,
-            wire_edges: vec![],
-            free_vertices: vec![],
-        });
-        region.shells.push(sid);
+        let mut component_edge_vertices = BTreeMap::new();
+        for (used_shell, edge_id) in &used_e {
+            if *used_shell != shell_step {
+                continue;
+            }
+            let Some(edge) = edefs.get(edge_id) else {
+                continue;
+            };
+            let (start, end) = if edge.same {
+                (edge.start, edge.end)
+            } else {
+                (edge.end, edge.start)
+            };
+            component_edge_vertices.insert(
+                scoped_edge_id(*edge_id, id, shell_step, scope_edges, scope_root).0,
+                (
+                    scoped_vertex_id(start, id, shell_step, scope_edges, scope_root).0,
+                    scoped_vertex_id(end, id, shell_step, scope_edges, scope_root).0,
+                ),
+            );
+        }
+        for ((used_shell, edge_id), (start, end)) in &poly_edges {
+            if *used_shell != shell_step {
+                continue;
+            }
+            component_edge_vertices.insert(
+                edge_id.0.clone(),
+                (
+                    scoped_poly_vertex_id(*start, id, shell_step, scope_edges, scope_root).0,
+                    scoped_poly_vertex_id(*end, id, shell_step, scope_edges, scope_root).0,
+                ),
+            );
+        }
+        let components =
+            connected_face_components(&face_ids, &loops, &coedges, &component_edge_vertices);
+        if components.len() > 1 {
+            let note = LossNote::new(
+                LossKind::SourceTopologyInvalid,
+                format!(
+                    "source {shell_type} #{shell_step} contains {} disconnected face components across {} faces",
+                    components.len(),
+                    face_ids.len(),
+                ),
+            );
+            losses.push(note.with_provenance(cadmpeg_ir::LossProvenance {
+                format: "step".into(),
+                stream: String::new(),
+                offset: sr.span.start as u64,
+                tag: Some(shell_type.to_ascii_lowercase()),
+            }));
+        }
+        for (component_index, component) in components.into_iter().enumerate() {
+            if has_type(root, "BREP_WITH_VOIDS")
+                && shell_steps.first().copied() == Some(shell_reference)
+                && component_index > 0
+            {
+                note_failure(failure, shell_step, "connected outer shell");
+                return None;
+            }
+            let component_shell = if component_index == 0 {
+                sid.clone()
+            } else {
+                ShellId(format!("{}-component-{component_index}", sid.0))
+            };
+            let component_faces = component
+                .into_iter()
+                .map(|face_index| {
+                    let face_id = face_ids[face_index].clone();
+                    faces[face_index].shell = component_shell.clone();
+                    face_id
+                })
+                .collect();
+            shells.push(Shell {
+                id: component_shell.clone(),
+                region: rid.clone(),
+                faces: component_faces,
+                wire_edges: vec![],
+                free_vertices: vec![],
+            });
+            region.shells.push(component_shell);
+        }
         typed.insert(shell_step);
     }
     for (shell_step, edge_id) in used_e {
@@ -2379,6 +2914,9 @@ fn build_one(
         id,
         "topology draft",
     )?;
+    for pcurve in pcurve_variants {
+        built.draft.insert(pcurve).ok()?;
+    }
     for &shell_reference in shell_steps {
         let shell_step = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
             shell_reference
@@ -2396,6 +2934,89 @@ fn build_one(
         built.shell_sources.insert(shell_step);
     }
     Some(built)
+}
+
+/// Partition a source shell into connected IR shells before committing it.
+///
+/// STEP shell records can contain several disconnected face components. The
+/// IR shell invariant is stricter: every face must be reachable through a
+/// shared edge or vertex. Keep the source body and region, but split only the
+/// shell boundary so every decoded face remains available without weakening
+/// validation.
+fn connected_face_components(
+    face_ids: &[FaceId],
+    loops: &[Loop],
+    coedges: &[Coedge],
+    edge_vertices: &BTreeMap<String, (String, String)>,
+) -> Vec<Vec<usize>> {
+    let face_indices = face_ids
+        .iter()
+        .enumerate()
+        .map(|(index, face)| (face.0.clone(), index))
+        .collect::<BTreeMap<_, _>>();
+    let coedge_edges = coedges
+        .iter()
+        .map(|coedge| (coedge.id.0.clone(), coedge.edge.0.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let mut faces_by_edge = BTreeMap::<String, BTreeSet<usize>>::new();
+    let mut faces_by_vertex = BTreeMap::<String, BTreeSet<usize>>::new();
+    for loop_ in loops {
+        let Some(&face_index) = face_indices.get(&loop_.face.0) else {
+            continue;
+        };
+        for coedge_id in &loop_.coedges {
+            let Some(edge_id) = coedge_edges.get(&coedge_id.0) else {
+                continue;
+            };
+            faces_by_edge
+                .entry(edge_id.clone())
+                .or_default()
+                .insert(face_index);
+            if let Some((start, end)) = edge_vertices.get(edge_id) {
+                faces_by_vertex
+                    .entry(start.clone())
+                    .or_default()
+                    .insert(face_index);
+                faces_by_vertex
+                    .entry(end.clone())
+                    .or_default()
+                    .insert(face_index);
+            }
+        }
+        for vertex_use in &loop_.vertex_uses {
+            faces_by_vertex
+                .entry(vertex_use.vertex.0.clone())
+                .or_default()
+                .insert(face_index);
+        }
+    }
+
+    let mut neighbors = vec![BTreeSet::new(); face_ids.len()];
+    for group in faces_by_edge.values().chain(faces_by_vertex.values()) {
+        for &face in group {
+            neighbors[face].extend(group.iter().copied().filter(|other| *other != face));
+        }
+    }
+    let mut reached = BTreeSet::new();
+    let mut components = Vec::new();
+    for start in 0..face_ids.len() {
+        if !reached.insert(start) {
+            continue;
+        }
+        let mut component = Vec::new();
+        let mut pending = vec![start];
+        while let Some(face) = pending.pop() {
+            component.push(face);
+            for &neighbor in &neighbors[face] {
+                if reached.insert(neighbor) {
+                    pending.push(neighbor);
+                }
+            }
+        }
+        component.sort_unstable();
+        components.push(component);
+    }
+    components
 }
 
 fn shell_identity(root_id: u64, shell_step: u64, scope_root: bool) -> ShellId {
@@ -2498,61 +3119,68 @@ fn implicit_face_points(
     edefs: &BTreeMap<u64, EdgeDef>,
     odefs: &BTreeMap<u64, OrientedDef>,
     point_positions: &CarrierIndex,
-) -> Vec<Point3> {
-    let mut points = Vec::new();
-    for &bound_step in bounds {
-        let Some(bound) = exchange.records.get(&bound_step) else {
-            continue;
-        };
-        let Some(loop_step) = named_reference(
-            bound,
-            if has_type(bound, "FACE_OUTER_BOUND") {
-                "FACE_OUTER_BOUND"
-            } else {
-                "FACE_BOUND"
-            },
-            1,
-            0,
-        ) else {
-            continue;
-        };
-        let Some(loop_record) = exchange.records.get(&loop_step) else {
-            continue;
-        };
-        let candidates = if has_type(loop_record, "POLY_LOOP") {
-            named_refs(loop_record, "POLY_LOOP", 1)
-                .unwrap_or_default()
-                .into_iter()
-                .collect::<Vec<_>>()
-        } else if has_type(loop_record, "VERTEX_LOOP") {
-            named_reference(loop_record, "VERTEX_LOOP", 1, 0)
-                .into_iter()
-                .collect::<Vec<_>>()
+) -> Option<Vec<Point3>> {
+    let outer = bounds.iter().copied().find(|bound_step| {
+        exchange
+            .records
+            .get(bound_step)
+            .is_some_and(|bound| has_type(bound, "FACE_OUTER_BOUND"))
+    });
+    let candidates = outer.map_or_else(|| bounds.to_vec(), |bound| vec![bound]);
+
+    candidates.into_iter().find_map(|bound_step| {
+        let bound = exchange.records.get(&bound_step)?;
+        let bound_type = face_bound_attribute_type(bound)?;
+        let loop_step = named_reference(bound, bound_type, 1, 0)?;
+        let loop_record = exchange.records.get(&loop_step)?;
+        let bound_forward = named_logical(bound, bound_type, 2, 0)?;
+        let mut point_steps = if has_type(loop_record, "POLY_LOOP") {
+            named_refs(loop_record, "POLY_LOOP", 1)?
         } else if has_type(loop_record, "EDGE_LOOP") {
-            named_refs(loop_record, "EDGE_LOOP", 1)
-                .unwrap_or_default()
-                .into_iter()
-                .filter_map(|oriented_step| odefs.get(&oriented_step))
-                .filter_map(|oriented| edefs.get(&oriented.edge))
-                .flat_map(|edge| [edge.start, edge.end])
-                .collect::<Vec<_>>()
+            let oriented_steps = named_refs(loop_record, "EDGE_LOOP", 1)?;
+            let mut directed_edges = Vec::with_capacity(oriented_steps.len());
+            for oriented_step in oriented_steps {
+                let oriented = odefs.get(&oriented_step)?;
+                let edge = edefs.get(&oriented.edge)?;
+                let directed = if oriented.forward {
+                    (edge.start, edge.end)
+                } else {
+                    (edge.end, edge.start)
+                };
+                directed_edges.push(directed);
+            }
+            if !bound_forward {
+                directed_edges.reverse();
+                for (start, end) in &mut directed_edges {
+                    std::mem::swap(start, end);
+                }
+            }
+            directed_edges.into_iter().map(|(start, _)| start).collect()
         } else {
-            Vec::new()
+            return None;
         };
-        for vertex_or_point in candidates {
+        if !bound_forward && has_type(loop_record, "POLY_LOOP") {
+            point_steps.reverse();
+        }
+        let mut points = Vec::with_capacity(point_steps.len());
+        for point_step in point_steps {
             let point_step = vdefs
-                .get(&vertex_or_point)
-                .map_or(vertex_or_point, |vertex| vertex.point);
-            let Some(point) = point_positions.get(point_step).copied() else {
-                continue;
-            };
-            if !points.contains(&point) {
+                .get(&point_step)
+                .map_or(point_step, |vertex| vertex.point);
+            let point = point_positions.get(point_step).copied()?;
+            if points.last().is_none_or(|previous| *previous != point) {
                 points.push(point);
             }
         }
-    }
-    points
+        if points.len() > 1 && points.first() == points.last() {
+            points.pop();
+        }
+        (points.len() >= 3).then_some(points)
+    })
 }
+
+const IMPLICIT_FACE_AREA_RELATIVE_TOLERANCE: f64 = 1.0e-12;
+const IMPLICIT_FACE_PLANAR_RELATIVE_TOLERANCE: f64 = 1.0e-12;
 
 fn implicit_face_plane(
     bounds: &[u64],
@@ -2562,25 +3190,67 @@ fn implicit_face_plane(
     odefs: &BTreeMap<u64, OrientedDef>,
     point_positions: &CarrierIndex,
 ) -> Option<SurfaceGeometry> {
-    let points = implicit_face_points(bounds, exchange, vdefs, edefs, odefs, point_positions);
-    let origin = *points.first()?;
-    for (index, &point) in points.iter().enumerate().skip(1) {
-        let u = point.vector_from(origin);
-        for &other in points.iter().skip(index + 1) {
-            let v = other.vector_from(origin);
-            let Some(u_axis) = u.unit() else {
-                continue;
-            };
-            if let Some(normal) = u.cross(v).unit() {
-                return Some(SurfaceGeometry::Plane {
-                    origin,
-                    normal,
-                    u_axis,
-                });
-            }
+    let points = implicit_face_points(bounds, exchange, vdefs, edefs, odefs, point_positions)?;
+    let point_count = points.len() as f64;
+    let origin = Point3::new(
+        points.iter().map(|point| point.x).sum::<f64>() / point_count,
+        points.iter().map(|point| point.y).sum::<f64>() / point_count,
+        points.iter().map(|point| point.z).sum::<f64>() / point_count,
+    );
+    let relative_points = points
+        .iter()
+        .map(|point| point.vector_from(origin))
+        .collect::<Vec<_>>();
+    let scale = relative_points
+        .iter()
+        .map(Vector3::norm)
+        .fold(0.0, f64::max);
+    if !scale.is_finite() || scale <= f64::EPSILON {
+        return None;
+    }
+    let mut area_normal = Vector3::new(0.0, 0.0, 0.0);
+    for (current, next) in relative_points
+        .iter()
+        .zip(relative_points.iter().cycle().skip(1))
+        .take(relative_points.len())
+    {
+        area_normal = area_normal + current.cross(*next);
+    }
+    let area = area_normal.norm();
+    if !area.is_finite() || area <= IMPLICIT_FACE_AREA_RELATIVE_TOLERANCE * scale * scale {
+        return None;
+    }
+    let normal = area_normal.unit()?;
+    let planarity_tolerance =
+        COINCIDENCE_TOLERANCE.max(IMPLICIT_FACE_PLANAR_RELATIVE_TOLERANCE * scale);
+    if relative_points
+        .iter()
+        .map(|point| point.dot(normal).abs())
+        .fold(0.0, f64::max)
+        > planarity_tolerance
+    {
+        return None;
+    }
+    let mut u_axis = None;
+    let mut u_axis_norm = 0.0;
+    for axis in [
+        Vector3::new(1.0, 0.0, 0.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+    ] {
+        let projected = axis - normal.scale(axis.dot(normal));
+        let norm = projected.norm();
+        if norm > u_axis_norm {
+            u_axis_norm = norm;
+            u_axis = projected.unit();
         }
     }
-    None
+    let u_axis = u_axis?;
+    Some(SurfaceGeometry::Plane {
+        origin,
+        normal,
+        u_axis,
+    })
 }
 
 fn curve_carrier_step(curve_step: u64, exchange: &Exchange) -> Option<u64> {
@@ -2630,11 +3300,974 @@ fn associated_pcurves(
         .collect()
 }
 
+/// Select one same-surface pcurve when its mapped carrier has a unique
+/// endpoint-continuous fit to the oriented edge. Multiple pcurves are common
+/// on seam and intersection curves; list order is not a geometric rule.
+/// Distinct candidates that tie remain unresolved, while candidates that map
+/// to the same model-space locus are equivalent carriers and may be reduced
+/// to one deterministic identity.
+struct SelectedPcurve {
+    id: PcurveId,
+    geometry: PcurveGeometry,
+    parameter_range: Option<[f64; 2]>,
+}
+
+const PCURVE_VARIANT_MARKER: &str = "-use-";
+
+#[derive(Clone)]
+struct PcurveCandidateFit {
+    geometry: PcurveGeometry,
+    endpoint: PcurveEndpointFit,
+}
+
+fn pcurve_parameterization_variants(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    geometry: &PcurveGeometry,
+    start: Point3,
+    end: Point3,
+) -> Vec<PcurveGeometry> {
+    let calibrated = procedural_pcurve_calibration(index, surface_id, geometry, start, end);
+    let variants = std::iter::once(geometry.clone())
+        .chain(calibrated)
+        .collect::<Vec<_>>();
+    if variants.is_empty() {
+        vec![geometry.clone()]
+    } else {
+        variants
+    }
+}
+
+fn procedural_pcurve_calibration(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    geometry: &PcurveGeometry,
+    start: Point3,
+    end: Point3,
+) -> Vec<PcurveGeometry> {
+    // Some STEP producers parameterize a bounded edge locally even though
+    // the pcurve is attached to a surface with a different native chart.
+    // Keep the native and surface-chart candidates, then add endpoint-derived
+    // affine charts only when the native chart misses a model-space vertex.
+    let Some(procedural) = index
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.surface == *surface_id)
+    else {
+        return Vec::new();
+    };
+    let preserved_axes = match procedural.definition {
+        ProceduralSurfaceDefinition::AxisRevolution { .. } => [true, false],
+        ProceduralSurfaceDefinition::Extrusion { .. }
+        | ProceduralSurfaceDefinition::LinearSweep { .. } => [false, false],
+        _ => return Vec::new(),
+    };
+    let Some([lower, upper]) = pcurve_selection_parameter_domain(geometry) else {
+        return Vec::new();
+    };
+    let Some(first) = pcurve_uv(geometry, lower) else {
+        return Vec::new();
+    };
+    let Some(last) = pcurve_uv(geometry, upper) else {
+        return Vec::new();
+    };
+    let tolerance = COINCIDENCE_TOLERANCE.max(index.ir().tolerances.linear);
+    let endpoint_needs_calibration = |uv: Point2, target: Point3| {
+        let Some(point) = surface_selection_point(index, surface_id, uv.u, uv.v) else {
+            return true;
+        };
+        point.distance(target) > tolerance
+    };
+    if !endpoint_needs_calibration(first, start) && !endpoint_needs_calibration(last, end) {
+        return Vec::new();
+    }
+    let first_seed = surface_selection_parameters(index, surface_id, first.u, first.v);
+    let last_seed = surface_selection_parameters(index, surface_id, last.u, last.v);
+    let Some(first_target) = surface_point_closest(index, surface_id, start, first_seed) else {
+        return Vec::new();
+    };
+    let Some(last_target) = surface_point_closest(index, surface_id, end, last_seed) else {
+        return Vec::new();
+    };
+    if first_target.distance > tolerance || last_target.distance > tolerance {
+        return Vec::new();
+    }
+    [
+        [first_target.parameters, last_target.parameters],
+        [last_target.parameters, first_target.parameters],
+    ]
+    .into_iter()
+    .filter_map(|targets| {
+        let transform =
+            endpoint_parameter_transform(geometry, [first, last], targets, preserved_axes)?;
+        Some(PcurveGeometry::Transformed {
+            basis: Box::new(geometry.clone()),
+            transform,
+        })
+    })
+    .collect()
+}
+
+fn endpoint_parameter_transform(
+    geometry: &PcurveGeometry,
+    source: [Point2; 2],
+    destination: [[f64; 2]; 2],
+    preserved_axes: [bool; 2],
+) -> Option<Transform2> {
+    let source_bounds = pcurve_coordinate_bounds(geometry);
+    let mut rows = [[0.0, 0.0, 0.0]; 3];
+    for axis in 0..2 {
+        let source_start = [source[0].u, source[0].v][axis];
+        let source_end = [source[1].u, source[1].v][axis];
+        let destination_start = destination[0][axis];
+        let destination_end = destination[1][axis];
+        let source_span = source_end - source_start;
+        let destination_span = destination_end - destination_start;
+        let source_endpoint_tolerance = 1.0e-12 * (1.0 + source_start.abs().max(source_end.abs()));
+        let destination_tolerance =
+            1.0e-9 * (1.0 + destination_start.abs().max(destination_end.abs()));
+        let destination_collapses = destination_span.abs() <= destination_tolerance;
+        let source_is_constant = source_bounds.is_some_and(|bounds| {
+            let [lower, upper] = bounds[axis];
+            (upper - lower).abs() <= 1.0e-9 * (1.0 + lower.abs().max(upper.abs()))
+        });
+        let scale = if source_span.abs() > source_endpoint_tolerance {
+            if destination_collapses {
+                // A zero destination scale erases a varying source axis. The
+                // endpoint score cannot detect that loss because both ends
+                // still coincide.
+                return None;
+            }
+            destination_span / source_span
+        } else if destination_collapses && source_is_constant {
+            0.0
+        } else {
+            // A constant source endpoint pair cannot be stretched to two
+            // distinct destination values. A varying interior also makes a
+            // zero-scale map invalid, even when both endpoint pairs agree.
+            return None;
+        };
+        let offset = destination_start - scale * source_start;
+        if !scale.is_finite() || !offset.is_finite() {
+            return None;
+        }
+        if preserved_axes[axis]
+            && ((scale - 1.0).abs() > 1.0e-12
+                || offset.abs() > 1.0e-9 * (1.0 + source_start.abs().max(destination_start.abs())))
+        {
+            return None;
+        }
+        rows[axis][axis] = scale;
+        rows[axis][2] = offset;
+    }
+    rows[2] = [0.0, 0.0, 1.0];
+    Some(Transform2 { rows })
+}
+
+#[derive(Clone, Copy)]
+struct SurfacePointClosest {
+    parameters: [f64; 2],
+    distance: f64,
+}
+
+fn surface_point_closest(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    target: Point3,
+    seed: [f64; 2],
+) -> Option<SurfacePointClosest> {
+    // Invert the evaluated surface independently of the pcurve. This gives a
+    // stable target chart when the pcurve's declared endpoint is only an
+    // edge-local approximation of the surface endpoint.
+    let surface = index.surfaces(&surface_id.0)?;
+    let domains = surface_selection_parameter_domains(index, surface_id, &surface.geometry);
+    let u_seeds = surface_parameter_seeds(seed[0], domains[0]);
+    let v_seeds = surface_parameter_seeds(seed[1], domains[1]);
+    u_seeds
+        .into_iter()
+        .flat_map(|u| v_seeds.iter().copied().map(move |v| [u, v]))
+        .filter_map(|seed| {
+            surface_point_closest_from_seed(index, surface_id, target, domains, seed)
+        })
+        .min_by(|left, right| left.distance.total_cmp(&right.distance))
+}
+
+fn surface_parameter_seeds(seed: f64, domain: Option<[f64; 2]>) -> Vec<f64> {
+    let mut values = vec![seed];
+    if let Some([lower, upper]) = domain {
+        values.extend([lower, 0.5 * (lower + upper), upper]);
+    } else {
+        values.extend([0.0, -1.0, 1.0]);
+    }
+    values.retain(|value| value.is_finite());
+    values.dedup_by(|left, right| (*left - *right).abs() <= 1.0e-12);
+    values
+}
+
+fn surface_point_closest_from_seed(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    target: Point3,
+    domains: [Option<[f64; 2]>; 2],
+    seed: [f64; 2],
+) -> Option<SurfacePointClosest> {
+    // Solve the two-parameter least-squares step from the surface partials;
+    // line search and domain clamping keep singular or trimmed surfaces
+    // bounded without treating an extrapolated point as a valid hit.
+    let mut parameters = [
+        clamp_surface_parameter(seed[0], domains[0])?,
+        clamp_surface_parameter(seed[1], domains[1])?,
+    ];
+    let mut best = f64::INFINITY;
+    let mut best_parameters = parameters;
+    for _ in 0..32 {
+        let point = model_surface_point_by_id(index, surface_id, parameters[0], parameters[1])?;
+        let error = point.distance(target);
+        if !error.is_finite() {
+            return None;
+        }
+        if error < best {
+            best = error;
+            best_parameters = parameters;
+        }
+        let partials =
+            model_surface_partials_by_id(index, surface_id, parameters[0], parameters[1])?;
+        let du = partials.du;
+        let dv = partials.dv;
+        let residual = point.vector_from(target);
+        let uu = du.dot(du);
+        let uv = du.dot(dv);
+        let vv = dv.dot(dv);
+        let determinant = uu * vv - uv * uv;
+        if !determinant.is_finite() || determinant.abs() <= f64::EPSILON {
+            break;
+        }
+        let rhs_u = du.dot(residual);
+        let rhs_v = dv.dot(residual);
+        let step_u = (vv * rhs_u - uv * rhs_v) / determinant;
+        let step_v = (uu * rhs_v - uv * rhs_u) / determinant;
+        if !step_u.is_finite() || !step_v.is_finite() {
+            break;
+        }
+        let mut accepted = None;
+        let mut factor = 1.0;
+        for _ in 0..12 {
+            let candidate = [
+                clamp_surface_parameter(parameters[0] - factor * step_u, domains[0])?,
+                clamp_surface_parameter(parameters[1] - factor * step_v, domains[1])?,
+            ];
+            let candidate_point =
+                model_surface_point_by_id(index, surface_id, candidate[0], candidate[1])?;
+            let candidate_error = candidate_point.distance(target);
+            if candidate_error.is_finite() && candidate_error < error {
+                accepted = Some(candidate);
+                break;
+            }
+            factor *= 0.5;
+        }
+        let Some(candidate) = accepted else {
+            break;
+        };
+        if candidate == parameters {
+            break;
+        }
+        parameters = candidate;
+    }
+    best.is_finite().then_some(SurfacePointClosest {
+        parameters: best_parameters,
+        distance: best,
+    })
+}
+
+fn clamp_surface_parameter(value: f64, domain: Option<[f64; 2]>) -> Option<f64> {
+    if !value.is_finite() {
+        return None;
+    }
+    Some(domain.map_or(value, |[lower, upper]| value.clamp(lower, upper)))
+}
+
+fn pcurve_coordinate_bounds(geometry: &PcurveGeometry) -> Option<[[f64; 2]; 2]> {
+    const SAMPLE_COUNT: usize = 33;
+    let [lower, upper] = pcurve_selection_parameter_domain(geometry)?;
+    if !lower.is_finite() || !upper.is_finite() || lower >= upper {
+        return None;
+    }
+    let mut bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 2];
+    for sample in 0..SAMPLE_COUNT {
+        let fraction = sample as f64 / (SAMPLE_COUNT - 1) as f64;
+        let parameter = lower + (upper - lower) * fraction;
+        let point = pcurve_uv(geometry, parameter)?;
+        for (axis, value) in [point.u, point.v].into_iter().enumerate() {
+            if !value.is_finite() {
+                return None;
+            }
+            bounds[axis][0] = bounds[axis][0].min(value);
+            bounds[axis][1] = bounds[axis][1].max(value);
+        }
+    }
+    (bounds
+        .iter()
+        .all(|[lower, upper]| lower.is_finite() && upper.is_finite()))
+    .then_some(bounds)
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Pcurve selection keeps the edge, vertex, carrier, unit, and diagnostic inputs explicit."
+)]
+fn select_associated_pcurve(
+    ir: &mut CadIr,
+    surface_step: u64,
+    edge: &EdgeDef,
+    vdefs: &BTreeMap<u64, VertexDef>,
+    point_positions: &CarrierIndex,
+    candidates: &[PcurveId],
+) -> Option<SelectedPcurve> {
+    let surface_identity = format!("step:data:surface#{surface_step}");
+    let surface = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.0 == surface_identity)
+        .map(|surface| surface.geometry.clone())?;
+    let surface_id = SurfaceId(surface_identity);
+    let index = ModelIndex::new(ir);
+    let start = vdefs
+        .get(&edge.start)
+        .and_then(|vertex| point_positions.get(vertex.point))
+        .copied()?;
+    let end = vdefs
+        .get(&edge.end)
+        .and_then(|vertex| point_positions.get(vertex.point))
+        .copied()?;
+    let fits = candidates
+        .iter()
+        .map(|candidate| {
+            let pcurve = ir
+                .model
+                .pcurves
+                .iter()
+                .find(|pcurve| pcurve.id == *candidate)?;
+
+            let variants =
+                pcurve_parameterization_variants(&index, &surface_id, &pcurve.geometry, start, end);
+            variants
+                .into_iter()
+                .filter_map(|geometry| {
+                    let endpoint =
+                        pcurve_endpoint_fit(&index, &surface_id, &geometry, &surface, start, end);
+                    let endpoint = endpoint?;
+                    Some(PcurveCandidateFit { geometry, endpoint })
+                })
+                .min_by(|left, right| left.endpoint.score.total_cmp(&right.endpoint.score))
+        })
+        .collect::<Option<Vec<_>>>();
+    let fits = fits?;
+    let scores = fits
+        .iter()
+        .map(|fit| fit.endpoint.score)
+        .collect::<Vec<_>>();
+    let (best_index, &best) = scores
+        .iter()
+        .enumerate()
+        .min_by(|(_, left), (_, right)| left.total_cmp(right))?;
+    let bound = COINCIDENCE_TOLERANCE.max(ir.tolerances.linear);
+    if !best.is_finite() || !bound.is_finite() || best > bound {
+        return None;
+    }
+    let selected = |candidate_index: usize| {
+        let fit = &fits[candidate_index];
+        let parameter_range = pcurve_declared_parameter_range(&fit.geometry).and_then(|range| {
+            let declared = pcurve_declared_endpoint_fit(
+                &index,
+                &surface_id,
+                &fit.geometry,
+                range,
+                start,
+                end,
+            )?;
+            (declared.is_finite() && declared > bound)
+                .then_some([fit.endpoint.start_parameter, fit.endpoint.end_parameter])
+        });
+        Some(SelectedPcurve {
+            id: candidates[candidate_index].clone(),
+            geometry: fit.geometry.clone(),
+            parameter_range,
+        })
+    };
+    let tie_tolerance = 1.0e-9_f64.max(best * 1.0e-9);
+    let equally_good = scores
+        .iter()
+        .filter(|score| (**score - best).abs() <= tie_tolerance)
+        .count();
+    let equivalent_ties = scores
+        .iter()
+        .enumerate()
+        .filter(|(_, score)| (**score - best).abs() <= tie_tolerance)
+        .all(|(candidate_index, _)| {
+            if candidate_index == best_index {
+                return true;
+            }
+            pcurve_loci_equivalent(
+                &index,
+                &surface_id,
+                &fits[best_index].geometry,
+                [
+                    fits[best_index].endpoint.start_parameter,
+                    fits[best_index].endpoint.end_parameter,
+                ],
+                &fits[candidate_index].geometry,
+                [
+                    fits[candidate_index].endpoint.start_parameter,
+                    fits[candidate_index].endpoint.end_parameter,
+                ],
+                COINCIDENCE_TOLERANCE.max(ir.tolerances.linear),
+            )
+        });
+    let selected_index = if equally_good == 1 {
+        best_index
+    } else if equivalent_ties {
+        candidates
+            .iter()
+            .enumerate()
+            .find(|(candidate_index, _)| (scores[*candidate_index] - best).abs() <= tie_tolerance)
+            .map(|(candidate_index, _)| candidate_index)
+            .expect("tied candidate set is non-empty")
+    } else {
+        return None;
+    };
+    let selected = selected(selected_index)?;
+    drop(index);
+    Some(selected)
+}
+
+fn materialize_pcurve_variant(
+    ir: &CadIr,
+    selected: &SelectedPcurve,
+    coedge_id: &CoedgeId,
+) -> (PcurveId, Option<Pcurve>) {
+    let Some(source) = ir
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id == selected.id)
+        .cloned()
+    else {
+        return (selected.id.clone(), None);
+    };
+    if source.geometry == selected.geometry {
+        return (selected.id.clone(), None);
+    }
+
+    let use_key = coedge_id.0.replace([':', '#'], "-");
+    let id = PcurveId(format!("{}{PCURVE_VARIANT_MARKER}{use_key}", source.id.0));
+    let variant = Pcurve {
+        id: id.clone(),
+        geometry: selected.geometry.clone(),
+        wrapper_reversed: source.wrapper_reversed,
+        native_tail_flags: source.native_tail_flags,
+        parameter_range: source.parameter_range,
+        fit_tolerance: source.fit_tolerance,
+    };
+    (id, Some(variant))
+}
+
+#[derive(Clone, Copy)]
+struct PcurveEndpointFit {
+    start_parameter: f64,
+    end_parameter: f64,
+    score: f64,
+}
+
+fn pcurve_endpoint_fit(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    geometry: &PcurveGeometry,
+    surface: &SurfaceGeometry,
+    start: Point3,
+    end: Point3,
+) -> Option<PcurveEndpointFit> {
+    let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface);
+    let start = pcurve_surface_closest(index, surface_id, geometry, start, &seeds)?;
+    let end = pcurve_surface_closest(index, surface_id, geometry, end, &seeds)?;
+    Some(PcurveEndpointFit {
+        start_parameter: start.1,
+        end_parameter: end.1,
+        score: start.0.max(end.0),
+    })
+}
+
+fn pcurve_declared_parameter_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
+    match geometry {
+        PcurveGeometry::Trimmed {
+            parameter_range, ..
+        } => Some(*parameter_range),
+        PcurveGeometry::Offset { basis, .. } | PcurveGeometry::Transformed { basis, .. } => {
+            pcurve_declared_parameter_range(basis)
+        }
+        PcurveGeometry::Line { .. }
+        | PcurveGeometry::Circle { .. }
+        | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::Harmonic { .. }
+        | PcurveGeometry::Parabola { .. }
+        | PcurveGeometry::Hyperbola { .. }
+        | PcurveGeometry::Hyperbolic { .. }
+        | PcurveGeometry::PolarHarmonic { .. }
+        | PcurveGeometry::PolarNurbs { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. }
+        | PcurveGeometry::Nurbs { .. } => None,
+    }
+}
+
+fn surface_selection_parameters(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    u: f64,
+    v: f64,
+) -> [f64; 2] {
+    let domains = index
+        .surfaces(&surface_id.0)
+        .map_or([None, None], |surface| {
+            surface_selection_parameter_domains(index, surface_id, &surface.geometry)
+        });
+    [
+        clamp_selection_parameter(u, domains[0]),
+        clamp_selection_parameter(v, domains[1]),
+    ]
+}
+
+fn clamp_selection_parameter(value: f64, domain: Option<[f64; 2]>) -> f64 {
+    let Some([lower, upper]) = domain else {
+        return value;
+    };
+    let tolerance = 1.0e-12 * (1.0 + lower.abs().max(upper.abs()));
+    if value < lower && lower - value <= tolerance {
+        lower
+    } else if value > upper && value - upper <= tolerance {
+        upper
+    } else {
+        value
+    }
+}
+
+fn surface_selection_point(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    u: f64,
+    v: f64,
+) -> Option<Point3> {
+    let [u, v] = surface_selection_parameters(index, surface_id, u, v);
+    model_surface_point_by_id(index, surface_id, u, v)
+}
+
+fn pcurve_declared_endpoint_fit(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    geometry: &PcurveGeometry,
+    range: [f64; 2],
+    start: Point3,
+    end: Point3,
+) -> Option<f64> {
+    let first_uv = pcurve_uv(geometry, range[0])?;
+    let last_uv = pcurve_uv(geometry, range[1])?;
+    let first = surface_selection_point(index, surface_id, first_uv.u, first_uv.v)?;
+    let last = surface_selection_point(index, surface_id, last_uv.u, last_uv.v)?;
+    let forward = first.distance(start).max(last.distance(end));
+    let reversed = first.distance(end).max(last.distance(start));
+    Some(forward.min(reversed))
+}
+
+fn pcurve_surface_closest(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    geometry: &PcurveGeometry,
+    target: Point3,
+    seeds: &[f64],
+) -> Option<(f64, f64)> {
+    seeds
+        .iter()
+        .copied()
+        .filter_map(|seed| mapped_pcurve_closest(index, surface_id, geometry, target, seed))
+        .min_by(|left, right| left.0.total_cmp(&right.0))
+}
+
+/// Minimize the distance from one pcurve branch to a model-space endpoint.
+/// A pcurve and its 3D surface curve need not share parameter units, so this
+/// is an independent one-dimensional inverse rather than a parameter copy.
+fn mapped_pcurve_closest(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    geometry: &PcurveGeometry,
+    target: Point3,
+    seed: f64,
+) -> Option<(f64, f64)> {
+    if !seed.is_finite() {
+        return None;
+    }
+    let domain = pcurve_selection_parameter_domain(geometry);
+    let clamp_to_domain =
+        |parameter: f64| domain.map_or(parameter, |[lower, upper]| parameter.clamp(lower, upper));
+    let evaluate_point = |parameter: f64| {
+        let uv = pcurve_uv(geometry, parameter)?;
+        surface_selection_point(index, surface_id, uv.u, uv.v)
+    };
+    let evaluate_tangent = |parameter: f64| {
+        let uv = pcurve_uv(geometry, parameter)?;
+        let tangent_uv = pcurve_tangent(geometry, parameter)?;
+        let [u, v] = surface_selection_parameters(index, surface_id, uv.u, uv.v);
+        let partials = model_surface_partials_by_id(index, surface_id, u, v)?;
+        Some(Vector3::new(
+            partials.du.x * tangent_uv.u + partials.dv.x * tangent_uv.v,
+            partials.du.y * tangent_uv.u + partials.dv.y * tangent_uv.v,
+            partials.du.z * tangent_uv.u + partials.dv.z * tangent_uv.v,
+        ))
+    };
+
+    let mut parameter = clamp_to_domain(seed);
+    let mut best = f64::INFINITY;
+    let mut best_parameter = parameter;
+    for _ in 0..32 {
+        let point = evaluate_point(parameter)?;
+        let error = point.distance(target);
+        if !error.is_finite() {
+            return None;
+        }
+        if error < best {
+            best = error;
+            best_parameter = parameter;
+        }
+        let Some(tangent) = evaluate_tangent(parameter) else {
+            break;
+        };
+        let denominator = tangent.dot(tangent);
+        if !denominator.is_finite() || denominator <= f64::EPSILON {
+            break;
+        }
+        let residual = point.vector_from(target);
+        let step = residual.dot(tangent) / denominator;
+        if !step.is_finite() {
+            break;
+        }
+        let mut candidate = clamp_to_domain(parameter - step);
+        let Some(candidate_point) = evaluate_point(candidate) else {
+            break;
+        };
+        let mut candidate_error = candidate_point.distance(target);
+        for _ in 0..12 {
+            if candidate_error < error {
+                break;
+            }
+            candidate = clamp_to_domain(0.5 * (candidate + parameter));
+            let Some(candidate_point) = evaluate_point(candidate) else {
+                break;
+            };
+            candidate_error = candidate_point.distance(target);
+        }
+        if candidate == parameter || !candidate_error.is_finite() || candidate_error >= error {
+            break;
+        }
+        parameter = candidate;
+    }
+    best.is_finite().then_some((best, best_parameter))
+}
+
+fn pcurve_loci_equivalent(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    left: &PcurveGeometry,
+    left_parameters: [f64; 2],
+    right: &PcurveGeometry,
+    right_parameters: [f64; 2],
+    tolerance: f64,
+) -> bool {
+    if !tolerance.is_finite() || tolerance < 0.0 {
+        return false;
+    }
+    let left_points = pcurve_locus_samples(index, surface_id, left, left_parameters);
+    let right_points = pcurve_locus_samples(index, surface_id, right, right_parameters);
+    let (Some(left_points), Some(right_points)) = (left_points, right_points) else {
+        return false;
+    };
+    directed_sample_distance(&left_points, &right_points) <= tolerance
+        && directed_sample_distance(&right_points, &left_points) <= tolerance
+}
+
+fn pcurve_locus_samples(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    geometry: &PcurveGeometry,
+    parameters: [f64; 2],
+) -> Option<Vec<Point3>> {
+    const SAMPLE_COUNT: usize = 33;
+    (0..SAMPLE_COUNT)
+        .map(|sample| {
+            let fraction = sample as f64 / (SAMPLE_COUNT - 1) as f64;
+            let parameter = parameters[0] + (parameters[1] - parameters[0]) * fraction;
+            let uv = pcurve_uv(geometry, parameter)?;
+            surface_selection_point(index, surface_id, uv.u, uv.v)
+        })
+        .collect()
+}
+
+fn directed_sample_distance(from: &[Point3], to: &[Point3]) -> f64 {
+    from.iter()
+        .map(|point| {
+            to.iter()
+                .map(|candidate| point.distance(*candidate))
+                .fold(f64::INFINITY, f64::min)
+        })
+        .fold(0.0, f64::max)
+}
+
+fn pcurve_selection_seeds(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    geometry: &PcurveGeometry,
+    surface: &SurfaceGeometry,
+) -> Vec<f64> {
+    let mut seeds = vec![0.0];
+    if let Some([start, end]) = pcurve_selection_parameter_domain(geometry) {
+        seeds.extend([start, start + (end - start) * 0.5, end]);
+    }
+    if pcurve_has_angular_parameterization(geometry) {
+        seeds.extend([
+            std::f64::consts::FRAC_PI_2,
+            std::f64::consts::PI,
+            std::f64::consts::PI * 1.5,
+        ]);
+    }
+    if let Some((origin, direction)) = geometry.line_parameters() {
+        if let Some(period) = surface_parameter_periods(surface)[0] {
+            if direction.u != 0.0 {
+                for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                    seeds.push((period * fraction - origin.u) / direction.u);
+                }
+            }
+        }
+        if let Some(period) = surface_parameter_periods(surface)[1] {
+            if direction.v != 0.0 {
+                for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                    seeds.push((period * fraction - origin.v) / direction.v);
+                }
+            }
+        }
+        let [u_domain, v_domain] = surface_selection_parameter_domains(index, surface_id, surface);
+        if let Some([u_lower, u_upper]) = u_domain {
+            for boundary in [u_lower, (u_lower + u_upper) * 0.5, u_upper] {
+                if direction.u != 0.0 {
+                    seeds.push((boundary - origin.u) / direction.u);
+                }
+            }
+        }
+        if let Some([v_lower, v_upper]) = v_domain {
+            for boundary in [v_lower, (v_lower + v_upper) * 0.5, v_upper] {
+                if direction.v != 0.0 {
+                    seeds.push((boundary - origin.v) / direction.v);
+                }
+            }
+        }
+    }
+    seeds
+        .into_iter()
+        .filter(|seed| seed.is_finite())
+        .fold(Vec::new(), |mut unique, seed| {
+            if !unique.contains(&seed) {
+                unique.push(seed);
+            }
+            unique
+        })
+}
+
+fn pcurve_has_angular_parameterization(geometry: &PcurveGeometry) -> bool {
+    match geometry {
+        PcurveGeometry::Circle { .. }
+        | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::Harmonic { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. } => true,
+        PcurveGeometry::Offset { basis, .. }
+        | PcurveGeometry::Transformed { basis, .. }
+        | PcurveGeometry::Trimmed { basis, .. } => pcurve_has_angular_parameterization(basis),
+        PcurveGeometry::Line { .. }
+        | PcurveGeometry::PolarHarmonic { .. }
+        | PcurveGeometry::PolarNurbs { .. }
+        | PcurveGeometry::Nurbs { .. }
+        | PcurveGeometry::Parabola { .. }
+        | PcurveGeometry::Hyperbola { .. }
+        | PcurveGeometry::Hyperbolic { .. } => false,
+    }
+}
+
+fn pcurve_selection_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
+    match geometry {
+        PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            ..
+        } => selection_nurbs_parameter_domain(*degree, knots, control_points.len()),
+        PcurveGeometry::PolarNurbs {
+            degree,
+            knots,
+            radial_control_points,
+            ..
+        } => selection_nurbs_parameter_domain(*degree, knots, radial_control_points.len()),
+        PcurveGeometry::Trimmed {
+            parameter_range,
+            basis,
+            ..
+        } => {
+            if parameter_range[0] < parameter_range[1] {
+                Some(*parameter_range)
+            } else {
+                pcurve_selection_parameter_domain(basis)
+            }
+        }
+        PcurveGeometry::Offset { basis, .. } => pcurve_selection_parameter_domain(basis),
+        PcurveGeometry::Transformed { basis, .. } => pcurve_selection_parameter_domain(basis),
+        PcurveGeometry::Line { .. }
+        | PcurveGeometry::Circle { .. }
+        | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::PolarHarmonic { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. }
+        | PcurveGeometry::Harmonic { .. }
+        | PcurveGeometry::Parabola { .. }
+        | PcurveGeometry::Hyperbola { .. }
+        | PcurveGeometry::Hyperbolic { .. } => None,
+    }
+}
+
+fn surface_selection_parameter_domains(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    surface: &SurfaceGeometry,
+) -> [Option<[f64; 2]>; 2] {
+    let definition = index
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.surface == *surface_id)
+        .map(|procedural| &procedural.definition);
+    match definition {
+        Some(ProceduralSurfaceDefinition::Subset {
+            parameter_ranges, ..
+        }) => [
+            subset_parameter_domain(parameter_ranges[0]),
+            subset_parameter_domain(parameter_ranges[1]),
+        ],
+        Some(ProceduralSurfaceDefinition::AxisRevolution { directrix, .. }) => [
+            Some([0.0, std::f64::consts::TAU]),
+            curve_selection_parameter_domain(index, directrix),
+        ],
+        Some(
+            ProceduralSurfaceDefinition::Extrusion { directrix, .. }
+            | ProceduralSurfaceDefinition::LinearSweep { directrix, .. },
+        ) => [curve_selection_parameter_domain(index, directrix), None],
+        Some(ProceduralSurfaceDefinition::Replica { source, .. }) => index
+            .surfaces(&source.0)
+            .map_or([None, None], |source_surface| {
+                surface_selection_parameter_domains(index, source, &source_surface.geometry)
+            }),
+        _ => surface_selection_parameter_domains_from_geometry(surface),
+    }
+}
+
+fn surface_selection_parameter_domains_from_geometry(
+    surface: &SurfaceGeometry,
+) -> [Option<[f64; 2]>; 2] {
+    match surface {
+        SurfaceGeometry::Nurbs(surface) => {
+            let (Ok(u_count), Ok(v_count)) = (
+                usize::try_from(surface.u_count),
+                usize::try_from(surface.v_count),
+            ) else {
+                return [None, None];
+            };
+            [
+                selection_nurbs_parameter_domain(surface.u_degree, &surface.u_knots, u_count),
+                selection_nurbs_parameter_domain(surface.v_degree, &surface.v_knots, v_count),
+            ]
+        }
+        SurfaceGeometry::Transformed { basis, .. } => {
+            surface_selection_parameter_domains_from_geometry(basis)
+        }
+        SurfaceGeometry::Plane { .. }
+        | SurfaceGeometry::Cylinder { .. }
+        | SurfaceGeometry::Cone { .. }
+        | SurfaceGeometry::Sphere { .. }
+        | SurfaceGeometry::Torus { .. }
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Unknown { .. } => [None, None],
+    }
+}
+
+fn subset_parameter_domain(range: [f64; 2]) -> Option<[f64; 2]> {
+    let span = (range[1] - range[0]).abs();
+    (span.is_finite() && span > 0.0).then_some([0.0, span])
+}
+
+fn curve_selection_parameter_domain(
+    index: &ModelIndex<'_>,
+    curve_id: &CurveId,
+) -> Option<[f64; 2]> {
+    let curve = index.curves(&curve_id.0)?;
+    curve_selection_parameter_domain_from_geometry(&curve.geometry)
+}
+
+fn curve_selection_parameter_domain_from_geometry(geometry: &CurveGeometry) -> Option<[f64; 2]> {
+    match geometry {
+        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
+            Some([0.0, std::f64::consts::TAU])
+        }
+        CurveGeometry::Nurbs(curve) => nurbs_curve_parameter_domain(curve),
+        CurveGeometry::Polyline {
+            parameters: Some(parameters),
+            ..
+        } => {
+            let lower = *parameters.first()?;
+            let upper = *parameters.last()?;
+            (lower.is_finite() && upper.is_finite() && lower < upper).then_some([lower, upper])
+        }
+        CurveGeometry::Transformed { basis, .. } => {
+            curve_selection_parameter_domain_from_geometry(basis)
+        }
+        CurveGeometry::Line { .. }
+        | CurveGeometry::Parabola { .. }
+        | CurveGeometry::Hyperbola { .. }
+        | CurveGeometry::Degenerate { .. }
+        | CurveGeometry::Composite { .. }
+        | CurveGeometry::Procedural { .. }
+        | CurveGeometry::Polyline {
+            parameters: None, ..
+        }
+        | CurveGeometry::Unknown { .. } => None,
+    }
+}
+
+fn selection_nurbs_parameter_domain(
+    degree: u32,
+    knots: &[f64],
+    control_point_count: usize,
+) -> Option<[f64; 2]> {
+    let degree = usize::try_from(degree).ok()?;
+    if control_point_count <= degree
+        || knots.len() < control_point_count.checked_add(degree)?.checked_add(1)?
+    {
+        return None;
+    }
+    let start = *knots.get(degree)?;
+    let end = *knots.get(control_point_count)?;
+    (start.is_finite() && end.is_finite() && start < end).then_some([start, end])
+}
+
 #[derive(Clone)]
 struct ShellDef {
     base: u64,
     forward: bool,
-    typed: BTreeSet<u64>,
+    typed: HashSet<u64>,
 }
 
 fn shell_defs(exchange: &Exchange) -> BTreeMap<u64, ShellDef> {
@@ -2680,7 +4313,7 @@ fn shell_def_cached(
             "OPEN_SHELL" | "CLOSED_SHELL" => Some(ShellDef {
                 base: reference,
                 forward: true,
-                typed: BTreeSet::new(),
+                typed: HashSet::new(),
             }),
             "ORIENTED_OPEN_SHELL" | "ORIENTED_CLOSED_SHELL" => {
                 let shell_type =
@@ -2720,7 +4353,7 @@ fn shell_def_cached(
 fn shell_def_for(
     reference: u64,
     shells: &BTreeMap<u64, ShellDef>,
-    typed: &mut BTreeSet<u64>,
+    typed: &mut HashSet<u64>,
 ) -> Option<(u64, bool)> {
     let definition = shells.get(&reference)?;
     typed.extend(definition.typed.iter().copied());
@@ -2730,10 +4363,11 @@ fn shell_def_for(
 #[derive(Default)]
 struct FaceInfo {
     bounds: Vec<u64>,
+    name: Option<Value>,
     surface: Option<u64>,
     same_sense: bool,
     reverse_bound_orientation: bool,
-    typed: BTreeSet<u64>,
+    typed: HashSet<u64>,
 }
 
 fn is_face_record(record: &RawRecord) -> bool {
@@ -2770,6 +4404,9 @@ fn face_attributes(
                 base.reverse_bound_orientation = !base.reverse_bound_orientation;
             }
             base.same_sense = base.same_sense == orientation;
+            if let Some(name) = face_name_value(record) {
+                base.name = Some(name);
+            }
             base.typed.insert(face_element);
             Some(base)
         }
@@ -2779,8 +4416,12 @@ fn face_attributes(
                 face_attributes(exchange.records.get(&parent)?, exchange, active)?;
             let bounds = direct_face_bounds(record, exchange)?;
             parent_info.typed.insert(parent);
+            if let Some(name) = face_name_value(record) {
+                parent_info.name = Some(name);
+            }
             Some(FaceInfo {
                 bounds,
+                name: parent_info.name,
                 surface: parent_info.surface,
                 same_sense: parent_info.same_sense,
                 reverse_bound_orientation: parent_info.reverse_bound_orientation,
@@ -2791,10 +4432,11 @@ fn face_attributes(
             let bounds = direct_face_bounds(record, exchange)?;
             Some(FaceInfo {
                 bounds,
+                name: face_name_value(record),
                 surface: None,
                 same_sense: true,
                 reverse_bound_orientation: false,
-                typed: BTreeSet::new(),
+                typed: HashSet::new(),
             })
         }
         "ADVANCED_FACE" | "FACE_SURFACE" => {
@@ -2804,16 +4446,45 @@ fn face_attributes(
             let same_sense = direct_face_same_sense(record, governing)?;
             Some(FaceInfo {
                 bounds,
+                name: face_name_value(record),
                 surface: Some(surface),
                 same_sense,
                 reverse_bound_orientation: false,
-                typed: BTreeSet::new(),
+                typed: HashSet::new(),
             })
         }
         _ => None,
     })();
     active.remove(&record.id);
     result
+}
+
+fn face_name_value(record: &RawRecord) -> Option<Value> {
+    let value = if record.partials.len() == 1 {
+        record.parameter(0)
+    } else {
+        record
+            .partial("REPRESENTATION_ITEM")
+            .and_then(|partial| partial.parameters.first())
+            .or_else(|| {
+                [
+                    "ORIENTED_FACE",
+                    "SUBFACE",
+                    "ADVANCED_FACE",
+                    "FACE_SURFACE",
+                    "FACE",
+                ]
+                .into_iter()
+                .find_map(|name| {
+                    record
+                        .partial(name)
+                        .and_then(|partial| partial.parameters.first())
+                })
+            })
+    };
+    value
+        .filter(|value| !matches!(value, Value::String(bytes) if bytes.is_empty()))
+        .cloned()
 }
 
 fn direct_face_bounds(record: &RawRecord, exchange: &Exchange) -> Option<Vec<u64>> {
@@ -2919,6 +4590,32 @@ fn refs(value: &Value) -> Option<Vec<u64>> {
 
 fn has_type(record: &RawRecord, name: &str) -> bool {
     record.partials.iter().any(|partial| partial.name == name)
+}
+
+/// Selects the partial that carries inherited `FACE_BOUND` attributes.
+/// `FACE_OUTER_BOUND` adds the outer role but may be empty in a complex
+/// instance, so subtype classification and attribute lookup are separate.
+fn face_bound_attribute_type(record: &RawRecord) -> Option<&'static str> {
+    if record
+        .partial("FACE_OUTER_BOUND")
+        .is_some_and(|partial| partial.parameters.len() >= 3)
+    {
+        return Some("FACE_OUTER_BOUND");
+    }
+    if record
+        .partial("FACE_BOUND")
+        .is_some_and(|partial| partial.parameters.len() >= 3)
+    {
+        return Some("FACE_BOUND");
+    }
+    record
+        .partial("FACE_BOUND")
+        .map(|_| "FACE_BOUND")
+        .or_else(|| {
+            record
+                .partial("FACE_OUTER_BOUND")
+                .map(|_| "FACE_OUTER_BOUND")
+        })
 }
 
 /// Returns the first partial name present in a subtype-first dispatch chain.

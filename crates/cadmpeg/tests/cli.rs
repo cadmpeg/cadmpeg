@@ -638,7 +638,7 @@ fn garbage_reports_supported_formats() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains(
-            "supported: FCStd, f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP",
+            "supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP",
         ));
 }
 
@@ -789,9 +789,9 @@ fn rhino_point_archive_inspect_decode_and_validate_expose_geometry() {
 }
 
 #[test]
-fn rhino_v3_v4_decode_metadata_but_legacy_bands_are_header_only() {
+fn rhino_v1_to_v4_decode_metadata_but_legacy_v5_is_header_only() {
     let dir = tempdir().unwrap();
-    for version in ["3", "4"] {
+    for version in ["1", "2", "3", "4"] {
         let input = minimal_rhino_archive(dir.path(), &format!("empty-{version}.3dm"), version);
         let output = Command::cargo_bin("cadmpeg")
             .unwrap()
@@ -805,30 +805,26 @@ fn rhino_v3_v4_decode_metadata_but_legacy_bands_are_header_only() {
         assert_eq!(value["model"]["subds"], serde_json::json!([]));
     }
 
-    for version in ["1", "2", "5"] {
-        let input = dir.path().join(format!("header-{version}.3dm"));
-        fs::write(&input, rhino_header(version)).unwrap();
-        Command::cargo_bin("cadmpeg")
-            .unwrap()
-            .args(["inspect", input.to_str().unwrap()])
-            .assert()
-            .success()
-            .stdout(
-                predicate::str::contains("container: 3dm-chunks")
-                    .and(predicate::str::contains("entries: 0"))
-                    .and(predicate::str::contains(format!(
-                        "archive version {version}"
-                    ))),
-            );
-        Command::cargo_bin("cadmpeg")
-            .unwrap()
-            .args(["decode", input.to_str().unwrap()])
-            .assert()
-            .code(2)
-            .stderr(predicate::str::contains(format!(
-                "Rhino archive version {version} decode is not implemented"
-            )));
-    }
+    let input = dir.path().join("header-5.3dm");
+    fs::write(&input, rhino_header("5")).unwrap();
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["inspect", input.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("container: 3dm-chunks")
+                .and(predicate::str::contains("entries: 0"))
+                .and(predicate::str::contains("archive version 5")),
+        );
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["decode", input.to_str().unwrap()])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "Rhino archive version 5 decode is not implemented",
+        ));
 }
 
 #[test]
@@ -871,7 +867,7 @@ fn inspect_garbage_reports_rhino_among_supported_formats() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains(
-            "supported: FCStd, f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP",
+            "supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP",
         ));
 }
 

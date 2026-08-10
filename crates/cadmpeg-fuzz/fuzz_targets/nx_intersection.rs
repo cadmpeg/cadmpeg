@@ -8,5 +8,5 @@ use cadmpeg_codec_nx::intersection;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    let _ = intersection::curves(data);
+    let _ = intersection::curves(data, intersection::ChartPointLayout::Xyz3);
 });

@@ -12,6 +12,7 @@ use crate::mesh::MeshExpand;
 use crate::chunks::{chunk_at, ArchiveVersion, FramingError};
 use crate::curves::{DecodedCurve, DecodedGeometry, GeometryError};
 use crate::objects::parse_class_wrapper;
+use crate::objects::UserdataDescriptor;
 use crate::settings::{Plane, Point3, Vector3};
 use crate::wire::{ExactVec, Uuid};
 
@@ -19,6 +20,9 @@ pub(crate) const CLASS: Uuid = Uuid::from_canonical([
     0x05, 0x59, 0x73, 0x3b, 0x53, 0x32, 0x49, 0xd1, 0xa9, 0x36, 0x05, 0x32, 0xac, 0x76, 0xad, 0xe5,
 ]);
 const MAX_LOOPS: usize = 1 << 20;
+const V5_HATCH_EXTRA: Uuid = Uuid::from_canonical([
+    0x3f, 0xf7, 0x00, 0x7c, 0x3d, 0x04, 0x46, 0x3f, 0x84, 0xe3, 0x13, 0x2a, 0xce, 0xb9, 0x10, 0x62,
+]);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LoopKind {
@@ -248,6 +252,40 @@ pub(crate) fn decode(
     })
 }
 
+pub(crate) fn apply_userdata(
+    data: &[u8],
+    userdata: &[UserdataDescriptor],
+    scale: f64,
+    hatch: &mut Hatch,
+) -> Result<(), GeometryError> {
+    let Some(extra) = userdata
+        .iter()
+        .find(|value| value.class_uuid == V5_HATCH_EXTRA)
+    else {
+        return Ok(());
+    };
+    let mut reader = crate::chunks::BoundedReader::new(
+        data,
+        extra.payload_range.start,
+        extra.payload_range.end,
+    )?;
+    if reader.i32()? != 1 || reader.i32()? < 0 {
+        return Err(structural(
+            reader.position() - 8,
+            "unsupported V5 hatch-extra version",
+        ));
+    }
+    reader.take(16)?;
+    let basepoint = [
+        crate::wire::scaled_coordinate(reader.f64()?, scale)
+            .ok_or_else(|| structural(reader.position() - 8, "invalid V5 hatch base point"))?,
+        crate::wire::scaled_coordinate(reader.f64()?, scale)
+            .ok_or_else(|| structural(reader.position() - 8, "invalid V5 hatch base point"))?,
+    ];
+    hatch.basepoint = basepoint;
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -291,6 +329,36 @@ pub(crate) mod tests {
         payload.extend(3.0_f64.to_le_bytes());
         payload.extend(4.0_f64.to_le_bytes());
         payload
+    }
+
+    #[test]
+    fn v5_hatch_extra_supplies_scaled_base_point() {
+        let payload = version_two_hatch_payload();
+        crate::decode::with_expand_bytes(&payload, |expand| {
+            let mut hatch =
+                decode(expand, 0..payload.len(), 1.0, ArchiveVersion::V5).expect("hatch");
+            let mut extra = 1_i32.to_le_bytes().to_vec();
+            extra.extend(0_i32.to_le_bytes());
+            extra.extend([0; 16]);
+            extra.extend(2.0_f64.to_le_bytes());
+            extra.extend(3.0_f64.to_le_bytes());
+            let descriptor = UserdataDescriptor {
+                range: 0..extra.len(),
+                version: (2, 3),
+                class_uuid: V5_HATCH_EXTRA,
+                item_uuid: Uuid::nil(),
+                copy_count: 0,
+                transform_range: 0..0,
+                application_uuid: None,
+                last_saved_as_goo: None,
+                archive_version: None,
+                writer_version: None,
+                payload_range: 0..extra.len(),
+                unknown_version: false,
+            };
+            apply_userdata(&extra, &[descriptor], 10.0, &mut hatch).expect("hatch extra");
+            assert_eq!(hatch.basepoint, [20.0, 30.0]);
+        });
     }
 
     #[test]

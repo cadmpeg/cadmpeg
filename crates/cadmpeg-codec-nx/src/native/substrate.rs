@@ -136,14 +136,14 @@ impl StreamView {
     /// Parse every cached family from a single byte buffer with the plain
     /// intersection scan. This is the raw view (`stream.inflated`); it is also the
     /// semantic view whenever the semantic bytes equal the raw bytes.
-    fn parse_uniform(bytes: &[u8]) -> Self {
+    fn parse_uniform(bytes: &[u8], point_layout: crate::intersection::ChartPointLayout) -> Self {
         let graph = Graph::parse(bytes);
         StreamView {
             offset_surfaces: graph.offset_surfaces(),
             blend_surfaces: graph.blend_surfaces(),
             trimmed_curves: graph.trimmed_curves(),
             surface_curves: graph.surface_curves(),
-            intersections: intersection::scan_with_graph(bytes, &graph),
+            intersections: intersection::scan_with_graph(bytes, &graph, point_layout),
             graph,
         }
     }
@@ -157,6 +157,7 @@ impl StreamView {
         semantic_bytes: &[u8],
         scan: &Scan,
         paired_deltas: Option<&Vec<usize>>,
+        point_layout: crate::intersection::ChartPointLayout,
     ) -> Self {
         let semantic_graph =
             (semantic_bytes != topology_bytes).then(|| Graph::parse(semantic_bytes));
@@ -173,7 +174,7 @@ impl StreamView {
                 scan_graph,
             )
         } else {
-            intersection::scan_with_graph(semantic_bytes, scan_graph)
+            intersection::scan_with_graph(semantic_bytes, scan_graph, point_layout)
         };
         StreamView {
             offset_surfaces: scan_graph.offset_surfaces(),
@@ -243,7 +244,11 @@ impl<'a> ParsedStreams<'a> {
                 continue;
             }
 
-            let raw = Rc::new(StreamView::parse_uniform(&stream.inflated));
+            let point_layout = stream
+                .kind
+                .chart_point_layout()
+                .expect("Parasolid stream has a chart point layout");
+            let raw = Rc::new(StreamView::parse_uniform(&stream.inflated, point_layout));
             let paired = delta_pairs.get(&si);
             let topology_matches_raw = semantic_bytes.as_ref() == stream.inflated;
             let mut residual = Vec::new();
@@ -272,6 +277,7 @@ impl<'a> ParsedStreams<'a> {
                     &semantic_bytes,
                     scan,
                     paired,
+                    point_layout,
                 ))
             };
             per_stream.push(StreamParses { raw, semantic });

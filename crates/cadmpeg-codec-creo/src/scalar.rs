@@ -107,7 +107,9 @@ pub fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
 #[derive(Debug, Clone, Default)]
 pub struct ScalarCache {
     entries: Vec<CacheEntry>,
-    paired_byte_1_by_tail: BTreeMap<[u8; 6], u8>,
+    /// Unique leading payload byte for each paired-form tail. `None` marks a
+    /// tail shared by distinct cache images.
+    paired_byte_1_by_tail: BTreeMap<[u8; 6], Option<u8>>,
 }
 
 #[derive(Debug, Clone)]
@@ -135,9 +137,13 @@ impl ScalarCache {
             }
             let mut ieee = raw;
             ieee[0] = 0x40;
-            paired_byte_1_by_tail
-                .entry(raw[2..].try_into().expect("six-byte cache tail"))
-                .or_insert(raw[1]);
+            let tail = raw[2..].try_into().expect("six-byte cache tail");
+            let paired_byte_1 = paired_byte_1_by_tail.entry(tail).or_insert(Some(raw[1]));
+            if let Some(existing) = *paired_byte_1 {
+                if existing != raw[1] {
+                    *paired_byte_1 = None;
+                }
+            }
             entries.push(CacheEntry {
                 value: f64::from_be_bytes(ieee),
             });
@@ -158,14 +164,17 @@ impl ScalarCache {
         self.paired_byte_1_by_tail
             .get(<&[u8; 6]>::try_from(tail).ok()?)
             .copied()
+            .flatten()
     }
 }
 
-const LANE_OPENERS: &[u8] = &[
-    0x0d, 0x0e, 0x0f, 0x18, 0x29, 0x2a, 0x2d, 0x2e, 0x2f, 0x41, 0x42, 0x43, 0x46, 0x47, 0x48, 0x4b,
-    0x5e, 0x66, 0x68, 0x6a, 0x71, 0x74, 0x76, 0x77, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88,
-    0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f, 0x90, 0x91, 0x9e, 0xa1, 0xa2, 0xa3, 0xaf, 0xb0, 0xb1,
-    0xb7, 0xb9, 0xbf, 0xd3, 0xd7, 0xde, 0xdf, 0xe4, 0xd1, 0xe6, 0xe8, 0xb3,
+// Only prefixes decoded by the generic row/f9 lane belong here. Other scalar
+// lanes must classify their own prefixes before delegating to this lane.
+const GENERIC_LANE_OPENERS: &[u8] = &[
+    0x0d, 0x0f, 0x18, 0x29, 0x2a, 0x2d, 0x2e, 0x2f, 0x41, 0x42, 0x43, 0x46, 0x47, 0x48, 0x4b, 0x5e,
+    0x66, 0x67, 0x68, 0x6a, 0x71, 0x76, 0x77, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a,
+    0x8b, 0x8c, 0x8d, 0x8e, 0x8f, 0x9e, 0xa3, 0xaf, 0xb0, 0xb1, 0xb3, 0xb9, 0xbf, 0xd1, 0xd3, 0xde,
+    0xdf, 0xe4, 0xe6, 0xe8,
 ];
 
 /// Decode one scalar in a row or `f9` scalar lane using its section cache.
@@ -173,7 +182,7 @@ pub fn decode_in_lane(data: &[u8], offset: usize, cache: &ScalarCache) -> Option
     match *data.get(offset)? {
         0x18 => {
             let next = *data.get(offset + 1)?;
-            if LANE_OPENERS.contains(&next)
+            if GENERIC_LANE_OPENERS.contains(&next)
                 || matches!(next, 0xe0..=0xe3 | 0xf1 | 0xf2 | 0xf7 | 0xf8)
             {
                 return Some((0.0, offset + 1));
@@ -212,6 +221,9 @@ pub fn decode_in_lane(data: &[u8], offset: usize, cache: &ScalarCache) -> Option
 /// implicit zero low byte. Named scalar fields use the eight-byte `0x71`
 /// form handled by [`decode_in_lane`].
 pub fn decode_in_row_lane(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(f64, usize)> {
+    if data.get(offset) == Some(&0x18) && data.get(offset + 1) == Some(&0x0e) {
+        return Some((0.0, offset + 1));
+    }
     if data.get(offset) == Some(&0x0e) {
         return Some((-0.5, offset + 1));
     }
@@ -367,6 +379,28 @@ pub fn decode_tabulated_cylinder_second_coordinate(
     offset: usize,
     cache: &ScalarCache,
 ) -> Option<(f64, usize)> {
+    decode_second_coordinate_lane(data, offset, cache)
+}
+
+/// Decode a model-space coordinate in a named `ActDatums` outline.
+///
+/// Named datum outlines use the same bounded positive/negative DICT lattice as
+/// the second coordinate of a tabulated-cylinder directrix. Keeping this
+/// entry point separate from the tabulated-cylinder API makes the shared byte
+/// grammar explicit at the call site.
+pub(crate) fn decode_named_datum_outline_coordinate(
+    data: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    decode_second_coordinate_lane(data, offset, cache)
+}
+
+fn decode_second_coordinate_lane(
+    data: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
     let head = *data.get(offset)?;
     if matches!(head, 0x28 | 0x41) {
         return ieee8(data, offset, 0x3f);
@@ -454,25 +488,36 @@ pub fn decode_named_surface_radius(
     if data.get(offset) == Some(&0x28) {
         return ieee8(data, offset, 0x3f);
     }
-    decode_named_positive_dict_scalar(data, offset, cache)
+    let head = *data.get(offset)?;
+    if GENERIC_LANE_OPENERS.contains(&head) {
+        return decode_in_lane(data, offset, cache);
+    }
+    if matches!(head, 0x5b..=0xa3) {
+        return ieee7_dict(data, offset, 0x3f75 + u16::from(head));
+    }
+    if head == 0xb7 {
+        return decode_positive_dict(data, offset);
+    }
+    decode_in_lane(data, offset, cache)
 }
 
 /// Decode one scalar in a named field using the positive DICT lane.
 ///
-/// Generic named-scalar forms take precedence. Otherwise prefixes
-/// `0x5b..=0xa3` encode the first two IEEE bytes as `0x3f75 + prefix`; their
-/// six-byte payload supplies the remaining bytes.
+/// Positive-DICT forms take precedence over generic forms when a prefix has
+/// an alternate width or IEEE mapping. Prefixes `0x5b..=0xa3` encode the first
+/// two IEEE bytes as `0x3f75 + prefix`; their six-byte payload supplies the
+/// remaining bytes.
 pub fn decode_named_positive_dict_scalar(
     data: &[u8],
     offset: usize,
     cache: &ScalarCache,
 ) -> Option<(f64, usize)> {
     let head = *data.get(offset)?;
-    if LANE_OPENERS.contains(&head) {
-        return decode_in_lane(data, offset, cache);
-    }
     if matches!(head, 0x5b..=0xa3) {
         return ieee7_dict(data, offset, 0x3f75 + u16::from(head));
+    }
+    if matches!(head, 0x71 | 0x74 | 0x76 | 0x81 | 0x90 | 0x91 | 0xb7) {
+        return decode_positive_dict(data, offset);
     }
     decode_in_lane(data, offset, cache)
 }
@@ -1779,8 +1824,36 @@ mod tests {
         assert_eq!(decode_in_lane(&[0x18, 0xe4], 0, &cache), Some((0.0, 1)));
         assert_eq!(decode_in_lane(&[0x18, 0xe4], 1, &cache), Some((1.0, 2)));
         assert_eq!(decode_in_lane(&[0x18, 0x0d], 0, &cache), Some((0.0, 1)));
+        assert_eq!(
+            decode_in_lane(&[0x18, 0x67, 0, 0, 0, 0, 0, 0], 0, &cache),
+            Some((0.0, 1))
+        );
+        assert_eq!(
+            decode_in_lane(&[0x18, 0x67, 0, 0, 0, 0, 0, 0], 1, &cache),
+            Some((f64::from_be_bytes([0x3f, 0, 0, 0, 0, 0, 0, 0]), 8))
+        );
         assert_eq!(decode_in_row_lane(&[0x18, 0x0e], 0, &cache), Some((0.0, 1)));
         assert_eq!(decode_in_lane(&[0x18, 0x18, 0], 0, &cache), Some((0.0, 1)));
+    }
+
+    #[test]
+    fn cache_indices_use_only_the_enclosing_lane_opener_set() {
+        let mut section = Vec::new();
+        for index in 0..=116_u8 {
+            let encoded = if index < 0x46 { index } else { index + 1 };
+            section.extend_from_slice(&[0x46, 0x08, encoded, 0, 0, 0, 0, 0]);
+        }
+        let cache = ScalarCache::from_section(&section);
+
+        assert_eq!(
+            decode_in_lane(&[0x18, 0x74], 0, &cache),
+            Some((f64::from_be_bytes([0x40, 0x08, 0x75, 0, 0, 0, 0, 0]), 2))
+        );
+        assert_eq!(
+            decode_in_lane(&[0x18, 0x0e], 0, &cache),
+            Some((f64::from_be_bytes([0x40, 0x08, 0x0e, 0, 0, 0, 0, 0]), 2))
+        );
+        assert_eq!(decode_in_row_lane(&[0x18, 0x0e], 0, &cache), Some((0.0, 1)));
     }
 
     #[test]
@@ -1826,15 +1899,12 @@ mod tests {
     }
 
     #[test]
-    fn paired_cache_tail_keeps_its_first_exponent() {
+    fn paired_cache_tail_collision_withholds_value() {
         let cache = ScalarCache::from_section(&[
             0x46, 0x08, 1, 2, 3, 4, 5, 6, 0x46, 0x13, 1, 2, 3, 4, 5, 6,
         ]);
-        let expected = f64::from_be_bytes([0x40, 0x08, 1, 2, 3, 4, 5, 6]);
-        assert_eq!(
-            decode_in_lane(&[0x9e, 1, 2, 3, 4, 5, 6], 0, &cache),
-            Some((expected, 7))
-        );
+        assert_eq!(decode_in_lane(&[0x9e, 1, 2, 3, 4, 5, 6], 0, &cache), None);
+        assert_eq!(decode_in_lane(&[0xa3, 1, 2, 3, 4, 5, 6], 0, &cache), None);
     }
 
     #[test]
@@ -1953,6 +2023,22 @@ mod tests {
                 f64::from_be_bytes([0x3f, 0xe4, 0x5e, 0x8a, 0x1c, 0xf2, 0x17, 0x1e]),
                 7
             ))
+        );
+    }
+
+    #[test]
+    fn named_positive_dict_lane_precedes_generic_scalar_forms() {
+        let cache = ScalarCache::default();
+        let subunit = [0x71, 0, 0, 0, 0, 0, 0];
+        let named_dict = [0xa3, 0, 0, 0, 0, 0, 0];
+
+        assert_eq!(
+            decode_named_positive_dict_scalar(&subunit, 0, &cache),
+            Some((f64::from_be_bytes([0x3f, 0xe6, 0, 0, 0, 0, 0, 0]), 7))
+        );
+        assert_eq!(
+            decode_named_positive_dict_scalar(&named_dict, 0, &cache),
+            Some((f64::from_be_bytes([0x40, 0x18, 0, 0, 0, 0, 0, 0]), 7))
         );
     }
 

@@ -47,9 +47,9 @@ use crate::records::{
     SketchPoint, SketchRelation, SketchSurface, SketchText, XrefDesign, XrefReference,
 };
 use cadmpeg_asm::brep::records::{
-    BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceSidedness, MeshSurfaceSentinel,
-    TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail, TransformHints,
-    VertexOwnership, WireTopology,
+    BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceNativeKey, FaceSidedness,
+    MeshSurfaceSentinel, TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail,
+    TransformHints, VertexOwnership, WireTopology,
 };
 
 fn owner_indices<'a>(ids: impl IntoIterator<Item = &'a str>) -> HashMap<String, usize> {
@@ -77,7 +77,7 @@ fn group_by_owner<T>(
 }
 
 /// Current schema version for the Autodesk Fusion native namespace.
-pub const F3D_NATIVE_VERSION: u32 = 11;
+pub const F3D_NATIVE_VERSION: u32 = 12;
 
 pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "act_entities",
@@ -128,6 +128,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_types",
     "edge_continuities",
     "edge_ownerships",
+    "face_native_keys",
     "face_sidedness",
     "lost_edge_references",
     "mesh_surface_sentinels",
@@ -791,6 +792,16 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
+        arena: "face_native_keys",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.face_native_keys),
+        len: |model| model.face_native_keys.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
         arena: "construction_recipes",
         tag: None,
         exactness: (),
@@ -1229,6 +1240,9 @@ pub struct F3dNative {
     /// Native single/double-sided classifications stored on ASM faces.
     #[serde(default)]
     pub face_sidedness: Vec<FaceSidedness>,
+    /// Native Design-join keys stored on solved ASM faces.
+    #[serde(default)]
+    pub face_native_keys: Vec<FaceNativeKey>,
     /// Parametric regeneration recipes from the Design `BulkStream`.
     #[serde(default)]
     pub construction_recipes: Vec<ConstructionRecipe>,
@@ -1345,6 +1359,7 @@ impl Default for F3dNative {
             edge_continuities: Vec::new(),
             edge_ownerships: Vec::new(),
             face_sidedness: Vec::new(),
+            face_native_keys: Vec::new(),
             construction_recipes: Vec::new(),
             creation_timestamps: Vec::new(),
             persistent_design_links: Vec::new(),
@@ -1429,6 +1444,7 @@ impl F3dNative {
             edge_continuities: namespace.arena_as("edge_continuities")?,
             edge_ownerships: namespace.arena_as("edge_ownerships")?,
             face_sidedness: namespace.arena_as("face_sidedness")?,
+            face_native_keys: namespace.arena_as("face_native_keys")?,
             construction_recipes: namespace.arena_as("construction_recipes")?,
             creation_timestamps: namespace.arena_as("creation_timestamps")?,
             persistent_design_links: namespace.arena_as("persistent_design_links")?,

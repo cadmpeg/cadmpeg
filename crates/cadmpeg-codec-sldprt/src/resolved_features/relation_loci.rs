@@ -3,12 +3,12 @@
 use super::markers::marker_is_geometry_locus;
 use super::relation_geometry::{relation_operand_geometry_ref, solver_line_geometry_ref};
 use super::transforms::{
-    compatible_marker_transform_candidates, locus_entity, locus_key, marker_entities, quantize,
-    select_marker_transforms_by_frame, sketch_entity_loci, MarkerTransform,
+    compatible_marker_transform_candidates, locus_entity, locus_key, marker_entities,
+    marker_transforms_with_frame_fallback, quantize, sketch_entity_loci, MarkerTransform,
 };
 use super::typed_relations::{
-    line_endpoint_markers, relation_link_identifies_owner, relation_owner_markers,
-    sketch_entity_contains_point,
+    line_endpoint_markers, relation_link_identifies_owner, relation_link_is_geometric_operand,
+    relation_owner_markers, sketch_entity_contains_point,
 };
 use super::SKETCH_POINT_TOLERANCE;
 use crate::records::{
@@ -26,8 +26,13 @@ pub(super) fn linked_single_arc_entity(
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchEntityId> {
-    if marker.links.is_empty()
-        || marker.links.iter().any(|link| {
+    let links = marker
+        .links
+        .iter()
+        .filter(|link| !relation_link_identifies_owner(marker, link))
+        .collect::<Vec<_>>();
+    if links.is_empty()
+        || links.iter().any(|link| {
             !matches!(
                 markers_by_id
                     .get(link.entity_ref.as_str())
@@ -67,12 +72,17 @@ pub(super) fn linked_midpoint_operands(
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<(SketchLocus, SketchEntityId)> {
-    let [first, second] = marker.links.as_slice() else {
+    let links = marker
+        .links
+        .iter()
+        .filter(|link| !relation_link_identifies_owner(marker, link))
+        .collect::<Vec<_>>();
+    let [first, second] = links.as_slice() else {
         return None;
     };
     let mut point = None;
     let mut entity = None;
-    for link in [first, second] {
+    for link in [*first, *second] {
         let linked_marker = markers_by_id.get(link.entity_ref.as_str())?;
         let locus = unique_locus(loci_by_marker.get(&link.entity_ref)?)?;
         match linked_marker.kind {
@@ -97,17 +107,18 @@ pub(super) fn relation_operand_loci(
     let loci = relation
         .links
         .iter()
-        .filter(|link| !relation_link_identifies_owner(relation, link))
+        .filter(|link| relation_link_is_geometric_operand(relation, link, markers_by_id))
         .map(|link| link.entity_ref.as_str())
         .chain(owners.iter().map(|owner| owner.id.as_str()))
         .map(|marker| marker_point_locus(marker, markers_by_id, loci_by_marker))
         .collect::<Option<Vec<_>>>()?;
-    Some(loci.into_iter().fold(Vec::new(), |mut unique, locus| {
+    let loci = loci.into_iter().fold(Vec::new(), |mut unique, locus| {
         if !unique.contains(&locus) {
             unique.push(locus);
         }
         unique
-    }))
+    });
+    (!loci.is_empty()).then_some(loci)
 }
 
 pub(super) fn linked_single_entities(
@@ -116,7 +127,11 @@ pub(super) fn linked_single_entities(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<Vec<SketchEntityId>> {
     let mut result = Vec::new();
-    for link in &marker.links {
+    for link in marker
+        .links
+        .iter()
+        .filter(|link| !relation_link_identifies_owner(marker, link))
+    {
         let entities = marker_entities(&link.entity_ref, markers_by_id, loci_by_marker);
         let [entity] = entities.as_slice() else {
             return None;
@@ -698,21 +713,27 @@ pub(super) fn typed_relation_definition(
                 .find(|entity| {
                     entity.sketch == *sketch
                         && entity.geometry_ref.as_deref() == Some(relation.id.as_str())
-                        && matches!(entity.geometry, SketchGeometry::Circle { .. })
+                        && matches!(
+                            entity.geometry,
+                            SketchGeometry::Circle { .. } | SketchGeometry::Arc { .. }
+                        )
                 })
                 .map(|entity| entity.id.clone())
                 .or_else(|| {
                     marker(0).and_then(|marker| {
-                        if sketch_entities.is_empty() {
-                            single_marker_entity(marker, markers_by_id, loci_by_marker)
-                        } else {
-                            single_marker_curve_entity(
-                                marker,
-                                markers_by_id,
-                                loci_by_marker,
-                                sketch_entities,
-                            )
-                        }
+                        marker_center_dimensioned_entity(marker, sketch, sketch_entities, parameter)
+                            .or_else(|| {
+                                if sketch_entities.is_empty() {
+                                    single_marker_entity(marker, markers_by_id, loci_by_marker)
+                                } else {
+                                    single_marker_circular_entity(
+                                        marker,
+                                        markers_by_id,
+                                        loci_by_marker,
+                                        sketch_entities,
+                                    )
+                                }
+                            })
                     })
                 });
             let authoritative = resolved_entity.is_some();
@@ -1478,6 +1499,12 @@ pub(super) fn relation_operand_marker<'a>(
             .copied()
             .filter(|marker| marker.feature_ref.as_deref() == Some(&relation.feature_ref))
             .filter(|marker| marker.coordinates_m.is_some())
+            .filter(|marker| {
+                matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+            })
             .collect::<Vec<_>>();
         coordinate_handles.sort_unstable_by_key(|marker| marker.offset);
         return coordinate_handles
@@ -1513,6 +1540,54 @@ fn relation_line_point_marker<'a>(
         return None;
     };
     Some(*marker)
+}
+
+fn marker_center_dimensioned_entity(
+    marker_id: &str,
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
+    parameter: &cadmpeg_ir::features::DesignParameter,
+) -> Option<SketchEntityId> {
+    let cadmpeg_ir::features::ParameterValue::Length(value) = parameter.value.as_ref()? else {
+        return None;
+    };
+    let expected_radius = match parameter.display {
+        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
+        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+        None => return None,
+    };
+    let centers = sketch_entities
+        .iter()
+        .filter(|entity| {
+            entity.sketch == *sketch
+                && entity.native_ref.as_deref() == Some(marker_id)
+                && matches!(entity.geometry, SketchGeometry::Point { .. })
+        })
+        .collect::<Vec<_>>();
+    let [center_entity] = centers.as_slice() else {
+        return None;
+    };
+    let SketchGeometry::Point { position: center } = center_entity.geometry else {
+        return None;
+    };
+    let candidates = sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch)
+        .filter_map(|entity| {
+            let (candidate_center, radius) = match entity.geometry {
+                SketchGeometry::Circle { center, radius }
+                | SketchGeometry::Arc { center, radius, .. } => (center, radius.0),
+                _ => return None,
+            };
+            (quantize(candidate_center, 1.0e-8) == quantize(center, 1.0e-8)
+                && same_dimension_length(radius, expected_radius))
+            .then_some(entity.id.clone())
+        })
+        .collect::<Vec<_>>();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
 }
 
 fn unique_dimensioned_circle_entity(
@@ -1630,7 +1705,7 @@ fn single_marker_entity(
     Some(entity.clone())
 }
 
-pub(super) fn single_marker_curve_entity(
+fn single_marker_circular_entity(
     marker_id: &str,
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
@@ -1645,9 +1720,7 @@ pub(super) fn single_marker_curve_entity(
                 .is_some_and(|entity| {
                     matches!(
                         entity.geometry,
-                        SketchGeometry::Line { .. }
-                            | SketchGeometry::Circle { .. }
-                            | SketchGeometry::Arc { .. }
+                        SketchGeometry::Circle { .. } | SketchGeometry::Arc { .. }
                     )
                 })
         })
@@ -1679,7 +1752,16 @@ pub(super) fn single_marker_line_entity(
         return Some(entity.clone());
     }
     let marker = markers_by_id.get(marker_id)?;
-    let [first_link, second_link] = marker.links.as_slice() else {
+    let links = marker
+        .links
+        .iter()
+        .filter(|link| {
+            link.entity_ref != marker_id
+                && (!matches!(marker.kind, SketchInputKind::Relation(_))
+                    || !relation_link_identifies_owner(marker, link))
+        })
+        .collect::<Vec<_>>();
+    let [first_link, second_link] = links.as_slice() else {
         return unique_line_containing_marker_point(
             marker_id,
             markers_by_id,
@@ -1827,7 +1909,11 @@ fn marker_line_entities_inner(
     let mut linked = marker
         .links
         .iter()
-        .filter(|link| link.entity_ref != marker_id)
+        .filter(|link| {
+            link.entity_ref != marker_id
+                && (!matches!(marker.kind, SketchInputKind::Relation(_))
+                    || !relation_link_identifies_owner(marker, link))
+        })
         .map(|link| {
             marker_line_entities_inner(
                 &link.entity_ref,
@@ -1865,7 +1951,10 @@ pub(super) fn profile_loci_by_marker(
         .filter(|operand| {
             matches!(
                 operand.kind,
-                FeatureInputOperandKind::Native(0x837b | 0xbc7c)
+                FeatureInputOperandKind::D6
+                    | FeatureInputOperandKind::Native(
+                        0x80cc | 0x8152 | 0x837b | 0x8ab6 | 0x8dcb | 0x929d | 0xbc7c | 0xbd69,
+                    )
             )
         })
         .filter_map(|operand| operand.entity_ref.as_deref())
@@ -1898,6 +1987,11 @@ pub(super) fn profile_loci_by_marker(
         .flat_map(|lane| &lane.sketch_entities)
         .map(|marker| (marker.id.as_str(), marker))
         .collect::<HashMap<_, _>>();
+    let native_point_markers_with_nonpoint_carrier = sketch_entities
+        .iter()
+        .filter(|entity| !matches!(entity.geometry, SketchGeometry::Point { .. }))
+        .filter_map(|entity| entity.native_ref.as_deref())
+        .collect::<HashSet<_>>();
     for entity in sketch_entities {
         for (point, locus) in sketch_entity_loci(entity) {
             profile_loci
@@ -1916,7 +2010,11 @@ pub(super) fn profile_loci_by_marker(
         .iter()
         .filter_map(|entity| {
             let (marker, qualified_point) = if let Some(marker) = entity.native_ref.as_ref() {
-                (marker, false)
+                (
+                    marker,
+                    matches!(entity.geometry, SketchGeometry::Point { .. })
+                        && native_point_markers_with_nonpoint_carrier.contains(marker.as_str()),
+                )
             } else {
                 let reference = entity.geometry_ref.as_ref().filter(|reference| {
                     reference.starts_with("sldprt:feature-input:sketch-entity#")
@@ -2428,7 +2526,7 @@ pub(super) fn marker_transform_candidates_by_feature(
                 .iter()
                 .find(|candidate| candidate.id == **sketch)
                 .map_or(candidates.clone(), |sketch| {
-                    select_marker_transforms_by_frame(&candidates, sketch, QUANTUM)
+                    marker_transforms_with_frame_fallback(&candidates, sketch, QUANTUM)
                 });
             if !candidates.is_empty() {
                 result.insert(feature.to_string(), candidates);

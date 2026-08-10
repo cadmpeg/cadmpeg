@@ -10,9 +10,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 fn finite_vector(record: &ParameterRecord, start: usize) -> Option<[f64; 3]> {
     let values = [
-        record.number(start)?,
-        record.number(start + 1)?,
-        record.number(start + 2)?,
+        record.number_or(start, 0.0)?,
+        record.number_or(start + 1, 0.0)?,
+        record.number_or(start + 2, 0.0)?,
     ];
     values
         .iter()
@@ -20,8 +20,20 @@ fn finite_vector(record: &ParameterRecord, start: usize) -> Option<[f64; 3]> {
         .then_some(values)
 }
 
-fn norm_squared(vector: [f64; 3]) -> f64 {
-    vector.iter().map(|value| value * value).sum()
+fn has_in_plane_component(normal: [f64; 3], up: [f64; 3]) -> bool {
+    let normal_scale = normal.iter().map(|value| value.abs()).fold(0.0, f64::max);
+    let up_scale = up.iter().map(|value| value.abs()).fold(0.0, f64::max);
+    if normal_scale == 0.0 || up_scale == 0.0 {
+        return false;
+    }
+    let normal = normal.map(|value| value / normal_scale);
+    let up = up.map(|value| value / up_scale);
+    let cross = [
+        normal[1] * up[2] - normal[2] * up[1],
+        normal[2] * up[0] - normal[0] * up[2],
+        normal[0] * up[1] - normal[1] * up[0],
+    ];
+    cross.iter().any(|value| *value != 0.0)
 }
 
 pub(super) fn project(
@@ -93,7 +105,9 @@ pub(super) fn project(
                     .integer(start)
                     .and_then(|value| u32::try_from(value).ok())
                     .and_then(|sequence| entries.get(&sequence).copied())
-                    .is_some_and(|view| view.entity_type == 410 && view.status.subordinate == 2)
+                    .is_some_and(|view| {
+                        view.entity_type == 410 && view.status.is_logically_dependent()
+                    })
                     && (start + 1..=start + 2)
                         .all(|index| record.number(index).is_some_and(f64::is_finite))
                     && (entry.form == 0
@@ -112,7 +126,8 @@ pub(super) fn project(
                     .and_then(|value| u32::try_from(value).ok())
                     .and_then(|sequence| entries.get(&sequence).copied())
                     .is_some_and(|annotation| {
-                        annotation.status.use_flag == 1 && annotation.status.subordinate == 1
+                        annotation.status.use_flag == 1
+                            && annotation.status.is_physically_dependent()
                     })
             })
         });
@@ -135,13 +150,10 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let view_number_valid = record.integer(1).is_some();
-        let scale_valid = match record.tokens.get(2).map(|token| &token.value) {
-            None | Some(crate::parameter::TokenValue::Omitted) => entry.form == 0,
-            _ => record
-                .number(2)
-                .is_some_and(|value| value.is_finite() && value > 0.0),
-        };
+        let view_number_valid = record.integer_or(1, 0).is_some();
+        let scale_valid = record
+            .number_or(2, if entry.form == 0 { 1.0 } else { 0.0 })
+            .is_some_and(|value| value.is_finite() && value > 0.0);
         let form_valid = if entry.form == 0 {
             let transform_valid = if entry.transform == 0 {
                 true
@@ -150,21 +162,20 @@ pub(super) fn project(
                     entries.get(&sequence).is_some_and(|target| {
                         target.entity_type == 124
                             && target.form == 0
-                            && global.length_factor_mm().is_some_and(|factor| {
-                                resolve_transform(
-                                    entry.transform,
-                                    &entries,
-                                    &records,
-                                    factor,
-                                    &mut BTreeSet::new(),
-                                )
-                                .is_ok()
-                            })
+                            && resolve_transform(
+                                entry.transform,
+                                &entries,
+                                &records,
+                                global.length_factor_mm(),
+                                global.real_precision(),
+                                &mut BTreeSet::new(),
+                            )
+                            .is_ok()
                     })
                 })
             };
             let clipping_valid = (3..=8).all(|index| {
-                record.integer(index).is_some_and(|value| {
+                record.integer_or(index, 0).is_some_and(|value| {
                     value == 0
                         || u32::try_from(value).ok().is_some_and(|sequence| {
                             entries
@@ -179,29 +190,28 @@ pub(super) fn project(
             let reference = finite_vector(record, 6);
             let center = finite_vector(record, 9);
             let up = finite_vector(record, 12);
-            let vectors_valid = normal.zip(up).is_some_and(|(normal, up)| {
-                let normal_norm = norm_squared(normal);
-                let up_norm = norm_squared(up);
-                let dot = (0..3).map(|index| normal[index] * up[index]).sum::<f64>();
-                normal_norm > 0.0 && up_norm > 0.0 && up_norm - dot * dot / normal_norm > 1.0e-20
-            });
+            let vectors_valid = normal
+                .zip(up)
+                .is_some_and(|(normal, up)| has_in_plane_component(normal, up));
             let window_valid = (15..=19)
-                .all(|index| record.number(index).is_some_and(f64::is_finite))
+                .all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite))
                 && record
-                    .number(16)
-                    .zip(record.number(17))
+                    .number_or(16, 0.0)
+                    .zip(record.number_or(17, 0.0))
                     .is_some_and(|(min, max)| min < max)
                 && record
-                    .number(18)
-                    .zip(record.number(19))
+                    .number_or(18, 0.0)
+                    .zip(record.number_or(19, 0.0))
                     .is_some_and(|(min, max)| min < max);
-            let depth = record.integer(20).filter(|value| matches!(value, 0..=3));
+            let depth = record
+                .integer_or(20, 0)
+                .filter(|value| matches!(value, 0..=3));
             let depth_values_valid = (21..=22)
-                .all(|index| record.number(index).is_some_and(f64::is_finite))
+                .all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite))
                 && (depth != Some(3)
                     || record
-                        .number(21)
-                        .zip(record.number(22))
+                        .number_or(21, 0.0)
+                        .zip(record.number_or(22, 0.0))
                         .is_some_and(|(min, max)| min < max));
             entry.transform == 0
                 && reference.is_some()
@@ -398,5 +408,26 @@ pub(super) fn project(
         handled,
         decoded,
         losses,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::has_in_plane_component;
+
+    #[test]
+    fn view_up_component_test_is_scale_invariant() {
+        assert!(has_in_plane_component(
+            [0.0, 0.0, 1.0e-200],
+            [0.0, 1.0e-200, 0.0]
+        ));
+        assert!(has_in_plane_component(
+            [1.0e200, 0.0, 0.0],
+            [1.0e200, 1.0e184, 0.0]
+        ));
+        assert!(!has_in_plane_component(
+            [1.0e200, 0.0, 0.0],
+            [1.0e200, 0.0, 0.0]
+        ));
     }
 }

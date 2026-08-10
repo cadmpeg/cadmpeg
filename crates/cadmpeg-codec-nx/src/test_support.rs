@@ -502,6 +502,40 @@ pub(crate) fn composed_feature_history_prt() -> Vec<u8> {
     prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
 }
 
+/// A synthetic history whose two body writers select the same exact
+/// offset-store block. The source record order is newest first, so the
+/// decoder must attach the older operation as the writer dependency of the
+/// newer operation without using the integer block suffix alone.
+pub(crate) fn offset_store_primary_body_lineage_prt() -> Vec<u8> {
+    let input_slots: &'static [u8] = &[1, 0xff, 0xff, 0xff];
+    let primary_body = || vec![0x01, 0x02, 0x10, 0x02, 0xff];
+    let operations = [
+        (input_slots, "BLEND", primary_body()),
+        (input_slots, "EXTRUDE", primary_body()),
+    ];
+    let store_records: [&[u8]; 2] = [b"\0", b"\0"];
+    let payload = composed_feature_history_payload(&operations, &store_records);
+    prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
+}
+
+/// A synthetic history whose Boolean target reuses the native body identity
+/// written by the preceding operation and is then consumed by a later
+/// operation. The Boolean payload has no separate primary-body field, so its
+/// target must supply both writer transitions.
+pub(crate) fn boolean_target_body_lineage_prt() -> Vec<u8> {
+    let input_slots: &'static [u8] = &[0xff, 0xff, 0xff, 0xff];
+    let boolean_payload = b"\x31\x00\x00\x01\x00\x14\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\x00\x00\xe0\x7f\xff\xff\xff\x01\x01\x01\x02\x90\x19\x42\x00\x01\x03\x90\x19\x4c\x7f\x00".to_vec();
+    let primary_body = vec![0x01, 0x02, 0x10, 0x90, 0x19, 0x42, 0xff];
+    let operations = [
+        (input_slots, "EXTRUDE", primary_body.clone()),
+        (input_slots, "UNITE", boolean_payload),
+        (input_slots, "EXTRUDE", primary_body),
+    ];
+    let store_records: [&[u8]; 0] = [];
+    let payload = composed_feature_history_payload(&operations, &store_records);
+    prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
+}
+
 /// Write three big-endian doubles into `rec` starting at `at`.
 pub(crate) fn put_vec3(rec: &mut [u8], at: usize, xyz: [f64; 3]) {
     for (i, v) in xyz.iter().enumerate() {
@@ -817,11 +851,13 @@ pub(crate) fn partition_stream() -> Vec<u8> {
 
     // POINT (type 29): xyz at +16, metres.
     let mut pt = record(0x1d, 40);
+    put_ref(&mut pt, 2, 2);
     put_vec3(&mut pt, 16, [0.0625, 0.0, 0.0127]); // 62.5, 0, 12.7 mm
     s.extend_from_slice(&pt);
 
     // PLANE (type 50): origin +19, normal +43, x_axis +67.
     let mut pl = record(0x32, 91);
+    put_ref(&mut pl, 2, 3);
     pl[18] = b'+';
     put_vec3(&mut pl, 19, [0.0762, 0.0, 0.0]); // 76.2 mm
     put_vec3(&mut pl, 43, [0.0, 0.0, 1.0]);
@@ -830,6 +866,7 @@ pub(crate) fn partition_stream() -> Vec<u8> {
 
     // CYLINDER (type 51): origin +19, axis +43, radius +67, x_axis +75.
     let mut cy = record(0x33, 99);
+    put_ref(&mut cy, 2, 4);
     cy[18] = b'+';
     put_vec3(&mut cy, 19, [0.0, 0.0, 0.0]);
     put_vec3(&mut cy, 43, [0.0, 0.0, 1.0]);
@@ -839,6 +876,7 @@ pub(crate) fn partition_stream() -> Vec<u8> {
 
     // LINE (type 30): point +19, direction +43.
     let mut ln = record(0x1e, 67);
+    put_ref(&mut ln, 2, 5);
     ln[18] = b'+';
     put_vec3(&mut ln, 19, [0.01, 0.02, 0.03]);
     put_vec3(&mut ln, 43, [1.0, 0.0, 0.0]);
@@ -1827,6 +1865,14 @@ pub(crate) fn two_support_ext11_charted_intersection_curve_stream(ambiguous: boo
         put_f64(&mut entries, at + 80, x);
     }
     stream.splice(chart + 60..chart + 108, entries);
+    if !ambiguous {
+        let uv = stream
+            .windows(8)
+            .position(|window| window == [0, 204, 0, 0, 0, 8, 0, 23])
+            .expect("UV record");
+        put_f64(&mut stream, uv + 9 + 6 * 8, 0.0);
+        put_f64(&mut stream, uv + 9 + 7 * 8, 0.01);
+    }
     stream
 }
 
@@ -1846,7 +1892,45 @@ pub(crate) fn partial_ext11_charted_intersection_curve_stream() -> Vec<u8> {
     stream
 }
 
+/// Wrap a partition topology and its ext11 intersection auxiliaries as a paired
+/// partition/deltas stream set.
+pub(crate) fn prt_with_ext11_intersection(partition: &[u8], ext11: &[u8]) -> Vec<u8> {
+    let chart = crate::intersection::chart_source_records(
+        ext11,
+        crate::intersection::ChartPointLayout::Ext11,
+    )
+    .into_iter()
+    .next()
+    .expect("ext11 chart record");
+    let (_, chart_end) = crate::intersection::chart_source_record_at(
+        ext11,
+        chart.pos,
+        crate::intersection::ChartPointLayout::Ext11,
+    )
+    .expect("ext11 chart bounds");
+    let mut deltas = DELTAS_PREAMBLE.to_vec();
+    deltas.extend_from_slice(&ext11[chart.pos..chart_end]);
+    for term in crate::intersection::term_use_records(ext11) {
+        let (_, end) = crate::intersection::term_use_at(ext11, term.pos).expect("term bounds");
+        deltas.extend_from_slice(&ext11[term.pos..end]);
+    }
+    let support_uv = crate::intersection::support_uv_records(ext11)
+        .into_iter()
+        .next()
+        .expect("ext11 support UV");
+    let (_, support_uv_end) =
+        crate::intersection::support_uv_record_at(ext11, support_uv.pos).expect("UV bounds");
+    deltas.extend_from_slice(&ext11[support_uv.pos..support_uv_end]);
+    prt_with_streams(&[partition, &deltas])
+}
+
 pub(crate) fn two_support_charted_intersection_curve_stream() -> Vec<u8> {
+    two_support_charted_intersection_curve_stream_with_second_plane_axis([1.0, 0.0, 0.0])
+}
+
+pub(crate) fn two_support_charted_intersection_curve_stream_with_second_plane_axis(
+    second_plane_axis: [f64; 3],
+) -> Vec<u8> {
     let mut stream = charted_intersection_curve_topology_partition_stream();
     let intersection = stream
         .windows(4)
@@ -1874,7 +1958,7 @@ pub(crate) fn two_support_charted_intersection_curve_stream() -> Vec<u8> {
     second_plane[18] = b'+';
     put_vec3(&mut second_plane, 19, [0.0, 0.0, 0.0]);
     put_vec3(&mut second_plane, 43, [0.0, 1.0, 0.0]);
-    put_vec3(&mut second_plane, 67, [1.0, 0.0, 0.0]);
+    put_vec3(&mut second_plane, 67, second_plane_axis);
     stream.extend(second_plane);
     stream
 }
@@ -1935,7 +2019,24 @@ pub(crate) fn inline_descriptor_intersection_curve_stream() -> Vec<u8> {
 
 pub(crate) fn deltas_intersection_curve_stream() -> Vec<u8> {
     let mut stream = DELTAS_PREAMBLE.to_vec();
-    stream.extend_from_slice(b"intersection_data");
+    stream.extend_from_slice(crate::topology::TYPE_38_SCHEMA_HEADER);
+    stream.extend_from_slice(&12u16.to_be_bytes());
+    stream.extend_from_slice(&7u32.to_be_bytes());
+    for reference in [1u16, 1, 1, 1, 1] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream.push(b'-');
+    for reference in [6u16, 7] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    for reference in [15u16, 14, 13] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(0);
+    }
+    stream.extend_from_slice(&[0, 1, 1]);
+
     stream.push(0x5a);
     stream.extend_from_slice(&12u16.to_be_bytes());
     stream.extend_from_slice(&7u32.to_be_bytes());
@@ -3071,12 +3172,25 @@ pub(crate) fn assembly_with_external_paths() -> Vec<u8> {
     prt_with_named_payloads(&[("/Root/UG_PART/ExternalReferences", payload.to_vec())])
 }
 
+pub(crate) fn append_rmfastload_table<I>(payload: &mut Vec<u8>, object_ids: I)
+where
+    I: IntoIterator<Item = u32>,
+{
+    let object_ids: Vec<_> = object_ids.into_iter().collect();
+    payload.extend_from_slice(
+        &u32::try_from(object_ids.len())
+            .expect("synthetic RMFastLoad table fits")
+            .to_le_bytes(),
+    );
+    for object_id in object_ids {
+        payload.extend_from_slice(&object_id.to_le_bytes());
+    }
+    payload.extend_from_slice(b"\x05\x01\x0eNX 2027.3102\0");
+}
+
 pub(crate) fn rmfastload_prt() -> Vec<u8> {
     let mut payload = b"UGS::Solid::Topol".to_vec();
-    payload.extend_from_slice(&50u32.to_le_bytes());
-    for id in 1..=50u32 {
-        payload.extend_from_slice(&id.to_le_bytes());
-    }
+    append_rmfastload_table(&mut payload, 1..=50);
     prt_with_named_payloads(&[("/Root/FastLoad/RMFastLoad", payload)])
 }
 
@@ -3129,14 +3243,59 @@ pub(crate) fn many_face_partition_stream(node_id_start: u32) -> Vec<u8> {
     stream
 }
 
+/// Assemble two terminal partition images addressed by a self-bounded segment
+/// index. The body identity words are deliberately outside the payload so they
+/// cannot be mistaken for additional wrapper offsets.
+pub(crate) fn prt_with_two_terminal_bodies() -> Vec<u8> {
+    let compressed_streams = [
+        zlib_compress(&many_face_partition_stream(1_000)),
+        zlib_compress(&many_face_partition_stream(2_000)),
+    ];
+    let index_byte_len = 72usize;
+    let first_wrapper_offset = 96usize;
+    let second_wrapper_offset = first_wrapper_offset + 8 + compressed_streams[0].len();
+    let index_words = [
+        0,
+        0,
+        0,
+        1,
+        1,
+        index_byte_len as u32,
+        first_wrapper_offset as u32,
+        0,
+        0x1000_0001,
+        0x1000_0002,
+        19,
+        0,
+        second_wrapper_offset as u32,
+        0,
+        0x2000_0001,
+        0x2000_0002,
+        19,
+        0,
+    ];
+    let mut payload = index_words
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect::<Vec<_>>();
+    assert_eq!(payload.len(), index_byte_len);
+    payload.resize(first_wrapper_offset, 0);
+    for compressed in compressed_streams {
+        payload.extend_from_slice(&0x8000_0000u32.to_le_bytes());
+        payload.extend_from_slice(&0u32.to_le_bytes());
+        payload.extend_from_slice(&compressed);
+        if payload.len() < second_wrapper_offset {
+            payload.resize(second_wrapper_offset, 0);
+        }
+    }
+    prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
+}
+
 pub(crate) fn prt_with_two_bodies_and_rmfastload() -> Vec<u8> {
     let mut part_payload = zlib_compress(&many_face_partition_stream(1_000));
     part_payload.extend(zlib_compress(&many_face_partition_stream(2_000)));
     let mut rm_payload = b"UGS::Solid::Topol".to_vec();
-    rm_payload.extend_from_slice(&50u32.to_le_bytes());
-    for id in 1_000..1_050u32 {
-        rm_payload.extend_from_slice(&id.to_le_bytes());
-    }
+    append_rmfastload_table(&mut rm_payload, 1_000..1_050);
 
     prt_with_named_payloads(&[
         ("/Root/UG_PART/UG_PART", part_payload),
@@ -3148,13 +3307,7 @@ pub(crate) fn prt_with_two_active_bodies_and_rmfastload() -> Vec<u8> {
     let mut part_payload = zlib_compress(&many_face_partition_stream(1_000));
     part_payload.extend(zlib_compress(&many_face_partition_stream(2_000)));
     let mut rm_payload = b"UGS::Solid::Topol".to_vec();
-    rm_payload.extend_from_slice(&100u32.to_le_bytes());
-    for id in 1_000..1_050u32 {
-        rm_payload.extend_from_slice(&id.to_le_bytes());
-    }
-    for id in 2_000..2_050u32 {
-        rm_payload.extend_from_slice(&id.to_le_bytes());
-    }
+    append_rmfastload_table(&mut rm_payload, (1_000..1_050).chain(2_000..2_050));
 
     prt_with_named_payloads(&[
         ("/Root/UG_PART/UG_PART", part_payload),
@@ -3172,10 +3325,7 @@ pub(crate) fn prt_with_missing_active_body_record() -> Vec<u8> {
     let mut part_payload = zlib_compress(&active_stream);
     part_payload.extend(zlib_compress(&many_face_partition_stream(2_000)));
     let mut rm_payload = b"UGS::Solid::Topol".to_vec();
-    rm_payload.extend_from_slice(&50u32.to_le_bytes());
-    for id in 1_000..1_050u32 {
-        rm_payload.extend_from_slice(&id.to_le_bytes());
-    }
+    append_rmfastload_table(&mut rm_payload, 1_000..1_050);
 
     prt_with_named_payloads(&[
         ("/Root/UG_PART/UG_PART", part_payload),

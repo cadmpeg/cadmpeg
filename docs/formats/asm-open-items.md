@@ -142,109 +142,147 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** The decoder currently attaches the construction-chart pcurve directly to the solved NURBS support. This relation is invalid when the charts differ. We must retain or derive the exact chart map before the neutral support relation can be complete. A fitted map is not sufficient because it does not preserve the stored construction semantics.
 
-### GC-29. Selection of a carrier record's own curve block
+### GC-29. Ownership of multiple 3D curve cache blocks
 
-**Question.** Which curve block of a carrier record is the record's own solved curve, and what bounds the search for it?
+**Question.** Which 3D curve block is the writable cache when a carrier record contains multiple decodable blocks or supports more than one integer width?
 
-**Known.** GC-27 states, as part of what the specification gives, that "the record-level search takes the first curve block in the record as that curve". The rule is written there as settled. It is not settled: nothing in `asm.md` §6.3 names an ordinal or a scope bound for that search, and three properties of the search are unrecorded.
+**Known.** `first_curve_patch_layout` scans the admitted integer widths and marker positions and accepts the first block that decodes. `final_curve_patch_layout` uses the final decodable block for a different caller. Neither function verifies a record-specific owner, cache role, or relationship between the selected block and the carrier subtype.
 
-The search is nesting-blind. `marker_positions` in `nurbs/reader.rs` scans every byte offset of the whole record for the literals `\x0d\x04nubs` and `\x0d\x05nurbs`. The sibling `owned_marker_positions` in the same file states the hazard in its own comment: "A scope's members and the members of the constructions it nests are indistinguishable to a raw byte scan, so a scan that ignores nesting reports a nested support's cache as the scope's own." `first_curve_patch_layout` in `nurbs/core.rs` uses the nesting-blind form, and so do `decode_curve_cache`, `curve_cache`, and `curve_cache_resolving_refs`.
+**Need.** A record with more than one decodable 3D curve can make the writer patch a support or pcurve instead of the writable cache. We need an owner reference, subtype rule, or full-consumption invariant before the first-block selection can be used for writing.
 
-The acceptance test is numeric plausibility. `decode_curve_block` accepts a position when the degree is in `1..=20`, the unique-knot count is in `1..=1000`, the expanded knot count is in `2..=100_000`, and the tagged doubles are present. `asm.md` bounds none of the three. A six-byte match inside an f64 payload run or a long string is admitted by the scan and rejected only by these bounds.
+### GC-30. Missing major-axis vector of an analytic cone
 
-The integer width is also selected by the search. `INT_WIDTHS` is `[8, 4]` and is the outer loop, so width 8 is tried at every marker before width 4 is tried at any marker. The comment argues the probe is sound from the same unrecorded bounds.
+**Question.** Is a `cone` record with no valid major-axis vector a valid form? If it is valid, which member gives its radius and reference direction?
 
-No tie is detected in any of these functions. `find_map` returns the first accepted block; a second accepted block is not counted, not compared, and not reported.
+**Known.** `asm.md` §6.2 `cone` states that the major-axis vector gives the base radius. It states that `u_scale` is a parameter scale and is not a radius. `decode_surface` in `brep/geometry.rs` accepts a missing or zero-length major-axis vector. It then uses `u_scale` as the radius and `deterministic_ref_direction(axis)` as the reference direction. It records no loss.
 
-**Conflict.** Decode and write take opposite ordinals for one record family. `procedural_curve_recursive` in `nurbs/proc_curve.rs` takes the **last** decodable block for a wrapper construction, and its comment gives the reason: "Wrapper constructions serialize their source curves before the record's own cache, so the cache is the last decodable curve block." `patch_nurbs_curve_record` in the f3d writer calls `first_curve_patch_layout` for every edited B-rep curve, for a tolerant-coedge use curve, and for a procedural directrix, and has no wrapper test. Its only guard compares the control-point count and the rationality. A vector offset keeps both, because it translates every control point by a constant vector, so an edit to an `offset_int_cur` curve is written into the source block while the solved cache keeps the old geometry. The edit then disappears on the next read and the record states an offset of its own offset.
+If an offset-derived cone has a `u_scale` that differs from its major-axis radius, the emitted radius is wrong. Its zero-azimuth direction is also invented, so an attached cone pcurve can use the wrong chart. We need a valid-record witness or a rule that requires the record to remain native when the major-axis vector is absent.
 
-**Need.** `cadmpeg-asm` is shared by `cadmpeg-codec-f3d` and `cadmpeg-codec-sat`, so the rule reaches both. We must know which ordinal names a record's own curve, what bounds the search to the record's own scope, and what the real degree, knot, and pole limits are. Until then the search must walk tokens with `owned_marker_positions`, must take the width from the stream header, and must withhold when two blocks are accepted.
+**Note.** QA sweep location: `crates/cadmpeg-asm/src/brep/geometry.rs:98-118`. Confidence: high for the fallback and its failure path; medium for reachability in a conforming record because the fixed layout requires the vector. The fixed layout and the text shape table are counter-evidence against treating the fallback as a conforming form, but they do not justify emitting substitute geometry when the binary reader reaches it.
 
-### GC-30. Cone radius when the major-axis vector is absent
+### GC-31. Missing analytic-surface frame members
 
-**Conflict.** `asm.md` §6.2 `cone` states that the base major radius is the major-axis vector's magnitude and that `u_scale` "usually equals it but diverges on offset-derived surfaces and is not a radius". `decode_surface` in `brep/geometry.rs` falls back to `u_scale` for the radius when the major-axis vector is absent or has zero length, and then supplies the zero-azimuth direction from `deterministic_ref_direction` rather than from the record.
+**Question.** Which frame does an analytic surface carry when one of its direction vectors is absent?
 
-**Known.** `asm.md` §6.2 also makes the zero-azimuth direction the frame an embedded pcurve on a cone is measured against, so both substituted values reach the pcurve chart. No loss is recorded for either.
+**Known.** `asm.md` §6.2 gives both frame members for `plane`, `sphere`, and `torus`: plane normal plus reference direction, sphere equator plus polar axis, and torus axis plus reference direction. `decode_surface` in `brep/geometry.rs` synthesizes a plane reference direction when only its normal is present, uses `sphere.dir1` as the polar axis when `dir2` is absent and synthesizes a new equator, and synthesizes a torus reference direction when only its axis is present. It records no loss.
 
-**Need.** The specification forbids the substitution the decoder makes. The decision states whether such a record is readable at all or must be retained.
+If a one-vector sphere is accepted, the point set is unchanged but the pole and seam frame is rotated: the decoder treats the equator as the polar axis. A pcurve or trim measured in the stored frame then lands on the wrong parameters. The same substitution moves a plane seam or torus zero-azimuth direction.
 
-### GC-31. Sphere frame when one direction vector is present
+**Need.** A conforming record carries the complete frame. We need a specimen or an authoritative alternate form that identifies the one stored vector, or the decoder must retain the record without synthesizing a frame.
 
-**Question.** Which frame does a `sphere` record carry when it stores one direction vector?
+**Note.** QA sweep locations: `crates/cadmpeg-asm/src/brep/geometry.rs:82-96,155-183`. Confidence: high for the code behavior and parameterization failure; medium for reachability in a conforming record because the fixed layouts require the vectors. Required-vector layouts are counter-evidence against a valid one-vector form, not evidence for the substitutions.
 
-**Known.** `asm.md` §6.2 `sphere` gives the members as center, signed radius, `dir1` as the equator, and `dir2` as the polar axis. `decode_surface` in `brep/geometry.rs` falls back to `dir1` for the polar axis when `dir2` is absent, and then synthesizes an equator perpendicular to it. The emitted sphere occupies the correct point set with a frame turned through a right angle, so every UV parameter measured on it is wrong. The same synthesis stands for `plane.u_axis` and for `torus.ref_direction`.
+### GC-32. Rolling-ball fallback field selection
 
-**Need.** A conforming record carries both vectors. We must know whether a one-vector form exists and which member it stores, or the record must be retained.
+**Question.** Which members give the radii, spine, and two supports of an `rb_blend_spl_sur` record when the structured side decoder fails?
 
-### GC-32. Rolling-ball blend fallback inference
+**Known.** `asm.md` §6.6 `rb_blend_spl_sur` gives ordered side graphs, a slice curve, offsets, radius selection, and cross-section fields. `procedural_surface_resolving_refs` calls `rb_blend_spl_sur_fallback` after the complete decoder fails. The fallback in `nurbs/blend.rs` collects every `DOUBLE` before the first tail cache, takes the last two as the radius endpoints, takes the last decodable curve as the spine, assigns analytic support surfaces by encounter order to slots zero and one, forces a circular cross-section, and drops the native rolling-ball payload. It records no distinction between a structured decode failure and a successful fallback.
 
-**Question.** Which members give the blend radii, the spine, and the supports of an `rb_blend_spl_sur` record whose side graphs do not decode?
+If optional side ranges, locations, or other doubles occur after the actual offsets, the last two doubles are not the radius law. If a support or nested construction has a later curve block, the last curve is not the slice. A valid non-circular selector is emitted as circular geometry. The neutral result can therefore contain a wrong radius, wrong spine, or wrong surface with no loss.
 
-**Known.** `asm.md` §6.6 `rb_blend_spl_sur` gives the structured form. `rb_blend_spl_sur_fallback` in `nurbs/blend.rs` runs when `full_rb_blend_spl_sur` fails for any reason. It pools every `Token::Double` in the scope prefix without regard to the field each belongs to, declares the last two by position to be the start and end radii, takes the last curve block in the scope as the spine, and assigns the supports to slots zero and one by encounter order. It sets the cross-section to circular without reading a field and sets `native` to nothing, so the structured payload is not retained.
+**Need.** A real `rb_blend_spl_sur` specimen with a failed structured branch must identify each field by its grammar and must state whether a failed branch is recoverable. Until then the fallback must not infer members from encounter order and must retain the native payload or report the loss.
 
-`brep/topology.rs` inserts the result with no distinguishing statistic and no finding, so the structured decoder's failure is invisible to `cadmpeg query findings`.
+**Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/proc_surface.rs:4087-4115` and `crates/cadmpeg-asm/src/nurbs/blend.rs:1505-1577`. Confidence: high for the inference and failure mechanism; medium for the set of inputs that reach it because the complete decoder runs first. The complete decoder and the structured grammar are counter-evidence for conforming records that parse successfully, not for the fallback's behavior after a parse failure.
 
-**Need.** The number of doubles before the closing enum changes with the optional side fields, so the last two are not always the radii. A wrong radius reaches the neutral model as a millimetre value with no mark. The fallback must record a loss and must retain the native payload, and the members it infers must come from the grammar.
+### GC-33. Cone pcurve chart sign and scale
 
-### GC-33. Axial sign of a cone native support chart
+**Question.** What gives the sign and scale of the axial coordinate of a pcurve on a native `cone` support?
 
-**Question.** What gives the sign of the axial coordinate of an embedded pcurve on a `cone` support?
+**Conflict.** `asm.md` §6.2 now states that the first cone-chart coordinate is multiplied by `direction * cosine * u_scale`, with `direction` selected by `sine * cosine`. `native_support_chart` and `normalize_pcurve_for_surface_record` in `nurbs/proc_curve.rs` implement that formula. The current rule was written from the implementation change and synthetic token tests; no independent SAT/SAB witness or external rule in the repository separates this formula from the preceding `direction * u_scale` interpretation. The parse-failure branch also substitutes the canonical chart with no loss.
 
-**Known.** `asm.md` §6.2 states that an embedded pcurve on a cone stores normalized axial distance first and azimuth second, and that multiplying the first coordinate by `u_scale` gives signed axial distance along the native axis. It states no sign factor. `asm.md` §6.2 relates the sign of `cosine` to the surface normal and the ratio of `sine` to `cosine` to the radius slope, and relates neither to the chart direction.
+**Need.** A cone pcurve with a negative cosine, an offset-derived `u_scale`, and a known surface position would distinguish the chart direction and scale. Without that evidence, the current text is a promotion of the implementation's choice, not proof that the file format uses it.
 
-`native_support_chart` in `nurbs/proc_curve.rs` negates the axial scale when `sine * cosine` is negative. The plane arm of the same function is spec-cited; this arm is not.
+**Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/proc_curve.rs:79-164`; the synthetic tests are at `:3111-3145`. Confidence: high that the current implementation and specification agree; high that the agreement is not independently evidenced in this branch. A test that supplies tokens constructed by the same rule is counter-evidence only for arithmetic consistency, not for the native rule.
 
-**Note.** The same function substitutes the canonical chart when the cone payload does not walk. The canonical chart performs no transformation, so the pcurve reaches the neutral model with its two coordinates in native order and unscaled. Nothing records the substitution.
+### GC-34. Pcurve interval eligibility tolerance
 
-**Need.** A cone whose normal points toward the axis has every pcurve axial coordinate negated, so the edge lies on the wrong half of the cone. The rule that gives the chart direction settles the item.
+**Question.** What tolerance applies when an edge-use interval is compared with a pcurve knot domain?
 
-### GC-34. Eligibility of an edge-use interval against a pcurve knot domain
+**Known.** `asm.md` §6.4 says that only intervals whose endpoints lie in the pcurve knot domain are eligible and that the full knot domain is the fallback when neither signed edge interval is eligible. `pcurve_ranges_on_domain` in `brep/geometry.rs` uses `1.0e-9 * max(abs(domain span), 1.0)`, clamps an accepted overshoot to the knot boundary, appends the full domain, and its caller takes the first range.
 
-**Question.** What tolerance applies when an edge's stored interval is compared against a pcurve's knot domain?
+If an endpoint overshoots by less than the hard-coded tolerance, the decoder silently changes it. If it overshoots by slightly more, the signed interval is rejected and the whole pcurve domain becomes the trim. The transition is an unrecorded selection threshold and no loss identifies it.
 
-**Known.** `asm.md` §6.4 states that intervals whose endpoints lie in the pcurve knot domain are eligible, that edge sense selects the first eligible sign tested, and that the full knot domain is the fallback when neither sign lies in the domain. `pcurve_ranges_on_domain` in `brep/geometry.rs` adds a relative slack of `1.0e-9` times the domain span, accepts an interval inside the slack, and then moves the overshooting endpoint onto the domain boundary.
+**Need.** A source rule or a specimen with endpoint error near the boundary must settle the tolerance, the clamping rule, and whether the full-domain fallback is valid after rejection.
 
-**Need.** The slack is not in the specification. An interval that overshoots by slightly less than the slack is silently moved; one that overshoots by slightly more is rejected and the coedge takes the entire carrier domain as its trim, which is a fabricated trim that no loss records. The two behaviours are discontinuous across an unrecorded threshold.
+**Note.** QA sweep locations: `crates/cadmpeg-asm/src/brep/geometry.rs:386-420` and `crates/cadmpeg-asm/src/brep/topology.rs:355-372`. Confidence: high for the code behavior and failure mechanism; medium for the intended tolerance because the specification only gives the domain predicate. The ordered signed candidates and full-domain fallback are documented, but the numeric threshold is not.
 
-### GC-35. Support reversal of a blend
+### GC-35. Reversal of an embedded blend support
 
-**Question.** Which member of an embedded blend support carries the surface-normal side?
+**Question.** Which member of an embedded blend support gives the surface-normal side of that support?
 
-**Known.** `cadmpeg-ir` documents `BlendSupport.reversed` as selecting the opposite surface-normal side. `emit_blend_surface` in `brep/emit.rs` is the only producer of that field in the workspace and writes `false` at both of its construction sites. The embedded-support decoders in `nurbs/proc_curve.rs` consume and discard a boolean at the slot the text grammar in `sat.rs` types as a sense slot, for the `plane`, `cone`, and `sphere` supports. `asm.md` §6.2 gives the plane layout without a trailing boolean.
+**Known.** `cadmpeg-ir` defines `BlendSupport.reversed` as selecting the opposite surface-normal side. `emit_blend_surface` writes `reversed: false` at both support construction sites. The embedded support readers in `nurbs/proc_curve.rs` consume and discard a Boolean after analytic support fields: the plane, cone, sphere, and torus branches each read one such Boolean. `asm.md` §6.2 gives the top-level analytic layouts without assigning this trailing Boolean to a support-reversal member.
 
-**Need.** Either the discarded boolean is the reversal and the field is unfilled, or the boolean is another member and the neutral field has no reader and must go. The member's meaning decides which.
+If the discarded Boolean is the support reversal, every reversed blend support is emitted on the wrong side. If it is another native field, `BlendSupport.reversed` has no reader and the neutral field is misleading. In both cases the current code selects a meaning without evidence.
+
+**Need.** A paired support/face specimen or an authoritative field description must bind the Boolean to surface reversal or to another native member. The answer determines whether the neutral field must be populated or removed from this path.
+
+**Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/proc_curve.rs:2481-2583,2631-2733`, `crates/cadmpeg-asm/src/nurbs/blend.rs:384-440`, and `crates/cadmpeg-asm/src/brep/emit.rs:2441-2483`. Confidence: high for the discarded/constant behavior; medium for the Boolean's format meaning. The field is structurally consumed, but no current specification paragraph assigns its semantics.
+
+### GC-36. Ownership and width of decoded NURBS cache blocks
+
+**Question.** Which NURBS block is the owning cache when a record contains multiple decodable blocks or when more than one integer width parses a candidate?
+
+**Known.** `marker_positions` scans every marker without nesting, while `owned_marker_positions` exists specifically to exclude nested construction scopes. Token readers still use the raw scan in `surface_cache`, `curve_cache`, `decode_pcurve_cache`, `decode_curve_cache`, and the compound/directrix helpers. `surface_cache` chooses the first block when any `comp_spl_sur` bytes occur anywhere and otherwise the last block; `curve_cache` chooses the first. Binary readers try `INT_WIDTHS = [8, 4]` and return the first width with a decodable block. `procedural_curve_recursive` changes the ordinal to last for wrapper flags and first for other families. No path counts competing valid blocks or withholds on a tie.
+
+If a nested support cache precedes an owning cache, a raw scan can return the support. If a wrapper has a source curve before its solved cache, a first-block caller returns the source; a last-block caller applied to a non-wrapper returns a later nested curve. A second valid block is accepted without an owner reference, and a wrong-width parse is accepted without a stream-width witness. The resulting face, edge, pcurve, or patch can therefore use a different carrier while remaining numerically valid.
+
+**Need.** A specimen with multiple valid blocks and the stream header's integer width must establish the owner, scope boundary, ordinal, and whether a second candidate is invalid. Until then every read and patch path must use the owning scope and known width, and must withhold when two blocks remain valid. GC-29 covers the separate writer helper; this item covers the read paths.
+
+**Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/reader.rs:20-26,52-92`, `crates/cadmpeg-asm/src/nurbs/core.rs:146-187,551-630`, `crates/cadmpeg-asm/src/nurbs/pcurve.rs:160-171`, and `crates/cadmpeg-asm/src/nurbs/proc_curve.rs:560-583,2876-2935`. Confidence: high for the selection behavior and missing tie gate; medium for a conforming file that presents competing valid blocks. The format paragraphs in `asm.md` §6.3-§6.6 assert first/final cache roles, and owned-scope helpers exist, but neither is an independent witness for every generic caller.
 
 ## 2. Topology
 
-### TG-01. Radial partner of a coedge with no kept mate
+### TG-01. Missing partner coedge substitution
 
-**Question.** How does a reader mark a coedge whose partner is absent from the decoded topology?
+**Question.** How does a reader represent a coedge whose stored partner is not kept in the reachable topology?
 
-**Known.** `asm.md` §5.2 **CoEdge** gives partner symmetry as a manifold invariant: every coedge's partner's partner is itself, and every shell edge is shared by exactly two mutually-referencing coedges of opposite sense. `cadmpeg-ir` states that a self-referencing `radial_next` denotes a laminar boundary.
+**Known.** `asm.md` §5.2 gives the coedge partner link and §5.4 gives the radial pairing invariant. `emit_coedges` filters the stored partner through the kept-coedge set. When the partner is absent, it writes `radial_next` back to the coedge itself. A partner can be absent because an adjacent face or carrier was dropped for a missing or dangling surface reference in `keep_faces_and_carriers`. No loss records the replacement.
 
-`emit_coedges` in `brep/emit.rs` filters the stored partner against the kept coedge set and emits a self-reference when the partner is not kept. A partner is not kept when its face was dropped, and `keep_faces_and_carriers` in `brep/topology.rs` drops a face whose surface reference dangles and counts it under the missing-face statistic. Every coedge on each neighbouring face then states a laminar boundary. The coedge-pairing validator walks the radial ring and a self-reference closes it at one member, so it raises no finding, and no loss records the substituted pairing.
+If one coedge of a valid pair is dropped because its face carrier is unavailable, the surviving coedge is emitted as a self-ring. Validation accepts the self-ring as a laminar boundary, so a broken decode is represented as a different topology rather than as an unresolved partner.
 
-**Need.** A decoder-side reachability failure is converted into a claim that the file violates the specification's own invariant. The IR needs a third state, or the neighbouring coedges must be withheld with a loss.
+**Need.** A source rule or a retained native reference must distinguish a genuinely laminar self-ring from a partner lost during reachability filtering. The decoder must withhold the coedge or report the missing partner until that distinction is known.
 
-### TG-02. Discriminator of a body kind
+**Note.** QA sweep locations: `crates/cadmpeg-asm/src/brep/topology.rs:90-103` and `crates/cadmpeg-asm/src/brep/emit.rs:3690-3751`. Confidence: high for the substitution; medium for the intended neutral representation. Self-radial laminar boundaries are valid counter-evidence, but the current code uses the same value for a dropped partner.
 
-**Question.** Which stored member gives a body's solid, sheet, or wire kind?
+### TG-02. Body-kind inference from edge-use counts
 
-**Known.** `asm.md` gives no solid-or-sheet rule. `face.chunk[9]` carries the `single` and `double` sidedness that `asm.md` §5.2 gives, and the decoder retains it in `FaceSidedness`. `classify_body_kinds` in `brep/geometry.rs` does not read it. It counts edge uses and calls a body solid when every edge is used exactly twice.
+**Question.** Which native member gives an ASM body's `Solid`, `Sheet`, or `General` kind?
 
-A closed double-sided sheet body has every edge used twice and is emitted as a solid. A solid with one internal double-sided face has an edge used four times and is emitted as a sheet. `classify_body_kinds` runs only for a model decode, so a body decoded for history binding keeps the unconditional solid kind that `emit_containers` seeds.
+**Known.** `asm.md` §5.2 documents the body flags/history field and topology links but does not define a body-kind member. `classify_body_kinds` in `brep/geometry.rs` sets `Wire` or `General` from visible topology, then labels a face-bearing body `Solid` when every counted edge has exactly two coedge uses and `Sheet` otherwise. It runs only after model transfer and records no inference or loss.
 
-**Need.** The sidedness member is stored, retained, and unread, and the counting rule is the codec's own. The member that gives the body kind settles both the rule and the history-path default.
+If a closed sheet or a body with a non-manifold internal face has every edge counted twice, the rule emits `Solid`. If a solid has a missing coedge, it emits `Sheet`. The same topological count can therefore select different native body meanings without reading a source discriminator.
 
-### TG-03. Normal orientation of a recognized procedural analytic surface
+**Need.** A body-kind field, an authoritative topology invariant, or a specimen with a body whose stored metadata separates solid and sheet states must settle the rule. Until then the neutral body kind is an inference from the output graph.
 
-**Question.** What gives the native normal direction of a procedural surface that the decoder recognizes as an analytic carrier?
+**Note.** QA sweep locations: `crates/cadmpeg-asm/src/brep/geometry.rs:1099-1168` and `crates/cadmpeg-asm/src/brep/mod.rs:673-681`. Confidence: high for the inference; medium for the native source of body kind because no body-kind rule appears in the current specification. The edge-count rule is valid for ordinary two-manifold solids, but that does not establish it for all bodies.
 
-**Known.** `asm.md` §5.2 states that a reversed spline carrier and an inward-normal cone reverse the face sense, and `asm.md` §6.2 requires the extrusion direction of a recognized cylinder to be parallel to the circle normal. `analytic_procedural_surface` in `brep/geometry.rs` compares the two with `abs`, so it also admits an antiparallel pair. `keep_faces_and_carriers` in `brep/topology.rs` then records every recognized carrier with the inward-normal flag clear, and the flag exists to carry exactly this state. `emit_faces` reverses only for a reversed spline record, so nothing compensates.
+### TG-03. Normal sign of an analytic procedural carrier
 
-**Need.** The directrix normal's sign is the traversal orientation of its circle. A clockwise directrix gives a carrier whose normal opposes the record, and every face on it is emitted with an inverted normal. The rule that fixes the recognized carrier's normal settles the item.
+**Question.** Does a procedural circle/extrusion or rolling-ball construction with an antiparallel frame carry the same natural normal as the direct construction, or must its axis or face sense be reversed?
 
-## 3. Text encoding
+**Known.** `asm.md` §6.6 says that an extrusion direction is parallel to the circle normal and that a rolling-ball carrier uses parallel support and spine directions. `analytic_procedural_surface` tests `abs(dot)` and therefore accepts both parallel and antiparallel vectors. It stores the extrusion direction or spine direction as the IR axis without a sign correction. `emit_faces` reverses only for a record-level reversed spline or a marked inward-normal analytic surface.
+
+If the directrix normal is opposite the chosen cylinder axis, the point set is unchanged but the IR surface parameterization and natural normal can be opposite. The face then keeps the wrong winding because the analytic recognition path does not provide a reversal marker.
+
+**Need.** A specimen with an oriented directrix and an antiparallel extrusion or blend axis must settle whether parallel means oriented parallel, either sign, or a sign plus face-sense rule.
+
+**Note.** QA sweep locations: `crates/cadmpeg-asm/src/brep/geometry.rs:625-652,732-782` and `crates/cadmpeg-asm/src/brep/emit.rs:3830-3847`. Confidence: high for the absolute-dot selection; medium for the normal failure because the current prose can be read as allowing either parallel sign. Existing tests deliberately use an antiparallel extrusion and therefore prove only that the implementation accepts it.
+
+## 3. Attributes
+
+### AT-01. Precedence of multiple colour attributes
+
+**Question.** Which colour attribute wins when one ASM attribute chain contains more than one decodable colour record?
+
+**Known.** `asm.md` §5.6 allows colour and feature-tag attributes to coexist but gives no precedence among `rgb_color`, `truecolor`, and `entatt_color-bt-attrib`. `attribute_chain_color` returns the first decodable matching record in chain order, skips an `rgb_color` whose channels fail the `0.0..=1.0` plausibility check, and then accepts a later colour record. It records no conflict or skipped candidate.
+
+If a chain contains `truecolor` before `rgb_color`, the first record supplies the neutral colour even when the later record is the authoritative display colour. If the first `rgb_color` is out of range because its encoding is not normalized, the function silently selects a later record. Chain order and a numeric plausibility test therefore decide the result.
+
+**Need.** A source rule or a specimen with multiple colour classes must establish precedence, channel units, and the treatment of an invalid first candidate.
+
+**Note.** QA sweep location: `crates/cadmpeg-asm/src/brep/attributes.rs:132-193`. Confidence: high for first-match behavior and the failure story; medium for the intended precedence because the current specification only establishes coexistence. Chain order is counter-evidence only if the format explicitly defines it as precedence.
+
+## 4. Text encoding
 
 ### TE-01. Migration-flag words of a `gen-attrib` record in the text encoding
 
@@ -261,3 +299,15 @@ A closed double-sided sheet body has every edge used twice and is emitted as a s
 **Known.** `asm.md` §7.1 gives the header lines. The flags word keeps its binary semantics, so bit 0 is the history-partition flag. No further text-specific marking is known, and the record grammar for a text history partition is not known.
 
 **Need.** A reader must know the marking to separate the solved records from history records; without it, a history-bearing text stream would read history records as model records.
+
+### TE-03. Invalid text-header scale handling
+
+**Question.** What scale values are valid in the SAT/SMT text header, and what must a reader do for zero, negative, or non-finite values?
+
+**Known.** `asm.md` §7.1 defines `scale` as millimetres per model-space unit. `parse_header` accepts any value that `f64::parse` accepts and does not require finiteness, positivity, or an exact three-field line. `parse` converts positive values with `scale / 10.0` but substitutes `1.0` for every non-positive value; `NaN` also takes that branch because its comparison with zero is false. No loss is recorded.
+
+If a stream carries zero, a negative value, or `NaN`, every length-bearing text field is decoded with the fallback factor instead of being rejected or retained. A malformed header can therefore produce plausible but wrongly scaled geometry and tolerances.
+
+**Need.** An authoritative valid-domain rule or a specimen with an invalid header must settle whether the stream is malformed, uses a special unit convention, or requires a different conversion. The reader must not fabricate a scale while this is open.
+
+**Note.** QA sweep locations: `crates/cadmpeg-asm/src/sat.rs:274-324,331-341`. Confidence: high for the fallback behavior; medium for whether invalid headers are in the format's accepted domain. The settled unit rule and existing valid positive headers are counter-evidence against treating the fallback as a valid convention.

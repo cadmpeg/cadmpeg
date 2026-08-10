@@ -15,7 +15,7 @@ use crate::wire::Uuid;
 /// Maximum embedded curve nesting depth.
 pub(crate) const MAX_CURVE_DEPTH: usize = 32;
 /// Maximum points or polycurve segments in one payload.
-pub(crate) const MAX_CURVE_ITEMS: usize = 1 << 16;
+const CIRCLE_TOLERANCE: f64 = 1.0e-10;
 
 const POINT: Uuid = Uuid::from_canonical([
     0xc3, 0x10, 0x1a, 0x1d, 0xf1, 0x57, 0x11, 0xd3, 0xbf, 0xe7, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
@@ -163,11 +163,6 @@ pub(crate) fn supported_class(uuid: Uuid) -> bool {
             | REV_SURFACE_LEGACY
             | SUM_SURFACE
     )
-}
-
-/// Returns whether class data contains independently checksummed child chunks.
-pub(crate) fn class_data_nests_chunks(uuid: Uuid) -> bool {
-    matches!(uuid, CURVE_ON_SURFACE | POLYCURVE | POLYCURVE_LEGACY)
 }
 
 /// Returns whether a class derives from the curve carrier family.
@@ -531,10 +526,10 @@ pub(crate) fn exact_nurbs(
             offset,
         )?);
     }
-    merge_nurbs_segments(segments, offset)
+    Ok(join_nurbs_segments(segments, offset)?.curve)
 }
 
-fn remap_nurbs_domain(
+pub(crate) fn remap_nurbs_domain(
     mut curve: NurbsCurve,
     target: [f64; 2],
     offset: usize,
@@ -567,19 +562,189 @@ fn remap_nurbs_domain(
     Ok(curve)
 }
 
-fn merge_nurbs_segments(
-    mut segments: Vec<NurbsCurve>,
+/// Exact joined curve and recoverable join diagnostics.
+pub(crate) struct NurbsJoin {
+    pub(crate) curve: NurbsCurve,
+    pub(crate) warnings: Vec<String>,
+}
+
+#[derive(Clone, Copy)]
+struct Homogeneous([f64; 4]);
+
+impl Homogeneous {
+    fn blend(self, other: Self, alpha: f64) -> Self {
+        Self(std::array::from_fn(|index| {
+            (1.0 - alpha) * self.0[index] + alpha * other.0[index]
+        }))
+    }
+}
+
+fn elevate_bezier(mut values: Vec<Homogeneous>, target: usize) -> Vec<Homogeneous> {
+    while values.len() - 1 < target {
+        let degree = values.len() - 1;
+        let mut elevated = Vec::with_capacity(values.len() + 1);
+        elevated.push(values[0]);
+        for index in 1..=degree {
+            elevated
+                .push(values[index].blend(values[index - 1], index as f64 / (degree + 1) as f64));
+        }
+        elevated.push(values[degree]);
+        values = elevated;
+    }
+    values
+}
+
+fn insert_knot_once(
+    knots: &mut Vec<f64>,
+    points: &mut Vec<Homogeneous>,
+    degree: usize,
+    value: f64,
+) -> Result<(), ()> {
+    let n = points.len() - 1;
+    let k = (degree..=n)
+        .find(|index| value < knots[index + 1])
+        .unwrap_or(n);
+    let multiplicity = knots.iter().filter(|knot| **knot == value).count();
+    if multiplicity > degree {
+        return Err(());
+    }
+    let mut output = vec![points[0]; points.len() + 1];
+    output[..=k - degree].copy_from_slice(&points[..=k - degree]);
+    output[k - multiplicity + 1..=n + 1].copy_from_slice(&points[k - multiplicity..=n]);
+    for index in k - degree + 1..=k - multiplicity {
+        let denominator = knots[index + degree] - knots[index];
+        if denominator <= 0.0 || !denominator.is_finite() {
+            return Err(());
+        }
+        let alpha = (value - knots[index]) / denominator;
+        output[index] = points[index - 1].blend(points[index], alpha);
+    }
+    knots.insert(k + 1, value);
+    *points = output;
+    Ok(())
+}
+
+fn elevate_to_degree(
+    curve: NurbsCurve,
+    target: usize,
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
-    let Some(first) = segments.first() else {
+    let degree =
+        usize::try_from(curve.degree).map_err(|_| error(offset, "curve degree overflow"))?;
+    if degree > target
+        || curve.periodic
+        || curve.control_points.len() + degree + 1 != curve.knots.len()
+    {
+        return Err(error(offset, "polycurve segment knot vector is invalid"));
+    }
+    let weights = curve
+        .weights
+        .unwrap_or_else(|| vec![1.0; curve.control_points.len()]);
+    if weights.len() != curve.control_points.len() {
+        return Err(error(offset, "polycurve segment weight count mismatch"));
+    }
+    let rational = weights.iter().any(|weight| *weight != 1.0);
+    let mut points = curve
+        .control_points
+        .into_iter()
+        .zip(weights)
+        .map(|(point, weight)| {
+            Homogeneous([point.x * weight, point.y * weight, point.z * weight, weight])
+        })
+        .collect::<Vec<_>>();
+    let mut knots = curve.knots;
+    let domain = [knots[degree], knots[knots.len() - degree - 1]];
+    for endpoint in domain {
+        while knots.iter().filter(|value| **value == endpoint).count() < degree + 1 {
+            insert_knot_once(&mut knots, &mut points, degree, endpoint)
+                .map_err(|()| error(offset, "polycurve endpoint clamping failed"))?;
+        }
+    }
+    let mut internal = knots[degree + 1..knots.len() - degree - 1].to_vec();
+    internal.dedup();
+    for knot in internal {
+        while knots.iter().filter(|value| **value == knot).count() < degree {
+            insert_knot_once(&mut knots, &mut points, degree, knot)
+                .map_err(|()| error(offset, "polycurve knot insertion failed"))?;
+        }
+    }
+    let boundaries = knots
+        .windows(2)
+        .filter_map(|pair| (pair[0] < pair[1]).then_some([pair[0], pair[1]]))
+        .collect::<Vec<_>>();
+    if boundaries.is_empty() {
+        return Err(error(offset, "polycurve segment has no nonempty span"));
+    }
+    let mut elevated = Vec::new();
+    for (span, boundary) in boundaries.iter().enumerate() {
+        let start = span * degree;
+        let bezier = elevate_bezier(points[start..=start + degree].to_vec(), target);
+        if span == 0 {
+            elevated.extend(bezier);
+        } else {
+            elevated.extend(bezier.into_iter().skip(1));
+        }
+        let _ = boundary;
+    }
+    let mut elevated_knots = vec![boundaries[0][0]; target + 1];
+    for boundary in boundaries.iter().take(boundaries.len() - 1) {
+        elevated_knots.extend(std::iter::repeat_n(boundary[1], target));
+    }
+    elevated_knots.extend(std::iter::repeat_n(
+        boundaries.last().expect("nonempty spans")[1],
+        target + 1,
+    ));
+    let mut output_weights = Vec::with_capacity(elevated.len());
+    let mut control_points = Vec::with_capacity(elevated.len());
+    for point in elevated {
+        let weight = point.0[3];
+        if weight == 0.0 || !weight.is_finite() {
+            return Err(error(
+                offset,
+                "polycurve degree elevation produced an invalid weight",
+            ));
+        }
+        control_points.push(Point3::new(
+            point.0[0] / weight,
+            point.0[1] / weight,
+            point.0[2] / weight,
+        ));
+        output_weights.push(weight);
+    }
+    Ok(NurbsCurve {
+        degree: target as u32,
+        knots: elevated_knots,
+        control_points,
+        weights: rational.then_some(output_weights),
+        periodic: false,
+    })
+}
+
+pub(crate) fn join_nurbs_segments(
+    mut segments: Vec<NurbsCurve>,
+    offset: usize,
+) -> Result<NurbsJoin, GeometryError> {
+    let Some(_) = segments.first() else {
         return Err(error(offset, "polycurve has no segments"));
     };
-    if segments.len() == 1 {
-        return Ok(segments.remove(0));
+    let degree = segments
+        .iter()
+        .map(|segment| segment.degree)
+        .max()
+        .expect("nonempty segments");
+    let target = usize::try_from(degree).map_err(|_| error(offset, "curve degree overflow"))?;
+    if target == 0 {
+        return Err(error(offset, "polycurve segment degree must be positive"));
     }
-    let degree = first.degree;
-    if segments.iter().any(|segment| segment.degree != degree) {
-        return Err(error(offset, "polycurve segments have unequal degrees"));
+    segments = segments
+        .into_iter()
+        .map(|segment| elevate_to_degree(segment, target, offset))
+        .collect::<Result<_, _>>()?;
+    if segments.len() == 1 {
+        return Ok(NurbsJoin {
+            curve: segments.remove(0),
+            warnings: Vec::new(),
+        });
     }
     let multiplicity = usize::try_from(degree)
         .ok()
@@ -622,34 +787,72 @@ fn merge_nurbs_segments(
         })
         .and_then(|total| {
             (segments.len() - 1)
-                .checked_mul(multiplicity)
+                .checked_mul(multiplicity + 1)
                 .and_then(|duplicates| total.checked_sub(duplicates))
         })
         .ok_or_else(|| error(offset, "polycurve size overflow"))?;
-    let mut control_points = Vec::with_capacity(control_count);
-    let mut knots = Vec::with_capacity(knot_count);
+    let mut control_points: Vec<Point3> = Vec::with_capacity(control_count);
+    let mut knots: Vec<f64> = Vec::with_capacity(knot_count);
     let mut weights = rational.then(|| Vec::with_capacity(control_count));
-    for (index, segment) in segments.into_iter().enumerate() {
+    let mut warnings = Vec::new();
+    for (index, mut segment) in segments.into_iter().enumerate() {
+        if index > 0 {
+            let previous = *control_points.last().expect("previous segment endpoint");
+            let next = segment.control_points[0];
+            let midpoint = Point3::new(
+                (previous.x + next.x) * 0.5,
+                (previous.y + next.y) * 0.5,
+                (previous.z + next.z) * 0.5,
+            );
+            let gap = ((previous.x - next.x).powi(2)
+                + (previous.y - next.y).powi(2)
+                + (previous.z - next.z).powi(2))
+            .sqrt();
+            if gap > 0.0 {
+                warnings.push(format!(
+                    "polycurve join moved endpoints by half of gap {gap}"
+                ));
+            }
+            *control_points.last_mut().expect("previous endpoint") = midpoint;
+            segment.control_points[0] = midpoint;
+        }
+        let skip = usize::from(index > 0);
         if let Some(target) = &mut weights {
             match segment.weights {
-                Some(values) => target.extend(values),
-                None => target.extend(std::iter::repeat_n(1.0, segment.control_points.len())),
+                Some(values) => target.extend(values.into_iter().skip(skip)),
+                None => target.extend(std::iter::repeat_n(
+                    1.0,
+                    segment.control_points.len() - skip,
+                )),
             }
         }
-        control_points.extend(segment.control_points);
+        control_points.extend(segment.control_points.into_iter().skip(skip));
+        let segment_start = segment.knots[multiplicity - 1];
+        let dk = if index == 0 {
+            0.0
+        } else {
+            knots.last().copied().unwrap_or(0.0) - segment_start
+        };
+        if index > 0 {
+            knots.pop();
+        }
         knots.extend(
             segment
                 .knots
                 .into_iter()
+                .map(|knot| knot + dk)
                 .skip(if index == 0 { 0 } else { multiplicity }),
         );
     }
-    Ok(NurbsCurve {
-        degree,
-        knots,
-        control_points,
-        weights,
-        periodic: false,
+    Ok(NurbsJoin {
+        curve: NurbsCurve {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic: false,
+        },
+        warnings,
     })
 }
 
@@ -1017,13 +1220,13 @@ fn read_circle(reader: &mut BoundedReader<'_>, scale: f64) -> Result<Circle, Geo
     if !(norm_x.is_finite()
         && norm_y.is_finite()
         && norm_axis.is_finite()
-        && (norm_x - 1.0).abs() < 1.0e-10
-        && (norm_y - 1.0).abs() < 1.0e-10
-        && (norm_axis - 1.0).abs() < 1.0e-10
-        && dot(xaxis, yaxis).abs() < 1.0e-10
-        && dot(xaxis, axis).abs() < 1.0e-10
-        && dot(yaxis, axis).abs() < 1.0e-10
-        && close_vector(cross(xaxis, yaxis), axis, 1.0e-10)
+        && (norm_x - 1.0).abs() < CIRCLE_TOLERANCE
+        && (norm_y - 1.0).abs() < CIRCLE_TOLERANCE
+        && (norm_axis - 1.0).abs() < CIRCLE_TOLERANCE
+        && dot(xaxis, yaxis).abs() < CIRCLE_TOLERANCE
+        && dot(xaxis, axis).abs() < CIRCLE_TOLERANCE
+        && dot(yaxis, axis).abs() < CIRCLE_TOLERANCE
+        && close_vector(cross(xaxis, yaxis), axis, CIRCLE_TOLERANCE)
         && close_native_point(zero, native.origin, native.xaxis, radius)
         && close_native_point(half_pi, native.origin, native.yaxis, radius)
         && close_native_point(at_pi, native.origin, negate(native.xaxis), radius))
@@ -1176,11 +1379,11 @@ fn arc_nurbs(circle: &Circle, angle: [f64; 2], domain: [f64; 2], delta: f64) -> 
 }
 
 fn canonical_circle(circle: &Circle, angle: [f64; 2], domain: [f64; 2], delta: f64) -> bool {
-    (delta - TAU).abs() < 1.0e-10
-        && angle[0].abs() < 1.0e-10
-        && (domain[0]).abs() < 1.0e-10
-        && (domain[1] - TAU).abs() < 1.0e-10
-        && circle.xaxis.norm() == 1.0
+    (delta - TAU).abs() < CIRCLE_TOLERANCE
+        && angle[0].abs() < CIRCLE_TOLERANCE
+        && (domain[0]).abs() < CIRCLE_TOLERANCE
+        && (domain[1] - TAU).abs() < CIRCLE_TOLERANCE
+        && (circle.xaxis.norm() - 1.0).abs() < CIRCLE_TOLERANCE
 }
 
 fn circle_point(circle: &Circle, angle: f64) -> Point3 {
@@ -1251,7 +1454,7 @@ fn count(reader: &mut BoundedReader<'_>, width: usize) -> Result<usize, Geometry
         raw,
         width,
         reader.remaining(),
-        MAX_CURVE_ITEMS,
+        reader.remaining() / width,
         reader.position() - 4,
     )?;
     Ok(bytes / width)
@@ -1335,6 +1538,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn stored_count_above_legacy_limit_is_bounded_by_payload() {
+        let item_count = 65_537_usize;
+        let mut bytes = (item_count as i32).to_le_bytes().to_vec();
+        bytes.resize(4 + item_count, 0);
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+        assert_eq!(
+            count(&mut reader, 1).expect("payload-bounded count"),
+            item_count
+        );
+    }
+
+    #[test]
     fn curve_on_surface_obeys_the_shared_curve_recursion_limit() {
         let error = decode_inner(
             &[],
@@ -1384,6 +1599,11 @@ mod tests {
     fn full_canonical_circle_is_analytic_but_shifted_circle_is_rational() {
         let circle = unit_circle();
         assert!(canonical_circle(&circle, [0.0, TAU], [0.0, TAU], TAU));
+        let rounded = Circle {
+            xaxis: Vector3::new(1.0 - f64::EPSILON, 0.0, 0.0),
+            ..circle
+        };
+        assert!(canonical_circle(&rounded, [0.0, TAU], [0.0, TAU], TAU));
         assert!(!canonical_circle(
             &circle,
             [0.25, 0.25 + TAU],
@@ -1485,7 +1705,39 @@ mod tests {
             warnings: Vec::new(),
         };
         let converted = exact_nurbs(&nested, 0).expect("required invariant");
-        assert_eq!(converted.knots, vec![2.0, 2.0, 3.0, 3.0, 5.0, 5.0]);
-        assert_eq!(converted.control_points.len(), 4);
+        assert_eq!(converted.knots, vec![2.0, 2.0, 3.0, 5.0, 5.0]);
+        assert_eq!(converted.control_points.len(), 3);
+    }
+
+    #[test]
+    fn join_elevates_degree_and_midpoints_a_gap() {
+        let line = NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            weights: None,
+            periodic: false,
+        };
+        let quadratic = NurbsCurve {
+            degree: 2,
+            knots: vec![5.0, 5.0, 5.0, 7.0, 7.0, 7.0],
+            control_points: vec![
+                Point3::new(3.0, 0.0, 0.0),
+                Point3::new(4.0, 1.0, 0.0),
+                Point3::new(5.0, 0.0, 0.0),
+            ],
+            weights: None,
+            periodic: false,
+        };
+        let joined = join_nurbs_segments(vec![line, quadratic], 0).expect("join");
+        assert_eq!(joined.curve.degree, 2);
+        assert_eq!(
+            joined.curve.knots,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 3.0, 3.0, 3.0]
+        );
+        assert_eq!(joined.curve.control_points.len(), 5);
+        assert_eq!(joined.curve.control_points[2], Point3::new(2.0, 0.0, 0.0));
+        assert_eq!(joined.warnings.len(), 1);
+        assert!(joined.warnings[0].contains("gap 2"));
     }
 }

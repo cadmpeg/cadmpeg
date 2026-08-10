@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Entity index, Directory Entry references, cycles, and validation states.
 
+use crate::card::{CardScan, Section};
 use crate::directory::DirectoryEntry;
+use crate::parameter::ParameterRecord;
+use cadmpeg_ir::report::{LossNote, Severity};
+use cadmpeg_ir::LossProvenance;
 use serde::Serialize;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -15,12 +20,14 @@ pub(crate) enum ReferenceKind {
     Transform,
     LabelDisplay,
     Color,
+    Parameter,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Resolution {
     Resolved,
+    Null,
     OutOfRange,
     EvenSequence,
     Dangling,
@@ -35,6 +42,8 @@ pub(crate) struct ReferenceEdge {
     target: Option<String>,
     resolution: Resolution,
     expected: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parameter_index: Option<usize>,
 }
 
 impl ReferenceEdge {
@@ -48,6 +57,153 @@ struct Candidate {
     kind: ReferenceKind,
     raw_pointer: i64,
     target_sequence: Option<u32>,
+}
+
+pub(crate) struct ParameterResolver<'a> {
+    directory: BTreeMap<u32, &'a DirectoryEntry>,
+    edges: RefCell<BTreeMap<u32, Vec<ReferenceEdge>>>,
+}
+
+impl<'a> ParameterResolver<'a> {
+    pub(crate) fn new(directory: &'a [DirectoryEntry]) -> Self {
+        Self {
+            directory: directory
+                .iter()
+                .map(|entry| (entry.sequence, entry))
+                .collect(),
+            edges: RefCell::new(BTreeMap::new()),
+        }
+    }
+
+    pub(crate) fn resolve(
+        &self,
+        source: u32,
+        parameter_index: usize,
+        raw_pointer: i64,
+        expected: impl Into<String>,
+        accepts: impl FnOnce(&DirectoryEntry) -> bool,
+    ) -> Option<u32> {
+        if raw_pointer == 0 {
+            return None;
+        }
+        let target_sequence = u32::try_from(raw_pointer).ok();
+        self.resolve_sequence(
+            source,
+            parameter_index,
+            raw_pointer,
+            target_sequence,
+            expected,
+            accepts,
+        )
+    }
+
+    pub(crate) fn resolve_negative(
+        &self,
+        source: u32,
+        parameter_index: usize,
+        raw_pointer: i64,
+        expected: impl Into<String>,
+        accepts: impl FnOnce(&DirectoryEntry) -> bool,
+    ) -> Option<u32> {
+        if raw_pointer == 0 {
+            return None;
+        }
+        let target_sequence = raw_pointer
+            .checked_neg()
+            .and_then(|value| u32::try_from(value).ok());
+        self.resolve_sequence(
+            source,
+            parameter_index,
+            raw_pointer,
+            target_sequence,
+            expected,
+            accepts,
+        )
+    }
+
+    fn resolve_sequence(
+        &self,
+        source: u32,
+        parameter_index: usize,
+        raw_pointer: i64,
+        target_sequence: Option<u32>,
+        expected: impl Into<String>,
+        accepts: impl FnOnce(&DirectoryEntry) -> bool,
+    ) -> Option<u32> {
+        let target = target_sequence.and_then(|sequence| self.directory.get(&sequence).copied());
+        let resolution = if target_sequence.is_none() {
+            Resolution::OutOfRange
+        } else if target_sequence.is_some_and(|sequence| sequence % 2 == 0) {
+            Resolution::EvenSequence
+        } else if target.is_none() {
+            Resolution::Dangling
+        } else if target.is_some_and(|entry| !accepts(entry)) {
+            Resolution::WrongType
+        } else {
+            Resolution::Resolved
+        };
+        self.edges
+            .borrow_mut()
+            .entry(source)
+            .or_default()
+            .push(ReferenceEdge {
+                kind: ReferenceKind::Parameter,
+                raw_pointer,
+                target: target.map(|entry| format!("iges:entity:directory#{}", entry.sequence)),
+                resolution,
+                expected: expected.into(),
+                parameter_index: Some(parameter_index),
+            });
+        if resolution == Resolution::Resolved {
+            target_sequence
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn resolve_type(
+        &self,
+        source: u32,
+        parameter_index: usize,
+        raw_pointer: i64,
+        entity_type: i64,
+        forms: &[i64],
+    ) -> Option<u32> {
+        let expected = if forms.is_empty() {
+            format!("type-{entity_type}")
+        } else {
+            let forms = forms
+                .iter()
+                .map(i64::to_string)
+                .collect::<Vec<_>>()
+                .join("-or-");
+            format!("type-{entity_type}-form-{forms}")
+        };
+        self.resolve(source, parameter_index, raw_pointer, expected, |target| {
+            target.entity_type == entity_type && (forms.is_empty() || forms.contains(&target.form))
+        })
+    }
+
+    pub(crate) fn resolve_any(
+        &self,
+        source: u32,
+        parameter_index: usize,
+        raw_pointer: i64,
+    ) -> Option<u32> {
+        self.resolve(
+            source,
+            parameter_index,
+            raw_pointer,
+            "existing-directory-entry",
+            |_| true,
+        )
+    }
+
+    pub(crate) fn append_to(self, graph: &mut BTreeMap<u32, Vec<ReferenceEdge>>) {
+        for (source, mut edges) in self.edges.into_inner() {
+            graph.entry(source).or_default().append(&mut edges);
+        }
+    }
 }
 
 fn negative_candidate(kind: ReferenceKind, raw_pointer: i64) -> Candidate {
@@ -64,7 +220,9 @@ fn positive_candidate(kind: ReferenceKind, raw_pointer: i64) -> Candidate {
     Candidate {
         kind,
         raw_pointer,
-        target_sequence: u32::try_from(raw_pointer).ok(),
+        target_sequence: (raw_pointer != 0)
+            .then(|| u32::try_from(raw_pointer).ok())
+            .flatten(),
     }
 }
 
@@ -87,7 +245,7 @@ fn candidates(entry: &DirectoryEntry) -> Vec<Candidate> {
         (ReferenceKind::Transform, entry.transform),
         (ReferenceKind::LabelDisplay, entry.label_display),
     ] {
-        if pointer > 0 {
+        if pointer != 0 {
             values.push(positive_candidate(kind, pointer));
         }
     }
@@ -97,21 +255,34 @@ fn candidates(entry: &DirectoryEntry) -> Vec<Candidate> {
     values
 }
 
-fn expected(kind: ReferenceKind) -> &'static str {
+fn expected(kind: ReferenceKind, source: &DirectoryEntry) -> &'static str {
     match kind {
-        ReferenceKind::Structure => "structure-definition",
+        ReferenceKind::Structure => match source.entity_type {
+            422 if matches!(source.form, 0..=1) => "type-322-form-0",
+            402 if matches!(source.form, 5001..=9999) => "type-302-matching-form",
+            600..=699 | 10_000..=99_999 => "type-306-or-type-416",
+            _ => "structure-not-permitted",
+        },
         ReferenceKind::LineFont => "type-304",
         ReferenceKind::Level => "type-406-form-1",
         ReferenceKind::View => "type-410-or-type-402-form-3-4-19",
         ReferenceKind::Transform => "type-124",
         ReferenceKind::LabelDisplay => "type-402-form-5",
         ReferenceKind::Color => "type-314",
+        ReferenceKind::Parameter => unreachable!("parameter edges carry their field contract"),
     }
 }
 
-fn accepts(kind: ReferenceKind, target: &DirectoryEntry) -> bool {
+fn accepts(kind: ReferenceKind, source: &DirectoryEntry, target: &DirectoryEntry) -> bool {
     match kind {
-        ReferenceKind::Structure => true,
+        ReferenceKind::Structure => match source.entity_type {
+            422 if matches!(source.form, 0..=1) => target.entity_type == 322 && target.form == 0,
+            402 if matches!(source.form, 5001..=9999) => {
+                target.entity_type == 302 && target.form == source.form
+            }
+            600..=699 | 10_000..=99_999 => matches!(target.entity_type, 306 | 416),
+            _ => false,
+        },
         ReferenceKind::LineFont => target.entity_type == 304,
         ReferenceKind::Level => target.entity_type == 406 && target.form == 1,
         ReferenceKind::View => {
@@ -121,6 +292,7 @@ fn accepts(kind: ReferenceKind, target: &DirectoryEntry) -> bool {
         ReferenceKind::Transform => target.entity_type == 124,
         ReferenceKind::LabelDisplay => target.entity_type == 402 && target.form == 5,
         ReferenceKind::Color => target.entity_type == 314,
+        ReferenceKind::Parameter => unreachable!("parameter edges use their field contract"),
     }
 }
 
@@ -171,7 +343,9 @@ pub(crate) fn build(directory: &[DirectoryEntry]) -> BTreeMap<u32, Vec<Reference
                     let target = candidate
                         .target_sequence
                         .and_then(|value| index.get(&value).copied());
-                    let resolution = if candidate.target_sequence.is_none() {
+                    let resolution = if candidate.raw_pointer == 0 {
+                        Resolution::Null
+                    } else if candidate.target_sequence.is_none() {
                         Resolution::OutOfRange
                     } else if candidate
                         .target_sequence
@@ -180,7 +354,7 @@ pub(crate) fn build(directory: &[DirectoryEntry]) -> BTreeMap<u32, Vec<Reference
                         Resolution::EvenSequence
                     } else if target.is_none() {
                         Resolution::Dangling
-                    } else if target.is_some_and(|value| !accepts(candidate.kind, value)) {
+                    } else if target.is_some_and(|value| !accepts(candidate.kind, entry, value)) {
                         Resolution::WrongType
                     } else {
                         Resolution::Resolved
@@ -191,7 +365,8 @@ pub(crate) fn build(directory: &[DirectoryEntry]) -> BTreeMap<u32, Vec<Reference
                         target: target
                             .map(|value| format!("iges:entity:directory#{}", value.sequence)),
                         resolution,
-                        expected: expected(candidate.kind).into(),
+                        expected: expected(candidate.kind, entry).into(),
+                        parameter_index: None,
                     }
                 })
                 .collect();
@@ -211,6 +386,18 @@ pub(crate) fn build(directory: &[DirectoryEntry]) -> BTreeMap<u32, Vec<Reference
     graph
 }
 
+pub(crate) fn resolved_structure_sequence(
+    graph: &BTreeMap<u32, Vec<ReferenceEdge>>,
+    source: u32,
+) -> Option<u32> {
+    graph.get(&source)?.iter().find_map(|edge| {
+        (edge.kind == ReferenceKind::Structure && edge.resolution == Resolution::Resolved)
+            .then(|| edge.raw_pointer.checked_abs())
+            .flatten()
+            .and_then(|value| u32::try_from(value).ok())
+    })
+}
+
 pub(crate) fn summary_notes(graph: &BTreeMap<u32, Vec<ReferenceEdge>>) -> Vec<String> {
     let mut counts = BTreeMap::<String, usize>::new();
     for edge in graph.values().flatten() {
@@ -221,5 +408,73 @@ pub(crate) fn summary_notes(graph: &BTreeMap<u32, Vec<ReferenceEdge>>) -> Vec<St
     counts
         .into_iter()
         .map(|(resolution, count)| format!("references.{resolution}={count}"))
+        .collect()
+}
+
+pub(crate) fn losses(
+    graph: &BTreeMap<u32, Vec<ReferenceEdge>>,
+    scan: &CardScan<'_>,
+    parameters: &[ParameterRecord],
+) -> Vec<LossNote> {
+    let directory_offsets = scan
+        .lines
+        .iter()
+        .filter(|line| line.section == Some(Section::Directory))
+        .filter_map(|line| line.sequence.map(|sequence| (sequence, line.offset)))
+        .collect::<BTreeMap<_, _>>();
+    let parameter_lines = scan
+        .lines
+        .iter()
+        .filter(|line| line.section == Some(Section::Parameter))
+        .filter_map(|line| line.sequence.map(|sequence| (sequence, line.offset)))
+        .collect::<BTreeMap<_, _>>();
+    let records = parameters
+        .iter()
+        .map(|record| (record.directory_sequence, record))
+        .collect::<BTreeMap<_, _>>();
+    graph
+        .iter()
+        .flat_map(|(source, edges)| {
+            let directory_offsets = &directory_offsets;
+            let parameter_lines = &parameter_lines;
+            let records = &records;
+            edges
+                .iter()
+                .filter(|edge| {
+                    !matches!(edge.resolution, Resolution::Resolved | Resolution::Null)
+                })
+                .map(move |edge| {
+                    let parameter_location = edge.parameter_index.and_then(|index| {
+                        let record = records.get(source)?;
+                        let span = record.tokens.get(index)?.span.start;
+                        let card = u32::try_from(span / 64).ok()?;
+                        let sequence = record.line_range.start.checked_add(card)?;
+                        let offset = parameter_lines
+                            .get(&sequence)?
+                            .checked_add((span % 64) as u64)?;
+                        Some((offset, format!("D{source}:parameter[{index}]")))
+                    });
+                    let location = parameter_location.or_else(|| {
+                        directory_offsets
+                            .get(source)
+                            .copied()
+                            .map(|offset| (offset, format!("D{source}")))
+                    });
+                    LossNote {
+                        code: cadmpeg_ir::LossKind::ReferenceGraphNotClosed,
+                        severity: Severity::Warning,
+                        message: format!(
+                            "IGES Directory Entry D{source} {:?} pointer {} has {:?} resolution; expected {}",
+                            edge.kind, edge.raw_pointer, edge.resolution, edge.expected
+                        ),
+                        provenance: location.map(|(offset, tag)| LossProvenance {
+                            format: "iges".into(),
+                            stream: "iges".into(),
+                            offset,
+                            tag: Some(tag),
+                        }),
+                    }
+                })
+        })
         .collect()
 }

@@ -126,6 +126,24 @@ fn presentation_pipeline_binds_materials_face_colors_tessellation_and_pmi() {
 
     let display = decode(sldprt_with_body_and_display_list(&triangle_body()));
     assert!(!display.ir.model.tessellations.is_empty());
+    assert_eq!(
+        display.ir.model.tessellations[0].faces,
+        [display.ir.model.faces[0].id.clone()]
+    );
+    assert_eq!(
+        display.ir.model.tessellations[0].body.as_ref(),
+        Some(&display.ir.model.bodies[0].id)
+    );
+    let tessellation_exactness =
+        &display.source_fidelity.annotations.exactness[&display.ir.model.tessellations[0].id];
+    assert_eq!(
+        tessellation_exactness.fields["body"],
+        cadmpeg_ir::Exactness::Derived
+    );
+    assert_eq!(
+        tessellation_exactness.fields["faces"],
+        cadmpeg_ir::Exactness::Derived
+    );
     assert_valid(&display);
 
     let mut bytes = sldprt_with_body(&triangle_body());
@@ -143,6 +161,22 @@ fn presentation_pipeline_binds_materials_face_colors_tessellation_and_pmi() {
     assert!(!sldprt_native(&pmi.ir).pmi_dimensions.is_empty());
     assert!(!pmi.ir.model.parameters.is_empty());
     assert_valid(&pmi);
+}
+
+#[test]
+fn tessellation_geometry_does_not_choose_between_coincident_faces() {
+    let mut decoded = decode(sldprt_with_body_and_display_list(&triangle_body()));
+    decoded.ir.model.tessellations[0].body = None;
+    decoded.ir.model.tessellations[0].faces.clear();
+    let mut coincident = decoded.ir.model.faces[0].clone();
+    coincident.id = cadmpeg_ir::ids::FaceId("sldprt:brep:face#coincident".into());
+    decoded.ir.model.shells[0].faces.push(coincident.id.clone());
+    decoded.ir.model.faces.push(coincident);
+
+    let _ = crate::tessellation::assign_unique_analytic_owners(&mut decoded.ir.model);
+
+    assert!(decoded.ir.model.tessellations[0].body.is_none());
+    assert!(decoded.ir.model.tessellations[0].faces.is_empty());
 }
 
 #[test]

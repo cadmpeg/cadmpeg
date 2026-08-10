@@ -155,9 +155,11 @@ fn application_pipeline_composes_products_joints_payloads_gui_drawings_and_annot
 }
 
 #[test]
-fn refusal_pipeline_keeps_unsafe_legacy_and_unserializable_states_atomic() {
+fn compatibility_and_refusal_pipeline_keeps_states_atomic() {
     rejects_unsafe_names();
-    legacy_layout_is_inspectable_but_explicitly_refused_for_decode();
+    schema_three_uses_the_object_envelope_and_defaults_file_version();
+    schema_two_uses_the_feature_envelope_and_common_property_grammar();
+    legacy_schema_dispatch_rejects_wrong_envelopes_and_inconsistent_counts();
     write_target_and_source_requirements_are_explicit();
     writer_rejects_unserialized_declaration_and_stale_payload_edits();
 

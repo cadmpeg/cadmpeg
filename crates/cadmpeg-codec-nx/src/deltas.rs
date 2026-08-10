@@ -637,7 +637,10 @@ pub fn walk(stream: &[u8]) -> Census {
         .transmit_header
         .as_ref()
         .map_or(0, |header| header.end);
+    let mut intersection_schema_anchor_seen = false;
     while offset + 4 <= stream.len() {
+        intersection_schema_anchor_seen |=
+            crate::topology::intersection_data_schema_prefix_at(stream, offset);
         if let Some(preamble) = schema_reference_preamble(stream, offset, stream.len()) {
             census.bytes_decoded += preamble.end - preamble.offset;
             offset = preamble.end;
@@ -658,10 +661,15 @@ pub fn walk(stream: &[u8]) -> Census {
             census.reference_type_maps.push(map);
             continue;
         }
-        if let Some(record) = consume_shared_record(stream, offset, &census.records) {
+        if let Some(record) = consume_shared_record(
+            stream,
+            offset,
+            &census.records,
+            intersection_schema_anchor_seen,
+        ) {
             census.bytes_decoded += record.end - offset;
             let name =
-                family_name(record.kind).expect("shared records have admitted deltas families");
+                record_family_name(&record).expect("shared records have admitted deltas families");
             *census.full_counts.entry(name).or_default() += 1;
             offset = record.end;
             census.records.push(record);
@@ -739,7 +747,9 @@ pub fn walk(stream: &[u8]) -> Census {
             census.records.push(record);
             continue;
         }
-        if let Some(record) = consume_intersection_data(stream, offset) {
+        if let Some(record) =
+            consume_intersection_data(stream, offset, intersection_schema_anchor_seen)
+        {
             census.bytes_decoded += record.end - record.offset;
             *census.full_counts.entry("INTERSECTION_DATA").or_default() += 1;
             offset = record.end;
@@ -772,7 +782,7 @@ pub fn walk(stream: &[u8]) -> Census {
             continue;
         }
         if let Some(xmt) = compact_tombstone(stream, offset) {
-            if xmt > 1 && plausible_next(stream, offset + 6) {
+            if xmt > 1 {
                 *census.tombstone_counts.entry(name).or_default() += 1;
                 census.tombstones.push(Tombstone { kind, xmt, offset });
                 census.bytes_decoded += 6;
@@ -1379,12 +1389,6 @@ const TYPE_100_SCHEMA_HEADER: &[u8] = &[
     0x65, 0x63, 0x69, 0x73, 0x69, 0x6f, 0x6e, 0x00, 0xe5, 0x00, 0x01, 0x5a,
 ];
 
-const TYPE_38_SCHEMA_HEADER: &[u8] = &[
-    0x00, 0x26, 0x0c, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x41, 0x11,
-    0x69, 0x6e, 0x74, 0x65, 0x72, 0x73, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x64, 0x61, 0x74,
-    0x61, 0x00, 0xcc, 0x00, 0x01, 0x5a,
-];
-
 const TYPE_41_SCHEMA_HEADER: &[u8] = &[
     0x00, 0x29, 0x03, 0x43, 0x49, 0x08, 0x74, 0x65, 0x72, 0x6d, 0x5f, 0x75, 0x73, 0x65, 0x00, 0x00,
     0x00, 0x01, 0x01, 0x63, 0x43, 0x5a,
@@ -1517,10 +1521,10 @@ fn inline_schema_declaration(
             end: at,
         });
     }
-    if stream.get(offset..offset.checked_add(TYPE_38_SCHEMA_HEADER.len())?)
-        == Some(TYPE_38_SCHEMA_HEADER)
+    if stream.get(offset..offset.checked_add(crate::topology::TYPE_38_SCHEMA_HEADER.len())?)
+        == Some(crate::topology::TYPE_38_SCHEMA_HEADER)
     {
-        let mut at = offset.checked_add(TYPE_38_SCHEMA_HEADER.len())?;
+        let mut at = offset.checked_add(crate::topology::TYPE_38_SCHEMA_HEADER.len())?;
         let (xmt, consumed) = read_xmt(stream, at)?;
         (xmt > 1).then_some(())?;
         at = at.checked_add(consumed)?;
@@ -1815,7 +1819,7 @@ fn inline_body_state(stream: &[u8], offset: usize, gap_end: usize) -> Option<Inl
             REGION_SCHEMA_HEADER,
             ATTDEF_LIST_SCHEMA_HEADER,
             TYPE_70_SCHEMA_HEADER,
-            TYPE_38_SCHEMA_HEADER,
+            crate::topology::TYPE_38_SCHEMA_HEADER,
             TYPE_41_SCHEMA_HEADER,
             TYPE_100_SCHEMA_HEADER,
             TYPE_101_SCHEMA_HEADER,
@@ -2087,7 +2091,12 @@ fn is_reference_type_kind(kind: u16) -> bool {
     is_tagged_reference_kind(kind) || matches!(kind, 11 | 35 | 55 | 61 | 67 | 100)
 }
 
-fn consume_shared_record(stream: &[u8], offset: usize, records: &[Record]) -> Option<Record> {
+fn consume_shared_record(
+    stream: &[u8],
+    offset: usize,
+    records: &[Record],
+    intersection_schema_anchor_seen: bool,
+) -> Option<Record> {
     let previous = records.last()?;
     (previous.end == offset && has_shareable_terminal(stream, previous)).then_some(())?;
     let record_offset = offset.checked_sub(1)?;
@@ -2098,7 +2107,9 @@ fn consume_shared_record(stream: &[u8], offset: usize, records: &[Record]) -> Op
         .or_else(|| consume_type_70(stream, record_offset))
         .or_else(|| consume_attdef_list(stream, record_offset))
         .or_else(|| consume_type_101(stream, record_offset))
-        .or_else(|| consume_intersection_data(stream, record_offset))
+        .or_else(|| {
+            consume_intersection_data(stream, record_offset, intersection_schema_anchor_seen)
+        })
     {
         return Some(record);
     }
@@ -2164,17 +2175,17 @@ fn body_revision_prefix(stream: &[u8], offset: usize) -> Option<BodyRevision> {
 ///
 /// Replaced partition records are masked with non-tag bytes. Status-free
 /// canonical current replacements are appended once. When BODY revision
-/// envelopes are present, only records in the final revision contribute to the
-/// current image. Raw current-revision deltas bytes remain available to
-/// independent procedural decoders.
+/// envelopes are present, only records in the current interval of each body
+/// sequence contribute to the current image. Raw current-revision deltas bytes
+/// remain available to independent procedural decoders.
 pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
     let census = walk(deltas);
-    let revision_start = current_revision_start(&census);
+    let current_scopes = current_revision_scopes(&census, deltas.len());
     let mut replacements = BTreeMap::<(u8, u32), &Record>::new();
     for record in census
         .records
         .iter()
-        .filter(|record| record.offset >= revision_start)
+        .filter(|record| current_scope_contains(&current_scopes, record.offset))
     {
         let Ok(kind) = u8::try_from(record.kind) else {
             continue;
@@ -2188,7 +2199,7 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
     for tombstone in census
         .tombstones
         .iter()
-        .filter(|tombstone| tombstone.offset >= revision_start)
+        .filter(|tombstone| current_scope_contains(&current_scopes, tombstone.offset))
     {
         if let Ok(kind) = u8::try_from(tombstone.kind) {
             tombstones.insert((kind, tombstone.xmt), tombstone);
@@ -2274,13 +2285,13 @@ pub fn unmatched_terminal_tombstones_by_family(
     }
 
     let census = walk(deltas);
-    let revision_start = current_revision_start(&census);
+    let current_scopes = current_revision_scopes(&census, deltas.len());
     let graph = crate::topology::Graph::parse(partition);
     let mut events = BTreeMap::<(u8, u32), Vec<Event>>::new();
     for record in census
         .records
         .into_iter()
-        .filter(|record| record.offset >= revision_start)
+        .filter(|record| current_scope_contains(&current_scopes, record.offset))
     {
         let Ok(kind) = u8::try_from(record.kind) else {
             continue;
@@ -2298,7 +2309,7 @@ pub fn unmatched_terminal_tombstones_by_family(
     for tombstone in census
         .tombstones
         .into_iter()
-        .filter(|tombstone| tombstone.offset >= revision_start)
+        .filter(|tombstone| current_scope_contains(&current_scopes, tombstone.offset))
     {
         let Ok(kind) = u8::try_from(tombstone.kind) else {
             continue;
@@ -2341,43 +2352,137 @@ fn mergeable_record(record: &Record, kind: u8) -> bool {
         .is_some()
 }
 
-fn current_revision_start(census: &Census) -> usize {
-    census
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RevisionScope {
+    start: usize,
+    end: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RevisionDirection {
+    Ascending,
+    Descending,
+}
+
+fn current_revision_scopes(census: &Census, stream_len: usize) -> Vec<RevisionScope> {
+    // Only xmt 3 BODY envelopes delimit snapshots. Other validated type-12
+    // envelopes remain available to the byte ledger without changing scope.
+    let snapshot_revisions = census
         .body_revisions
-        .last()
-        .map_or(0, |revision| revision.offset)
+        .iter()
+        .enumerate()
+        .filter(|(_, revision)| revision.xmt == 3)
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    if snapshot_revisions.is_empty() {
+        return vec![RevisionScope {
+            start: 0,
+            end: stream_len,
+        }];
+    }
+
+    let direction = revision_direction(
+        &snapshot_revisions
+            .iter()
+            .map(|index| census.body_revisions[*index].node_id)
+            .collect::<Vec<_>>(),
+    );
+    let mut run_starts = vec![0];
+    for (position, pair) in snapshot_revisions.windows(2).enumerate() {
+        let previous = census.body_revisions[pair[0]].node_id;
+        let current = census.body_revisions[pair[1]].node_id;
+        if !revision_follows_direction(previous, current, direction) {
+            run_starts.push(position + 1);
+        }
+    }
+
+    let mut scopes = Vec::new();
+    for (run, &run_start) in run_starts.iter().enumerate() {
+        let run_end = run_starts
+            .get(run + 1)
+            .copied()
+            .unwrap_or(snapshot_revisions.len());
+        let current_revision = &census.body_revisions[snapshot_revisions[run_end - 1]];
+        let end = run_starts
+            .get(run + 1)
+            .map_or(stream_len, |next_run_start| {
+                census.body_revisions[snapshot_revisions[*next_run_start]].offset
+            });
+        if current_revision.offset < end {
+            scopes.push(RevisionScope {
+                start: current_revision.offset,
+                end,
+            });
+        }
+        debug_assert!(run_start < run_end);
+    }
+
+    debug_assert!(scopes.windows(2).all(|pair| pair[0].end <= pair[1].start));
+    scopes
+}
+
+fn revision_direction(node_ids: &[u32]) -> RevisionDirection {
+    // A stream can serialize one revision sequence in either direction. The
+    // direction with fewer violations is the sequence direction; the opposite
+    // transitions are the resets that begin another sequence.
+    let ascending_violations = node_ids.windows(2).filter(|pair| pair[1] < pair[0]).count();
+    let descending_violations = node_ids.windows(2).filter(|pair| pair[1] > pair[0]).count();
+    if ascending_violations <= descending_violations {
+        RevisionDirection::Ascending
+    } else {
+        RevisionDirection::Descending
+    }
+}
+
+fn revision_follows_direction(previous: u32, current: u32, direction: RevisionDirection) -> bool {
+    match direction {
+        RevisionDirection::Ascending => current >= previous,
+        RevisionDirection::Descending => current <= previous,
+    }
+}
+
+fn current_scope_contains(scopes: &[RevisionScope], offset: usize) -> bool {
+    scopes
+        .iter()
+        .any(|scope| scope.start <= offset && offset < scope.end)
 }
 
 /// Return raw deltas bytes with decoded records and compact tombstones masked.
-/// Bytes preceding the final BODY revision are also masked. Current-revision
-/// records needed by semantic scanners are appended in their partition form.
+/// Historical BODY revision intervals are also masked. Current-revision records
+/// needed by semantic scanners are appended in their partition form.
 pub fn semantic_residual(stream: &[u8]) -> Vec<u8> {
     let census = walk(stream);
     let mut residual = stream.to_vec();
-    let revision_start = current_revision_start(&census);
-    residual[..revision_start].fill(0xff);
+    let current_scopes = current_revision_scopes(&census, stream.len());
+    let mut cursor = 0;
+    for scope in &current_scopes {
+        residual[cursor..scope.start].fill(0xff);
+        cursor = scope.end;
+    }
+    residual[cursor..].fill(0xff);
     let canonical_residual_records = census
         .records
         .iter()
         .filter(|record| {
-            record.offset >= revision_start
-                && matches!(
-                    record.kind,
-                    38
-                        | 40
-                        | 41
-                        | 45
-                        | 59
-                        | 81..=84
-                        | 91
-                        | 125..=128
-                        | 135..=136
-                        | 141
-                        | 204
-                )
-                || record.kind == 90 && record.canonical_bytes.first() == Some(&0x5a)
+            let is_current = current_scope_contains(&current_scopes, record.offset);
+            let is_semantic = matches!(
+                record.kind,
+                38 | 40 | 41 | 45 | 59 | 81..=84 | 91 | 125..=128 | 135..=136 | 141 | 204
+            ) || record.kind == 90
+                && record.canonical_bytes.first() == Some(&0x5a);
+            is_current && is_semantic
         })
-        .map(|record| record.canonical_bytes.clone())
+        .map(|record| {
+            if record.kind == 90 && record.canonical_bytes.first() == Some(&0x5a) {
+                let prefix_len = crate::topology::TYPE_38_SCHEMA_HEADER.len() - 1;
+                let mut anchored = Vec::new();
+                anchored.extend_from_slice(&crate::topology::TYPE_38_SCHEMA_HEADER[..prefix_len]);
+                anchored.extend_from_slice(&record.canonical_bytes);
+                anchored
+            } else {
+                record.canonical_bytes.clone()
+            }
+        })
         .collect::<Vec<_>>();
     for record in census.records {
         residual[record.offset..record.end].fill(0xff);
@@ -2999,8 +3104,16 @@ fn unique_layout<T>(direct: Option<T>, escaped: Option<T>) -> Option<T> {
     }
 }
 
-fn consume_intersection_data(stream: &[u8], offset: usize) -> Option<Record> {
-    let (curve, end) = crate::topology::intersection_data_curve_at(stream, offset)?;
+fn consume_intersection_data(
+    stream: &[u8],
+    offset: usize,
+    intersection_schema_anchor_seen: bool,
+) -> Option<Record> {
+    let (curve, end) = crate::topology::intersection_data_curve_at(
+        stream,
+        offset,
+        intersection_schema_anchor_seen,
+    )?;
     let mut references = curve.header_references.to_vec();
     references.extend(curve.references);
     Some(Record {
@@ -3016,19 +3129,23 @@ fn consume_intersection_data(stream: &[u8], offset: usize) -> Option<Record> {
 }
 
 fn consume_intersection_auxiliary(stream: &[u8], offset: usize) -> Option<Record> {
-    let (kind, xmt, references, end) =
-        if let Some((chart, end)) = crate::intersection::chart_source_record_at(stream, offset) {
-            (40, chart.xmt, Vec::new(), end)
-        } else if let Some((term, end)) = crate::intersection::term_use_at(stream, offset) {
-            (41, term.xmt, Vec::new(), end)
-        } else if let Some((bound, end)) = crate::intersection::blend_bound_at(stream, offset) {
-            let mut references = bound.header_references.to_vec();
-            references.extend([bound.boundary_index, bound.blend_surface]);
-            (59, bound.xmt, references, end)
-        } else {
-            let (support_uv, end) = crate::intersection::support_uv_record_at(stream, offset)?;
-            (204, support_uv.xmt, Vec::new(), end)
-        };
+    let (kind, xmt, references, end) = if let Some((chart, end)) =
+        crate::intersection::chart_source_record_at(
+            stream,
+            offset,
+            crate::intersection::ChartPointLayout::Ext11,
+        ) {
+        (40, chart.xmt, Vec::new(), end)
+    } else if let Some((term, end)) = crate::intersection::term_use_at(stream, offset) {
+        (41, term.xmt, Vec::new(), end)
+    } else if let Some((bound, end)) = crate::intersection::blend_bound_at(stream, offset) {
+        let mut references = bound.header_references.to_vec();
+        references.extend([bound.boundary_index, bound.blend_surface]);
+        (59, bound.xmt, references, end)
+    } else {
+        let (support_uv, end) = crate::intersection::support_uv_record_at(stream, offset)?;
+        (204, support_uv.xmt, Vec::new(), end)
+    };
     Some(Record {
         kind,
         xmt,
@@ -3126,6 +3243,17 @@ pub(crate) fn family_name(kind: u16) -> Option<&'static str> {
         204 => "SUPPORT_UV",
         _ => return None,
     })
+}
+
+/// Resolve the semantic family after the record-form discriminator is known.
+/// Numeric tag 90 is `GROUP` in the two-byte fixed-record form and
+/// `INTERSECTION_DATA` in the schema-anchored single-byte form.
+pub(crate) fn record_family_name(record: &Record) -> Option<&'static str> {
+    if record.kind == 90 && record.canonical_bytes.first() == Some(&0x5a) {
+        Some("INTERSECTION_DATA")
+    } else {
+        family_name(record.kind)
+    }
 }
 
 fn fixed_signature(kind: u16) -> Option<&'static [Token]> {
@@ -3554,7 +3682,7 @@ mod inline_schema_tests {
     }
 
     fn type_38_declaration() -> Vec<u8> {
-        let mut bytes = TYPE_38_SCHEMA_HEADER.to_vec();
+        let mut bytes = crate::topology::TYPE_38_SCHEMA_HEADER.to_vec();
         push_xmt(&mut bytes, 40_000);
         bytes.extend_from_slice(&17u32.to_be_bytes());
         for reference in [1, 7, 8, 9, 1] {
@@ -3627,7 +3755,7 @@ mod inline_schema_tests {
             (112, [1, 7, 8, 9, 1], [118, 119], [120, 121, 122]),
             (10, [1, 13, 47, 1, 1], [45, 9], [48, 49, 50]),
         ] {
-            let mut bytes = TYPE_38_SCHEMA_HEADER.to_vec();
+            let mut bytes = crate::topology::TYPE_38_SCHEMA_HEADER.to_vec();
             push_xmt(&mut bytes, xmt);
             bytes.extend_from_slice(&17u32.to_be_bytes());
             for reference in leading_references {
@@ -3666,7 +3794,7 @@ mod inline_schema_tests {
 
     #[test]
     fn type_38_schema_declaration_accepts_marker_2b_state() {
-        let mut bytes = TYPE_38_SCHEMA_HEADER.to_vec();
+        let mut bytes = crate::topology::TYPE_38_SCHEMA_HEADER.to_vec();
         push_xmt(&mut bytes, 53);
         bytes.extend_from_slice(&2_711u32.to_be_bytes());
         for reference in [1, 778, 763, 372, 1] {
@@ -3702,7 +3830,7 @@ mod inline_schema_tests {
 
     #[test]
     fn type_38_schema_declaration_retains_status_zero_anchor() {
-        let mut bytes = TYPE_38_SCHEMA_HEADER.to_vec();
+        let mut bytes = crate::topology::TYPE_38_SCHEMA_HEADER.to_vec();
         push_xmt(&mut bytes, 1_118);
         bytes.extend_from_slice(&3_178u32.to_be_bytes());
         let mut fifth_status_offset = 0;

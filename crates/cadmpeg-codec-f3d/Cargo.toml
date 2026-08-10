@@ -35,7 +35,9 @@ cadmpeg-asm.workspace = true
 cadmpeg-container.workspace = true
 cadmpeg-core.workspace = true
 cadmpeg-ir.workspace = true
+cadmpeg-protein.workspace = true
 zip.workspace = true
+roxmltree.workspace = true
 lzma-rs.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
@@ -44,7 +46,6 @@ serde_json.workspace = true
 tempfile.workspace = true
 serde-value.workspace = true
 schemars = { workspace = true, optional = true }
-roxmltree.workspace = true
 memchr.workspace = true
 
 [dev-dependencies]

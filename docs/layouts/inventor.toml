@@ -1,0 +1,1149 @@
+# SPDX-License-Identifier: Apache-2.0
+schema = 1
+format = "inventor"
+spec = "docs/formats/inventor.md"
+endianness = "little"
+note = "Fixed prefixes and descriptors in the supported RSe schema-31, Meta Stream v8, Protein, UFRxDoc, and kernel-carrier envelope."
+
+[[record]]
+name = "pm_dc_content_header"
+kind = "byte"
+section = "12"
+anchor = "PmDc content records start with this 22-byte header"
+size = 22
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id u16"
+
+[[record.field]]
+name = "next_reference"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "next_reference u32"
+
+[[record.field]]
+name = "flags"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "flags u32"
+
+[[record.field]]
+name = "context_reference"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "context_reference u32"
+
+[[record.field]]
+name = "source_index"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "source_index u32"
+
+[[record]]
+name = "pm_dc_sketch_entity_header"
+kind = "byte"
+section = "12"
+anchor = "Planar sketch entities add"
+size = 30
+
+[[record.field]]
+name = "content_header"
+offset = 0
+type = "bytes[22]"
+source = "spec"
+anchor = "after the content header"
+
+[[record.field]]
+name = "entity_flags"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "entity_flags:u32"
+
+[[record.field]]
+name = "sketch_reference"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "sketch_reference:u32"
+
+[[record]]
+name = "pm_dc_reference_list_prefix"
+kind = "byte"
+section = "12"
+anchor = "A type-2 reference list starts with"
+size = 8
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u16[2]"
+source = "spec"
+anchor = "u16 values `2, 0x3000`"
+
+[[record.field]]
+name = "item_count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "and a u32 count"
+
+[[record]]
+name = "pm_dc_reference_array_prefix"
+kind = "byte"
+section = "12"
+anchor = "A type-8 reference array starts with"
+size = 8
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u16[2]"
+source = "spec"
+anchor = "u16 values `8, 0x3000`"
+
+[[record.field]]
+name = "item_count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "and a u32 count"
+
+[[record]]
+name = "pm_dc_constraint_prefix"
+kind = "byte"
+section = "12"
+anchor = "A planar constraint starts with"
+size = 30
+
+[[record.field]]
+name = "content_header"
+offset = 0
+type = "bytes[22]"
+source = "spec"
+anchor = "the content header"
+
+[[record.field]]
+name = "state"
+offset = 22
+type = "i32"
+source = "spec"
+anchor = "state:i32"
+
+[[record.field]]
+name = "group_reference"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "a group reference"
+
+[[record]]
+name = "pm_dc_constraint_v15_v16_header"
+kind = "byte"
+section = "12"
+anchor = "Segment major versions 15 and 16 store"
+size = 34
+
+[[record.field]]
+name = "constraint_prefix"
+offset = 0
+type = "bytes[30]"
+source = "spec"
+anchor = "starts with the content header, `state:i32`, and a group reference"
+
+[[record.field]]
+name = "parameter_reference"
+offset = 30
+type = "u32"
+source = "spec"
+anchor = "the parameter reference immediately after the group reference"
+
+[[record]]
+name = "pm_dc_constraint_map_prefix"
+kind = "byte"
+section = "12"
+anchor = "A type-6 map starts with"
+size = 8
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u16[2]"
+source = "spec"
+anchor = "u16 values `6, 0x3000`"
+
+[[record.field]]
+name = "item_count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "and a u32 count"
+
+[[record]]
+name = "pm_dc_feature_prefix"
+kind = "byte"
+section = "13"
+anchor = "Its fixed prefix contains"
+size = 38
+
+[[record.field]]
+name = "content_header"
+offset = 0
+type = "bytes[22]"
+source = "spec"
+anchor = "the 22-byte content header"
+
+[[record.field]]
+name = "state"
+offset = 22
+type = "i32"
+source = "spec"
+anchor = "state:i32"
+
+[[record.field]]
+name = "outline_value"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "outline_value:u32"
+
+[[record.field]]
+name = "property_list_prefix"
+offset = 30
+type = "bytes[8]"
+source = "spec"
+anchor = "a type-2 property-reference list prefix"
+
+[[record]]
+name = "pm_dc_feature_terminator"
+kind = "byte"
+section = "13"
+anchor = "Its 26-byte payload contains"
+size = 26
+
+[[record.field]]
+name = "content_header"
+offset = 0
+type = "bytes[22]"
+source = "spec"
+anchor = "the 22-byte content header"
+
+[[record.field]]
+name = "state"
+offset = 22
+type = "i32"
+source = "spec"
+anchor = "followed by `state:i32`"
+
+[[record]]
+name = "pm_dc_feature_enumeration"
+kind = "byte"
+section = "13"
+anchor = "enumeration records add"
+size = 26
+
+[[record.field]]
+name = "content_header"
+offset = 0
+type = "bytes[22]"
+source = "spec"
+anchor = "same 22-byte content header"
+
+[[record.field]]
+name = "type_value"
+offset = 22
+type = "i16"
+source = "spec"
+anchor = "type_value:i16"
+
+[[record.field]]
+name = "value"
+offset = 24
+type = "u16"
+source = "spec"
+anchor = "value:u16"
+
+[[record]]
+name = "pm_dc_chamfer_enumeration"
+kind = "byte"
+section = "13"
+anchor = "stores the chamfer form"
+size = 30
+
+[[record.field]]
+name = "content_header"
+offset = 0
+type = "bytes[22]"
+source = "spec"
+anchor = "It adds the same `type_value:i16`"
+
+[[record.field]]
+name = "type_value"
+offset = 22
+type = "i16"
+source = "spec"
+anchor = "type_value:i16"
+
+[[record.field]]
+name = "value"
+offset = 24
+type = "u16"
+source = "spec"
+anchor = "value:u16"
+
+[[record.field]]
+name = "terminal_value"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "followed by a zero u32 terminal value"
+
+[[record]]
+name = "pm_dc_fillet_edge_selection"
+kind = "byte"
+section = "13"
+anchor = "stores a fillet edge-selection enumeration"
+size = 30
+
+[[record.field]]
+name = "content_header"
+offset = 0
+type = "bytes[22]"
+source = "spec"
+anchor = "after the content header"
+
+[[record.field]]
+name = "type_value"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "type_value:u32"
+
+[[record.field]]
+name = "value"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "value:u32"
+
+[[record]]
+name = "pm_dc_linked_element_header"
+kind = "byte"
+section = "13"
+anchor = "starts with this 26-byte linked-element header"
+size = 26
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id u16"
+
+[[record.field]]
+name = "values"
+offset = 6
+type = "u32[2]"
+source = "spec"
+anchor = "values u32[2]"
+
+[[record.field]]
+name = "owner_reference"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "owner_reference u32"
+
+[[record.field]]
+name = "parent_reference"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "parent_reference u32"
+
+[[record.field]]
+name = "next_reference"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "next_reference u32"
+
+[[record]]
+name = "pm_dc_parameter_prefix"
+kind = "byte"
+section = "11"
+anchor = "stores one numeric design parameter"
+size = 26
+note = "The counted UTF-16LE parameter name starts at byte 22."
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id u16"
+
+[[record.field]]
+name = "next_reference"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "next_reference u32"
+
+[[record.field]]
+name = "flags"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "flags u32"
+
+[[record.field]]
+name = "context_reference"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "context_reference u32"
+
+[[record.field]]
+name = "source_index"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "source_index u32"
+
+[[record.field]]
+name = "name_code_units"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "name counted UTF-16LE"
+
+[[record]]
+name = "pm_dc_expression_header"
+kind = "byte"
+section = "11"
+anchor = "A numeric expression record starts with"
+size = 10
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value:u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id:u16"
+
+[[record.field]]
+name = "unit_reference"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "unit_reference:u32"
+
+[[record]]
+name = "pm_dc_unit_array_prefix"
+kind = "byte"
+section = "11"
+anchor = "Each reference array starts with"
+size = 8
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u16[2]"
+source = "spec"
+anchor = "u16 values `3, 0x3000`"
+
+[[record.field]]
+name = "item_count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "a u32 count"
+
+[[record]]
+name = "pm_dc_base_unit"
+kind = "byte"
+section = "11"
+anchor = "Base-unit records contain"
+size = 22
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value:u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id:u16"
+
+[[record.field]]
+name = "magnitude"
+offset = 6
+type = "f64"
+source = "spec"
+anchor = "magnitude:f64"
+
+[[record.field]]
+name = "factor"
+offset = 14
+type = "f64"
+source = "spec"
+anchor = "factor:f64"
+
+[[record]]
+name = "rse_database_prefix"
+kind = "byte"
+section = "2"
+anchor = "An `RSeDb` stream starts with"
+size = 56
+
+[[record.field]]
+name = "database_id"
+offset = 0
+type = "bytes[16]"
+source = "spec"
+anchor = "16-byte database identifier"
+
+[[record.field]]
+name = "schema"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "a u32 schema"
+
+[[record.field]]
+name = "created_by"
+offset = 20
+type = "bytes[8]"
+source = "spec"
+anchor = "an 8-byte creation-version tuple"
+
+[[record.field]]
+name = "created_filetime"
+offset = 28
+type = "u64"
+source = "spec"
+anchor = "a u64 creation FILETIME"
+
+[[record.field]]
+name = "saved_by"
+offset = 36
+type = "bytes[8]"
+source = "spec"
+anchor = "an 8-byte save-version tuple"
+
+[[record.field]]
+name = "saved_filetime"
+offset = 44
+type = "u64"
+source = "spec"
+anchor = "a u64 save FILETIME"
+
+[[record.field]]
+name = "note_code_units"
+offset = 52
+type = "u32"
+source = "spec"
+anchor = "a u32-counted UTF-16LE note"
+
+[[record]]
+name = "bulk_envelope"
+kind = "byte"
+section = "4"
+anchor = "A `B<token>` stream starts with"
+size = 18
+
+[[record.field]]
+name = "prefix"
+offset = 0
+type = "bytes[16]"
+source = "spec"
+anchor = "a 16-byte prefix"
+
+[[record.field]]
+name = "form"
+offset = 16
+type = "u16"
+source = "spec"
+anchor = "a u16 form"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/rse.rs"
+contains = "let header = bytes"
+note = "The bulk parser reads the 18-byte fixed envelope before the exact zlib member."
+
+[[record]]
+name = "meta_body_prefix"
+kind = "byte"
+section = "3"
+anchor = "The inflated body starts with seven u16 values"
+size = 14
+
+[[record.field]]
+name = "values"
+offset = 0
+type = "u16[7]"
+source = "spec"
+anchor = "seven u16 values"
+
+[[record]]
+name = "meta_type_descriptor"
+kind = "byte"
+section = "3"
+anchor = "A type descriptor contains"
+size = 28
+
+[[record.field]]
+name = "type_id"
+offset = 0
+type = "bytes[16]"
+source = "spec"
+anchor = "a 16-byte type identifier"
+
+[[record.field]]
+name = "field_0_kind"
+offset = 16
+type = "u16"
+source = "spec"
+anchor = "two `(u16, u32)` field pairs"
+
+[[record.field]]
+name = "field_0_value"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "two `(u16, u32)` field pairs"
+
+[[record.field]]
+name = "field_1_kind"
+offset = 22
+type = "u16"
+source = "spec"
+anchor = "two `(u16, u32)` field pairs"
+
+[[record.field]]
+name = "field_1_value"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "two `(u16, u32)` field pairs"
+
+[[record]]
+name = "kernel_carrier_header"
+kind = "byte"
+section = "5"
+anchor = "The record payload starts with"
+size = 14
+
+[[record.field]]
+name = "header_state"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "u32 header state"
+
+[[record.field]]
+name = "header_kind"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "u16 header kind"
+
+[[record.field]]
+name = "header_value"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "u32 header value"
+
+[[record.field]]
+name = "schema"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "u32 schema"
+
+[[record]]
+name = "protein_header"
+kind = "byte"
+section = "7"
+anchor = "The root `Protein` stream starts with"
+size = 4
+
+[[record.field]]
+name = "payload_len"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "a u32 payload length"
+
+[[record]]
+name = "ufrx_header"
+kind = "byte"
+section = "8"
+anchor = "`UFRxDoc` schemas 11 through 15 start with"
+size = 4
+
+[[record.field]]
+name = "schema"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "a u16 schema"
+
+[[record.field]]
+name = "section_version_count"
+offset = 2
+type = "u16"
+source = "spec"
+anchor = "a u16 section-version count"
+
+[[record]]
+name = "pm_app_default_style_current"
+kind = "byte"
+section = "10"
+anchor = "For segment major versions above 19, its 55-byte payload contains"
+size = 55
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id u16"
+
+[[record.field]]
+name = "material_reference"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "material_reference u32"
+
+[[record.field]]
+name = "rendering_style_reference"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "rendering_style_reference u32"
+
+[[record.field]]
+name = "related_references"
+offset = 14
+type = "u32[7]"
+source = "spec"
+anchor = "related_references u32[7]"
+
+[[record.field]]
+name = "state"
+offset = 42
+type = "u8"
+source = "spec"
+anchor = "state u8"
+
+[[record.field]]
+name = "terminal_reference"
+offset = 43
+type = "u32"
+source = "spec"
+anchor = "terminal_reference u32"
+
+[[record.field]]
+name = "padding"
+offset = 47
+type = "bytes[8]"
+source = "spec"
+anchor = "padding bytes[8] = 0"
+
+[[record]]
+name = "pm_app_rendering_style_current_prefix"
+kind = "byte"
+section = "10"
+anchor = "For segment major versions above 23, its fixed prefix contains"
+size = 27
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id u16"
+
+[[record.field]]
+name = "state"
+offset = 6
+type = "u8"
+source = "spec"
+anchor = "state u8"
+
+[[record.field]]
+name = "flags"
+offset = 7
+type = "u16"
+source = "spec"
+anchor = "flags u16"
+
+[[record.field]]
+name = "padding"
+offset = 9
+type = "u16"
+source = "spec"
+anchor = "padding u16 = 0"
+
+[[record.field]]
+name = "values"
+offset = 11
+type = "u16[2]"
+source = "spec"
+anchor = "values u16[2]"
+
+[[record.field]]
+name = "default_state"
+offset = 15
+type = "u32"
+source = "spec"
+anchor = "default_state u32"
+
+[[record.field]]
+name = "value"
+offset = 19
+type = "u32"
+source = "spec"
+anchor = "value u32"
+
+[[record.field]]
+name = "name_reference"
+offset = 23
+type = "u32"
+source = "spec"
+anchor = "name_reference u32"
+
+[[record]]
+name = "pm_graphics_face_current_prefix"
+kind = "byte"
+section = "10"
+anchor = "For segment major versions above 14, its payload contains"
+size = 26
+note = "The variable edge-reference list starts at byte 26. Its exact end selects the fixed visibility, bounds, key, and values tail."
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id u16"
+
+[[record.field]]
+name = "flags"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "flags u32"
+
+[[record.field]]
+name = "styles_reference"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "styles_reference u32"
+
+[[record.field]]
+name = "surface_reference"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "surface_reference u32"
+
+[[record.field]]
+name = "parent_reference"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "parent_reference u32"
+
+[[record.field]]
+name = "state"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "state u32"
+
+[[record]]
+name = "pm_graphics_list_prefix"
+kind = "byte"
+section = "10"
+anchor = "A current `PmGraphics` list starts with"
+size = 8
+note = "A nonempty list continues with two u32 metadata values and its counted items."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u16[2]"
+source = "spec"
+anchor = "u16 values `2, 0x3000`"
+
+[[record.field]]
+name = "item_count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "a u32 item count"
+
+[[record]]
+name = "pm_graphics_primary_color_style_current"
+kind = "byte"
+section = "10"
+anchor = "For segment major versions above 14, its 94-byte payload contains"
+size = 94
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "controls"
+offset = 4
+type = "u16[7]"
+source = "spec"
+anchor = "controls u16[7]"
+
+[[record.field]]
+name = "color_header"
+offset = 18
+type = "u8[2]"
+source = "spec"
+anchor = "color_header u8[2]"
+
+[[record.field]]
+name = "colors"
+offset = 20
+type = "f32[16]"
+source = "spec"
+anchor = "colors f32[4][4]"
+note = "Four consecutive RGBA vectors."
+
+[[record.field]]
+name = "color_tail"
+offset = 84
+type = "u16[2]"
+source = "spec"
+anchor = "color_tail u16[2]"
+
+[[record.field]]
+name = "state"
+offset = 88
+type = "u8"
+source = "spec"
+anchor = "state u8"
+
+[[record.field]]
+name = "values"
+offset = 89
+type = "u16[2]"
+source = "spec"
+anchor = "values u16[2]"
+
+[[record.field]]
+name = "terminal_state"
+offset = 93
+type = "u8"
+source = "spec"
+anchor = "terminal_state u8"
+
+[[record]]
+name = "ufrx_occurrence_prefix"
+kind = "byte"
+section = "8"
+anchor = "Each nonempty record starts with"
+size = 20
+
+[[record.field]]
+name = "end_string_flag"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "end_string_flag u32"
+
+[[record.field]]
+name = "file_reference_id"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "file_reference_id u32"
+
+[[record.field]]
+name = "occurrence_id"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "occurrence_id u32"
+
+[[record.field]]
+name = "header_value"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "title_form_or_count"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "title_form_or_count u32"
+
+[[record]]
+name = "assembly_occurrence_prefix"
+kind = "byte"
+section = "9"
+anchor = "Its payload contains"
+size = 50
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id u16"
+
+[[record.field]]
+name = "next_reference"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "next_reference u32"
+
+[[record.field]]
+name = "flags"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "flags u32"
+
+[[record.field]]
+name = "owner_reference"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "owner_reference u32"
+
+[[record.field]]
+name = "node_index"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "node_index u32"
+
+[[record.field]]
+name = "state"
+offset = 22
+type = "i32[2]"
+source = "spec"
+anchor = "state i32[2]"
+
+[[record.field]]
+name = "relation_marker"
+offset = 30
+type = "u32"
+source = "spec"
+anchor = "relation_marker u32"
+
+[[record.field]]
+name = "relation_count"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "relation_count u32"
+
+[[record.field]]
+name = "ordinal_key"
+offset = 38
+type = "u32"
+source = "spec"
+anchor = "ordinal_key u32"
+
+[[record.field]]
+name = "related_marker"
+offset = 42
+type = "u32"
+source = "spec"
+anchor = "related_marker u32"
+
+[[record.field]]
+name = "related_count"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "related_count u32"

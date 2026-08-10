@@ -65,7 +65,13 @@ pub(crate) fn transfer(
             element_transforms: parse_placement_list(&owned, entries)?,
             element_scales: parse_vector_list(&owned, entries)?,
             linked_subelements: prototype_link
-                .map(|link| link.subelements.clone())
+                .map(|link| {
+                    link.subelements
+                        .iter()
+                        .filter(|subelement| !subelement.is_empty())
+                        .cloned()
+                        .collect()
+                })
                 .unwrap_or_default(),
             claim_child: scalar(&owned, "LinkClaimChild").and_then(parse_bool),
             copy_on_change: owned
@@ -159,11 +165,7 @@ pub(crate) fn transfer_neutral(
     let mut parent_by_object = HashMap::<&str, &str>::new();
     for record in records.iter().filter(|record| record.kind != "occurrence") {
         for member in &record.members {
-            if parent_by_object.insert(member, &record.object).is_some() {
-                return Err(CodecError::Malformed(format!(
-                    "product object {member} has multiple direct containers"
-                )));
-            }
+            parent_by_object.entry(member).or_insert(&record.object);
         }
     }
 
@@ -403,46 +405,44 @@ fn linked_prototype_transform(
 }
 
 fn occurrence_count(record: &ProductNodeRecord) -> Result<usize, CodecError> {
-    let count = record
+    let declared_count = record
         .element_count
         .map(usize::try_from)
         .transpose()
-        .map_err(|_| CodecError::Malformed(format!("{} has negative element count", record.id)))?
-        .filter(|count| *count > 0)
-        .unwrap_or_else(|| {
-            [
-                record.element_transforms.len(),
-                record.element_scales.len(),
-                record.element_visibility.len(),
-                record.element_objects.len(),
-                1,
-            ]
-            .into_iter()
-            .max()
-            .expect("nonempty lengths")
-        });
+        .map_err(|_| CodecError::Malformed(format!("{} has negative element count", record.id)))?;
+    let count = declared_count.unwrap_or_else(|| {
+        [
+            record.element_transforms.len(),
+            record.element_scales.len(),
+            record.element_visibility.len(),
+            record.element_objects.len(),
+            1,
+        ]
+        .into_iter()
+        .max()
+        .expect("nonempty lengths")
+    });
     if count > 1_000_000 || u32::try_from(count).is_err() {
         return Err(CodecError::Malformed(format!(
             "{} link-array count limit exceeded",
             record.id
         )));
     }
-    if count == 0
-        || [
-            record.element_transforms.len(),
-            record.element_scales.len(),
-            record.element_visibility.len(),
-            record.element_objects.len(),
-        ]
-        .into_iter()
-        .any(|length| length != 0 && length != count)
+    if [
+        record.element_transforms.len(),
+        record.element_scales.len(),
+        record.element_visibility.len(),
+        record.element_objects.len(),
+    ]
+    .into_iter()
+    .any(|length| length != 0 && length != count)
     {
         return Err(CodecError::Malformed(format!(
             "{} has inconsistent link-array counts",
             record.id
         )));
     }
-    Ok(count)
+    Ok(count.max(1))
 }
 
 fn copy_on_change_policy(value: &str) -> CopyOnChangePolicy {

@@ -3,7 +3,7 @@
 //! graph, one pass per entity kind.
 
 use super::records::{
-    BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceContainment, FaceSidedness,
+    BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceContainment, FaceNativeKey, FaceSidedness,
     TolerantCoedgeExtension, TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail,
     TransformHints, VertexOwnership,
 };
@@ -2645,6 +2645,7 @@ fn emit_carrier_curve(
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
                 source: source_id,
                 parameter_range,
+                sense: true,
             }
         } else if let Some(embedded) = procedural.5 {
             let surfaces: [Option<SurfaceId>; 2] = embedded
@@ -3867,6 +3868,18 @@ pub(crate) fn emit_faces(
                 normalized_sense: sense,
                 containment,
             });
+            if let Some(Token::Long(key)) = r.chunk(1) {
+                let face_id = FaceId(id(format, i));
+                out.face_native_keys.push(FaceNativeKey {
+                    id: format!("{format}:asm:face-native-key#{i}"),
+                    face: face_id.clone(),
+                    record_index: r.index as u32,
+                    asm_face_key: (*key >= 0).then_some(*key as u64),
+                });
+                if *key >= 0 {
+                    out.face_keys.insert(face_id, *key as u64);
+                }
+            }
         }
     }
 }

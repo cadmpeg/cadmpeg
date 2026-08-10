@@ -352,44 +352,100 @@
       "features": [],
       "loops": [
         {
-          "boundary_role": "unspecified",
+          "boundary_role": "outer",
           "coedges": [
             "catia:standard:coedge#0:0:0",
             "catia:standard:coedge#0:0:1",
             "catia:standard:coedge#0:0:2"
           ],
           "face": "catia:standard:face#0",
-          "id": "catia:standard:loop#0:0"
+          "id": "catia:standard:loop#0:0",
+          "vertex_uses": [
+            {
+              "after": "catia:standard:coedge#0:0:0",
+              "vertex": "catia:standard:v#2"
+            },
+            {
+              "after": "catia:standard:coedge#0:0:1",
+              "vertex": "catia:standard:v#0"
+            },
+            {
+              "after": "catia:standard:coedge#0:0:2",
+              "vertex": "catia:standard:v#1"
+            }
+          ]
         },
         {
-          "boundary_role": "unspecified",
+          "boundary_role": "outer",
           "coedges": [
             "catia:standard:coedge#1:0:0",
             "catia:standard:coedge#1:0:1",
             "catia:standard:coedge#1:0:2"
           ],
           "face": "catia:standard:face#1",
-          "id": "catia:standard:loop#1:0"
+          "id": "catia:standard:loop#1:0",
+          "vertex_uses": [
+            {
+              "after": "catia:standard:coedge#1:0:0",
+              "vertex": "catia:standard:v#3"
+            },
+            {
+              "after": "catia:standard:coedge#1:0:1",
+              "vertex": "catia:standard:v#1"
+            },
+            {
+              "after": "catia:standard:coedge#1:0:2",
+              "vertex": "catia:standard:v#0"
+            }
+          ]
         },
         {
-          "boundary_role": "unspecified",
+          "boundary_role": "outer",
           "coedges": [
             "catia:standard:coedge#2:0:0",
             "catia:standard:coedge#2:0:1",
             "catia:standard:coedge#2:0:2"
           ],
           "face": "catia:standard:face#2",
-          "id": "catia:standard:loop#2:0"
+          "id": "catia:standard:loop#2:0",
+          "vertex_uses": [
+            {
+              "after": "catia:standard:coedge#2:0:0",
+              "vertex": "catia:standard:v#3"
+            },
+            {
+              "after": "catia:standard:coedge#2:0:1",
+              "vertex": "catia:standard:v#2"
+            },
+            {
+              "after": "catia:standard:coedge#2:0:2",
+              "vertex": "catia:standard:v#1"
+            }
+          ]
         },
         {
-          "boundary_role": "unspecified",
+          "boundary_role": "outer",
           "coedges": [
             "catia:standard:coedge#3:0:0",
             "catia:standard:coedge#3:0:1",
             "catia:standard:coedge#3:0:2"
           ],
           "face": "catia:standard:face#3",
-          "id": "catia:standard:loop#3:0"
+          "id": "catia:standard:loop#3:0",
+          "vertex_uses": [
+            {
+              "after": "catia:standard:coedge#3:0:0",
+              "vertex": "catia:standard:v#3"
+            },
+            {
+              "after": "catia:standard:coedge#3:0:1",
+              "vertex": "catia:standard:v#0"
+            },
+            {
+              "after": "catia:standard:coedge#3:0:2",
+              "vertex": "catia:standard:v#2"
+            }
+          ]
         }
       ],
       "occurrences": [],
@@ -611,6 +667,7 @@
           "consolidated_owner_packets": [],
           "consolidated_parameter_points": [],
           "consolidated_pcurves": [],
+          "consolidated_plane_carriers": [],
           "consolidated_reference_lists": [],
           "consolidated_revolutions": [],
           "consolidated_spheres": [],
@@ -653,7 +710,7 @@
           "zero_entity_support_runs": [],
           "zero_entity_vertex_incidences": []
         },
-        "version": 269
+        "version": 271
       }
     },
     "source": {
@@ -661,7 +718,8 @@
         "brep_stream_len": "616",
         "brep_stream_sha256": "d7fb4c3acc0a6eba22f5b98742357824db6b2fd70767cf9be35ec0bcd799c626",
         "external_reference_count": "0",
-        "fbb_runs": "4",
+        "fbb_face_rows": "4",
+        "fbb_runs": "1",
         "file_size": "879",
         "finjpl_segment_count": "0",
         "inner_offset": "16",
@@ -732,6 +790,7 @@
       "decoded_consolidated_line_profile_count": 0,
       "decoded_consolidated_parameter_point_count": 0,
       "decoded_consolidated_pcurve_count": 0,
+      "decoded_consolidated_plane_carrier_count": 0,
       "decoded_consolidated_reference_list_count": 0,
       "decoded_consolidated_revolution_count": 0,
       "decoded_consolidated_sphere_count": 0,
@@ -825,6 +884,7 @@
       "decoded_null_object_record_reference_count": 0,
       "decoded_null_reference_signature_entity_count": 0,
       "decoded_null_relation_program_instance_count": 0,
+      "decoded_null_relation_program_output_count": 0,
       "decoded_null_relation_program_reference_incidence_count": 0,
       "decoded_null_relation_program_repeated_reference_count": 0,
       "decoded_numeric_entity_value_packet_count": 0,
@@ -853,6 +913,7 @@
       "decoded_relation_expression_count": 0,
       "decoded_relation_expression_program_instance_count": 0,
       "decoded_relation_program_instance_count": 0,
+      "decoded_relation_program_output_count": 0,
       "decoded_relation_program_parameter_dependency_count": 0,
       "decoded_relation_program_reference_incidence_count": 0,
       "decoded_repeated_reference_schema_selection_count": 0,
@@ -870,6 +931,7 @@
       "decoded_resolved_relation_program_input_count": 0,
       "decoded_resolved_relation_program_input_instance_count": 0,
       "decoded_resolved_relation_program_instance_count": 0,
+      "decoded_resolved_relation_program_output_count": 0,
       "decoded_resolved_relation_program_parameter_dependency_count": 0,
       "decoded_resolved_relation_program_reference_incidence_count": 0,
       "decoded_resolved_relation_program_repeated_reference_count": 0,
@@ -905,6 +967,8 @@
       "decoded_zero_entity_bound_typed_loop_reference_count": 0,
       "decoded_zero_entity_edge_stride_allocation_count": 0,
       "decoded_zero_entity_edge_stride_count": 0,
+      "decoded_zero_entity_edge_stride_surface_support_ref_count": 0,
+      "decoded_zero_entity_edge_stride_topology_ref_count": 0,
       "decoded_zero_entity_endpoint_locus_candidate_count": 0,
       "decoded_zero_entity_endpoint_pair_candidate_count": 0,
       "decoded_zero_entity_face_bound_support_run_count": 0,
@@ -943,6 +1007,10 @@
       "resolved_consolidated_revolution_seam_curve_count": 0,
       "retained_unscoped_object_graph_count": 0,
       "retained_unscoped_object_record_count": 0,
+      "standard_fbb_admitted_face_row_count": 4,
+      "standard_fbb_candidate_face_row_count": 4,
+      "standard_fbb_run_count": 1,
+      "standard_fbb_withheld_face_row_count": 0,
       "standard_topology_curve_support_count": 6,
       "standard_topology_empty_endpoint_domain_count": 0,
       "standard_topology_endpoint_domain_choice_count": 6,
@@ -985,11 +1053,18 @@
       "transferred_configuration_count": 0,
       "transferred_consolidated_line_profile_count": 0,
       "transferred_consolidated_revolution_count": 0,
+      "transferred_definition_chain_parameter_count": 0,
       "transferred_feature_count": 0,
+      "transferred_feature_parent_count": 0,
       "transferred_formula_design_record_count": 0,
       "transferred_legacy_formula_count": 0,
       "transferred_legacy_parameter_count": 0,
       "transferred_legacy_selector_parameter_count": 0,
+      "transferred_native_operation_count": 0,
+      "transferred_native_operation_definition_chain_value_count": 0,
+      "transferred_native_operation_definition_value_count": 0,
+      "transferred_native_operation_parameter_count": 0,
+      "transferred_native_sketch_entity_count": 0,
       "transferred_parameter_count": 0,
       "transferred_principal_plane_record_count": 0,
       "transferred_relation_program_input_parameter_count": 0,
@@ -1031,6 +1106,7 @@
       "unresolved_object_record_reference_count": 0,
       "unresolved_relation_program_input_instance_count": 0,
       "unresolved_relation_program_instance_count": 0,
+      "unresolved_relation_program_output_count": 0,
       "unresolved_relation_program_parameter_dependency_count": 0,
       "unresolved_relation_program_reference_incidence_count": 0,
       "unresolved_relation_program_repeated_reference_count": 0,
@@ -1054,7 +1130,7 @@
     "notes": [
       "outer V5_CFV2 container: directory offset 879 + length 0 = 879 (file size 879); variant: standard nested V5_CFV2 (FBB spine + standard edge-table delimiter): geometry decode supported",
       "nested V5_CFV2 at file offset 16 with a CATIA_V5 CB0001 directory of 2 stream(s)",
-      "reconstructed BREP stream from MainDataStream + SurfacicReps: 4 FBB run(s), 4 vertex record(s), 1 edge-table delimiter(s)",
+      "reconstructed BREP stream from MainDataStream + SurfacicReps: 1 FBB group(s) containing 4 face row(s), 4 vertex record(s), 1 edge-table delimiter(s)",
       "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
     ]
   },
@@ -1337,29 +1413,37 @@
         "catia:standard:loop#0:0": {
           "entity": "byte_exact",
           "fields": {
+            "boundary_role": "derived",
             "coedges": "derived",
-            "face": "derived"
+            "face": "derived",
+            "vertex_uses": "derived"
           }
         },
         "catia:standard:loop#1:0": {
           "entity": "byte_exact",
           "fields": {
+            "boundary_role": "derived",
             "coedges": "derived",
-            "face": "derived"
+            "face": "derived",
+            "vertex_uses": "derived"
           }
         },
         "catia:standard:loop#2:0": {
           "entity": "byte_exact",
           "fields": {
+            "boundary_role": "derived",
             "coedges": "derived",
-            "face": "derived"
+            "face": "derived",
+            "vertex_uses": "derived"
           }
         },
         "catia:standard:loop#3:0": {
           "entity": "byte_exact",
           "fields": {
+            "boundary_role": "derived",
             "coedges": "derived",
-            "face": "derived"
+            "face": "derived",
+            "vertex_uses": "derived"
           }
         },
         "catia:standard:region#0-0": {

@@ -4,10 +4,14 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::tests::{
-    a5_freeform_curve_stream, a5_guide_curve_stream, a5_pcurve_stream, a5_rational_surface_stream,
-    a5_surface_stream, a6_freeform_curve_stream, a6_pcurve_stream, a6_surface_stream,
-    a8_elided_surface_stream, a8_freeform_curve_stream, a8_pcurve_stream,
-    a8_rational_surface_stream, a8_surface_stream, le_f64,
+    a5_freeform_curve_stream, a5_freeform_curve_stream_with_count, a5_guide_curve_stream,
+    a5_guide_curve_stream_with_count, a5_pcurve_stream, a5_pcurve_stream_with_count,
+    a5_rational_surface_stream, a5_surface_extrapolated_short_tail, a5_surface_extrapolated_tail,
+    a5_surface_short_tail, a5_surface_stream, a5_surface_stream_with_tail, a5_surface_tail,
+    a6_freeform_curve_stream, a6_pcurve_stream, a6_surface_stream, a8_elided_surface_stream,
+    a8_freeform_curve_stream, a8_freeform_curve_stream_with_count, a8_inline_tail_surface_stream,
+    a8_pcurve_stream, a8_pcurve_stream_with_count, a8_rational_surface_stream, a8_surface_stream,
+    a8_surface_stream_with_u_count, a8_surface_tail, le_f64,
 };
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
@@ -25,6 +29,80 @@ fn a8_surface_parser_reads_common_form_nurbs() {
         }
         other => panic!("expected NURBS surface, got {other:?}"),
     }
+}
+
+#[test]
+fn a8_surface_parser_accepts_frame_bounded_knot_and_pole_counts() {
+    let surfaces =
+        crate::families::a5a8::records::a8_surfaces(&a8_surface_stream_with_u_count(20_001));
+    assert_eq!(surfaces.len(), 1);
+    let SurfaceGeometry::Nurbs(surface) = &surfaces[0].geometry else {
+        panic!("NURBS surface");
+    };
+    assert_eq!((surface.u_count, surface.v_count), (20_002, 3));
+    assert_eq!(surface.control_points.len(), 60_006);
+}
+
+#[test]
+fn a8_surface_parser_rejects_unframed_trailing_bytes() {
+    let mut bytes = a8_surface_stream();
+    bytes.push(0);
+    let payload_len = u32::try_from(bytes.len() - 11).unwrap();
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+
+    assert!(crate::families::a5a8::records::a8_surfaces(&bytes).is_empty());
+}
+
+#[test]
+fn a8_surface_parser_accepts_a_closed_nested_b5_run() {
+    let a8 = a8_pcurve_stream();
+    let payload = &a8[11..];
+    let mut child = vec![0xb5, 0x03, 0x20, u8::try_from(payload.len()).unwrap()];
+    child.extend_from_slice(&0x9abcu32.to_le_bytes());
+    child.extend_from_slice(payload);
+
+    let mut bytes = a8_surface_stream();
+    bytes.extend_from_slice(&child);
+    let payload_len = u32::try_from(bytes.len() - 11).unwrap();
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+
+    assert_eq!(crate::families::a5a8::records::a8_surfaces(&bytes).len(), 1);
+}
+
+#[test]
+fn a8_surface_parser_accepts_a_valid_tail_after_inline_poles() {
+    let bytes = a8_inline_tail_surface_stream();
+    let [surface] = crate::families::a5a8::records::a8_surfaces(&bytes)
+        .try_into()
+        .expect("one inline-tail surface");
+    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
+        panic!("NURBS surface");
+    };
+    assert_eq!(surface.control_points[8].x, 8.0);
+}
+
+#[test]
+fn a8_surface_parser_accepts_a_valid_tail_after_inline_weights() {
+    let mut bytes = a8_rational_surface_stream();
+    bytes.extend_from_slice(&a8_surface_tail());
+    let payload_len = u32::try_from(bytes.len() - 11).unwrap();
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+
+    let [surface] = crate::families::a5a8::records::a8_surfaces(&bytes)
+        .try_into()
+        .expect("one inline-weight-tail surface");
+    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
+        panic!("NURBS surface");
+    };
+    assert_eq!(surface.weights, Some(vec![2.0; 9]));
+}
+
+#[test]
+fn a8_surface_parser_rejects_a_malformed_tail_after_inline_poles() {
+    let mut bytes = a8_inline_tail_surface_stream();
+    let tail_start = bytes.len() - 141;
+    bytes[tail_start + 68] = 0;
+    assert!(crate::families::a5a8::records::a8_surfaces(&bytes).is_empty());
 }
 
 #[test]
@@ -50,6 +128,27 @@ fn a8_surface_parser_accepts_each_object_frame_flag() {
 }
 
 #[test]
+fn a8_surface_header_rejects_nonfinite_and_repeated_distinct_knots() {
+    for (start, value, label) in [
+        (17, f64::INFINITY, "nonfinite U knot"),
+        (25, 0.0, "repeated U knot"),
+        (40, f64::INFINITY, "nonfinite V knot"),
+        (48, 0.0, "repeated V knot"),
+    ] {
+        let mut bytes = a8_surface_stream();
+        bytes[start..start + 8].copy_from_slice(&le_f64(value));
+        assert!(
+            crate::families::a5a8::records::a8_surfaces(&bytes).is_empty(),
+            "{label} must not produce a resolved surface"
+        );
+        assert!(
+            crate::families::a5a8::records::a8_surface_headers(&bytes).is_empty(),
+            "{label} must not produce a surface header"
+        );
+    }
+}
+
+#[test]
 fn a8_surface_header_survives_an_opaque_pole_representation() {
     let mut bytes = a8_surface_stream();
     bytes[59..67].copy_from_slice(&f64::NAN.to_le_bytes());
@@ -66,18 +165,71 @@ fn a8_surface_header_survives_an_opaque_pole_representation() {
 
 #[test]
 fn a8_surface_header_identifies_an_elided_pole_grid() {
-    let mut bytes = a8_surface_stream();
-    bytes.truncate(59);
-    let mut tail = vec![0; 141];
-    tail[..4].copy_from_slice(&[0x05, 0x21, 0x05, 0x05]);
-    bytes.extend_from_slice(&tail);
-    bytes.extend_from_slice(&[0xb5, 0x03, 0x5e, 0, 1, 0, 0, 0]);
-    let payload_len = u32::try_from(bytes.len() - 11).unwrap();
-    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+    let bytes = a8_elided_surface_stream();
     assert!(crate::families::a5a8::records::a8_surfaces(&bytes).is_empty());
     let headers = crate::families::a5a8::records::a8_surface_headers(&bytes);
     assert_eq!(headers.len(), 1);
     assert!(headers[0].poles_elided);
+    let tail = headers[0]
+        .parameter_tail
+        .as_ref()
+        .expect("elided parameter tail");
+    assert_eq!((tail.u_control, tail.v_control), (0x21, 0x05));
+    assert_eq!(tail.u_range, [0.0, 1.0]);
+    assert_eq!(tail.v_range, [0.0, 1.0]);
+    assert_eq!(tail.u_affine, [1.0, 0.0]);
+    assert_eq!(tail.v_affine, [1.0, 0.0]);
+    assert_eq!(tail.flags, [0x01, 0x01, 0x01]);
+    assert_eq!(tail.continuation, [0.0; 8]);
+}
+
+#[test]
+fn a8_surface_header_retains_an_inline_parameter_tail() {
+    let headers =
+        crate::families::a5a8::records::a8_surface_headers(&a8_inline_tail_surface_stream());
+    let [header] = headers.as_slice() else {
+        panic!("one inline-tail header");
+    };
+    assert!(!header.poles_elided);
+    let tail = header
+        .parameter_tail
+        .as_ref()
+        .expect("inline parameter tail");
+    assert_eq!(tail.v_range[1], 1.0);
+}
+
+#[test]
+fn a8_surface_header_rejects_an_incomplete_elided_program() {
+    let mut bytes = a8_elided_surface_stream();
+    bytes[59 + 44] = 1;
+    let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
+        .try_into()
+        .expect("one surface header");
+    assert!(!header.poles_elided);
+    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
+}
+
+#[test]
+fn a8_elided_surface_requires_length_closed_nested_children() {
+    let mut bytes = a8_elided_surface_stream();
+    let payload_len = u32::from_le_bytes(bytes[3..7].try_into().unwrap());
+    let a8_end = 11 + usize::try_from(payload_len).unwrap();
+    let child = [0xb5, 0x03, 0x5e, 0, 2, 0, 0, 0];
+    bytes.splice(a8_end..a8_end, child);
+    let new_payload_len = payload_len + u32::try_from(child.len()).unwrap();
+    bytes[3..7].copy_from_slice(&new_payload_len.to_le_bytes());
+
+    let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
+        .try_into()
+        .expect("one elided surface header");
+    assert!(header.poles_elided);
+
+    bytes[a8_end + 3] = 250;
+    let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
+        .try_into()
+        .expect("one surface header");
+    assert!(!header.poles_elided);
+    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
 }
 
 #[test]
@@ -98,11 +250,40 @@ fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
     let [resolved] = crate::families::a5a8::records::resolved_a8_surfaces(&bytes)
         .try_into()
         .expect("one resolved surface");
-    assert_eq!(resolved.object_id(), Some(0xdeca_fbad));
+    assert_eq!(resolved.object_id(), Some(100));
     let SurfaceGeometry::Nurbs(resolved) = resolved.geometry else {
         panic!("NURBS surface");
     };
     assert_eq!(resolved.control_points, surface.control_points);
+}
+
+#[test]
+fn a8_elided_surface_uses_the_pcurve_support_reference_to_disambiguate_equal_grids() {
+    let first = a8_elided_surface_stream();
+    let mut second = a8_elided_surface_stream();
+    second[7..11].copy_from_slice(&101_u32.to_le_bytes());
+    let pcurve = second
+        .windows(3)
+        .position(|value| value == [0xb5, 0x03, 0x21])
+        .expect("second external pcurve");
+    second[pcurve + 10..pcurve + 12].copy_from_slice(&101_u16.to_le_bytes());
+
+    let mut bytes = first;
+    bytes.extend(second);
+    let headers = crate::families::a5a8::records::a8_surface_headers(&bytes);
+    assert_eq!(headers.len(), 2);
+    assert_eq!(
+        headers
+            .iter()
+            .map(|header| header.object_id)
+            .collect::<Vec<_>>(),
+        [100, 101]
+    );
+    for header in &headers {
+        let surface = crate::families::a5a8::records::a8_surface_from_external_grid(&bytes, header)
+            .expect("support reference selects one equal-sized grid");
+        assert_eq!(surface.object_id(), Some(header.object_id));
+    }
 }
 
 #[test]
@@ -154,6 +335,17 @@ fn a8_elided_surface_accepts_finite_large_external_poles() {
 }
 
 #[test]
+fn a8_elided_surface_requires_a_length_closed_successor_frame() {
+    let mut bytes = a8_elided_surface_stream();
+    let successor = bytes
+        .windows(3)
+        .rposition(|value| value == [0xb5, 0x03, 0x5e])
+        .expect("successor frame");
+    bytes[successor + 3] = 3;
+    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
+}
+
+#[test]
 fn a8_pcurve_parser_reads_degree5_uv_jet() {
     let pcurves = crate::families::a5a8::records::a8_pcurves(&a8_pcurve_stream());
     assert_eq!(pcurves.len(), 1);
@@ -181,6 +373,14 @@ fn a8_pcurve_parser_reads_degree5_uv_jet() {
     let payload_len = u32::try_from(trailing_byte.len() - 11).unwrap();
     trailing_byte[3..7].copy_from_slice(&payload_len.to_le_bytes());
     assert!(crate::families::a5a8::records::a8_pcurves(&trailing_byte).is_empty());
+}
+
+#[test]
+fn a8_pcurve_parser_accepts_frame_bounded_site_count() {
+    let pcurves = crate::families::a5a8::records::a8_pcurves(&a8_pcurve_stream_with_count(8193));
+    assert_eq!(pcurves.len(), 1);
+    assert_eq!(pcurves[0].knots.len(), 8193);
+    assert_eq!(pcurves[0].points.len(), 8193);
 }
 
 #[test]
@@ -320,6 +520,14 @@ fn consolidated_pcurve_parser_reads_width2_frame() {
 }
 
 #[test]
+fn a5_pcurve_parser_accepts_frame_bounded_site_count() {
+    let pcurves = crate::families::a5a8::records::a5_pcurves(&a5_pcurve_stream_with_count(4097));
+    assert_eq!(pcurves.len(), 1);
+    assert_eq!(pcurves[0].knots.len(), 4097);
+    assert_eq!(pcurves[0].points.len(), 4097);
+}
+
+#[test]
 fn a8_surface_parser_reads_rational_weight_grid() {
     let surfaces = crate::families::a5a8::records::a8_surfaces(&a8_rational_surface_stream());
     match &surfaces[0].geometry {
@@ -405,6 +613,21 @@ fn surface_parsers_accept_finite_large_control_points() {
 }
 
 #[test]
+fn a5_surface_parser_rejects_nonfinite_and_repeated_distinct_knots() {
+    let mut nonfinite_u = a5_surface_stream();
+    nonfinite_u[11..19].copy_from_slice(&le_f64(f64::NAN));
+    assert!(crate::families::a5a8::records::a5_surfaces(&nonfinite_u).is_empty());
+
+    let mut repeated_u = a5_surface_stream();
+    repeated_u[19..27].copy_from_slice(&le_f64(0.0));
+    assert!(crate::families::a5a8::records::a5_surfaces(&repeated_u).is_empty());
+
+    let mut nonfinite_v = a5_surface_stream();
+    nonfinite_v[30..38].copy_from_slice(&le_f64(f64::NAN));
+    assert!(crate::families::a5a8::records::a5_surfaces(&nonfinite_v).is_empty());
+}
+
+#[test]
 fn consolidated_surface_parser_reads_width2_frame() {
     let surfaces = crate::families::a5a8::records::a5_surfaces(&a6_surface_stream());
     assert_eq!(surfaces.len(), 1);
@@ -429,11 +652,42 @@ fn a5_surface_parser_rejects_zero_tail_codes_without_underflow() {
         let mut malformed = a5_surface_stream();
         let tail = malformed
             .windows(4)
-            .position(|window| window == [0x05, 0x01, 0x05, 0x01])
+            .position(|window| window == [0x05, 0x05, 0x05, 0x05])
             .expect("surface tail");
         malformed[tail + index] = 0;
         assert!(crate::families::a5a8::records::a5_surfaces(&malformed).is_empty());
     }
+}
+
+#[test]
+fn a5_surface_parser_accepts_each_structured_tail_variant() {
+    for tail in [
+        a5_surface_short_tail(),
+        a5_surface_tail(),
+        a5_surface_extrapolated_short_tail(),
+        a5_surface_extrapolated_tail(),
+    ] {
+        let surfaces =
+            crate::families::a5a8::records::a5_surfaces(&a5_surface_stream_with_tail(&tail));
+        assert_eq!(surfaces.len(), 1, "tail length {}", tail.len());
+    }
+}
+
+#[test]
+fn a5_surface_parser_rejects_unclosed_or_nonfinite_tail_data() {
+    let mut trailing = a5_surface_stream();
+    trailing.push(0);
+    let payload_len = u32::try_from(trailing.len() - 8).unwrap();
+    trailing[3..7].copy_from_slice(&payload_len.to_le_bytes());
+    assert!(crate::families::a5a8::records::a5_surfaces(&trailing).is_empty());
+
+    let mut nonfinite = a5_surface_stream();
+    let tail = nonfinite
+        .windows(4)
+        .position(|window| window == [0x05, 0x05, 0x05, 0x05])
+        .expect("surface tail");
+    nonfinite[tail + 4..tail + 12].copy_from_slice(&le_f64(f64::NAN));
+    assert!(crate::families::a5a8::records::a5_surfaces(&nonfinite).is_empty());
 }
 
 #[test]
@@ -448,7 +702,7 @@ fn a5_weight_program_reads_independent_palindromic_rows() {
     bytes.extend([1.0, 0.8].into_iter().flat_map(le_f64));
     let mut at = 0;
     assert_eq!(
-        crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4),
+        crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4, bytes.len()),
         Some(vec![
             1.0, 0.8, 0.8, 1.0, 0.9, 0.65, 0.65, 0.9, 0.9, 0.65, 0.65, 0.9, 1.0, 0.8, 0.8, 1.0,
         ])
@@ -466,10 +720,21 @@ fn a5_weight_program_reads_zero_prefixed_complete_grid() {
     bytes.extend(expected.into_iter().flat_map(le_f64));
     let mut at = 0;
     assert_eq!(
-        crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4),
+        crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4, bytes.len()),
         Some(expected.to_vec())
     );
     assert_eq!(at, bytes.len());
+}
+
+#[test]
+fn a5_weight_program_does_not_cross_frame_boundary() {
+    let mut bytes = vec![0x00];
+    bytes.extend([1.0, 2.0, 3.0, 4.0].into_iter().flat_map(le_f64));
+    bytes.extend([0u8; 8]);
+    let mut at = 0;
+    assert!(
+        crate::families::a5a8::records::a5_weights(&bytes, &mut at, 2, 2, 1 + 3 * 8,).is_none()
+    );
 }
 
 #[test]
@@ -500,6 +765,30 @@ fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
     let mut invalid_header_token = a5_freeform_curve_stream();
     invalid_header_token[7] = 17;
     assert!(crate::families::a5a8::records::a5_freeform_curves(&invalid_header_token).is_empty());
+}
+
+#[test]
+fn a5_curve_parser_accepts_frame_bounded_continuation() {
+    let mut bytes = a5_freeform_curve_stream();
+    bytes.extend(std::iter::repeat_n(0, 4097));
+    let payload_len = u32::try_from(bytes.len() - 8).expect("test frame fits u32");
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+
+    let [curve] = crate::families::a5a8::records::a5_freeform_curves(&bytes)
+        .try_into()
+        .expect("one rolling-ball jet");
+    assert_eq!(curve.knots, [0.0, 1.0]);
+    assert_eq!(curve.sites[1].radius, 2.0);
+}
+
+#[test]
+fn a5_curve_parser_accepts_frame_bounded_site_count() {
+    let curves = crate::families::a5a8::records::a5_freeform_curves(
+        &a5_freeform_curve_stream_with_count(4097),
+    );
+    assert_eq!(curves.len(), 1);
+    assert_eq!(curves[0].knots.len(), 4097);
+    assert_eq!(curves[0].sites.len(), 4097);
 }
 
 #[test]
@@ -597,6 +886,31 @@ fn guide_curve_parser_reads_position_and_unit_direction_jet() {
 }
 
 #[test]
+fn guide_curve_parser_accepts_frame_bounded_site_count() {
+    let curves =
+        crate::families::a5a8::records::a5_guide_curves(&a5_guide_curve_stream_with_count(4097));
+    assert_eq!(curves.len(), 1);
+    assert_eq!(curves[0].knots.len(), 4097);
+    assert_eq!(curves[0].sites.len(), 4097);
+}
+
+#[test]
+fn guide_curve_parser_rejects_nonfinite_jet_channels() {
+    for offset in [12, 124, 220] {
+        let mut bytes = a5_guide_curve_stream();
+        bytes[offset..offset + 8].copy_from_slice(&le_f64(f64::NAN));
+        assert!(
+            crate::families::a5a8::records::a5_guide_curves(&bytes).is_empty(),
+            "offset {offset}"
+        );
+    }
+
+    let mut repeated_knot = a5_guide_curve_stream();
+    repeated_knot[20..28].copy_from_slice(&le_f64(0.0));
+    assert!(crate::families::a5a8::records::a5_guide_curves(&repeated_knot).is_empty());
+}
+
+#[test]
 fn a8_curve_parser_reads_common_form_rolling_ball_jet() {
     let curves = crate::families::a5a8::records::a8_freeform_curves(&a8_freeform_curve_stream());
     assert_eq!(curves.len(), 1);
@@ -619,6 +933,16 @@ fn a8_curve_parser_reads_common_form_rolling_ball_jet() {
 }
 
 #[test]
+fn a8_curve_parser_accepts_frame_bounded_site_count() {
+    let curves = crate::families::a5a8::records::a8_freeform_curves(
+        &a8_freeform_curve_stream_with_count(8193),
+    );
+    assert_eq!(curves.len(), 1);
+    assert_eq!(curves[0].knots.len(), 8193);
+    assert_eq!(curves[0].sites.len(), 8193);
+}
+
+#[test]
 fn a8_curve_parser_accepts_each_object_frame_flag() {
     for flag in [0x03, 0x13, 0x83] {
         let mut bytes = a8_freeform_curve_stream();
@@ -633,6 +957,47 @@ fn a8_curve_parser_accepts_each_object_frame_flag() {
     let mut malformed = a8_freeform_curve_stream();
     malformed[1] = 0x23;
     assert!(crate::families::a5a8::records::a8_freeform_curves(&malformed).is_empty());
+}
+
+#[test]
+fn indexed_a5_record_decoders_match_one_shot_wrappers() {
+    let freeform = a5_freeform_curve_stream();
+    let records = crate::wire::records::consolidated_records(&freeform);
+    let one_shot = crate::families::a5a8::records::a5_freeform_curves(&freeform);
+    let indexed =
+        crate::families::a5a8::records::a5_freeform_curves_from_records(&freeform, &records);
+    assert_eq!(one_shot.len(), indexed.len());
+    for (one_shot, indexed) in one_shot.iter().zip(&indexed) {
+        assert_eq!(one_shot.pos, indexed.pos);
+        assert_eq!(one_shot.header_token, indexed.header_token);
+        assert_eq!(one_shot.degree, indexed.degree);
+        assert_eq!(one_shot.knots, indexed.knots);
+        assert_eq!(one_shot.sites, indexed.sites);
+        assert_eq!(one_shot.first_derivatives, indexed.first_derivatives);
+        assert_eq!(one_shot.second_derivatives, indexed.second_derivatives);
+    }
+
+    let guide = a5_guide_curve_stream();
+    let records = crate::wire::records::consolidated_records(&guide);
+    let one_shot = crate::families::a5a8::records::a5_guide_curves(&guide);
+    let indexed = crate::families::a5a8::records::a5_guide_curves_from_records(&guide, &records);
+    assert_eq!(one_shot.len(), indexed.len());
+    for (one_shot, indexed) in one_shot.iter().zip(&indexed) {
+        assert_eq!(one_shot.pos, indexed.pos);
+        assert_eq!(one_shot.header_token, indexed.header_token);
+        assert_eq!(one_shot.degree, indexed.degree);
+        assert_eq!(one_shot.knots, indexed.knots);
+        assert_eq!(one_shot.sites, indexed.sites);
+        assert_eq!(one_shot.first_derivatives, indexed.first_derivatives);
+        assert_eq!(one_shot.second_derivatives, indexed.second_derivatives);
+    }
+
+    let nurbs = a5_nurbs_curve_stream();
+    let records = crate::wire::records::consolidated_records(&nurbs);
+    assert_eq!(
+        crate::families::a5a8::records::a5_nurbs_curves(&nurbs),
+        crate::families::a5a8::records::a5_nurbs_curves_from_records(&nurbs, &records)
+    );
 }
 
 fn a5_nurbs_curve_stream() -> Vec<u8> {
@@ -671,6 +1036,35 @@ fn a5_nurbs_curve_stream() -> Vec<u8> {
     record
 }
 
+fn a5_nurbs_curve_stream_with_knot_count(knot_count: usize) -> Vec<u8> {
+    assert_eq!(knot_count, 8193);
+    let mut payload = vec![0x15, 0x08, 0x01, 0x20, 0x0c];
+    for knot in 0..knot_count {
+        payload.extend_from_slice(&f64::from(u32::try_from(knot).unwrap()).to_le_bytes());
+    }
+    payload.push(0x01);
+    for _ in 0..(3 * knot_count) {
+        for _ in 0..3 {
+            payload.extend_from_slice(&0.0f64.to_le_bytes());
+        }
+    }
+    payload.extend_from_slice(&[0x05, 0x09]);
+    for value in [
+        0.0,
+        f64::from(u32::try_from(knot_count - 1).unwrap()),
+        1.0,
+        0.0,
+    ] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+    payload.extend_from_slice(&[0x00, 0x07]);
+    let mut record = vec![0xa5, 0x13, 0x16];
+    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.push(0x0d);
+    record.extend(payload);
+    record
+}
+
 #[test]
 fn a5_nurbs_curve_parser_expands_the_degree_five_knot_multiplicities() {
     let curves = crate::families::a5a8::records::a5_nurbs_curves(&a5_nurbs_curve_stream());
@@ -684,6 +1078,27 @@ fn a5_nurbs_curve_parser_expands_the_degree_five_knot_multiplicities() {
     assert_eq!(curve.geometry.knots[6..9], [0.0; 3]);
     assert_eq!(curve.geometry.knots[9..], [2.220_264_955_47; 6]);
     assert!(curve.geometry.weights.is_none());
+}
+
+#[test]
+fn a5_nurbs_curve_parser_accepts_frame_bounded_knot_count() {
+    let curves = crate::families::a5a8::records::a5_nurbs_curves(
+        &a5_nurbs_curve_stream_with_knot_count(8193),
+    );
+    assert_eq!(curves.len(), 1);
+    assert_eq!(curves[0].geometry.control_points.len(), 24_579);
+    assert_eq!(curves[0].geometry.knots.len(), 24_585);
+}
+
+#[test]
+fn a5_nurbs_curve_parser_rejects_nonfinite_knots_and_control_points() {
+    let mut nonfinite_knot = a5_nurbs_curve_stream();
+    nonfinite_knot[11..19].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(crate::families::a5a8::records::a5_nurbs_curves(&nonfinite_knot).is_empty());
+
+    let mut nonfinite_control_point = a5_nurbs_curve_stream();
+    nonfinite_control_point[36..44].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(crate::families::a5a8::records::a5_nurbs_curves(&nonfinite_control_point).is_empty());
 }
 
 #[test]

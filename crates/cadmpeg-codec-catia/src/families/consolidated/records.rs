@@ -15,19 +15,25 @@ use std::collections::BTreeMap;
 #[cfg(test)]
 use std::collections::HashMap;
 
-use crate::families::a5a8::records::{a5_pcurves, a5_surfaces, FreeformSurface};
+use crate::families::a5a8::records::{
+    a5_pcurves_from_records, a5_surfaces_from_records, FreeformSurface,
+};
 use crate::families::b2::records::{
-    b2_circles, b2_class25_descriptors, b2_cone_point, b2_cones, b2_cylinder_point, b2_cylinders,
-    b2_edge_nodes, b2_edge_parameters, b2_embedded_cylinders, b2_pcurves, b2_sphere_geometry,
-    b2_spheres, b2_tori, b2_torus_geometry, b2_use_metadata, point_distance, B2Circle,
-    B2Class25Descriptor, B2Cone, B2Cylinder, B2EdgeNode, B2EdgeParameters, B2EmbeddedCylinder,
-    B2Sphere, B2Torus, B2UseMetadata,
+    b2_circles_from_records, b2_class25_descriptors_from_records, b2_cone_point,
+    b2_cones_from_records, b2_cylinder_point, b2_cylinders_from_records,
+    b2_edge_nodes_from_records, b2_edge_parameters_from_records,
+    b2_embedded_cylinders_from_records, b2_pcurves_from_records, b2_plane_carriers_from_records,
+    b2_plane_geometry, b2_sphere_geometry, b2_spheres_from_records, b2_tori_from_records,
+    b2_torus_geometry, b2_use_metadata_from_records, point_distance, B2Circle, B2Class25Descriptor,
+    B2Cone, B2Cylinder, B2EdgeNode, B2EdgeParameters, B2EmbeddedCylinder, B2PlaneCarrier, B2Sphere,
+    B2Torus, B2UseMetadata,
 };
 use crate::wire::bytes::{
     allocation_ref, compact_int, finite_f64_lane, persistent_ref, read_f64_array,
 };
 use crate::wire::records::{
-    consolidated_records, scan_vertex_records, ConsolidatedFamily, ConsolidatedPcurve,
+    consolidated_records, records_are_contiguous, scan_vertex_records, ConsolidatedFamily,
+    ConsolidatedPcurve, ConsolidatedRecord,
 };
 
 /// Serialized consolidated edge block formed by two pcurves and one range packet.
@@ -319,6 +325,11 @@ pub enum ConsolidatedSupportBinding {
         /// Carrier record byte offset.
         pos: usize,
     },
+    /// Direction-bearing `b2/b3/b4 03 27` plane carrier selected by endpoint lifts.
+    Plane {
+        /// Carrier record byte offset.
+        pos: usize,
+    },
     /// Consolidated `a5 03 34` NURBS carrier, optionally at a constant normal offset.
     NurbsCarrier {
         /// Carrier record byte offset.
@@ -349,28 +360,41 @@ struct ConsolidatedCarriers<'a> {
     cones: &'a [B2Cone],
     spheres: &'a [B2Sphere],
     tori: &'a [B2Torus],
+    planes: &'a [B2PlaneCarrier],
     nurbs_surfaces: &'a [FreeformSurface],
 }
 
 /// Group ordered pairs of same-family class-`0x20` pcurves followed by one
 /// B-family class-`0x23` range packet.
 #[must_use]
+#[cfg(test)]
 pub fn consolidated_edge_blocks(data: &[u8]) -> Vec<ConsolidatedEdgeBlock> {
-    let pcurves = a5_pcurves(data)
+    let records = consolidated_records(data);
+    consolidated_edge_blocks_from_records(data, &records)
+}
+
+pub(crate) fn consolidated_edge_blocks_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<ConsolidatedEdgeBlock> {
+    let pcurves = a5_pcurves_from_records(data, records)
         .into_iter()
-        .chain(b2_pcurves(data))
+        .chain(b2_pcurves_from_records(data, records))
         .map(|value| (value.pos, value))
         .collect::<BTreeMap<_, _>>();
-    let parameters = b2_edge_parameters(data)
+    let parameters = b2_edge_parameters_from_records(data, records)
         .into_iter()
         .map(|value| (value.pos, value))
         .collect::<BTreeMap<_, _>>();
-    consolidated_records(data)
+    records
         .windows(3)
         .filter_map(|window| {
             let [first_record, second_record, parameter_record] = window else {
                 return None;
             };
+            if !records_are_contiguous(window) {
+                return None;
+            }
             if first_record.class == 0x20
                 && second_record.class == 0x20
                 && first_record.family == second_record.family
@@ -398,21 +422,33 @@ pub fn consolidated_edge_blocks(data: &[u8]) -> Vec<ConsolidatedEdgeBlock> {
 /// Decode complete six-record consolidated edge runs. Records separated by any
 /// other framed record do not form a run.
 #[must_use]
+#[cfg(test)]
 pub fn consolidated_topology_edge_runs(data: &[u8]) -> Vec<ConsolidatedTopologyEdgeRun> {
-    let edges = consolidated_edge_blocks(data)
+    let records = consolidated_records(data);
+    consolidated_topology_edge_runs_from_records(data, &records)
+}
+
+pub(crate) fn consolidated_topology_edge_runs_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<ConsolidatedTopologyEdgeRun> {
+    let edges = consolidated_edge_blocks_from_records(data, records)
         .into_iter()
         .map(|edge| (edge.pcurves[0].pos, edge))
         .collect::<BTreeMap<_, _>>();
-    let use_runs = consolidated_edge_use_runs(data)
+    let use_runs = consolidated_edge_use_runs_from_records(data, records)
         .into_iter()
         .map(|value| (value.uses[0].pos, value))
         .collect::<BTreeMap<_, _>>();
-    consolidated_records(data)
+    records
         .windows(6)
         .filter_map(|window| {
             let [pcurve0, pcurve1, parameters, use0, use1, node] = window else {
                 return None;
             };
+            if !records_are_contiguous(window) {
+                return None;
+            }
             if pcurve0.class == 0x20
                 && pcurve1.class == 0x20
                 && pcurve0.family == pcurve1.family
@@ -443,23 +479,35 @@ pub fn consolidated_topology_edge_runs(data: &[u8]) -> Vec<ConsolidatedTopologyE
 /// Decode adjacent `18,19,23,06,06,5e` analytic-circle edge runs. The
 /// class-`0x23` definition must close under the eight-scalar grammar.
 #[must_use]
+#[cfg(test)]
 pub fn consolidated_analytic_circle_edge_runs(
     data: &[u8],
 ) -> Vec<ConsolidatedAnalyticCircleEdgeRun> {
-    let circles = b2_circles(data)
+    let records = consolidated_records(data);
+    consolidated_analytic_circle_edge_runs_from_records(data, &records)
+}
+
+pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<ConsolidatedAnalyticCircleEdgeRun> {
+    let circles = b2_circles_from_records(data, records)
         .into_iter()
         .map(|value| (value.pos, value))
         .collect::<BTreeMap<_, _>>();
-    let use_runs = consolidated_edge_use_runs(data)
+    let use_runs = consolidated_edge_use_runs_from_records(data, records)
         .into_iter()
         .map(|value| (value.uses[0].pos, value))
         .collect::<BTreeMap<_, _>>();
-    consolidated_records(data)
+    records
         .windows(6)
         .filter_map(|window| {
             let [parameter, circle, definition, use0, use1, node] = window else {
                 return None;
             };
+            if !records_are_contiguous(window) {
+                return None;
+            }
             if parameter.family != ConsolidatedFamily::B
                 || parameter.class != 0x18
                 || circle.family != ConsolidatedFamily::B
@@ -502,21 +550,33 @@ pub fn consolidated_analytic_circle_edge_runs(
 /// Decode adjacent `18,25,06,06,5e` edge runs whose descriptor and definition
 /// both close under their typed grammars.
 #[must_use]
+#[cfg(test)]
 pub fn consolidated_class25_edge_runs(data: &[u8]) -> Vec<ConsolidatedClass25EdgeRun> {
-    let descriptors = b2_class25_descriptors(data)
+    let records = consolidated_records(data);
+    consolidated_class25_edge_runs_from_records(data, &records)
+}
+
+pub(crate) fn consolidated_class25_edge_runs_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<ConsolidatedClass25EdgeRun> {
+    let descriptors = b2_class25_descriptors_from_records(data, records)
         .into_iter()
         .map(|value| (value.pos, value))
         .collect::<BTreeMap<_, _>>();
-    let use_runs = consolidated_edge_use_runs(data)
+    let use_runs = consolidated_edge_use_runs_from_records(data, records)
         .into_iter()
         .map(|value| (value.uses[0].pos, value))
         .collect::<BTreeMap<_, _>>();
-    consolidated_records(data)
+    records
         .windows(5)
         .filter_map(|window| {
             let [descriptor, definition, use0, use1, node] = window else {
                 return None;
             };
+            if !records_are_contiguous(window) {
+                return None;
+            }
             if descriptor.family != ConsolidatedFamily::B
                 || descriptor.class != 0x18
                 || definition.family != ConsolidatedFamily::B
@@ -553,16 +613,24 @@ pub fn consolidated_class25_edge_runs(data: &[u8]) -> Vec<ConsolidatedClass25Edg
 /// Decode every adjacent `06,06,5e` edge-use run independently of pcurve
 /// availability. Records separated by another framed record do not form a run.
 #[must_use]
+#[cfg(test)]
 pub fn consolidated_edge_use_runs(data: &[u8]) -> Vec<ConsolidatedEdgeUseRun> {
-    let uses = b2_use_metadata(data)
-        .into_iter()
-        .map(|value| (value.pos, value))
-        .collect::<BTreeMap<_, _>>();
-    let nodes = b2_edge_nodes(data)
-        .into_iter()
-        .map(|value| (value.pos, value))
-        .collect::<BTreeMap<_, _>>();
     let records = consolidated_records(data);
+    consolidated_edge_use_runs_from_records(data, &records)
+}
+
+pub(crate) fn consolidated_edge_use_runs_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<ConsolidatedEdgeUseRun> {
+    let uses = b2_use_metadata_from_records(data, records)
+        .into_iter()
+        .map(|value| (value.pos, value))
+        .collect::<BTreeMap<_, _>>();
+    let nodes = b2_edge_nodes_from_records(data, records)
+        .into_iter()
+        .map(|value| (value.pos, value))
+        .collect::<BTreeMap<_, _>>();
     records
         .windows(3)
         .enumerate()
@@ -570,6 +638,9 @@ pub fn consolidated_edge_use_runs(data: &[u8]) -> Vec<ConsolidatedEdgeUseRun> {
             let [use0, use1, node] = window else {
                 return None;
             };
+            if !records_are_contiguous(window) {
+                return None;
+            }
             if use0.family != ConsolidatedFamily::B
                 || use0.class != 0x06
                 || use1.family != ConsolidatedFamily::B
@@ -597,7 +668,9 @@ pub fn consolidated_edge_use_runs(data: &[u8]) -> Vec<ConsolidatedEdgeUseRun> {
                 .checked_sub(1)
                 .and_then(|preceding| records.get(preceding))
                 .filter(|record| {
-                    record.family == ConsolidatedFamily::B && matches!(record.class, 0x23..=0x25)
+                    record.range.end == use0.range.start
+                        && record.family == ConsolidatedFamily::B
+                        && matches!(record.class, 0x23..=0x25)
                 })
                 .map(|record| ConsolidatedEdgeDefinition {
                     pos: record.range.start,
@@ -682,95 +755,125 @@ pub fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeE
 /// NURBS carriers.
 ///
 /// A carrier binds only when record identity or chart geometry determines one
-/// solution. Ambiguous candidates remain unresolved.
+/// solution. Ambiguous candidates, including matches from different analytic
+/// families, remain unresolved.
 #[must_use]
+#[cfg(test)]
 pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidatedEdgeBlock> {
-    let points = object_stream_vertices(data);
-    let embedded = b2_embedded_cylinders(data);
-    let standalone = b2_cylinders(data);
-    let circles = b2_circles(data);
-    let cones = b2_cones(data);
-    let spheres = b2_spheres(data);
-    let tori = b2_tori(data);
-    let surfaces = a5_surfaces(data);
+    let records = consolidated_records(data);
+    resolve_consolidated_edge_blocks_from_records(data, &records)
+}
+
+pub(crate) fn resolve_consolidated_edge_blocks_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<ResolvedConsolidatedEdgeBlock> {
+    let points = object_stream_vertices_from_records(data, records);
+    let embedded = b2_embedded_cylinders_from_records(data, records);
+    let standalone = b2_cylinders_from_records(data, records);
+    let circles = b2_circles_from_records(data, records);
+    let cones = b2_cones_from_records(data, records);
+    let spheres = b2_spheres_from_records(data, records);
+    let tori = b2_tori_from_records(data, records);
+    let planes = b2_plane_carriers_from_records(data, records);
+    let surfaces = a5_surfaces_from_records(data, records);
     let carriers = ConsolidatedCarriers {
         cylinders: &standalone,
         embedded_cylinders: &embedded,
         cones: &cones,
         spheres: &spheres,
         tori: &tori,
+        planes: &planes,
         nurbs_surfaces: &surfaces,
     };
-    consolidated_edge_blocks(data)
+    consolidated_edge_blocks_from_records(data, records)
         .into_iter()
         .map(|block| {
             let mut supports = std::array::from_fn(|side| {
                 let pcurve = &block.pcurves[side];
                 let mut winners = Vec::new();
-                for cylinder in &standalone {
-                    if pcurve_endpoints_match_vertices(pcurve, cylinder, &points) {
-                        winners.push(ConsolidatedSupportBinding::Cylinder { pos: cylinder.pos });
+                let mut ambiguous_family = false;
+                let identity_circles: Vec<_> = circles
+                    .iter()
+                    .filter(|circle| circle.record_id == pcurve.support_id)
+                    .collect();
+                let identity_embedded: Vec<_> = embedded
+                    .iter()
+                    .filter(|value| value.object_id == pcurve.support_id)
+                    .collect();
+                let identity_count = identity_circles.len() + identity_embedded.len();
+                if identity_count == 0 {
+                    for cylinder in &standalone {
+                        if pcurve_endpoints_match_vertices(pcurve, cylinder, &points) {
+                            winners
+                                .push(ConsolidatedSupportBinding::Cylinder { pos: cylinder.pos });
+                        }
                     }
-                }
-                for value in &embedded {
+                    winners.extend(
+                        embedded
+                            .iter()
+                            .filter(|value| {
+                                pcurve_endpoints_match_vertices(pcurve, &value.cylinder, &points)
+                            })
+                            .map(|value| ConsolidatedSupportBinding::EmbeddedCylinder {
+                                pos: value.pos,
+                                wrapper_pos: value.wrapper_pos,
+                            }),
+                    );
+                    winners.extend(
+                        circles
+                            .iter()
+                            .filter(|circle| pcurve_matches_circle(pcurve, circle))
+                            .map(|circle| ConsolidatedSupportBinding::Circle { pos: circle.pos }),
+                    );
+                    winners.extend(
+                        cones
+                            .iter()
+                            .filter(|cone| pcurve_endpoints_match_cone(pcurve, cone, &points))
+                            .map(|cone| ConsolidatedSupportBinding::Cone { pos: cone.pos }),
+                    );
+                    winners.extend(
+                        spheres
+                            .iter()
+                            .filter(|sphere| pcurve_endpoints_match_sphere(pcurve, sphere, &points))
+                            .map(|sphere| ConsolidatedSupportBinding::Sphere { pos: sphere.pos }),
+                    );
+                    winners.extend(
+                        tori.iter()
+                            .filter(|torus| pcurve_endpoints_match_torus(pcurve, torus, &points))
+                            .map(|torus| ConsolidatedSupportBinding::Torus { pos: torus.pos }),
+                    );
+                    winners.extend(
+                        planes
+                            .iter()
+                            .filter(|plane| pcurve_endpoints_match_plane(pcurve, plane, &points))
+                            .map(|plane| ConsolidatedSupportBinding::Plane { pos: plane.pos }),
+                    );
+                } else if identity_count > 1 {
+                    ambiguous_family = true;
+                } else if let [circle] = identity_circles.as_slice() {
+                    if pcurve_matches_circle(pcurve, circle) {
+                        winners.push(ConsolidatedSupportBinding::Circle { pos: circle.pos });
+                    } else {
+                        ambiguous_family = true;
+                    }
+                } else if let [value] = identity_embedded.as_slice() {
                     if pcurve_endpoints_match_vertices(pcurve, &value.cylinder, &points) {
                         winners.push(ConsolidatedSupportBinding::EmbeddedCylinder {
                             pos: value.pos,
                             wrapper_pos: value.wrapper_pos,
                         });
+                    } else {
+                        ambiguous_family = true;
                     }
+                } else {
+                    ambiguous_family = true;
                 }
-                if winners.is_empty() {
-                    let identity_circles: Vec<_> = circles
-                        .iter()
-                        .filter(|circle| circle.record_id == pcurve.support_id)
-                        .collect();
-                    if let [circle] = identity_circles.as_slice() {
-                        if pcurve_matches_circle(pcurve, circle) {
-                            winners.push(ConsolidatedSupportBinding::Circle { pos: circle.pos });
-                        }
-                    } else if identity_circles.is_empty() {
-                        let geometric_circle_winners: Vec<_> = circles
-                            .iter()
-                            .filter(|circle| pcurve_matches_circle(pcurve, circle))
-                            .map(|circle| ConsolidatedSupportBinding::Circle { pos: circle.pos })
-                            .collect();
-                        if let [winner] = geometric_circle_winners.as_slice() {
-                            winners.push(winner.clone());
-                        }
-                    }
+                if !ambiguous_family && winners.len() == 1 {
+                    winners.pop()
+                } else {
+                    None
                 }
-                if winners.is_empty() {
-                    let mut cone_winners: Vec<_> = cones
-                        .iter()
-                        .filter(|cone| pcurve_endpoints_match_cone(pcurve, cone, &points))
-                        .map(|cone| ConsolidatedSupportBinding::Cone { pos: cone.pos })
-                        .collect();
-                    if cone_winners.len() == 1 {
-                        winners.append(&mut cone_winners);
-                    }
-                }
-                if winners.is_empty() {
-                    let mut sphere_winners: Vec<_> = spheres
-                        .iter()
-                        .filter(|sphere| pcurve_endpoints_match_sphere(pcurve, sphere, &points))
-                        .map(|sphere| ConsolidatedSupportBinding::Sphere { pos: sphere.pos })
-                        .collect();
-                    if sphere_winners.len() == 1 {
-                        winners.append(&mut sphere_winners);
-                    }
-                }
-                if winners.is_empty() {
-                    let mut torus_winners: Vec<_> = tori
-                        .iter()
-                        .filter(|torus| pcurve_endpoints_match_torus(pcurve, torus, &points))
-                        .map(|torus| ConsolidatedSupportBinding::Torus { pos: torus.pos })
-                        .collect();
-                    if torus_winners.len() == 1 {
-                        winners.append(&mut torus_winners);
-                    }
-                }
-                (winners.len() == 1).then(|| winners.remove(0))
             });
             for anchor_side in [0, 1] {
                 let partner = 1 - anchor_side;
@@ -926,6 +1029,15 @@ fn support_points(
                 .map(|uv| b2_torus_point(carrier, *uv))
                 .collect()
         }
+        ConsolidatedSupportBinding::Plane { pos } => {
+            let carrier = carriers.planes.iter().find(|value| value.pos == *pos)?;
+            let geometry = b2_plane_geometry(carrier)?;
+            pcurve
+                .points
+                .iter()
+                .map(|&[u, v]| cadmpeg_ir::eval::surface_point(&geometry, u, v))
+                .collect()
+        }
         ConsolidatedSupportBinding::NurbsCarrier { pos, offset } => {
             let SurfaceGeometry::Nurbs(surface) = &carriers
                 .nurbs_surfaces
@@ -1069,6 +1181,26 @@ fn pcurve_endpoints_match_sphere(
     })
 }
 
+fn pcurve_endpoints_match_plane(
+    pcurve: &ConsolidatedPcurve,
+    plane: &B2PlaneCarrier,
+    vertices: &[Point3],
+) -> bool {
+    let Some(geometry) = b2_plane_geometry(plane) else {
+        return false;
+    };
+    let (Some(first), Some(last)) = (pcurve.points.first(), pcurve.points.last()) else {
+        return false;
+    };
+    [*first, *last].into_iter().all(|[u, v]| {
+        cadmpeg_ir::eval::surface_point(&geometry, u, v).is_some_and(|point| {
+            vertices
+                .iter()
+                .any(|vertex| point_distance(point, *vertex) < 2e-3)
+        })
+    })
+}
+
 fn pcurve_endpoints_match_vertices(
     pcurve: &ConsolidatedPcurve,
     cylinder: &B2Cylinder,
@@ -1100,9 +1232,17 @@ fn pcurve_endpoints_match_vertices(
 /// vertices.
 #[must_use]
 pub(crate) fn object_stream_vertices(data: &[u8]) -> Vec<Point3> {
-    let mut ranges = consolidated_records(data)
-        .into_iter()
-        .map(|record| record.range)
+    let records = consolidated_records(data);
+    object_stream_vertices_from_records(data, &records)
+}
+
+pub(crate) fn object_stream_vertices_from_records(
+    data: &[u8],
+    records: &[crate::wire::records::ConsolidatedRecord],
+) -> Vec<Point3> {
+    let mut ranges = records
+        .iter()
+        .map(|record| record.range.clone())
         .chain(crate::families::b5::graph::framed_ranges(data))
         .collect::<Vec<_>>();
     if ranges.is_empty() {

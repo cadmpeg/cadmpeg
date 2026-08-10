@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Offset curve entity projection.
 
-use super::geometry::{entity_loss, source_object};
+use super::curve_conversion::angularly_equal;
+use super::geometry::{declared_unit_vector, entity_loss, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
-use crate::parameter::ParameterRecord;
+use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, CurveOffsetDistanceLaw, CurveOffsetLawBasis, NurbsCurve, ProceduralCurve,
     ProceduralCurveDefinition,
@@ -56,11 +57,80 @@ fn greville(knots: &[f64], degree: usize, control: usize) -> Option<f64> {
     Some(values.iter().sum::<f64>() / degree as f64)
 }
 
+fn omitted_or_integer_zero(record: &ParameterRecord, index: usize) -> bool {
+    matches!(
+        record.tokens.get(index).map(|token| &token.value),
+        Some(TokenValue::Omitted | TokenValue::Integer(0))
+    )
+}
+
+fn omitted_or_numeric_zero(record: &ParameterRecord, index: usize) -> bool {
+    matches!(
+        record.tokens.get(index).map(|token| &token.value),
+        Some(TokenValue::Omitted | TokenValue::Integer(0) | TokenValue::Real(0.0))
+    )
+}
+
 pub(super) struct OffsetProjection {
     pub(super) handled: BTreeSet<u32>,
     pub(super) decoded: BTreeSet<u32>,
     pub(super) losses: Vec<LossNote>,
     pub(super) wire_edges: Vec<EdgeId>,
+}
+
+#[derive(Clone, Copy)]
+struct SourceParameterMap {
+    native: [f64; 2],
+    neutral: [f64; 2],
+}
+
+impl SourceParameterMap {
+    fn new(native: [f64; 2], neutral: [f64; 2]) -> Option<Self> {
+        (native
+            .iter()
+            .chain(neutral.iter())
+            .all(|value| value.is_finite())
+            && native[0] < native[1]
+            && neutral[0] < neutral[1])
+            .then_some(Self { native, neutral })
+    }
+
+    fn scale(self) -> f64 {
+        (self.neutral[1] - self.neutral[0]) / (self.native[1] - self.native[0])
+    }
+
+    fn to_neutral(self, value: f64) -> f64 {
+        self.neutral[0] + (value - self.native[0]) * self.scale()
+    }
+}
+
+fn source_parameter_map(
+    entry: &DirectoryEntry,
+    record: &ParameterRecord,
+    neutral: [f64; 2],
+) -> Option<SourceParameterMap> {
+    let native = match entry.entity_type {
+        100 => {
+            let center = [record.number(2)?, record.number(3)?];
+            let start = [record.number(4)?, record.number(5)?];
+            let end = [record.number(6)?, record.number(7)?];
+            let start_parameter = (start[1] - center[1])
+                .atan2(start[0] - center[0])
+                .rem_euclid(std::f64::consts::TAU);
+            let end_parameter = (end[1] - center[1])
+                .atan2(end[0] - center[0])
+                .rem_euclid(std::f64::consts::TAU);
+            let mut sweep = (end_parameter - start_parameter).rem_euclid(std::f64::consts::TAU);
+            if angularly_equal(sweep, 0.0) {
+                sweep = std::f64::consts::TAU;
+            }
+            [start_parameter, start_parameter + sweep]
+        }
+        110 => [0.0, 1.0],
+        130 => [record.number(13)?, record.number(14)?],
+        _ => return None,
+    };
+    SourceParameterMap::new(native, neutral)
 }
 
 pub(super) fn project(
@@ -73,6 +143,10 @@ pub(super) fn project(
         .iter()
         .map(|record| (record.directory_sequence, record))
         .collect::<BTreeMap<_, _>>();
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect::<BTreeMap<_, _>>();
     let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
@@ -83,10 +157,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 130 && entry.form == 0)
     {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -114,7 +185,7 @@ pub(super) fn project(
             ));
             continue;
         };
-        if (Vector3::new(x, y, z).norm() - 1.0).abs() > 1.0e-10 {
+        if !declared_unit_vector(record, 10, Vector3::new(x, y, z), global.real_precision()) {
             losses.push(entity_loss(
                 entry,
                 "offset plane normal is not a unit vector",
@@ -153,46 +224,62 @@ pub(super) fn project(
                 .then_some(edge.param_range)
                 .flatten()
         });
-        let (parameter_origin, parameter_factor) =
-            if matches!(source.geometry, CurveGeometry::Line { .. }) {
-                let Some(range) = source_range else {
-                    losses.push(entity_loss(
-                        entry,
-                        "offset line source has no bounded parameter domain",
-                    ));
-                    continue;
-                };
-                (range[0], range[1] - range[0])
-            } else {
-                (0.0, 1.0)
-            };
-        let start = parameter_origin + native_start * parameter_factor;
-        let end = parameter_origin + native_end * parameter_factor;
-        let within_source_domain = ir.model.edges.iter().any(|edge| {
-            edge.curve.as_ref() == Some(&source_id)
-                && edge
-                    .param_range
-                    .is_some_and(|range| start >= range[0] && end <= range[1])
-        });
-        if !within_source_domain {
+        let Some(source_range) = source_range else {
+            losses.push(entity_loss(
+                entry,
+                "offset source has no bounded neutral parameter domain",
+            ));
+            continue;
+        };
+        let Some(source_entry) = entries.get(&source_sequence).copied() else {
+            losses.push(entity_loss(
+                entry,
+                "offset source Directory Entry is missing",
+            ));
+            continue;
+        };
+        let Some(source_record) = records.get(&source_sequence).copied() else {
+            losses.push(entity_loss(
+                entry,
+                "offset source Parameter Data record is missing",
+            ));
+            continue;
+        };
+        let Some(parameter_map) = source_parameter_map(source_entry, source_record, source_range)
+        else {
+            losses.push(entity_loss(
+                entry,
+                "offset source has no supported native-to-neutral parameter mapping",
+            ));
+            continue;
+        };
+        if native_start < parameter_map.native[0] || native_end > parameter_map.native[1] {
             losses.push(entity_loss(
                 entry,
                 "offset parameter interval lies outside the source curve domain",
             ));
             continue;
         }
+        let start = parameter_map.to_neutral(native_start);
+        let end = parameter_map.to_neutral(native_end);
+        let parameter_origin = parameter_map.to_neutral(0.0);
+        let parameter_factor = parameter_map.scale();
         let (distance, distance_law, geometry) = match flag {
             1 => {
-                if record.integer(3) != Some(0)
-                    || record.integer(4) != Some(0)
-                    || record.integer(5) != Some(0)
-                    || record.number(7) != Some(0.0)
-                    || record.number(8) != Some(0.0)
-                    || record.number(9) != Some(0.0)
+                if record.integer(3) != Some(0) {
+                    losses.push(entity_loss(
+                        entry,
+                        "uniform offset DE2 is not explicit integer zero",
+                    ));
+                    continue;
+                }
+                if !omitted_or_integer_zero(record, 4)
+                    || !omitted_or_integer_zero(record, 5)
+                    || !(7..=9).all(|index| omitted_or_numeric_zero(record, index))
                 {
                     losses.push(entity_loss(
                         entry,
-                        "uniform offset has a nonzero unused field",
+                        "uniform offset has an unused scalar field that is neither zero nor omitted",
                     ));
                     continue;
                 }
@@ -242,10 +329,17 @@ pub(super) fn project(
                 (distance, None, geometry)
             }
             2 => {
-                if record.integer(3) != Some(0) || record.integer(4) != Some(0) {
+                if record.integer(3) != Some(0) {
                     losses.push(entity_loss(
                         entry,
-                        "linear offset has a nonzero function field",
+                        "linear offset DE2 is not explicit integer zero",
+                    ));
+                    continue;
+                }
+                if !omitted_or_integer_zero(record, 4) {
+                    losses.push(entity_loss(
+                        entry,
+                        "linear offset NDIM is neither zero nor omitted",
                     ));
                     continue;
                 }
@@ -374,10 +468,10 @@ pub(super) fn project(
                         continue;
                     }
                 };
-                if (6..=9).any(|index| record.number(index) != Some(0.0)) {
+                if !(6..=9).all(|index| omitted_or_numeric_zero(record, index)) {
                     losses.push(entity_loss(
                         entry,
-                        "function offset has a nonzero unused field",
+                        "function offset has an unused distance field that is neither zero nor omitted",
                     ));
                     continue;
                 }

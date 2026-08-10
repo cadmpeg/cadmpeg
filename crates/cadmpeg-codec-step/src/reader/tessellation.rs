@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! AP242 indexed tessellation decoding.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::BodyId;
@@ -16,7 +16,7 @@ use super::geometry::GeometryResult;
 use super::topology::TopologyResult;
 
 pub(super) struct TessellationResult {
-    pub typed_records: BTreeSet<u64>,
+    pub typed_records: HashSet<u64>,
     pub warnings: Vec<String>,
     pub losses: Vec<LossNote>,
 }
@@ -31,30 +31,29 @@ pub(super) fn decode(
         .records
         .iter()
         .filter_map(|(&id, record)| {
-            if record.simple_name() != Some("COORDINATES_LIST") {
+            if !has_entity(record, "COORDINATES_LIST") {
                 return None;
             }
-            coordinate_rows(record, geometry.length_scale).map(|vertices| (id, vertices))
+            let scale = geometry
+                .length_scales
+                .get(&id)
+                .copied()
+                .unwrap_or(geometry.length_scale);
+            coordinate_rows(record, scale).map(|vertices| (id, vertices))
         })
         .collect::<BTreeMap<_, _>>();
-    let mut typed = BTreeSet::new();
+    let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
     let mut item_bodies = BTreeMap::<u64, BTreeSet<BodyId>>::new();
     let mut unresolved_items = BTreeSet::new();
     let mut declared_items = BTreeSet::new();
     for (&id, record) in &exchange.records {
-        if !matches!(
-            record.simple_name(),
-            Some("TESSELLATED_SOLID" | "TESSELLATED_SHELL")
-        ) {
+        let Some(kind) = entity_kind(record, &["TESSELLATED_SOLID", "TESSELLATED_SHELL"]) else {
             continue;
-        }
-        let Some(items) = record.parameter(1).and_then(ValueExt::list) else {
-            warnings.push(format!(
-                "{} #{id} has no structured items",
-                record.simple_name().expect("matched tessellated body")
-            ));
+        };
+        let Some(items) = entity_parameter(record, kind, 0, 1).and_then(ValueExt::list) else {
+            warnings.push(format!("{kind} #{id} has no structured items"));
             continue;
         };
         let item_ids = items
@@ -62,13 +61,10 @@ pub(super) fn decode(
             .filter_map(ValueExt::reference)
             .collect::<Vec<_>>();
         declared_items.extend(item_ids.iter().copied());
-        let candidates = linked_bodies(record, topology);
+        let candidates = linked_bodies(record, kind, topology);
         if candidates.is_empty() {
             unresolved_items.extend(item_ids.iter().copied());
-            warnings.push(format!(
-                "{} #{id} has no decoded exact body link",
-                record.simple_name().expect("matched tessellated body")
-            ));
+            warnings.push(format!("{kind} #{id} has no decoded exact body link"));
         }
         for item in item_ids {
             item_bodies
@@ -94,63 +90,53 @@ pub(super) fn decode(
         }
     }
     for (&id, record) in &exchange.records {
-        if !matches!(
-            record.simple_name(),
-            Some(
-                "TRIANGULATED_FACE"
-                    | "COMPLEX_TRIANGULATED_FACE"
-                    | "TRIANGULATED_SURFACE_SET"
-                    | "COMPLEX_TRIANGULATED_SURFACE_SET"
-            )
-        ) {
+        let Some(kind) = entity_kind(
+            record,
+            &[
+                "TRIANGULATED_FACE",
+                "COMPLEX_TRIANGULATED_FACE",
+                "TRIANGULATED_SURFACE_SET",
+                "COMPLEX_TRIANGULATED_SURFACE_SET",
+            ],
+        ) else {
             continue;
-        }
-        let Some(coordinate_id) = record.parameter(1).and_then(ValueExt::reference) else {
-            warnings.push(format!(
-                "{} #{id} has no COORDINATES_LIST reference",
-                record.simple_name().expect("matched simple name")
-            ));
+        };
+        let base_kind = if matches!(kind, "TRIANGULATED_FACE" | "COMPLEX_TRIANGULATED_FACE") {
+            "TESSELLATED_FACE"
+        } else {
+            "TESSELLATED_SURFACE_SET"
+        };
+        let Some(coordinate_id) =
+            inherited_parameter(record, base_kind, 0).and_then(ValueExt::reference)
+        else {
+            warnings.push(format!("{kind} #{id} has no COORDINATES_LIST reference"));
             continue;
         };
         let Some(vertices) = coordinates.get(&coordinate_id) else {
-            warnings.push(format!(
-                "{} #{id} has no resolved COORDINATES_LIST",
-                record.simple_name().expect("matched simple name")
-            ));
+            warnings.push(format!("{kind} #{id} has no resolved COORDINATES_LIST"));
             continue;
         };
-        let (triangles, strip_lengths) = match record.simple_name() {
-            Some("TRIANGULATED_FACE") => (record.parameter(6).and_then(triangle_rows), Vec::new()),
-            Some("TRIANGULATED_SURFACE_SET") => {
-                (record.parameter(5).and_then(triangle_rows), Vec::new())
-            }
-            Some("COMPLEX_TRIANGULATED_FACE") => {
-                complex_triangles(record.parameter(6), record.parameter(7))
-            }
-            Some("COMPLEX_TRIANGULATED_SURFACE_SET") => {
-                complex_triangles(record.parameter(5), record.parameter(6))
-            }
-            _ => (None, Vec::new()),
+        let (triangles, strip_lengths) = match kind {
+            "TRIANGULATED_FACE" | "TRIANGULATED_SURFACE_SET" => (
+                entity_parameter(record, kind, 1, own_parameter_offset(kind))
+                    .and_then(triangle_rows),
+                Vec::new(),
+            ),
+            "COMPLEX_TRIANGULATED_FACE" | "COMPLEX_TRIANGULATED_SURFACE_SET" => complex_triangles(
+                entity_parameter(record, kind, 1, own_parameter_offset(kind)),
+                entity_parameter(record, kind, 2, own_parameter_offset(kind)),
+            ),
+            _ => unreachable!("tessellation kind was checked above"),
         };
         let Some(triangles) = triangles.filter(|triangles| !triangles.is_empty()) else {
-            warnings.push(format!(
-                "{} #{id} has no triangle indices",
-                record.simple_name().expect("matched simple name")
-            ));
+            warnings.push(format!("{kind} #{id} has no triangle indices"));
             continue;
         };
-        let pnindex_parameter = match record.simple_name() {
-            Some("TRIANGULATED_FACE" | "COMPLEX_TRIANGULATED_FACE") => 5,
-            _ => 4,
-        };
-        let pnindex = match record.parameter(pnindex_parameter) {
+        let pnindex = match entity_parameter(record, kind, 0, own_parameter_offset(kind)) {
             None | Some(Value::Omitted) => Vec::new(),
             Some(value) => {
                 let Some(indices) = index_list(Some(value)) else {
-                    warnings.push(format!(
-                        "{} #{id} has an invalid pnindex",
-                        record.simple_name().expect("matched simple name")
-                    ));
+                    warnings.push(format!("{kind} #{id} has an invalid pnindex"));
                     continue;
                 };
                 indices
@@ -163,8 +149,7 @@ pub(super) fn decode(
                 .any(|index| *index == 0 || *index as usize > vertices.len())
             {
                 warnings.push(format!(
-                    "{} #{id} has an out-of-range one-based coordinate index",
-                    record.simple_name().expect("matched simple name")
+                    "{kind} #{id} has an out-of-range one-based coordinate index"
                 ));
                 continue;
             }
@@ -193,8 +178,7 @@ pub(super) fn decode(
                     .any(|index| *index == 0 || *index as usize > pnindex.len())
             {
                 warnings.push(format!(
-                    "{} #{id} has an out-of-range one-based tessellation index",
-                    record.simple_name().expect("matched simple name")
+                    "{kind} #{id} has an out-of-range one-based tessellation index"
                 ));
                 continue;
             }
@@ -210,7 +194,8 @@ pub(super) fn decode(
                 None,
             )
         };
-        let source_normals = normal_rows(record.parameter(3)).unwrap_or_default();
+        let source_normals =
+            normal_rows(inherited_parameter(record, base_kind, 2)).unwrap_or_default();
         let normals = match source_normals.len() {
             0 => Vec::new(),
             1 => vec![source_normals[0]; local_vertices.len()],
@@ -222,13 +207,33 @@ pub(super) fn decode(
                 .collect(),
             count => {
                 warnings.push(format!(
-                    "{} #{id} carries {count} normals for {} coordinates",
-                    record.simple_name().expect("matched simple name"),
+                    "{kind} #{id} carries {count} normals for {} coordinates",
                     local_vertices.len()
                 ));
                 Vec::new()
             }
         };
+        if let Some(surface_step) = complex_triangulated_face_surface(record) {
+            let surface_id = format!("step:data:surface#{surface_step}");
+            if let Some(surface) = ir
+                .model
+                .surfaces
+                .iter_mut()
+                .find(|surface| surface.id.0 == surface_id)
+            {
+                surface
+                    .source_object
+                    .get_or_insert_with(|| SourceObjectAssociation {
+                        format: "step".into(),
+                        object_id: format!("#{id}"),
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    });
+            }
+        }
         if !declared_items.contains(&id) {
             let message = format!(
                 "tessellation item #{id} is not declared by an exact body container; mesh retained as detached"
@@ -271,12 +276,10 @@ pub(super) fn decode(
     }
     if !ir.model.tessellations.is_empty() {
         for (&id, record) in &exchange.records {
-            if matches!(
-                record.simple_name(),
-                Some(
-                    "TESSELLATED_SHAPE_REPRESENTATION" | "TESSELLATED_SOLID" | "TESSELLATED_SHELL"
-                )
-            ) {
+            if has_entity(record, "TESSELLATED_SHAPE_REPRESENTATION")
+                || has_entity(record, "TESSELLATED_SOLID")
+                || has_entity(record, "TESSELLATED_SHELL")
+            {
                 typed.insert(id);
             }
         }
@@ -288,19 +291,26 @@ pub(super) fn decode(
     }
 }
 
-fn linked_bodies(record: &RawRecord, topology: &TopologyResult) -> BTreeSet<BodyId> {
-    let Some(link) = record.parameter(2).and_then(ValueExt::reference) else {
+fn complex_triangulated_face_surface(record: &RawRecord) -> Option<u64> {
+    has_entity(record, "COMPLEX_TRIANGULATED_FACE")
+        .then(|| inherited_parameter(record, "TESSELLATED_FACE", 3))
+        .flatten()
+        .and_then(ValueExt::reference)
+}
+
+fn linked_bodies(record: &RawRecord, kind: &str, topology: &TopologyResult) -> BTreeSet<BodyId> {
+    let Some(link) = entity_parameter(record, kind, 1, 1).and_then(ValueExt::reference) else {
         return BTreeSet::new();
     };
-    match record.simple_name() {
-        Some("TESSELLATED_SOLID") => topology
+    match kind {
+        "TESSELLATED_SOLID" => topology
             .body_by_root
             .get(&link)
             .into_iter()
             .flatten()
             .cloned()
             .collect(),
-        Some("TESSELLATED_SHELL") => topology
+        "TESSELLATED_SHELL" => topology
             .body_by_shell
             .get(&link)
             .cloned()
@@ -319,8 +329,9 @@ fn index_list(value: Option<&Value>) -> Option<Vec<u32>> {
 
 fn coordinate_rows(record: &RawRecord, scale: f64) -> Option<Vec<Point3>> {
     record
-        .parameters()
+        .partials
         .iter()
+        .flat_map(|partial| partial.parameters.iter())
         .filter_map(ValueExt::list)
         .find_map(|rows| {
             rows.iter()
@@ -343,6 +354,53 @@ fn coordinate_rows(record: &RawRecord, scale: f64) -> Option<Vec<Point3>> {
                 .filter(|vertices| !vertices.is_empty())
         })
 }
+
+fn has_entity(record: &RawRecord, name: &str) -> bool {
+    entity_kind(record, &[name]).is_some()
+}
+
+fn entity_kind<'a>(record: &'a RawRecord, names: &[&str]) -> Option<&'a str> {
+    record
+        .partials
+        .iter()
+        .find(|partial| names.iter().any(|name| *name == partial.name))
+        .map(|partial| partial.name.as_str())
+}
+
+fn entity_parameter<'a>(
+    record: &'a RawRecord,
+    entity: &str,
+    index: usize,
+    simple_offset: usize,
+) -> Option<&'a Value> {
+    let partial = record
+        .partials
+        .iter()
+        .find(|partial| partial.name == entity)?;
+    let offset = if record.partials.len() == 1 {
+        simple_offset
+    } else {
+        0
+    };
+    partial.parameters.get(index + offset)
+}
+
+fn own_parameter_offset(entity: &str) -> usize {
+    match entity {
+        "TRIANGULATED_FACE" | "COMPLEX_TRIANGULATED_FACE" => 5,
+        "TRIANGULATED_SURFACE_SET" | "COMPLEX_TRIANGULATED_SURFACE_SET" => 4,
+        _ => unreachable!("tessellation entity has no indexed subtype fields"),
+    }
+}
+
+fn inherited_parameter<'a>(record: &'a RawRecord, entity: &str, index: usize) -> Option<&'a Value> {
+    if record.partials.len() == 1 {
+        record.parameter(index + 1)
+    } else {
+        entity_parameter(record, entity, index, 0)
+    }
+}
+
 fn triangle_rows(value: &Value) -> Option<Vec<[u32; 3]>> {
     let rows = value.list()?;
     rows.iter()
@@ -422,22 +480,13 @@ fn normal_rows(value: Option<&Value>) -> Option<Vec<Vector3>> {
         .collect()
 }
 trait RecordExt {
-    fn simple_name(&self) -> Option<&str>;
-    fn parameters(&self) -> &[Value];
     fn parameter(&self, index: usize) -> Option<&Value>;
 }
 impl RecordExt for RawRecord {
-    fn simple_name(&self) -> Option<&str> {
-        (self.partials.len() == 1).then(|| self.partials[0].name.as_str())
-    }
-    fn parameters(&self) -> &[Value] {
+    fn parameter(&self, index: usize) -> Option<&Value> {
         self.partials
             .first()
-            .map(|partial| partial.parameters.as_slice())
-            .unwrap_or_default()
-    }
-    fn parameter(&self, index: usize) -> Option<&Value> {
-        self.parameters().get(index)
+            .and_then(|partial| partial.parameters.get(index))
     }
 }
 trait ValueExt {

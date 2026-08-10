@@ -22,6 +22,7 @@ mod emit;
 pub mod geometry;
 pub mod records;
 mod topology;
+pub mod transfer;
 
 use crate::asm_header;
 use crate::ids::IdFormat;
@@ -39,7 +40,7 @@ use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralCurve, ProceduralSurface, Surface,
     SurfaceGeometry,
 };
-use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::ids::{BodyId, FaceId};
 use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;
 use serde::{Deserialize, Serialize};
@@ -54,9 +55,9 @@ use self::emit::{
 };
 use self::geometry::{clamp_edge_ranges_to_carrier_domains, classify_body_kinds};
 use self::records::{
-    BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceSidedness, MeshSurfaceSentinel,
-    TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail, TransformHints,
-    VertexOwnership, WireTopology,
+    BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceNativeKey, FaceSidedness,
+    MeshSurfaceSentinel, TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail,
+    TransformHints, VertexOwnership, WireTopology,
 };
 use self::topology::{
     classify_edge_curve_senses, collect_wire_topology, decode_analytic_carriers,
@@ -112,6 +113,10 @@ pub struct AsmBrep {
     pub vertex_ownerships: Vec<VertexOwnership>,
     /// Native sidedness fields stored on solved faces.
     pub face_sidedness: Vec<FaceSidedness>,
+    /// Native ASM face key by emitted face id, used by Design-side joins.
+    pub face_keys: HashMap<FaceId, u64>,
+    /// Native Design-join key field for every emitted face, including null keys.
+    pub face_native_keys: Vec<FaceNativeKey>,
     /// Native parameter intervals stored on tolerant coedges.
     pub tolerant_coedge_parameters: Vec<TolerantCoedgeParameters>,
     /// Native trailing fields stored on tolerant edges.
@@ -221,6 +226,7 @@ impl AsmBrep {
             edge_ownerships,
             vertex_ownerships,
             face_sidedness,
+            face_native_keys,
             tolerant_coedge_parameters,
             tolerant_edge_tails,
             tolerant_vertex_tails,
@@ -233,6 +239,7 @@ impl AsmBrep {
             annotation_records,
         );
         self.body_keys.extend(other.body_keys);
+        self.face_keys.extend(other.face_keys);
         self.stats.merge(other.stats);
     }
 }
@@ -554,7 +561,7 @@ pub fn decode_with_purpose(
 pub fn decode_with_header(
     records: &[Record],
     bytes: &[u8],
-    header: Option<crate::asm_header::AsmHeader>,
+    header: Option<crate::kernel_header::KernelHeader>,
     stream: &str,
     format: IdFormat<'_>,
     purpose: DecodePurpose,
@@ -571,7 +578,7 @@ pub fn decode_with_header(
     );
     let save_format_major = header
         .as_ref()
-        .and_then(crate::asm_header::AsmHeader::save_format_major);
+        .and_then(crate::kernel_header::KernelHeader::save_format_major);
     let saved_entity_limit = header
         .as_ref()
         .and_then(|header| header.entity_count)

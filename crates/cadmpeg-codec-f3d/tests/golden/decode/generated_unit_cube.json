@@ -1356,7 +1356,7 @@
     },
     "native": {
       "f3d": {
-        "version": 11,
+        "version": 12,
         "arenas": {
           "act_entities": [],
           "act_guids": [],
@@ -1559,6 +1559,38 @@
               "id": "f3d:asm:edge-ownership#69",
               "edge": "f3d:brep:entity#69",
               "record_index": 69
+            }
+          ],
+          "face_native_keys": [
+            {
+              "id": "f3d:asm:face-native-key#4",
+              "face": "f3d:brep:entity#4",
+              "record_index": 4
+            },
+            {
+              "id": "f3d:asm:face-native-key#5",
+              "face": "f3d:brep:entity#5",
+              "record_index": 5
+            },
+            {
+              "id": "f3d:asm:face-native-key#6",
+              "face": "f3d:brep:entity#6",
+              "record_index": 6
+            },
+            {
+              "id": "f3d:asm:face-native-key#7",
+              "face": "f3d:brep:entity#7",
+              "record_index": 7
+            },
+            {
+              "id": "f3d:asm:face-native-key#8",
+              "face": "f3d:brep:entity#8",
+              "record_index": 8
+            },
+            {
+              "id": "f3d:asm:face-native-key#9",
+              "face": "f3d:brep:entity#9",
+              "record_index": 9
             }
           ],
           "face_sidedness": [

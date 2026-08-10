@@ -11,7 +11,7 @@ All files in both trees are synthesized by generator code in [`crates/cadmpeg-fu
 
 The fuzz crate's seed generator binaries include:
 
-- `generate_submodule_seeds` writes minimal inputs for focused F3D, SolidWorks, CATIA, Creo, and NX parser targets.
+- `generate_submodule_seeds` writes minimal inputs for focused F3D, SolidWorks, CATIA, Creo, NX, Inventor, and shared CFB/Protein parser targets.
 - `generate_all_seeds` writes the main container and `ir_from_json` seeds, then creates deterministic mutations of eligible seeds.
 - `generate_seeds` writes the focused `f3d_container` set, including pcurve and BinaryFile4 inputs.
 - `generate_comprehensive_seeds` writes the expanded SolidWorks, CATIA, Creo, and NX container sets. It does not regenerate F3D seeds.

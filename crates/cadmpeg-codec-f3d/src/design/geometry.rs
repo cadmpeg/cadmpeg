@@ -3249,11 +3249,7 @@ fn union_endpoint_nodes(parents: &mut [usize], first: usize, second: usize) {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        analytic_segment_intersections, arrangement_region_containing_points,
-        region_containing_points, sketch_arrangement_faces, ProfileBoundary,
-        ProfileBoundarySegment,
-    };
+    use super::*;
     use cadmpeg_ir::features::{Angle, Length, SketchProfileRegion};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometric validation-property decoding and mesh self-checks.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point3;
@@ -13,7 +13,7 @@ use super::decode_text;
 use super::geometry::GeometryResult;
 
 pub(super) struct ValidationResult {
-    pub typed_records: BTreeSet<u64>,
+    pub typed_records: HashSet<u64>,
     pub notes: Vec<String>,
     pub warnings: Vec<String>,
     pub losses: Vec<LossNote>,
@@ -35,7 +35,7 @@ pub(super) fn decode(
         || !exchange.has_entity("PROPERTY_DEFINITION_REPRESENTATION")
     {
         return ValidationResult {
-            typed_records: BTreeSet::new(),
+            typed_records: HashSet::new(),
             notes: Vec::new(),
             warnings: Vec::new(),
             losses: Vec::new(),
@@ -45,20 +45,26 @@ pub(super) fn decode(
     let representations = exchange
         .entities_any(&["REPRESENTATION", "SHAPE_REPRESENTATION"])
         .filter_map(|(id, record)| {
-            if !matches!(
-                record.simple_name(),
-                Some("REPRESENTATION" | "SHAPE_REPRESENTATION")
-            ) {
-                return None;
-            }
-            Some((id, record.parameter(1)?.list()?.first()?.reference()?))
+            let representation = record
+                .partial("REPRESENTATION")
+                .or_else(|| record.partial("SHAPE_REPRESENTATION"))?;
+            let items = representation
+                .parameters
+                .get(1)
+                .and_then(ValueExt::list)?
+                .iter()
+                .filter_map(ValueExt::reference)
+                .collect::<BTreeSet<_>>();
+            (!items.is_empty()).then_some((id, items))
         })
         .collect::<BTreeMap<_, _>>();
     let properties = exchange
         .entities("PROPERTY_DEFINITION")
         .filter_map(|(id, record)| {
-            let name = record.parameter(0).and_then(|value| {
+            let property = record.partial("PROPERTY_DEFINITION")?;
+            let name = property.parameters.first().and_then(|value| {
                 decode_text(
+                    exchange,
                     value,
                     &mut losses,
                     id,
@@ -66,15 +72,15 @@ pub(super) fn decode(
                     LossKind::MetadataNotTransferred,
                 )
             })?;
-            if record.simple_name() == Some("PROPERTY_DEFINITION")
-                && name.eq_ignore_ascii_case("geometric validation property")
-            {
+            if name.eq_ignore_ascii_case("geometric validation property") {
                 Some((
                     id,
-                    record
-                        .parameter(1)
+                    property
+                        .parameters
+                        .get(1)
                         .and_then(|value| {
                             decode_text(
+                                exchange,
                                 value,
                                 &mut losses,
                                 id,
@@ -90,64 +96,80 @@ pub(super) fn decode(
         })
         .collect::<BTreeMap<_, _>>();
     let computed = mesh_properties(ir);
-    let mut typed = BTreeSet::new();
+    let mut typed = HashSet::new();
     let mut validation_points = BTreeSet::new();
     let mut validation_representations = BTreeSet::new();
     let mut notes = Vec::new();
     let mut warnings = Vec::new();
 
     for (relation_id, relation) in exchange.entities("PROPERTY_DEFINITION_REPRESENTATION") {
-        let Some(property_id) = relation.parameter(0).and_then(ValueExt::reference) else {
+        let Some(relation) = relation.partial("PROPERTY_DEFINITION_REPRESENTATION") else {
+            continue;
+        };
+        let Some(property_id) = relation.parameters.first().and_then(ValueExt::reference) else {
             continue;
         };
         let Some(description) = properties.get(&property_id) else {
             continue;
         };
-        let Some(representation_id) = relation.parameter(1).and_then(ValueExt::reference) else {
+        let Some(representation_id) = relation.parameters.get(1).and_then(ValueExt::reference)
+        else {
             continue;
         };
-        let Some(&item_id) = representations.get(&representation_id) else {
+        let Some(item_ids) = representations.get(&representation_id) else {
             continue;
         };
-        let Some(item) = exchange.records.get(&item_id) else {
-            continue;
-        };
-        let expected = expected_value(item, exchange, geometry.length_scale, &mut losses);
-        let Some(expected) = expected else {
-            warnings.push(format!(
-                "geometric validation property #{property_id} has an unsupported value"
-            ));
-            continue;
-        };
-        if matches!(expected, Expected::Centroid(_)) {
-            validation_points.insert(item_id);
-        }
         validation_representations.insert(representation_id);
-        typed.extend([property_id, relation_id, representation_id, item_id]);
-        if let Some(unit) = item.parameter(2).and_then(ValueExt::reference) {
-            collect_unit_records(unit, exchange, &mut typed);
-        }
-        let (kind, expected_text, actual) = match expected {
-            Expected::Area(value) => ("surface area", value.to_string(), computed.map(|p| p.area)),
-            Expected::Volume(value) => ("volume", value.to_string(), computed.map(|p| p.volume)),
-            Expected::Centroid(value) => (
-                "centroid",
-                format!("({},{},{})", value.x, value.y, value.z),
-                computed.map(|p| p.centroid_distance(value)),
-            ),
-        };
-        if let Some(actual) = actual {
-            let actual_text = match expected {
-                Expected::Centroid(_) => format!("distance {actual}"),
-                _ => actual.to_string(),
+        for &item_id in item_ids {
+            let Some(item) = exchange.records.get(&item_id) else {
+                continue;
             };
-            notes.push(format!(
-                "geometric validation {kind} {description}: expected {expected_text}, tessellation approximation {actual_text}"
-            ));
-        } else {
-            notes.push(format!(
-                "geometric validation {kind} {description}: expected {expected_text}"
-            ));
+            let scale = geometry
+                .length_scales
+                .get(&item_id)
+                .copied()
+                .or_else(|| geometry.length_scales.get(&representation_id).copied())
+                .unwrap_or(geometry.length_scale);
+            let expected = expected_value(item, exchange, scale, &mut losses);
+            let Some(expected) = expected else {
+                warnings.push(format!(
+                    "geometric validation property #{property_id} has unsupported item #{item_id}"
+                ));
+                continue;
+            };
+            if matches!(expected, Expected::Centroid(_)) {
+                validation_points.insert(item_id);
+            }
+            typed.extend([property_id, relation_id, representation_id, item_id]);
+            if let Some(unit) = measure_unit(item) {
+                collect_unit_records(unit, exchange, &mut typed);
+            }
+            let (kind, expected_text, actual) = match expected {
+                Expected::Area(value) => {
+                    ("surface area", value.to_string(), computed.map(|p| p.area))
+                }
+                Expected::Volume(value) => {
+                    ("volume", value.to_string(), computed.map(|p| p.volume))
+                }
+                Expected::Centroid(value) => (
+                    "centroid",
+                    format!("({},{},{})", value.x, value.y, value.z),
+                    computed.map(|p| p.centroid_distance(value)),
+                ),
+            };
+            if let Some(actual) = actual {
+                let actual_text = match expected {
+                    Expected::Centroid(_) => format!("distance {actual}"),
+                    _ => actual.to_string(),
+                };
+                notes.push(format!(
+                    "geometric validation {kind} {description}: expected {expected_text}, tessellation approximation {actual_text}"
+                ));
+            } else {
+                notes.push(format!(
+                    "geometric validation {kind} {description}: expected {expected_text}"
+                ));
+            }
         }
     }
     let mut referenced_validation_points = BTreeSet::new();
@@ -187,8 +209,8 @@ fn expected_value(
     scale: f64,
     losses: &mut Vec<LossNote>,
 ) -> Option<Expected> {
-    if record.simple_name() == Some("CARTESIAN_POINT") {
-        let values = record.parameter(1)?.list()?;
+    if let Some(point) = record.partial("CARTESIAN_POINT") {
+        let values = point.parameters.get(1)?.list()?;
         if values.len() != 3 {
             return None;
         }
@@ -198,81 +220,108 @@ fn expected_value(
             values[2].number()? * scale,
         )));
     }
-    if record.simple_name() != Some("MEASURE_REPRESENTATION_ITEM") {
-        return None;
-    }
-    match record.parameter(1)? {
-        Value::Typed(kind, value) if kind == "AREA_MEASURE" => Some(Expected::Area(
-            value.number()? * measure_scale(record, exchange, scale, 2, losses),
-        )),
-        Value::Typed(kind, value) if kind == "VOLUME_MEASURE" => Some(Expected::Volume(
-            value.number()? * measure_scale(record, exchange, scale, 3, losses),
-        )),
-        _ => None,
-    }
+    record.partial("MEASURE_REPRESENTATION_ITEM")?;
+    let (kind, value) = record
+        .partials
+        .iter()
+        .flat_map(|partial| partial.parameters.iter())
+        .find_map(area_or_volume_measure)?;
+    let scale = measure_scale(record, exchange, scale, kind, losses);
+    Some(match kind {
+        "AREA_MEASURE" => Expected::Area(value * scale),
+        "VOLUME_MEASURE" => Expected::Volume(value * scale),
+        _ => return None,
+    })
 }
 
 fn measure_scale(
     record: &RawRecord,
     exchange: &Exchange,
     fallback: f64,
-    order: i32,
+    kind: &str,
     losses: &mut Vec<LossNote>,
 ) -> f64 {
-    record
-        .parameter(2)
-        .and_then(ValueExt::reference)
+    measure_unit(record)
         .and_then(|unit| exchange.records.get(&unit))
-        .and_then(|unit| {
-            if unit.simple_name() != Some("DERIVED_UNIT") {
-                return None;
-            }
-            unit.parameter(0)?
-                .list()?
-                .iter()
-                .try_fold(1.0, |scale, element| {
-                    let element = exchange.records.get(&element.reference()?)?;
-                    let base = element.parameter(0)?.reference()?;
-                    let exponent = element.parameter(1)?.number()?;
-                    let base =
-                        super::geometry::unit_scale_mm(base, exchange, &mut BTreeSet::new())?;
-                    Some(scale * base.powf(exponent))
-                })
+        .and_then(derived_unit_elements)
+        .and_then(ValueExt::list)
+        .and_then(|elements| {
+            elements.iter().try_fold(1.0, |scale, element| {
+                let element = exchange.records.get(&element.reference()?)?;
+                let element = element.partial("DERIVED_UNIT_ELEMENT")?;
+                let base = element.parameters.first()?.reference()?;
+                let exponent = element.parameters.get(1)?.number()?;
+                let base =
+                    super::geometry::unit_scale_mm(base, exchange, &mut BTreeSet::new())?;
+                Some(scale * base.powf(exponent))
+            })
         })
         .unwrap_or_else(|| {
             losses.push(LossNote {
                 code: LossKind::GeometryNotTransferred,
                 severity: Severity::Error,
                 message: format!(
-                    "geometric validation measure #{} unit scale did not resolve; the document length scale was used",
-                    record.id
+                    "geometric validation {kind} measure #{} unit scale did not resolve; the document length scale was used",
+                    record.id,
                 ),
                 provenance: None,
             });
-            fallback.powi(order)
+            fallback.powi(if kind == "AREA_MEASURE" { 2 } else { 3 })
         })
 }
 
-fn collect_unit_records(id: u64, exchange: &Exchange, typed: &mut BTreeSet<u64>) {
+fn area_or_volume_measure(value: &Value) -> Option<(&str, f64)> {
+    match value {
+        Value::Typed(kind, value) if matches!(kind.as_str(), "AREA_MEASURE" | "VOLUME_MEASURE") => {
+            Some((kind.as_str(), value.number()?))
+        }
+        Value::Typed(_, value) => area_or_volume_measure(value),
+        Value::List(values) => values.iter().find_map(area_or_volume_measure),
+        _ => None,
+    }
+}
+
+fn measure_unit(record: &RawRecord) -> Option<u64> {
+    record
+        .partial("MEASURE_WITH_UNIT")
+        .and_then(|partial| {
+            partial
+                .parameters
+                .iter()
+                .rev()
+                .find_map(ValueExt::reference)
+        })
+        .or_else(|| {
+            record
+                .partial("MEASURE_REPRESENTATION_ITEM")
+                .and_then(|partial| partial.parameters.get(2))
+                .and_then(ValueExt::reference)
+        })
+}
+
+fn derived_unit_elements(record: &RawRecord) -> Option<&Value> {
+    record
+        .partial("DERIVED_UNIT")
+        .or_else(|| record.partial("AREA_UNIT"))
+        .or_else(|| record.partial("VOLUME_UNIT"))
+        .and_then(|partial| partial.parameters.first())
+}
+
+fn collect_unit_records(id: u64, exchange: &Exchange, typed: &mut HashSet<u64>) {
     typed.insert(id);
     let Some(record) = exchange.records.get(&id) else {
         return;
     };
-    if record.simple_name() != Some("DERIVED_UNIT") {
+    let Some(elements) = derived_unit_elements(record).and_then(ValueExt::list) else {
         return;
-    }
-    for element in record
-        .parameter(0)
-        .and_then(ValueExt::list)
-        .into_iter()
-        .flatten()
-        .filter_map(ValueExt::reference)
-    {
+    };
+    for element in elements.iter().filter_map(ValueExt::reference) {
         typed.insert(element);
         if let Some(base) = exchange
             .records
             .get(&element)
-            .and_then(|record| record.parameter(0))
+            .and_then(|record| record.partial("DERIVED_UNIT_ELEMENT"))
+            .and_then(|record| record.parameters.first())
             .and_then(ValueExt::reference)
         {
             typed.insert(base);
@@ -415,15 +464,11 @@ fn collect_validation_references(
 }
 
 trait RecordExt {
-    fn simple_name(&self) -> Option<&str>;
-    fn parameter(&self, index: usize) -> Option<&Value>;
+    fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord>;
 }
 impl RecordExt for RawRecord {
-    fn simple_name(&self) -> Option<&str> {
-        (self.partials.len() == 1).then(|| self.partials[0].name.as_str())
-    }
-    fn parameter(&self, index: usize) -> Option<&Value> {
-        self.partials.first()?.parameters.get(index)
+    fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord> {
+        self.partials.iter().find(|partial| partial.name == name)
     }
 }
 trait ValueExt {

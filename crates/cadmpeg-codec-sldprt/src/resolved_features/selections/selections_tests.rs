@@ -3,20 +3,8 @@
 use super::super::component_paths::{compact_edge_path_value, compact_edge_selection_set_value};
 use super::super::{CLASS_MARKER, LEGACY_SKETCH_MARKER};
 use super::selection_vector_tail;
-use super::{
-    compact_body_retention_mode, compact_body_selection_at, compact_body_selection_vector,
-    compact_body_state_ids, compact_edge_component_path_at, compact_edge_selection_at,
-    compact_edge_selections, compact_general_curve_ref_at,
-    compact_sketch_surface_component_path_at, compact_surface_selection_at,
-    component_face_reference_at, component_face_reference_in_record, component_profile_source_at,
-    component_reference_curve_path_at, coordinate_marker_local_links,
-    cosmetic_thread_cylinder_marker_reference, cosmetic_thread_cylinder_reference_at,
-    cosmetic_thread_cylinder_references, cosmetic_thread_diameter_child_tail,
-    generated_surface_identities, history_features_with_object_sources,
-    inline_surface_reference_at, marker_local_links, mirror_pattern_component_path_at,
-    mirror_surface_component_path_at, surface_reference_matches_at, unique_marker_candidate,
-    COMPACT_EDGE_VECTOR_MARKER,
-};
+use super::*;
+use crate::classification::FeatureClass;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
     FeatureInputComponentPathEntry, FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
@@ -370,7 +358,7 @@ fn compact_edge_selection_accepts_root_and_zero_run_separators() {
 }
 
 #[test]
-fn compact_edge_selection_accepts_wide_component_entries() {
+fn compact_edge_selection_with_wide_and_identifierless_entries_is_withheld() {
     let marker = 12;
     let mut payload = vec![0; 160];
     payload[..4].copy_from_slice(&4u32.to_le_bytes());
@@ -391,20 +379,28 @@ fn compact_edge_selection_accepts_wide_component_entries() {
     let fourth = third + 28;
     entry(&mut payload, fourth, 0x8141, 0);
 
-    assert_eq!(
-        compact_edge_selection_at(&payload, marker),
-        Some(vec![0, 2, 1, 0])
-    );
-    let path = compact_edge_component_path_at(&payload, marker).unwrap();
-    assert_eq!(
-        path.iter()
-            .map(|component| component.local_id)
-            .collect::<Vec<_>>(),
-        [Some(0), Some(2), Some(1), Some(0)]
-    );
-    assert!(path
-        .iter()
-        .all(|component| component.type_signature == signature));
+    assert_eq!(compact_edge_selection_at(&payload, marker), None);
+    assert_eq!(compact_edge_component_path_at(&payload, marker), None);
+}
+
+#[test]
+fn compact_edge_selection_with_ambiguous_entry_widths_is_withheld() {
+    let marker = 12;
+    let mut payload = vec![0; 120];
+    payload[..4].copy_from_slice(&2u32.to_le_bytes());
+    payload[4..8].copy_from_slice(&[0, 2, 0, 0]);
+    payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+    let signature = [0x2a, 0x81, 0x2c, 1, 28, 0, 0, 0, 0x24, 1, 0xd3, 0x48];
+    let first = marker + 18;
+    payload[first..first + 2].copy_from_slice(&0x8130u16.to_le_bytes());
+    payload[first + 4..first + 16].copy_from_slice(&signature);
+    let second = first + 24;
+    payload[second..second + 2].copy_from_slice(&0x8141u16.to_le_bytes());
+    payload[second + 4..second + 16].copy_from_slice(&signature);
+    payload[second + 20..second + 24].copy_from_slice(&5u32.to_le_bytes());
+
+    assert_eq!(compact_edge_component_path_at(&payload, marker), None);
+    assert_eq!(compact_edge_selection_at(&payload, marker), None);
 }
 
 #[test]
@@ -667,7 +663,7 @@ fn compact_surface_selection_ends_with_its_entry_signature() {
     payload.extend(COMPACT_EDGE_VECTOR_MARKER);
     payload.extend([0, 0]);
     let signature = [0x34, 0x80, 0x37, 0, 0x89, 0, 0, 0, 0xe2, 0x56, 0xdf, 0x5e];
-    for (index, id) in [2u32, 1, 11].into_iter().enumerate() {
+    for (index, id) in [2u32, 1, 11, 14, 15, 16, 17].into_iter().enumerate() {
         payload.extend((0x8c20u32 + index as u32).to_le_bytes());
         payload.extend(signature);
         payload.extend(id.to_le_bytes());
@@ -689,7 +685,11 @@ fn compact_surface_selection_ends_with_its_entry_signature() {
         vec![
             (Some(0x8c20), signature, Some(2)),
             (Some(0x8c21), signature, Some(1)),
-            (Some(0x8c22), signature, Some(11))
+            (Some(0x8c22), signature, Some(11)),
+            (Some(0x8c23), signature, Some(14)),
+            (Some(0x8c24), signature, Some(15)),
+            (Some(0x8c25), signature, Some(16)),
+            (Some(0x8c26), signature, Some(17))
         ]
     );
     payload[12 + 18 + 24 + 4] ^= 1;
@@ -701,6 +701,63 @@ fn compact_surface_selection_ends_with_its_entry_signature() {
             .collect::<Vec<_>>(),
         vec![Some(2)]
     );
+}
+
+#[test]
+fn operation_surface_selection_finds_marker_inside_class_body() {
+    let class_name = "moCompSurfaceBody_c";
+    let class_body = 6 + class_name.len();
+    let marker = class_body + 43;
+    let entry = marker + 18;
+    let signature = [
+        0x23, 0x86, 0x25, 0x06, 0x02, 0x02, 0, 0, 0xc3, 0xea, 0xde, 0x51,
+    ];
+    let mut payload = vec![0; entry + 20];
+    payload[..4].copy_from_slice(CLASS_MARKER);
+    payload[4..6].copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+    payload[6..class_body].copy_from_slice(class_name.as_bytes());
+    payload[class_body..class_body + 2].copy_from_slice(&0x860eu16.to_le_bytes());
+    payload[marker - 12..marker - 8].copy_from_slice(&6u32.to_le_bytes());
+    payload[marker - 8..marker - 4].copy_from_slice(&[0x04, 0x02, 0, 0]);
+    payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+    payload[entry..entry + 2].copy_from_slice(&0x8781u16.to_le_bytes());
+    payload[entry + 4..entry + 16].copy_from_slice(&signature);
+    payload[entry + 16..entry + 20].copy_from_slice(&6u32.to_le_bytes());
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload.clone(),
+        classes: vec![FeatureInputClass {
+            id: "class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            name: class_name.into(),
+            role: FeatureInputClassRole::Reference,
+        }],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    let selections = operation_surface_selection_candidates(
+        FeatureClass::TrimSurface,
+        &lane,
+        0,
+        payload.len(),
+        None,
+    );
+
+    assert_eq!(selections.len(), 1);
+    assert_eq!(selections[0].0, marker);
+    assert_eq!(selections[0].1[0].local_id, Some(6));
 }
 
 #[test]
@@ -1277,6 +1334,7 @@ fn mirror_pattern_path_count_includes_the_unserialized_root_cell() {
         (3u32, &[][..]),
         (4, &[1, 0, 0, 0, 0, 0, 0, 0][..]),
         (5, &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0][..]),
+        (4, &[5, 0, 0, 0][..]),
     ] {
         let mut mixed = vec![0; marker];
         mixed[..4].copy_from_slice(&count.to_le_bytes());
@@ -1303,6 +1361,30 @@ fn mirror_pattern_path_count_includes_the_unserialized_root_cell() {
 }
 
 #[test]
+fn component_vector_cell_count_includes_interleaved_path_slots() {
+    let marker = 12;
+    let mut payload = vec![0; marker];
+    payload[..4].copy_from_slice(&7u32.to_le_bytes());
+    payload.extend(COMPACT_EDGE_VECTOR_MARKER);
+    payload.extend([0, 0]);
+    for index in 0..4u32 {
+        payload.extend(0x803e_u16.to_le_bytes());
+        payload.extend([0, 0]);
+        payload.extend([0x34, 0x80, 0x37, 0]);
+        payload.extend((37 + index).to_le_bytes());
+        payload.extend(0x4ad9_837au32.wrapping_add(index).to_le_bytes());
+        payload.extend((index + 1).to_le_bytes());
+        if index != 3 {
+            payload.extend((25 + index * 2).to_le_bytes());
+        }
+    }
+
+    let path = component_vector_path_at(&payload, marker).expect("interleaved path slots");
+    assert_eq!(path.len(), 4);
+    assert_eq!(path.last().expect("terminal component").local_id, Some(4));
+}
+
+#[test]
 fn mirror_surface_path_preserves_tagged_and_anonymous_nodes() {
     let marker = 12;
     let mut payload = vec![0; marker];
@@ -1326,6 +1408,16 @@ fn mirror_surface_path_preserves_tagged_and_anonymous_nodes() {
     assert_eq!(path[1].local_id, Some(4));
     assert_eq!(&path[1].type_signature[4..8], &56u32.to_le_bytes());
     assert!(surface_reference_matches_at(&payload, marker, &path));
+
+    payload[..4].copy_from_slice(&3u32.to_le_bytes());
+    assert_eq!(
+        mirror_surface_component_path_at(&payload, marker)
+            .expect("one root slot")
+            .len(),
+        2
+    );
+    payload[..4].copy_from_slice(&4u32.to_le_bytes());
+    assert!(mirror_surface_component_path_at(&payload, marker).is_none());
 }
 
 #[test]
@@ -1352,6 +1444,88 @@ fn inline_surface_path_distinguishes_branch_and_selection_nodes() {
     assert_eq!(path[0].local_id, None);
     assert_eq!(path[1].instance, Some(0x8200));
     assert_eq!(path[1].local_id, Some(7));
+}
+
+#[test]
+fn projected_split_line_consumes_self_owned_surface_identity_paths() {
+    let class_name = "moPLineSurfIdRep_c";
+    let prefix = [0xc3, 0x80, 0xc5, 0x00];
+    let signature = |source: u32, identity: u32| {
+        let mut signature = [0; 12];
+        signature[..4].copy_from_slice(&prefix);
+        signature[4..8].copy_from_slice(&source.to_le_bytes());
+        signature[8..].copy_from_slice(&identity.to_le_bytes());
+        signature
+    };
+    let mut payload = CLASS_MARKER.to_vec();
+    payload.extend((class_name.len() as u16).to_le_bytes());
+    payload.extend(class_name.as_bytes());
+    payload.extend([0, 0]);
+    payload.extend(signature(711, 1));
+    payload.extend(0x80a7_u16.to_le_bytes());
+    payload.extend([0, 0]);
+    payload.extend(signature(314, 2));
+    payload.extend(3u32.to_le_bytes());
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload.clone(),
+        classes: vec![
+            FeatureInputClass {
+                id: "surface-class".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 0,
+                name: class_name.into(),
+                role: FeatureInputClassRole::Auxiliary,
+            },
+            FeatureInputClass {
+                id: "projection-class".into(),
+                parent: "lane".into(),
+                ordinal: 1,
+                offset: payload.len() as u64,
+                name: "moPLineProjIdRep_c".into(),
+                role: FeatureInputClassRole::Auxiliary,
+            },
+        ],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    let candidates = operation_surface_selection_candidates(
+        FeatureClass::SplitFace,
+        &lane,
+        0,
+        payload.len(),
+        Some(711),
+    );
+    assert_eq!(candidates.len(), 1, "{candidates:#?}");
+    assert_eq!(candidates[0].1.len(), 2);
+    assert_eq!(
+        &candidates[0].1[0].type_signature[4..8],
+        &711u32.to_le_bytes()
+    );
+    assert_eq!(
+        &candidates[0].1[1].type_signature[4..8],
+        &314u32.to_le_bytes()
+    );
+    assert_eq!(candidates[0].1[1].local_id, Some(3));
+    assert!(operation_surface_selection_candidates(
+        FeatureClass::SplitFace,
+        &lane,
+        0,
+        payload.len(),
+        Some(712),
+    )
+    .is_empty());
 }
 
 #[test]

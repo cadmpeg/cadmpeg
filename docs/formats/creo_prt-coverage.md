@@ -16,20 +16,23 @@ fixtures, claims above L1 remain unproven.
 
 ## Cumulative gates
 
-| Level | Required evidence                                                                                                                  | Current result         | Remaining gate                                                                                                                                                               |
-| ----- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| L0    | Signature and part-kind detection; bounded container metadata; preview or tessellation when present                                | Pass in implementation | Representative release-band fixtures                                                                                                                                         |
-| L1    | Section/stream navigation; ND and DEPDB dispatch; bounded Unix-compress expansion; version/layout reporting; named opaque sections | Claimed                | Close the release and layout envelope and verify every admitted section combination                                                                                          |
-| L2    | Placed points; analytic and NURBS curves and surfaces; correct units and parameterization across the envelope                      | Incomplete             | Remaining positional curve and surface bodies, prototype-instance joins, spline joins, type-26 placements, and lane-specific scalar forms                                    |
-| L3    | Connected bodies through vertices with ownership, orientation, trimming, placements, and transforms; unknown carriers permitted    | Incomplete             | Complete face-instance partitioning, rowless face-use binding, loop classification, vertex coordinates, and shell-to-body ownership                                          |
-| L4    | Typed feature operations, sketches, ordering, dependencies, profiles, directions, and extents                                      | Incomplete             | Resolve the remaining operation families and incomplete operands, including chamfer, draft, mirror, boundary, merge, fill, thicken, and non-default sweep termination        |
-| L5    | Every admitted carrier and topology case; typed mainstream bodies throughout; body and face colors                                 | Incomplete             | Close all L2/L3 families, transfer appearance bindings and precedence, then demonstrate zero shape-domain loss across the envelope                                           |
-| L6    | Complete constraints, dimensions, parameters, expressions, feature semantics, configurations, and coherent re-derivation history   | Incomplete             | Complete solver relation/incidence families, dimension-variable joins, expressions, every admitted feature family, configuration driver tables, and history replay coherence |
+| Level | Required evidence                                                                                                                  | Current result         | Remaining gate                                                                                                                                                                                  |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| L0    | Signature and part-kind detection; bounded container metadata; preview or tessellation when present                                | Pass in implementation | Representative release-band fixtures                                                                                                                                                            |
+| L1    | Section/stream navigation; ND and DEPDB dispatch; bounded Unix-compress expansion; version/layout reporting; named opaque sections | Claimed                | Close the release and layout envelope and verify every admitted section combination                                                                                                             |
+| L2    | Placed points; analytic and NURBS curves and surfaces; correct units and parameterization across the envelope                      | Incomplete             | Remaining positional curve and surface bodies, prototype-instance joins, spline joins, type-26 placements, and lane-specific scalar forms                                                       |
+| L3    | Connected bodies through vertices with ownership, orientation, trimming, placements, and transforms; unknown carriers permitted    | Incomplete             | Complete face-instance partitioning, rowless face-use binding, loop classification, vertex coordinates, and shell-to-body ownership                                                             |
+| L4    | Typed feature operations, sketches, ordering, dependencies, profiles, directions, and extents                                      | Incomplete             | Resolve the remaining operation families and incomplete operands, including chamfer, draft, mirror, boundary, ambiguous surface-merge quilt-to-surface joins, and non-default sweep termination |
+| L5    | Every admitted carrier and topology case; typed mainstream bodies throughout; body and face colors                                 | Incomplete             | Close all L2/L3 families, transfer appearance bindings and precedence, then demonstrate zero shape-domain loss across the envelope                                                              |
+| L6    | Complete constraints, dimensions, parameters, expressions, feature semantics, configurations, and coherent re-derivation history   | Incomplete             | Complete solver relation/incidence families, dimension-variable joins, expressions, every admitted feature family, configuration driver tables, and history replay coherence                    |
 
 ## Implemented design slices
 
 - Saved planar sections transfer placed sketch points, lines, arcs, splines,
   dimensions, and typed or identity-preserving native constraints.
+- Paired `9e` and `a3` scalars require one distinct section-cache `46` image
+  for their six-byte tail; duplicate images are valid and differing payload
+  bytes withhold the scalar.
 - Section-reference lines transfer as construction-line geometry when both
   stored endpoint references resolve to distinct section coordinates.
 - Section lines with a uniquely proven fixed coordinate and unresolved
@@ -38,11 +41,58 @@ fixtures, claims above L1 remain unproven.
 - Section-reference lines use their stored selector or a consistent
   perpendicular/parallel incidence component to establish the same unbounded
   fixed-coordinate construction when both referenced endpoint ordinates agree.
+- Omitted `order_table` line geometry is recovered only from one unique missing
+  trimmed line, two unmatched saved endpoints, and a stored `verhor` selector
+  those endpoints satisfy; absent or conflicting selectors remain unresolved.
 - Active solver incidences drive coordinate, orientation, equality, radius,
-  and supported dimensional equations; disabled incidences remain retained but
-  do not affect solved geometry.
+  and supported dimensional equations; type-five arc-radius relations seed the
+  joined radius component in radius and diameter form. Disabled incidences
+  remain retained but do not affect solved geometry.
 - Linear extrusions and rotations transfer when profile, placement, direction,
-  and termination have independent byte-backed proofs.
+  and termination have independent byte-backed proofs. Additive linear
+  extrusions also accept a closed one-entity circle section, a closed single
+  full-turn arc section, and closed profiles containing interpolation-spline
+  entities. Circular profiles preserve their complete geometry through area,
+  cap p-curves, side p-curves, and edge-parameter derivation. Spline profiles
+  preserve their intrinsic NURBS degree, knot vector, control points, weights,
+  cap p-curves, edge parameter domains, and ruled side surfaces.
+- Full-turn revolutions accept interpolation-spline profile entities and
+  preserve their oriented directrix degree, intrinsic knot domain, poles,
+  weights, periodic flag, exact angular NURBS surface, constant-parameter
+  endpoint p-curves, and face sense.
+- Full-turn revolutions reconstruct a missing section axis from their complete
+  transferred carrier surfaces, requiring coaxial analytic axes, parallel
+  carrier-plane normals, and carrier-sphere centers on the common axis.
+- Class-942 `Surface` operations with a unique numbered `Extrude` reference
+  transfer as independent sheet linear sweeps; the same class without that
+  reference remains distinct from the sheet-sweep family.
+- Generated cap-plane tables and complete positional-cylinder carriers provide
+  blind extrusion spans to generated feature surfaces and first additive linear
+  or one-circle B-reps when the section transform agrees with the carrier
+  direction. Complete NURBS-translation carriers provide the same span to
+  generated NURBS feature surfaces when their profile is supported.
+- Rectilinear generated-plane fallback uses the uniquely owned section's
+  `plane_flip`/section-`flip` parity for cap polarity; Boolean operation does not
+  select the sweep direction, and missing section or cap evidence remains
+  unresolved.
+- Material base-body precedence uses unique section-transform and definition
+  joins ordered by bounded definition-record offset; current operation-state
+  offsets do not order material bodies.
+- Named surface rows require byte-backed `orient` and `boundary_type`
+  discriminators; absent or undefined values remain opaque.
+- Eight-slot type-24 terminal frames require mutually exclusive
+  single-diameter and square-radial invariants; a collision withholds the
+  carrier.
+- Positional cylinder terminal radii require one positive scalar start that
+  consumes the body remainder; overlapping starts withhold the carrier.
+- Plane placement keeps `ActDatums` datum-geometry and model-surface
+  namespaces independent; a complete numeric collision between them withholds
+  the section frame.
+- Layout dispatch uses the exact `DEPDB_DATA` root record; embedded `ND:` names
+  do not override the persistence-layout discriminator, and missing
+  discriminators remain unknown.
+- Compressed `THMB_IMG_MAIN` payloads expand to the JPEG marker before preview
+  detection and retain the JPEG bytes as a derived native record.
 - Axis-aligned coaxial cone-cylinder intersections transfer the unique circle
   whose axial center coordinate agrees with the repeated `fc 14` held
   world-coordinate token.
@@ -112,7 +162,44 @@ fixtures, claims above L1 remain unproven.
   recipe effects, saved sections, and operation states retain stable native
   identities when neutral semantics remain incomplete. A class-100 generated
   entity reference adds a history dependency when that entity has exactly one
-  distinct producing feature, independent of feature-row order.
+  preceding feature-generated class-200 producer.
+- `AllFeatur` rows are discovered at section start, after the raw section
+  header, or after an `e3` boundary only when a known feature identifier and
+  the complete bounded `e3 f6 <compact-class> e1` root prefix are present.
+  Row headers are retained without a fixed-value allowlist, and row-shaped
+  bytes inside an existing row do not split its owned tables.
+- Class-913 and class-914 unanchored replay rows accept explicit affected-array
+  pairs only with a bounded compound-close or generated-array separator prefix
+  and exact consumption through the repeated-row suffix.
+- Named `gsec3d_ptr` fields stay inside the span through their first
+  `p_saved_result` close, or the next `gsec3d_ptr`/definition boundary when the
+  close is absent; nested `ref_planes` identifiers use their typed field.
+- Positional `gsec3d_ptr` reference rows retain all six row fields, and the
+  geometrically selected orientation plane supplies its own `ref_type`,
+  `seg_id`, and `flip_flag`.
+- `ActDatums` positional datum promotion is limited to counted `srf_array`
+  rows with compact-width identifiers, `geom_type = 22`, `boundary_type = 01`,
+  and `next_geom_ptr = 0`; each row body is bounded at the next validated row
+  or its containing frame boundary.
+- Unique feature-owned class-200 materialized surfaces now emit feature-result
+  topology face identities. Hole placement, thicken inputs, and knit inputs
+  use generated face references only when those identities and their producer
+  dependencies are declared; ambiguous, rowless, or foreign-owned surfaces
+  remain native selections.
+- Class-911 hole cap planes retain their stored surface-row order. The first
+  complete outline-backed plane is the placement face, and the second defines
+  the signed blind direction and depth.
+- Positional `ActDatums` outlines require exactly one held coordinate. Outlines
+  with zero or multiple held coordinate pairs remain unresolved instead of
+  selecting an arbitrary plane normal.
+- Named `ActDatums` outlines decode their bounded model-coordinate DICT forms,
+  including `a5`, `9f`, `5c`, and `45`, into complete corner coordinates while
+  retaining positional `a5`/`9f` tokens as opaque held-coordinate values.
+- Unique feature-owned `crv_array` topology rows now emit feature-result edge
+  identities. Fillet and chamfer affected-edge selections use generated edge
+  references only when the topology row is unique and its producer result
+  declares the matching local edge identity. The coverage map counts both
+  result-topology states and their declared result edges.
 - Feature-local pre-rollback, post-rollback, and post-regeneration outlines
   retain each of their six exact scalar bodies independently of numeric decode.
 - Bare `Body`, `Körper`, and `Surface` operation states without a recipe,
@@ -141,6 +228,25 @@ fixtures, claims above L1 remain unproven.
   table is present. A joined saved circle also seeds its
   radius-reference component. Disagreement with stored or constraint-derived
   coordinates or radii withholds the inconsistent derivation.
+- Positional `entity(line)` rows require exactly one six-scalar endpoint suffix
+  start that consumes the complete row body; competing starts withhold the
+  line.
+- `line3d` and `arc_z` rows use their next validated row or list-block end as
+  the complete body bound; no fixed byte window truncates candidate geometry.
+- Positional `MdlRefInfo` conics require exactly one complete twelve-slot
+  local-system prefix immediately before the trailing compound record;
+  incomplete or competing frame boundaries remain unresolved.
+- Type-zero and type-three coincidence incidences add point-coordinate
+  equalities when their selected point rows are unique. This includes the
+  two-sense-zero-point form of type three; contradictory components retain
+  stored non-conflicting coordinates.
+- Signed type-zero linear dimensions select their measured coordinate from a
+  unique spanning line, or from one equal endpoint coordinate on uniquely
+  incident point rows when no segment spans the pair. Stored and uniquely
+  joined saved endpoint coordinates both participate in that axis proof. A
+  pair of separate incident lines does not select an axis. The selected
+  equation can derive a missing ordinate; ambiguous endpoint or
+  orientation evidence does not derive one.
 - Constraint coverage separates typed and native `skamp_ptr` incidences and
   `relat_ptr` relations by discriminator, including the active native subset.
   It also counts decoded and missing declared relation, incidence, and
@@ -156,15 +262,22 @@ fixtures, claims above L1 remain unproven.
   dimension ordinal. A uniquely identified type-10 circle whose primary field
   resolves to a type-three or type-four dimension uses the neutral radius or
   diameter form; all other bindings remain native.
+- Type-five arc-radius and type-fourteen circular-size relations accept every
+  linear dimension type. Type four propagates a diameter as half its stored
+  value; the other linear types propagate a radius. Angular and schema-defined
+  dimensions remain native.
 - A complete endpoint-selection or type-35 incidence whose non-target operand
   resolves to a point locus establishes its sense-zero operand's line role
   independently of solver activity. A unique unary type-one or type-two
   incidence can therefore transfer as a neutral horizontal or vertical
   constraint on that native line without activating the corroborating equation.
   The type-35 incidence itself transfers as a neutral midpoint constraint when
-  that native line and point locus are both emitted. A sense-zero circular
-  operand supplies its center as the midpoint locus; it does not become a
-  bounded midpoint target.
+  that native line or arc and point locus are both emitted. Resolved line and
+  centered-line targets add affine midpoint equations; resolved arc targets add
+  their oriented analytic midpoint after the center and endpoints are known.
+  A sense-zero circular operand supplies its center as the midpoint locus; an
+  unresolved centered type-47 line supplies its stored sense-four center
+  without becoming a bounded midpoint target or acquiring line coordinates.
 - A type-four incidence with one sense-zero line or arc and one
   endpoint-selected operand transfers as an explicit tangent-loci constraint
   when the selected section-point identifier matches exactly one endpoint of
@@ -188,12 +301,17 @@ fixtures, claims above L1 remain unproven.
   fixed angle.
 - Unary type-twelve and type-thirteen incidences on a uniquely established arc
   transfer as horizontal and vertical alignment of the arc endpoint loci.
-  Solver activity controls constraint activity, not the stored arc role or
-  endpoint selection.
+  Active forms also add the corresponding endpoint-coordinate equality to the
+  affine solver; inactive forms retain the neutral constraint without adding
+  an equation. Solver activity controls constraint activity, not the stored
+  arc role or endpoint selection.
 - Two-locus type-fifteen incidences transfer the same flag-selected
   same-coordinate constraint as type seventeen. Disabled forms retain
   endpoint-selected loci on emitted solver-only carriers without requiring a
   solved section-point identity. Unsupported flags remain native.
+- Neutral incidence definitions are emitted only when every selected locus is
+  compatible with its emitted entity family, regardless of solver activity;
+  incompatible active and inactive candidates remain native constraints.
 - A native `relat_ptr` constraint retains each decoded non-null `a`, `b`, and
   `c` operand at its fixed vector slot. Null slots remain absent rather than
   becoming zero-valued object references. Native `relat_ptr` and `skamp_ptr`

@@ -31,23 +31,14 @@ pub fn extract_streams(payload: &[u8]) -> Vec<Vec<u8>> {
 /// Extract every stream with its direct or wrapper offset in the outer payload.
 pub fn extract_streams_with_offsets(payload: &[u8]) -> Vec<(usize, Vec<u8>)> {
     let mut out = Vec::new();
-    let signatures: Vec<_> = payload
-        .windows(4)
-        .enumerate()
-        .filter_map(|(at, bytes)| (bytes == b"PS\0\0").then_some(at))
-        .collect();
-    for (index, start) in signatures.iter().copied().enumerate() {
-        let end = signatures.get(index + 1).copied().unwrap_or(payload.len());
+    let starts = direct_stream_starts(payload);
+    for (index, start) in starts.iter().copied().enumerate() {
+        let end = starts.get(index + 1).copied().unwrap_or(payload.len());
         let candidate = payload[start..end].to_vec();
-        if stream_header(&candidate).is_some() {
-            out.push((start, candidate));
-        }
+        out.push((start, candidate));
     }
     if !out.is_empty() {
         return out;
-    }
-    if let Some(off) = parasolid_offset(payload) {
-        return vec![(off, payload[off..].to_vec())];
     }
     if !contains(payload, &WRAPPED_MAGIC_PREFIX) {
         return out;
@@ -93,26 +84,25 @@ fn inflate_zlib_candidate(bytes: &[u8]) -> Option<Vec<u8>> {
 
 /// Direct (uncompressed) Parasolid streams with their block-payload offsets.
 pub fn direct_streams_with_offsets(payload: &[u8]) -> Vec<(usize, Vec<u8>)> {
-    let mut out = Vec::new();
-    let signatures: Vec<_> = payload
+    let starts = direct_stream_starts(payload);
+    starts
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(index, start)| {
+            let end = starts.get(index + 1).copied().unwrap_or(payload.len());
+            (start, payload[start..end].to_vec())
+        })
+        .collect()
+}
+
+fn direct_stream_starts(payload: &[u8]) -> Vec<usize> {
+    payload
         .windows(4)
         .enumerate()
         .filter_map(|(at, bytes)| (bytes == b"PS\0\0").then_some(at))
-        .collect();
-    for (index, start) in signatures.iter().copied().enumerate() {
-        let end = signatures.get(index + 1).copied().unwrap_or(payload.len());
-        let candidate = payload[start..end].to_vec();
-        if stream_header(&candidate).is_some() {
-            out.push((start, candidate));
-        }
-    }
-    if !out.is_empty() {
-        return out;
-    }
-    if let Some(off) = parasolid_offset(payload) {
-        return vec![(off, payload[off..].to_vec())];
-    }
-    out
+        .filter(|start| stream_header(&payload[*start..]).is_some())
+        .collect()
 }
 
 /// Offsets of candidate wrapped zlib members in a block payload.

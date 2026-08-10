@@ -2,7 +2,7 @@
 
 The primary profile is ZIP-packaged `SchemaVersion=4`, `FileVersion=1`. Each row requires an
 independently authored, redistribution-cleared public fixture and the listed machine assertion.
-Legacy schemas 2 and 3 are refusal profiles until their rows acquire explicit support.
+Schemas 2 and 3 are decode-only profiles. The write profile is schema 4/file 1.
 
 | Gate | Fixture classes                                                                                                         | Machine assertion                                                                                                                                                                                                                                |
 | ---- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

@@ -5,7 +5,33 @@ use std::io::Read;
 
 use cadmpeg_core::decode::{DecodeContext, ExpandSpec, View};
 use cadmpeg_core::CodecError;
+use flate2::bufread::ZlibDecoder as BufferedZlibDecoder;
 use flate2::read::{DeflateDecoder, ZlibDecoder};
+
+/// Inflates exactly one zlib member and rejects truncation or trailing input.
+pub fn inflate_zlib_exact<'a>(
+    ctx: &DecodeContext<'a>,
+    source: View<'_>,
+) -> Result<View<'a>, CodecError> {
+    let mut decoder = BufferedZlibDecoder::new(std::io::Cursor::new(source.window()));
+    let mut writer = ctx.begin_expand(source, ExpandSpec::Unknown)?;
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let read = decoder
+            .read(&mut chunk)
+            .map_err(|error| CodecError::Malformed(format!("invalid zlib member: {error}")))?;
+        if read == 0 {
+            break;
+        }
+        writer.write(&chunk[..read])?;
+    }
+    if decoder.total_in() != source.window().len() as u64 {
+        return Err(CodecError::Malformed(
+            "zlib member does not exhaust its declared input".into(),
+        ));
+    }
+    writer.finalize()
+}
 
 /// Inflates a zlib member under the decode budget, retaining a nonempty prefix
 /// when the compressed stream is truncated or followed by another stream.
@@ -97,6 +123,36 @@ mod tests {
                 .expect("test output fits the expansion allowance")
                 .map(View::window),
             Some(b"parasolid".as_slice())
+        );
+    }
+
+    #[test]
+    fn exact_inflate_rejects_trailing_bytes() {
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(b"one member").expect("write test member");
+        let mut compressed = encoder.finish().expect("finish test member");
+        compressed.extend_from_slice(b"suffix");
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&compressed, &arena, &DecodePolicy::default())
+                .expect("test input fits the root allowance");
+        assert!(inflate_zlib_exact(&ctx, root).is_err());
+    }
+
+    #[test]
+    fn exact_inflate_accepts_one_complete_member() {
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(b"one member").expect("write test member");
+        let compressed = encoder.finish().expect("finish test member");
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&compressed, &arena, &DecodePolicy::default())
+                .expect("test input fits the root allowance");
+        assert_eq!(
+            inflate_zlib_exact(&ctx, root)
+                .expect("complete member inflates")
+                .window(),
+            b"one member"
         );
     }
 

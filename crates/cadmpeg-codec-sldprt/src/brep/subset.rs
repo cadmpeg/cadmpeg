@@ -184,6 +184,7 @@ pub(super) fn scan(bytes: &[u8], carriers: &CarrierIndex) -> Vec<Carrier> {
             end: marker_at + 1 + PAYLOAD_LEN,
             geometry: CarrierGeometry::Curve(geometry.clone()),
             frame: source.frame,
+            parameter_range: Some([values[6], values[7]]),
             orientation_reversed: false,
         });
     }
@@ -226,6 +227,7 @@ mod tests {
                 direction: Vector3::new(0.0, 1.0, 0.0),
             }),
             frame: None,
+            parameter_range: None,
             orientation_reversed: false,
         });
         carriers
@@ -240,6 +242,7 @@ mod tests {
             decoded[0].geometry,
             CarrierGeometry::Curve(CurveGeometry::Line { .. })
         ));
+        assert_eq!(decoded[0].parameter_range, Some([0.0, 0.005]));
     }
 
     #[test]

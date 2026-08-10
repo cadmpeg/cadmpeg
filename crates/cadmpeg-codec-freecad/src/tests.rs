@@ -18,6 +18,39 @@ const CORE_DESIGN_PRODUCT: &[u8] = include_bytes!(concat!(
 ));
 
 #[test]
+fn transfers_zero_radius_brep_circles_as_degenerate_curves() {
+    let center = cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0);
+    let curve = crate::brep::TextCurve::Circle {
+        center,
+        axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        radius: 0.0,
+    };
+    let association = cadmpeg_ir::SourceObjectAssociation {
+        format: "fcstd".into(),
+        object_id: "object".into(),
+        name: None,
+        color: None,
+        visible: None,
+        layer: None,
+        instance_path: Vec::new(),
+    };
+    let mut transfer = crate::CurveTransfer::default();
+
+    let geometry = crate::append_text_curve(
+        &curve,
+        cadmpeg_ir::ids::CurveId("curve".into()),
+        &association,
+        &mut transfer,
+    );
+
+    assert_eq!(
+        geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Degenerate { point: center }
+    );
+}
+
+#[test]
 fn writes_typed_property_edits_and_preserves_other_entries() {
     let decoded = FcstdCodec
         .decode(
@@ -301,7 +334,7 @@ fn assert_valid_document(ir: &cadmpeg_ir::CadIr) {
 
 #[test]
 fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
-    let fixtures: [(&str, &[u8]); 11] = [
+    let fixtures: [(&str, &[u8]); 12] = [
         (
             "external_component.FCStd",
             include_bytes!(concat!(
@@ -328,6 +361,13 @@ fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
             include_bytes!(concat!(
                 env!("CARGO_MANIFEST_DIR"),
                 "/../../corpus/freecad_fcstd/fixtures/sketch_constraints.FCStd"
+            )),
+        ),
+        (
+            "sketch_conics.FCStd",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/sketch_conics.FCStd"
             )),
         ),
         (
@@ -408,6 +448,77 @@ fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
 }
 
 #[test]
+fn transfers_application_saved_rotated_conics_and_profile_chain() {
+    let bytes = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../corpus/freecad_fcstd/fixtures/sketch_conics.FCStd"
+    ));
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("application-saved conic fixture");
+    let entities = &result.ir.model.sketch_entities;
+    assert_eq!(entities.len(), 7);
+    assert!(matches!(
+        entities[0].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Arc {
+            start_angle: cadmpeg_ir::features::Angle(start),
+            end_angle: cadmpeg_ir::features::Angle(end),
+            ..
+        } if (start - 0.65).abs() < 1.0e-12 && (end - 1.83).abs() < 1.0e-12
+    ));
+    assert!(matches!(
+        entities[3].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Ellipse {
+            major_angle: cadmpeg_ir::features::Angle(angle),
+            start_angle: Some(cadmpeg_ir::features::Angle(start)),
+            end_angle: Some(cadmpeg_ir::features::Angle(end)),
+            ..
+        } if (angle - 0.53).abs() < 1.0e-12
+            && (start - (std::f64::consts::TAU - 0.42)).abs() < 1.0e-12
+            && (end - (std::f64::consts::TAU + 1.37)).abs() < 1.0e-12
+    ));
+    assert!(matches!(
+        entities[4].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Ellipse {
+            major_angle: cadmpeg_ir::features::Angle(angle),
+            start_angle: None,
+            end_angle: None,
+            ..
+        } if (angle - 0.71).abs() < 1.0e-12
+    ));
+    assert!(matches!(
+        entities[5].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Hyperbola {
+            major_angle: cadmpeg_ir::features::Angle(angle),
+            start_parameter: Some(start),
+            end_parameter: Some(end),
+            ..
+        } if (angle - 0.47).abs() < 1.0e-12
+            && (start + 0.63).abs() < 1.0e-12
+            && (end - 0.88).abs() < 1.0e-12
+    ));
+    assert!(matches!(
+        entities[6].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Parabola {
+            axis_angle: cadmpeg_ir::features::Angle(angle),
+            start_parameter: Some(start),
+            end_parameter: Some(end),
+            ..
+        } if (angle - 0.67).abs() < 1.0e-12
+            && (start + 2.1).abs() < 1.0e-12
+            && (end - 2.4).abs() < 1.0e-12
+    ));
+    assert!(result
+        .ir
+        .model
+        .shells
+        .iter()
+        .any(|shell| shell.wire_edges.len() == 3));
+    assert_valid_document(&result.ir);
+    assert!(crate::validate_native(&result.ir).is_empty());
+}
+
+#[test]
 fn rejects_malformed_sketch_record_counts() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
@@ -432,11 +543,13 @@ fn transfers_point_and_elliptical_sketch_geometry_without_fabricated_defaults() 
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Sketch"><Properties Count="1">
-<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="4">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="6">
  <Geometry type="Part::GeomPoint"><Point X="1" Y="2"/></Geometry>
  <Geometry type="Part::GeomEllipse"><Ellipse CenterX="3" CenterY="4" MajorRadius="6" MinorRadius="2" MajorAxisX="0" MajorAxisY="1"/></Geometry>
  <Geometry type="Part::GeomArcOfEllipse"><ArcOfEllipse CenterX="0" CenterY="0" MajorRadius="5" MinorRadius="3" MajorAngle="0.25" FirstParameter="0.5" LastParameter="1.5"/></Geometry>
  <Geometry type="Part::GeomCircle"><Circle CenterX="9" CenterY="9"/></Geometry>
+ <Geometry type="Part::GeomCircle"><UID value="41"/><Circle CenterX="7" CenterY="8" Radius="0"/></Geometry>
+ <Geometry type="Part::GeomLineSegment"><UID value="42"/><LineSegment StartX="1" StartY="3" EndX="2" EndY="4"/></Geometry>
 </GeometryList></Property>
 </Properties></Object></ObjectData></Document>"#;
     let result = FcstdCodec
@@ -472,6 +585,17 @@ fn transfers_point_and_elliptical_sketch_geometry_without_fabricated_defaults() 
         entities[3].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Native { .. }
     ));
+    assert!(matches!(
+        entities[4].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Point { position }
+            if position == cadmpeg_ir::math::Point2::new(7.0, 8.0)
+    ));
+    assert!(matches!(
+        entities[5].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Line { start, end }
+            if start == cadmpeg_ir::math::Point2::new(1.0, 3.0)
+                && end == cadmpeg_ir::math::Point2::new(2.0, 4.0)
+    ));
 }
 
 #[test]
@@ -484,7 +608,7 @@ fn transfers_full_and_bounded_sketch_conics() {
  <Geometry type="Part::GeomArcOfHyperbola"><ArcOfHyperbola CenterX="2" CenterY="3" AngleXU="0.5" MajorRadius="7" MinorRadius="4" StartAngle="-1" EndAngle="1.5"/></Geometry>
  <Geometry type="Part::GeomParabola"><Parabola CenterX="3" CenterY="4" AngleXU="0.75" Focal="2"/></Geometry>
  <Geometry type="Part::GeomArcOfParabola"><ArcOfParabola CenterX="4" CenterY="5" AngleXU="1" Focal="2.5" StartAngle="-2" EndAngle="3"/></Geometry>
- <Geometry type="Part::GeomArcOfCircle"><ArcOfCircle CenterX="0" CenterY="0" Radius="4" StartAngle="0.2" EndAngle="1.2"/></Geometry>
+ <Geometry type="Part::GeomArcOfCircle"><ArcOfCircle CenterX="0" CenterY="0" Radius="4" AngleXU="0.6" StartAngle="0.2" EndAngle="1.2"/></Geometry>
  <Geometry type="Part::GeomArcOfEllipse"><ArcOfEllipse CenterX="0" CenterY="1" AngleXU="0.3" MajorRadius="6" MinorRadius="2" StartAngle="0.4" EndAngle="1.4"/></Geometry>
 </GeometryList></Property></Properties></Object></ObjectData></Document>"#;
     let result = FcstdCodec
@@ -530,7 +654,11 @@ fn transfers_full_and_bounded_sketch_conics() {
     ));
     assert!(matches!(
         entities[4].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Arc { .. }
+        cadmpeg_ir::sketches::SketchGeometry::Arc {
+            start_angle: cadmpeg_ir::features::Angle(start),
+            end_angle: cadmpeg_ir::features::Angle(end),
+            ..
+        } if (start - 0.8).abs() < 1e-12 && (end - 1.8).abs() < 1e-12
     ));
     assert!(matches!(
         entities[5].geometry,
@@ -588,18 +716,19 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/><Object type="Part::Feature" name="Source" id="2"/></Objects>
 <ObjectData Count="2"><Object name="Sketch"><Properties Count="4">
-<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="3">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="4">
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="1" EndX="1" EndY="1"/></Geometry>
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0.5" StartY="-1" EndX="0.5" EndY="2"/></Geometry>
+ <Geometry type="Part::GeomPoint"><Point X="2" Y="6"/></Geometry>
 </GeometryList></Property>
-<Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkList count="1"><Link object="Source" sub="Edge1"/></LinkList></Property>
+<Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="Source" sub="Edge1"/><Link obj="Source" sub="Edge2"/></LinkSubList></Property>
 <Property name="ExternalGeo" type="Part::PropertyGeometryList"><GeometryList count="3">
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>
  <Geometry type="Part::GeomCircle"><Circle CenterX="4" CenterY="5" Radius="2"/></Geometry>
 </GeometryList></Property>
-<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="12">
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="17">
  <Constrain Type="14" First="0" FirstPos="1" Second="1" SecondPos="1" Third="2" ThirdPos="0"/>
  <Constrain Type="6" First="0" FirstPos="1" Second="1" SecondPos="2" Value="4" IsDriving="1"/>
  <Constrain Name="OnAxis" MetaData="reviewed" Type="13" Orientation="4" Value="0" LabelDistance="2.5" LabelPosition="0.25" IsDriving="0" IsInVirtualSpace="1" IsVisible="0" IsActive="1" First="0" FirstPos="1" Second="2" SecondPos="0"/>
@@ -612,6 +741,11 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
  <Constrain Type="13" First="0" FirstPos="1" Second="-1" SecondPos="0"/>
  <Constrain Type="6" First="-1" FirstPos="1" Second="0" SecondPos="1" Value="2" IsDriving="1"/>
  <Constrain Type="13" First="0" FirstPos="2" Second="-3" SecondPos="0"/>
+ <Constrain Type="7" First="-4" FirstPos="1" Second="0" SecondPos="1" Value="3" IsDriving="1"/>
+ <Constrain Name="Repeated" Type="9" First="0" FirstPos="0" Value="0.5" IsDriving="1"/>
+ <Constrain Name="Repeated" Type="8" First="3" FirstPos="1" Value="6" IsDriving="1"/>
+ <Constrain Type="9" First="0" FirstPos="0" Second="-2" SecondPos="2" Value="1.5" IsDriving="1"/>
+ <Constrain Type="7" First="-2" FirstPos="1" Second="3" SecondPos="1" Value="3.175" IsDriving="1"/>
 </ConstraintList></Property>
 </Properties></Object><Object name="Source"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let result = FcstdCodec
@@ -711,6 +845,57 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
         constraint(12).definition,
         cadmpeg_ir::sketches::SketchConstraintDefinition::PointOnObject { .. }
     ));
+    assert!(matches!(
+        constraint(13).definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::HorizontalDistance { .. }
+    ));
+    assert!(matches!(
+        constraint(14).definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::AngleToAxis {
+            axis: cadmpeg_ir::sketches::SketchAxis::Horizontal,
+            ..
+        }
+    ));
+    assert!(matches!(
+        constraint(15).definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::VerticalDistance {
+            ref first,
+            ref second,
+            ..
+        } if matches!(first, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.0.ends_with(":reference-root-point"))
+            && matches!(second, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.0.ends_with(":4"))
+    ));
+    let repeated_parameters = result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| {
+            parameter
+                .properties
+                .get("source_name")
+                .is_some_and(|name| name == "Repeated")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(repeated_parameters.len(), 2);
+    assert_eq!(repeated_parameters[0].name, "Constraint14");
+    assert_eq!(repeated_parameters[1].name, "Constraint15");
+    assert!(matches!(
+        constraint(16).definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::AngleToAxis {
+            axis: cadmpeg_ir::sketches::SketchAxis::Vertical,
+            ..
+        }
+    ));
+    assert!(matches!(
+        constraint(17).definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::HorizontalDistance {
+            ref first,
+            ref second,
+            ..
+        } if matches!(first, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.0.ends_with(":reference-root-point"))
+            && matches!(second, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.0.ends_with(":4"))
+    ));
     assert!(result.ir.model.sketch_entities.iter().any(|entity| {
         entity.id.0.ends_with(":reference-horizontal-axis")
             && matches!(
@@ -740,6 +925,21 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
         .as_deref()
         .is_some_and(|reference| reference.ends_with(":ExternalGeometry")));
     assert_eq!(external.endpoint_refs, ["Edge1"]);
+    let unresolved_external = result
+        .ir
+        .model
+        .sketch_entities
+        .iter()
+        .find(|entity| entity.id.0.ends_with(":external:1"))
+        .expect("link-only external geometry");
+    assert!(matches!(
+        &unresolved_external.geometry,
+        cadmpeg_ir::sketches::SketchGeometry::ExternalReference {
+            document: None,
+            object,
+            subelements,
+        } if object.ends_with("Source") && subelements == &["Edge2"]
+    ));
     assert!(matches!(
         constraint(2).definition,
         cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLoci { .. }
@@ -755,18 +955,51 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
 }
 
 #[test]
+fn neutralizes_line_midpoint_coincidence() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="2">
+<Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="2" EndY="0"/></Geometry>
+<Geometry type="Part::GeomPoint"><Point X="1" Y="0"/></Geometry>
+</GeometryList></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="2">
+<Constrain Type="1" First="0" FirstPos="3" Second="1" SecondPos="1"/>
+<Constrain Type="1" First="0" FirstPos="2" Second="1" SecondPos="3"/>
+</ConstraintList></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("midpoint constraint");
+
+    assert!(matches!(
+        result.ir.model.sketch_constraints[0].definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::Midpoint { .. }
+    ));
+    assert_valid_document(&result.ir);
+}
+
+#[test]
 fn transfers_revolution_fillet_and_chamfer_semantics() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="4">
+<Objects Count="6" Dependencies="1">
+ <ObjectDeps Name="Sketch" Count="0"/>
+ <ObjectDeps Name="Revolution" Count="1"><Dep Name="Sketch"/></ObjectDeps>
+ <ObjectDeps Name="Fillet" Count="1"><Dep Name="Revolution"/></ObjectDeps>
+ <ObjectDeps Name="Chamfer" Count="1"><Dep Name="Fillet"/></ObjectDeps>
+ <ObjectDeps Name="LegacyChamfer" Count="1"><Dep Name="Chamfer"/></ObjectDeps>
+ <ObjectDeps Name="Profileless" Count="0"/>
  <Object type="Sketcher::SketchObject" name="Sketch" id="1"/>
  <Object type="PartDesign::Revolution" name="Revolution" id="2"/>
  <Object type="PartDesign::Fillet" name="Fillet" id="3"/>
  <Object type="PartDesign::Chamfer" name="Chamfer" id="4"/>
- <ObjectDeps Name="Revolution"><Dep Name="Sketch"/></ObjectDeps>
- <ObjectDeps Name="Fillet"><Dep Name="Revolution"/></ObjectDeps>
- <ObjectDeps Name="Chamfer"><Dep Name="Fillet"/></ObjectDeps>
+ <Object type="PartDesign::Chamfer" name="LegacyChamfer" id="5"/>
+ <Object type="PartDesign::Revolution" name="Profileless" id="6"/>
 </Objects>
-<ObjectData Count="4">
+<ObjectData Count="6">
  <Object name="Sketch"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
  <Object name="Revolution"><Properties Count="5">
   <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
@@ -776,16 +1009,26 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
   <Property name="Angle" type="App::PropertyAngle"><Float value="180"/></Property>
  </Properties></Object>
  <Object name="Fillet"><Properties Count="3">
-  <Property name="Base" type="App::PropertyLinkSub"><Link object="Revolution" sub="Edge1"/></Property>
+  <Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Revolution" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="Radius" type="App::PropertyLength"><Float value="2"/></Property>
   <Property name="UseAllEdges" type="App::PropertyBool"><Bool value="true"/></Property>
  </Properties></Object>
  <Object name="Chamfer"><Properties Count="5">
-  <Property name="Base" type="App::PropertyLinkSub"><Link object="Fillet" sub="Edge2"/></Property>
+  <Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Fillet" count="1"><Sub value="Edge2"/></LinkSub></Property>
   <Property name="ChamferType" type="App::PropertyEnumeration"><Integer value="2"/></Property>
   <Property name="Size" type="App::PropertyLength"><Float value="1.5"/></Property>
   <Property name="Angle" type="App::PropertyAngle"><Float value="30"/></Property>
   <Property name="FlipDirection" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+ <Object name="LegacyChamfer"><Properties Count="2">
+  <Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Chamfer" count="1"><Sub value="Edge3"/></LinkSub></Property>
+  <Property name="Size" type="App::PropertyLength"><Float value="0.75"/></Property>
+ </Properties></Object>
+ <Object name="Profileless"><Properties Count="4">
+  <Property name="Sketch" type="App::PropertyLink"><Link value=""/></Property>
+  <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
+  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="0" z="1"/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="360"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -837,6 +1080,23 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
             spec: cadmpeg_ir::features::ChamferSpec::DistanceAngle { distance: cadmpeg_ir::features::Length(1.5), angle }, ..
         }] if (angle.0 - std::f64::consts::FRAC_PI_6).abs() < 1e-12)
     ));
+    assert!(matches!(
+        definition("LegacyChamfer"),
+        cadmpeg_ir::features::FeatureDefinition::Chamfer { groups, .. }
+            if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+                spec: cadmpeg_ir::features::ChamferSpec::Distance {
+                    distance: cadmpeg_ir::features::Length(0.75)
+                },
+                ..
+            }])
+    ));
+    assert!(matches!(
+        definition("Profileless"),
+        FeatureDefinition::Revolve {
+            construction: cadmpeg_ir::features::RevolutionConstruction { profile: None, .. },
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -864,7 +1124,7 @@ fn transfers_non_default_revolution_branches() {
   <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
   <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="1" z="0"/></Property>
   <Property name="Type" type="App::PropertyEnumeration"><Integer value="3"/></Property>
-  <Property name="UpToFace" type="App::PropertyLinkSub"><Link object="Standalone" sub="Face1"/></Property>
+  <Property name="UpToFace" type="App::PropertyLinkSub"><LinkSub value="Standalone" count="1"><Sub value="Face1"/></LinkSub></Property>
  </Properties></Object>
  <Object name="TwoAngles"><Properties Count="6">
   <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
@@ -882,7 +1142,7 @@ fn transfers_non_default_revolution_branches() {
   <Property name="Angle" type="App::PropertyAngle"><Float value="90"/></Property>
   <Property name="Midplane" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
-  <Property name="ReferenceAxis" type="App::PropertyLinkSub"><Link object="Sketch" sub="H_Axis"/></Property>
+  <Property name="ReferenceAxis" type="App::PropertyLinkSub"><LinkSub value="Sketch" count="1"><Sub value="H_Axis"/></LinkSub></Property>
   <Property name="FuseOrder" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="false"/></Property>
  </Properties></Object>
@@ -899,7 +1159,7 @@ fn transfers_non_default_revolution_branches() {
   <Property name="Angle" type="App::PropertyFloatConstraint"><Float value="45"/></Property>
   <Property name="Symmetric" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Solid" type="App::PropertyBool"><Bool value="true"/></Property>
-  <Property name="AxisLink" type="App::PropertyLinkSub"><Link object="Sketch" sub="Edge1"/></Property>
+  <Property name="AxisLink" type="App::PropertyLinkSub"><LinkSub value="Sketch" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="FaceMakerClass" type="App::PropertyString"><String value="Part::FaceMakerUnified"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
@@ -977,12 +1237,13 @@ fn transfers_non_default_revolution_branches() {
 #[test]
 fn transfers_part_and_partdesign_analytic_primitives() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="3">
+<Objects Count="3" Dependencies="1">
+ <ObjectDeps Name="Box" Count="0"/>
+ <ObjectDeps Name="AddCylinder" Count="1"><Dep Name="Box"/></ObjectDeps>
+ <ObjectDeps Name="CutCone" Count="1"><Dep Name="AddCylinder"/></ObjectDeps>
  <Object type="Part::Box" name="Box" id="1"/>
  <Object type="PartDesign::AdditiveCylinder" name="AddCylinder" id="2"/>
  <Object type="PartDesign::SubtractiveCone" name="CutCone" id="3"/>
- <ObjectDeps Name="AddCylinder"><Dep Name="Box"/></ObjectDeps>
- <ObjectDeps Name="CutCone"><Dep Name="AddCylinder"/></ObjectDeps>
 </Objects>
 <ObjectData Count="3">
  <Object name="Box"><Properties Count="3">
@@ -1201,7 +1462,7 @@ fn transfers_part_construction_geometry_features() {
 <ObjectData Count="8">
  <Object name="Vertex"><Properties Count="3"><Property name="X" type="App::PropertyDistance"><Float value="1"/></Property><Property name="Y" type="App::PropertyDistance"><Float value="2"/></Property><Property name="Z" type="App::PropertyDistance"><Float value="3"/></Property></Properties></Object>
  <Object name="Line"><Properties Count="6"><Property name="X1" type="App::PropertyDistance"><Float value="0"/></Property><Property name="Y1" type="App::PropertyDistance"><Float value="1"/></Property><Property name="Z1" type="App::PropertyDistance"><Float value="2"/></Property><Property name="X2" type="App::PropertyDistance"><Float value="3"/></Property><Property name="Y2" type="App::PropertyDistance"><Float value="4"/></Property><Property name="Z2" type="App::PropertyDistance"><Float value="5"/></Property></Properties></Object>
- <Object name="Circle"><Properties Count="3"><Property name="Radius" type="App::PropertyLength"><Float value="4"/></Property><Property name="Angle1" type="App::PropertyAngle"><Float value="30"/></Property><Property name="Angle2" type="App::PropertyAngle"><Float value="300"/></Property></Properties></Object>
+ <Object name="Circle"><Properties Count="3"><Property name="Radius" type="App::PropertyLength"><Float value="4"/></Property><Property name="Angle0" type="App::PropertyAngle"><Float value="30"/></Property><Property name="Angle1" type="App::PropertyAngle"><Float value="300"/></Property></Properties></Object>
  <Object name="Ellipse"><Properties Count="4"><Property name="MajorRadius" type="App::PropertyLength"><Float value="6"/></Property><Property name="MinorRadius" type="App::PropertyLength"><Float value="2"/></Property><Property name="Angle1" type="App::PropertyAngle"><Float value="15"/></Property><Property name="Angle2" type="App::PropertyAngle"><Float value="270"/></Property></Properties></Object>
  <Object name="Polyline"><Properties Count="2"><Property name="Nodes" type="App::PropertyVectorList"><VectorList count="3"><Vector x="0" y="0" z="0"/><Vector x="2" y="0" z="0"/><Vector x="1" y="1" z="0"/></VectorList></Property><Property name="Close" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
  <Object name="Regular"><Properties Count="2"><Property name="Polygon" type="App::PropertyInteger"><Integer value="7"/></Property><Property name="Circumradius" type="App::PropertyLength"><Float value="8"/></Property></Properties></Object>
@@ -1233,8 +1494,11 @@ fn transfers_part_construction_geometry_features() {
         feature("Circle").definition,
         FeatureDefinition::CircularArc {
             radius: cadmpeg_ir::features::Length(4.0),
+            start_angle: cadmpeg_ir::features::Angle(start),
+            end_angle: cadmpeg_ir::features::Angle(end),
             ..
-        }
+        } if (start - 30_f64.to_radians()).abs() < 1e-12
+            && (end - 300_f64.to_radians()).abs() < 1e-12
     ));
     assert!(matches!(
         feature("Ellipse").definition,
@@ -1341,21 +1605,23 @@ fn transfers_uniform_and_anisotropic_part_scale() {
 #[test]
 fn transfers_part_compound_refine_and_reverse_operations() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="6">
+<Objects Count="7">
  <Object type="Part::Box" name="A" id="1"/>
  <Object type="Part::Box" name="B" id="2"/>
  <Object type="Part::Compound" name="Compound" id="3"/>
  <Object type="Part::Compound2" name="Compound2" id="4"/>
  <Object type="Part::Refine" name="Refine" id="5"/>
  <Object type="Part::Reverse" name="Reverse" id="6"/>
+ <Object type="Part::Compound" name="CachedCompound" id="7"/>
 </Objects>
-<ObjectData Count="6">
+<ObjectData Count="7">
  <Object name="A"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
  <Object name="B"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="2"/></Property><Property name="Width" type="App::PropertyLength"><Float value="2"/></Property><Property name="Height" type="App::PropertyLength"><Float value="2"/></Property></Properties></Object>
  <Object name="Compound"><Properties Count="1"><Property name="Links" type="App::PropertyLinkList"><LinkList count="2"><Link value="A"/><Link value="B"/></LinkList></Property></Properties></Object>
  <Object name="Compound2"><Properties Count="1"><Property name="Links" type="App::PropertyLinkList"><LinkList count="2"><Link value="B"/><Link value="A"/></LinkList></Property></Properties></Object>
  <Object name="Refine"><Properties Count="1"><Property name="Source" type="App::PropertyLink"><Link value="Compound"/></Property></Properties></Object>
  <Object name="Reverse"><Properties Count="1"><Property name="Source" type="App::PropertyLink"><Link value="Refine"/></Property></Properties></Object>
+ <Object name="CachedCompound"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"/></Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
         .decode(
@@ -1386,6 +1652,10 @@ fn transfers_part_compound_refine_and_reverse_operations() {
         feature("Reverse").definition,
         cadmpeg_ir::features::FeatureDefinition::ReverseShape { .. }
     ));
+    assert!(matches!(
+        feature("CachedCompound").definition,
+        cadmpeg_ir::features::FeatureDefinition::StoredGeometry
+    ));
     assert_eq!(feature("Compound").dependencies.len(), 2);
     assert_eq!(feature("Compound2").dependencies.len(), 2);
     assert_eq!(feature("Refine").dependencies.len(), 1);
@@ -1406,8 +1676,8 @@ fn transfers_part_ruled_surface_and_section_intersection() {
  <Object name="First"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
  <Object name="Second"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="2"/></Property><Property name="Width" type="App::PropertyLength"><Float value="2"/></Property><Property name="Height" type="App::PropertyLength"><Float value="2"/></Property></Properties></Object>
  <Object name="Ruled"><Properties Count="3">
-  <Property name="Curve1" type="App::PropertyLinkSub"><Link object="First" sub="Edge1"/></Property>
-  <Property name="Curve2" type="App::PropertyLinkSub"><Link object="Second" sub="Wire1"/></Property>
+  <Property name="Curve1" type="App::PropertyLinkSub"><LinkSub value="First" count="1"><Sub value="Edge1"/></LinkSub></Property>
+  <Property name="Curve2" type="App::PropertyLinkSub"><LinkSub value="Second" count="1"><Sub value="Wire1"/></LinkSub></Property>
   <Property name="Orientation" type="App::PropertyEnumeration"><Integer value="2"/></Property>
  </Properties></Object>
  <Object name="Section"><Properties Count="3">
@@ -1466,7 +1736,7 @@ fn transfers_standalone_part_mirror_plane_semantics() {
   <Property name="Source" type="App::PropertyLink"><Link value="Source"/></Property>
   <Property name="Base" type="App::PropertyVector"><Vector x="1" y="2" z="3"/></Property>
   <Property name="Normal" type="App::PropertyVector"><Vector x="0" y="0" z="4"/></Property>
-  <Property name="MirrorPlane" type="App::PropertyLinkSub"><Link object="PlaneCarrier" sub="Face1"/></Property>
+  <Property name="MirrorPlane" type="App::PropertyLinkSub"><LinkSub value="PlaneCarrier" count="1"><Sub value="Face1"/></LinkSub></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -1509,8 +1779,8 @@ fn transfers_part_projection_on_surface_construction() {
  <Object name="Second"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="2"/></Property><Property name="Width" type="App::PropertyLength"><Float value="2"/></Property><Property name="Height" type="App::PropertyLength"><Float value="2"/></Property></Properties></Object>
  <Object name="Support"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="3"/></Property><Property name="Width" type="App::PropertyLength"><Float value="3"/></Property><Property name="Height" type="App::PropertyLength"><Float value="3"/></Property></Properties></Object>
  <Object name="Projection"><Properties Count="6">
-  <Property name="Projection" type="App::PropertyLinkSubList"><LinkList count="2"><Link object="First" sub="Wire1"/><Link object="Second" sub="Face2"/></LinkList></Property>
-  <Property name="SupportFace" type="App::PropertyLinkSub"><Link object="Support" sub="Face1"/></Property>
+  <Property name="Projection" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="First" sub="Wire1"/><Link obj="Second" sub="Face2"/></LinkSubList></Property>
+  <Property name="SupportFace" type="App::PropertyLinkSub"><LinkSub value="Support" count="1"><Sub value="Face1"/></LinkSub></Property>
   <Property name="Direction" type="App::PropertyVector"><Vector x="0" y="0" z="5"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="Height" type="App::PropertyLength"><Float value="8"/></Property>
@@ -1683,18 +1953,19 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
  <Object name="Section1"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
  <Object name="Section2"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
  <Object name="Path"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
- <Object name="Loft"><Properties Count="4">
-  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Section1"/><Link value="Section2"/></LinkList></Property>
+ <Object name="Loft"><Properties Count="5">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Section1"/></Property>
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="1"><Link value="Section2"/></LinkList></Property>
   <Property name="Closed" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Ruled" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="false"/></Property>
  </Properties></Object>
  <Object name="Pipe"><Properties Count="11">
   <Property name="Profile" type="App::PropertyLink"><Link value="Section1"/></Property>
-  <Property name="Sections" type="App::PropertyLinkSubList"><LinkList count="2"><Link object="Section1"/><Link object="Section2"/></LinkList></Property>
-  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Sections" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="Section1" sub=""/><Link obj="Section2" sub=""/></LinkSubList></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="SpineTangent" type="App::PropertyBool"><Bool value="true"/></Property>
-  <Property name="AuxiliarySpine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge2"/></Property>
+  <Property name="AuxiliarySpine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge2"/></LinkSub></Property>
   <Property name="AuxiliarySpineTangent" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="AuxiliaryCurvilinear" type="App::PropertyBool"><Bool value="false"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="3"/></Property>
@@ -1710,7 +1981,7 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
  </Properties></Object>
  <Object name="SurfaceSweep"><Properties Count="6">
   <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Section1"/><Link value="Section2"/></LinkList></Property>
-  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="Solid" type="App::PropertyBool"><Bool value="false"/></Property>
   <Property name="Frenet" type="App::PropertyBool"><Bool value="false"/></Property>
   <Property name="Transition" type="App::PropertyEnumeration"><Integer value="2"/></Property>
@@ -1816,21 +2087,21 @@ fn transfers_remaining_pipe_orientation_and_transformation_modes() {
  <Object name="Path"><Properties Count="0"/></Object>
  <Object name="Fixed"><Properties Count="5">
   <Property name="Profile" type="App::PropertyLink"><Link value="Section"/></Property>
-  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="Transition" type="App::PropertyEnumeration"><Integer value="0"/></Property>
   <Property name="Transformation" type="App::PropertyEnumeration"><Integer value="0"/></Property>
  </Properties></Object>
  <Object name="Frenet"><Properties Count="5">
   <Property name="Profile" type="App::PropertyLink"><Link value="Section"/></Property>
-  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="2"/></Property>
   <Property name="Transition" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="Transformation" type="App::PropertyEnumeration"><Integer value="0"/></Property>
  </Properties></Object>
  <Object name="Binormal"><Properties Count="6">
   <Property name="Profile" type="App::PropertyLink"><Link value="Section"/></Property>
-  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="4"/></Property>
   <Property name="Binormal" type="App::PropertyVector"><Vector x="0" y="0" z="4"/></Property>
   <Property name="Transition" type="App::PropertyEnumeration"><Integer value="2"/></Property>
@@ -1838,17 +2109,17 @@ fn transfers_remaining_pipe_orientation_and_transformation_modes() {
  </Properties></Object>
  <Object name="Linear"><Properties Count="3">
   <Property name="Profile" type="App::PropertyLink"><Link value="Section"/></Property>
-  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="Transformation" type="App::PropertyEnumeration"><Integer value="2"/></Property>
  </Properties></Object>
  <Object name="SShape"><Properties Count="3">
   <Property name="Profile" type="App::PropertyLink"><Link value="Section"/></Property>
-  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="Transformation" type="App::PropertyEnumeration"><Integer value="3"/></Property>
  </Properties></Object>
  <Object name="Interpolation"><Properties Count="3">
   <Property name="Profile" type="App::PropertyLink"><Link value="Section"/></Property>
-  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="Transformation" type="App::PropertyEnumeration"><Integer value="4"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
@@ -1908,16 +2179,72 @@ fn transfers_remaining_pipe_orientation_and_transformation_modes() {
 }
 
 #[test]
+fn preserves_cached_loft_and_chamfer_without_construction_inputs() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="Part::Loft" name="Loft" id="1"/>
+ <Object type="Part::Chamfer" name="Chamfer" id="2"/>
+ <Object type="Part::MultiFuse" name="Fusion" id="3"/>
+ <Object type="Part::Fillet" name="Fillet" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Loft"><Properties Count="2">
+  <Property name="Shape" type="Part::PropertyPartShape"><Part file="Loft.Shape.brp"/></Property>
+  <Property name="Solid" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+ <Object name="Chamfer"><Properties Count="2">
+  <Property name="Shape" type="Part::PropertyPartShape"><Part file="Chamfer.Shape.brp"/></Property>
+  <Property name="Base" type="App::PropertyLink"><Link value="Loft"/></Property>
+ </Properties></Object>
+ <Object name="Fusion"><Properties Count="1">
+  <Property name="Shape" type="Part::PropertyPartShape"><Part file="Fusion.Shape.brp"/></Property>
+ </Properties></Object>
+ <Object name="Fillet"><Properties Count="2">
+  <Property name="Shape" type="Part::PropertyPartShape"><Part file="Fillet.Shape.brp"/></Property>
+  <Property name="Base" type="App::PropertyLink"><Link value="Fusion"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 0
+Curves 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 0
+Triangulations 0
+TShapes 0
+*";
+    let bytes = archive_entries(&[
+        ("Document.xml", document.as_bytes()),
+        ("Loft.Shape.brp", brep),
+        ("Chamfer.Shape.brp", brep),
+        ("Fusion.Shape.brp", brep),
+        ("Fillet.Shape.brp", brep),
+    ]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("cached operations");
+    assert!(result
+        .ir
+        .model
+        .features
+        .iter()
+        .all(|feature| matches!(feature.definition, FeatureDefinition::StoredGeometry)));
+    assert!(result.report.losses.is_empty());
+}
+
+#[test]
 fn transfers_uniform_irregular_and_two_axis_patterns() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="5">
- <Object type="PartDesign::Feature" name="Seed" id="1"/>
+<Objects Count="6">
  <Object type="PartDesign::LinearPattern" name="Uniform" id="2"/>
  <Object type="PartDesign::LinearPattern" name="Custom" id="3"/>
  <Object type="PartDesign::LinearPattern" name="TwoAxis" id="4"/>
  <Object type="PartDesign::PolarPattern" name="PolarCustom" id="5"/>
+ <Object type="PartDesign::LinearPattern" name="NativeDirection" id="6"/>
+ <Object type="PartDesign::Feature" name="Seed" id="1"/>
 </Objects>
-<ObjectData Count="5">
+<ObjectData Count="6">
  <Object name="Seed"><Properties Count="0"/></Object>
  <Object name="Uniform"><Properties Count="7">
   <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
@@ -1957,6 +2284,12 @@ fn transfers_uniform_irregular_and_two_axis_patterns() {
   <Property name="Occurrences" type="App::PropertyInteger"><Integer value="4"/></Property>
   <Property name="Spacings" type="App::PropertyFloatList"><FloatList count="3"><Float value="-1"/><Float value="-1"/><Float value="-1"/></FloatList></Property>
   <Property name="SpacingPattern" type="App::PropertyFloatList"><FloatList count="2"><Float value="10"/><Float value="20"/></FloatList></Property>
+ </Properties></Object>
+ <Object name="NativeDirection"><Properties Count="4">
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="Direction" type="App::PropertyLinkSub"><LinkSub value="Seed" count="1"><Sub value="Edge1"/></LinkSub></Property>
+  <Property name="Length" type="App::PropertyLength"><Float value="8"/></Property>
+  <Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -2026,6 +2359,18 @@ fn transfers_uniform_irregular_and_two_axis_patterns() {
         } if angles.iter().zip([0.0, 10.0, 30.0, 40.0]).all(|(angle, expected)|
             (angle.0.to_degrees() - expected).abs() < 1e-12)
     ));
+    assert!(matches!(
+        &feature("NativeDirection").definition,
+        cadmpeg_ir::features::FeatureDefinition::Pattern {
+            pattern: cadmpeg_ir::features::PatternKind::Linear {
+                direction: None,
+                spacing: cadmpeg_ir::features::Length(4.0),
+                count: 3,
+                ..
+            },
+            ..
+        }
+    ));
     assert_eq!(feature("Uniform").dependencies.len(), 1);
     assert!(result.report.losses.is_empty());
     assert_valid_document(&result.ir);
@@ -2036,7 +2381,7 @@ fn transfers_uniform_irregular_and_two_axis_patterns() {
         .expect("native namespace")
         .arena_as::<crate::native::DesignCensusRecord>("design_census")
         .expect("design census");
-    assert_eq!(census.len(), 5);
+    assert_eq!(census.len(), 6);
     assert!(census.iter().any(|record| {
         record.object == "fcstd:native:object#Seed"
             && record.semantic_kind == "stored_geometry"
@@ -2170,7 +2515,7 @@ fn transfers_ordered_body_membership_and_active_tip() {
 </Objects>
 <ObjectData Count="3">
  <Object name="Body"><Properties Count="2">
-  <Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="First"/><Link value="Second"/></LinkList></Property>
+  <Property name="Model" type="App::PropertyLinkList"><LinkList count="2"><Link value="First"/><Link value="Second"/></LinkList></Property>
   <Property name="Tip" type="App::PropertyLink"><Link value="Second"/></Property>
  </Properties></Object>
  <Object name="First"><Properties Count="0"/></Object>
@@ -2326,27 +2671,36 @@ fn transfers_stored_and_external_part_feature_families() {
 #[test]
 fn resolves_datum_references_for_polar_and_mirror_patterns() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="5">
+<Objects Count="7">
  <Object type="Part::Box" name="Seed" id="1"/>
- <Object type="PartDesign::Line" name="Axis" id="2"/>
- <Object type="PartDesign::Plane" name="Plane" id="3"/>
+ <Object type="App::Line" name="Axis" id="2"/>
+ <Object type="App::Plane" name="Plane" id="3"/>
  <Object type="PartDesign::PolarPattern" name="Ring" id="4"/>
  <Object type="PartDesign::Mirrored" name="Mirror" id="5"/>
+ <Object type="PartDesign::Body" name="Body" id="6"/>
+ <Object type="PartDesign::Mirrored" name="FaceMirror" id="7"/>
 </Objects>
-<ObjectData Count="5">
+<ObjectData Count="7">
  <Object name="Seed"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
  <Object name="Axis"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="2" Pz="3" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
  <Object name="Plane"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="4" Py="5" Pz="6" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
  <Object name="Ring"><Properties Count="5">
   <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
-  <Property name="Axis" type="App::PropertyLinkSub"><Link object="Axis" sub=""/></Property>
+  <Property name="Axis" type="App::PropertyLinkSub"><LinkSub value="Axis" count="1"><Sub value=""/></LinkSub></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property>
   <Property name="Angle" type="App::PropertyAngle"><Float value="360"/></Property>
   <Property name="Occurrences" type="App::PropertyInteger"><Integer value="4"/></Property>
  </Properties></Object>
  <Object name="Mirror"><Properties Count="2">
-  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
-  <Property name="MirrorPlane" type="App::PropertyLinkSub"><Link object="Plane" sub=""/></Property>
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="0"/></Property>
+  <Property name="MirrorPlane" type="App::PropertyLinkSub"><LinkSub value="Plane" count="1"><Sub value=""/></LinkSub></Property>
+ </Properties></Object>
+ <Object name="FaceMirror"><Properties Count="2">
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="2"><Link value="Seed"/><Link value="Plane"/></LinkList></Property>
+  <Property name="MirrorPlane" type="App::PropertyLinkSub"><LinkSub value="Seed" count="1"><Sub value="Face1"/></LinkSub></Property>
+ </Properties></Object>
+ <Object name="Body"><Properties Count="1">
+  <Property name="Group" type="App::PropertyLinkList"><LinkList count="3"><Link value="Seed"/><Link value="Mirror"/><Link value="FaceMirror"/></LinkList></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -2390,6 +2744,15 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
         } if *plane_origin == cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)
             && *plane_normal == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
     ));
+    assert!(matches!(
+        definition("FaceMirror"),
+        cadmpeg_ir::features::FeatureDefinition::Pattern {
+            pattern: cadmpeg_ir::features::PatternKind::MirrorReference {
+                plane: cadmpeg_ir::features::FaceSelection::Native(plane),
+            },
+            ..
+        } if plane.ends_with(":MirrorPlane")
+    ));
     assert!(result.report.losses.is_empty());
 }
 
@@ -2405,14 +2768,14 @@ fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
 <ObjectData Count="4">
  <Object name="Seed"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
  <Object name="Linear"><Properties Count="5">
-  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="0"/></Property>
   <Property name="Direction" type="App::PropertyVector"><Vector x="1" y="0" z="0"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property>
   <Property name="Length" type="App::PropertyLength"><Float value="8"/></Property>
   <Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property>
  </Properties></Object>
  <Object name="Scaled"><Properties Count="3">
-  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="0"/></Property>
   <Property name="Factor" type="App::PropertyFloat"><Float value="2.5"/></Property>
   <Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property>
  </Properties></Object>
@@ -2484,9 +2847,9 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
  <Object type="PartDesign::SubtractiveHelix" name="OutsideCut" id="3"/>
 </Objects>
 <ObjectData Count="3">
- <Object name="Profile"><Properties Count="0"/></Object>
+ <Object name="Profile"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
  <Object name="Spring"><Properties Count="14">
-  <Property name="Profile" type="App::PropertyLinkSub"><Link object="Profile" sub=""/></Property>
+  <Property name="Profile" type="App::PropertyLinkSub"><LinkSub value="Profile" count="1"><Sub value=""/></LinkSub></Property>
   <Property name="Base" type="App::PropertyVector"><Vector x="1" y="2" z="3"/></Property>
   <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="0" z="1"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
@@ -2501,10 +2864,9 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
   <Property name="Tolerance" type="App::PropertyFloatConstraint"><Float value="0.25"/></Property>
   <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="false"/></Property>
  </Properties></Object>
- <Object name="OutsideCut"><Properties Count="13">
-  <Property name="Profile" type="App::PropertyLinkSub"><Link object="Profile" sub=""/></Property>
-  <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
-  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="1" z="0"/></Property>
+ <Object name="OutsideCut"><Properties Count="11">
+  <Property name="Profile" type="App::PropertyLinkSub"><LinkSub value="Profile" count="1"><Sub value=""/></LinkSub></Property>
+  <Property name="ReferenceAxis" type="App::PropertyLinkSub"><LinkSub value="Profile" count="1"><Sub value="N_Axis"/></LinkSub></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="3"/></Property>
   <Property name="Pitch" type="App::PropertyLength"><Float value="0"/></Property>
   <Property name="Height" type="App::PropertyLength"><Float value="0"/></Property>
@@ -2514,7 +2876,6 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
   <Property name="LeftHanded" type="App::PropertyBool"><Bool value="false"/></Property>
   <Property name="Reversed" type="App::PropertyBool"><Bool value="false"/></Property>
   <Property name="Outside" type="App::PropertyBool"><Bool value="true"/></Property>
-  <Property name="Tolerance" type="App::PropertyFloatConstraint"><Float value="0.1"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -2540,7 +2901,7 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
     } if construction.law == cadmpeg_ir::features::HelicalSweepLaw::PitchTurnsAngle
         && construction.axis_origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
         && construction.left_handed && construction.reversed
-        && construction.turns == 2.5 && construction.tolerance == 0.25
+        && construction.turns == 2.5 && construction.tolerance == Some(0.25)
         && construction.allow_multi_profile_faces == Some(false))
     );
     assert!(
@@ -2548,7 +2909,9 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
         construction,
         op: cadmpeg_ir::features::BooleanOp::Intersect,
     } if construction.law == cadmpeg_ir::features::HelicalSweepLaw::HeightTurnsGrowth
-        && construction.pitch.0 == 0.0 && construction.radial_growth.0 == 2.0)
+        && construction.pitch.0 == 0.0 && construction.radial_growth.0 == 2.0
+        && construction.axis_direction == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+        && construction.tolerance.is_none())
     );
     assert!(result.report.losses.is_empty());
 }
@@ -2612,10 +2975,10 @@ fn transfers_shape_and_subshape_binder_construction() {
 <ObjectData Count="4">
  <Object name="Source"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
  <Object name="Context"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
- <Object name="ShapeBind"><Properties Count="2"><Property name="Support" type="App::PropertyLinkSubListGlobal"><LinkList count="1"><Link object="Source" sub="Face1 Face2"/></LinkList></Property><Property name="TraceSupport" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
+ <Object name="ShapeBind"><Properties Count="2"><Property name="Support" type="App::PropertyLinkSubListGlobal"><LinkSubList count="1"><Link obj="Source" sub="Face1 Face2"/></LinkSubList></Property><Property name="TraceSupport" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
  <Object name="SubBind"><Properties Count="15">
-  <Property name="Support" type="App::PropertyXLinkSubList"><LinkList count="2"><XLink object="Source" sub="Edge1"/><XLink document="library.FCStd" object="RemotePart" sub="Face3"/></LinkList></Property>
-  <Property name="Context" type="App::PropertyXLink"><XLink object="Context"/></Property>
+  <Property name="Support" type="App::PropertyXLinkSubList"><XLinkSubList count="2"><XLink name="Source" sub="Edge1"/><XLink file="library.FCStd" name="RemotePart" sub="Face3"/></XLinkSubList></Property>
+  <Property name="Context" type="App::PropertyXLink"><XLink name="Context"/></Property>
   <Property name="ClaimChildren" type="App::PropertyBool"><Bool value="true"/></Property><Property name="Relative" type="App::PropertyBool"><Bool value="false"/></Property><Property name="Fuse" type="App::PropertyBool"><Bool value="true"/></Property><Property name="MakeFace" type="App::PropertyBool"><Bool value="false"/></Property>
   <Property name="BindMode" type="App::PropertyEnumeration"><Integer value="1"/></Property><Property name="PartialLoad" type="App::PropertyBool"><Bool value="true"/></Property><Property name="BindCopyOnChange" type="App::PropertyEnumeration"><Integer value="2"/></Property><Property name="Refine" type="App::PropertyBool"><Bool value="false"/></Property>
   <Property name="Offset" type="App::PropertyFloat"><Float value="-2.5"/></Property><Property name="OffsetJoinType" type="App::PropertyEnumeration"><Integer value="2"/></Property><Property name="OffsetFill" type="App::PropertyBool"><Bool value="true"/></Property><Property name="OffsetOpenResult" type="App::PropertyBool"><Bool value="true"/></Property><Property name="OffsetIntersection" type="App::PropertyBool"><Bool value="true"/></Property>
@@ -2704,7 +3067,7 @@ fn transfers_complete_thickness_construction_controls() {
   <Property name="Height" type="App::PropertyLength"><Float value="10"/></Property>
  </Properties></Object>
  <Object name="Wall"><Properties Count="7">
-  <Property name="Base" type="App::PropertyLinkSub"><Link object="Base" sub="Face2 Face4"/></Property>
+  <Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Face2 Face4"/></LinkSub></Property>
   <Property name="Value" type="App::PropertyLength"><Float value="2.5"/></Property>
   <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="2"/></Property>
@@ -2759,7 +3122,7 @@ fn transfers_part_thickness_and_shape_offset_construction() {
   <Property name="Height" type="App::PropertyLength"><Float value="10"/></Property>
  </Properties></Object>
  <Object name="Thickness"><Properties Count="6">
-  <Property name="Faces" type="App::PropertyLinkSub"><Link object="Base" sub="Face1 Face3"/></Property>
+  <Property name="Faces" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Face1 Face3"/></LinkSub></Property>
   <Property name="Value" type="App::PropertyLength"><Float value="-2"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="Join" type="App::PropertyEnumeration"><Integer value="2"/></Property>
@@ -2841,22 +3204,29 @@ fn transfers_part_thickness_and_shape_offset_construction() {
 #[test]
 fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="4">
+<Objects Count="5">
  <Object type="Part::Box" name="Base" id="1"/>
  <Object type="PartDesign::Plane" name="Neutral" id="2"/>
  <Object type="PartDesign::Line" name="Pull" id="3"/>
  <Object type="PartDesign::Draft" name="Draft" id="4"/>
+ <Object type="PartDesign::Draft" name="FaceDraft" id="5"/>
 </Objects>
-<ObjectData Count="4">
+<ObjectData Count="5">
  <Object name="Base"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="10"/></Property><Property name="Width" type="App::PropertyLength"><Float value="10"/></Property><Property name="Height" type="App::PropertyLength"><Float value="10"/></Property></Properties></Object>
  <Object name="Neutral"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="2" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
  <Object name="Pull"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0.7071067811865476" Q1="0" Q2="0" Q3="0.7071067811865476"/></Property></Properties></Object>
  <Object name="Draft"><Properties Count="5">
-  <Property name="Base" type="App::PropertyLinkSub"><Link object="Base" sub="Face1 Face3"/></Property>
-  <Property name="NeutralPlane" type="App::PropertyLinkSub"><Link object="Neutral" sub=""/></Property>
-  <Property name="PullDirection" type="App::PropertyLinkSub"><Link object="Pull" sub=""/></Property>
+  <Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Face1 Face3"/></LinkSub></Property>
+  <Property name="NeutralPlane" type="App::PropertyLinkSub"><LinkSub value="Neutral" count="1"><Sub value=""/></LinkSub></Property>
+  <Property name="PullDirection" type="App::PropertyLinkSub"><LinkSub value="Pull" count="1"><Sub value=""/></LinkSub></Property>
   <Property name="Angle" type="App::PropertyAngle"><Float value="5"/></Property>
   <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+ <Object name="FaceDraft"><Properties Count="4">
+  <Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Face2"/></LinkSub></Property>
+  <Property name="NeutralPlane" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Face1"/></LinkSub></Property>
+  <Property name="PullDirection" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Face2"/></LinkSub></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="3"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -2891,6 +3261,20 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
             && (*angle + 5f64.to_radians()).abs() < 1e-12
     ));
     assert_eq!(draft.dependencies.len(), 3);
+    let face_draft = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("FaceDraft"))
+        .expect("face draft");
+    assert!(matches!(
+        face_draft.definition,
+        FeatureDefinition::Draft {
+            pull_direction: None,
+            ..
+        }
+    ));
     assert!(result.report.losses.is_empty());
 }
 
@@ -3025,6 +3409,49 @@ fn transfers_branch_complete_threaded_counterdrill_hole() {
 }
 
 #[test]
+fn resolves_deprecated_fcstd_hole_cut_indices() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1" ProgramVersion="0.18R4">
+<Objects Count="2"><Object type="Sketcher::SketchObject" name="Locations"/><Object type="PartDesign::Hole" name="Hole"/></Objects>
+<ObjectData Count="2">
+ <Object name="Locations"><Properties Count="0"/></Object>
+ <Object name="Hole"><Properties Count="8">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Locations"/></Property>
+  <Property name="Diameter" type="App::PropertyLength"><Float value="4.4"/></Property>
+  <Property name="HoleCutType" type="App::PropertyEnumeration"><Integer value="5"/></Property>
+  <Property name="HoleCutDiameter" type="App::PropertyLength"><Float value="6"/></Property>
+  <Property name="HoleCutDepth" type="App::PropertyLength"><Float value="5"/></Property>
+  <Property name="DepthType" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="DrillPoint" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+  <Property name="ThreadType" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("legacy hole");
+    let hole = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Hole"))
+        .expect("hole feature");
+    assert!(matches!(
+        hole.definition,
+        FeatureDefinition::Hole {
+            kind: cadmpeg_ir::features::HoleKind::Counterbore {
+                diameter: cadmpeg_ir::features::Length(6.0),
+                depth: cadmpeg_ir::features::Length(5.0),
+            },
+            ..
+        }
+    ));
+    assert!(result.report.losses.is_empty());
+}
+
+#[test]
 fn transfers_datum_frames_from_persisted_placements() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">
@@ -3113,15 +3540,16 @@ fn reports_attributable_native_design_blockers() {
 #[test]
 fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="2">
- <Object type="Spreadsheet::Sheet" name="Sheet" id="1"/>
+<Objects Count="2" Dependencies="1">
+ <ObjectDeps Name="Pad" Count="0"/>
+ <ObjectDeps Name="Sheet" Count="0"/>
  <Object type="PartDesign::Pad" name="Pad" id="2"/>
- <ObjectDeps Name="Pad"><Dep Name="Sheet"/></ObjectDeps>
+ <Object type="Spreadsheet::Sheet" name="Sheet" id="1"/>
 </Objects>
 <ObjectData Count="2">
  <Object name="Sheet"><Properties Count="3"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="2" xlink="1">
-  <Cell address="A1" content="5" alias="width" displayUnit="mm" rowSpan="1" colSpan="2"/>
   <Cell address="A2" content="=width * 3" alias="height" style="bold"/>
+  <Cell address="A1" content="5" alias="width" displayUnit="mm" rowSpan="1" colSpan="2"/>
  </Cells></Property>
  <Property name="columnWidths" type="Spreadsheet::PropertyColumnWidths"><ColumnInfo Count="2"><Column name="A" width="120"/><Column name="B" width="80"/></ColumnInfo></Property>
  <Property name="rowHeights" type="Spreadsheet::PropertyRowHeights"><RowInfo Count="1"><Row name="2" height="45"/></RowInfo></Property>
@@ -3167,6 +3595,21 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         .find(|parameter| parameter.owner.as_ref() == Some(&pad.id) && parameter.name == "Length")
         .expect("pad length");
     assert_eq!(length.dependencies, vec![width.id.clone()]);
+    let width_position = result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .position(|parameter| parameter.name == "width")
+        .expect("width position");
+    let height_position = result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .position(|parameter| parameter.name == "height")
+        .expect("height position");
+    assert!(width_position < height_position);
     let sheet = result.ir.model.spreadsheets.first().expect("sheet state");
     assert_eq!(sheet.feature.0, "fcstd:design:feature#Sheet");
     assert_eq!(sheet.cells.len(), 2);
@@ -3388,6 +3831,128 @@ fn recovers_product_prototypes_occurrences_and_placements() {
 }
 
 #[test]
+fn retains_overlapping_native_product_membership_with_one_neutral_parent() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object type="App::Part" name="First"/><Object type="App::Part" name="Second"/><Object type="Part::Feature" name="Member"/></Objects>
+<ObjectData Count="3">
+ <Object name="First"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Member"/></LinkList></Property></Properties></Object>
+ <Object name="Second"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Member"/></LinkList></Property></Properties></Object>
+ <Object name="Member"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[("Document.xml", document)])),
+            &DecodeOptions::default(),
+        )
+        .expect("overlapping product membership");
+    let nodes = result
+        .ir
+        .native
+        .namespace("fcstd")
+        .expect("native namespace")
+        .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    let member_id = "fcstd:native:object#Member";
+    assert_eq!(
+        nodes
+            .iter()
+            .filter(|node| node.members.iter().any(|member| member == member_id))
+            .count(),
+        2
+    );
+    let member = result
+        .ir
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.native_ref.as_deref() == Some(member_id))
+        .expect("member occurrence");
+    assert!(matches!(
+        &member.parent,
+        cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence }
+            if occurrence.0.contains("First")
+    ));
+    assert_valid_document(&result.ir);
+}
+
+#[test]
+fn rejects_populated_link_arrays_when_element_count_is_zero() {
+    let decode = |array_property: &str, entry: Option<(&str, Vec<u8>)>| {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="2"><Object name="Prototype"><Properties Count="0"/></Object><Object name="Occurrence"><Properties Count="3">
+<Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
+<Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="0"/></Property>
+{array_property}
+</Properties></Object></ObjectData></Document>"#
+        );
+        let bytes = entry.map_or_else(
+            || archive(&document),
+            |(name, content)| {
+                archive_entries(&[("Document.xml", document.as_bytes()), (name, &content)])
+            },
+        );
+        FcstdCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+    };
+
+    let mut placement = 1_u32.to_le_bytes().to_vec();
+    for value in [0.0_f64, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0] {
+        placement.extend_from_slice(&value.to_le_bytes());
+    }
+    let mut scale = 1_u32.to_le_bytes().to_vec();
+    for value in [1.0_f64, 1.0, 1.0] {
+        scale.extend_from_slice(&value.to_le_bytes());
+    }
+    let cases = [
+        (
+            r#"<Property name="PlacementList" type="App::PropertyPlacementList"><PlacementList file="PlacementList"/></Property>"#,
+            Some(("PlacementList", placement)),
+        ),
+        (
+            r#"<Property name="ScaleList" type="App::PropertyVectorList"><VectorList file="ScaleList"/></Property>"#,
+            Some(("ScaleList", scale)),
+        ),
+        (
+            r#"<Property name="VisibilityList" type="App::PropertyBoolList"><BoolList count="1"><Bool value="true"/></BoolList></Property>"#,
+            None,
+        ),
+        (
+            r#"<Property name="ElementList" type="App::PropertyLinkList"><LinkList count="1"><Link value="Prototype"/></LinkList></Property>"#,
+            None,
+        ),
+    ];
+
+    for (array_property, entry) in cases {
+        assert!(matches!(
+            decode(array_property, entry),
+            Err(cadmpeg_core::CodecError::Malformed(message))
+                if message.contains("inconsistent link-array counts")
+        ));
+    }
+
+    let zero = decode(
+        r#"<Property name="VisibilityList" type="App::PropertyBoolList"><BoolList count="0"/></Property>"#,
+        None,
+    )
+    .expect("empty zero-count link array");
+    assert_eq!(
+        zero.ir
+            .model
+            .occurrences
+            .iter()
+            .filter(|occurrence| {
+                occurrence
+                    .native_ref
+                    .as_deref()
+                    .is_some_and(|native_ref| native_ref.ends_with("Occurrence"))
+            })
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn recovers_assembly_joint_operands_frames_and_state() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2">
@@ -3552,15 +4117,13 @@ fn composes_nested_link_prototype_placements_once_by_policy() {
 }
 
 #[test]
-fn distinguishes_external_product_paths_document_ids_and_targets() {
+fn transfers_external_product_paths_and_targets() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="2">
+<Objects Count="1">
  <Object type="App::Link" name="ByPath" id="1"/>
- <Object type="App::Link" name="ByDocument" id="2"/>
 </Objects>
-<ObjectData Count="2">
+<ObjectData Count="1">
  <Object name="ByPath"><Properties Count="1"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="parts/widget.FCStd" name="Body"/></Property></Properties></Object>
- <Object name="ByDocument"><Properties Count="1"><Property name="LinkedObject" type="App::PropertyXLink"><XLink document="document-7" name="Gear"/></Property></Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
         .decode(
@@ -3568,7 +4131,7 @@ fn distinguishes_external_product_paths_document_ids_and_targets() {
             &DecodeOptions::default(),
         )
         .expect("external products");
-    assert_eq!(result.ir.model.occurrences.len(), 2);
+    assert_eq!(result.ir.model.occurrences.len(), 1);
     let by_path = result
         .ir
         .model
@@ -3592,29 +4155,6 @@ fn distinguishes_external_product_paths_document_ids_and_targets() {
         cadmpeg_ir::ExternalResolution::Unresolved
     );
 
-    let by_document = result
-        .ir
-        .model
-        .occurrences
-        .iter()
-        .find(|occurrence| {
-            occurrence
-                .native_ref
-                .as_deref()
-                .is_some_and(|id| id.ends_with("ByDocument"))
-        })
-        .expect("document occurrence");
-    let cadmpeg_ir::PrototypeReference::External { document, object } = &by_document.prototype
-    else {
-        panic!("document prototype is external");
-    };
-    assert_eq!(document.path, None);
-    assert_eq!(document.document_id.as_deref(), Some("document-7"));
-    assert_eq!(object.as_deref(), Some("Gear"));
-    assert_eq!(
-        document.resolution,
-        cadmpeg_ir::ExternalResolution::Unresolved
-    );
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
     let mut corrupted = result.ir.clone();
@@ -3629,6 +4169,73 @@ fn distinguishes_external_product_paths_document_ids_and_targets() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid occurrence reference")));
+}
+
+#[test]
+fn rejects_non_schema_link_carrier_aliases() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Link" name="Link"/></Objects>
+<ObjectData Count="1"><Object name="Link"><Properties Count="1">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink document="document-7" name="Gear"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("unsupported XLink document alias");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::Malformed(message)
+            if message.contains("unsupported link carrier document")
+    ));
+}
+
+#[test]
+fn restores_shadowed_link_subelement_name() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Owner"/><Object type="Part::Feature" name="Target"/></Objects>
+<ObjectData Count="2"><Object name="Owner"><Properties Count="1">
+<Property name="Support" type="App::PropertyLinkSub"><LinkSub value="Target" count="1"><Sub value="Face1" shadowed="Face7"/></LinkSub></Property>
+</Properties></Object><Object name="Target"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("shadowed subelement");
+    let properties = result
+        .ir
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    let support = properties
+        .iter()
+        .find(|property| property.name == "Support")
+        .expect("support");
+    assert_eq!(support.links[0].subelements, ["Face7"]);
+}
+
+#[test]
+fn rejects_conflicting_xlink_subelement_carriers() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Link" name="Link"/></Objects>
+<ObjectData Count="1"><Object name="Link"><Properties Count="1">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink name="Gear" sub="Face1" count="1"><Sub value="Face2"/></XLink></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("conflicting XLink subelement carriers");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::Malformed(message)
+            if message.contains("both sub and count carriers")
+    ));
 }
 
 #[test]
@@ -3667,13 +4274,17 @@ fn transfers_grounded_assembly_state_with_resolved_component() {
 #[test]
 fn censuses_application_domains_and_keeps_python_payloads_inert() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="5">
+<Objects Count="5" Dependencies="1">
+ <ObjectDeps Name="Mesh" Count="1"><Dep Name="Points"/></ObjectDeps>
+ <ObjectDeps Name="Points" Count="0"/>
+ <ObjectDeps Name="Analysis" Count="0"/>
+ <ObjectDeps Name="Toolpath" Count="0"/>
+ <ObjectDeps Name="Local" Count="0"/>
  <Object type="Mesh::Feature" name="Mesh" id="1"/>
  <Object type="Points::Feature" name="Points" id="2"/>
  <Object type="Fem::FemAnalysis" name="Analysis" id="3"/>
  <Object type="Path::FeaturePython" name="Toolpath" id="4"/>
  <Object type="LocalType" name="Local" id="5"/>
- <ObjectDeps Name="Mesh"><Dep Name="Points"/></ObjectDeps>
 </Objects>
 <ObjectData Count="5">
  <Object name="Mesh"><Properties Count="1"><Property name="Source" type="App::PropertyLink"><Link value="Points"/></Property></Properties></Object>
@@ -3807,16 +4418,54 @@ fn transfers_application_mesh_and_transformed_point_cloud_payloads() {
 }
 
 #[test]
+fn rejects_multiple_side_entries_for_one_typed_geometry_property() {
+    for (object_type, property_type, values) in [
+        (
+            "Mesh::Feature",
+            "Mesh::PropertyMeshKernel",
+            r#"<Mesh file="first"/><Mesh file="second"/>"#,
+        ),
+        (
+            "Points::Feature",
+            "Points::PropertyPointKernel",
+            r#"<Points file="first"/><Points file="second"/>"#,
+        ),
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="{object_type}" name="Geometry"/></Objects>
+<ObjectData Count="1"><Object name="Geometry"><Properties Count="1"><Property name="Geometry" type="{property_type}">{values}</Property></Properties></Object></ObjectData>
+</Document>"#
+        );
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document.as_bytes()),
+                    ("first", b""),
+                    ("second", b""),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect_err("multiple typed geometry entries");
+
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::Malformed(message)
+                if message.contains("references more than one side entry")
+        ));
+    }
+}
+
+#[test]
 fn retains_ordered_document_level_gui_state() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="App::Feature" name="Model" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData>
 </Document>"#;
-    let gui = br#"<Document SchemaVersion="1" active="Perspective">
- <Camera orientation="0 0 0 1"><Position x="1" y="2" z="3"/></Camera>
- <ActiveView name="Perspective"/>
- <ClipPlane enabled="true" file="section.bin"/>
+    let gui = br#"<Document SchemaVersion="1" active="UnrecognizedRootState">
  <ViewProviderData Count="0"/>
+ <Camera settings="OrthographicCamera { position 1 2 3 }"/>
+ <ClipPlane enabled="true" file="section.bin"/>
 </Document>"#;
     let bytes = archive_entries(&[
         ("Document.xml", document.as_bytes()),
@@ -3832,17 +4481,20 @@ fn retains_ordered_document_level_gui_state() {
         .expect("GUI documents");
     assert_eq!(documents.len(), 1);
     assert_eq!(documents[0].schema_version, Some(1));
-    assert_eq!(documents[0].attributes["active"], "Perspective");
+    assert_eq!(documents[0].attributes["active"], "UnrecognizedRootState");
     assert_eq!(
         documents[0]
             .states
             .iter()
             .map(|state| state.kind.as_str())
             .collect::<Vec<_>>(),
-        ["Camera", "ActiveView", "ClipPlane"]
+        ["Camera", "ClipPlane"]
     );
-    assert_eq!(documents[0].states[0].values[0].tag, "Position");
-    assert_eq!(documents[0].states[2].side_entries, ["section.bin"]);
+    assert_eq!(
+        documents[0].states[0].attributes["settings"],
+        "OrthographicCamera { position 1 2 3 }"
+    );
+    assert_eq!(documents[0].states[1].side_entries, ["section.bin"]);
     let entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("entries");
@@ -3850,16 +4502,20 @@ fn retains_ordered_document_level_gui_state() {
         .iter()
         .find(|entry| entry.name == "section.bin")
         .expect("section asset");
-    assert_eq!(section.referenced_by, [documents[0].states[2].id.clone()]);
+    assert_eq!(section.referenced_by, [documents[0].states[1].id.clone()]);
     assert_eq!(result.ir.model.presentation_documents.len(), 1);
     let presentation = &result.ir.model.presentation_documents[0];
     assert_eq!(presentation.schema_version, Some(1));
-    assert_eq!(presentation.active_view.as_deref(), Some("Perspective"));
+    assert_eq!(presentation.active_view, None);
     let camera = presentation.camera.as_ref().expect("camera state");
-    assert_eq!(camera.position, Some([1.0, 2.0, 3.0]));
-    assert_eq!(camera.orientation, Some([0.0, 0.0, 0.0, 1.0]));
-    assert_eq!(presentation.states[2].assets.len(), 1);
-    assert!(presentation.states[2].assets[0].ends_with("section.bin"));
+    assert_eq!(camera.position, None);
+    assert_eq!(camera.orientation, None);
+    assert_eq!(
+        camera.properties["settings"],
+        "OrthographicCamera { position 1 2 3 }"
+    );
+    assert_eq!(presentation.states[1].assets.len(), 1);
+    assert!(presentation.states[1].assets[0].ends_with("section.bin"));
     assert!(result.ir.model.view_presentations.is_empty());
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
@@ -3877,6 +4533,35 @@ fn retains_ordered_document_level_gui_state() {
 }
 
 #[test]
+fn requires_one_camera_in_schema_one_gui_document() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    for camera_records in [
+        "",
+        r#"<Camera settings="first"/><Camera settings="second"/>"#,
+    ] {
+        let gui = format!(
+            r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/>{camera_records}</Document>"#
+        );
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document.as_bytes()),
+                    ("GuiDocument.xml", gui.as_bytes()),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect_err("schema-one camera cardinality");
+
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::Malformed(message)
+                if message.contains("schema 1 requires one Camera record")
+        ));
+    }
+}
+
+#[test]
 fn gui_property_counts_ignore_nested_extension_properties() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="App::Feature" name="Model" id="1"/></Objects>
@@ -3884,7 +4569,7 @@ fn gui_property_counts_ignore_nested_extension_properties() {
 </Document>"#;
     let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
 <ViewProvider name="Model"><Properties Count="0"/><Extension name="Nested"><Properties Count="1"><Property name="NestedValue" type="App::PropertyString"><String value="kept by extension"/></Property></Properties></Extension></ViewProvider>
-</ViewProviderData></Document>"#;
+</ViewProviderData><Camera settings=""/></Document>"#;
     let result = FcstdCodec
         .decode(
             &mut Cursor::new(archive_entries(&[
@@ -3907,6 +4592,127 @@ fn gui_property_counts_ignore_nested_extension_properties() {
         1
     );
     assert!(crate::validate_native(&result.ir).is_empty());
+}
+
+#[test]
+fn rejects_malformed_registered_gui_property_values() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Model"><Properties Count="1"><Property name="LineWidth" type="App::PropertyFloatConstraint"><Integer value="2"/></Property></Properties></ViewProvider>
+</ViewProviderData><Camera settings=""/></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect_err("mismatched GUI value tag");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn accepts_and_validates_gui_custom_enumerations() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Model"><Properties Count="2"><Property name="Pattern" type="App::PropertyEnumeration"><Integer value="1" CustomEnum="true"/><CustomEnumList count="2"><Enum value="None"/><Enum value="Cross"/></CustomEnumList></Property><Property name="ChildViewProvider" type="App::PropertyPersistentObject"><String value=""/><PersistentObject><State value="retained"/></PersistentObject></Property></Properties></ViewProvider>
+</ViewProviderData><Camera settings=""/></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("custom GUI enumeration");
+    let properties = result
+        .ir
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::GuiPropertyRecord>("gui_properties")
+        .expect("GUI properties");
+    let enumeration = properties
+        .iter()
+        .find(|property| property.name == "Pattern")
+        .expect("enumeration");
+    let persistent = properties
+        .iter()
+        .find(|property| property.name == "ChildViewProvider")
+        .expect("persistent object");
+    assert_eq!(enumeration.values.len(), 4);
+    assert_eq!(persistent.values[0].tag, "String");
+    assert_eq!(persistent.values[1].tag, "PersistentObject");
+    assert_eq!(persistent.values[2].tag, "State");
+
+    for invalid in [
+        br#"<Integer value="1"/><CustomEnumList count="0"/>"#.as_slice(),
+        br#"<Integer value="1" CustomEnum="true"/><CustomEnumList count="2"><Enum value="None"/></CustomEnumList>"#.as_slice(),
+    ] {
+        let gui = [
+            br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1"><Property name="Pattern" type="App::PropertyEnumeration">"#.as_slice(),
+            invalid,
+            br#"</Property></Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#.as_slice(),
+        ]
+        .concat();
+        assert!(FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document),
+                    ("GuiDocument.xml", &gui),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .is_err());
+    }
+}
+
+#[test]
+fn rejects_truncated_gui_material_list_payload() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Model"><Properties Count="1"><Property name="ShapeAppearance" type="App::PropertyMaterialList"><MaterialList file="ShapeAppearance" version="3"/></Property></Properties></ViewProvider>
+</ViewProviderData><Camera settings=""/></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+                ("ShapeAppearance", &1_u32.to_le_bytes()),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect_err("truncated GUI material list");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn retains_unregistered_gui_property_values_without_semantic_dispatch() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Model"><Properties Count="1"><Property name="ExtensionState" type="Vendor::PropertyState"><VendorState mode="custom"><Nested value="kept"/></VendorState></Property></Properties></ViewProvider>
+</ViewProviderData><Camera settings=""/></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("unregistered GUI property");
+    let properties = result
+        .ir
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::GuiPropertyRecord>("gui_properties")
+        .expect("GUI properties");
+    assert_eq!(properties[0].type_name, "Vendor::PropertyState");
+    assert_eq!(properties[0].values[0].tag, "VendorState");
+    assert_eq!(properties[0].values[1].tag, "Nested");
 }
 
 #[test]
@@ -4024,6 +4830,68 @@ fn recovers_techdraw_page_template_and_view_graph() {
 }
 
 #[test]
+fn transfers_app_annotation_text_and_position_carriers() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="App::Annotation" name="Note"/>
+ <Object type="App::AnnotationLabel" name="Label"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Note"><Properties Count="2">
+  <Property name="LabelText" type="App::PropertyStringList"><StringList count="1"><String value="NOTE"/></StringList></Property>
+  <Property name="Position" type="App::PropertyVector"><PropertyVector valueX="1" valueY="2" valueZ="3"/></Property>
+ </Properties></Object>
+ <Object name="Label"><Properties Count="2">
+  <Property name="LabelText" type="App::PropertyStringList"><StringList count="1"><String value="LABEL"/></StringList></Property>
+  <Property name="TextPosition" type="App::PropertyVector"><PropertyVector valueX="4" valueY="5" valueZ="6"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("App annotations");
+
+    let annotations = &result.ir.model.semantic_annotations;
+    assert_eq!(annotations.len(), 2);
+    let note = annotations
+        .iter()
+        .find(|annotation| annotation.runtime_type == "App::Annotation")
+        .expect("note annotation");
+    assert_eq!(note.text, ["NOTE"]);
+    assert_eq!(note.position, Some([1.0, 2.0, 3.0]));
+    let label = annotations
+        .iter()
+        .find(|annotation| annotation.runtime_type == "App::AnnotationLabel")
+        .expect("label annotation");
+    assert_eq!(label.text, ["LABEL"]);
+    assert_eq!(label.position, Some([4.0, 5.0, 6.0]));
+}
+
+#[test]
+fn rejects_incomplete_annotation_position_carriers() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawViewAnnotation" name="Note"/></Objects>
+<ObjectData Count="1"><Object name="Note"><Properties Count="2">
+<Property name="Text" type="App::PropertyStringList"><StringList count="1"><String value="NOTE"/></StringList></Property>
+<Property name="X" type="App::PropertyDistance"><Float value="10"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("incomplete annotation position");
+
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::Malformed(message)
+            if message.contains("position requires both X and Y")
+    ));
+}
+
+#[test]
 fn separates_semantic_annotations_from_drawing_relationships() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">
@@ -4037,10 +4905,10 @@ fn separates_semantic_annotations_from_drawing_relationships() {
  <Object name="View"><Properties Count="1"><Property name="Source" type="App::PropertyLink"><Link value="Model"/></Property></Properties></Object>
  <Object name="Dimension"><Properties Count="5">
   <Property name="BaseView" type="App::PropertyLink"><Link value="View"/></Property>
-  <Property name="References2D" type="App::PropertyLinkSubList"><LinkList count="1"><Link obj="Model" sub="Edge1"/></LinkList></Property>
+  <Property name="References2D" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Model" sub="Edge1"/></LinkSubList></Property>
   <Property name="FormatSpec" type="App::PropertyString"><String value="12.5 mm"/></Property>
-  <Property name="Measurement" type="App::PropertyLength"><Float value="12.5"/></Property>
-  <Property name="Position" type="App::PropertyVector"><PropertyVector valueX="10" valueY="20" valueZ="0"/></Property>
+  <Property name="X" type="App::PropertyDistance"><Float value="10"/></Property>
+  <Property name="Y" type="App::PropertyDistance"><Float value="20"/></Property>
  </Properties></Object>
  <Object name="Note"><Properties Count="2">
   <Property name="Text" type="App::PropertyStringList"><StringList count="1"><String value="INSPECT"/></StringList></Property>
@@ -4112,7 +4980,7 @@ fn separates_semantic_annotations_from_drawing_relationships() {
     );
     assert_eq!(semantic_dimension.text, ["12.5 mm"]);
     assert_eq!(semantic_dimension.format.as_deref(), Some("12.5 mm"));
-    assert_eq!(semantic_dimension.value, Some(12.5));
+    assert_eq!(semantic_dimension.value, None);
     assert_eq!(semantic_dimension.position, Some([10.0, 20.0, 0.0]));
     assert_eq!(
         semantic_dimension.references["References2D"][0].subelements,
@@ -4168,7 +5036,7 @@ fn transfers_remaining_semantic_annotation_families_and_assets() {
  <Object name="Model"><Properties Count="0"/></Object>
  <Object name="Balloon"><Properties Count="2">
   <Property name="Text" type="App::PropertyString"><String value="7"/></Property>
-  <Property name="Source" type="App::PropertyLinkSub"><Link object="Model" sub="Face1"/></Property>
+  <Property name="Source" type="App::PropertyLinkSub"><LinkSub value="Model" count="1"><Sub value="Face1"/></LinkSub></Property>
  </Properties></Object>
  <Object name="Leader"><Properties Count="1"><Property name="Text" type="App::PropertyString"><String value="LEAD"/></Property></Properties></Object>
  <Object name="Symbol"><Properties Count="1"><Property name="Symbol" type="App::PropertyFileIncluded"><FileIncluded file="symbol.svg"/></Property></Properties></Object>
@@ -4191,16 +5059,14 @@ fn transfers_remaining_semantic_annotation_families_and_assets() {
         .iter()
         .map(|annotation| annotation.kind.clone())
         .collect::<Vec<_>>();
-    assert_eq!(
-        kinds,
-        [
-            Kind::Balloon,
-            Kind::Datum,
-            Kind::Leader,
-            Kind::Symbol,
-            Kind::GeometricTolerance
-        ]
-    );
+    assert_eq!(kinds, [Kind::Balloon, Kind::Leader, Kind::Symbol]);
+    assert!(result
+        .ir
+        .model
+        .semantic_annotations
+        .iter()
+        .all(|annotation| !annotation.object.ends_with("#Datum")
+            && !annotation.object.ends_with("#Tolerance")));
     let balloon = &result.ir.model.semantic_annotations[0];
     assert_eq!(balloon.text, ["7"]);
     assert_eq!(balloon.references["Source"][0].subelements, ["Face1"]);
@@ -4220,7 +5086,7 @@ fn transfers_remaining_semantic_annotation_families_and_assets() {
 #[test]
 fn transfers_non_default_extrusion_termination_branches() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="8">
+<Objects Count="9">
   <Object type="Sketcher::SketchObject" name="Sketch" id="1"/>
   <Object type="PartDesign::Pad" name="ToLast" id="2"/>
   <Object type="PartDesign::Pad" name="ToFirst" id="3"/>
@@ -4229,8 +5095,9 @@ fn transfers_non_default_extrusion_termination_branches() {
   <Object type="PartDesign::Pocket" name="ThroughAll" id="6"/>
   <Object type="PartDesign::Pad" name="Symmetric" id="7"/>
   <Object type="Part::Extrusion" name="PartExtrusion" id="8"/>
+  <Object type="Part::Extrusion" name="NegativeProfileNormal" id="9"/>
 </Objects>
-<ObjectData Count="8">
+<ObjectData Count="9">
   <Object name="Sketch"><Properties Count="0"/></Object>
   <Object name="ToLast"><Properties Count="2">
     <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
@@ -4243,12 +5110,12 @@ fn transfers_non_default_extrusion_termination_branches() {
   <Object name="ToFace"><Properties Count="3">
     <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
     <Property name="Type" type="App::PropertyEnumeration"><Integer value="3"/></Property>
-    <Property name="UpToFace" type="App::PropertyLinkSub"><Link object="PartExtrusion" sub="Face1"/></Property>
+    <Property name="UpToFace" type="App::PropertyLinkSub"><LinkSub value="PartExtrusion" count="1"><Sub value="Face1"/></LinkSub></Property>
   </Properties></Object>
   <Object name="ToShape"><Properties Count="3">
     <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
     <Property name="Type" type="App::PropertyEnumeration"><Integer value="5"/></Property>
-    <Property name="UpToShape" type="App::PropertyLinkSub"><Link object="PartExtrusion" sub="Face2"/></Property>
+    <Property name="UpToShape" type="App::PropertyLinkSub"><LinkSub value="PartExtrusion" count="1"><Sub value="Face2"/></LinkSub></Property>
   </Properties></Object>
   <Object name="ThroughAll"><Properties Count="2">
     <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
@@ -4269,11 +5136,19 @@ fn transfers_non_default_extrusion_termination_branches() {
     <Property name="TaperAngle" type="App::PropertyAngle"><Float value="2"/></Property>
     <Property name="TaperAngleRev" type="App::PropertyAngle"><Float value="4"/></Property>
     <Property name="DirMode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
-    <Property name="DirLink" type="App::PropertyLinkSub"><Link object="Sketch" sub="Edge1"/></Property>
+    <Property name="DirLink" type="App::PropertyLinkSub"><LinkSub value="Sketch" count="1"><Sub value="Edge1"/></LinkSub></Property>
     <Property name="Solid" type="App::PropertyBool"><Bool value="true"/></Property>
     <Property name="FaceMakerClass" type="App::PropertyString"><String value="Part::FaceMakerUnified"/></Property>
     <Property name="FaceMakerMode" type="App::PropertyEnumeration"><Integer value="4"/></Property>
     <Property name="InnerWireTaper" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  </Properties></Object>
+  <Object name="NegativeProfileNormal"><Properties Count="6">
+    <Property name="Base" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="DirMode" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+    <Property name="LengthFwd" type="App::PropertyLength"><Float value="5"/></Property>
+    <Property name="LengthRev" type="App::PropertyLength"><Float value="-1"/></Property>
+    <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
+    <Property name="Solid" type="App::PropertyBool"><Bool value="true"/></Property>
   </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -4396,23 +5271,71 @@ fn transfers_non_default_extrusion_termination_branches() {
             && reference.ends_with(":DirLink")
             && face_maker.class == "Part::FaceMakerUnified" && face_maker.mode == Some(4)
     ));
+    assert!(matches!(
+        definition("NegativeProfileNormal"),
+        FeatureDefinition::Extrude {
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind { length },
+                    ..
+                }
+            },
+            direction_source: Some(ExtrusionDirectionSource::ProfileNormal),
+            ..
+        } if direction.z == -1.0 && length.0 == 5.0
+    ));
+}
+
+#[test]
+fn derives_extrusion_direction_from_a_non_sketch_profile_frame() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Part2DObjectPython" name="Profile"/><Object type="PartDesign::Pocket" name="Pocket"/></Objects>
+<ObjectData Count="2">
+ <Object name="Profile"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0.7071067811865476" Q2="0" Q3="0.7071067811865476"/></Property></Properties></Object>
+ <Object name="Pocket"><Properties Count="3"><Property name="Profile" type="App::PropertyLinkSub"><LinkSub value="Profile" count="0"/></Property><Property name="Length" type="App::PropertyLength"><Float value="5"/></Property><Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("non-sketch profile extrusion");
+    let pocket = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Pocket"))
+        .expect("pocket feature");
+    assert!(matches!(
+        &pocket.definition,
+        FeatureDefinition::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Native(_),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+            op: cadmpeg_ir::features::BooleanOp::Cut,
+            ..
+        } if (direction.x - 1.0).abs() < 1.0e-12
+            && direction.y.abs() < 1.0e-12
+            && direction.z.abs() < 1.0e-12
+    ));
+    assert!(result.report.losses.is_empty());
+    assert_valid_document(&result.ir);
 }
 
 #[test]
 fn transfers_part_extrusion_symmetric_direction_magnitude() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2">
- <Object type="Sketcher::SketchObject" name="Profile" id="1"/>
  <Object type="Part::Extrusion" name="Extrusion" id="2"/>
+ <Object type="Sketcher::SketchObject" name="Profile" id="1"/>
 </Objects>
 <ObjectData Count="2">
  <Object name="Profile"><Properties Count="0"/></Object>
- <Object name="Extrusion"><Properties Count="8">
+ <Object name="Extrusion"><Properties Count="6">
   <Property name="Base" type="App::PropertyLink"><Link value="Profile"/></Property>
   <Property name="Dir" type="App::PropertyVector"><Vector x="0" y="0" z="12"/></Property>
   <Property name="DirMode" type="App::PropertyEnumeration"><Integer value="2"/></Property>
-  <Property name="LengthFwd" type="App::PropertyLength"><Float value="0"/></Property>
-  <Property name="LengthRev" type="App::PropertyLength"><Float value="0"/></Property>
   <Property name="Symmetric" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Solid" type="App::PropertyBool"><Bool value="false"/></Property>
   <Property name="TaperAngle" type="App::PropertyAngle"><Float value="3"/></Property>
@@ -4451,14 +5374,44 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
 }
 
 #[test]
+fn preserves_linkless_partdesign_extrusion_profile_and_direction() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="PartDesign::Pad" name="Pad" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Pad"><Properties Count="4">
+ <Property name="Sketch" type="App::PropertyLink"><Link value=""/></Property>
+ <Property name="Length" type="App::PropertyLength"><Float value="5"/></Property>
+ <Property name="Midplane" type="App::PropertyBool"><Bool value="false"/></Property>
+ <Property name="Reversed" type="App::PropertyBool"><Bool value="false"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("linkless pad");
+    let definition = &result.ir.model.features[0].definition;
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Native(profile),
+            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
+            extent: ExtrudeExtent::OneSided { .. },
+            ..
+        } if profile.ends_with(":Sketch")
+    ));
+    assert!(result.report.losses.is_empty());
+    assert_valid_document(&result.ir);
+}
+
+#[test]
 fn transfers_partdesign_mixed_extrusion_side_controls() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="5">
- <Object type="Sketcher::SketchObject" name="Profile" id="1"/>
  <Object type="Part::Box" name="Target" id="2"/>
  <Object type="PartDesign::Pad" name="Mixed" id="3"/>
  <Object type="PartDesign::Pocket" name="Symmetric" id="4"/>
  <Object type="PartDesign::Pad" name="LegacyTwoLengths" id="5"/>
+ <Object type="Sketcher::SketchObject" name="Profile" id="1"/>
 </Objects>
 <ObjectData Count="5">
  <Object name="Profile"><Properties Count="0"/></Object>
@@ -4469,10 +5422,10 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
   <Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property>
   <Property name="Length" type="App::PropertyLength"><Float value="-5"/></Property>
   <Property name="Type2" type="App::PropertyEnumeration"><Integer value="5"/></Property>
-  <Property name="UpToShape2" type="App::PropertyLinkSubList"><LinkList count="1"><Link object="Target" sub="Face2"/></LinkList></Property>
+  <Property name="UpToShape2" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Target" sub="Face2"/></LinkSubList></Property>
   <Property name="Direction" type="App::PropertyVector"><Vector x="0" y="3" z="0"/></Property>
   <Property name="UseCustomVector" type="App::PropertyBool"><Bool value="false"/></Property>
-  <Property name="ReferenceAxis" type="App::PropertyLinkSub"><Link object="Profile" sub="Edge1"/></Property>
+  <Property name="ReferenceAxis" type="App::PropertyLinkSub"><LinkSub value="Profile" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="TaperAngle" type="App::PropertyAngle"><Float value="2"/></Property>
   <Property name="TaperAngle2" type="App::PropertyAngle"><Float value="-3"/></Property>
   <Property name="Offset" type="App::PropertyDistance"><Float value="1"/></Property>
@@ -4573,13 +5526,15 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
 #[test]
 fn transfers_sketch_pad_and_pocket_design_history() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="4">
+<Objects Count="4" Dependencies="1">
+  <ObjectDeps Name="Body" Count="0"/>
+  <ObjectDeps Name="Sketch" Count="0"/>
+  <ObjectDeps Name="Pad" Count="1"><Dep Name="Sketch"/></ObjectDeps>
+  <ObjectDeps Name="Pocket" Count="2"><Dep Name="Pad"/><Dep Name="Sketch"/></ObjectDeps>
   <Object type="PartDesign::Body" name="Body" id="1"/>
   <Object type="Sketcher::SketchObject" name="Sketch" id="1"/>
   <Object type="PartDesign::Pad" name="Pad" id="2"/>
   <Object type="PartDesign::Pocket" name="Pocket" id="3"/>
-  <ObjectDeps Name="Pad"><Dep Name="Sketch"/></ObjectDeps>
-  <ObjectDeps Name="Pocket"><Dep Name="Pad"/><Dep Name="Sketch"/></ObjectDeps>
 </Objects>
 <ObjectData Count="4">
   <Object name="Body"><Properties Count="2">
@@ -4600,7 +5555,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
     <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="2" Pz="3" Q0="0.7071067811865476" Q1="0" Q2="0" Q3="0.7071067811865476"/></Property>
   </Properties></Object>
   <Object name="Pad"><Properties Count="2">
-    <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="Sketch" type="App::PropertyLink"><Link value="Sketch"/></Property>
     <Property name="Length" type="App::PropertyLength"><Float value="10"/></Property>
   </Properties></Object>
   <Object name="Pocket"><Properties Count="4">
@@ -4745,7 +5700,7 @@ fn retains_support_attachment_and_distinct_offset_frame() {
  <Object name="Support"><Properties Count="0"/></Object>
  <Object name="Sketch"><Properties Count="5">
   <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
-  <Property name="Support" type="App::PropertyLinkSub"><Link object="Support" sub="Face1"/></Property>
+  <Property name="Support" type="App::PropertyLinkSub"><LinkSub value="Support" count="1"><Sub value="Face1"/></LinkSub></Property>
   <Property name="MapMode" type="App::PropertyString"><String value="FlatFace"/></Property>
   <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="10" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
   <Property name="AttachmentOffset" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
@@ -4808,6 +5763,45 @@ fn transfers_recursive_exact_parameter_curve_geometry() {
         basis.as_ref(),
         cadmpeg_ir::geometry::PcurveGeometry::Trimmed { basis, .. }
             if matches!(basis.as_ref(), cadmpeg_ir::geometry::PcurveGeometry::Circle { radius: 3.0, .. })
+    ));
+}
+
+#[test]
+fn transfers_occt_revolution_surface_parameter_order() {
+    let surface = crate::brep::TextSurface::Revolution {
+        axis_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        axis_direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        directrix: Box::new(crate::brep::TextCurve::Circle {
+            center: cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0),
+            axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+            ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            radius: 1.0,
+        }),
+    };
+    let association = cadmpeg_ir::SourceObjectAssociation {
+        format: "fcstd".into(),
+        object_id: "fcstd:native:object#Surface".into(),
+        name: None,
+        color: None,
+        visible: None,
+        layer: None,
+        instance_path: Vec::new(),
+    };
+    let mut curves = crate::CurveTransfer::default();
+    let mut surfaces = crate::SurfaceTransfer::default();
+    crate::append_text_surface(
+        &surface,
+        cadmpeg_ir::ids::SurfaceId("fcstd:model:surface#revolution".into()),
+        &association,
+        &mut curves,
+        &mut surfaces,
+    );
+    assert!(matches!(
+        surfaces.procedural[0].definition,
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
+            transposed: true,
+            ..
+        }
     ));
 }
 
@@ -5006,15 +6000,16 @@ fn transfers_connected_text_brep_topology() {
 <ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
 </Document>"#;
     let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
-<ViewProvider name="Shape" expanded="1"><Properties Count="7">
+<ViewProvider name="Shape" expanded="1"><Properties Count="8">
 <Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="3368601600"/></Property>
+<Property name="ShapeAppearance" type="App::PropertyMaterialList"><MaterialList file="ShapeAppearance" version="3"/></Property>
 <Property name="LineColor" type="App::PropertyColor"><PropertyColor value="4278190335"/></Property>
 <Property name="LineWidth" type="App::PropertyFloatConstraint"><Float value="2.5"/></Property>
 <Property name="PointColor" type="App::PropertyColor"><PropertyColor value="16711935"/></Property>
 <Property name="PointSize" type="App::PropertyFloatConstraint"><Float value="4"/></Property>
 <Property name="Transparency" type="App::PropertyPercent"><Integer value="25"/></Property>
 <Property name="Visibility" type="App::PropertyBool"><Bool value="false"/></Property>
-</Properties></ViewProvider></ViewProviderData></Document>"#;
+</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
     let brep = b"CASCADE Topology V1, (c) Matra-Datavision
 Locations 0
 Curve2ds 2
@@ -5039,9 +6034,21 @@ Sh 1001000 +4 0 *
 So 1001000 +3 0 *
 Co 1001000 +2 0 *
 +1 0 *";
+    let mut shape_appearance = Vec::new();
+    shape_appearance.extend_from_slice(&1_u32.to_le_bytes());
+    shape_appearance.extend_from_slice(&0x3333_33ff_u32.to_le_bytes());
+    shape_appearance.extend_from_slice(&0x3366_99ff_u32.to_le_bytes());
+    shape_appearance.extend_from_slice(&0x1111_11ff_u32.to_le_bytes());
+    shape_appearance.extend_from_slice(&0x0000_00ff_u32.to_le_bytes());
+    shape_appearance.extend_from_slice(&0.75_f32.to_le_bytes());
+    shape_appearance.extend_from_slice(&0.25_f32.to_le_bytes());
+    for _ in 0..3 {
+        shape_appearance.extend_from_slice(&0_u32.to_le_bytes());
+    }
     let bytes = archive_entries(&[
         ("Document.xml", document.as_bytes()),
         ("GuiDocument.xml", gui),
+        ("ShapeAppearance", &shape_appearance),
         ("Shape.brp", brep),
     ]);
     let result = FcstdCodec
@@ -5118,10 +6125,21 @@ Co 1001000 +2 0 *
     assert_eq!(view.line_width, Some(2.5));
     assert_eq!(view.point_size, Some(4.0));
     let color = result.ir.model.bodies[0].color.expect("shape color");
-    assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
+    assert!((color.r - 0x33 as f32 / 255.0).abs() < 1e-6);
+    assert!((color.g - 0x66 as f32 / 255.0).abs() < 1e-6);
+    assert!((color.b - 0x99 as f32 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
+    let shape_material = result
+        .ir
+        .model
+        .appearances
+        .iter()
+        .find(|appearance| appearance.schema.as_deref() == Some("FCStd ShapeAppearance"))
+        .expect("shape material");
+    assert_eq!(shape_material.properties.get("shininess"), Some(&0.75));
+    assert_eq!(shape_material.properties.get("transparency"), Some(&0.25));
     let namespace = result.ir.native.namespace("fcstd").expect("native");
-    assert_eq!(namespace.version, 20);
+    assert_eq!(namespace.version, 22);
     let census = namespace
         .arena_as::<crate::native::CarrierCensusRecord>("carrier_census")
         .expect("carrier census");
@@ -5143,7 +6161,7 @@ Co 1001000 +2 0 *
         gui_providers[0].object.as_deref(),
         Some("fcstd:native:object#Shape")
     );
-    assert_eq!(gui_properties.len(), 7);
+    assert_eq!(gui_properties.len(), 8);
     assert!(gui_properties
         .iter()
         .all(|property| property.raw_xml.starts_with("<Property")));
@@ -5242,7 +6260,28 @@ So 1001000 +2 0 *
 fn connects_persistent_element_names_to_neutral_topology() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1" StringHasher="1">
 <Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
-<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape">
+<ObjectData Count="1"><Object name="Shape"><Properties Count="2">
+<Property name="AuxShape" type="Part::PropertyPartShape">
+<Part HasherIndex="0" SaveHasher="1" ElementMap="1.0" file="AuxShape.brp"/>
+<ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap>
+<ElementMap2 count="5">
+41 PostfixCount 0 MapCount 1
+ElementMap 1 41 3
+Face ChildCount 0 NameCount 2
+0
+;FaceStable.0.a 0
+Edge ChildCount 0 NameCount 3
+0
+;EdgeStable1.0.a 0
+;EdgeStable2.0.a 0
+Vertex ChildCount 0 NameCount 3
+0
+;VertexStable1.0.a 0
+;VertexStable2.0.a 0
+EndMap
+</ElementMap2>
+</Property>
+<Property name="Shape" type="Part::PropertyPartShape">
 <Part HasherIndex="0" SaveHasher="1" ElementMap="1.0" file="Shape.brp"/>
 <StringHasher saveall="0" threshold="16" count="0" new="1"/>
 <StringHasher2 count="1">
@@ -5252,12 +6291,15 @@ a.c PersistentSource
 <ElementMap2 count="5">
 41 PostfixCount 0 MapCount 1
 ElementMap 1 41 3
-Face ChildCount 0 NameCount 1
+Face ChildCount 0 NameCount 2
+0
 ;FaceStable.0.a 0
-Edge ChildCount 0 NameCount 2
+Edge ChildCount 0 NameCount 3
+0
 ;EdgeStable1.0.a 0
 ;EdgeStable2.0.a 0
-Vertex ChildCount 0 NameCount 2
+Vertex ChildCount 0 NameCount 3
+0
 ;VertexStable1.0.a 0
 ;VertexStable2.0.a 0
 EndMap
@@ -5269,7 +6311,7 @@ EndMap
 <Property name="DiffuseColor" type="App::PropertyColorList"><ColorList file="DiffuseColor"/></Property>
 <Property name="LineColorArray" type="App::PropertyColorList"><ColorList file="LineColorArray"/></Property>
 <Property name="PointColorArray" type="App::PropertyColorList"><ColorList file="PointColorArray"/></Property>
-</Properties></ViewProvider></ViewProviderData></Document>"#;
+</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
     let brep = b"CASCADE Topology V1, (c) Matra-Datavision
 Locations 0
 Curve2ds 2
@@ -5303,6 +6345,7 @@ Co 1001000 +2 0 *
         ("DiffuseColor", &face_colors),
         ("LineColorArray", &edge_colors),
         ("PointColorArray", &point_colors),
+        ("AuxShape.brp", brep),
         ("Shape.brp", brep),
     ]);
     let result = FcstdCodec
@@ -5321,18 +6364,28 @@ Co 1001000 +2 0 *
     let maps = namespace
         .arena_as::<crate::native::ElementMapRecord>("element_maps")
         .expect("required invariant");
-    assert_eq!(maps.len(), 1);
-    assert_eq!(maps[0].hasher_index, Some(0));
-    let groups = &maps[0].maps[0].groups;
-    assert_eq!(groups[0].names[0][0].topology_ids.len(), 1);
-    assert_eq!(groups[1].names[0][0].topology_ids.len(), 1);
+    assert_eq!(maps.len(), 2);
+    let shape_map = maps
+        .iter()
+        .find(|map| map.property.ends_with("#Shape:Shape"))
+        .expect("displayed Shape element map");
+    assert_eq!(shape_map.hasher_index, Some(0));
+    let groups = &shape_map.maps[0].groups;
+    assert_eq!(groups[0].names[1][0].topology_ids.len(), 1);
     assert_eq!(groups[1].names[1][0].topology_ids.len(), 1);
-    assert_eq!(groups[2].names[0][0].topology_ids.len(), 1);
+    assert_eq!(groups[1].names[2][0].topology_ids.len(), 1);
     assert_eq!(groups[2].names[1][0].topology_ids.len(), 1);
+    assert_eq!(groups[2].names[2][0].topology_ids.len(), 1);
+    let shape_face_ids = groups[0]
+        .names
+        .iter()
+        .flatten()
+        .flat_map(|name| &name.topology_ids)
+        .collect::<std::collections::HashSet<_>>();
     assert!(result.ir.model.appearance_bindings.iter().any(|binding| {
         matches!(
-            binding.target,
-            cadmpeg_ir::appearance::AppearanceTarget::Face(_)
+            &binding.target,
+            cadmpeg_ir::appearance::AppearanceTarget::Face(face) if shape_face_ids.contains(&face.0)
         ) && binding.channels.get("precedence").map(String::as_str) == Some("face_over_object")
     }));
     assert_eq!(
@@ -5452,6 +6505,65 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
     assert_eq!(result.ir.model.shells.len(), 1);
     assert_eq!(result.ir.model.shells[0].wire_edges.len(), 1);
     assert!(result.ir.model.shells[0].faces.is_empty());
+}
+
+#[test]
+fn repeated_shape_roots_have_distinct_occurrence_identity() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape">
+<Part ElementMap="1.0" file="Shape.brp"/>
+<ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap>
+<ElementMap2 count="4">
+1 PostfixCount 0 MapCount 1
+ElementMap 1 1 2
+Edge ChildCount 0 NameCount 3
+0
+;EdgeStable.0.a 0
+;DeletedEdgeStable.0.a 0
+Vertex ChildCount 0 NameCount 3
+0
+;VertexStable1.0.a 0
+;VertexStable2.0.a 0
+EndMap
+</ElementMap2>
+</Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 0
+Curves 1
+1 0 0 0 1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 0
+Triangulations 0
+TShapes 3
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
++1 0 +1 0 *";
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("repeated roots");
+
+    assert_eq!(result.ir.model.bodies.len(), 2);
+    assert_eq!(result.ir.model.edges.len(), 2);
+    assert_eq!(result.ir.model.vertices.len(), 4);
+    assert_ne!(result.ir.model.bodies[0].id, result.ir.model.bodies[1].id);
+    let maps = result
+        .ir
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::ElementMapRecord>("element_maps")
+        .expect("element maps");
+    let groups = &maps[0].maps[0].groups;
+    assert_eq!(groups[0].names[1][0].topology_ids.len(), 2);
+    assert_eq!(groups[1].names[1][0].topology_ids.len(), 2);
+    assert_eq!(groups[1].names[2][0].topology_ids.len(), 2);
+    assert_valid_document(&result.ir);
 }
 
 #[test]
@@ -5608,8 +6720,13 @@ Co 1001000 +2 1 +2 3 *
 }
 
 #[test]
-fn legacy_layout_is_inspectable_but_explicitly_refused_for_decode() {
-    let bytes = archive("<Document SchemaVersion=\"3\" FileVersion=\"1\"/>");
+fn schema_three_uses_the_object_envelope_and_defaults_file_version() {
+    let document = r#"<Document SchemaVersion="3">
+<Properties Count="1"><Property name="Label" type="App::PropertyString"><String value="Legacy"/></Property></Properties>
+<Objects Count="1"><Object type="App::FeaturePython" name="Thing"/></Objects>
+<ObjectData Count="1"><Object name="Thing"><Properties Count="1"><Property name="Source" type="App::PropertyLink"><Link value="Thing"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    let bytes = archive(document);
     let summary = FcstdCodec
         .inspect(
             &mut Cursor::new(&bytes),
@@ -5617,12 +6734,80 @@ fn legacy_layout_is_inspectable_but_explicitly_refused_for_decode() {
         )
         .expect("legacy inspection");
     assert!(summary.notes.iter().any(|note| note == "SchemaVersion=3"));
-    let error = FcstdCodec
+    assert!(summary.notes.iter().any(|note| note == "FileVersion=0"));
+    let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect_err("legacy decode must fail");
-    assert!(error
-        .to_string()
-        .contains("FCStd SchemaVersion=3 FileVersion=1 persistence layout"));
+        .expect("schema-three decode");
+    let namespace = result.ir.native.namespace("fcstd").expect("namespace");
+    let objects = namespace
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .expect("objects");
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    assert_eq!(objects.len(), 1);
+    assert_eq!(objects[0].type_name, "App::FeaturePython");
+    assert_eq!(properties.len(), 2);
+    assert_eq!(
+        properties[1].links[0].object.as_deref(),
+        Some(objects[0].id.as_str())
+    );
+    assert!(crate::validate_native(&result.ir).is_empty());
+}
+
+#[test]
+fn schema_two_uses_the_feature_envelope_and_common_property_grammar() {
+    let document = r#"<Document SchemaVersion="2" ProgramVersion="0.13">
+<Properties Count="1"><Property name="Label" type="App::PropertyString"><String value="Document"/></Property></Properties>
+<Features Count="2"><Feature type="App::Feature" name="First"/><Feature type="App::FeaturePython" name="Second"/></Features>
+<FeatureData Count="2"><Feature name="First"><Properties Count="0"/></Feature><Feature name="Second"><Properties Count="1"><Property name="Source" type="App::PropertyLink"><Link value="First"/></Property></Properties></Feature></FeatureData>
+</Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("schema-two decode");
+    let namespace = result.ir.native.namespace("fcstd").expect("namespace");
+    let objects = namespace
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .expect("objects");
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    assert_eq!(
+        objects
+            .iter()
+            .map(|object| object.name.as_str())
+            .collect::<Vec<_>>(),
+        ["First", "Second"]
+    );
+    assert_eq!(properties.len(), 2);
+    assert_eq!(
+        properties[1].links[0].object.as_deref(),
+        Some(objects[0].id.as_str())
+    );
+    assert!(objects.iter().all(|object| object.persistent_id.is_none()));
+    assert!(crate::validate_native(&result.ir).is_empty());
+}
+
+#[test]
+fn legacy_schema_dispatch_rejects_wrong_envelopes_and_inconsistent_counts() {
+    let cases = [
+        r#"<Document SchemaVersion="2"><Objects Count="0"/><ObjectData Count="0"/></Document>"#,
+        r#"<Document SchemaVersion="3"><Features Count="0"/><FeatureData Count="0"/></Document>"#,
+        r#"<Document SchemaVersion="2"><Features Count="1"><Feature type="App::Feature" name="A"/></Features><FeatureData Count="0"><Feature name="A"/></FeatureData></Document>"#,
+        r#"<Document SchemaVersion="2"><Features Count="1"><Feature type="App::Feature" name="A"/></Features><FeatureData Count="1"><Feature name="B"/></FeatureData></Document>"#,
+    ];
+    for document in cases {
+        assert!(matches!(
+            FcstdCodec.decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default()
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
 }
 
 #[test]
@@ -5652,11 +6837,98 @@ fn thumbnail_bytes_are_retained_with_digest() {
 }
 
 #[test]
+fn retains_every_reference_to_a_shared_side_entry() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Feature" name="Owner"/></Objects>
+<ObjectData Count="1"><Object name="Owner"><Properties Count="2">
+<Property name="First" type="App::PropertyFileIncluded"><File file="Shared.bin"/></Property>
+<Property name="Second" type="App::PropertyFileIncluded"><File file="Shared.bin"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document.as_bytes()),
+                ("Shared.bin", b"shared"),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("shared side entry");
+    let namespace = result.ir.native.namespace("fcstd").expect("namespace");
+    let entries = namespace
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .expect("entries");
+    let shared = entries
+        .iter()
+        .find(|entry| entry.name == "Shared.bin")
+        .expect("shared entry");
+    let spans = namespace
+        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
+        .expect("logical ledger");
+    let span = spans
+        .iter()
+        .find(|span| span.entry == "Shared.bin")
+        .expect("shared entry span");
+
+    assert_eq!(shared.referenced_by.len(), 2);
+    assert_ne!(shared.referenced_by[0], shared.referenced_by[1]);
+    assert_eq!(span.classification, "named_opaque");
+    assert_eq!(span.owner.as_deref(), Some(shared.id.as_str()));
+    assert!(crate::validate_native(&result.ir).is_empty());
+}
+
+#[test]
+fn unregistered_application_payloads_remain_whole_named_opaque_entries() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Vendor::Feature" name="Owner"/></Objects>
+<ObjectData Count="1"><Object name="Owner"><Properties Count="1">
+<Property name="Payload" type="Vendor::PropertyMeshLike"><Mesh file="Payload.bin"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let payload = [
+        0xd0, 0xc0, 0xb0, 0xa0, 0x00, 0x00, 0x01, 0x00, 0x7f, 0x45, 0x4c, 0x46,
+    ];
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document.as_bytes()),
+                ("Payload.bin", &payload),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("opaque vendor payload");
+    assert!(result.ir.model.tessellations.is_empty());
+    let namespace = result.ir.native.namespace("fcstd").expect("namespace");
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    assert_eq!(properties[0].type_name, "Vendor::PropertyMeshLike");
+    let entries = namespace
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .expect("entries");
+    let entry = entries
+        .iter()
+        .find(|entry| entry.name == "Payload.bin")
+        .expect("payload entry");
+    let spans = namespace
+        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
+        .expect("logical ledger");
+    let span = spans
+        .iter()
+        .find(|span| span.entry == entry.name)
+        .expect("payload span");
+    assert_eq!(span.start, 0);
+    assert_eq!(span.end, payload.len() as u64);
+    assert_eq!(span.classification, "named_opaque");
+    assert_eq!(span.owner.as_deref(), Some(entry.id.as_str()));
+    assert_eq!(entry.data, payload);
+    assert!(crate::validate_native(&result.ir).is_empty());
+}
+
+#[test]
 fn recovers_objects_dynamic_properties_links_and_side_entries() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Properties Count="1"><Property name="Label" type="App::PropertyString"><String value="Demo"/></Property></Properties>
 <Objects Count="2" Dependencies="1">
-<ObjectDeps Name="Body" Count="1"><Dep Name="Sketch"/></ObjectDeps>
+<ObjectDeps Name="Body" Count="1" AllowPartial="2"><Dep Name="Sketch"/></ObjectDeps>
 <ObjectDeps Name="Sketch" Count="0"/>
 <Object type="PartDesign::Body" name="Body" id="1" Touched="1"/>
 <Object type="PartDesign::Feature" name="Sketch" id="2"/>
@@ -5664,7 +6936,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
 <ObjectData Count="2">
 <Object name="Body" Extensions="True"><Extensions Count="1"><Extension type="Demo::Extension" name="Demo"><Properties Count="1"><Property name="ExtensionValue" type="App::PropertyString"><String value="kept"/></Property></Properties></Extension></Extensions><Properties Count="4" TransientCount="1">
 <_Property name="TransientState" type="App::PropertyInteger" status="8"/>
-<Property name="Support" type="App::PropertyLinkSub" status="4" group="Attachment" doc="Support object" attr="2" ro="1" hide="0"><Link object="Sketch" sub="Face1"/></Property>
+<Property name="Support" type="App::PropertyLinkSub" status="4" group="Attachment" doc="Support object" attr="2" ro="1" hide="0"><LinkSub value="Sketch" count="1"><Sub value="Face1"/></LinkSub></Property>
 <Property name="Members" type="App::PropertyLinkList"><LinkList count="2"><Link value="Sketch"/><Link value=""/></LinkList></Property>
 <Property name="Payload" type="App::PropertyFileIncluded"><File file="Payload.bin"/></Property>
 <Property name="Shape" type="Part::PropertyPartShape"><Part ElementMap="" file="Shape.brp"/></Property>
@@ -5693,6 +6965,8 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .arena_as::<crate::native::ExtensionRecord>("extensions")
         .expect("extensions");
     assert_eq!(objects.len(), 2);
+    assert_eq!(objects[0].dependency_allow_partial, Some(2));
+    assert_eq!(objects[1].dependency_allow_partial, None);
     assert_eq!(extensions.len(), 1);
     assert_eq!(extensions[0].owner, "fcstd:native:object#Body");
     let extension_value = properties
@@ -5936,6 +7210,153 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert!(crate::validate_native(&corrupted)
         .iter()
         .any(|finding| finding.message.contains("invalid logical entry or owner")));
+
+    let mut corrupted = result.ir.clone();
+    let mut invalid_objects = objects.clone();
+    invalid_objects[0].dependency_allow_partial = Some(0);
+    corrupted
+        .native
+        .namespace_mut("fcstd")
+        .set_arena("objects", &invalid_objects)
+        .expect("replace objects");
+    assert!(crate::validate_native(&corrupted)
+        .iter()
+        .any(|finding| finding.message.contains("invalid partial-load capability")));
+}
+
+#[test]
+fn rejects_interleaved_new_string_hasher_payload() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1">
+<Property name="Shape" type="Part::PropertyPartShape"><Part file=""/>
+<StringHasher new="1" count="0"/><Interleaved/><StringHasher2 count="0"/>
+</Property></Properties></Object></ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("interleaved string table must fail");
+
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn rejects_inconsistent_object_dependency_envelopes() {
+    let cases = [
+        r#"<Document SchemaVersion="4"><Objects Count="1"><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"/></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="2" Dependencies="1"><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/><Object type="App::Feature" name="B"/></Objects><ObjectData Count="2"><Object name="A"/><Object name="B"/></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="1" Dependencies="1"><ObjectDeps Name="A" Count="1"/><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"/></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="2" Dependencies="1"><ObjectDeps Name="A" Count="0"/><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/><Object type="App::Feature" name="B"/></Objects><ObjectData Count="2"><Object name="A"/><Object name="B"/></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="2" Dependencies="1"><ObjectDeps Name="B" Count="0"/><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/><Object type="App::Feature" name="B"/></Objects><ObjectData Count="2"><Object name="A"/><Object name="B"/></ObjectData></Document>"#,
+    ];
+
+    for document in cases {
+        assert!(matches!(
+            crate::persistence::parse(document.as_bytes()),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
+}
+
+#[test]
+fn preserves_forward_declared_feature_dependencies() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2" Dependencies="1">
+<ObjectDeps Name="First" Count="1"><Dep Name="Second"/></ObjectDeps>
+<ObjectDeps Name="Second" Count="0"/>
+<Object type="PartDesign::Feature" name="First"/><Object type="PartDesign::Feature" name="Second"/>
+</Objects><ObjectData Count="2"><Object name="First"><Properties Count="0"/></Object><Object name="Second"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("forward dependency");
+    let first = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("First"))
+        .expect("first feature");
+    let second = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Second"))
+        .expect("second feature");
+
+    assert_eq!(first.dependencies, std::slice::from_ref(&second.id));
+    assert!(second.ordinal < first.ordinal);
+    assert_valid_document(&result.ir);
+}
+
+#[test]
+fn orders_forward_linked_sketches_before_profile_consumers() {
+    for property_name in ["Profile", "Sketch", "Base", "Source"] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="PartDesign::Pad" name="Pad"/><Object type="Sketcher::SketchObject" name="Sketch"/></Objects>
+<ObjectData Count="2"><Object name="Pad"><Properties Count="1"><Property name="{property_name}" type="App::PropertyLink"><Link value="Sketch"/></Property></Properties></Object><Object name="Sketch"><Properties Count="0"/></Object></ObjectData>
+</Document>"#
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .expect("forward-linked sketch");
+        let features = &result.ir.model.features;
+        let pad = features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Pad"))
+            .expect("pad feature");
+        let sketch = features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Sketch"))
+            .expect("sketch feature");
+
+        assert!(sketch.ordinal < pad.ordinal, "property {property_name}");
+        assert_valid_document(&result.ir);
+    }
+}
+
+#[test]
+fn retains_native_dependency_cycles_as_a_stable_acyclic_feature_projection() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2" Dependencies="1">
+<ObjectDeps Name="First" Count="1"><Dep Name="Second"/></ObjectDeps>
+<ObjectDeps Name="Second" Count="1"><Dep Name="First"/></ObjectDeps>
+<Object type="PartDesign::Feature" name="First"/><Object type="PartDesign::Feature" name="Second"/>
+</Objects><ObjectData Count="2"><Object name="First"><Properties Count="0"/></Object><Object name="Second"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("cyclic native dependency graph");
+    let features = &result.ir.model.features;
+    assert_eq!(features.len(), 2);
+    assert_eq!(features[0].ordinal, 0);
+    assert_eq!(features[1].ordinal, 1);
+    assert!(features[0].dependencies.is_empty());
+    assert_eq!(features[1].dependencies, [features[0].id.clone()]);
+    let objects = result
+        .ir
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .expect("objects");
+    assert_eq!(objects[0].dependencies, [objects[1].id.clone()]);
+    assert_eq!(objects[1].dependencies, [objects[0].id.clone()]);
+    assert_valid_document(&result.ir);
+    assert!(crate::validate_native(&result.ir).is_empty());
 }
 
 #[test]

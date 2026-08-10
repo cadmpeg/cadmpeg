@@ -237,7 +237,7 @@
     },
     "native": {
       "f3d": {
-        "version": 11,
+        "version": 12,
         "arenas": {
           "act_entities": [],
           "act_guids": [],
@@ -332,6 +332,13 @@
               "id": "f3d:asm:edge-ownership#12",
               "edge": "f3d:brep:entity#12",
               "record_index": 12
+            }
+          ],
+          "face_native_keys": [
+            {
+              "id": "f3d:asm:face-native-key#4",
+              "face": "f3d:brep:entity#4",
+              "record_index": 4
             }
           ],
           "face_sidedness": [

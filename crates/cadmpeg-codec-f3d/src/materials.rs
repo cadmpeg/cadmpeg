@@ -246,12 +246,12 @@ fn patch_instance_colors(
     edits: &BTreeMap<String, ProteinAppearanceEdit>,
     patched: &mut std::collections::BTreeSet<String>,
 ) -> Result<(), CodecError> {
-    let frames = crate::protein::record_frames(bytes).ok_or_else(|| {
+    let frames = cadmpeg_protein::record_frames(bytes).ok_or_else(|| {
         CodecError::Malformed("cannot frame Protein InstanceProperties pages".into())
     })?;
-    let schema_driven = crate::protein::has_schemas(protein);
+    let schema_driven = cadmpeg_protein::has_schemas(protein);
     let decoded = if schema_driven {
-        crate::protein::decode(protein, bytes)?
+        cadmpeg_protein::decode(protein, bytes)?
     } else {
         Vec::new()
     };
@@ -298,7 +298,7 @@ fn patch_instance_colors(
                     .properties
                     .get(property_id)
                     .filter(|property| {
-                        matches!(&property.value, crate::protein::PropertyValue::Color(_))
+                        matches!(&property.value, cadmpeg_protein::PropertyValue::Color(_))
                     })
                     .ok_or_else(|| {
                         CodecError::Malformed(format!(
@@ -353,7 +353,7 @@ fn patch_instance_colors(
                     .properties
                     .get(property_id)
                     .filter(|property| {
-                        matches!(&property.value, crate::protein::PropertyValue::Float(_))
+                        matches!(&property.value, cadmpeg_protein::PropertyValue::Float(_))
                     })
                     .map(|property| property.value_offset)
                     .ok_or_else(|| {
@@ -489,12 +489,12 @@ pub fn decode_with_body_bindings(
         let Some(instance) = instance_properties(payload) else {
             continue;
         };
-        let Some(record_frames) = crate::protein::record_frames(&instance) else {
+        let Some(record_frames) = cadmpeg_protein::record_frames(&instance) else {
             continue;
         };
         let catalog = definition_catalog(payload);
-        let mut appearances = if crate::protein::has_schemas(payload) {
-            let records = crate::protein::decode(payload, &instance)?;
+        let mut appearances = if cadmpeg_protein::has_schemas(payload) {
+            let records = cadmpeg_protein::decode(payload, &instance)?;
             let mut decoded = appearances_from_schema_records(&records);
             let decoded_ids = decoded
                 .iter()
@@ -604,7 +604,7 @@ pub fn decode_with_body_bindings(
     })
 }
 
-fn appearances_from_schema_records(records: &[crate::protein::DecodedRecord]) -> Vec<Appearance> {
+fn appearances_from_schema_records(records: &[cadmpeg_protein::DecodedRecord]) -> Vec<Appearance> {
     let textures = records
         .iter()
         .filter_map(texture_asset)
@@ -622,7 +622,7 @@ fn appearances_from_schema_records(records: &[crate::protein::DecodedRecord]) ->
             let mut properties = BTreeMap::new();
             let mut connected = Vec::new();
             for (id, property) in &record.properties {
-                if let crate::protein::PropertyValue::Float(value) = property.value {
+                if let cadmpeg_protein::PropertyValue::Float(value) = property.value {
                     properties.insert(neutral_property_name(id).to_owned(), value);
                 }
                 for guid in &property.connections {
@@ -659,20 +659,20 @@ fn appearances_from_schema_records(records: &[crate::protein::DecodedRecord]) ->
 /// Resolve the one schema member that supplies an appearance's neutral base
 /// colour. An enabled common tint replaces the shader family's primary colour;
 /// a disabled or absent tint does not participate in selection.
-fn appearance_base_color(record: &crate::protein::DecodedRecord) -> Option<Color> {
+fn appearance_base_color(record: &cadmpeg_protein::DecodedRecord) -> Option<Color> {
     color_property(record, appearance_base_color_property_id(record)?)
 }
 
 /// Select the serialized color carrier that represents the neutral base color.
 fn appearance_base_color_property_id(
-    record: &crate::protein::DecodedRecord,
+    record: &cadmpeg_protein::DecodedRecord,
 ) -> Option<&'static str> {
     if matches!(
         record
             .properties
             .get("common_Tint_toggle")
             .map(|property| &property.value),
-        Some(crate::protein::PropertyValue::Boolean(true))
+        Some(cadmpeg_protein::PropertyValue::Boolean(true))
     ) {
         return Some("common_Tint_color");
     }
@@ -694,8 +694,8 @@ fn appearance_base_color_property_id(
     Some(id)
 }
 
-fn color_property(record: &crate::protein::DecodedRecord, id: &str) -> Option<Color> {
-    let crate::protein::PropertyValue::Color([r, g, b, a]) =
+fn color_property(record: &cadmpeg_protein::DecodedRecord, id: &str) -> Option<Color> {
+    let cadmpeg_protein::PropertyValue::Color([r, g, b, a]) =
         record.properties.get(id).map(|property| &property.value)?
     else {
         return None;
@@ -715,7 +715,7 @@ fn decoded_color(values: [f64; 4]) -> Option<Color> {
         })
 }
 
-fn texture_asset(record: &crate::protein::DecodedRecord) -> Option<TextureRef> {
+fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> Option<TextureRef> {
     if !matches!(
         record.schema.as_str(),
         "UnifiedBitmapSchema" | "BumpMapSchema"
@@ -729,7 +729,7 @@ fn texture_asset(record: &crate::protein::DecodedRecord) -> Option<TextureRef> {
             (id.ends_with("_Bitmap"))
                 .then_some(&property.value)
                 .and_then(|value| match value {
-                    crate::protein::PropertyValue::TextureUri(paths) => Some(paths.clone()),
+                    cadmpeg_protein::PropertyValue::TextureUri(paths) => Some(paths.clone()),
                     _ => None,
                 })
         })
@@ -738,7 +738,7 @@ fn texture_asset(record: &crate::protein::DecodedRecord) -> Option<TextureRef> {
         (id.ends_with("_Bitmap_urn"))
             .then_some(&property.value)
             .and_then(|value| match value {
-                crate::protein::PropertyValue::String(value) if !value.is_empty() => {
+                cadmpeg_protein::PropertyValue::String(value) if !value.is_empty() => {
                     Some(value.clone())
                 }
                 _ => None,
@@ -776,9 +776,9 @@ fn texture_asset(record: &crate::protein::DecodedRecord) -> Option<TextureRef> {
 }
 
 fn property_with_suffix<'a>(
-    record: &'a crate::protein::DecodedRecord,
+    record: &'a cadmpeg_protein::DecodedRecord,
     suffix: &str,
-) -> Option<&'a crate::protein::PropertyValue> {
+) -> Option<&'a cadmpeg_protein::PropertyValue> {
     let qualified_suffix = format!("_{suffix}");
     record
         .properties
@@ -799,29 +799,29 @@ fn is_physical_schema(schema: &str) -> bool {
     schema == "PhysMatSchema" || schema.starts_with("Structural") || schema.starts_with("Thermal")
 }
 
-fn integer_property(record: &crate::protein::DecodedRecord, suffix: &str) -> Option<u32> {
+fn integer_property(record: &cadmpeg_protein::DecodedRecord, suffix: &str) -> Option<u32> {
     match property_with_suffix(record, suffix)? {
-        crate::protein::PropertyValue::Integer(value) => Some(*value),
+        cadmpeg_protein::PropertyValue::Integer(value) => Some(*value),
         _ => None,
     }
 }
 
-fn float_property(record: &crate::protein::DecodedRecord, suffix: &str) -> Option<f64> {
+fn float_property(record: &cadmpeg_protein::DecodedRecord, suffix: &str) -> Option<f64> {
     match property_with_suffix(record, suffix)? {
-        crate::protein::PropertyValue::Float(value) => Some(*value),
+        cadmpeg_protein::PropertyValue::Float(value) => Some(*value),
         _ => None,
     }
 }
 
-fn boolean_property(record: &crate::protein::DecodedRecord, suffix: &str) -> Option<bool> {
+fn boolean_property(record: &cadmpeg_protein::DecodedRecord, suffix: &str) -> Option<bool> {
     match property_with_suffix(record, suffix)? {
-        crate::protein::PropertyValue::Boolean(value) => Some(*value),
+        cadmpeg_protein::PropertyValue::Boolean(value) => Some(*value),
         _ => None,
     }
 }
 
-fn distance_property(record: &crate::protein::DecodedRecord, suffix: &str) -> Option<f64> {
-    let crate::protein::PropertyValue::Distance { unit, value } =
+fn distance_property(record: &cadmpeg_protein::DecodedRecord, suffix: &str) -> Option<f64> {
+    let cadmpeg_protein::PropertyValue::Distance { unit, value } =
         property_with_suffix(record, suffix)?
     else {
         return None;
@@ -1750,7 +1750,7 @@ fn nested_entry(protein: &[u8], suffix: &str) -> Option<Vec<u8>> {
 
 /// Decode the fixed source-less layouts emitted by [`encode_protein`]. Native
 /// Protein assets package schemas and use the schema-driven path instead.
-fn decode_fixed_logical_records(frames: &[crate::protein::RecordFrame]) -> Vec<Appearance> {
+fn decode_fixed_logical_records(frames: &[cadmpeg_protein::RecordFrame]) -> Vec<Appearance> {
     frames
         .iter()
         .filter_map(|frame| decode_fixed_record(&frame.bytes))
@@ -2138,8 +2138,9 @@ mod tests {
         assert_eq!(super::generic_connection_delta(&record, 0), None);
     }
 
-    fn distance_record(unit: u32, value: f64) -> crate::protein::DecodedRecord {
-        crate::protein::DecodedRecord {
+    fn distance_record(unit: u32, value: f64) -> cadmpeg_protein::DecodedRecord {
+        cadmpeg_protein::DecodedRecord {
+            ordinal: 0,
             logical_offset: 0,
             schema: "TestSchema".into(),
             guid: String::new(),
@@ -2147,9 +2148,9 @@ mod tests {
             asset_lib_id: String::new(),
             properties: std::collections::BTreeMap::from([(
                 "test_Depth".to_owned(),
-                crate::protein::DecodedProperty {
+                cadmpeg_protein::DecodedProperty {
                     value_offset: 0,
-                    value: crate::protein::PropertyValue::Distance { unit, value },
+                    value: cadmpeg_protein::PropertyValue::Distance { unit, value },
                     connections: Vec::new(),
                 },
             )]),
@@ -2193,18 +2194,18 @@ mod tests {
                 color_property("surface_albedo", [0.5, 0.5, 0.5, 1.0]),
                 (
                     "common_Tint_toggle".to_owned(),
-                    crate::protein::DecodedProperty {
+                    cadmpeg_protein::DecodedProperty {
                         value_offset: 0,
-                        value: crate::protein::PropertyValue::Boolean(false),
+                        value: cadmpeg_protein::PropertyValue::Boolean(false),
                         connections: Vec::new(),
                     },
                 ),
             ]);
             properties.insert(
                 primary_id.to_owned(),
-                crate::protein::DecodedProperty {
+                cadmpeg_protein::DecodedProperty {
                     value_offset: 0,
-                    value: crate::protein::PropertyValue::Color([0.125, 0.25, 0.375, 1.0]),
+                    value: cadmpeg_protein::PropertyValue::Color([0.125, 0.25, 0.375, 1.0]),
                     connections: Vec::new(),
                 },
             );
@@ -2226,9 +2227,9 @@ mod tests {
         ]);
         properties.insert(
             "common_Tint_toggle".to_owned(),
-            crate::protein::DecodedProperty {
+            cadmpeg_protein::DecodedProperty {
                 value_offset: 0,
-                value: crate::protein::PropertyValue::Boolean(true),
+                value: cadmpeg_protein::PropertyValue::Boolean(true),
                 connections: Vec::new(),
             },
         );
@@ -2239,12 +2240,12 @@ mod tests {
         );
     }
 
-    fn color_property(id: &str, color: [f64; 4]) -> (String, crate::protein::DecodedProperty) {
+    fn color_property(id: &str, color: [f64; 4]) -> (String, cadmpeg_protein::DecodedProperty) {
         (
             id.to_owned(),
-            crate::protein::DecodedProperty {
+            cadmpeg_protein::DecodedProperty {
                 value_offset: 0,
-                value: crate::protein::PropertyValue::Color(color),
+                value: cadmpeg_protein::PropertyValue::Color(color),
                 connections: Vec::new(),
             },
         )
@@ -2252,9 +2253,10 @@ mod tests {
 
     fn appearance_record(
         schema: &str,
-        properties: std::collections::BTreeMap<String, crate::protein::DecodedProperty>,
-    ) -> crate::protein::DecodedRecord {
-        crate::protein::DecodedRecord {
+        properties: std::collections::BTreeMap<String, cadmpeg_protein::DecodedProperty>,
+    ) -> cadmpeg_protein::DecodedRecord {
+        cadmpeg_protein::DecodedRecord {
+            ordinal: 0,
             logical_offset: 0,
             schema: schema.to_owned(),
             guid: "11111111-2222-3333-4444-555555555555".to_owned(),

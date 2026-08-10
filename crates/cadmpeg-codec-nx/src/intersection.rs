@@ -294,18 +294,31 @@ struct ChartPoints {
 
 /// Decode type-38 and single-byte `0x5a` records whose referenced chart and
 /// endpoint witnesses form a complete solved cache.
-pub fn curves(stream: &[u8]) -> Vec<IntersectionCurve> {
-    scan(stream).curves
+pub fn curves(stream: &[u8], point_layout: ChartPointLayout) -> Vec<IntersectionCurve> {
+    scan(stream, point_layout).curves
 }
 
 /// Decode chart-backed constructions and classify every rejected construction.
-pub fn scan(stream: &[u8]) -> CurveScan {
+pub fn scan(stream: &[u8], point_layout: ChartPointLayout) -> CurveScan {
     let graph = topology::Graph::parse(stream);
-    scan_with_graph(stream, &graph)
+    scan_with_graph(stream, &graph, point_layout)
 }
 
-pub(crate) fn scan_with_graph(stream: &[u8], graph: &topology::Graph) -> CurveScan {
-    scan_with_auxiliaries(stream, &chart_records(stream), &term_records(stream), graph)
+pub(crate) fn scan_with_graph(
+    stream: &[u8],
+    graph: &topology::Graph,
+    point_layout: ChartPointLayout,
+) -> CurveScan {
+    let (uv, uv_markers) = uv_records(stream);
+    scan_with_auxiliaries(
+        stream,
+        &chart_records(stream, point_layout),
+        &term_records(stream),
+        &uv,
+        &uv_markers,
+        &blend_bound_records(stream),
+        graph,
+    )
 }
 
 /// Decode a merged partition/deltas stream with explicit auxiliary replacement boundaries.
@@ -325,23 +338,30 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
     replacement_streams: &[&[u8]],
     graph: &topology::Graph,
 ) -> CurveScan {
-    let mut charts = chart_records(base_stream);
+    let mut charts = chart_records(base_stream, ChartPointLayout::Xyz3);
     let mut terms = term_records(base_stream);
+    let (mut uv, mut uv_markers) = uv_records(base_stream);
+    let mut bridges = blend_bound_records(base_stream);
     for replacement_stream in replacement_streams {
-        charts.extend(chart_records(replacement_stream));
+        charts.extend(chart_records(replacement_stream, ChartPointLayout::Ext11));
         terms.extend(term_records(replacement_stream));
+        let (replacement_uv, replacement_markers) = uv_records(replacement_stream);
+        uv.extend(replacement_uv);
+        uv_markers.extend(replacement_markers);
+        bridges.extend(blend_bound_records(replacement_stream));
     }
-    scan_with_auxiliaries(stream, &charts, &terms, graph)
+    scan_with_auxiliaries(stream, &charts, &terms, &uv, &uv_markers, &bridges, graph)
 }
 
 fn scan_with_auxiliaries(
     stream: &[u8],
     charts: &BTreeMap<u32, Chart>,
     terms: &BTreeMap<u32, Point3>,
+    uv: &BTreeMap<u32, SupportUv>,
+    uv_markers: &BTreeMap<u32, u8>,
+    bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
 ) -> CurveScan {
-    let uv = uv_records(stream);
-    let bridges = blend_bound_records(stream);
     let referenced_curves = graph.referenced_curve_xmts();
     let mut result = CurveScan::default();
     for construction in graph
@@ -349,20 +369,21 @@ fn scan_with_auxiliaries(
         .into_iter()
         .chain(topology::intersection_data_curves(stream))
     {
-        match enrich(construction, charts, terms, &uv, &bridges, graph) {
+        match enrich(construction, charts, terms, uv, uv_markers, bridges, graph) {
             Ok(curve) => {
                 result.constructions.push(construction);
                 result.curves.push(curve);
             }
             Err(rejection)
                 if referenced_curves.contains(&construction.xmt)
-                    && construction_supports(construction, &bridges, graph).is_some()
+                    && construction_supports(construction, uv_markers, bridges, graph)
+                        .is_some()
                     && construction_has_endpoint_witnesses(construction, terms, graph) =>
             {
                 result.constructions.push(construction);
                 if matches!(rejection, Rejection::MissingChart) {
                     if let (Some(supports), Some(witness)) = (
-                        construction_supports(construction, &bridges, graph)
+                        construction_supports(construction, uv_markers, bridges, graph)
                             .filter(|supports| supports[1] > 1),
                         graph
                             .unique_curve_edge_witness(construction.xmt)
@@ -393,6 +414,7 @@ fn enrich(
     charts: &BTreeMap<u32, Chart>,
     terms: &BTreeMap<u32, Point3>,
     uv: &BTreeMap<u32, SupportUv>,
+    uv_markers: &BTreeMap<u32, u8>,
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
 ) -> Result<IntersectionCurve, Rejection> {
@@ -448,7 +470,8 @@ fn enrich(
         .get(&construction.references[5])
         .cloned()
         .unwrap_or([None, None]);
-    let supports = construction_supports(construction, bridges, graph).unwrap_or([1, 1]);
+    let supports =
+        construction_supports(construction, uv_markers, bridges, graph).unwrap_or([1, 1]);
     Ok(IntersectionCurve {
         xmt: construction.xmt,
         references: construction.references,
@@ -464,18 +487,23 @@ fn enrich(
 
 fn construction_supports(
     construction: CompositeCurve,
+    uv_markers: &BTreeMap<u32, u8>,
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
 ) -> Option<[u32; 2]> {
-    let first_is_surface = is_surface(graph, construction.references[0]);
-    let second_is_surface = is_surface(graph, construction.references[1]);
-    let (primary, bridge) = if first_is_surface {
+    let (primary, bridge) = if construction.delta_twin {
         (construction.references[0], construction.references[1])
-    } else if second_is_surface {
-        (construction.references[1], construction.references[0])
     } else {
-        (1, 1)
+        // A present marker-3 values array explicitly reverses the serialized
+        // support order. Without that array, retain the type-38 references'
+        // order; no alternate order was serialized.
+        match uv_markers.get(&construction.references[5]).copied() {
+            Some(3) => (construction.references[1], construction.references[0]),
+            Some(2 | 4) | None => (construction.references[0], construction.references[1]),
+            Some(_) => return None,
+        }
     };
+    is_surface(graph, primary).then_some(())?;
     let secondary = bridges
         .get(&bridge)
         .copied()
@@ -609,11 +637,11 @@ fn is_surface(graph: &topology::Graph, xmt: u32) -> bool {
         .any(|kind| graph.get(kind, xmt).is_some())
 }
 
-fn chart_records(stream: &[u8]) -> BTreeMap<u32, Chart> {
+fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32, Chart> {
     let mut out = BTreeMap::new();
     let mut complemented = BTreeSet::new();
     let mut duplicates = BTreeSet::new();
-    for source in chart_source_records(stream) {
+    for source in chart_source_records(stream, point_layout) {
         if duplicates.contains(&source.xmt) {
             continue;
         }
@@ -668,10 +696,13 @@ fn chart_records(stream: &[u8]) -> BTreeMap<u32, Chart> {
 }
 
 /// Decode every complete physical direct or escaped `CHART_s` source record.
-pub fn chart_source_records(stream: &[u8]) -> Vec<ChartSourceRecord> {
+pub fn chart_source_records(
+    stream: &[u8],
+    point_layout: ChartPointLayout,
+) -> Vec<ChartSourceRecord> {
     let mut out = Vec::new();
     for tag in find_tags(stream, [0, 40]) {
-        if let Some((record, _)) = chart_source_record_at(stream, tag) {
+        if let Some((record, _)) = chart_source_record_at(stream, tag, point_layout) {
             out.push(record);
         }
     }
@@ -681,6 +712,7 @@ pub fn chart_source_records(stream: &[u8]) -> Vec<ChartSourceRecord> {
 pub(crate) fn chart_source_record_at(
     stream: &[u8],
     tag: usize,
+    point_layout: ChartPointLayout,
 ) -> Option<(ChartSourceRecord, usize)> {
     (stream.get(tag..tag + 2) == Some(&[0, 40])).then_some(())?;
     for escape in [0usize, 1] {
@@ -688,12 +720,12 @@ pub(crate) fn chart_source_record_at(
             continue;
         }
         let base = tag + 2 + escape;
-        let Some(count) = be::u32_at(stream, base).map(|value| value as usize) else {
+        let Some(count) = be::u32_at(stream, base)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count >= 2)
+        else {
             continue;
         };
-        if !(2..=1024).contains(&count) {
-            continue;
-        }
         let Some((xmt, xmt_len)) = read_xmt(stream, base + 4) else {
             continue;
         };
@@ -729,7 +761,7 @@ pub(crate) fn chart_source_record_at(
             continue;
         }
         let block = preamble + 52;
-        let Some(chart_points) = chart_points(stream, block, count) else {
+        let Some(chart_points) = chart_points(stream, block, count, point_layout) else {
             continue;
         };
         let point_layout = if chart_points.native_parameters.is_some() {
@@ -768,7 +800,30 @@ pub(crate) fn chart_source_record_at(
     None
 }
 
-fn chart_points(stream: &[u8], block: usize, count: usize) -> Option<ChartPoints> {
+fn chart_points(
+    stream: &[u8],
+    block: usize,
+    count: usize,
+    point_layout: ChartPointLayout,
+) -> Option<ChartPoints> {
+    let point_width = match point_layout {
+        ChartPointLayout::Xyz3 => 24,
+        ChartPointLayout::Ext11 => 88,
+    };
+    let end = block.checked_add(count.checked_mul(point_width)?)?;
+    stream.get(block..end)?;
+    if point_layout == ChartPointLayout::Xyz3 {
+        let points = (0..count)
+            .map(|index| point_m(stream, block + index * 24))
+            .collect::<Option<Vec<_>>>()?;
+        return (points.windows(2).any(|pair| pair[0] != pair[1])).then_some(ChartPoints {
+            points,
+            native_parameters: None,
+            ext_support_uv: [None, None],
+            end,
+        });
+    }
+
     let ext = (0..count)
         .map(|index| {
             let at = block + index * 88;
@@ -816,19 +871,11 @@ fn chart_points(stream: &[u8], block: usize, count: usize) -> Option<ChartPoints
                 points,
                 native_parameters: Some(native_parameters),
                 ext_support_uv,
-                end: block.checked_add(count.checked_mul(88)?)?,
+                end,
             });
         }
     }
-    let points = (0..count)
-        .map(|index| point_m(stream, block + index * 24))
-        .collect::<Option<Vec<_>>>()?;
-    (points.windows(2).any(|pair| pair[0] != pair[1])).then_some(ChartPoints {
-        points,
-        native_parameters: None,
-        ext_support_uv: [None, None],
-        end: block.checked_add(count.checked_mul(24)?)?,
-    })
+    None
 }
 
 fn term_records(stream: &[u8]) -> BTreeMap<u32, Point3> {
@@ -903,11 +950,17 @@ fn term_at(
     ))
 }
 
-fn uv_records(stream: &[u8]) -> BTreeMap<u32, SupportUv> {
-    support_uv_records(stream)
-        .into_iter()
+fn uv_records(stream: &[u8]) -> (BTreeMap<u32, SupportUv>, BTreeMap<u32, u8>) {
+    let records = support_uv_records(stream);
+    let uv = records
+        .iter()
         .map(|record| (record.xmt, record.support_uv()))
-        .collect()
+        .collect();
+    let markers = records
+        .into_iter()
+        .map(|record| (record.xmt, record.marker))
+        .collect();
+    (uv, markers)
 }
 
 /// Decode complete direct, escaped, and descriptor-inline support-UV arrays.
@@ -1017,13 +1070,11 @@ fn find_bytes<'a>(stream: &'a [u8], needle: &'a [u8]) -> impl Iterator<Item = us
 
 fn point_m(stream: &[u8], at: usize) -> Option<Point3> {
     let xyz = be::vec3_at(stream, at)?;
-    xyz.iter()
-        .all(|value| value.is_finite() && value.abs() < 100.0)
-        .then_some(Point3::new(
-            xyz[0] * 1000.0,
-            xyz[1] * 1000.0,
-            xyz[2] * 1000.0,
-        ))
+    let millimeters = xyz.map(|value| value * 1000.0);
+    millimeters
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(Point3::new(millimeters[0], millimeters[1], millimeters[2]))
 }
 
 fn distance(first: Point3, second: Point3) -> f64 {

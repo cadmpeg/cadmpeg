@@ -1,9 +1,9 @@
 # cadmpeg
 
 `cadmpeg` inspects native CAD containers, decodes supported model data into
-CADIR, validates and compares CADIR models, and exports CADIR or STEP Part 21
-(AP203, AP214, or AP242). It also writes supported `.FCStd`, `.f3d`, `.sldprt`,
-and `.3dm` models.
+CADIR, validates and compares CADIR models, and exports CADIR, STEP Part 21
+(AP203, AP214, or AP242), and bounded IGES 5.1, 5.2, or 5.3 Fixed ASCII. It also writes
+supported `.FCStd`, `.f3d`, `.sldprt`, and `.3dm` models.
 
 Native codecs transfer different subsets of geometry, topology, design intent,
 presentation, and metadata. Check [format support][support] before relying on a
@@ -38,6 +38,7 @@ cargo install cadmpeg
 cadmpeg convert bracket.f3d -o bracket.step
 cadmpeg convert bracket.f3d -o bracket.ap242.step --step-target ap242e3
 cadmpeg convert bracket.f3d -o bracket.step --reject-step-losses
+cadmpeg convert bracket.f3d -o bracket.igs --iges-target 5.3
 ```
 
 `--step-target` selects the STEP application protocol and edition
@@ -45,7 +46,10 @@ cadmpeg convert bracket.f3d -o bracket.step --reject-step-losses
 `--reject-step-losses` refuses STEP output before writing when any STEP loss
 note would be reported.
 
-The output extension selects `step`, `fcstd`, `f3d`, `sldprt`, `rhino`, or
+`--iges-target 5.1`, `5.2`, or `5.3` selects the IGES target. The default is
+`5.3`.
+
+The output extension selects `step`, `iges`, `fcstd`, `f3d`, `sldprt`, `rhino`, or
 `cadir`. Pass `--format` (alias `--to`) when the filename does not identify
 the format, or when a text format (`cadir`, `step`) goes to standard output:
 

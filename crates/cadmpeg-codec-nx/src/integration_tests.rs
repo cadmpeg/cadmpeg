@@ -163,6 +163,187 @@ fn object_model_pipeline_projects_composed_feature_history_and_inputs() {
     let namespace = result.ir.native.namespace("nx").unwrap();
     assert!(!namespace.arenas["feature_operation_records"].is_empty());
     assert!(!namespace.arenas["feature_input_blocks"].is_empty());
+
+    let labels = &namespace.arenas["feature_operation_labels"];
+    let find_feature = |value: &str| {
+        let label = labels
+            .iter()
+            .find(|label| {
+                label
+                    .field("value")
+                    .and_then(|value| value.as_str().map(str::to_owned))
+                    .as_deref()
+                    == Some(value)
+            })
+            .expect("operation label");
+        result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.native_ref.as_deref() == Some(label.id()))
+            .expect("neutral feature")
+    };
+    let assert_native_links =
+        |feature: &cadmpeg_ir::features::Feature, arena: &str, property_prefix: &str| {
+            let operation_label = feature.native_ref.as_deref().expect("native feature label");
+            let records = namespace.arenas[arena]
+                .iter()
+                .filter(|record| {
+                    record
+                        .field("operation_label")
+                        .is_some_and(|value| value.as_str() == Some(operation_label))
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                !records.is_empty(),
+                "{arena} has no records for {operation_label}"
+            );
+            for (ordinal, record) in records.iter().enumerate() {
+                assert_eq!(
+                    feature
+                        .source_properties
+                        .get(&format!("{property_prefix}.{ordinal}"))
+                        .map(String::as_str),
+                    Some(record.id())
+                );
+            }
+        };
+    let csys = find_feature("DATUM_CSYS");
+    assert_native_links(
+        csys,
+        "feature_datum_csys_payload_scalar_pairs",
+        "datum_csys_payload_scalar_pair",
+    );
+    assert_native_links(
+        csys,
+        "feature_datum_csys_payload_fixed_pairs",
+        "datum_csys_payload_fixed_pair",
+    );
+    assert_native_links(
+        csys,
+        "feature_datum_csys_payload_scalars",
+        "datum_csys_payload_scalar",
+    );
+    assert_native_links(
+        csys,
+        "feature_datum_csys_descriptors",
+        "datum_csys_descriptor",
+    );
+    let plane = find_feature("DATUM_PLANE");
+    assert_native_links(
+        plane,
+        "feature_datum_plane_payload_scalar_pairs",
+        "datum_plane_payload_scalar_pair",
+    );
+    assert_native_links(
+        plane,
+        "feature_datum_plane_descriptors",
+        "datum_plane_descriptor",
+    );
+    assert_valid(&result);
+}
+
+#[test]
+fn offset_store_primary_body_history_attaches_exact_writer_dependencies() {
+    let result = decode(offset_store_primary_body_lineage_prt());
+    let older = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| {
+            feature.native_ref.as_deref()
+                == Some("nx:feature-history:operation-label#0000000000-0000000001")
+        })
+        .expect("older offset-store writer");
+    let newer = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| {
+            feature.native_ref.as_deref()
+                == Some("nx:feature-history:operation-label#0000000000-0000000000")
+        })
+        .expect("newer offset-store writer");
+
+    assert!(older.dependencies.is_empty());
+    assert_eq!(
+        newer.dependencies.as_slice(),
+        std::slice::from_ref(&older.id)
+    );
+    assert_eq!(
+        older.source_properties.get("primary_body_reference"),
+        Some(&String::from(
+            "nx:feature-history:body-reference#0000000000-0000000001",
+        )),
+    );
+    assert_eq!(
+        older.source_properties.get("body_reference_occurrence.0"),
+        Some(&String::from(
+            "nx:feature-history:body-reference-occurrence#0000000000-0000000001-0000000000",
+        )),
+    );
+    assert_eq!(
+        newer.source_properties.get("primary_body_reference"),
+        Some(&String::from(
+            "nx:feature-history:body-reference#0000000000-0000000000",
+        )),
+    );
+    assert_eq!(
+        newer.source_properties.get("body_reference_occurrence.0"),
+        Some(&String::from(
+            "nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000",
+        )),
+    );
+    assert_eq!(result.ir.model.feature_result_topologies.len(), 2);
+    assert_valid(&result);
+}
+
+#[test]
+fn boolean_target_history_attaches_the_target_writer_dependency() {
+    let result = decode(boolean_target_body_lineage_prt());
+    let older = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| {
+            feature.native_ref.as_deref()
+                == Some("nx:feature-history:operation-label#0000000000-0000000001")
+        })
+        .expect("Boolean target writer");
+    let oldest = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| {
+            feature.native_ref.as_deref()
+                == Some("nx:feature-history:operation-label#0000000000-0000000002")
+        })
+        .expect("oldest native body writer");
+    let followup = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| {
+            feature.native_ref.as_deref()
+                == Some("nx:feature-history:operation-label#0000000000-0000000000")
+        })
+        .expect("follow-up native body writer");
+    assert!(oldest.dependencies.is_empty());
+    assert_eq!(
+        older.dependencies.as_slice(),
+        std::slice::from_ref(&oldest.id)
+    );
+    assert_eq!(
+        followup.dependencies.as_slice(),
+        std::slice::from_ref(&older.id)
+    );
+    assert_eq!(result.ir.model.feature_result_topologies.len(), 3);
     assert_valid(&result);
 }
 

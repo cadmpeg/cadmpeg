@@ -20,8 +20,9 @@ use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::graph::{
-    loop_chain_closes, B5ExtrusionDirectrix, B5ExtrusionSurface, B5Graph, B5OffsetSurface,
-    B5SupportedSurface, B5Surface,
+    bounded_occurrence_range, edge_pcurve_parameters, face_loop_owner_counts, loop_chain_closes,
+    B5ExtrusionDirectrix, B5ExtrusionSurface, B5Graph, B5OffsetSurface, B5SupportedSurface,
+    B5Surface,
 };
 
 mod edges;
@@ -32,8 +33,7 @@ mod vertices;
 
 use edges::{
     b5_supports_agree, b5_supports_follow_curve, b5_supports_follow_edge, b5_vertex_point,
-    bounded_occurrence_range, curve_cache_has_ordered_knots, edge_pcurve_parameters,
-    merge_curve_plan, orient_b5_supports_to_edge,
+    curve_cache_has_ordered_knots, merge_curve_plan, orient_b5_supports_to_edge,
 };
 use faces::{orient_loop_members, ownership_plan};
 use pcurves::{
@@ -43,7 +43,8 @@ use pcurves::{
 };
 use vertices::transfer_vertex_tolerances;
 
-const POINT_TOLERANCE: f64 = 1.5e-3;
+/// CATIA's object-stream on-carrier incidence tolerance, in millimetres.
+const POINT_TOLERANCE: f64 = 1e-3;
 
 type B5Support = (u32, u32, [f64; 2]);
 type B5SupportPlan = HashMap<u32, Vec<B5Support>>;
@@ -168,6 +169,12 @@ pub(crate) fn transfer(
                         .get(loop_id)
                         .is_some_and(|loop_| loop_.surface == face.surface)
                 })
+        });
+        let loop_owner_counts = face_loop_owner_counts(&graph.faces);
+        graph.faces.retain(|face| {
+            face.loops
+                .iter()
+                .all(|loop_id| loop_owner_counts.get(loop_id).copied() == Some(1))
         });
         let referenced_loops: HashSet<u32> = graph
             .faces
@@ -1137,14 +1144,14 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 #[cfg(test)]
 mod tests {
     use super::super::graph::{
-        loop_chain_closes, B5ExtrusionDirectrix, B5ExtrusionSurface, B5Face, B5Graph, B5Loop,
-        B5LoopMetadata, B5OffsetSurface, B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5Profile,
-        B5SphereGreatCirclePcurve, B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
+        bounded_occurrence_range, edge_pcurve_parameters, loop_chain_closes, B5ExtrusionDirectrix,
+        B5ExtrusionSurface, B5Face, B5Graph, B5Loop, B5LoopMetadata, B5OffsetSurface,
+        B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5Profile, B5SphereGreatCirclePcurve,
+        B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
     };
     use super::edges::{
-        b5_edge_support_definition, b5_supports_follow_edge, bounded_occurrence_range,
-        curve_cache_has_ordered_knots, edge_pcurve_parameters, merge_curve_plan, ordered_subrange,
-        orient_b5_supports_to_edge,
+        b5_edge_support_definition, b5_supports_follow_edge, curve_cache_has_ordered_knots,
+        merge_curve_plan, ordered_subrange, orient_b5_supports_to_edge,
     };
     use super::faces::{orient_loop_members, ownership_plan};
     use super::pcurves::{
@@ -1161,11 +1168,7 @@ mod tests {
     }
     use super::surfaces::{rational_arc, revolution_surface, revolve_nurbs};
     use super::vertices::transfer_vertex_tolerances;
-    use super::{
-        build_plan, curve_on_parameter_range, native_pcurve_parameter_range,
-        referenced_surface_ids, resolved_surface_carrier_in_graph, transfer, CurvePlan,
-        ResolvedPcurveSurface, SurfacePlan,
-    };
+    use super::*;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::surface_point;
     use cadmpeg_ir::geometry::{
@@ -1703,6 +1706,31 @@ mod tests {
                 .map(|coedge| coedge.pcurves[0].parameter_range)
                 .collect::<Vec<_>>(),
             [None, Some([1.0, 0.5]), None]
+        );
+        assert_eq!(ir.model.loops.len(), 1);
+        assert_eq!(
+            ir.model.loops[0]
+                .vertex_uses
+                .iter()
+                .map(|use_| use_.vertex.0.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "catia:b5:vertex#1",
+                "catia:b5:vertex#2",
+                "catia:b5:vertex#0"
+            ]
+        );
+        assert_eq!(
+            ir.model.loops[0]
+                .vertex_uses
+                .iter()
+                .map(|use_| use_.after.as_ref().map(|coedge| coedge.0.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                Some("catia:b5:coedge#2-0"),
+                Some("catia:b5:coedge#2-1"),
+                Some("catia:b5:coedge#2-2")
+            ]
         );
     }
 
@@ -3450,13 +3478,10 @@ mod tests {
             Some(&Point3::new(2.0, 0.0, 3.0))
         );
 
-        let reversed = cylinder_helix(&pcurve, &cylinder, [0.0, 1.0], end, [2.0, 0.0, 3.0])
-            .expect("reversed physical edge helix");
-        let ProceduralCurveDefinition::Helix { center, pitch, .. } = reversed.definition else {
-            unreachable!();
-        };
-        assert_eq!(center, Point3::new(0.0, 0.0, 7.0));
-        assert!((pitch.z + 4.0 * std::f64::consts::PI).abs() < 1e-12);
+        assert!(
+            cylinder_helix(&pcurve, &cylinder, [0.0, 1.0], end, [2.0, 0.0, 3.0]).is_none(),
+            "the native edge endpoint order is authoritative"
+        );
 
         let trimmed_start = [2.0 * 0.5_f64.cos(), 2.0 * 0.5_f64.sin(), 4.0];
         let trimmed_end = [2.0 * 1.5_f64.cos(), 2.0 * 1.5_f64.sin(), 6.0];

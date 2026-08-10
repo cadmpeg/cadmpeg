@@ -542,6 +542,16 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     finding(findings, Check::Bounds, id, "invalid sketch text");
                 }
             }
+            SketchGeometry::ExternalReference { object, .. } => {
+                if object.is_empty() {
+                    finding(
+                        findings,
+                        Check::ReferentialIntegrity,
+                        id,
+                        "empty external sketch reference",
+                    );
+                }
+            }
             SketchGeometry::Native { native_kind } => {
                 if native_kind.is_empty() {
                     finding(findings, Check::Counts, id, "empty native sketch kind");
@@ -1592,6 +1602,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     SketchGeometry::Circle { .. }
                         | SketchGeometry::Arc { .. }
                         | SketchGeometry::Ellipse { .. }
+                        | SketchGeometry::ExternalReference { .. }
                         | SketchGeometry::Native { .. }
                 ),
             };

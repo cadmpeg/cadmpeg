@@ -4,18 +4,95 @@ schema = 1
 format = "iges"
 spec = "docs/formats/iges.md"
 note = """
-IGES has no binary byte layout, but its card is a fixed 80-column text record,
-so the layouts here use `kind = "column"`: 1-based inclusive character columns
+The Binary representation starts with a fixed 80-byte flag. The Fixed and
+Compressed ASCII representations use records with an 80-column text envelope,
+so their layouts use `kind = "column"`: 1-based inclusive character columns
 that must tile the 80-column card exactly.
 
 `iges.md` uses unnumbered headings, so the `section` keys below are the heading
 titles rather than section numbers.
 
-Covers the ordinary card, the Parameter Data card, the Terminate data area, and
-both Directory Entry cards. Per-entity parameter slot order is not in the
+Covers the Binary flag, the ordinary card, the Parameter Data card, the
+Terminate data area, and both Directory Entry cards. Per-entity parameter slot order is not in the
 specification; `corpus/iges-envelope-a.toml` already carries the entity and form
 matrix, and the per-entity parameter order lives only in the parser.
 """
+
+[[record]]
+name = "binary_flag"
+kind = "byte"
+section = "Physical representation"
+anchor = "The Binary representation starts with one 80-byte Binary Flag Section."
+size = 80
+note = "The six one-byte primitive length fields select the bit widths used by the remaining Binary representation. Each displacement counts its section and any following null padding."
+
+[[record.field]]
+name = "identifier"
+offset = 0
+type = "bytes[1]"
+source = "spec"
+anchor = "Byte 1 is ASCII `B`."
+
+[[record.field]]
+name = "remaining_byte_count"
+offset = 1
+type = "u32"
+endianness = "big"
+source = "spec"
+anchor = "Bytes 2 through 5 are the big-endian unsigned 32-bit value `75`"
+
+[[record.field]]
+name = "primitive_bit_lengths"
+offset = 5
+type = "bytes[6]"
+source = "spec"
+anchor = "Bytes 6 through 11 are the one-byte bit lengths `Is`, `Id`, `NXs`, `NFs`, `NXd`, and `NFd`."
+
+[[record.field]]
+name = "section_displacements"
+offset = 11
+type = "bytes[30]"
+source = "spec"
+anchor = "Bytes 12, 17, 22, 27, 32, and 37 are ASCII `B`, `S`, `G`, `D`, `P`, and `T`."
+note = "Six repetitions of a one-byte ASCII section identifier and a big-endian u32 displacement."
+
+[[record.field]]
+name = "unassigned"
+offset = 41
+type = "bytes[31]"
+source = "spec"
+anchor = "Bytes 42 through 72 are unassigned."
+
+[[record.field]]
+name = "section_marker"
+offset = 72
+type = "bytes[1]"
+source = "spec"
+anchor = "Byte 73 is ASCII `B`"
+
+[[record.field]]
+name = "sequence_padding"
+offset = 73
+type = "bytes[6]"
+source = "spec"
+anchor = "bytes 74 through 79 are ASCII blanks or zeroes"
+
+[[record.field]]
+name = "sequence"
+offset = 79
+type = "bytes[1]"
+source = "spec"
+anchor = "byte 80 is ASCII `1`."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-iges/src/layout.rs"
+contains = "flag[1..5] == 75_u32.to_be_bytes()"
+note = "Representation detection requires the fixed big-endian byte count."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-iges/src/layout.rs"
+contains = "flag[73..79]"
+note = "Representation detection validates the six-byte Binary sequence padding."
 
 [[record]]
 name = "canonical_card"
@@ -102,7 +179,7 @@ note = "The parser reads the back-pointer from zero-based 64..72, which is 1-bas
 name = "directory_entry_card_1"
 kind = "column"
 section = "Directory Entry section"
-anchor = "The first card fields are entity type, Parameter Data start sequence, structure, line font pattern, level, view, transformation matrix, label-display associativity, and the eight-digit status number."
+anchor = "The first card fields are entity type, Parameter Data start sequence, structure, line font pattern, level, view, transformation matrix, label-display associativity, and the eight-character status number."
 size = 72
 note = "Columns 1-72 of the first of the two Directory Entry cards, as nine fixed eight-column fields. Blank numeric fields take their field-defined default; nonblank numeric fields are right-aligned signed decimal integers. Columns 73-80 carry the section marker and sequence field of the enclosing card."
 
@@ -153,21 +230,21 @@ name = "transformation_matrix"
 columns = "49-56"
 type = "text"
 source = "spec"
-anchor = "view, transformation matrix, label-display associativity, and the eight-digit status number"
+anchor = "view, transformation matrix, label-display associativity, and the eight-character status number"
 
 [[record.field]]
 name = "label_display"
 columns = "57-64"
 type = "text"
 source = "spec"
-anchor = "transformation matrix, label-display associativity, and the eight-digit status number"
+anchor = "transformation matrix, label-display associativity, and the eight-character status number"
 
 [[record.field]]
 name = "status"
 columns = "65-72"
 type = "text"
 source = "spec"
-anchor = "the eight-digit status number"
+anchor = "the eight-character status number"
 note = "Four two-digit decimal subfields: blank status, subordinate-entity switch, entity-use flag, and hierarchy."
 
 [[record.code]]

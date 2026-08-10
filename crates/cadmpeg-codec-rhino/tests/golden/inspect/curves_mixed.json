@@ -125,6 +125,12 @@
   "format": "rhino",
   "notes": [
     "archive version 50",
+    "CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0x39b4e298",
+    "CRC mismatch at offset 314 for typecode 0x20008070: expected 0x0, got 0x66d82b63",
+    "CRC mismatch at offset 659 for typecode 0x20008070: expected 0x0, got 0x5010a2d6",
+    "CRC mismatch at offset 840 for typecode 0x20008070: expected 0x0, got 0x966b1368",
+    "CRC mismatch at offset 1197 for typecode 0x20008070: expected 0x0, got 0xc25c0543",
+    "CRC mismatch at offset 1418 for typecode 0x20008070: expected 0x0, got 0x3d8e7ff3",
     "object at 177 has nil object UUID",
     "object at 314 has nil object UUID",
     "object at 659 has nil object UUID",

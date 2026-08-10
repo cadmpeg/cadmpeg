@@ -10,7 +10,7 @@
 //!
 //! [`DecodeReport`]: cadmpeg_ir::report::DecodeReport
 
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -19,8 +19,9 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, curve_point, curve_second_derivative, curve_tangent,
     model_surface_partials_by_id, model_surface_point_by_id, nurbs_curve_speed_bound,
-    nurbs_surface_isocurve, nurbs_surface_partials, pcurve_tangent, pcurve_uv, surface_partials,
-    surface_second_partials,
+    nurbs_surface_closest_parameter, nurbs_surface_isocurve,
+    nurbs_surface_parameter_within_tolerance, nurbs_surface_partials, pcurve_tangent, pcurve_uv,
+    surface_partials, surface_second_partials,
 };
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
@@ -51,7 +52,7 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
-use crate::container::{self, Container, EntryContent};
+use crate::container::{self, Container};
 use crate::geometry;
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 use crate::parasolid::{self, Stream, StreamKind};
@@ -1140,8 +1141,12 @@ fn try_decode_geometry(
                 definition: ProceduralSurfaceDefinition::Offset {
                     support,
                     distance: offset.distance,
-                    u_sense: Some(0),
-                    v_sense: Some(0),
+                    // OFFSET_SURF status fields do not select parameter
+                    // direction. The exact fields remain in the native
+                    // source record; the neutral IR senses are intentionally
+                    // unknown.
+                    u_sense: None,
+                    v_sense: None,
                     extension_flags: Vec::new(),
                     revision_form: None,
                 },
@@ -1398,7 +1403,14 @@ fn try_decode_geometry(
                 id: procedural_id,
                 curve: curve_id.clone(),
                 definition: if let Some(charted) = charted {
-                    let mut support_uv = charted.support_uv.clone();
+                    let mut support_uv = validate_serialized_support_uv(
+                        &ir,
+                        &surfaces_by_xmt,
+                        charted.supports,
+                        &charted.points,
+                        charted.fit_tolerance,
+                        &charted.support_uv,
+                    );
                     if let Some(ext_support_uv) = assign_ext11_support_uv(
                         &ir,
                         &surfaces_by_xmt,
@@ -1899,38 +1911,23 @@ fn select_active_body(
         return false;
     }
     let active: BTreeSet<_> = rmfastload_ids.iter().copied().collect();
-    let mut scored: Vec<_> = ir
+    let selected: BTreeSet<_> = ir
         .model
         .bodies
         .iter()
-        .map(|body| {
-            let ids = body_node_ids.get(&body.id);
-            let count = ids.map_or(0, BTreeSet::len);
-            let hits = ids.map_or(0, |ids| ids.intersection(&active).count());
-            (hits, count, body.id.clone())
+        .filter_map(|body| {
+            let ids = body_node_ids.get(&body.id)?;
+            (!ids.is_empty() && ids.is_subset(&active)).then(|| body.id.clone())
         })
         .collect();
-    scored.sort_by(|first, second| second.0.cmp(&first.0).then(second.1.cmp(&first.1)));
-    let Some(&(top_hits, top_count, ref top_body)) = scored.first() else {
+    if selected.is_empty() {
         return false;
-    };
-    let next_hits = scored.get(1).map_or(0, |score| score.0);
-    let mut selected: BTreeSet<_> = scored
+    }
+    let selected_hits = selected
         .iter()
-        .filter(|(hits, count, _)| *hits > 0 && *count > 0 && (*hits as f64 / *count as f64) > 0.10)
-        .map(|(_, _, body)| body.clone())
-        .collect();
-    let dominant = top_hits >= 5 * next_hits.max(1);
-    if dominant {
-        selected.retain(|body| body == top_body);
-    }
-    if top_count == 0
-        || (top_hits as f64 / top_count as f64) <= 0.10
-        || selected.is_empty()
-        || (selected.len() == 1 && !dominant)
-    {
-        return false;
-    }
+        .filter_map(|body| body_node_ids.get(body))
+        .map(BTreeSet::len)
+        .sum::<usize>();
     prune_inactive_topology(ir, &selected);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
@@ -1939,7 +1936,7 @@ fn select_active_body(
         );
         source
             .attributes
-            .insert("rmfastload_hits".to_string(), top_hits.to_string());
+            .insert("rmfastload_hits".to_string(), selected_hits.to_string());
         source.attributes.insert(
             "rmfastload_active_body_count".to_string(),
             selected.len().to_string(),
@@ -1952,34 +1949,14 @@ fn select_terminal_feature_bodies(ir: &mut CadIr, model: &crate::native::NativeM
     if ir.model.bodies.len() <= 1 {
         return false;
     }
-    // These families are read straight from the pre-built model; extracting
-    // them here as well would parse the same container bytes a second time.
-    // `feature_operation_body_operands` already folds in the body-member and
-    // reference-occurrence families the legacy code computed inline.
-    let labels = model.features.feature_operation_labels.as_slice();
-    let body_references = model.features.feature_body_references.as_slice();
-    let body_data_block_uses = model.features.feature_body_data_block_uses.as_slice();
-    let booleans = model.features.feature_boolean_operations.as_slice();
     let bindings = model.segments.segment_body_bindings.as_slice();
-    let body_operands = model.features.feature_operation_body_operands.as_slice();
-    let Some(statuses) = crate::native::segment_body_lineage_statuses(
-        labels,
-        body_references,
-        body_data_block_uses,
-        booleans,
-        body_operands,
-        bindings,
-    ) else {
+    let statuses = model.segments.segment_body_lineage_statuses.as_slice();
+    if statuses.len() != bindings.len() {
         return false;
-    };
+    }
     let mut mapped = BTreeSet::new();
     let mut selected = BTreeSet::new();
-    for (binding, status) in bindings.iter().filter_map(|binding| {
-        statuses
-            .iter()
-            .find(|status| status.segment_body_binding == binding.id)
-            .map(|status| (binding, status))
-    }) {
+    for (binding, status) in bindings.iter().zip(statuses) {
         let prefix = format!("nx:s{}:", binding.stream_ordinal);
         let stream_bodies = ir
             .model
@@ -2002,7 +1979,10 @@ fn select_terminal_feature_bodies(ir: &mut CadIr, model: &crate::native::NativeM
         .iter()
         .map(|body| body.id.clone())
         .collect::<BTreeSet<_>>();
-    if mapped != emitted || selected.is_empty() || selected.len() == emitted.len() {
+    // A complete terminal mapping resolves composition even when every emitted
+    // body is terminal. The absence of pruning is a valid result: it means the
+    // retained body images are all final, not that lineage was unresolved.
+    if mapped != emitted || selected.is_empty() {
         return false;
     }
 
@@ -2336,6 +2316,59 @@ pub(crate) fn assign_ext11_support_uv(
     )
 }
 
+fn validate_serialized_support_uv(
+    ir: &CadIr,
+    surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
+    supports: [u32; 2],
+    points: &[Point3],
+    fit_tolerance: f64,
+    lanes: &[Option<Vec<[f64; 2]>>; 2],
+) -> [Option<Vec<[f64; 2]>>; 2] {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    std::array::from_fn(|side| {
+        let surface = surfaces_by_xmt.get(&supports[side])?;
+        let values = lanes[side].as_deref()?;
+        let tolerance = blend_spine_cache_fit_tolerance(ir, surface, fit_tolerance);
+        support_uv_lane_matches_surface(ir, &index, surface, points, tolerance, Some(values))
+            .then(|| values.to_vec())
+    })
+}
+
+fn support_uv_lane_matches_surface(
+    ir: &CadIr,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    points: &[Point3],
+    fit_tolerance: f64,
+    values: Option<&[[f64; 2]]>,
+) -> bool {
+    let Some(values) = values.filter(|values| values.len() == points.len()) else {
+        return false;
+    };
+    let Some(geometry) = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| &candidate.id == surface)
+        .map(|surface| &surface.geometry)
+    else {
+        return false;
+    };
+    values.iter().zip(points).all(|(uv, point)| {
+        if uv
+            .iter()
+            .any(|value| !value.is_finite() || missing_support_parameter(*value))
+        {
+            return false;
+        }
+        let Some(uv) = surface_parameters(geometry, *uv) else {
+            return false;
+        };
+        decoded_surface_point_inner(index, surface, uv.u, uv.v, 0)
+            .is_some_and(|candidate| point_distance(candidate, *point) <= fit_tolerance)
+    })
+}
+
 pub(crate) fn assign_ext11_support_uv_to_surfaces(
     ir: &CadIr,
     surfaces: [&SurfaceId; 2],
@@ -2345,28 +2378,14 @@ pub(crate) fn assign_ext11_support_uv_to_surfaces(
 ) -> Option<[Option<Vec<[f64; 2]>>; 2]> {
     let index = cadmpeg_ir::index::ModelIndex::new(ir);
     let lane_matches_surface = |surface: &SurfaceId, lane: usize| {
-        let Some(values) = lanes[lane]
-            .as_deref()
-            .filter(|values| values.len() == points.len())
-        else {
-            return false;
-        };
-        let Some(geometry) = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|candidate| &candidate.id == surface)
-            .map(|surface| &surface.geometry)
-        else {
-            return false;
-        };
-        values.iter().zip(points).all(|(uv, point)| {
-            let Some(uv) = surface_parameters(geometry, *uv) else {
-                return false;
-            };
-            model_surface_point_by_id(&index, surface, uv.u, uv.v)
-                .is_some_and(|candidate| point_distance(candidate, *point) <= fit_tolerance)
-        })
+        support_uv_lane_matches_surface(
+            ir,
+            &index,
+            surface,
+            points,
+            fit_tolerance,
+            lanes[lane].as_deref(),
+        )
     };
     let matches = [
         [
@@ -2658,11 +2677,11 @@ fn complete_support_uv_wave(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
                     pcurve_control_point_seed(context.sides[side].pcurve.as_ref(), point_index)
                         .or_else(|| uv.last().copied());
                 let parameters = match &surface.geometry {
-                    SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters_with_tolerance(
+                    SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_parameter_within_tolerance(
                         nurbs,
                         *point,
                         seed,
-                        Some(effective_fit_tolerance),
+                        effective_fit_tolerance,
                     ),
                     SurfaceGeometry::Procedural { .. } => {
                         let other_side = &context.sides[1 - side];
@@ -4957,7 +4976,7 @@ fn surface_contact_direction_with_index(
         // closest-point proof is neither required nor sufficient for this
         // incidence question.
         SurfaceGeometry::Nurbs(nurbs) => {
-            nurbs_parameters_with_tolerance(nurbs, center, None, Some(radius + tolerance))
+            nurbs_surface_parameter_within_tolerance(nurbs, center, None, radius + tolerance)
         }
         SurfaceGeometry::Procedural { .. } => offset_surface_parameters_with_tolerance_with_index(
             index,
@@ -5533,9 +5552,10 @@ fn initial_surface_parameters(
         .iter()
         .find(|candidate| &candidate.id == surface)?;
     match &carrier.geometry {
-        SurfaceGeometry::Nurbs(nurbs) => {
-            nurbs_parameters_with_tolerance(nurbs, point, seed, fit_tolerance)
-        }
+        SurfaceGeometry::Nurbs(nurbs) => fit_tolerance.map_or_else(
+            || nurbs_surface_closest_parameter(nurbs, point, seed),
+            |tolerance| nurbs_surface_parameter_within_tolerance(nurbs, point, seed, tolerance),
+        ),
         SurfaceGeometry::Procedural { construction } => {
             let procedural =
                 ir.model.procedural_surfaces.iter().find(|candidate| {
@@ -5684,7 +5704,7 @@ fn continue_surface_intersection_parameters_with_seeds(
             .geometry;
         match geometry {
             SurfaceGeometry::Nurbs(nurbs) => {
-                nurbs_parameters_with_tolerance(nurbs, point, seed, Some(fit_tolerance))
+                nurbs_surface_parameter_within_tolerance(nurbs, point, seed, fit_tolerance)
             }
             SurfaceGeometry::Procedural { .. } => {
                 offset_surface_parameters_with_tolerance_with_index(
@@ -6197,662 +6217,6 @@ fn least_squares_step(du: Vector3, dv: Vector3, residual: Vector3) -> Option<(f6
     ))
 }
 
-#[derive(Clone)]
-struct RationalBezierSurfacePatch {
-    u_domain: [f64; 2],
-    v_domain: [f64; 2],
-    u_degree: usize,
-    v_degree: usize,
-    controls: Vec<[f64; 4]>,
-}
-
-struct SurfacePatchQueueEntry {
-    lower_bound: f64,
-    diameter: f64,
-    sequence: usize,
-    patch: RationalBezierSurfacePatch,
-}
-
-impl PartialEq for SurfacePatchQueueEntry {
-    fn eq(&self, other: &Self) -> bool {
-        self.sequence == other.sequence
-    }
-}
-
-impl Eq for SurfacePatchQueueEntry {}
-
-impl PartialOrd for SurfacePatchQueueEntry {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for SurfacePatchQueueEntry {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // BinaryHeap is a max-heap; reverse the distance order so the patch
-        // with the strongest minimum-distance promise is examined first.
-        other
-            .lower_bound
-            .total_cmp(&self.lower_bound)
-            .then_with(|| other.sequence.cmp(&self.sequence))
-    }
-}
-
-fn rational_surface_residual_patches(
-    surface: &NurbsSurface,
-    point: Point3,
-) -> Option<Vec<RationalBezierSurfacePatch>> {
-    let u_degree = usize::try_from(surface.u_degree).ok()?;
-    let v_degree = usize::try_from(surface.v_degree).ok()?;
-    let u_count = usize::try_from(surface.u_count).ok()?;
-    let v_count = usize::try_from(surface.v_count).ok()?;
-    let control_count = u_count.checked_mul(v_count)?;
-    if u_degree == 0
-        || v_degree == 0
-        || u_degree >= u_count
-        || v_degree >= v_count
-        || surface.control_points.len() != control_count
-        || surface.u_knots.len() != u_count.checked_add(u_degree)?.checked_add(1)?
-        || surface.v_knots.len() != v_count.checked_add(v_degree)?.checked_add(1)?
-        || surface
-            .u_knots
-            .iter()
-            .chain(&surface.v_knots)
-            .any(|knot| !knot.is_finite())
-        || surface.u_knots.windows(2).any(|pair| pair[0] > pair[1])
-        || surface.v_knots.windows(2).any(|pair| pair[0] > pair[1])
-        || surface.control_points.iter().any(|control| {
-            !control.x.is_finite() || !control.y.is_finite() || !control.z.is_finite()
-        })
-        || !point.x.is_finite()
-        || !point.y.is_finite()
-        || !point.z.is_finite()
-    {
-        return None;
-    }
-    let weights = match &surface.weights {
-        Some(weights)
-            if weights.len() == control_count
-                && weights
-                    .iter()
-                    .all(|weight| weight.is_finite() && *weight > 0.0) =>
-        {
-            weights.clone()
-        }
-        Some(_) => return None,
-        None => vec![1.0; control_count],
-    };
-    let residual_controls = surface
-        .control_points
-        .iter()
-        .zip(weights)
-        .map(|(control, weight)| {
-            [
-                weight * (control.x - point.x),
-                weight * (control.y - point.y),
-                weight * (control.z - point.z),
-                weight,
-            ]
-        })
-        .collect::<Vec<_>>();
-    if residual_controls
-        .iter()
-        .flatten()
-        .any(|value| !value.is_finite())
-    {
-        return None;
-    }
-    let u_spans_by_v = (0..v_count)
-        .map(|v| {
-            bezier_spans(
-                u_degree,
-                &surface.u_knots,
-                (0..u_count)
-                    .map(|u| residual_controls[u * v_count + v])
-                    .collect(),
-            )
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let u_span_count = u_spans_by_v.first()?.len();
-    if u_span_count == 0 || u_spans_by_v.iter().any(|spans| spans.len() != u_span_count) {
-        return None;
-    }
-    let mut patches = Vec::new();
-    for u_span in 0..u_span_count {
-        let u_domain = u_spans_by_v[0][u_span].domain;
-        if u_spans_by_v
-            .iter()
-            .any(|spans| spans[u_span].domain != u_domain)
-        {
-            return None;
-        }
-        let v_spans_by_u = (0..=u_degree)
-            .map(|u_control| {
-                bezier_spans(
-                    v_degree,
-                    &surface.v_knots,
-                    (0..v_count)
-                        .map(|v| u_spans_by_v[v][u_span].controls[u_control])
-                        .collect(),
-                )
-            })
-            .collect::<Option<Vec<_>>>()?;
-        let v_span_count = v_spans_by_u.first()?.len();
-        if v_span_count == 0 || v_spans_by_u.iter().any(|spans| spans.len() != v_span_count) {
-            return None;
-        }
-        for v_span in 0..v_span_count {
-            let v_domain = v_spans_by_u[0][v_span].domain;
-            if v_spans_by_u
-                .iter()
-                .any(|spans| spans[v_span].domain != v_domain)
-            {
-                return None;
-            }
-            patches.push(RationalBezierSurfacePatch {
-                u_domain,
-                v_domain,
-                u_degree,
-                v_degree,
-                controls: (0..=u_degree)
-                    .flat_map(|u| v_spans_by_u[u][v_span].controls.iter().copied())
-                    .collect(),
-            });
-        }
-    }
-    (!patches.is_empty()).then_some(patches)
-}
-
-fn rational_patch_distance_bounds(patch: &RationalBezierSurfacePatch) -> Option<(f64, f64)> {
-    let mut minimum = [f64::INFINITY; 3];
-    let mut maximum = [f64::NEG_INFINITY; 3];
-    for control in &patch.controls {
-        if !control[3].is_finite() || control[3] <= 0.0 {
-            return None;
-        }
-        for axis in 0..3 {
-            let coordinate = control[axis] / control[3];
-            if !coordinate.is_finite() {
-                return None;
-            }
-            minimum[axis] = minimum[axis].min(coordinate);
-            maximum[axis] = maximum[axis].max(coordinate);
-        }
-    }
-    let lower = (0..3)
-        .map(|axis| {
-            if minimum[axis] > 0.0 {
-                minimum[axis] * minimum[axis]
-            } else if maximum[axis] < 0.0 {
-                maximum[axis] * maximum[axis]
-            } else {
-                0.0
-            }
-        })
-        .sum::<f64>();
-    let diameter = (0..3)
-        .map(|axis| (maximum[axis] - minimum[axis]).powi(2))
-        .sum::<f64>();
-    (lower.is_finite() && diameter.is_finite()).then_some((lower, diameter))
-}
-
-fn split_rational_surface_patch(
-    patch: &RationalBezierSurfacePatch,
-    split_u: bool,
-) -> Option<[RationalBezierSurfacePatch; 2]> {
-    let (degree, line_count) = if split_u {
-        (patch.u_degree, patch.v_degree + 1)
-    } else {
-        (patch.v_degree, patch.u_degree + 1)
-    };
-    let mut first_lines = Vec::with_capacity(line_count);
-    let mut second_lines = Vec::with_capacity(line_count);
-    for line in 0..line_count {
-        let controls = if split_u {
-            (0..=degree)
-                .map(|index| patch.controls[index * (patch.v_degree + 1) + line])
-                .collect::<Vec<_>>()
-        } else {
-            patch.controls[line * (patch.v_degree + 1)..(line + 1) * (patch.v_degree + 1)].to_vec()
-        };
-        let mut levels = vec![controls];
-        while levels.last()?.len() > 1 {
-            levels.push(
-                levels
-                    .last()?
-                    .windows(2)
-                    .map(|pair| std::array::from_fn(|axis| 0.5 * (pair[0][axis] + pair[1][axis])))
-                    .collect(),
-            );
-        }
-        first_lines.push(levels.iter().map(|level| level[0]).collect::<Vec<_>>());
-        second_lines.push(
-            levels
-                .iter()
-                .rev()
-                .map(|level| *level.last().expect("nonempty de Casteljau level"))
-                .collect::<Vec<_>>(),
-        );
-    }
-    let assemble = |lines: Vec<Vec<[f64; 4]>>| {
-        if split_u {
-            (0..=patch.u_degree)
-                .flat_map(|u| {
-                    (0..=patch.v_degree).map({
-                        let lines = &lines;
-                        move |v| lines[v][u]
-                    })
-                })
-                .collect()
-        } else {
-            lines.into_iter().flatten().collect()
-        }
-    };
-    let u_middle = patch.u_domain[0] + (patch.u_domain[1] - patch.u_domain[0]) * 0.5;
-    let v_middle = patch.v_domain[0] + (patch.v_domain[1] - patch.v_domain[0]) * 0.5;
-    let (first_u, second_u, first_v, second_v) = if split_u {
-        (
-            [patch.u_domain[0], u_middle],
-            [u_middle, patch.u_domain[1]],
-            patch.v_domain,
-            patch.v_domain,
-        )
-    } else {
-        (
-            patch.u_domain,
-            patch.u_domain,
-            [patch.v_domain[0], v_middle],
-            [v_middle, patch.v_domain[1]],
-        )
-    };
-    if split_u && (u_middle == patch.u_domain[0] || u_middle == patch.u_domain[1])
-        || !split_u && (v_middle == patch.v_domain[0] || v_middle == patch.v_domain[1])
-    {
-        return None;
-    }
-    Some([
-        RationalBezierSurfacePatch {
-            u_domain: first_u,
-            v_domain: first_v,
-            u_degree: patch.u_degree,
-            v_degree: patch.v_degree,
-            controls: assemble(first_lines),
-        },
-        RationalBezierSurfacePatch {
-            u_domain: second_u,
-            v_domain: second_v,
-            u_degree: patch.u_degree,
-            v_degree: patch.v_degree,
-            controls: assemble(second_lines),
-        },
-    ])
-}
-
-fn complete_nurbs_surface_starts(
-    surface: &NurbsSurface,
-    point: Point3,
-    seed: Option<Point2>,
-    fit_tolerance: Option<f64>,
-) -> Option<Vec<Point2>> {
-    const MAX_PATCHES: usize = 1_000_000;
-
-    let patches = rational_surface_residual_patches(surface, point)?;
-    let coordinate_scale =
-        patches
-            .iter()
-            .flat_map(|patch| &patch.controls)
-            .try_fold(1.0_f64, |scale, control| {
-                let weight = control[3];
-                if !weight.is_finite() || weight <= 0.0 {
-                    return None;
-                }
-                control[..3].iter().try_fold(scale, |scale, coordinate| {
-                    let coordinate = (coordinate / weight).abs();
-                    coordinate.is_finite().then(|| scale.max(coordinate))
-                })
-            })?;
-    let requested_tolerance = match fit_tolerance {
-        Some(tolerance) if tolerance.is_finite() && tolerance >= 0.0 => tolerance,
-        Some(_) => return None,
-        None => 0.0,
-    };
-    let distance_tolerance = requested_tolerance.max(256.0 * f64::EPSILON * coordinate_scale);
-    let squared_tolerance = distance_tolerance * distance_tolerance;
-    let squared_distance = |parameters: Point2| {
-        let position = cadmpeg_ir::eval::nurbs_surface_point(surface, parameters.u, parameters.v)?;
-        let distance = point_distance(position, point);
-        distance.is_finite().then_some(distance * distance)
-    };
-    let position_squared_distance = |position: Point3| point_distance(position, point).powi(2);
-    let center = |patch: &RationalBezierSurfacePatch| {
-        Point2::new(
-            patch.u_domain[0] + (patch.u_domain[1] - patch.u_domain[0]) * 0.5,
-            patch.v_domain[0] + (patch.v_domain[1] - patch.v_domain[0]) * 0.5,
-        )
-    };
-    let surface_u_domain = [
-        *surface
-            .u_knots
-            .get(usize::try_from(surface.u_degree).ok()?)?,
-        *surface
-            .u_knots
-            .get(usize::try_from(surface.u_count).ok()?)?,
-    ];
-    let surface_v_domain = [
-        *surface
-            .v_knots
-            .get(usize::try_from(surface.v_degree).ok()?)?,
-        *surface
-            .v_knots
-            .get(usize::try_from(surface.v_count).ok()?)?,
-    ];
-    let refined_upper = |start, u_domain, v_domain| {
-        let parameters = refine_nurbs_surface_parameters(
-            surface,
-            point,
-            start,
-            u_domain,
-            v_domain,
-            &position_squared_distance,
-        )
-        .unwrap_or(start);
-        Some((parameters, squared_distance(parameters)?))
-    };
-    let mut best_distance = f64::INFINITY;
-    let mut best_upper_parameters = Vec::new();
-    {
-        let mut consider_upper = |(parameters, distance): (Point2, f64)| {
-            if !best_distance.is_finite() {
-                best_distance = distance;
-                best_upper_parameters.push(parameters);
-                return;
-            }
-            let tolerance = 128.0
-                * f64::EPSILON
-                * distance
-                    .abs()
-                    .max(best_distance.abs())
-                    .max(squared_tolerance);
-            if distance < best_distance && best_distance - distance > tolerance {
-                best_distance = distance;
-                best_upper_parameters.clear();
-            }
-            if (distance - best_distance).abs() <= tolerance {
-                best_upper_parameters.push(parameters);
-            }
-        };
-        if let Some(candidate) =
-            seed.and_then(|seed| refined_upper(seed, surface_u_domain, surface_v_domain))
-        {
-            consider_upper(candidate);
-        }
-        for patch in &patches {
-            consider_upper(refined_upper(
-                center(patch),
-                patch.u_domain,
-                patch.v_domain,
-            )?);
-        }
-    }
-    best_distance.is_finite().then_some(())?;
-    // A tolerance-bounded inverse asks for a parameter whose evaluated point
-    // reproduces the target within that tolerance, not a proof of the global
-    // minimum. The refined span seeds above are evaluated on the surface, so a
-    // fitting candidate is already a constructive certificate. Preserve the
-    // exhaustive branch-and-bound search for exact closest-point inversion.
-    if fit_tolerance.is_some() && best_distance <= squared_tolerance {
-        return (!best_upper_parameters.is_empty()).then_some(best_upper_parameters);
-    }
-    let mut queue = BinaryHeap::new();
-    let mut sequence = 0usize;
-    for patch in patches {
-        let (lower_bound, diameter) = rational_patch_distance_bounds(&patch)?;
-        queue.push(SurfacePatchQueueEntry {
-            lower_bound,
-            diameter,
-            sequence,
-            patch,
-        });
-        sequence += 1;
-    }
-    let mut terminal = Vec::<(Point2, f64)>::new();
-    let mut examined = 0usize;
-    while let Some(entry) = queue.pop() {
-        examined += 1;
-        if examined > MAX_PATCHES {
-            return None;
-        }
-        let SurfacePatchQueueEntry {
-            lower_bound,
-            diameter,
-            patch,
-            ..
-        } = entry;
-        let comparison_tolerance = 128.0
-            * f64::EPSILON
-            * lower_bound
-                .abs()
-                .max(best_distance.abs())
-                .max(squared_tolerance);
-        if lower_bound > best_distance + comparison_tolerance {
-            break;
-        }
-        let parameters = center(&patch);
-        let (upper_parameters, center_distance) =
-            refined_upper(parameters, patch.u_domain, patch.v_domain)?;
-        if fit_tolerance.is_some() && center_distance <= squared_tolerance {
-            return Some(vec![upper_parameters]);
-        }
-        let upper_tolerance = 128.0
-            * f64::EPSILON
-            * center_distance
-                .abs()
-                .max(best_distance.abs())
-                .max(squared_tolerance);
-        if center_distance < best_distance && best_distance - center_distance > upper_tolerance {
-            best_distance = center_distance;
-            best_upper_parameters.clear();
-        }
-        if (center_distance - best_distance).abs() <= upper_tolerance {
-            best_upper_parameters.push(upper_parameters);
-        }
-        let indivisible = parameters.u == patch.u_domain[0]
-            || parameters.u == patch.u_domain[1]
-            || parameters.v == patch.v_domain[0]
-            || parameters.v == patch.v_domain[1];
-        if diameter <= squared_tolerance
-            || center_distance - lower_bound <= squared_tolerance
-            || indivisible
-        {
-            terminal.push((upper_parameters, lower_bound));
-            continue;
-        }
-        let control = |u: usize, v: usize| {
-            let homogeneous = patch.controls[u * (patch.v_degree + 1) + v];
-            [
-                homogeneous[0] / homogeneous[3],
-                homogeneous[1] / homogeneous[3],
-                homogeneous[2] / homogeneous[3],
-            ]
-        };
-        let u_variation = (0..patch.u_degree)
-            .flat_map(|u| (0..=patch.v_degree).map(move |v| (u, v)))
-            .map(|(u, v)| {
-                let first = control(u, v);
-                let second = control(u + 1, v);
-                (0..3)
-                    .map(|axis| (second[axis] - first[axis]).powi(2))
-                    .sum::<f64>()
-            })
-            .fold(0.0_f64, f64::max);
-        let v_variation = (0..=patch.u_degree)
-            .flat_map(|u| (0..patch.v_degree).map(move |v| (u, v)))
-            .map(|(u, v)| {
-                let first = control(u, v);
-                let second = control(u, v + 1);
-                (0..3)
-                    .map(|axis| (second[axis] - first[axis]).powi(2))
-                    .sum::<f64>()
-            })
-            .fold(0.0_f64, f64::max);
-        let split_u = u_variation >= v_variation;
-        let children = split_rational_surface_patch(&patch, split_u)?;
-        for patch in children {
-            let (lower_bound, diameter) = rational_patch_distance_bounds(&patch)?;
-            queue.push(SurfacePatchQueueEntry {
-                lower_bound,
-                diameter,
-                sequence,
-                patch,
-            });
-            sequence += 1;
-        }
-    }
-    let final_tolerance = 128.0 * f64::EPSILON * best_distance.abs().max(squared_tolerance);
-    let mut starts = terminal
-        .into_iter()
-        .filter_map(|(parameters, lower)| {
-            (lower <= best_distance + final_tolerance).then_some(parameters)
-        })
-        .collect::<Vec<_>>();
-    starts.extend(best_upper_parameters);
-    (!starts.is_empty()).then_some(starts)
-}
-
-#[cfg(test)]
-pub(crate) fn nurbs_parameters(
-    surface: &NurbsSurface,
-    point: Point3,
-    seed: Option<Point2>,
-) -> Option<Point2> {
-    nurbs_parameters_with_tolerance(surface, point, seed, None)
-}
-
-fn nurbs_parameters_with_tolerance(
-    surface: &NurbsSurface,
-    point: Point3,
-    seed: Option<Point2>,
-    fit_tolerance: Option<f64>,
-) -> Option<Point2> {
-    let seed = seed.filter(|seed| seed.u.is_finite() && seed.v.is_finite());
-    let u_degree = usize::try_from(surface.u_degree).ok()?;
-    let v_degree = usize::try_from(surface.v_degree).ok()?;
-    let u_count = usize::try_from(surface.u_count).ok()?;
-    let v_count = usize::try_from(surface.v_count).ok()?;
-    let u_domain = [
-        *surface.u_knots.get(u_degree)?,
-        *surface.u_knots.get(u_count)?,
-    ];
-    let v_domain = [
-        *surface.v_knots.get(v_degree)?,
-        *surface.v_knots.get(v_count)?,
-    ];
-    if u_domain[0] >= u_domain[1] || v_domain[0] >= v_domain[1] {
-        return None;
-    }
-    let squared_distance = |candidate: Point3| point_distance(candidate, point).powi(2);
-    let starts = complete_nurbs_surface_starts(surface, point, seed, fit_tolerance)?;
-    let mut best = None;
-    let mut best_distance = f64::INFINITY;
-    let mut best_seed_distance = f64::INFINITY;
-    for start in starts {
-        let Some(parameters) = refine_nurbs_surface_parameters(
-            surface,
-            point,
-            start,
-            u_domain,
-            v_domain,
-            &squared_distance,
-        ) else {
-            continue;
-        };
-        let Some(position) =
-            cadmpeg_ir::eval::nurbs_surface_point(surface, parameters.u, parameters.v)
-        else {
-            continue;
-        };
-        let distance = squared_distance(position);
-        let seed_distance = seed.map_or(parameters.u.abs() + parameters.v.abs(), |seed| {
-            (parameters.u - seed.u).hypot(parameters.v - seed.v)
-        });
-        let same_point = (distance - best_distance).abs()
-            <= f64::EPSILON * 64.0 * distance.abs().max(best_distance.abs()).max(1.0);
-        if distance < best_distance && !same_point
-            || same_point && seed_distance < best_seed_distance
-        {
-            best = Some(parameters);
-            best_distance = distance;
-            best_seed_distance = seed_distance;
-        }
-    }
-    best
-}
-
-fn refine_nurbs_surface_parameters(
-    surface: &NurbsSurface,
-    point: Point3,
-    mut parameters: Point2,
-    u_domain: [f64; 2],
-    v_domain: [f64; 2],
-    squared_distance: &impl Fn(Point3) -> f64,
-) -> Option<Point2> {
-    parameters.u = parameters.u.clamp(u_domain[0], u_domain[1]);
-    parameters.v = parameters.v.clamp(v_domain[0], v_domain[1]);
-    for _ in 0..32 {
-        let position = cadmpeg_ir::eval::nurbs_surface_point(surface, parameters.u, parameters.v)?;
-        let residual = Vector3::new(
-            position.x - point.x,
-            position.y - point.y,
-            position.z - point.z,
-        );
-        let partials = nurbs_surface_partials(surface, parameters.u, parameters.v)?;
-        let (du, dv) = (partials.du, partials.dv);
-        let dot =
-            |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
-        let du_squared = dot(du, du);
-        let mixed = dot(du, dv);
-        let dv_squared = dot(dv, dv);
-        let determinant = du_squared * dv_squared - mixed * mixed;
-        if !determinant.is_finite()
-            || determinant.abs() <= f64::EPSILON * du_squared.max(dv_squared).powi(2)
-        {
-            break;
-        }
-        let du_residual = dot(du, residual);
-        let dv_residual = dot(dv, residual);
-        let step = Point2::new(
-            (dv_squared * du_residual - mixed * dv_residual) / determinant,
-            (du_squared * dv_residual - mixed * du_residual) / determinant,
-        );
-        let current_distance = squared_distance(position);
-        let mut scale = 1.0;
-        let mut accepted = None;
-        for _ in 0..16 {
-            let candidate = Point2::new(
-                (parameters.u - scale * step.u).clamp(u_domain[0], u_domain[1]),
-                (parameters.v - scale * step.v).clamp(v_domain[0], v_domain[1]),
-            );
-            let candidate_position =
-                cadmpeg_ir::eval::nurbs_surface_point(surface, candidate.u, candidate.v)?;
-            if squared_distance(candidate_position) <= current_distance {
-                accepted = Some(candidate);
-                break;
-            }
-            scale *= 0.5;
-        }
-        let Some(candidate) = accepted else {
-            break;
-        };
-        parameters = candidate;
-        if scale * step.u.abs() <= 1.0e-12 * (1.0 + parameters.u.abs())
-            && scale * step.v.abs() <= 1.0e-12 * (1.0 + parameters.v.abs())
-        {
-            break;
-        }
-    }
-    Some(parameters)
-}
-
 fn point_distance(first: Point3, second: Point3) -> f64 {
     (first.x - second.x)
         .hypot(first.y - second.y)
@@ -7233,12 +6597,22 @@ fn emit_topology(
         } else {
             fin_fields.forward
         };
-        let end = graph
-            .get(17, end_fin)
-            .and_then(Node::fin_fields)
-            .and_then(|next| vertices.get(&next.vertex))
-            .cloned()
-            .unwrap_or_else(|| start.clone());
+        let Some(end_fields) = graph.get(17, end_fin).and_then(Node::fin_fields) else {
+            continue;
+        };
+        let end = vertices.get(&end_fields.vertex).cloned().or_else(|| {
+            // A partnered closed FIN repeats the null vertex and closes its own
+            // forward/backward links. Its endpoint is the same analytic point
+            // as the current FIN's synthesized start, even when `end_fin` is a
+            // distinct radial partner record.
+            (end_fields.vertex == 1
+                && end_fields.forward == end_fin
+                && end_fields.backward == end_fin)
+                .then(|| start.clone())
+        });
+        let Some(end) = end else {
+            continue;
+        };
         let (mut start, mut end) = (start, end);
         let id = EdgeId(format!("{prefix}:edge#{}", node.xmt));
         annotate_node(annotations, &id, source_stream, node, "EDGE");
@@ -8200,9 +7574,15 @@ fn reverse_pcurve_over_range(
         PcurveGeometry::Trimmed {
             parameter_range,
             basis,
+            same_sense,
         } => Some(PcurveGeometry::Trimmed {
             parameter_range: *parameter_range,
+            same_sense: *same_sense,
             basis: Box::new(reverse_pcurve_over_range(basis, [start, end])?),
+        }),
+        PcurveGeometry::Transformed { basis, transform } => Some(PcurveGeometry::Transformed {
+            basis: Box::new(reverse_pcurve_over_range(basis, [start, end])?),
+            transform: *transform,
         }),
         PcurveGeometry::Offset { distance, basis } => Some(PcurveGeometry::Offset {
             distance: -*distance,
@@ -8618,7 +7998,8 @@ pub(crate) fn complete_exact_boundary_intersection_pcurves(
             _ => continue,
         }
         if cache_backed {
-            procedural.cache_fit_tolerance = Some(tolerance);
+            procedural.cache_fit_tolerance =
+                Some(procedural.cache_fit_tolerance.unwrap_or(0.0).max(tolerance));
         }
         if tolerant {
             bounded_tolerant_curves.push((curve, range));
@@ -8690,13 +8071,17 @@ fn exact_boundary_pcurve(
             && direction.v.is_finite()
             && (direction.u != 0.0 || direction.v != 0.0))
             .then_some(())?;
-        return Some(PcurveGeometry::Line {
+        let candidate = PcurveGeometry::Line {
             origin: Point2::new(
                 first.u - direction.u * range[0],
                 first.v - direction.v * range[0],
             ),
             direction,
-        });
+        };
+        return exact_boundary_pcurve_matches_carrier(
+            ir, curve, surface, &candidate, range, tolerance,
+        )
+        .then_some(candidate);
     }
     if matches!(
         &carrier.geometry,
@@ -8729,15 +8114,18 @@ fn exact_boundary_pcurve(
                 return None;
             }
         }
-        return Some(candidate);
+        return exact_boundary_pcurve_matches_carrier(
+            ir, curve, surface, &candidate, range, tolerance,
+        )
+        .then_some(candidate);
     }
     let SurfaceGeometry::Nurbs(nurbs) = &carrier.geometry else {
         return None;
     };
     let domain = surface_parameter_domain(ir, surface)?;
     let parameters = [
-        nurbs_parameters_with_tolerance(nurbs, endpoints[0], None, Some(tolerance))?,
-        nurbs_parameters_with_tolerance(nurbs, endpoints[1], None, Some(tolerance))?,
+        nurbs_surface_parameter_within_tolerance(nurbs, endpoints[0], None, tolerance)?,
+        nurbs_surface_parameter_within_tolerance(nurbs, endpoints[1], None, tolerance)?,
     ];
     for index in 0..2 {
         if !parameters[index].u.is_finite() || !parameters[index].v.is_finite() {
@@ -8750,47 +8138,113 @@ fn exact_boundary_pcurve(
             return None;
         }
     }
-    let axes = [
-        ([parameters[0].u, parameters[1].u], domain.0),
-        ([parameters[0].v, parameters[1].v], domain.1),
-    ];
+    let axes = [domain.0, domain.1];
     let candidates = axes
         .into_iter()
         .enumerate()
-        .filter_map(|(constant_axis, (values, axis_domain))| {
-            let scale = (axis_domain[1] - axis_domain[0]).abs().max(1.0);
-            let parameter_tolerance = 1.0e-8 * scale;
-            let boundary = axis_domain.into_iter().find(|boundary| {
-                values
-                    .iter()
-                    .all(|value| (*value - *boundary).abs() <= parameter_tolerance)
-            })?;
-            let varying = if constant_axis == 0 {
-                [parameters[0].v, parameters[1].v]
-            } else {
-                [parameters[0].u, parameters[1].u]
-            };
-            ((varying[1] - varying[0]).abs() > parameter_tolerance).then(|| {
-                let delta = (varying[1] - varying[0]) / (range[1] - range[0]);
-                let (origin, direction) = if constant_axis == 0 {
-                    (
-                        Point2::new(boundary, varying[0] - delta * range[0]),
-                        Point2::new(0.0, delta),
-                    )
+        .flat_map(|(constant_axis, axis_domain)| {
+            axis_domain.into_iter().filter_map(move |boundary| {
+                let varying = if constant_axis == 0 {
+                    [parameters[0].v, parameters[1].v]
                 } else {
-                    (
-                        Point2::new(varying[0] - delta * range[0], boundary),
-                        Point2::new(delta, 0.0),
-                    )
+                    [parameters[0].u, parameters[1].u]
                 };
-                PcurveGeometry::Line { origin, direction }
+                let delta = (varying[1] - varying[0]) / (range[1] - range[0]);
+                (delta.is_finite() && delta != 0.0).then(|| {
+                    let (origin, direction) = if constant_axis == 0 {
+                        (
+                            Point2::new(boundary, varying[0] - delta * range[0]),
+                            Point2::new(0.0, delta),
+                        )
+                    } else {
+                        (
+                            Point2::new(varying[0] - delta * range[0], boundary),
+                            Point2::new(delta, 0.0),
+                        )
+                    };
+                    PcurveGeometry::Line { origin, direction }
+                })
             })
+        })
+        .filter(|candidate| {
+            exact_boundary_pcurve_matches_carrier(ir, curve, surface, candidate, range, tolerance)
         })
         .collect::<Vec<_>>();
     let [candidate] = candidates.as_slice() else {
         return None;
     };
     Some(candidate.clone())
+}
+
+fn exact_boundary_pcurve_matches_carrier(
+    ir: &CadIr,
+    curve: &CurveId,
+    surface: &SurfaceId,
+    pcurve: &PcurveGeometry,
+    range: [f64; 2],
+    tolerance: f64,
+) -> bool {
+    let Some(carrier) = ir
+        .model
+        .curves
+        .iter()
+        .find(|candidate| &candidate.id == curve)
+    else {
+        return false;
+    };
+    let Some(curve_breaks) = exact_boundary_curve_breaks(&carrier.geometry, range) else {
+        return false;
+    };
+    let Some(surface_breaks) = boundary_curve_affine_breaks(ir, surface, pcurve, range) else {
+        return false;
+    };
+    let mut breaks = curve_breaks;
+    breaks.extend(surface_breaks);
+    breaks.sort_by(f64::total_cmp);
+    breaks.dedup_by(|first, second| first.to_bits() == second.to_bits());
+    breaks.into_iter().all(|parameter| {
+        let Some(uv) = pcurve_uv(pcurve, parameter) else {
+            return false;
+        };
+        let Some(expected) = decoded_surface_point(ir, surface, uv.u, uv.v) else {
+            return false;
+        };
+        let Some(actual) = model_curve_point(ir, curve, parameter) else {
+            return false;
+        };
+        let error = point_distance(expected, actual);
+        error.is_finite() && error <= tolerance
+    })
+}
+
+fn exact_boundary_curve_breaks(geometry: &CurveGeometry, range: [f64; 2]) -> Option<Vec<f64>> {
+    let mut breaks = match geometry {
+        CurveGeometry::Line { .. } => range.to_vec(),
+        CurveGeometry::Nurbs(nurbs)
+            if nurbs.degree == 1
+                && !nurbs.periodic
+                && !nurbs.weights.as_ref().is_some_and(|weights| {
+                    weights
+                        .windows(2)
+                        .any(|pair| pair[0].to_bits() != pair[1].to_bits())
+                }) =>
+        {
+            let degree = usize::try_from(nurbs.degree).ok()?;
+            let count = nurbs.control_points.len();
+            if degree > count {
+                return None;
+            }
+            nurbs.knots.get(degree..=count)?.to_vec()
+        }
+        _ => return None,
+    };
+    breaks.retain(|parameter| {
+        parameter.is_finite() && *parameter >= range[0] && *parameter <= range[1]
+    });
+    breaks.extend(range);
+    breaks.sort_by(f64::total_cmp);
+    breaks.dedup_by(|first, second| first.to_bits() == second.to_bits());
+    Some(breaks)
 }
 
 fn exact_analytic_isocurve_pcurve(
@@ -9446,7 +8900,7 @@ fn surface_parameters_for_fit_with_index(
         .find(|candidate| &candidate.id == surface)?;
     match &carrier.geometry {
         SurfaceGeometry::Nurbs(nurbs) => {
-            nurbs_parameters_with_tolerance(nurbs, point, seed, Some(tolerance))
+            nurbs_surface_parameter_within_tolerance(nurbs, point, seed, tolerance)
         }
         SurfaceGeometry::Procedural { .. } => offset_surface_parameters_with_tolerance_with_index(
             index,
@@ -10310,7 +9764,7 @@ fn build_geometry_report(
                  Equal-schema deltas were paired with the preceding partition. Exact-key \
                  BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact \
                  non-topology replacements and tombstones were applied using the last event for \
-                 each key. Validated partition topology remained authoritative, including any \
+                 each key within each current body-sequence interval. Validated partition topology remained authoritative, including any \
                  point, curve, or surface carrier still referenced by surviving topology. Complete \
                  ENTITY_51, ENTITY_52, ENTITY_53, and ENTITY_54 records were retained for native \
                  attribute extraction. Every completely bounded full record, compact tombstone, \
@@ -10333,7 +9787,7 @@ fn build_geometry_report(
             } else {
                 format!(
                     "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
-                 Equal-schema deltas were paired with the preceding partition. Exact-key revisions were applied using the last \
+                    Equal-schema deltas were paired with the preceding partition. Exact-key revisions in current body-sequence intervals were applied using the last \
                  event for each key, but {unmatched_tombstones} terminal tombstone(s) have no exact \
                  current or earlier-added key and remain unresolved: {unmatched_tombstone_detail}.",
                     scan.count(StreamKind::Deltas)
@@ -10364,24 +9818,8 @@ fn build_geometry_report(
         losses.push(LossNote {
             code: LossKind::AttributesNotTransferred,
             severity: Severity::Warning,
-            message: "A referenced Parasolid attribute value or field-name record was not \
-                      transferred because its complete value relation did not resolve."
-                .to_string(),
-            provenance: None,
-        });
-    }
-
-    if scan
-        .container
-        .entries
-        .iter()
-        .any(|entry| entry.content() == EntryContent::ExternalReferences)
-    {
-        losses.push(LossNote {
-            code: LossKind::AssemblyPlacementsNotTransferred,
-            severity: Severity::Warning,
-            message: "Assembly occurrence placements were not transferred because their remaining \
-                      NX object-model field serialization is not decoded."
+            message: "A referenced Parasolid attribute value was not transferred because its \
+                      complete value relation did not resolve."
                 .to_string(),
             provenance: None,
         });
@@ -10399,11 +9837,43 @@ fn build_geometry_report(
 }
 
 pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>) {
+    let current_body_ids = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect::<Vec<_>>();
+    // A retained segment-body input is represented as a BaseFeature so that
+    // the saved body census has an explicit replay boundary. It is not an
+    // evaluated history writer. Do not use a closure rooted only in that
+    // boundary to suppress losses for the retained operation stream: without
+    // a non-BaseFeature writer, the body-to-history relation is still
+    // unproven and conservative accounting is required.
+    let active_features = crate::native::history::active_feature_closure(ir, &current_body_ids)
+        .filter(|active| {
+            active.iter().any(|id| {
+                ir.model.features.iter().any(|feature| {
+                    feature.id == *id
+                        && !matches!(&feature.definition, FeatureDefinition::BaseFeature { .. })
+                })
+            })
+        });
+    let suppression_scope = active_features.as_ref().map_or("", |_| "active ");
+    let feature_in_active_scope = |feature: &Feature| {
+        active_features
+            .as_ref()
+            .is_none_or(|active| active.contains(&feature.id))
+    };
     let unresolved_suppression_count = ir
         .model
         .features
         .iter()
-        .filter(|feature| feature.suppressed.is_none())
+        .filter(|feature| {
+            feature.suppressed.is_none()
+                && active_features
+                    .as_ref()
+                    .is_none_or(|active| active.contains(&feature.id))
+        })
         .count();
     if unresolved_suppression_count != 0 {
         losses.push(LossNote {
@@ -10411,7 +9881,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             severity: Severity::Warning,
             message: format!(
                 "Suppression state remains unresolved for {unresolved_suppression_count} NX \
-                 feature history operation(s)."
+                 {suppression_scope}feature history operation(s)."
             ),
             provenance: None,
         });
@@ -10473,6 +9943,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
 
     let mut native_feature_kinds = BTreeMap::<&str, usize>::new();
     for feature in &ir.model.features {
+        if !feature_in_active_scope(feature) {
+            continue;
+        }
         if let FeatureDefinition::Native { kind, .. } = &feature.definition {
             *native_feature_kinds.entry(kind.as_str()).or_default() += 1;
         }
@@ -10496,6 +9969,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
 
     let mut unresolved_feature_families = BTreeMap::<&str, usize>::new();
     for feature in &ir.model.features {
+        if !feature_in_active_scope(feature) {
+            continue;
+        }
         let family = match feature.definition {
             FeatureDefinition::DatumPlaneUnresolved => "datum plane",
             FeatureDefinition::DatumPointUnresolved => "datum point",
@@ -10534,13 +10010,22 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .map(|state| &state.output_of)
         .collect::<BTreeSet<_>>();
     for feature in &ir.model.features {
+        if !feature_in_active_scope(feature) {
+            continue;
+        }
         let is_exact_empty_base = matches!(
             &feature.definition,
             FeatureDefinition::BaseFeature {
                 bodies: BodySelection::Resolved { bodies, native },
             } if bodies.is_empty() && !native.trim().is_empty() && feature.outputs.is_empty()
         );
-        if feature.suppressed != Some(true) && !is_exact_empty_base {
+        if feature.suppressed != Some(true)
+            && !is_exact_empty_base
+            && !output_free_native_snapshot(feature)
+            && !output_free_local_body_construction(feature)
+            && !output_free_pattern_construction(feature)
+            && !output_free_trim_surface_construction(feature)
+        {
             if let Some(family) = feature.definition.body_output_family().filter(|_| {
                 let current_outputs_are_valid = !feature.outputs.is_empty()
                     && feature.outputs.iter().collect::<BTreeSet<_>>().len()
@@ -10560,7 +10045,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         }
         let family = match &feature.definition {
             FeatureDefinition::BaseFeature { bodies }
-                if !is_exact_empty_base && body_selection_is_incomplete(bodies) =>
+                if !is_exact_empty_base
+                    && !output_free_native_snapshot(feature)
+                    && body_selection_is_incomplete(bodies) =>
             {
                 "base feature"
             }
@@ -10766,12 +10253,14 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .model
         .features
         .iter()
+        .filter(|feature| feature_in_active_scope(feature))
         .filter(|feature| matches!(feature.definition, FeatureDefinition::Sketch { .. }))
         .count();
     let unresolved_sketch_feature_count = ir
         .model
         .features
         .iter()
+        .filter(|feature| feature_in_active_scope(feature))
         .filter(|feature| {
             matches!(
                 feature.definition,
@@ -10792,10 +10281,27 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         });
     }
 
+    let active_sketch_ids = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| feature_in_active_scope(feature))
+        .filter_map(|feature| match &feature.definition {
+            FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+                ..
+            } => Some(sketch.clone()),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let sketch_in_active_scope = |sketch: &cadmpeg_ir::sketches::SketchId| {
+        active_features.is_none() || active_sketch_ids.contains(sketch)
+    };
     let native_sketch_entity_count = ir
         .model
         .sketch_entities
         .iter()
+        .filter(|entity| sketch_in_active_scope(&entity.sketch))
         .filter(|entity| {
             matches!(
                 entity.geometry,
@@ -10807,6 +10313,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .model
         .sketch_constraints
         .iter()
+        .filter(|constraint| sketch_in_active_scope(&constraint.sketch))
         .filter(|constraint| {
             matches!(
                 constraint.definition,
@@ -10826,6 +10333,75 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             provenance: None,
         });
     }
+}
+
+pub(crate) fn output_free_native_snapshot(feature: &cadmpeg_ir::features::Feature) -> bool {
+    feature.outputs.is_empty()
+        && feature.name.as_deref() == Some("MASTER SNAPSHOT BODY")
+        && matches!(
+            &feature.definition,
+            FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Unresolved
+            }
+        )
+        && feature
+            .source_properties
+            .get("operation_record")
+            .is_some_and(|record| !record.trim().is_empty())
+}
+
+/// Return whether a feature's primary body is local to the history namespace.
+///
+/// Offset-store and unbound object-namespace bodies are retained as native
+/// feature-local identities. They do not create neutral current-body outputs;
+/// the saved segment image remains the only neutral body census.
+pub(crate) fn output_free_local_body_construction(feature: &cadmpeg_ir::features::Feature) -> bool {
+    feature.outputs.is_empty()
+        && feature
+            .source_properties
+            .contains_key("primary_body_reference")
+        && !feature
+            .source_properties
+            .contains_key("primary_body_segment_use")
+}
+
+/// Return whether a pattern record is construction-only and has no neutral
+/// body-output obligation.
+///
+/// Pattern construction records without a primary-body field describe the
+/// seed and transform graph. A body-affecting pattern has at least one body
+/// reference occurrence, even when the occurrence is too ambiguous to become
+/// a primary writer. Keep that distinction explicit so an incomplete body
+/// binding cannot be mistaken for a construction-only record.
+pub(crate) fn output_free_pattern_construction(feature: &cadmpeg_ir::features::Feature) -> bool {
+    feature.outputs.is_empty()
+        && matches!(&feature.definition, FeatureDefinition::Pattern { .. })
+        && !feature.source_properties.keys().any(|key| {
+            key == "primary_body_reference"
+                || key == "primary_body_object_index"
+                || key == "primary_body_data_block"
+                || key.starts_with("body_reference.")
+                || key.starts_with("body_reference_occurrence.")
+        })
+}
+
+/// Return whether a `TRIMMED_SH` record is a construction-only operation.
+///
+/// NX uses the typed trim-surface family for records that carry no body
+/// occurrence or primary-body field. Those records have no body result to
+/// bind; a body marker makes the output obligation explicit again.
+pub(crate) fn output_free_trim_surface_construction(
+    feature: &cadmpeg_ir::features::Feature,
+) -> bool {
+    feature.outputs.is_empty()
+        && matches!(&feature.definition, FeatureDefinition::TrimSurface { .. })
+        && !feature.source_properties.keys().any(|key| {
+            key == "primary_body_reference"
+                || key == "primary_body_object_index"
+                || key == "primary_body_data_block"
+                || key.starts_with("body_reference.")
+                || key.starts_with("body_reference_occurrence.")
+        })
 }
 
 pub(crate) fn active_configuration_state_is_incomplete(
@@ -11754,6 +11330,7 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
             plane_origin,
             plane_normal,
         } => !finite_feature_point(*plane_origin) || !valid_feature_direction(*plane_normal),
+        PatternKind::MirrorReference { .. } => true,
         PatternKind::CurveDriven {
             path,
             spacing,
@@ -11910,7 +11487,7 @@ pub(crate) fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
         | PatternKind::Scale { count, .. } => usize::try_from(*count).ok(),
         PatternKind::LinearOffsets { offsets, .. } => Some(offsets.len()),
         PatternKind::CircularAngles { angles, .. } => Some(angles.len()),
-        PatternKind::Mirror { .. } => Some(2),
+        PatternKind::Mirror { .. } | PatternKind::MirrorReference { .. } => Some(2),
         PatternKind::Composite { stages } => {
             stages
                 .iter()
@@ -12309,12 +11886,58 @@ mod tests {
         ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{
-        CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
+        BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
         ProceduralSurfaceId, ShellId, SurfaceId, VertexId,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
-    use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, PcurveUse, Point, Sense, Vertex};
+    use cadmpeg_ir::topology::{
+        Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Sense, Vertex,
+    };
     use cadmpeg_ir::AnnotationBuilder;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    #[test]
+    fn active_body_selection_accepts_a_complete_singleton_membership() {
+        let first = BodyId("nx:test:body#first".into());
+        let second = BodyId("nx:test:body#second".into());
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.bodies.extend([
+            Body {
+                id: first.clone(),
+                kind: BodyKind::Solid,
+                regions: Vec::new(),
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+            Body {
+                id: second.clone(),
+                kind: BodyKind::Solid,
+                regions: Vec::new(),
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+        ]);
+        ir.source = Some(cadmpeg_ir::document::SourceMeta::default());
+        let body_node_ids = BTreeMap::from([
+            (first.clone(), BTreeSet::from([7])),
+            (second, BTreeSet::from([8])),
+        ]);
+
+        assert!(super::select_active_body(&mut ir, &body_node_ids, &[7]));
+        assert_eq!(ir.model.bodies.len(), 1);
+        assert_eq!(ir.model.bodies[0].id, first);
+        assert_eq!(
+            ir.source
+                .as_ref()
+                .and_then(|source| source.attributes.get("rmfastload_hits"))
+                .map(String::as_str),
+            Some("1")
+        );
+    }
 
     #[test]
     fn analytic_closed_isocurves_retain_the_native_full_turn() {
@@ -12545,6 +12168,96 @@ mod tests {
                     });
             assert!((inverse - parameter).abs() < 1.0e-10);
         }
+    }
+
+    #[test]
+    fn boundary_pcurve_requires_an_affine_carrier_witness() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let curve = CurveId("nx:test:bowed-boundary-curve".into());
+        let surface = SurfaceId("nx:test:boundary-plane".into());
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Nurbs(NurbsCurve {
+                degree: 2,
+                knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                control_points: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(5.0, 5.0, 0.0),
+                    Point3::new(10.0, 0.0, 0.0),
+                ],
+                weights: None,
+                periodic: false,
+            }),
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+
+        assert!(super::exact_boundary_pcurve(
+            &ir,
+            &curve,
+            &surface,
+            [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+            [0.0, 1.0],
+            1.0e-8,
+        )
+        .is_none());
+
+        ir.model.curves[0].geometry = CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(10.0, 0.0, 0.0),
+        };
+        assert!(matches!(
+            super::exact_boundary_pcurve(
+                &ir,
+                &curve,
+                &surface,
+                [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+                [0.0, 1.0],
+                1.0e-8,
+            ),
+            Some(PcurveGeometry::Line { .. })
+        ));
+    }
+
+    #[test]
+    fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let curve = CurveId("nx:test:affine-nurbs-boundary-curve".into());
+        let surface = SurfaceId("nx:test:affine-nurbs-boundary-surface".into());
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(3.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: affine_nurbs_surface(0.0),
+            source_object: None,
+        });
+
+        assert!(matches!(
+            super::exact_boundary_pcurve(
+                &ir,
+                &curve,
+                &surface,
+                [Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+                [0.0, 1.0],
+                1.0e-8,
+            ),
+            Some(PcurveGeometry::Line { origin, direction })
+                if origin.v == 0.0 && direction.u == 1.0 && direction.v == 0.0
+        ));
     }
 
     fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
@@ -12893,7 +12606,8 @@ mod tests {
         point.z += 0.001;
 
         let parameters =
-            super::nurbs_parameters_with_tolerance(&surface, point, None, Some(0.01)).unwrap();
+            cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance(&surface, point, None, 0.01)
+                .unwrap();
         let mapped =
             cadmpeg_ir::eval::nurbs_surface_point(&surface, parameters.u, parameters.v).unwrap();
 
