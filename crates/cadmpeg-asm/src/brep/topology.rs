@@ -313,6 +313,7 @@ pub(crate) fn walk_reachable_topology(
                                             "exp_par_cur",
                                         ) {
                                             nurbs::pcurve::explicit_pcurve_cache(span)
+                                                .map(|pcurve| (pcurve, true))
                                         } else if let Some(span) =
                                             nurbs::toks::payload_subtype_toks(prec, 5, "ref")
                                         {
@@ -321,31 +322,31 @@ pub(crate) fn walk_reachable_topology(
                                                     nurbs::pcurve::explicit_pcurve_cache_from_subtype_ref(
                                                         *index,
                                                         token_table,
-                                                    ),
+                                                    )
+                                                    .map(|pcurve| (pcurve, true)),
                                                 _ => None,
                                             }
                                         } else {
                                             None
                                         }
                                     }
-                                    (
-                                        Some(Token::Long(selector)),
-                                        Some(Token::Ref(reference)),
-                                    ) if matches!(*selector, 1 | 2 | -1 | -2) => {
+                                    (Some(Token::Long(selector)), Some(Token::Ref(reference)))
+                                        if matches!(*selector, 1 | 2 | -1 | -2) =>
+                                    {
                                         by_index
                                             .get(reference)
                                             .filter(|record| record.head == "intcurve")
                                             .and_then(|intcurve| {
-                                                nurbs::proc_curve::pcurve_for_selector_resolving_refs(
+                                                nurbs::proc_curve::pcurve_for_selector_with_chart(
                                                     &intcurve.tokens,
                                                     *selector,
                                                     token_table,
                                                 )
-                                                .map(|mut curve| {
+                                                .map(|(mut curve, native_chart)| {
                                                     if (*selector < 0) ^ record_reversed(intcurve) {
                                                         reverse_nurbs_pcurve(&mut curve);
                                                     }
-                                                    curve
+                                                    (curve, native_chart)
                                                 })
                                             })
                                     }
@@ -353,7 +354,19 @@ pub(crate) fn walk_reachable_topology(
                                 };
                                 let edge =
                                     ce.ref_at(6).and_then(|edge| by_index.get(&edge)).copied();
-                                let decoded = decoded.and_then(|decoded| {
+                                let decoded = decoded.and_then(|(mut decoded, native_chart)| {
+                                    if native_chart {
+                                        if let Some(surface) = face
+                                            .ref_at(7)
+                                            .and_then(|surface| by_index.get(&surface))
+                                        {
+                                            nurbs::proc_curve::normalize_pcurve_for_surface_record(
+                                                &surface.head,
+                                                &surface.tokens,
+                                                &mut decoded,
+                                            );
+                                        }
+                                    }
                                     pcurve_ranges_on_domain(&decoded, edge)
                                         .and_then(|ranges| ranges.into_iter().next())
                                         .map(|range| (decoded, range))

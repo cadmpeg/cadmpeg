@@ -2,11 +2,12 @@
 //! Native record writers for surfaces, curves, and pcurves.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::geometry::{
     BlendRadiusLaw, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,
     ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
+use cadmpeg_ir::ids::{LoopId, PcurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use super::native_bytes::{
@@ -5513,9 +5514,17 @@ fn native_embedded_surface(
     Ok(())
 }
 
-fn native_support_pcurve(
+pub(crate) fn native_support_pcurve(
     geometry: &SurfaceGeometry,
     pcurve: &PcurveGeometry,
+) -> Result<PcurveGeometry, CodecError> {
+    native_support_pcurve_for_range(geometry, pcurve, [0.0, 1.0])
+}
+
+fn native_support_pcurve_for_range(
+    geometry: &SurfaceGeometry,
+    pcurve: &PcurveGeometry,
+    range: [f64; 2],
 ) -> Result<PcurveGeometry, CodecError> {
     let NativePcurveGeometry {
         degree,
@@ -5523,7 +5532,7 @@ fn native_support_pcurve(
         mut control_points,
         weights,
         periodic,
-    } = native_pcurve_geometry(pcurve, [0.0, 1.0])?;
+    } = native_pcurve_geometry(pcurve, range)?;
     match geometry {
         SurfaceGeometry::Plane { .. } => {
             for point in &mut control_points {
@@ -5531,7 +5540,7 @@ fn native_support_pcurve(
                 point.v /= -LEN_TO_MM;
             }
         }
-        SurfaceGeometry::Cylinder { radius, .. } | SurfaceGeometry::Cone { radius, .. } => {
+        SurfaceGeometry::Cylinder { radius, .. } => {
             if !radius.is_finite() || radius.abs() <= f64::EPSILON {
                 return Err(CodecError::Malformed(
                     "intcurve support has an invalid cone parameter scale".into(),
@@ -5540,6 +5549,24 @@ fn native_support_pcurve(
             for point in &mut control_points {
                 let neutral = *point;
                 point.u = neutral.v / radius;
+                point.v = neutral.u;
+            }
+        }
+        SurfaceGeometry::Cone {
+            radius, half_angle, ..
+        } => {
+            let sine = half_angle.sin();
+            let cosine = half_angle.cos();
+            let direction = if sine * cosine < 0.0 { -1.0 } else { 1.0 };
+            let axial_scale = direction * radius * cosine;
+            if !axial_scale.is_finite() || axial_scale.abs() <= f64::EPSILON {
+                return Err(CodecError::Malformed(
+                    "intcurve support has an invalid cone axial parameter scale".into(),
+                ));
+            }
+            for point in &mut control_points {
+                let neutral = *point;
+                point.u = neutral.v / axial_scale;
                 point.v = neutral.u;
             }
         }
@@ -5552,6 +5579,127 @@ fn native_support_pcurve(
         weights,
         periodic,
     })
+}
+
+#[cfg(test)]
+mod pcurve_chart_tests {
+    use super::*;
+    use cadmpeg_ir::math::Point2;
+
+    #[test]
+    fn cone_writer_inverts_signed_axial_projection() {
+        for half_angle in [0.5_f64, -0.5] {
+            let support = SurfaceGeometry::Cone {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 12.0,
+                ratio: 1.0,
+                half_angle,
+            };
+            let pcurve = PcurveGeometry::Nurbs {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![Point2::new(1.25, 15.0), Point2::new(2.5, -3.0)],
+                weights: None,
+                periodic: false,
+            };
+            let PcurveGeometry::Nurbs { control_points, .. } =
+                native_support_pcurve(&support, &pcurve).expect("native cone chart")
+            else {
+                panic!("native chart conversion returns a NURBS pcurve")
+            };
+            let direction = if half_angle < 0.0 { -1.0 } else { 1.0 };
+            let axial_scale = direction * 12.0 * half_angle.cos();
+            assert_eq!(control_points[0].u, 15.0 / axial_scale);
+            assert_eq!(control_points[0].v, 1.25);
+            assert_eq!(control_points[1].u, -3.0 / axial_scale);
+            assert_eq!(control_points[1].v, 2.5);
+        }
+    }
+}
+
+pub(crate) fn pcurve_support_geometry<'a>(
+    model: &'a Model,
+    pcurve_id: &PcurveId,
+) -> Result<&'a SurfaceGeometry, CodecError> {
+    fn surface_for_loop<'a>(
+        model: &'a Model,
+        loop_id: &LoopId,
+        pcurve_id: &PcurveId,
+    ) -> Result<&'a SurfaceId, CodecError> {
+        let loop_ = model
+            .loops
+            .iter()
+            .find(|loop_| loop_.id == *loop_id)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "pcurve {pcurve_id} is used by missing loop {loop_id}"
+                ))
+            })?;
+        let face = model
+            .faces
+            .iter()
+            .find(|face| face.id == loop_.face)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "pcurve {pcurve_id} is used by loop {} with missing face {}",
+                    loop_.id, loop_.face
+                ))
+            })?;
+        Ok(&face.surface)
+    }
+
+    fn record_surface(
+        selected: &mut Option<SurfaceId>,
+        surface: &SurfaceId,
+        pcurve_id: &PcurveId,
+    ) -> Result<(), CodecError> {
+        if selected
+            .as_ref()
+            .is_some_and(|selected| selected != surface)
+        {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D pcurve {pcurve_id} is shared by faces with different support surfaces"
+            )));
+        }
+        selected.get_or_insert_with(|| surface.clone());
+        Ok(())
+    }
+
+    let mut surface_id = None;
+    for coedge in &model.coedges {
+        if coedge.pcurves.iter().any(|use_| use_.pcurve == *pcurve_id) {
+            let surface = surface_for_loop(model, &coedge.owner_loop, pcurve_id)?;
+            record_surface(&mut surface_id, surface, pcurve_id)?;
+        }
+    }
+    for loop_ in &model.loops {
+        if loop_.vertex_uses.iter().any(|vertex_use| {
+            vertex_use
+                .pcurves
+                .iter()
+                .any(|use_| use_.pcurve == *pcurve_id)
+        }) {
+            let surface = surface_for_loop(model, &loop_.id, pcurve_id)?;
+            record_surface(&mut surface_id, surface, pcurve_id)?;
+        }
+    }
+    let surface_id = surface_id.ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "F3D pcurve {pcurve_id} is not used by a coedge or pole vertex"
+        ))
+    })?;
+    model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == surface_id)
+        .map(|surface| &surface.geometry)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "F3D pcurve {pcurve_id} references missing support {surface_id}"
+            ))
+        })
 }
 
 fn native_intcurve_support_context(
@@ -6018,6 +6166,7 @@ pub(crate) fn native_pcurve(
     bytes: &mut Vec<u8>,
     pcurve: &Pcurve,
     companion_ref: Option<i64>,
+    support: &SurfaceGeometry,
 ) -> Result<(), CodecError> {
     if pcurve_uses_ref_form(pcurve)? {
         let companion_ref = companion_ref.ok_or_else(|| {
@@ -6049,13 +6198,14 @@ pub(crate) fn native_pcurve(
         )));
     }
     let range = pcurve.parameter_range.unwrap_or([0.0, 1.0]);
+    let native_geometry = native_support_pcurve_for_range(support, &pcurve.geometry, range)?;
     let NativePcurveGeometry {
         degree,
         knots,
         control_points,
         weights,
         periodic,
-    } = native_pcurve_geometry(&pcurve.geometry, range)?;
+    } = native_pcurve_geometry(&native_geometry, range)?;
     let degree_usize = usize::try_from(degree)
         .map_err(|_| CodecError::NotImplemented("F3D pcurve degree exceeds usize".into()))?;
     if knots.len() != control_points.len() + degree_usize + 1
@@ -6111,6 +6261,7 @@ pub(crate) fn native_pcurve(
 pub(crate) fn native_ref_pcurve_companion(
     bytes: &mut Vec<u8>,
     pcurve: &Pcurve,
+    support: &SurfaceGeometry,
 ) -> Result<(), CodecError> {
     if !pcurve_uses_ref_form(pcurve)? {
         return Err(CodecError::Malformed(format!(
@@ -6124,7 +6275,8 @@ pub(crate) fn native_ref_pcurve_companion(
             pcurve.id
         ))
     })?;
-    let native = native_pcurve_geometry(&pcurve.geometry, range)?;
+    let native_geometry = native_support_pcurve_for_range(support, &pcurve.geometry, range)?;
+    let native = native_pcurve_geometry(&native_geometry, range)?;
     let lifted = NurbsCurve {
         degree: native.degree,
         knots: native.knots,
@@ -6138,7 +6290,7 @@ pub(crate) fn native_ref_pcurve_companion(
     };
     native_curve_base(bytes, "intcurve")?;
     native_nurbs_curve(bytes, &lifted)?;
-    native_nurbs_pcurve_block(bytes, &pcurve.geometry)?;
+    native_nurbs_pcurve_block(bytes, &native_geometry)?;
     Ok(())
 }
 
