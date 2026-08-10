@@ -52,7 +52,7 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
-use crate::container::{self, Container, EntryContent};
+use crate::container::{self, Container};
 use crate::geometry;
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 use crate::parasolid::{self, Stream, StreamKind};
@@ -1141,8 +1141,12 @@ fn try_decode_geometry(
                 definition: ProceduralSurfaceDefinition::Offset {
                     support,
                     distance: offset.distance,
-                    u_sense: Some(0),
-                    v_sense: Some(0),
+                    // OFFSET_SURF status fields do not select parameter
+                    // direction. The exact fields remain in the native
+                    // source record; the neutral IR senses are intentionally
+                    // unknown.
+                    u_sense: None,
+                    v_sense: None,
                     extension_flags: Vec::new(),
                     revision_form: None,
                 },
@@ -1399,7 +1403,14 @@ fn try_decode_geometry(
                 id: procedural_id,
                 curve: curve_id.clone(),
                 definition: if let Some(charted) = charted {
-                    let mut support_uv = charted.support_uv.clone();
+                    let mut support_uv = validate_serialized_support_uv(
+                        &ir,
+                        &surfaces_by_xmt,
+                        charted.supports,
+                        &charted.points,
+                        charted.fit_tolerance,
+                        &charted.support_uv,
+                    );
                     if let Some(ext_support_uv) = assign_ext11_support_uv(
                         &ir,
                         &surfaces_by_xmt,
@@ -1900,38 +1911,23 @@ fn select_active_body(
         return false;
     }
     let active: BTreeSet<_> = rmfastload_ids.iter().copied().collect();
-    let mut scored: Vec<_> = ir
+    let selected: BTreeSet<_> = ir
         .model
         .bodies
         .iter()
-        .map(|body| {
-            let ids = body_node_ids.get(&body.id);
-            let count = ids.map_or(0, BTreeSet::len);
-            let hits = ids.map_or(0, |ids| ids.intersection(&active).count());
-            (hits, count, body.id.clone())
+        .filter_map(|body| {
+            let ids = body_node_ids.get(&body.id)?;
+            (!ids.is_empty() && ids.is_subset(&active)).then(|| body.id.clone())
         })
         .collect();
-    scored.sort_by(|first, second| second.0.cmp(&first.0).then(second.1.cmp(&first.1)));
-    let Some(&(top_hits, top_count, ref top_body)) = scored.first() else {
+    if selected.is_empty() {
         return false;
-    };
-    let next_hits = scored.get(1).map_or(0, |score| score.0);
-    let mut selected: BTreeSet<_> = scored
+    }
+    let selected_hits = selected
         .iter()
-        .filter(|(hits, count, _)| *hits > 0 && *count > 0 && (*hits as f64 / *count as f64) > 0.10)
-        .map(|(_, _, body)| body.clone())
-        .collect();
-    let dominant = top_hits >= 5 * next_hits.max(1);
-    if dominant {
-        selected.retain(|body| body == top_body);
-    }
-    if top_count == 0
-        || (top_hits as f64 / top_count as f64) <= 0.10
-        || selected.is_empty()
-        || (selected.len() == 1 && !dominant)
-    {
-        return false;
-    }
+        .filter_map(|body| body_node_ids.get(body))
+        .map(BTreeSet::len)
+        .sum::<usize>();
     prune_inactive_topology(ir, &selected);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
@@ -1940,7 +1936,7 @@ fn select_active_body(
         );
         source
             .attributes
-            .insert("rmfastload_hits".to_string(), top_hits.to_string());
+            .insert("rmfastload_hits".to_string(), selected_hits.to_string());
         source.attributes.insert(
             "rmfastload_active_body_count".to_string(),
             selected.len().to_string(),
@@ -1953,34 +1949,14 @@ fn select_terminal_feature_bodies(ir: &mut CadIr, model: &crate::native::NativeM
     if ir.model.bodies.len() <= 1 {
         return false;
     }
-    // These families are read straight from the pre-built model; extracting
-    // them here as well would parse the same container bytes a second time.
-    // `feature_operation_body_operands` already folds in the body-member and
-    // reference-occurrence families the legacy code computed inline.
-    let labels = model.features.feature_operation_labels.as_slice();
-    let body_references = model.features.feature_body_references.as_slice();
-    let body_data_block_uses = model.features.feature_body_data_block_uses.as_slice();
-    let booleans = model.features.feature_boolean_operations.as_slice();
     let bindings = model.segments.segment_body_bindings.as_slice();
-    let body_operands = model.features.feature_operation_body_operands.as_slice();
-    let Some(statuses) = crate::native::segment_body_lineage_statuses(
-        labels,
-        body_references,
-        body_data_block_uses,
-        booleans,
-        body_operands,
-        bindings,
-    ) else {
+    let statuses = model.segments.segment_body_lineage_statuses.as_slice();
+    if statuses.len() != bindings.len() {
         return false;
-    };
+    }
     let mut mapped = BTreeSet::new();
     let mut selected = BTreeSet::new();
-    for (binding, status) in bindings.iter().filter_map(|binding| {
-        statuses
-            .iter()
-            .find(|status| status.segment_body_binding == binding.id)
-            .map(|status| (binding, status))
-    }) {
+    for (binding, status) in bindings.iter().zip(statuses) {
         let prefix = format!("nx:s{}:", binding.stream_ordinal);
         let stream_bodies = ir
             .model
@@ -2003,7 +1979,10 @@ fn select_terminal_feature_bodies(ir: &mut CadIr, model: &crate::native::NativeM
         .iter()
         .map(|body| body.id.clone())
         .collect::<BTreeSet<_>>();
-    if mapped != emitted || selected.is_empty() || selected.len() == emitted.len() {
+    // A complete terminal mapping resolves composition even when every emitted
+    // body is terminal. The absence of pruning is a valid result: it means the
+    // retained body images are all final, not that lineage was unresolved.
+    if mapped != emitted || selected.is_empty() {
         return false;
     }
 
@@ -2337,6 +2316,59 @@ pub(crate) fn assign_ext11_support_uv(
     )
 }
 
+fn validate_serialized_support_uv(
+    ir: &CadIr,
+    surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
+    supports: [u32; 2],
+    points: &[Point3],
+    fit_tolerance: f64,
+    lanes: &[Option<Vec<[f64; 2]>>; 2],
+) -> [Option<Vec<[f64; 2]>>; 2] {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    std::array::from_fn(|side| {
+        let surface = surfaces_by_xmt.get(&supports[side])?;
+        let values = lanes[side].as_deref()?;
+        let tolerance = blend_spine_cache_fit_tolerance(ir, surface, fit_tolerance);
+        support_uv_lane_matches_surface(ir, &index, surface, points, tolerance, Some(values))
+            .then(|| values.to_vec())
+    })
+}
+
+fn support_uv_lane_matches_surface(
+    ir: &CadIr,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    points: &[Point3],
+    fit_tolerance: f64,
+    values: Option<&[[f64; 2]]>,
+) -> bool {
+    let Some(values) = values.filter(|values| values.len() == points.len()) else {
+        return false;
+    };
+    let Some(geometry) = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| &candidate.id == surface)
+        .map(|surface| &surface.geometry)
+    else {
+        return false;
+    };
+    values.iter().zip(points).all(|(uv, point)| {
+        if uv
+            .iter()
+            .any(|value| !value.is_finite() || missing_support_parameter(*value))
+        {
+            return false;
+        }
+        let Some(uv) = surface_parameters(geometry, *uv) else {
+            return false;
+        };
+        decoded_surface_point_inner(index, surface, uv.u, uv.v, 0)
+            .is_some_and(|candidate| point_distance(candidate, *point) <= fit_tolerance)
+    })
+}
+
 pub(crate) fn assign_ext11_support_uv_to_surfaces(
     ir: &CadIr,
     surfaces: [&SurfaceId; 2],
@@ -2346,28 +2378,14 @@ pub(crate) fn assign_ext11_support_uv_to_surfaces(
 ) -> Option<[Option<Vec<[f64; 2]>>; 2]> {
     let index = cadmpeg_ir::index::ModelIndex::new(ir);
     let lane_matches_surface = |surface: &SurfaceId, lane: usize| {
-        let Some(values) = lanes[lane]
-            .as_deref()
-            .filter(|values| values.len() == points.len())
-        else {
-            return false;
-        };
-        let Some(geometry) = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|candidate| &candidate.id == surface)
-            .map(|surface| &surface.geometry)
-        else {
-            return false;
-        };
-        values.iter().zip(points).all(|(uv, point)| {
-            let Some(uv) = surface_parameters(geometry, *uv) else {
-                return false;
-            };
-            model_surface_point_by_id(&index, surface, uv.u, uv.v)
-                .is_some_and(|candidate| point_distance(candidate, *point) <= fit_tolerance)
-        })
+        support_uv_lane_matches_surface(
+            ir,
+            &index,
+            surface,
+            points,
+            fit_tolerance,
+            lanes[lane].as_deref(),
+        )
     };
     let matches = [
         [
@@ -6579,12 +6597,22 @@ fn emit_topology(
         } else {
             fin_fields.forward
         };
-        let end = graph
-            .get(17, end_fin)
-            .and_then(Node::fin_fields)
-            .and_then(|next| vertices.get(&next.vertex))
-            .cloned()
-            .unwrap_or_else(|| start.clone());
+        let Some(end_fields) = graph.get(17, end_fin).and_then(Node::fin_fields) else {
+            continue;
+        };
+        let end = vertices.get(&end_fields.vertex).cloned().or_else(|| {
+            // A partnered closed FIN repeats the null vertex and closes its own
+            // forward/backward links. Its endpoint is the same analytic point
+            // as the current FIN's synthesized start, even when `end_fin` is a
+            // distinct radial partner record.
+            (end_fields.vertex == 1
+                && end_fields.forward == end_fin
+                && end_fields.backward == end_fin)
+                .then(|| start.clone())
+        });
+        let Some(end) = end else {
+            continue;
+        };
         let (mut start, mut end) = (start, end);
         let id = EdgeId(format!("{prefix}:edge#{}", node.xmt));
         annotate_node(annotations, &id, source_stream, node, "EDGE");
@@ -7970,7 +7998,8 @@ pub(crate) fn complete_exact_boundary_intersection_pcurves(
             _ => continue,
         }
         if cache_backed {
-            procedural.cache_fit_tolerance = Some(tolerance);
+            procedural.cache_fit_tolerance =
+                Some(procedural.cache_fit_tolerance.unwrap_or(0.0).max(tolerance));
         }
         if tolerant {
             bounded_tolerant_curves.push((curve, range));
@@ -8042,13 +8071,17 @@ fn exact_boundary_pcurve(
             && direction.v.is_finite()
             && (direction.u != 0.0 || direction.v != 0.0))
             .then_some(())?;
-        return Some(PcurveGeometry::Line {
+        let candidate = PcurveGeometry::Line {
             origin: Point2::new(
                 first.u - direction.u * range[0],
                 first.v - direction.v * range[0],
             ),
             direction,
-        });
+        };
+        return exact_boundary_pcurve_matches_carrier(
+            ir, curve, surface, &candidate, range, tolerance,
+        )
+        .then_some(candidate);
     }
     if matches!(
         &carrier.geometry,
@@ -8081,7 +8114,10 @@ fn exact_boundary_pcurve(
                 return None;
             }
         }
-        return Some(candidate);
+        return exact_boundary_pcurve_matches_carrier(
+            ir, curve, surface, &candidate, range, tolerance,
+        )
+        .then_some(candidate);
     }
     let SurfaceGeometry::Nurbs(nurbs) = &carrier.geometry else {
         return None;
@@ -8102,47 +8138,113 @@ fn exact_boundary_pcurve(
             return None;
         }
     }
-    let axes = [
-        ([parameters[0].u, parameters[1].u], domain.0),
-        ([parameters[0].v, parameters[1].v], domain.1),
-    ];
+    let axes = [domain.0, domain.1];
     let candidates = axes
         .into_iter()
         .enumerate()
-        .filter_map(|(constant_axis, (values, axis_domain))| {
-            let scale = (axis_domain[1] - axis_domain[0]).abs().max(1.0);
-            let parameter_tolerance = 1.0e-8 * scale;
-            let boundary = axis_domain.into_iter().find(|boundary| {
-                values
-                    .iter()
-                    .all(|value| (*value - *boundary).abs() <= parameter_tolerance)
-            })?;
-            let varying = if constant_axis == 0 {
-                [parameters[0].v, parameters[1].v]
-            } else {
-                [parameters[0].u, parameters[1].u]
-            };
-            ((varying[1] - varying[0]).abs() > parameter_tolerance).then(|| {
-                let delta = (varying[1] - varying[0]) / (range[1] - range[0]);
-                let (origin, direction) = if constant_axis == 0 {
-                    (
-                        Point2::new(boundary, varying[0] - delta * range[0]),
-                        Point2::new(0.0, delta),
-                    )
+        .flat_map(|(constant_axis, axis_domain)| {
+            axis_domain.into_iter().filter_map(move |boundary| {
+                let varying = if constant_axis == 0 {
+                    [parameters[0].v, parameters[1].v]
                 } else {
-                    (
-                        Point2::new(varying[0] - delta * range[0], boundary),
-                        Point2::new(delta, 0.0),
-                    )
+                    [parameters[0].u, parameters[1].u]
                 };
-                PcurveGeometry::Line { origin, direction }
+                let delta = (varying[1] - varying[0]) / (range[1] - range[0]);
+                (delta.is_finite() && delta != 0.0).then(|| {
+                    let (origin, direction) = if constant_axis == 0 {
+                        (
+                            Point2::new(boundary, varying[0] - delta * range[0]),
+                            Point2::new(0.0, delta),
+                        )
+                    } else {
+                        (
+                            Point2::new(varying[0] - delta * range[0], boundary),
+                            Point2::new(delta, 0.0),
+                        )
+                    };
+                    PcurveGeometry::Line { origin, direction }
+                })
             })
+        })
+        .filter(|candidate| {
+            exact_boundary_pcurve_matches_carrier(ir, curve, surface, candidate, range, tolerance)
         })
         .collect::<Vec<_>>();
     let [candidate] = candidates.as_slice() else {
         return None;
     };
     Some(candidate.clone())
+}
+
+fn exact_boundary_pcurve_matches_carrier(
+    ir: &CadIr,
+    curve: &CurveId,
+    surface: &SurfaceId,
+    pcurve: &PcurveGeometry,
+    range: [f64; 2],
+    tolerance: f64,
+) -> bool {
+    let Some(carrier) = ir
+        .model
+        .curves
+        .iter()
+        .find(|candidate| &candidate.id == curve)
+    else {
+        return false;
+    };
+    let Some(curve_breaks) = exact_boundary_curve_breaks(&carrier.geometry, range) else {
+        return false;
+    };
+    let Some(surface_breaks) = boundary_curve_affine_breaks(ir, surface, pcurve, range) else {
+        return false;
+    };
+    let mut breaks = curve_breaks;
+    breaks.extend(surface_breaks);
+    breaks.sort_by(f64::total_cmp);
+    breaks.dedup_by(|first, second| first.to_bits() == second.to_bits());
+    breaks.into_iter().all(|parameter| {
+        let Some(uv) = pcurve_uv(pcurve, parameter) else {
+            return false;
+        };
+        let Some(expected) = decoded_surface_point(ir, surface, uv.u, uv.v) else {
+            return false;
+        };
+        let Some(actual) = model_curve_point(ir, curve, parameter) else {
+            return false;
+        };
+        let error = point_distance(expected, actual);
+        error.is_finite() && error <= tolerance
+    })
+}
+
+fn exact_boundary_curve_breaks(geometry: &CurveGeometry, range: [f64; 2]) -> Option<Vec<f64>> {
+    let mut breaks = match geometry {
+        CurveGeometry::Line { .. } => range.to_vec(),
+        CurveGeometry::Nurbs(nurbs)
+            if nurbs.degree == 1
+                && !nurbs.periodic
+                && !nurbs.weights.as_ref().is_some_and(|weights| {
+                    weights
+                        .windows(2)
+                        .any(|pair| pair[0].to_bits() != pair[1].to_bits())
+                }) =>
+        {
+            let degree = usize::try_from(nurbs.degree).ok()?;
+            let count = nurbs.control_points.len();
+            if degree > count {
+                return None;
+            }
+            nurbs.knots.get(degree..=count)?.to_vec()
+        }
+        _ => return None,
+    };
+    breaks.retain(|parameter| {
+        parameter.is_finite() && *parameter >= range[0] && *parameter <= range[1]
+    });
+    breaks.extend(range);
+    breaks.sort_by(f64::total_cmp);
+    breaks.dedup_by(|first, second| first.to_bits() == second.to_bits());
+    Some(breaks)
 }
 
 fn exact_analytic_isocurve_pcurve(
@@ -9662,7 +9764,7 @@ fn build_geometry_report(
                  Equal-schema deltas were paired with the preceding partition. Exact-key \
                  BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact \
                  non-topology replacements and tombstones were applied using the last event for \
-                 each key. Validated partition topology remained authoritative, including any \
+                 each key within each current body-sequence interval. Validated partition topology remained authoritative, including any \
                  point, curve, or surface carrier still referenced by surviving topology. Complete \
                  ENTITY_51, ENTITY_52, ENTITY_53, and ENTITY_54 records were retained for native \
                  attribute extraction. Every completely bounded full record, compact tombstone, \
@@ -9685,7 +9787,7 @@ fn build_geometry_report(
             } else {
                 format!(
                     "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
-                 Equal-schema deltas were paired with the preceding partition. Exact-key revisions were applied using the last \
+                    Equal-schema deltas were paired with the preceding partition. Exact-key revisions in current body-sequence intervals were applied using the last \
                  event for each key, but {unmatched_tombstones} terminal tombstone(s) have no exact \
                  current or earlier-added key and remain unresolved: {unmatched_tombstone_detail}.",
                     scan.count(StreamKind::Deltas)
@@ -9716,24 +9818,8 @@ fn build_geometry_report(
         losses.push(LossNote {
             code: LossKind::AttributesNotTransferred,
             severity: Severity::Warning,
-            message: "A referenced Parasolid attribute value or field-name record was not \
-                      transferred because its complete value relation did not resolve."
-                .to_string(),
-            provenance: None,
-        });
-    }
-
-    if scan
-        .container
-        .entries
-        .iter()
-        .any(|entry| entry.content() == EntryContent::ExternalReferences)
-    {
-        losses.push(LossNote {
-            code: LossKind::AssemblyPlacementsNotTransferred,
-            severity: Severity::Warning,
-            message: "Assembly occurrence placements were not transferred because their remaining \
-                      NX object-model field serialization is not decoded."
+            message: "A referenced Parasolid attribute value was not transferred because its \
+                      complete value relation did not resolve."
                 .to_string(),
             provenance: None,
         });
@@ -9751,11 +9837,43 @@ fn build_geometry_report(
 }
 
 pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>) {
+    let current_body_ids = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect::<Vec<_>>();
+    // A retained segment-body input is represented as a BaseFeature so that
+    // the saved body census has an explicit replay boundary. It is not an
+    // evaluated history writer. Do not use a closure rooted only in that
+    // boundary to suppress losses for the retained operation stream: without
+    // a non-BaseFeature writer, the body-to-history relation is still
+    // unproven and conservative accounting is required.
+    let active_features = crate::native::history::active_feature_closure(ir, &current_body_ids)
+        .filter(|active| {
+            active.iter().any(|id| {
+                ir.model.features.iter().any(|feature| {
+                    feature.id == *id
+                        && !matches!(&feature.definition, FeatureDefinition::BaseFeature { .. })
+                })
+            })
+        });
+    let suppression_scope = active_features.as_ref().map_or("", |_| "active ");
+    let feature_in_active_scope = |feature: &Feature| {
+        active_features
+            .as_ref()
+            .is_none_or(|active| active.contains(&feature.id))
+    };
     let unresolved_suppression_count = ir
         .model
         .features
         .iter()
-        .filter(|feature| feature.suppressed.is_none())
+        .filter(|feature| {
+            feature.suppressed.is_none()
+                && active_features
+                    .as_ref()
+                    .is_none_or(|active| active.contains(&feature.id))
+        })
         .count();
     if unresolved_suppression_count != 0 {
         losses.push(LossNote {
@@ -9763,7 +9881,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             severity: Severity::Warning,
             message: format!(
                 "Suppression state remains unresolved for {unresolved_suppression_count} NX \
-                 feature history operation(s)."
+                 {suppression_scope}feature history operation(s)."
             ),
             provenance: None,
         });
@@ -9825,6 +9943,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
 
     let mut native_feature_kinds = BTreeMap::<&str, usize>::new();
     for feature in &ir.model.features {
+        if !feature_in_active_scope(feature) {
+            continue;
+        }
         if let FeatureDefinition::Native { kind, .. } = &feature.definition {
             *native_feature_kinds.entry(kind.as_str()).or_default() += 1;
         }
@@ -9848,6 +9969,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
 
     let mut unresolved_feature_families = BTreeMap::<&str, usize>::new();
     for feature in &ir.model.features {
+        if !feature_in_active_scope(feature) {
+            continue;
+        }
         let family = match feature.definition {
             FeatureDefinition::DatumPlaneUnresolved => "datum plane",
             FeatureDefinition::DatumPointUnresolved => "datum point",
@@ -9886,13 +10010,22 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .map(|state| &state.output_of)
         .collect::<BTreeSet<_>>();
     for feature in &ir.model.features {
+        if !feature_in_active_scope(feature) {
+            continue;
+        }
         let is_exact_empty_base = matches!(
             &feature.definition,
             FeatureDefinition::BaseFeature {
                 bodies: BodySelection::Resolved { bodies, native },
             } if bodies.is_empty() && !native.trim().is_empty() && feature.outputs.is_empty()
         );
-        if feature.suppressed != Some(true) && !is_exact_empty_base {
+        if feature.suppressed != Some(true)
+            && !is_exact_empty_base
+            && !output_free_native_snapshot(feature)
+            && !output_free_local_body_construction(feature)
+            && !output_free_pattern_construction(feature)
+            && !output_free_trim_surface_construction(feature)
+        {
             if let Some(family) = feature.definition.body_output_family().filter(|_| {
                 let current_outputs_are_valid = !feature.outputs.is_empty()
                     && feature.outputs.iter().collect::<BTreeSet<_>>().len()
@@ -9912,7 +10045,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         }
         let family = match &feature.definition {
             FeatureDefinition::BaseFeature { bodies }
-                if !is_exact_empty_base && body_selection_is_incomplete(bodies) =>
+                if !is_exact_empty_base
+                    && !output_free_native_snapshot(feature)
+                    && body_selection_is_incomplete(bodies) =>
             {
                 "base feature"
             }
@@ -10118,12 +10253,14 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .model
         .features
         .iter()
+        .filter(|feature| feature_in_active_scope(feature))
         .filter(|feature| matches!(feature.definition, FeatureDefinition::Sketch { .. }))
         .count();
     let unresolved_sketch_feature_count = ir
         .model
         .features
         .iter()
+        .filter(|feature| feature_in_active_scope(feature))
         .filter(|feature| {
             matches!(
                 feature.definition,
@@ -10144,10 +10281,27 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         });
     }
 
+    let active_sketch_ids = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| feature_in_active_scope(feature))
+        .filter_map(|feature| match &feature.definition {
+            FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+                ..
+            } => Some(sketch.clone()),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let sketch_in_active_scope = |sketch: &cadmpeg_ir::sketches::SketchId| {
+        active_features.is_none() || active_sketch_ids.contains(sketch)
+    };
     let native_sketch_entity_count = ir
         .model
         .sketch_entities
         .iter()
+        .filter(|entity| sketch_in_active_scope(&entity.sketch))
         .filter(|entity| {
             matches!(
                 entity.geometry,
@@ -10159,6 +10313,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .model
         .sketch_constraints
         .iter()
+        .filter(|constraint| sketch_in_active_scope(&constraint.sketch))
         .filter(|constraint| {
             matches!(
                 constraint.definition,
@@ -10178,6 +10333,75 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             provenance: None,
         });
     }
+}
+
+pub(crate) fn output_free_native_snapshot(feature: &cadmpeg_ir::features::Feature) -> bool {
+    feature.outputs.is_empty()
+        && feature.name.as_deref() == Some("MASTER SNAPSHOT BODY")
+        && matches!(
+            &feature.definition,
+            FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Unresolved
+            }
+        )
+        && feature
+            .source_properties
+            .get("operation_record")
+            .is_some_and(|record| !record.trim().is_empty())
+}
+
+/// Return whether a feature's primary body is local to the history namespace.
+///
+/// Offset-store and unbound object-namespace bodies are retained as native
+/// feature-local identities. They do not create neutral current-body outputs;
+/// the saved segment image remains the only neutral body census.
+pub(crate) fn output_free_local_body_construction(feature: &cadmpeg_ir::features::Feature) -> bool {
+    feature.outputs.is_empty()
+        && feature
+            .source_properties
+            .contains_key("primary_body_reference")
+        && !feature
+            .source_properties
+            .contains_key("primary_body_segment_use")
+}
+
+/// Return whether a pattern record is construction-only and has no neutral
+/// body-output obligation.
+///
+/// Pattern construction records without a primary-body field describe the
+/// seed and transform graph. A body-affecting pattern has at least one body
+/// reference occurrence, even when the occurrence is too ambiguous to become
+/// a primary writer. Keep that distinction explicit so an incomplete body
+/// binding cannot be mistaken for a construction-only record.
+pub(crate) fn output_free_pattern_construction(feature: &cadmpeg_ir::features::Feature) -> bool {
+    feature.outputs.is_empty()
+        && matches!(&feature.definition, FeatureDefinition::Pattern { .. })
+        && !feature.source_properties.keys().any(|key| {
+            key == "primary_body_reference"
+                || key == "primary_body_object_index"
+                || key == "primary_body_data_block"
+                || key.starts_with("body_reference.")
+                || key.starts_with("body_reference_occurrence.")
+        })
+}
+
+/// Return whether a `TRIMMED_SH` record is a construction-only operation.
+///
+/// NX uses the typed trim-surface family for records that carry no body
+/// occurrence or primary-body field. Those records have no body result to
+/// bind; a body marker makes the output obligation explicit again.
+pub(crate) fn output_free_trim_surface_construction(
+    feature: &cadmpeg_ir::features::Feature,
+) -> bool {
+    feature.outputs.is_empty()
+        && matches!(&feature.definition, FeatureDefinition::TrimSurface { .. })
+        && !feature.source_properties.keys().any(|key| {
+            key == "primary_body_reference"
+                || key == "primary_body_object_index"
+                || key == "primary_body_data_block"
+                || key.starts_with("body_reference.")
+                || key.starts_with("body_reference_occurrence.")
+        })
 }
 
 pub(crate) fn active_configuration_state_is_incomplete(
@@ -11661,12 +11885,58 @@ mod tests {
         ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{
-        CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
+        BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
         ProceduralSurfaceId, ShellId, SurfaceId, VertexId,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
-    use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, PcurveUse, Point, Sense, Vertex};
+    use cadmpeg_ir::topology::{
+        Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Sense, Vertex,
+    };
     use cadmpeg_ir::AnnotationBuilder;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    #[test]
+    fn active_body_selection_accepts_a_complete_singleton_membership() {
+        let first = BodyId("nx:test:body#first".into());
+        let second = BodyId("nx:test:body#second".into());
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.bodies.extend([
+            Body {
+                id: first.clone(),
+                kind: BodyKind::Solid,
+                regions: Vec::new(),
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+            Body {
+                id: second.clone(),
+                kind: BodyKind::Solid,
+                regions: Vec::new(),
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+        ]);
+        ir.source = Some(cadmpeg_ir::document::SourceMeta::default());
+        let body_node_ids = BTreeMap::from([
+            (first.clone(), BTreeSet::from([7])),
+            (second, BTreeSet::from([8])),
+        ]);
+
+        assert!(super::select_active_body(&mut ir, &body_node_ids, &[7]));
+        assert_eq!(ir.model.bodies.len(), 1);
+        assert_eq!(ir.model.bodies[0].id, first);
+        assert_eq!(
+            ir.source
+                .as_ref()
+                .and_then(|source| source.attributes.get("rmfastload_hits"))
+                .map(String::as_str),
+            Some("1")
+        );
+    }
 
     #[test]
     fn analytic_closed_isocurves_retain_the_native_full_turn() {
@@ -11897,6 +12167,96 @@ mod tests {
                     });
             assert!((inverse - parameter).abs() < 1.0e-10);
         }
+    }
+
+    #[test]
+    fn boundary_pcurve_requires_an_affine_carrier_witness() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let curve = CurveId("nx:test:bowed-boundary-curve".into());
+        let surface = SurfaceId("nx:test:boundary-plane".into());
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Nurbs(NurbsCurve {
+                degree: 2,
+                knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                control_points: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(5.0, 5.0, 0.0),
+                    Point3::new(10.0, 0.0, 0.0),
+                ],
+                weights: None,
+                periodic: false,
+            }),
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+
+        assert!(super::exact_boundary_pcurve(
+            &ir,
+            &curve,
+            &surface,
+            [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+            [0.0, 1.0],
+            1.0e-8,
+        )
+        .is_none());
+
+        ir.model.curves[0].geometry = CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(10.0, 0.0, 0.0),
+        };
+        assert!(matches!(
+            super::exact_boundary_pcurve(
+                &ir,
+                &curve,
+                &surface,
+                [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+                [0.0, 1.0],
+                1.0e-8,
+            ),
+            Some(PcurveGeometry::Line { .. })
+        ));
+    }
+
+    #[test]
+    fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let curve = CurveId("nx:test:affine-nurbs-boundary-curve".into());
+        let surface = SurfaceId("nx:test:affine-nurbs-boundary-surface".into());
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(3.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: affine_nurbs_surface(0.0),
+            source_object: None,
+        });
+
+        assert!(matches!(
+            super::exact_boundary_pcurve(
+                &ir,
+                &curve,
+                &surface,
+                [Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+                [0.0, 1.0],
+                1.0e-8,
+            ),
+            Some(PcurveGeometry::Line { origin, direction })
+                if origin.v == 0.0 && direction.u == 1.0 && direction.v == 0.0
+        ));
     }
 
     fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {

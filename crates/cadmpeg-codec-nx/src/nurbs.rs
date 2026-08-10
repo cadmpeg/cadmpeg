@@ -61,6 +61,12 @@ pub fn surfaces(bytes: &[u8]) -> Vec<Surface> {
                 .is_none_or(|payload| payload == refs[1])
                 .then_some(())?;
             let payload = payloads.get(&refs[1])?;
+            let poles = descriptor.u_count.checked_mul(descriptor.v_count)?;
+            let stride = payload.values.len().checked_div(poles)?;
+            let expected_values = poles.checked_mul(stride)?;
+            if !(stride == 3 || stride == 4) || payload.values.len() != expected_values {
+                return None;
+            }
             let u_mult = arrays.u16s.get(&descriptor.u_mult)?;
             let v_mult = arrays.u16s.get(&descriptor.v_mult)?;
             let u_knots = arrays.f64s.get(&descriptor.u_knots)?;
@@ -69,15 +75,18 @@ pub fn surfaces(bytes: &[u8]) -> Vec<Surface> {
             let v_mult = v_mult.get(..descriptor.v_distinct)?;
             let u_knots = u_knots.get(..descriptor.u_distinct)?;
             let v_knots = v_knots.get(..descriptor.v_distinct)?;
-            let full_u = expand_knots(u_knots, u_mult)?;
-            let full_v = expand_knots(v_knots, v_mult)?;
+            let full_u = expand_knots(
+                u_knots,
+                u_mult,
+                required_knot_count(descriptor.u_degree, descriptor.u_count)?,
+            )?;
+            let full_v = expand_knots(
+                v_knots,
+                v_mult,
+                required_knot_count(descriptor.v_degree, descriptor.v_count)?,
+            )?;
             valid_basis(descriptor.u_degree, descriptor.u_count, &full_u)?;
             valid_basis(descriptor.v_degree, descriptor.v_count, &full_v)?;
-            let poles = descriptor.u_count.checked_mul(descriptor.v_count)?;
-            let stride = payload.values.len().checked_div(poles)?;
-            if !(stride == 3 || stride == 4) || payload.values.len() != poles * stride {
-                return None;
-            }
             let mut control_points = Vec::new();
             let mut weights = (stride == 4).then(Vec::new);
             for pole in payload.values.chunks_exact(stride) {
@@ -101,8 +110,8 @@ pub fn surfaces(bytes: &[u8]) -> Vec<Surface> {
                     v_count: descriptor.v_count as u32,
                     control_points,
                     weights,
-                    u_periodic: descriptor.u_form == 6,
-                    v_periodic: descriptor.v_form == 6,
+                    u_periodic: descriptor.u_periodic,
+                    v_periodic: descriptor.v_periodic,
                 }),
             })
         })
@@ -121,6 +130,11 @@ pub fn pcurves(bytes: &[u8]) -> Vec<Pcurve> {
             let descriptor = descriptors.get(&refs[0])?;
             (descriptor.dimension == 2).then_some(())?;
             let control = controls.get(&refs[1])?;
+            let stride = control.values.len().checked_div(descriptor.poles)?;
+            let expected_values = descriptor.poles.checked_mul(stride)?;
+            if !(stride == 2 || stride == 3) || control.values.len() != expected_values {
+                return None;
+            }
             let mult = arrays
                 .u16s
                 .get(&descriptor.mult)?
@@ -129,12 +143,12 @@ pub fn pcurves(bytes: &[u8]) -> Vec<Pcurve> {
                 .f64s
                 .get(&descriptor.knots)?
                 .get(..descriptor.distinct)?;
-            let knots = expand_knots(distinct, mult)?;
+            let knots = expand_knots(
+                distinct,
+                mult,
+                required_knot_count(descriptor.degree, descriptor.poles)?,
+            )?;
             valid_basis(descriptor.degree, descriptor.poles, &knots)?;
-            let stride = control.values.len().checked_div(descriptor.poles)?;
-            if !(stride == 2 || stride == 3) || control.values.len() != descriptor.poles * stride {
-                return None;
-            }
             let mut control_points = Vec::new();
             let mut weights = (stride == 3).then(Vec::new);
             for pole in control.values.chunks_exact(stride) {
@@ -154,7 +168,7 @@ pub fn pcurves(bytes: &[u8]) -> Vec<Pcurve> {
                     knots,
                     control_points,
                     weights,
-                    periodic: descriptor.form == 6,
+                    periodic: descriptor.periodic,
                 },
             })
         })
@@ -176,6 +190,13 @@ pub fn curves(bytes: &[u8]) -> Vec<Curve> {
             let descriptor = descriptors.get(&refs[0])?;
             matches!(descriptor.dimension, 3 | 4).then_some(())?;
             let control = controls.get(&refs[1])?;
+            let stride = control.values.len().checked_div(descriptor.poles)?;
+            let expected_values = descriptor.poles.checked_mul(stride)?;
+            if !matches!((descriptor.dimension, stride), (3, 3 | 4) | (4, 4))
+                || control.values.len() != expected_values
+            {
+                return None;
+            }
             let mult = arrays
                 .u16s
                 .get(&descriptor.mult)?
@@ -184,14 +205,12 @@ pub fn curves(bytes: &[u8]) -> Vec<Curve> {
                 .f64s
                 .get(&descriptor.knots)?
                 .get(..descriptor.distinct)?;
-            let knots = expand_knots(distinct, mult)?;
+            let knots = expand_knots(
+                distinct,
+                mult,
+                required_knot_count(descriptor.degree, descriptor.poles)?,
+            )?;
             valid_basis(descriptor.degree, descriptor.poles, &knots)?;
-            let stride = control.values.len().checked_div(descriptor.poles)?;
-            if !matches!((descriptor.dimension, stride), (3, 3 | 4) | (4, 4))
-                || control.values.len() != descriptor.poles * stride
-            {
-                return None;
-            }
             let mut control_points = Vec::new();
             let mut weights = (stride == 4).then(Vec::new);
             for pole in control.values.chunks_exact(stride) {
@@ -211,7 +230,7 @@ pub fn curves(bytes: &[u8]) -> Vec<Curve> {
                     knots,
                     control_points,
                     weights,
-                    periodic: descriptor.form == 6,
+                    periodic: descriptor.periodic,
                 }),
             })
         })
@@ -280,7 +299,7 @@ fn array_record_at(bytes: &[u8], pos: usize) -> Option<ArrayRecord> {
     let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
     (bytes.get(pos + 2 + escape..pos + 4 + escape) == Some(&[0, 0])).then_some(())?;
     let count = be_u16(bytes, pos + 4 + escape).map(usize::from)?;
-    (1..4096).contains(&count).then_some(())?;
+    (count > 0).then_some(())?;
     let (reference, reference_len) = read_xmt(bytes, pos + 6 + escape)?;
     (reference > 5).then_some(())?;
     let data = pos + 6 + escape + reference_len;
@@ -341,8 +360,8 @@ fn surface_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload, usize)>
             .is_some_and(|(candidate_xmt, _)| candidate_xmt == xmt)
     });
     (!nested_same_record).then_some(())?;
-    let count = be_u32(bytes, count_at)? as usize;
-    (count > 0 && count <= 0x40000).then_some(())?;
+    let count = usize::try_from(be_u32(bytes, count_at)?).ok()?;
+    (count > 0).then_some(())?;
     let (_, first_len) = read_xmt(bytes, count_at + 4)?;
     let data = count_at + 4 + first_len;
     let end = data.checked_add(count.checked_mul(8)?)?;
@@ -399,8 +418,8 @@ fn curve_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload, usize)> {
     let shift = escape + xmt_len - 2;
     let count_escape = usize::from(bytes.get(pos + 9 + shift) == Some(&0xff));
     let count_at = pos + 9 + shift + count_escape;
-    let count = be_u32(bytes, count_at)? as usize;
-    (count > 0 && count <= 0x40000).then_some(())?;
+    let count = usize::try_from(be_u32(bytes, count_at)?).ok()?;
+    (count > 0).then_some(())?;
     let (_, control_ref_len) = read_xmt(bytes, count_at + 4)?;
     let data = count_at + 4 + control_ref_len;
     let end = data.checked_add(count.checked_mul(8)?)?;
@@ -445,8 +464,10 @@ struct SurfaceDescriptor {
     v_degree: u16,
     u_count: usize,
     v_count: usize,
-    u_form: u8,
-    v_form: u8,
+    u_periodic: bool,
+    v_periodic: bool,
+    u_knot_type: u8,
+    v_knot_type: u8,
     u_distinct: usize,
     v_distinct: usize,
     u_mult: u32,
@@ -501,23 +522,23 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
     let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
     (xmt > 10).then_some(())?;
     let shift = escape + xmt_len - 2;
+    let u_periodic = logical_at(bytes, pos + 4 + shift)?;
+    let v_periodic = logical_at(bytes, pos + 5 + shift)?;
     let u_degree = be_u16(bytes, pos + 6 + shift)?;
     let v_degree = be_u16(bytes, pos + 8 + shift)?;
-    let u_count = be_u16(bytes, pos + 12 + shift)? as usize;
-    let v_count = be_u16(bytes, pos + 16 + shift)? as usize;
-    let u_form = *bytes.get(pos + 18 + shift)?;
-    let v_form = *bytes.get(pos + 19 + shift)?;
-    let u_distinct = be_u32(bytes, pos + 20 + shift)? as usize;
-    let v_distinct = be_u32(bytes, pos + 24 + shift)? as usize;
-    ((1..=10).contains(&u_degree)
-        && (1..=10).contains(&v_degree)
-        && (2..=2000).contains(&u_count)
-        && (2..=2000).contains(&v_count)
-        && [1, 4, 5, 6].contains(&u_form)
-        && [1, 4, 5, 6].contains(&v_form)
-        && (2..2000).contains(&u_distinct)
-        && (2..2000).contains(&v_distinct))
-    .then_some(())?;
+    let u_count = usize::try_from(be_u32(bytes, pos + 10 + shift)?).ok()?;
+    let v_count = usize::try_from(be_u32(bytes, pos + 14 + shift)?).ok()?;
+    let u_knot_type = *bytes.get(pos + 18 + shift)?;
+    let v_knot_type = *bytes.get(pos + 19 + shift)?;
+    let u_distinct = usize::try_from(be_u32(bytes, pos + 20 + shift)?).ok()?;
+    let v_distinct = usize::try_from(be_u32(bytes, pos + 24 + shift)?).ok()?;
+    ((u_count > 0)
+        && (v_count > 0)
+        && valid_knot_type(u_knot_type)
+        && valid_knot_type(v_knot_type)
+        && (u_distinct > 0)
+        && (v_distinct > 0))
+        .then_some(())?;
     let short = be_u16(bytes, pos + 44 + shift) == Some(125);
     let (u_mult, v_mult, u_knots, v_knots, payload, end) = if short {
         let payload_at = pos + 46 + shift;
@@ -571,8 +592,10 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
             v_degree,
             u_count,
             v_count,
-            u_form,
-            v_form,
+            u_periodic,
+            v_periodic,
+            u_knot_type,
+            v_knot_type,
             u_distinct,
             v_distinct,
             u_mult,
@@ -591,7 +614,8 @@ struct CurveDescriptor {
     poles: usize,
     dimension: u16,
     distinct: usize,
-    form: u8,
+    knot_type: u8,
+    periodic: bool,
     mult: u32,
     knots: u32,
     references: Vec<u32>,
@@ -639,16 +663,13 @@ fn curve_descriptor_at(
     (xmt > 10).then_some(())?;
     let shift = escape + xmt_len - 2;
     let degree = be_u16(bytes, pos + 4 + shift)?;
-    let poles = be_u16(bytes, pos + 8 + shift)? as usize;
+    let poles = usize::try_from(be_u32(bytes, pos + 6 + shift)?).ok()?;
     let dimension = be_u16(bytes, pos + 10 + shift)?;
-    let distinct = be_u16(bytes, pos + 14 + shift)? as usize;
-    let form = *bytes.get(pos + 16 + shift)?;
-    ((1..=10).contains(&degree)
-        && (2..=2000).contains(&poles)
-        && matches!(dimension, 2..=4)
-        && (2..=2000).contains(&distinct)
-        && [1, 4, 5, 6].contains(&form))
-    .then_some(())?;
+    let distinct = usize::try_from(be_u32(bytes, pos + 12 + shift)?).ok()?;
+    let knot_type = *bytes.get(pos + 16 + shift)?;
+    let periodic = logical_at(bytes, pos + 17 + shift)?;
+    ((poles > 0) && matches!(dimension, 2..=4) && (distinct > 0) && valid_knot_type(knot_type))
+        .then_some(())?;
     if matches!(
         bytes.get(pos + 17 + shift..pos + 21 + shift),
         Some([0, 0, 0, 1] | [0, 0, 1, 4])
@@ -674,7 +695,8 @@ fn curve_descriptor_at(
                     poles,
                     dimension,
                     distinct,
-                    form,
+                    knot_type,
+                    periodic,
                     mult: references[1],
                     knots: references[2],
                     references: references.to_vec(),
@@ -693,7 +715,8 @@ fn curve_descriptor_at(
             poles,
             dimension,
             distinct,
-            form,
+            knot_type,
+            periodic,
             mult,
             knots,
             references: vec![mult, knots],
@@ -789,28 +812,41 @@ fn read_enveloped_xmt(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
     Some((value, escape + len))
 }
 
-/// Codec-local ceiling on the total expanded knot count. Multiplicities are
-/// attacker-controlled `u16` values with
-/// no physical input floor of their own, so a hostile record can request a knot
-/// vector of `distinct.len() * 65535` entries out of a few input bytes. This cap
-/// bounds the `repeat_n`-style expansion (class A) independently of input size;
-/// it is an algorithm fact retained as defense in depth, not a resource policy.
-const MAX_KNOT_ENTRIES: usize = 1 << 20;
+fn logical_at(bytes: &[u8], at: usize) -> Option<bool> {
+    match bytes.get(at)? {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
+}
 
-fn expand_knots(distinct: &[f64], multiplicities: &[u16]) -> Option<Vec<f64>> {
+fn valid_knot_type(value: u8) -> bool {
+    (1..=6).contains(&value)
+}
+
+fn required_knot_count(degree: u16, control_count: usize) -> Option<usize> {
+    control_count
+        .checked_add(usize::from(degree))?
+        .checked_add(1)
+}
+
+fn expand_knots(
+    distinct: &[f64],
+    multiplicities: &[u16],
+    required_count: usize,
+) -> Option<Vec<f64>> {
     if distinct.len() != multiplicities.len() || !distinct.windows(2).all(|pair| pair[0] <= pair[1])
     {
         return None;
     }
-    // The explicit running cap prevents the expansion from committing
-    // memory proportional to an untrusted multiplicity sum.
+    let expanded_count = multiplicities.iter().try_fold(0usize, |total, &count| {
+        (count > 0).then_some(())?;
+        total.checked_add(usize::from(count))
+    })?;
+    (expanded_count == required_count).then_some(())?;
     let mut out = Vec::new();
     for (&value, &count) in distinct.iter().zip(multiplicities) {
-        let count = count as usize;
-        if out.len().saturating_add(count) > MAX_KNOT_ENTRIES {
-            return None;
-        }
-        for _ in 0..count {
+        for _ in 0..usize::from(count) {
             out.push(value);
         }
     }

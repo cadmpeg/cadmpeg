@@ -37,7 +37,6 @@ pub(crate) mod vector;
 // consumes from outside the subtree are re-exported here.
 pub(crate) use model::NativeModel;
 pub(crate) use om::{evaluate_parameterized_expression, expression_parameter_names};
-pub(crate) use segments::segment_body_lineage_statuses;
 pub(crate) use substrate::{paired_delta_streams, topology_streams, ParsedStreams};
 
 /// Attach the pre-extracted native object model to `ir`: emit annotations, the

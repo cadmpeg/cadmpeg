@@ -336,6 +336,11 @@ impl ContainerNoted for FeatureOperationRecord {
         (&self.id, self.source_offset)
     }
 }
+impl ContainerNoted for FeatureOperationObjectRelation {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
 impl ContainerNoted for FeatureOperationCommonFrame {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
@@ -1800,6 +1805,18 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: Some(|m, r, a| note_container(&m.features.feature_operation_records, r, a)),
         emit: |m, r, ns| emit_arena(&m.features.feature_operation_records, r, ns),
         len: |m| m.features.feature_operation_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_operation_object_relations",
+        tag: Some("FEATURE_OPERATION_OBJECT_RELATION"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| {
+            note_container(&m.features.feature_operation_object_relations, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.features.feature_operation_object_relations, r, ns),
+        len: |m| m.features.feature_operation_object_relations.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

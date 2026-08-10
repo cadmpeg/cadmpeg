@@ -9,8 +9,9 @@ Table source: `docs/layouts/nx.toml`.
 
 Covers the SPLMSSTR container (§2), the Parasolid XT fixed record families
 (§4.1), the topology node field maps (§5.1), the analytic payload offsets
-(§6.1), the trimmed and SP curve carriers (§6.4), the rolling-ball blend
-(§6.5), and the CHART_s preamble (§6.3).
+(§6.1), the B-spline descriptor prefixes (§6.2), the trimmed and SP curve
+carriers (§6.4), the rolling-ball blend (§6.5), and the CHART_s preamble
+(§6.3).
 
 Endianness follows the two lanes §1 states: SPLMSSTR and UG_PART table fields
 are little-endian, Parasolid neutral-binary payload fields are big-endian. Each
@@ -300,7 +301,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 14 matches the declared 39 bytes, which the field list closes exactly.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 14 matches the declared 39 bytes, which the field list closes exactly.
 
 ## `edge_node`
 
@@ -324,7 +325,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 16 matches the declared 32 bytes, which the field list closes exactly.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 16 matches the declared 32 bytes, which the field list closes exactly.
 
 ## `fin_node`
 
@@ -351,7 +352,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 17 matches the declared 23 bytes, which the field list closes exactly.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 17 matches the declared 23 bytes, which the field list closes exactly.
 
 ## `vertex_node`
 
@@ -373,7 +374,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 18 matches the declared 28 bytes, which the field list closes exactly.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 18 matches the declared 28 bytes, which the field list closes exactly.
 
 ## `loop_node`
 
@@ -392,7 +393,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 15 matches the declared 16 bytes, which the field list closes exactly.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 15 matches the declared 16 bytes, which the field list closes exactly.
 
 ## `shell_node`
 
@@ -416,7 +417,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 13 matches the declared 24 bytes, which the field list closes exactly.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 13 matches the declared 24 bytes, which the field list closes exactly.
 
 ## `point_node`
 
@@ -436,7 +437,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 29 matches the declared 40 bytes, which the field list closes exactly.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 29 matches the declared 40 bytes, which the field list closes exactly.
 
 ## `line_payload`
 
@@ -455,7 +456,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/geometry.rs` — The parser pairs tag 0x1e with the 67-byte record length this table closes.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 30 length matches the declared 67 bytes, which the field list closes exactly.
 
 ## `circle_payload`
 
@@ -474,7 +475,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/geometry.rs` — The parser pairs tag 0x1f with the 99-byte record length this table closes.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 31 length matches the declared 99 bytes, which the field list closes exactly.
 
 ## `ellipse_payload`
 
@@ -494,7 +495,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/geometry.rs` — The parser pairs tag 0x20 with the 107-byte record length this table closes.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 32 length matches the declared 107 bytes, which the field list closes exactly.
 
 ## `plane_payload`
 
@@ -512,7 +513,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/geometry.rs` — The parser pairs tag 0x32 with the 91-byte record length this table closes.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 50 length matches the declared 91 bytes, which the field list closes exactly.
 
 ## `cylinder_payload`
 
@@ -531,7 +532,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/geometry.rs` — The parser pairs tag 0x33 with the 99-byte record length this table closes.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 51 length matches the declared 99 bytes, which the field list closes exactly.
 
 ## `cone_payload`
 
@@ -552,7 +553,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/geometry.rs` — The parser pairs tag 0x34 with the 115-byte record length this table closes.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 52 length matches the declared 115 bytes, which the field list closes exactly.
 
 ## `sphere_payload`
 
@@ -573,7 +574,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/geometry.rs` — The parser pairs tag 0x35 with the 99-byte record length this table closes.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 53 length matches the declared 99 bytes, which the field list closes exactly.
 
 ## `torus_payload`
 
@@ -593,7 +594,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/geometry.rs` — The parser pairs tag 0x36 with the 107-byte record length this table closes.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 54 length matches the declared 107 bytes, which the field list closes exactly.
 
 ## `offset_surf_payload`
 
@@ -614,7 +615,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 60 matches the declared 31 bytes, which the field list closes exactly.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 60 matches the declared 31 bytes, which the field list closes exactly.
 
 ## `trimmed_curve_payload`
 
@@ -636,7 +637,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 133 matches the declared 85 bytes, which the field list closes exactly.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 133 matches the declared 85 bytes, which the field list closes exactly.
 
 ## `sp_curve_payload`
 
@@ -655,7 +656,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 137 matches the declared 33 bytes, which the field list closes exactly.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 137 matches the declared 33 bytes, which the field list closes exactly.
 
 ## `intersection_type_38`
 
@@ -678,7 +679,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 38, which §4.1 does not state.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 38, which §4.1 does not state.
 
 ## `chart_s_preamble`
 
@@ -699,6 +700,59 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-nx/src/intersection.rs` — The parser's sentinel matches the stated absent-parameter pair.
 
+## `nurbs_surface_descriptor_prefix`
+
+Spec §6.2 · layout: byte offsets · size: 28 B
+
+Offsets are relative to the type tag after the optional envelope and large-index shift. The prefix ends at the V distinct-knot count; the later reference layout is variable-width.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 4 | 1 | `u_periodic` | `u8` | big | spec | `u_periodic +4`, `v_periodic +5` |
+| 5 | 1 | `v_periodic` | `u8` | big | spec | `u_periodic +4`, `v_periodic +5` |
+| 6 | 2 | `u_degree` | `u16` | big | spec | `u_degree +6`, `v_degree +8` |
+| 8 | 2 | `v_degree` | `u16` | big | spec | `u_degree +6`, `v_degree +8` |
+| 10 | 4 | `u_pole_count` | `u32` | big | spec | `u_pole_count +10`, `v_pole_count +14` |
+| 14 | 4 | `v_pole_count` | `u32` | big | spec | `u_pole_count +10`, `v_pole_count +14` |
+| 18 | 1 | `u_knot_type` | `u8` | big | spec | U/V knot types `+18/+19` |
+| 19 | 1 | `v_knot_type` | `u8` | big | spec | U/V knot types `+18/+19` |
+| 20 | 4 | `u_distinct_knot_count` | `u32` | big | spec | distinct-knot counts `+20/+24` |
+| 24 | 4 | `v_distinct_knot_count` | `u32` | big | spec | distinct-knot counts `+20/+24` |
+
+Unstated regions:
+
+- `0..4` (4 B): Type tag and the encoded XMT identity.
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-nx/src/nurbs.rs` — The parser reads the two logical flags at the declared shifted offsets.
+
+## `nurbs_curve_descriptor_prefix`
+
+Spec §6.2 · layout: byte offsets · size: 21 B
+
+Offsets are relative to the type tag after the optional envelope and large-index shift. The reference lane begins at +21 or +23 depending on the selected descriptor framing.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 4 | 2 | `degree` | `u16` | big | spec | `degree +4`, `pole_count +6` |
+| 6 | 4 | `pole_count` | `u32` | big | spec | `pole_count +6`, `dimension +10` |
+| 10 | 2 | `dimension` | `u16` | big | spec | `dimension +10` (2=UV, 3=XYZ) |
+| 12 | 4 | `distinct_knot_count` | `u32` | big | spec | distinct-knot `+12` |
+| 16 | 1 | `knot_type` | `u8` | big | spec | knot type `+16` |
+| 17 | 1 | `periodic` | `u8` | big | spec | periodic/closed/rational `+17/+18/+19` |
+| 18 | 1 | `closed` | `u8` | big | spec | periodic/closed/rational `+17/+18/+19` |
+| 19 | 1 | `rational` | `u8` | big | spec | periodic/closed/rational `+17/+18/+19` |
+| 20 | 1 | `curve_form` | `u8` | big | spec | curve form `+20` |
+
+Unstated regions:
+
+- `0..4` (4 B): Type tag and the encoded XMT identity.
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-nx/src/nurbs.rs` — The parser reads the curve and pcurve periodic flag at the declared shifted offset.
+
 ## Not tabulated
 
 | Area | Spec | Reason |
@@ -706,4 +760,4 @@ Cross-checked against code:
 | OM record grammars (§7.1) | §3.3 | About sixty fixed-literal token grammars with sequential field positions but no stated absolute offsets. They are slot layouts over a variable-width compact-index lane, so no byte arithmetic closes. |
 | `b5`-style deltas record grammars (§4.2, §9.2-§9.4) | §4.2 | Every reference slot is a variable-width encoded XMT index followed by a status byte, so field positions shift per record. The spec states field order and inline schema-header byte strings, not offsets. |
 | Int32 Compressed Data Packet Mk. 2 (§2.3) | §2.3 | A most-significant-bit-first bit stream with `u6` and `u3` sub-fields; there are no byte offsets to state. |
-| B_SURFACE and B_CURVE support records (§6.2) | §6.2 | Types 125-128 and 135-136 carry counted arrays whose element counts drive every later position, and each may place one or two `ff` envelope escapes that shift the remaining fields. |
+| B_SURFACE and B_CURVE counted payload and reference tails (§6.2) | §6.2 | Types 125-128 and 135-136 carry counted arrays and variable-width reference tails whose element counts and XMT widths drive every later position. The fixed descriptor prefixes are tabulated above. |

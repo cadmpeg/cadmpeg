@@ -5,13 +5,17 @@ use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
-use std::io::{Cursor, Write};
+use std::io::{self, Cursor, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command, Output, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use cadmpeg_codec_nx::NxCodec;
+use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 use cadmpeg_ir::report::LossCategory;
+use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::{CadIr, Severity};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -33,6 +37,7 @@ struct Profile {
 #[derive(Debug, Serialize, Deserialize)]
 struct FixtureEvidence {
     filename: String,
+    status: DecodeStatus,
     deterministic: bool,
     native_namespace_version: Option<u32>,
     entities: EntityCounts,
@@ -71,7 +76,7 @@ struct RederivationBoundaryCount {
     fixtures: usize,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 struct EntityCounts {
     assets: usize,
     bodies: usize,
@@ -136,7 +141,7 @@ struct Assertion {
     required: &'static str,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct DecodedFixtureEvidence {
     canonical_sha256: String,
     native_namespace_version: Option<u32>,
@@ -150,6 +155,39 @@ struct DecodedFixtureEvidence {
     rederivation: VerificationStatus,
     rederivation_boundary: Option<RederivationBoundary>,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum DecodeStatus {
+    /// Both bounded worker decodes completed.
+    Complete,
+    /// At least one bounded worker reached its per-file timeout.
+    TimedOut,
+    /// At least one bounded worker failed before producing evidence.
+    Failed,
+}
+
+#[derive(Debug)]
+enum WorkerFailure {
+    TimedOut,
+    Failed(String),
+}
+
+impl std::fmt::Display for WorkerFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TimedOut => formatter.write_str("worker timed out"),
+            Self::Failed(message) => formatter.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for WorkerFailure {}
+
+// A large admitted part can require several minutes for one complete decode.
+// Keep the bound per worker so one pathological file cannot stall the profile,
+// while allowing the largest supported object-model sections to finish.
+const WORKER_TIMEOUT: Duration = Duration::from_secs(600);
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut arguments = env::args_os().skip(1);
@@ -176,15 +214,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("usage: nx-profile FIXTURE_DIRECTORY OUTPUT_JSON".into());
     }
 
-    let mut paths = fs::read_dir(fixture_directory)?
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.extension()
-                .is_some_and(|extension| extension.eq_ignore_ascii_case("prt"))
-        })
-        .collect::<Vec<_>>();
-    paths.sort();
+    let paths = fixture_paths(&fixture_directory)?;
     if paths.is_empty() {
         return Err("fixture directory contains no .prt files".into());
     }
@@ -194,34 +224,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut total_loss_codes = BTreeMap::new();
     let mut total_loss_details = BTreeMap::new();
     for path in paths {
-        let first = decode_fixture_in_worker(&path)?;
-        let second = decode_fixture_in_worker(&path)?;
-        let entities = first.entities;
-        totals.add(&entities);
-        for (code, count) in &first.loss_codes {
-            *total_loss_codes.entry(code.clone()).or_insert(0) += count;
+        let first = decode_fixture_in_worker(&path);
+        let second = decode_fixture_in_worker(&path);
+        let status = decode_status(&first, &second);
+        let deterministic = match (first.as_ref(), second.as_ref()) {
+            (Ok(first), Ok(second)) => first.canonical_sha256 == second.canonical_sha256,
+            _ => false,
+        };
+        let filename = path
+            .strip_prefix(&fixture_directory)
+            .unwrap_or(path.as_path())
+            .to_string_lossy()
+            .into_owned();
+        if let Some(decoded) = first.as_ref().ok().or_else(|| second.as_ref().ok()) {
+            add_totals(
+                decoded,
+                &mut totals,
+                &mut total_loss_codes,
+                &mut total_loss_details,
+            );
+            fixtures.push(fixture_evidence(filename, status, deterministic, decoded));
+        } else {
+            fixtures.push(failed_fixture_evidence(filename, status));
         }
-        for (detail, count) in &first.loss_details {
-            *total_loss_details.entry(detail.clone()).or_insert(0) += count;
-        }
-        fixtures.push(FixtureEvidence {
-            filename: path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .ok_or("fixture filename is not UTF-8")?
-                .to_string(),
-            deterministic: first.canonical_sha256 == second.canonical_sha256,
-            native_namespace_version: first.native_namespace_version,
-            all_bodies_colored: first.all_bodies_colored,
-            all_faces_colored: first.all_faces_colored,
-            rederivation: first.rederivation,
-            rederivation_boundary: first.rederivation_boundary,
-            entities,
-            losses: first.losses,
-            loss_codes: first.loss_codes,
-            loss_details: first.loss_details,
-            validation_errors: first.validation_errors,
-        });
     }
 
     let gates = capability_gates(&fixtures);
@@ -232,7 +257,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .last()
         .map(|gate| gate.level.clone());
     let profile = Profile {
-        version: 8,
+        version: 10,
         format: "nx",
         fixtures,
         totals,
@@ -246,6 +271,114 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     json.push('\n');
     fs::write(output, json)?;
     Ok(())
+}
+
+fn fixture_paths(root: &Path) -> io::Result<Vec<PathBuf>> {
+    fn visit(directory: &Path, paths: &mut Vec<PathBuf>) -> io::Result<()> {
+        for entry in fs::read_dir(directory)? {
+            let entry = entry?;
+            let path = entry.path();
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                visit(&path, paths)?;
+            } else if file_type.is_file()
+                && path
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("prt"))
+            {
+                paths.push(path);
+            }
+        }
+        Ok(())
+    }
+
+    let mut paths = Vec::new();
+    visit(root, &mut paths)?;
+    paths.sort();
+    Ok(paths)
+}
+
+fn decode_status(
+    first: &Result<DecodedFixtureEvidence, WorkerFailure>,
+    second: &Result<DecodedFixtureEvidence, WorkerFailure>,
+) -> DecodeStatus {
+    if first.is_ok() && second.is_ok() {
+        DecodeStatus::Complete
+    } else if [first, second]
+        .into_iter()
+        .any(|result| matches!(result, Err(WorkerFailure::TimedOut)))
+    {
+        DecodeStatus::TimedOut
+    } else {
+        DecodeStatus::Failed
+    }
+}
+
+fn add_totals(
+    decoded: &DecodedFixtureEvidence,
+    totals: &mut EntityCounts,
+    total_loss_codes: &mut BTreeMap<String, usize>,
+    total_loss_details: &mut BTreeMap<String, usize>,
+) {
+    totals.add(&decoded.entities);
+    for (code, count) in &decoded.loss_codes {
+        *total_loss_codes.entry(code.clone()).or_insert(0) += count;
+    }
+    for (detail, count) in &decoded.loss_details {
+        *total_loss_details.entry(detail.clone()).or_insert(0) += count;
+    }
+}
+
+fn fixture_evidence(
+    filename: String,
+    status: DecodeStatus,
+    deterministic: bool,
+    decoded: &DecodedFixtureEvidence,
+) -> FixtureEvidence {
+    FixtureEvidence {
+        filename,
+        status,
+        deterministic,
+        native_namespace_version: decoded.native_namespace_version,
+        all_bodies_colored: decoded.all_bodies_colored,
+        all_faces_colored: decoded.all_faces_colored,
+        rederivation: decoded.rederivation,
+        rederivation_boundary: decoded.rederivation_boundary.clone(),
+        entities: decoded.entities.clone(),
+        losses: decoded.losses.clone(),
+        loss_codes: decoded.loss_codes.clone(),
+        loss_details: decoded.loss_details.clone(),
+        validation_errors: decoded.validation_errors,
+    }
+}
+
+fn failed_fixture_evidence(filename: String, status: DecodeStatus) -> FixtureEvidence {
+    let reason = match status {
+        DecodeStatus::TimedOut => "profile_worker_timeout",
+        DecodeStatus::Failed => "profile_worker_failure",
+        DecodeStatus::Complete => unreachable!("completed status has decoded evidence"),
+    };
+    FixtureEvidence {
+        filename,
+        status,
+        deterministic: false,
+        native_namespace_version: None,
+        entities: EntityCounts::default(),
+        losses: BTreeMap::new(),
+        loss_codes: BTreeMap::new(),
+        loss_details: BTreeMap::new(),
+        validation_errors: 1,
+        all_bodies_colored: false,
+        all_faces_colored: false,
+        rederivation: VerificationStatus::Missing,
+        rederivation_boundary: Some(RederivationBoundary {
+            feature: None,
+            feature_name: None,
+            feature_family: None,
+            feature_ordinal: None,
+            reason: reason.to_string(),
+        }),
+    }
 }
 
 fn rederivation_boundary_counts(fixtures: &[FixtureEvidence]) -> Vec<RederivationBoundaryCount> {
@@ -304,22 +437,129 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
         loss_details,
         validation_errors,
         all_bodies_colored: !decoded.ir.model.bodies.is_empty()
-            && decoded
-                .ir
-                .model
-                .bodies
-                .iter()
-                .all(|body| body.color.is_some()),
+            && decoded.ir.model.bodies.iter().all(|body| {
+                has_effective_color(
+                    &decoded.ir,
+                    body.color,
+                    &AppearanceTarget::Body(body.id.clone()),
+                )
+            }),
         all_faces_colored: !decoded.ir.model.faces.is_empty()
-            && decoded
-                .ir
-                .model
-                .faces
-                .iter()
-                .all(|face| face.color.is_some()),
+            && decoded.ir.model.faces.iter().all(|face| {
+                has_effective_color(
+                    &decoded.ir,
+                    face.color,
+                    &AppearanceTarget::Face(face.id.clone()),
+                )
+            }),
         rederivation,
         rederivation_boundary,
     })
+}
+
+/// Return the target's effective color under the neutral appearance contract.
+///
+/// An absent direct color is a complete no-assignment state when no
+/// topology-targeted binding exists. A direct color is sufficient when no
+/// topology-targeted binding exists. If a binding exists, it must be the sole
+/// binding and agree with the direct color; without a direct color it must
+/// resolve to exactly one appearance with a normalized base color.
+/// Source-carrier bindings and ambiguous target bindings do not supply a
+/// topology color.
+fn has_effective_color(ir: &CadIr, direct_color: Option<Color>, target: &AppearanceTarget) -> bool {
+    let bindings = ir
+        .model
+        .appearance_bindings
+        .iter()
+        .filter(|binding| &binding.target == target);
+    let bindings = bindings.collect::<Vec<_>>();
+    if bindings.len() > 1 {
+        return false;
+    }
+
+    let bound_color = bindings.first().and_then(|binding| {
+        let mut appearances = ir
+            .model
+            .appearances
+            .iter()
+            .filter(|appearance| appearance.id == binding.appearance);
+        let appearance = appearances.next()?;
+        if appearances.next().is_some() {
+            return None;
+        }
+        appearance
+            .base_color
+            .filter(|color| normalized_color(*color))
+    });
+
+    // A body appearance is the base for every owned face that has no direct
+    // face color or face-scoped binding. Require unique topology ownership so
+    // an authored body appearance cannot inherit through an ambiguous face.
+    if direct_color.is_none() && bindings.is_empty() {
+        if let AppearanceTarget::Face(face_id) = target {
+            let Some(body) = unique_face_body(ir, face_id) else {
+                let body_appearance_exists = ir.model.bodies.iter().any(|body| {
+                    body.color.is_some()
+                        || ir.model.appearance_bindings.iter().any(|binding| {
+                            binding.target == AppearanceTarget::Body(body.id.clone())
+                        })
+                });
+                return !body_appearance_exists;
+            };
+            let body_target = AppearanceTarget::Body(body.id.clone());
+            let body_appearance_exists = body.color.is_some()
+                || ir
+                    .model
+                    .appearance_bindings
+                    .iter()
+                    .any(|binding| binding.target == body_target);
+            if body_appearance_exists {
+                return has_effective_color(ir, body.color, &body_target);
+            }
+        }
+        return true;
+    }
+
+    match direct_color {
+        Some(color) => match bindings.first() {
+            None => normalized_color(color),
+            Some(_) => bound_color.is_some_and(|bound| normalized_color(color) && bound == color),
+        },
+        None => bound_color.is_some(),
+    }
+}
+
+fn unique_face_body<'a>(
+    ir: &'a CadIr,
+    face_id: &cadmpeg_ir::ids::FaceId,
+) -> Option<&'a cadmpeg_ir::topology::Body> {
+    let body_ids = ir
+        .model
+        .regions
+        .iter()
+        .filter_map(|region| {
+            let owns_face = region.shells.iter().any(|shell_id| {
+                ir.model
+                    .shells
+                    .iter()
+                    .find(|shell| shell.id == *shell_id)
+                    .is_some_and(|shell| shell.faces.iter().any(|face| face == face_id))
+            });
+            owns_face.then_some(region.body.clone())
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut body_ids = body_ids.into_iter();
+    let body_id = body_ids.next()?;
+    if body_ids.next().is_some() {
+        return None;
+    }
+    ir.model.bodies.iter().find(|body| body.id == body_id)
+}
+
+fn normalized_color(color: Color) -> bool {
+    [color.r, color.g, color.b, color.a]
+        .into_iter()
+        .all(|component| component.is_finite() && (0.0..=1.0).contains(&component))
 }
 
 /// Evaluate the admitted exact body-identity effects of neutral NX history.
@@ -418,18 +658,45 @@ fn canonical_sha256(ir: &CadIr) -> Result<String, serde_json::Error> {
     Ok(encoded)
 }
 
-fn decode_fixture_in_worker(
-    path: &Path,
-) -> Result<DecodedFixtureEvidence, Box<dyn std::error::Error>> {
-    let output = Command::new(env::current_exe()?)
-        .arg("--decode-fixture")
-        .arg(path)
-        .output()?;
+fn decode_fixture_in_worker(path: &Path) -> Result<DecodedFixtureEvidence, WorkerFailure> {
+    let worker =
+        Command::new(env::current_exe().map_err(|error| WorkerFailure::Failed(error.to_string()))?)
+            .arg("--decode-fixture")
+            .arg(path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| WorkerFailure::Failed(error.to_string()))?;
+    let output = wait_for_worker(worker)?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("NX profile worker failed for {}: {stderr}", path.display()).into());
+        return Err(WorkerFailure::Failed(format!(
+            "NX profile worker failed for {}: {stderr}",
+            path.display()
+        )));
     }
-    Ok(serde_json::from_slice(&output.stdout)?)
+    serde_json::from_slice(&output.stdout).map_err(|error| WorkerFailure::Failed(error.to_string()))
+}
+
+fn wait_for_worker(mut worker: Child) -> Result<Output, WorkerFailure> {
+    let deadline = Instant::now() + WORKER_TIMEOUT;
+    loop {
+        if worker
+            .try_wait()
+            .map_err(|error| WorkerFailure::Failed(error.to_string()))?
+            .is_some()
+        {
+            return worker
+                .wait_with_output()
+                .map_err(|error| WorkerFailure::Failed(error.to_string()));
+        }
+        if Instant::now() >= deadline {
+            let _ = worker.kill();
+            let _ = worker.wait();
+            return Err(WorkerFailure::TimedOut);
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
 }
 
 fn capability_gates(fixtures: &[FixtureEvidence]) -> Vec<Gate> {
@@ -521,12 +788,12 @@ fn capability_gates(fixtures: &[FixtureEvidence]) -> Vec<Gate> {
                 assertion(
                     "body_appearance",
                     body_colors,
-                    "every decoded body has a color",
+                    "every decoded body has a valid color assignment or no authored color assignment",
                 ),
                 assertion(
                     "face_appearance",
                     face_colors,
-                    "every decoded face has a color",
+                    "every decoded face has a valid color assignment or no authored color assignment",
                 ),
                 assertion(
                     "complete_attributes",
@@ -579,6 +846,7 @@ mod tests {
     fn fixture() -> FixtureEvidence {
         FixtureEvidence {
             filename: "fixture.prt".to_string(),
+            status: DecodeStatus::Complete,
             deterministic: true,
             native_namespace_version: Some(181),
             entities: EntityCounts::default(),
@@ -786,6 +1054,200 @@ mod tests {
         let assertion = &gates[3].assertions[0];
         assert_eq!(assertion.observed, "0/2 fixtures");
         assert!(!gates[3].passed);
+    }
+
+    #[test]
+    fn effective_color_accepts_a_unique_base_color_binding() {
+        use cadmpeg_ir::appearance::{Appearance, AppearanceBinding};
+        use cadmpeg_ir::ids::AppearanceId;
+
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let body = cadmpeg_ir::topology::Body {
+            id: BodyId("body".to_string()),
+            kind: cadmpeg_ir::topology::BodyKind::Solid,
+            regions: Vec::new(),
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        };
+        let appearance_id = AppearanceId("appearance".to_string());
+        ir.model.bodies.push(body.clone());
+        ir.model.appearances.push(Appearance {
+            id: appearance_id.clone(),
+            name: None,
+            asset_guid: None,
+            library_id: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: None,
+            category: None,
+            base_color: Some(Color {
+                r: 0.1,
+                g: 0.2,
+                b: 0.3,
+                a: 1.0,
+            }),
+            properties: BTreeMap::new(),
+            textures: Vec::new(),
+        });
+        ir.model.appearance_bindings.push(AppearanceBinding {
+            id: "binding".to_string(),
+            target: AppearanceTarget::Body(body.id.clone()),
+            appearance: appearance_id,
+            source_entity_id: None,
+            object_type: None,
+            channels: BTreeMap::new(),
+        });
+
+        assert!(has_effective_color(
+            &ir,
+            body.color,
+            &AppearanceTarget::Body(body.id),
+        ));
+
+        ir.model.bodies[0].color = Some(Color {
+            r: 0.1,
+            g: 0.2,
+            b: 0.3,
+            a: 1.0,
+        });
+        assert!(has_effective_color(
+            &ir,
+            ir.model.bodies[0].color,
+            &AppearanceTarget::Body(ir.model.bodies[0].id.clone()),
+        ));
+        ir.model.appearances[0].base_color = None;
+        assert!(!has_effective_color(
+            &ir,
+            ir.model.bodies[0].color,
+            &AppearanceTarget::Body(ir.model.bodies[0].id.clone()),
+        ));
+        ir.model.appearances[0].base_color = Some(Color {
+            r: 0.1,
+            g: 0.2,
+            b: 0.3,
+            a: 1.0,
+        });
+        ir.model.bodies[0].color = Some(Color {
+            r: 0.9,
+            g: 0.2,
+            b: 0.3,
+            a: 1.0,
+        });
+        assert!(!has_effective_color(
+            &ir,
+            ir.model.bodies[0].color,
+            &AppearanceTarget::Body(ir.model.bodies[0].id.clone()),
+        ));
+    }
+
+    #[test]
+    fn effective_color_rejects_ambiguous_or_non_color_bindings() {
+        use cadmpeg_ir::appearance::{Appearance, AppearanceBinding};
+        use cadmpeg_ir::ids::AppearanceId;
+
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let body = cadmpeg_ir::topology::Body {
+            id: BodyId("body".to_string()),
+            kind: cadmpeg_ir::topology::BodyKind::Solid,
+            regions: Vec::new(),
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        };
+        let appearance_id = AppearanceId("appearance".to_string());
+        ir.model.bodies.push(body.clone());
+        ir.model.appearances.push(Appearance {
+            id: appearance_id.clone(),
+            name: None,
+            asset_guid: None,
+            library_id: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: None,
+            category: None,
+            base_color: None,
+            properties: BTreeMap::new(),
+            textures: Vec::new(),
+        });
+        let target = AppearanceTarget::Body(body.id.clone());
+        ir.model.appearance_bindings.push(AppearanceBinding {
+            id: "binding-1".to_string(),
+            target: target.clone(),
+            appearance: appearance_id.clone(),
+            source_entity_id: None,
+            object_type: None,
+            channels: BTreeMap::new(),
+        });
+        assert!(!has_effective_color(&ir, None, &target));
+
+        ir.model.appearances[0].base_color = Some(Color {
+            r: 0.1,
+            g: 0.2,
+            b: 0.3,
+            a: 1.0,
+        });
+        ir.model.appearance_bindings.push(AppearanceBinding {
+            id: "binding-2".to_string(),
+            target: target.clone(),
+            appearance: appearance_id,
+            source_entity_id: None,
+            object_type: None,
+            channels: BTreeMap::new(),
+        });
+        assert!(!has_effective_color(&ir, None, &target));
+    }
+
+    #[test]
+    fn effective_color_accepts_absent_color_without_an_assignment() {
+        let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let target = AppearanceTarget::Body(BodyId("body".to_string()));
+
+        assert!(has_effective_color(&ir, None, &target));
+    }
+
+    #[test]
+    fn effective_color_requires_normalized_direct_color() {
+        let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let target = AppearanceTarget::Body(BodyId("body".to_string()));
+        assert!(!has_effective_color(
+            &ir,
+            Some(Color {
+                r: 1.1,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            }),
+            &target,
+        ));
+        assert!(has_effective_color(
+            &ir,
+            Some(Color {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            }),
+            &target,
+        ));
+    }
+
+    #[test]
+    fn effective_face_color_inherits_unique_body_color() {
+        let mut ir = cadmpeg_ir::examples::unit_cube();
+        let body_color = Color {
+            r: 0.2,
+            g: 0.3,
+            b: 0.4,
+            a: 1.0,
+        };
+        ir.model.bodies[0].color = Some(body_color);
+
+        assert!(ir.model.faces.iter().all(|face| {
+            has_effective_color(&ir, face.color, &AppearanceTarget::Face(face.id.clone()))
+        }));
     }
 
     #[test]

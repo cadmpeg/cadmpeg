@@ -12,6 +12,7 @@ use cadmpeg_ir::ids::BodyId;
 #[derive(Default)]
 pub(crate) struct BodyWriterHistory {
     native: BTreeMap<u32, FeatureId>,
+    offset_store: BTreeMap<String, FeatureId>,
     outputs: BTreeMap<BodyId, FeatureId>,
 }
 
@@ -20,34 +21,43 @@ impl BodyWriterHistory {
         self.native.get(&body)
     }
 
-    pub(crate) fn has_primary_writer(&self, native_body: Option<u32>, outputs: &[BodyId]) -> bool {
-        outputs
-            .iter()
-            .any(|output| self.outputs.contains_key(output))
-            || native_body.is_some_and(|body| self.native.contains_key(&body))
+    pub(crate) fn offset_store_writer(&self, data_block: &str) -> Option<&FeatureId> {
+        self.offset_store.get(data_block)
     }
 
-    pub(crate) fn has_output_writer_other_than(
+    /// Return whether a retained history feature already writes one of the
+    /// selected bodies. The provisional retained-history input is excluded
+    /// because segment-backed body images exist before feature replay but are
+    /// not feature writers.
+    pub(crate) fn has_preceding_writer(
         &self,
-        feature: Option<&FeatureId>,
+        provisional_feature: Option<&FeatureId>,
+        native_body: Option<u32>,
+        offset_store_body: Option<&str>,
         outputs: &[BodyId],
     ) -> bool {
         outputs.iter().any(|output| {
             self.outputs
                 .get(output)
-                .is_some_and(|writer| Some(writer) != feature)
-        })
+                .is_some_and(|writer| Some(writer) != provisional_feature)
+        }) || native_body.is_some_and(|body| self.native.contains_key(&body))
+            || offset_store_body.is_some_and(|body| self.offset_store.contains_key(body))
     }
 
     pub(crate) fn extend_primary_dependencies(
         &self,
+        provisional_feature: Option<&FeatureId>,
         native_body: Option<u32>,
+        offset_store_body: Option<&str>,
         outputs: &[BodyId],
         dependencies: &mut Vec<FeatureId>,
     ) {
         let mut has_output_writer = false;
         for output in outputs {
             if let Some(writer) = self.outputs.get(output) {
+                if Some(writer) == provisional_feature {
+                    continue;
+                }
                 has_output_writer = true;
                 if !dependencies.contains(writer) {
                     dependencies.push(writer.clone());
@@ -59,6 +69,12 @@ impl BodyWriterHistory {
                 if !dependencies.contains(writer) {
                     dependencies.push(writer.clone());
                 }
+            } else if let Some(writer) =
+                offset_store_body.and_then(|body| self.offset_store.get(body))
+            {
+                if !dependencies.contains(writer) {
+                    dependencies.push(writer.clone());
+                }
             }
         }
     }
@@ -66,11 +82,16 @@ impl BodyWriterHistory {
     pub(crate) fn record_writer(
         &mut self,
         native_body: Option<u32>,
+        offset_store_body: Option<&str>,
         outputs: &[BodyId],
         feature: &FeatureId,
     ) {
         if let Some(body) = native_body {
             self.native.insert(body, feature.clone());
+        }
+        if let Some(data_block) = offset_store_body {
+            self.offset_store
+                .insert(data_block.to_string(), feature.clone());
         }
         for output in outputs {
             self.outputs.insert(output.clone(), feature.clone());
@@ -151,28 +172,27 @@ mod tests {
         let first = FeatureId("first".into());
         let second = FeatureId("second".into());
         let mut history = BodyWriterHistory::default();
-        history.record_writer(Some(7), std::slice::from_ref(&body), &first);
+        history.record_writer(Some(7), None, std::slice::from_ref(&body), &first);
 
         let mut dependencies = Vec::new();
         history.extend_primary_dependencies(
+            None,
             Some(8),
+            None,
             std::slice::from_ref(&body),
             &mut dependencies,
         );
 
         assert_eq!(dependencies, [first]);
         assert!(history.native_writer(8).is_none());
-        assert!(history.has_primary_writer(Some(7), &[]));
-        assert!(history.has_primary_writer(None, std::slice::from_ref(&body)));
-        assert!(!history.has_primary_writer(Some(8), &[]));
-        history.record_writer(Some(8), std::slice::from_ref(&body), &second);
+        history.record_writer(Some(8), None, std::slice::from_ref(&body), &second);
         assert_eq!(history.native_writer(8), Some(&second));
         dependencies.clear();
-        history.extend_primary_dependencies(Some(7), &[body], &mut dependencies);
+        history.extend_primary_dependencies(None, Some(7), None, &[body], &mut dependencies);
         assert_eq!(dependencies, [second]);
 
         dependencies.clear();
-        history.extend_primary_dependencies(Some(7), &[], &mut dependencies);
+        history.extend_primary_dependencies(None, Some(7), None, &[], &mut dependencies);
         assert_eq!(dependencies, [FeatureId("first".into())]);
     }
 
@@ -183,17 +203,92 @@ mod tests {
         let created = BodyId("created".into());
         let existing = BodyId("existing".into());
         let mut history = BodyWriterHistory::default();
-        history.record_writer(None, &[created.clone(), existing.clone()], &provisional);
-        history.record_writer(Some(7), std::slice::from_ref(&existing), &retained);
+        history.record_writer(
+            None,
+            None,
+            &[created.clone(), existing.clone()],
+            &provisional,
+        );
+        history.record_writer(Some(7), None, std::slice::from_ref(&existing), &retained);
 
-        assert!(!history
-            .has_output_writer_other_than(Some(&provisional), std::slice::from_ref(&created)));
-        assert!(history
-            .has_output_writer_other_than(Some(&provisional), std::slice::from_ref(&existing)));
+        assert!(!history.has_preceding_writer(
+            Some(&provisional),
+            None,
+            None,
+            std::slice::from_ref(&created)
+        ));
+        assert!(history.has_preceding_writer(
+            Some(&provisional),
+            Some(7),
+            None,
+            std::slice::from_ref(&existing)
+        ));
+
+        let mut dependencies = Vec::new();
+        history.extend_primary_dependencies(
+            Some(&provisional),
+            Some(7),
+            None,
+            std::slice::from_ref(&existing),
+            &mut dependencies,
+        );
+        assert_eq!(dependencies, [retained]);
+
+        let mut dependencies = Vec::new();
+        history.extend_primary_dependencies(
+            Some(&provisional),
+            Some(7),
+            None,
+            std::slice::from_ref(&created),
+            &mut dependencies,
+        );
+        assert_eq!(dependencies, [FeatureId("retained".into())]);
 
         history.retract_outputs(&provisional, &[created.clone(), existing.clone()]);
 
-        assert!(!history.has_primary_writer(None, &[created]));
-        assert!(history.has_primary_writer(Some(7), &[existing]));
+        assert!(!history.has_preceding_writer(Some(&provisional), None, None, &[created]));
+        assert!(history.has_preceding_writer(Some(&provisional), Some(7), None, &[existing]));
+    }
+
+    #[test]
+    fn exact_offset_store_identity_orders_writers_without_cross_store_aliases() {
+        let first = FeatureId("first".into());
+        let second = FeatureId("second".into());
+        let mut history = BodyWriterHistory::default();
+        history.record_writer(None, Some("store-a:block#7"), &[], &first);
+
+        let mut dependencies = Vec::new();
+        history.extend_primary_dependencies(
+            None,
+            None,
+            Some("store-a:block#7"),
+            &[],
+            &mut dependencies,
+        );
+        assert_eq!(dependencies, [first]);
+        dependencies.clear();
+        history.extend_primary_dependencies(
+            None,
+            None,
+            Some("store-b:block#7"),
+            &[],
+            &mut dependencies,
+        );
+        assert!(dependencies.is_empty());
+
+        history.record_writer(None, Some("store-a:block#7"), &[], &second);
+        assert_eq!(
+            history.offset_store_writer("store-a:block#7"),
+            Some(&second)
+        );
+        dependencies.clear();
+        history.extend_primary_dependencies(
+            None,
+            None,
+            Some("store-a:block#7"),
+            &[],
+            &mut dependencies,
+        );
+        assert_eq!(dependencies, [second]);
     }
 }

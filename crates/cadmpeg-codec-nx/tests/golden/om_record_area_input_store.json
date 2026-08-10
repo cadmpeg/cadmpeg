@@ -44,13 +44,15 @@
             "ordinal": 1,
             "source_properties": {
               "body_reference.0": "6466",
+              "body_reference_occurrence.0": "nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000",
               "input_block.0": "nx:om-data-blocks-0:block#1",
+              "input_block_record.0": "nx:feature-history:input-block#0000000000-0000000000-0000000000",
               "object_index.0": "1",
               "object_index.1": "576",
               "object_index.2": "6099",
               "object_index.3": "null",
               "operation_record": "nx:feature-history:operation-record#0000000000-0000000000",
-              "primary_body_object_index": "6466"
+              "primary_body_reference": "nx:feature-history:body-reference#0000000000-0000000000"
             },
             "source_tag": "UNITE",
             "suppressed": null

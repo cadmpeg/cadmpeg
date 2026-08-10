@@ -277,10 +277,21 @@
                 "value": 305419896
               },
               {
+                "id": "nx:om-references-0-1:reference#272",
+                "kind": "tagged28",
+                "object_id": 258,
+                "ordinal": 1,
+                "record": "nx:om-record-directory-0:entry#1",
+                "source_entry": "/Root/UG_PART/UG_PART",
+                "source_offset": 348,
+                "target_record": null,
+                "value": 180150000
+              },
+              {
                 "id": "nx:om-references-0-1:reference#278",
                 "kind": "record_ordinal16",
                 "object_id": 258,
-                "ordinal": 1,
+                "ordinal": 2,
                 "record": "nx:om-record-directory-0:entry#1",
                 "source_entry": "/Root/UG_PART/UG_PART",
                 "source_offset": 354,
@@ -344,10 +355,10 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "582",
+          "file_size": "592",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "568",
+          "footer_offset": "578",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -381,7 +392,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 568, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 578, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999",
         "NX object model: 1 indexed section(s), 2 bounded entity record(s)"
@@ -525,10 +536,10 @@
         },
         {
           "byte_len": 383,
-          "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIgdmVyc2lvbiAzNDAwMTc2AFNDSF9URVNUXzFfOTk5OQAAHQAAAAAAAAAAAAAAAAAAP7AAAAAAAAAAAAAAAAAAAD+KAnUlRgqmADIAAAAAAAAAAAAAAAAAAAAAKz+zgdfb9If9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzAAAAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/cJa7mMfigj/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAAAAAAAAAAAAAAAAAAAACs/hHrhR64Uez+UeuFHrhR7P564UeuFHrg/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+          "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIgdmVyc2lvbiAzNDAwMTc2AFNDSF9URVNUXzFfOTk5OQAAHQACAAAAAAAAAAAAAAAAP7AAAAAAAAAAAAAAAAAAAD+KAnUlRgqmADIAAwAAAAAAAAAAAAAAAAAAKz+zgdfb9If9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzAAQAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/cJa7mMfigj/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAUAAAAAAAAAAAAAAAAAACs/hHrhR64Uez+UeuFHrhR7P564UeuFHrg/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
           "id": "nx:container:parasolid#0",
           "offset": 357,
-          "sha256": "b5a338b2331eb7af411e1fbb4fcae722dffc02eb7b7ecba5ad477c50b8c3dad8",
+          "sha256": "173ac020f2c71a2d189ac51864d2ec57d338dcbcd3ad5bc4941f16bbb6dd88e1",
           "stream": "nx:container"
         }
       ],
@@ -543,11 +554,11 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 492,
+        "compressed_size": 502,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 492
+        "uncompressed_size": 502
       },
       {
         "attributes": {
@@ -580,7 +591,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 568, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 578, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999",
       "NX object model: 1 indexed section(s), 2 bounded entity record(s)"

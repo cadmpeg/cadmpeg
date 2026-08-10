@@ -36,16 +36,23 @@ geometry in the cumulative L0–L6 gates.
 | ---- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | L0   | Claimed in the current envelope | Representative release and layout fixtures with closed physical ledgers.                                                                                |
 | L1   | Claimed in the current envelope | Representative release and layout fixtures with closed logical ledgers for every classified stream family.                                              |
-| L2   | Incomplete                      | Close terminal branches without paired FIN-carried SP_CURVE witnesses and cases whose distinct endpoints map to one procedural parameter.               |
-| L3   | Incomplete                      | Resolve cached-body ownership and terminal lineage for every multi-partition history.                                                                   |
+| L2   | Claimed                         | The declared geometry carriers, parameterization rules, and witnessed terminal branches pass the current envelope.                                     |
+| L3   | Claimed                         | Connected topology, revision replay, active-body selection, and the available terminal lineage pass the current envelope.                              |
 | L4   | Incomplete                      | Resolve suppression, sketch placement and entities, complete operands and outputs, configuration body state, and every admitted operation construction. |
-| L5   | Incomplete                      | Close all L2/L3 families and transfer body/face appearance with source precedence.                                                                      |
+| L5   | Incomplete                      | Body/face appearance evidence passes; the cumulative gate remains pending until the lower L4 design-domain gate closes.                                |
 | L6   | Incomplete                      | Close sketch constraints and dimensions, all expression forms, every feature construction, inactive configurations, and re-derivation coherence.        |
 
-The full validation profile passes cumulatively through L3. Profile version 7
+The full validation profile passes cumulatively through L3. Profile version 10
 records saved-body re-derivation as separate L6 evidence, identifies the first
-unsupported feature family and history ordinal, and aggregates exact loss
-messages and re-derivation boundaries. Absence of a design-domain loss cannot
-substitute for neutral feature evaluation and an exact current-body census
-comparison. Higher-level implementation is extra capability until every
-cumulative gate passes.
+unsupported feature family and history ordinal, aggregates exact loss messages
+and re-derivation boundaries, discovers nested fixtures, and bounds each worker
+decode independently. Body and face appearance evidence accepts a valid direct
+color or one unambiguous topology-targeted binding to an appearance with a
+normalized base color. When both sources exist, their colors must agree;
+source-carrier bindings and ambiguous assignments do not satisfy the gate.
+An absent direct color and absent topology-targeted binding is a complete
+no-assignment state; it does not require a fabricated default color.
+Absence of a design-domain loss cannot substitute for neutral feature evaluation
+and an exact current-body census comparison.
+Higher-level implementation is extra capability until every cumulative gate
+passes.

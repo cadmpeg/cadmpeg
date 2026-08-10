@@ -173,7 +173,7 @@
                   89,
                   151
                 ],
-                "source_offset": 519,
+                "source_offset": 529,
                 "version": 1
               },
               {
@@ -202,7 +202,7 @@
                   17,
                   17
                 ],
-                "source_offset": 519,
+                "source_offset": 529,
                 "version": 1
               },
               {
@@ -231,7 +231,7 @@
                   89,
                   151
                 ],
-                "source_offset": 519,
+                "source_offset": 529,
                 "version": 1
               },
               {
@@ -260,7 +260,7 @@
                   89,
                   151
                 ],
-                "source_offset": 519,
+                "source_offset": 529,
                 "version": 1
               },
               {
@@ -289,7 +289,7 @@
                   89,
                   151
                 ],
-                "source_offset": 519,
+                "source_offset": 529,
                 "version": 1
               }
             ],
@@ -307,7 +307,7 @@
                 "id": "nx:display-jt:segment#0-row-0-0-inflated-sequence",
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 519,
+                "source_offset": 529,
                 "tail": [],
                 "tail_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
               }
@@ -341,7 +341,7 @@
                 "ordinal": 0,
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 519
+                "source_offset": 529
               },
               {
                 "body_byte_len": 28,
@@ -371,7 +371,7 @@
                 "ordinal": 1,
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 519
+                "source_offset": 529
               },
               {
                 "body_byte_len": 106,
@@ -401,7 +401,7 @@
                 "ordinal": 2,
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 519
+                "source_offset": 529
               },
               {
                 "body_byte_len": 64,
@@ -431,7 +431,7 @@
                 "ordinal": 3,
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 519
+                "source_offset": 529
               },
               {
                 "body_byte_len": 118,
@@ -461,7 +461,7 @@
                 "ordinal": 4,
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 519
+                "source_offset": 529
               },
               {
                 "body_byte_len": 23,
@@ -491,7 +491,7 @@
                 "ordinal": 5,
                 "segment": "nx:display-jt:segment#0-row-0-0",
                 "segment_type": 1,
-                "source_offset": 519
+                "source_offset": 529
               }
             ],
             "display_jt_documents": [
@@ -520,7 +520,7 @@
                   1
                 ],
                 "physical_byte_len": 428,
-                "source_offset": 358,
+                "source_offset": 368,
                 "toc_entries": [
                   {
                     "attributes": [
@@ -551,7 +551,7 @@
                       2
                     ],
                     "segment_offset": 137,
-                    "source_offset": 467
+                    "source_offset": 477
                   }
                 ],
                 "toc_offset": 105,
@@ -590,7 +590,7 @@
                   ]
                 ],
                 "object_id": 6,
-                "source_offset": 519,
+                "source_offset": 529,
                 "state_flags": 8,
                 "stored_values_mask": 14
               }
@@ -606,7 +606,7 @@
                 "family_data_sha256": "ee10da4aefe61a37df1dee937ca3221afa3b2351f9ea34edbbb769573c6785f7",
                 "id": "nx:display-jt:segment#0-row-0-0-group-node-data-1",
                 "object_id": 2,
-                "source_offset": 519,
+                "source_offset": 529,
                 "version": 1
               },
               {
@@ -618,7 +618,7 @@
                 "family_data_sha256": "f592769b90ad61ae2b837cf9c9603a3087963ff76bb28dc3b27d293e842dce32",
                 "id": "nx:display-jt:segment#0-row-0-0-group-node-data-2",
                 "object_id": 3,
-                "source_offset": 519,
+                "source_offset": 529,
                 "version": 1
               },
               {
@@ -631,7 +631,7 @@
                 "family_data_sha256": "f1b62c7634dac33059f4857804efbc74e391c06cb9974ccdc3a1435e115d82d7",
                 "id": "nx:display-jt:segment#0-row-0-0-group-node-data-3",
                 "object_id": 4,
-                "source_offset": 519,
+                "source_offset": 529,
                 "version": 1
               }
             ],
@@ -644,11 +644,11 @@
                     "header_offset": 28,
                     "id": "nx:display-jt:index#0-row-0",
                     "ordinal": 0,
-                    "source_offset": 338,
+                    "source_offset": 348,
                     "value": 100
                   }
                 ],
-                "source_offset": 330,
+                "source_offset": 340,
                 "version": 9
               }
             ],
@@ -658,7 +658,7 @@
                 "child_object_id": 9,
                 "id": "nx:display-jt:segment#0-row-0-0-instance-node-0",
                 "object_id": 1,
-                "source_offset": 519,
+                "source_offset": 529,
                 "version": 1
               }
             ],
@@ -686,7 +686,7 @@
                   6
                 ],
                 "reserved_bounds": null,
-                "source_offset": 519,
+                "source_offset": 529,
                 "transformed_bounds": [
                   [
                     0.0,
@@ -742,7 +742,7 @@
                 "reserved_values": [
                   0.25
                 ],
-                "source_offset": 519
+                "source_offset": 529
               }
             ],
             "display_jt_segments": [
@@ -777,7 +777,7 @@
                   2
                 ],
                 "segment_type": 1,
-                "source_offset": 495,
+                "source_offset": 505,
                 "toc_entry": "nx:display-jt:toc-entry#0-row-0-0"
               }
             ],
@@ -811,7 +811,7 @@
                     5.0
                   ]
                 ],
-                "source_offset": 519,
+                "source_offset": 529,
                 "texture_quantization_bits": 16,
                 "untransformed_bounds": [
                   [
@@ -853,10 +853,10 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "2",
-          "file_size": "800",
+          "file_size": "810",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "786",
+          "footer_offset": "796",
           "header_entry_count": "2",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -890,7 +890,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 786, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 796, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
@@ -996,10 +996,10 @@
       "retained_records": [
         {
           "byte_len": 383,
-          "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIgdmVyc2lvbiAzNDAwMTc2AFNDSF9URVNUXzFfOTk5OQAAHQAAAAAAAAAAAAAAAAAAP7AAAAAAAAAAAAAAAAAAAD+KAnUlRgqmADIAAAAAAAAAAAAAAAAAAAAAKz+zgdfb9If9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzAAAAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/cJa7mMfigj/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAAAAAAAAAAAAAAAAAAAACs/hHrhR64Uez+UeuFHrhR7P564UeuFHrg/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+          "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIgdmVyc2lvbiAzNDAwMTc2AFNDSF9URVNUXzFfOTk5OQAAHQACAAAAAAAAAAAAAAAAP7AAAAAAAAAAAAAAAAAAAD+KAnUlRgqmADIAAwAAAAAAAAAAAAAAAAAAKz+zgdfb9If9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzAAQAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/cJa7mMfigj/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAUAAAAAAAAAAAAAAAAAACs/hHrhR64Uez+UeuFHrhR7P564UeuFHrg/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
           "id": "nx:container:parasolid#0",
           "offset": 119,
-          "sha256": "b5a338b2331eb7af411e1fbb4fcae722dffc02eb7b7ecba5ad477c50b8c3dad8",
+          "sha256": "173ac020f2c71a2d189ac51864d2ec57d338dcbcd3ad5bc4941f16bbb6dd88e1",
           "stream": "nx:container"
         }
       ],
@@ -1014,15 +1014,15 @@
           "file_offset": "119",
           "region": "HEADER"
         },
-        "compressed_size": 211,
+        "compressed_size": 221,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 211
+        "uncompressed_size": 221
       },
       {
         "attributes": {
-          "file_offset": "330",
+          "file_offset": "340",
           "region": "HEADER"
         },
         "compressed_size": 456,
@@ -1062,7 +1062,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 786, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 796, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]

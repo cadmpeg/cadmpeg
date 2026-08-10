@@ -80,14 +80,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the tail fields to transfer the complete body revision state.
 
-### PS-09. Delta tag `0x5a` name
-
-**Question.** What is the canonical later-schema node-type name for delta tag `0x5a`?
-
-**Known.** `siemens_nx.md` §4.1 "Type 38 is the XT `INTERSECTION` node." and `siemens_nx.md` §4.2 "Status-framed type-38 `INTERSECTION` records end after their six construction references" define tag `0x5a` as the `intersection_data` layout shared with type 38.
-
-**Need.** We must know the name to give the node one stable schema identity.
-
 ### PS-10. Deltas type 45
 
 **Question.** What is the canonical node-type name of deltas type 45 (`002d`), and what does each value mean?
@@ -266,29 +258,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the field roles to construct the complete OM schema registry.
 
-### OM-07. Offset-store body to segment-image relation
-
-**Question.** How does a primary feature body field that resolves to an offset-store block identify a segment body-image object-index pair?
-
-**Known.** `siemens_nx.md` §2 "A partition or plain cached-body wrapper word begins" and `siemens_nx.md` §2 "A primary feature body field whose operation does not select an offset-store" define segment body-image tuples and prohibit a relation based only on equal integer values across namespaces. They also define primary-body fields and body selection.
-
-**Need.** We must know the cross-store relation to attach the feature output and lineage to the correct body image.
-
 ### OM-08. Other feature-history object relations
 
 **Question.** What relation does each feature-history object index that is not a primary-body writer or Boolean tool use?
 
-**Known.** `siemens_nx.md` §2 "Within a feature-history record area, an operation header is encoded as the" and `siemens_nx.md` §2 "Input bindings from two or more distinct operation headers form an identity" and `siemens_nx.md` §2 "A body-affecting operation record contains exactly one primary-body field" define operation-header inputs, shared-block identity groups, primary-body lineage, and Boolean operands.
+**Known.** `siemens_nx.md` §7.1 "A nested operation object-relation frame is" defines the exact nested frame, canonical endpoint encoding, ordered endpoint retention, and source offsets. The native decoder retains these frames as `feature_operation_object_relations` without assigning endpoint roles. `siemens_nx.md` §2 "Within a feature-history record area, an operation header is encoded as the" and `siemens_nx.md` §2 "Input bindings from two or more distinct operation headers form an identity" and `siemens_nx.md` §2 "A body-affecting operation record contains exactly one primary-body field" define operation-header inputs, shared-block identity groups, primary-body lineage, and Boolean operands.
 
-**Need.** We must know each remaining relation to construct complete feature dependencies and selections.
-
-### OM-09. Embedded operation common-frame ownership
-
-**Question.** Which operation owns each embedded common frame, and what do the state-lane fields other than `m_modifiesParasolidData` mean?
-
-**Known.** `siemens_nx.md` §7.1 "A bounded operation payload's terminal common-frame suffix is" and `siemens_nx.md` §7.1 "An exact common frame is" define the exact frame and state-lane boundaries for the admitted operation families. The fourth state byte is the Boolean `m_legacyInactiveModules` field. The fifth state byte is the Boolean `m_modifiesParasolidData` field. The sixth and seventh state bytes are the exact two-byte `m_splitTrackingData` representation. The eighth state byte is the unsigned `m_groupCount` field. Legacy module inactivity is not feature suppression.
-
-**Need.** We must know ownership and field roles to attach the state to the correct operation.
+**Need.** We must map each retained nested frame to its owning feature relation before constructing feature dependencies or selections. The link tag and endpoint identities alone do not establish a body, operand, input, or output role.
 
 ### OM-10. Operation suppression fields
 
@@ -386,14 +362,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the roles to relate pattern instances to their output bodies or geometry.
 
-### OM-22. Equal pattern and profile labels
-
-**Question.** What serialized relation establishes identity or a seed relation between blocks that have equal canonical line labels?
-
-**Known.** `siemens_nx.md` §2 "Input bindings from two or more distinct operation headers form an identity" and `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one ten-slot construction-reference graph." define operation input identity by resolved store block. Equal text in distinct pattern and profile blocks does not establish block identity.
-
-**Need.** We must know the relation to connect a pattern to the correct seed without merging unrelated blocks.
-
 ### OM-23. `POINT` header fields
 
 **Question.** What construction role does the `POINT` header reference have, and what does its `02|03` mode select?
@@ -450,13 +418,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the class grammars to transfer the remaining fast-load state as typed data.
 
-### OM-30. Hole-package feature hierarchy
+### OM-37. Final field declaration in a pointerless OM section
 
-**Question.** Does a `HOLE PACKAGE` operation own its related `SIMPLE HOLE` operations as child features, replace them as the authored neutral feature, or coexist with them as an independent operation?
+**Question.** What terminates the final member-field declaration in a section without a unique valid record-area pointer?
 
-**Known.** `siemens_nx.md` §7.1 "A `HOLE PACKAGE` payload contains at most one construction-group lane framed as" and `siemens_nx.md` §7.1 "One package lane relates to one simple-hole construction group when their four resolved block identities are equal in serialized order" define the four-block package lane and its unambiguous equality relation to a simple-hole construction group. The equality does not encode hierarchy, dependency direction, or neutral feature identity.
+**Known.** `siemens_nx.md` §7.1 "The first record at `oid_end` begins `04 01, declared_len:u8, version_text[declared_len-2], 00`" defines the product record and the bounded registry suffix through the next length-framed `m_` declaration. A section-relative `u32 LE` word after the type registry is a record-area pointer only when its forward target remains inside the section, starts with the three control words and product record, and is unique. When valid, that pointer bounds the complete field registry.
 
-**Need.** We must identify the serialized hierarchy or operation-role field before collapsing, parenting, or suppressing either neutral feature family.
+**Need.** We must know the terminal marker or alternate boundary for the final field declaration when no valid record-area pointer exists. A pointerless section cannot establish a complete field registry from the settled byte structure alone.
 
 ## 3. Assembly and material data
 
@@ -528,20 +496,12 @@ member as a neutral suppression or visibility state.
 
 **Need.** We must know the fields to decode complete occurrence and external-reference state.
 
-### AM-10. Face material bindings
+### AM-10. Physical material bindings
 
-**Question.** Which serialized relation binds a material or appearance to a Parasolid face identity?
+**Question.** Which serialized relation binds a physical material to a Parasolid face identity?
 
-**Known.** `siemens_nx.md` §2.3 "Each `/Root/materialsTif/<name>` file entry contains one TIFF stream." and `siemens_nx.md` §9.4 "The type-81 definition reference selects an attribute class when it equals" define preview and texture assets, the material-texture catalog, and topology-owned Parasolid attributes.
+**Known.** `siemens_nx.md` §2.3 "Each `/Root/materialsTif/<name>` file entry contains one TIFF stream." and `siemens_nx.md` §9.4 "The type-81 definition reference selects an attribute class when it equals" define preview and texture assets, the material-texture catalog, and topology-owned Parasolid attributes. `siemens_nx.md` §7.1 "An explicit display-color assignment addresses a face when" defines the complete face appearance relation; a palette color is not a physical-material assignment.
 
-**Need.** We must know the relation to assign material and appearance state to neutral faces.
+**Need.** We must know the relation to assign physical-material state to neutral faces without treating a display color, texture asset, or topology attribute as a material identity.
 
 ## 4. Test evidence
-
-### TE-01. Equal topology goldens
-
-**Question.** What does the `topology_partition_stream` decode golden pin that `topology_part_prt` does not?
-
-**Known.** `crates/cadmpeg-codec-nx/tests/golden/topology_part_prt.json` and `crates/cadmpeg-codec-nx/tests/golden/topology_partition_stream.json` are byte-identical. The two inputs are equal by construction. `topology_part_prt` in `crates/cadmpeg-codec-nx/src/test_support.rs` returns `prt_with_partition(&topology_partition_stream())`, and the `fixtures` function in `src/tests.rs` wraps the `topology_partition_stream` entry with the same `prt_with_partition`. Two golden names therefore cover one input and one decoder result.
-
-**Need.** We must decide which of the two names keeps its golden. If the partition-stream case is meant to cover a separate path, its input must change so that its golden separates that path.

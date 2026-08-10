@@ -130,6 +130,7 @@ pub(crate) struct ToggleRecords {
 pub(crate) struct FeatureRecords {
     pub(crate) feature_operation_labels: Vec<FeatureOperationLabel>,
     pub(crate) feature_operation_records: Vec<FeatureOperationRecord>,
+    pub(crate) feature_operation_object_relations: Vec<FeatureOperationObjectRelation>,
     pub(crate) feature_operation_common_frames: Vec<FeatureOperationCommonFrame>,
     pub(crate) feature_operation_terminal_discriminators:
         Vec<FeatureOperationTerminalDiscriminator>,
@@ -305,9 +306,8 @@ pub(crate) struct NativeModel {
 
 impl NativeModel {
     pub(crate) fn has_untransferred_parasolid_attribute_fields(&self) -> bool {
-        parasolid_attribute_definitions_have_untransferred_fields(
+        parasolid_topology_attribute_fields_have_untransferred_values(
             &self.parasolid.parasolid_attribute_definitions,
-            &self.parasolid.parasolid_attribute_field_names,
             &self.parasolid.parasolid_entity_51_records,
             &self.parasolid.parasolid_attribute_field_uses,
             &self.parasolid.parasolid_topology_attribute_class_uses,
@@ -391,6 +391,7 @@ impl NativeModel {
         let om_record_areas = om_record_areas(container);
         let feature_operation_labels = feature_operation_labels(container);
         let feature_operation_records = feature_operation_records(container);
+        let feature_operation_object_relations = feature_operation_object_relations(container);
         let feature_operation_common_frames = feature_operation_common_frames(container);
         let feature_operation_terminal_discriminators =
             feature_operation_terminal_discriminators(container);
@@ -407,6 +408,7 @@ impl NativeModel {
         let feature_simple_hole_repeated_scalar_lane_block_references =
             feature_simple_hole_repeated_scalar_lane_block_references(container);
         let feature_simple_hole_construction_groups = feature_simple_hole_construction_groups(
+            &feature_operation_labels,
             &feature_simple_hole_repeated_scalar_lanes,
             &feature_simple_hole_repeated_scalar_lane_block_references,
         );
@@ -429,6 +431,8 @@ impl NativeModel {
         let feature_body_segment_uses = feature_body_segment_uses(
             &feature_body_references,
             &feature_body_data_block_uses,
+            &feature_input_blocks,
+            &data_blocks,
             &segment_body_bindings,
         );
         let feature_input_block_identity_groups =
@@ -758,9 +762,11 @@ impl NativeModel {
             &feature_operation_labels,
             &feature_body_references,
             &feature_body_data_block_uses,
+            &data_blocks,
             &feature_boolean_operations,
             &feature_operation_body_operands,
             &segment_body_bindings,
+            &feature_input_blocks,
         )
         .unwrap_or_default();
         let expression_declarations = expression_declarations(container);
@@ -972,6 +978,7 @@ impl NativeModel {
             features: FeatureRecords {
                 feature_operation_labels,
                 feature_operation_records,
+                feature_operation_object_relations,
                 feature_operation_common_frames,
                 feature_operation_terminal_discriminators,
                 feature_operation_terminal_frames,

@@ -40,9 +40,30 @@ pub struct FeatureOperationLabel {
 pub(crate) fn feature_operation_chronological_labels(
     labels: &[FeatureOperationLabel],
 ) -> Vec<&FeatureOperationLabel> {
-    labels
-        .chunk_by(|first, second| first.section_link == second.section_link)
-        .flat_map(|section| section.iter().rev())
+    let mut sections = Vec::<(&str, Vec<&FeatureOperationLabel>)>::new();
+    for label in labels {
+        if let Some((_, section)) = sections
+            .iter_mut()
+            .find(|(section_link, _)| *section_link == label.section_link)
+        {
+            section.push(label);
+        } else {
+            sections.push((label.section_link.as_str(), vec![label]));
+        }
+    }
+    sections.sort_by(|(left_link, left), (right_link, right)| {
+        left.iter()
+            .map(|label| label.source_offset)
+            .min()
+            .cmp(&right.iter().map(|label| label.source_offset).min())
+            .then_with(|| left_link.cmp(right_link))
+    });
+    sections
+        .into_iter()
+        .flat_map(|(_, mut section)| {
+            section.sort_by_key(|label| std::cmp::Reverse(label.source_offset));
+            section
+        })
         .collect()
 }
 
@@ -66,6 +87,40 @@ pub struct FeatureOperationRecord {
     /// Absolute file offset of the first post-label payload byte.
     pub payload_source_offset: u64,
     /// Absolute file offset of the fixed operation-header marker.
+    pub source_offset: u64,
+}
+
+/// Exact nested object-relation frame retained from one feature operation.
+///
+/// The endpoint order and link tag are native evidence. They do not assign a
+/// body, operand, input, or output role.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationObjectRelation {
+    /// Globally unique relation identity.
+    pub id: String,
+    /// Owning operation-label identity.
+    pub operation_label: String,
+    /// Owning bounded operation-record identity.
+    pub operation_record: String,
+    /// Zero-based relation order within the operation payload.
+    pub ordinal: u32,
+    /// Byte between the opening `01 02` marker and the first object index.
+    pub link_tag: u8,
+    /// First object index in serialized order.
+    pub first_object_index: u32,
+    /// Exact serialized first object-index token.
+    pub raw_first_object_index: Vec<u8>,
+    /// Absolute offset of the first object-index token.
+    pub first_object_index_source_offset: u64,
+    /// Second object index in serialized order.
+    pub second_object_index: u32,
+    /// Exact serialized second object-index token.
+    pub raw_second_object_index: Vec<u8>,
+    /// Absolute offset of the second object-index token.
+    pub second_object_index_source_offset: u64,
+    /// Exact serialized frame byte length.
+    pub byte_len: u64,
+    /// Absolute offset of the opening `01 02` marker.
     pub source_offset: u64,
 }
 
@@ -159,12 +214,12 @@ pub struct FeaturePayloadString {
     pub source_offset: u64,
 }
 
-/// Typed operation template carried by a `SIMPLE HOLE` payload string.
+/// Typed operation template carried by a hole payload string.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSimpleHoleTemplate {
     /// Globally unique template identity.
     pub id: String,
-    /// Owning `SIMPLE HOLE` operation label.
+    /// Owning `SIMPLE HOLE` or `CBORE_HOLE` operation label.
     pub operation_label: String,
     /// Source string in the native payload-string arena.
     pub payload_string: String,
@@ -291,6 +346,8 @@ pub enum SimpleHoleFamily {
 pub enum SimpleHoleForm {
     /// Plain cylindrical cross-section.
     Simple,
+    /// Counterbored cross-section.
+    Counterbored,
 }
 
 /// Axial termination named by a simple-hole template.
@@ -299,12 +356,16 @@ pub enum SimpleHoleForm {
 pub enum SimpleHoleExtent {
     /// Continue through all intersected material.
     Through,
+    /// Stop at a blind termination whose distance is carried by another field.
+    Blind,
 }
 
 /// End treatment named by a simple-hole template.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SimpleHoleEndTreatment {
+    /// No separate end treatment is named.
+    None,
     /// Chamfer the circular end edge.
     Chamfer,
 }
@@ -2866,6 +2927,60 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
     records
 }
 
+/// Decode exact nested object-relation frames from bounded feature operations.
+pub fn feature_operation_object_relations(
+    container: &Container,
+) -> Vec<FeatureOperationObjectRelation> {
+    let sections = container.om_sections();
+    let mut relations = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
+            let operation_record = format!(
+                "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
+            );
+            for (ordinal, relation) in crate::om::operation_object_relations(record)
+                .into_iter()
+                .enumerate()
+            {
+                relations.push(FeatureOperationObjectRelation {
+                    id: format!(
+                        "nx:feature-history:operation-object-relation#{section_key}-{operation_ordinal:010}-{ordinal:010}"
+                    ),
+                    operation_label: operation_label.clone(),
+                    operation_record: operation_record.clone(),
+                    ordinal: ordinal as u32,
+                    link_tag: relation.link_tag,
+                    first_object_index: relation.first_object_index,
+                    raw_first_object_index: relation.raw_first_object_index,
+                    first_object_index_source_offset: entry_offset
+                        + relation.first_object_index_offset as u64,
+                    second_object_index: relation.second_object_index,
+                    raw_second_object_index: relation.raw_second_object_index,
+                    second_object_index_source_offset: entry_offset
+                        + relation.second_object_index_offset as u64,
+                    byte_len: (relation.end_offset - relation.offset) as u64,
+                    source_offset: entry_offset + relation.offset as u64,
+                });
+            }
+        }
+    }
+    relations
+}
+
 /// Decode every exact common frame from bounded feature operations.
 pub fn feature_operation_common_frames(container: &Container) -> Vec<FeatureOperationCommonFrame> {
     let sections = container.om_sections();
@@ -3043,7 +3158,7 @@ pub fn feature_payload_strings(container: &Container) -> Vec<FeaturePayloadStrin
     strings
 }
 
-/// Join exact `SIMPLE HOLE` payload templates to their operation identities.
+/// Join exact hole payload templates to their operation identities.
 pub fn feature_simple_hole_templates(
     labels: &[FeatureOperationLabel],
     records: &[FeatureOperationRecord],
@@ -3065,7 +3180,9 @@ pub fn feature_simple_hole_templates(
         let Some(label) = labels_by_id.get(record.operation_label.as_str()) else {
             continue;
         };
-        if label.value != "SIMPLE HOLE" || !string.value.starts_with("Hole_") {
+        if !matches!(label.value.as_str(), "SIMPLE HOLE" | "CBORE_HOLE")
+            || !string.value.starts_with("Hole_")
+        {
             continue;
         }
         templates_by_operation
@@ -3221,9 +3338,15 @@ pub fn feature_simple_hole_repeated_scalar_lane_block_references(
 
 /// Group distinct simple-hole operations that address the same four construction blocks.
 pub fn feature_simple_hole_construction_groups(
+    labels: &[FeatureOperationLabel],
     lanes: &[FeatureSimpleHoleRepeatedScalarLane],
     references: &[FeatureSimpleHoleRepeatedScalarLaneBlockReferences],
 ) -> Vec<FeatureSimpleHoleConstructionGroup> {
+    let chronological_positions = feature_operation_chronological_labels(labels)
+        .into_iter()
+        .enumerate()
+        .map(|(position, label)| (label.id.as_str(), position))
+        .collect::<BTreeMap<_, _>>();
     let mut lanes_by_operation = BTreeMap::<&str, Vec<_>>::new();
     for lane in lanes {
         lanes_by_operation
@@ -3257,8 +3380,22 @@ pub fn feature_simple_hole_construction_groups(
             if ambiguous_groups.contains(&key) {
                 return None;
             }
+            let operation_position =
+                |reference: &FeatureSimpleHoleRepeatedScalarLaneBlockReferences| {
+                    chronological_positions
+                        .get(reference.operation_label.as_str())
+                        .copied()
+                };
+            if members
+                .iter()
+                .any(|(reference, _)| operation_position(reference).is_none())
+            {
+                return None;
+            }
             members.sort_by(|(first, _), (second, _)| {
-                first.operation_label.cmp(&second.operation_label)
+                operation_position(first)
+                    .cmp(&operation_position(second))
+                    .then_with(|| first.operation_label.cmp(&second.operation_label))
             });
             if members.len() < 2
                 || members
@@ -3268,12 +3405,17 @@ pub fn feature_simple_hole_construction_groups(
                 return None;
             }
             let first = members[0].0;
-            let key = first
+            let id_anchor = members
+                .iter()
+                .map(|(reference, _)| *reference)
+                .min_by(|first, second| first.operation_label.cmp(&second.operation_label))
+                .expect("a group has at least two members");
+            let id_key = id_anchor
                 .operation_label
                 .rsplit_once('#')
                 .map_or("unknown", |(_, key)| key);
             Some(FeatureSimpleHoleConstructionGroup {
-                id: format!("nx:feature-history:simple-hole-construction-group#{key}"),
+                id: format!("nx:feature-history:simple-hole-construction-group#{id_key}"),
                 first_data_blocks: first.first_data_blocks.clone(),
                 second_data_blocks: first.second_data_blocks.clone(),
                 operation_labels: members
@@ -3409,25 +3551,41 @@ pub(crate) fn parse_simple_hole_template(
     SimpleHoleEndTreatment,
     SimpleHoleEndTreatment,
 )> {
-    (value.split('_').collect::<Vec<_>>().as_slice()
-        == [
-            "Hole",
-            "GeneralHole",
-            "Simple",
-            "Through",
-            "StartChamfer",
-            "EndChamfer",
-        ])
-    .then_some((
+    let tokens = value.split('_').collect::<Vec<_>>();
+    if tokens.len() < 4 || tokens[0] != "Hole" || tokens[1] != "GeneralHole" {
+        return None;
+    }
+    let form = match tokens[2] {
+        "Simple" => SimpleHoleForm::Simple,
+        "Counterbored" => SimpleHoleForm::Counterbored,
+        _ => return None,
+    };
+    let extent = match tokens[3] {
+        "Through" => SimpleHoleExtent::Through,
+        "Blind" => SimpleHoleExtent::Blind,
+        _ => return None,
+    };
+    let (start_treatment, end_treatment) = match (form, extent, &tokens[4..]) {
+        (SimpleHoleForm::Simple, SimpleHoleExtent::Through, ["StartChamfer", "EndChamfer"]) => (
+            SimpleHoleEndTreatment::Chamfer,
+            SimpleHoleEndTreatment::Chamfer,
+        ),
+        (SimpleHoleForm::Counterbored, SimpleHoleExtent::Through, [])
+        | (SimpleHoleForm::Simple, SimpleHoleExtent::Blind, []) => {
+            (SimpleHoleEndTreatment::None, SimpleHoleEndTreatment::None)
+        }
+        _ => return None,
+    };
+    Some((
         SimpleHoleFamily::GeneralHole,
-        SimpleHoleForm::Simple,
-        SimpleHoleExtent::Through,
-        SimpleHoleEndTreatment::Chamfer,
-        SimpleHoleEndTreatment::Chamfer,
+        form,
+        extent,
+        start_treatment,
+        end_treatment,
     ))
 }
 
-/// Decode primary body lineage references from feature-history operations.
+/// Decode complete body-reference fields from feature-history operations.
 pub fn feature_body_references(container: &Container) -> Vec<FeatureBodyReference> {
     let sections = container.om_sections();
     let mut references = Vec::new();
@@ -3457,6 +3615,29 @@ pub fn feature_body_references(container: &Container) -> Vec<FeatureBodyReferenc
         }
     }
     references
+}
+
+/// Return the one body-reference field owned by each operation that has
+/// exactly one such field.
+pub(crate) fn unique_feature_body_references(
+    references: &[FeatureBodyReference],
+) -> BTreeMap<&str, &FeatureBodyReference> {
+    let mut by_operation = BTreeMap::<&str, Vec<&FeatureBodyReference>>::new();
+    for reference in references {
+        by_operation
+            .entry(reference.operation_label.as_str())
+            .or_default()
+            .push(reference);
+    }
+    by_operation
+        .into_iter()
+        .filter_map(|(operation, references)| {
+            let [reference] = references.as_slice() else {
+                return None;
+            };
+            Some((operation, *reference))
+        })
+        .collect()
 }
 
 /// Decode every ordered body-reference field from bounded feature operations.
@@ -3502,28 +3683,67 @@ pub fn feature_body_reference_occurrences(
 }
 
 /// Join object-index primary body fields to exactly one segment body alias pair.
+///
+/// A field resolved in an offset store enters the segment namespace only when
+/// its operation has one resolved offset store, the field has one retained
+/// data-block use, and that field's identity matches one unique segment alias.
+/// A primary-index match, a missing or duplicate data-block use, a missing or
+/// ambiguous store, or a duplicate segment alias remains unresolved.
 pub fn feature_body_segment_uses(
     references: &[FeatureBodyReference],
     data_block_uses: &[FeatureBodyDataBlockUse],
+    inputs: &[FeatureInputBlock],
+    blocks: &[crate::native::om::DataBlock],
     bindings: &[SegmentBodyBinding],
 ) -> Vec<FeatureBodySegmentUse> {
-    let offset_store_references = data_block_uses
-        .iter()
-        .map(|use_| use_.feature_body_reference.as_str())
+    let unique_references = unique_feature_body_references(references);
+    let offset_store_reference_counts =
+        data_block_uses
+            .iter()
+            .fold(BTreeMap::<&str, usize>::new(), |mut counts, use_| {
+                *counts
+                    .entry(use_.feature_body_reference.as_str())
+                    .or_default() += 1;
+                counts
+            });
+    let offset_store_operations = feature_input_store_operations(inputs, blocks);
+    let single_offset_store_operations = feature_input_store_sections(inputs, blocks)
+        .into_iter()
+        .filter_map(|(operation_label, sections)| (sections.len() == 1).then_some(operation_label))
         .collect::<BTreeSet<_>>();
     references
         .iter()
-        .filter(|reference| !offset_store_references.contains(reference.id.as_str()))
+        .filter(|reference| {
+            unique_references
+                .get(reference.operation_label.as_str())
+                .is_some_and(|unique| unique.id == reference.id)
+        })
         .filter_map(|reference| {
-            let matches = bindings
-                .iter()
-                .filter(|binding| {
-                    binding.body_object_index == reference.body_object_index
-                        || binding.body_alias_object_index == reference.body_object_index
-                })
-                .collect::<Vec<_>>();
-            let [binding] = matches.as_slice() else {
+            let offset_store_reference_count = offset_store_reference_counts
+                .get(reference.id.as_str())
+                .copied();
+            let has_offset_store_reference = offset_store_reference_count.is_some();
+            let is_offset_store_operation =
+                offset_store_operations.contains(reference.operation_label.as_str());
+            if is_offset_store_operation && !has_offset_store_reference {
                 return None;
+            }
+            if has_offset_store_reference
+                && (offset_store_reference_count != Some(1)
+                    || !single_offset_store_operations.contains(reference.operation_label.as_str()))
+            {
+                return None;
+            }
+            let binding = if has_offset_store_reference {
+                crate::native::segments::unique_segment_body_alias_binding(
+                    reference.body_object_index,
+                    bindings,
+                )?
+            } else {
+                crate::native::segments::unique_segment_body_binding(
+                    reference.body_object_index,
+                    bindings,
+                )?
             };
             Some(FeatureBodySegmentUse {
                 id: reference
@@ -3536,26 +3756,64 @@ pub fn feature_body_segment_uses(
         .collect()
 }
 
+/// Return operations with at least one resolved input field in an offset store.
+///
+/// This set identifies operations whose body fields must be resolved in the
+/// offset-store namespace. The one-store requirement for a segment bridge is
+/// checked separately from this broader namespace classification.
+pub(crate) fn feature_input_store_operations(
+    inputs: &[FeatureInputBlock],
+    blocks: &[crate::native::om::DataBlock],
+) -> BTreeSet<String> {
+    feature_input_store_sections(inputs, blocks)
+        .into_iter()
+        .filter_map(|(operation_label, sections)| (!sections.is_empty()).then_some(operation_label))
+        .collect()
+}
+
+/// Group resolved operation-header inputs by their indexed offset-store section.
+pub(crate) fn feature_input_store_sections(
+    inputs: &[FeatureInputBlock],
+    blocks: &[crate::native::om::DataBlock],
+) -> BTreeMap<String, BTreeSet<u32>> {
+    let blocks_by_id = blocks
+        .iter()
+        .map(|block| (block.id.as_str(), block))
+        .collect::<BTreeMap<_, _>>();
+    let mut sections_by_operation = BTreeMap::<String, BTreeSet<u32>>::new();
+    for input in inputs {
+        let Some(block) = blocks_by_id.get(input.data_block.as_str()) else {
+            continue;
+        };
+        sections_by_operation
+            .entry(input.operation_label.clone())
+            .or_default()
+            .insert(block.section_ordinal);
+    }
+    sections_by_operation
+}
+
 /// Resolve primary feature body fields in an unambiguous operation input store.
 pub fn feature_body_data_block_uses(
     references: &[FeatureBodyReference],
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
 ) -> Vec<FeatureBodyDataBlockUse> {
-    let blocks_by_id = blocks
-        .iter()
-        .map(|block| (block.id.as_str(), block))
-        .collect::<BTreeMap<_, _>>();
+    let unique_references = unique_feature_body_references(references);
+    let store_sections = feature_input_store_sections(inputs, blocks);
     references
         .iter()
         .filter_map(|reference| {
-            let section_ordinals = inputs
-                .iter()
-                .filter(|input| input.operation_label == reference.operation_label)
-                .filter_map(|input| blocks_by_id.get(input.data_block.as_str()))
-                .map(|block| block.section_ordinal)
-                .collect::<BTreeSet<_>>();
-            let section_ordinals = section_ordinals.into_iter().collect::<Vec<_>>();
+            if unique_references
+                .get(reference.operation_label.as_str())
+                .is_none_or(|unique| unique.id != reference.id)
+            {
+                return None;
+            }
+            let section_ordinals = store_sections
+                .get(reference.operation_label.as_str())
+                .map(|sections| sections.iter().copied().collect::<Vec<_>>())
+                .unwrap_or_default();
             let [section_ordinal] = section_ordinals.as_slice() else {
                 return None;
             };
@@ -8689,7 +8947,12 @@ mod tests {
         let roots = BTreeMap::from([(10, 10), (20, 10)]);
 
         assert_eq!(
-            crate::native::attach::boolean_feature_definition(&operation, &roots, &BTreeMap::new(),),
+            crate::native::attach::boolean_feature_definition(
+                &operation,
+                &roots,
+                &crate::native::segments::BooleanOffsetStoreResolution::None,
+                &BTreeMap::new(),
+            ),
             FeatureDefinition::Combine {
                 target: BodySelection::Native("nx:om-object-index#10".to_string()),
                 tools: BodySelection::Native("nx:om-object-indices#20".to_string()),
@@ -8703,6 +8966,7 @@ mod tests {
             crate::native::attach::boolean_feature_definition(
                 &operation,
                 &missing_tool,
+                &crate::native::segments::BooleanOffsetStoreResolution::None,
                 &BTreeMap::new(),
             ),
             FeatureDefinition::Combine {
@@ -8762,6 +9026,53 @@ mod tests {
             SimpleHoleEndTreatment::Chamfer
         );
         assert_eq!(templates[0].end_treatment, SimpleHoleEndTreatment::Chamfer);
+
+        assert_eq!(
+            super::parse_simple_hole_template("Hole_GeneralHole_Counterbored_Through"),
+            Some((
+                SimpleHoleFamily::GeneralHole,
+                SimpleHoleForm::Counterbored,
+                SimpleHoleExtent::Through,
+                SimpleHoleEndTreatment::None,
+                SimpleHoleEndTreatment::None,
+            ))
+        );
+        assert_eq!(
+            super::parse_simple_hole_template("Hole_GeneralHole_Simple_Blind"),
+            Some((
+                SimpleHoleFamily::GeneralHole,
+                SimpleHoleForm::Simple,
+                SimpleHoleExtent::Blind,
+                SimpleHoleEndTreatment::None,
+                SimpleHoleEndTreatment::None,
+            ))
+        );
+        assert!(super::parse_simple_hole_template("Hole_GeneralHole_Simple_Through").is_none());
+        assert!(super::parse_simple_hole_template("Hole_GeneralHole_Counterbored_Blind").is_none());
+
+        let mut counterbored_label = label.clone();
+        counterbored_label.id = "operation#4".to_string();
+        counterbored_label.value = "CBORE_HOLE".to_string();
+        let mut counterbored_record = record.clone();
+        counterbored_record.id = "record#4".to_string();
+        counterbored_record.operation_label = counterbored_label.id.clone();
+        let counterbored_string = FeaturePayloadString {
+            id: "payload-string#4-0".to_string(),
+            operation_record: counterbored_record.id.clone(),
+            ordinal: 0,
+            value: "Hole_GeneralHole_Counterbored_Through".to_string(),
+            source_offset: 130,
+        };
+        let counterbored_templates = super::feature_simple_hole_templates(
+            &[counterbored_label],
+            &[counterbored_record],
+            &[counterbored_string],
+        );
+        let [counterbored_template] = counterbored_templates.as_slice() else {
+            panic!("counterbored hole template was not admitted");
+        };
+        assert_eq!(counterbored_template.form, SimpleHoleForm::Counterbored);
+        assert_eq!(counterbored_template.extent, SimpleHoleExtent::Through);
 
         let mut duplicate = string.clone();
         duplicate.id = "payload-string#3-1".to_string();
@@ -9223,6 +9534,10 @@ mod tests {
         assert_eq!(
             result.ir.model.features[0].source_properties["input_block.0"],
             inputs[0].data_block
+        );
+        assert_eq!(
+            result.ir.model.features[0].source_properties["input_block_record.0"],
+            inputs[0].id
         );
         let references = result
             .ir
@@ -10457,17 +10772,39 @@ mod tests {
             &labels,
             &references,
             &[],
+            &[],
             &booleans,
             &[],
             &[
                 binding("binding#0", 0, "partition", 10, 11),
                 binding("binding#1", 1, "plain", 20, 21),
             ],
+            &[],
         )
         .expect("required invariant");
         assert_eq!(statuses.len(), 2);
         assert!(statuses[0].terminal);
         assert!(!statuses[1].terminal);
+    }
+
+    #[test]
+    fn unique_feature_body_references_require_one_field_per_operation() {
+        let reference =
+            |id: &str, operation_label: &str, body_object_index| super::FeatureBodyReference {
+                id: id.to_string(),
+                operation_label: operation_label.to_string(),
+                body_object_index,
+                raw_body_object_index: vec![body_object_index as u8],
+                source_offset: 0,
+            };
+        let references = [
+            reference("reference#0", "operation#0", 10),
+            reference("reference#1", "operation#0", 11),
+            reference("reference#2", "operation#1", 12),
+        ];
+        let unique = super::unique_feature_body_references(&references);
+        assert!(!unique.contains_key("operation#0"));
+        assert_eq!(unique["operation#1"].id, "reference#2");
     }
 
     #[test]
@@ -10494,18 +10831,175 @@ mod tests {
         let uses = feature_body_segment_uses(
             std::slice::from_ref(&reference),
             &[],
+            &[],
+            &[],
             std::slice::from_ref(&binding),
         );
         assert_eq!(uses.len(), 1);
         assert_eq!(uses[0].feature_body_reference, reference.id);
         assert_eq!(uses[0].segment_body_binding, binding.id);
-        assert!(
-            feature_body_segment_uses(&[reference], &[], &[binding.clone(), binding]).is_empty()
-        );
+        assert!(feature_body_segment_uses(
+            std::slice::from_ref(&reference),
+            &[],
+            &[],
+            &[],
+            &[binding.clone(), binding.clone()]
+        )
+        .is_empty());
+        let duplicate_reference = FeatureBodyReference {
+            id: "nx:feature-history:body-reference#1".into(),
+            operation_label: reference.operation_label.clone(),
+            body_object_index: 12,
+            raw_body_object_index: vec![12],
+            source_offset: 91,
+        };
+        assert!(feature_body_segment_uses(
+            &[reference, duplicate_reference],
+            &[],
+            &[],
+            &[],
+            std::slice::from_ref(&binding),
+        )
+        .is_empty());
     }
 
     #[test]
-    fn feature_body_segment_uses_exclude_offset_store_indices() {
+    fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
+        use super::{feature_body_segment_uses, FeatureBodyDataBlockUse, FeatureBodyReference};
+        use crate::native::om::{DataBlock, DataBlockRole};
+        use crate::native::segments::SegmentBodyBinding;
+
+        let reference = FeatureBodyReference {
+            id: "reference#0".into(),
+            operation_label: "operation#0".into(),
+            body_object_index: 11,
+            raw_body_object_index: vec![11],
+            source_offset: 90,
+        };
+        let data_block_use = FeatureBodyDataBlockUse {
+            id: "data-block-use#0".into(),
+            feature_body_reference: reference.id.clone(),
+            data_block: "block#11".into(),
+        };
+        let input = FeatureInputBlock {
+            id: "input#0".into(),
+            operation_label: reference.operation_label.clone(),
+            input_slot: 0,
+            object_index: 3,
+            raw_object_index: vec![3],
+            data_block: "block#3".into(),
+            source_offset: 80,
+        };
+        let blocks = [
+            DataBlock {
+                id: "block#3".into(),
+                section_ordinal: 2,
+                block_ordinal: 3,
+                role: DataBlockRole::Column,
+                section_offset: 0,
+                byte_len: 1,
+                sha256: String::new(),
+                source_entry: String::new(),
+                source_offset: 0,
+            },
+            DataBlock {
+                id: "block#11".into(),
+                section_ordinal: 2,
+                block_ordinal: 11,
+                role: DataBlockRole::Column,
+                section_offset: 0,
+                byte_len: 1,
+                sha256: String::new(),
+                source_entry: String::new(),
+                source_offset: 0,
+            },
+        ];
+        let binding = SegmentBodyBinding {
+            id: "binding#0".into(),
+            stream_link: "stream#0".into(),
+            stream_ordinal: 0,
+            stream_kind: "partition".into(),
+            body_object_index: 10,
+            body_alias_object_index: 11,
+            stream_role: 19,
+            source_offset: 40,
+        };
+        let uses = feature_body_segment_uses(
+            std::slice::from_ref(&reference),
+            std::slice::from_ref(&data_block_use),
+            std::slice::from_ref(&input),
+            &blocks,
+            std::slice::from_ref(&binding),
+        );
+        assert_eq!(uses.len(), 1);
+        assert_eq!(uses[0].segment_body_binding, "binding#0");
+
+        assert!(feature_body_segment_uses(
+            std::slice::from_ref(&reference),
+            &[data_block_use.clone(), data_block_use.clone()],
+            std::slice::from_ref(&input),
+            &blocks,
+            std::slice::from_ref(&binding),
+        )
+        .is_empty());
+
+        let second_input = FeatureInputBlock {
+            id: "input#1".into(),
+            operation_label: reference.operation_label.clone(),
+            input_slot: 1,
+            object_index: 4,
+            raw_object_index: vec![4],
+            data_block: "block#4".into(),
+            source_offset: 81,
+        };
+        let second_block = DataBlock {
+            id: "block#4".into(),
+            section_ordinal: 3,
+            block_ordinal: 4,
+            role: DataBlockRole::Column,
+            section_offset: 0,
+            byte_len: 1,
+            sha256: String::new(),
+            source_entry: String::new(),
+            source_offset: 0,
+        };
+        assert!(feature_body_segment_uses(
+            std::slice::from_ref(&reference),
+            std::slice::from_ref(&data_block_use),
+            &[input.clone(), second_input],
+            &[blocks[0].clone(), blocks[1].clone(), second_block],
+            std::slice::from_ref(&binding),
+        )
+        .is_empty());
+
+        let mut duplicate_alias = binding.clone();
+        duplicate_alias.id = "binding#1".into();
+        duplicate_alias.body_object_index = 20;
+        assert!(feature_body_segment_uses(
+            std::slice::from_ref(&reference),
+            std::slice::from_ref(&data_block_use),
+            std::slice::from_ref(&input),
+            &blocks,
+            &[binding.clone(), duplicate_alias],
+        )
+        .is_empty());
+
+        let mut primary_collision = binding.clone();
+        primary_collision.id = "binding#2".into();
+        primary_collision.body_object_index = 11;
+        primary_collision.body_alias_object_index = 12;
+        assert!(feature_body_segment_uses(
+            std::slice::from_ref(&reference),
+            std::slice::from_ref(&data_block_use),
+            std::slice::from_ref(&input),
+            &blocks,
+            &[binding, primary_collision],
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn feature_body_segment_uses_reject_primary_index_offset_collision() {
         use super::{feature_body_segment_uses, FeatureBodyDataBlockUse, FeatureBodyReference};
         use crate::native::segments::SegmentBodyBinding;
 
@@ -10526,12 +11020,118 @@ mod tests {
             stream_link: "stream#0".into(),
             stream_ordinal: 0,
             stream_kind: "partition".into(),
-            body_object_index: 10,
-            body_alias_object_index: 11,
+            body_object_index: 11,
+            body_alias_object_index: 12,
             stream_role: 19,
             source_offset: 40,
         };
-        assert!(feature_body_segment_uses(&[reference], &[data_block_use], &[binding]).is_empty());
+        assert!(
+            feature_body_segment_uses(&[reference], &[data_block_use], &[], &[], &[binding],)
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn feature_body_segment_uses_exclude_missing_offset_store_ordinals() {
+        use super::{feature_body_segment_uses, FeatureBodyReference, FeatureInputBlock};
+        use crate::native::om::{DataBlock, DataBlockRole};
+        use crate::native::segments::SegmentBodyBinding;
+
+        let reference = FeatureBodyReference {
+            id: "reference#99".into(),
+            operation_label: "operation#0".into(),
+            body_object_index: 99,
+            raw_body_object_index: vec![99],
+            source_offset: 90,
+        };
+        let input = FeatureInputBlock {
+            id: "input#0".into(),
+            operation_label: reference.operation_label.clone(),
+            input_slot: 0,
+            object_index: 3,
+            raw_object_index: vec![3],
+            data_block: "block#3".into(),
+            source_offset: 80,
+        };
+        let block = DataBlock {
+            id: "block#3".into(),
+            section_ordinal: 2,
+            block_ordinal: 3,
+            role: DataBlockRole::Column,
+            section_offset: 10,
+            byte_len: 19,
+            sha256: "00".into(),
+            source_entry: "part".into(),
+            source_offset: 20,
+        };
+        let binding = SegmentBodyBinding {
+            id: "binding#0".into(),
+            stream_link: "stream#0".into(),
+            stream_ordinal: 0,
+            stream_kind: "plain".into(),
+            body_object_index: 99,
+            body_alias_object_index: 100,
+            stream_role: 19,
+            source_offset: 40,
+        };
+
+        assert!(
+            feature_body_segment_uses(&[reference], &[], &[input], &[block], &[binding]).is_empty()
+        );
+    }
+
+    #[test]
+    fn feature_body_segment_uses_exclude_ambiguous_offset_store_namespaces() {
+        use super::{feature_body_segment_uses, FeatureBodyReference, FeatureInputBlock};
+        use crate::native::om::{DataBlock, DataBlockRole};
+        use crate::native::segments::SegmentBodyBinding;
+
+        let reference = FeatureBodyReference {
+            id: "reference#99".into(),
+            operation_label: "operation#0".into(),
+            body_object_index: 99,
+            raw_body_object_index: vec![99],
+            source_offset: 90,
+        };
+        let input = |slot: u8, object_index: u32, data_block: &str| FeatureInputBlock {
+            id: format!("input#{slot}"),
+            operation_label: reference.operation_label.clone(),
+            input_slot: slot,
+            object_index,
+            raw_object_index: vec![object_index as u8],
+            data_block: data_block.into(),
+            source_offset: 80 + u64::from(slot),
+        };
+        let block = |id: &str, section_ordinal: u32, block_ordinal: u32| DataBlock {
+            id: id.into(),
+            section_ordinal,
+            block_ordinal,
+            role: DataBlockRole::Column,
+            section_offset: 10,
+            byte_len: 19,
+            sha256: "00".into(),
+            source_entry: "part".into(),
+            source_offset: 20,
+        };
+        let binding = SegmentBodyBinding {
+            id: "binding#0".into(),
+            stream_link: "stream#0".into(),
+            stream_ordinal: 0,
+            stream_kind: "plain".into(),
+            body_object_index: 99,
+            body_alias_object_index: 100,
+            stream_role: 19,
+            source_offset: 40,
+        };
+
+        assert!(feature_body_segment_uses(
+            std::slice::from_ref(&reference),
+            &[],
+            &[input(0, 3, "block#3"), input(1, 4, "block#4"),],
+            &[block("block#3", 2, 3), block("block#4", 3, 4)],
+            &[binding],
+        )
+        .is_empty());
     }
 
     #[test]
@@ -10571,9 +11171,24 @@ mod tests {
             block("nx:om-data-blocks-1:block#72", 1, 72),
             block("nx:om-data-blocks-2:block#72", 2, 72),
         ];
-        let uses = feature_body_data_block_uses(&[reference], &[input], &blocks);
+        let uses = feature_body_data_block_uses(
+            std::slice::from_ref(&reference),
+            std::slice::from_ref(&input),
+            &blocks,
+        );
         assert_eq!(uses.len(), 1);
         assert_eq!(uses[0].data_block, blocks[2].id);
+        let duplicate_reference = FeatureBodyReference {
+            id: "nx:feature-history:body-reference#1".into(),
+            operation_label: "operation#0".into(),
+            body_object_index: 73,
+            raw_body_object_index: vec![73],
+            source_offset: 91,
+        };
+        assert!(
+            feature_body_data_block_uses(&[reference, duplicate_reference], &[input], &blocks,)
+                .is_empty()
+        );
     }
 
     #[test]
@@ -10591,9 +11206,9 @@ mod tests {
             value: value.to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
-            source_offset: u64::from(ordinal),
+            source_offset: 1 - u64::from(ordinal),
         };
-        let labels = [label(0, "EXTRUDE"), label(1, "UNITE")];
+        let labels = [label(1, "UNITE"), label(0, "EXTRUDE")];
         let references = [FeatureBodyReference {
             id: "reference#30".to_string(),
             operation_label: "operation#0".to_string(),
@@ -10629,9 +11244,17 @@ mod tests {
             binding("binding#2", 2, 40, 20),
         ];
 
-        let statuses =
-            segment_body_lineage_statuses(&labels, &references, &[], &booleans, &[], &bindings)
-                .expect("required invariant");
+        let statuses = segment_body_lineage_statuses(
+            &labels,
+            &references,
+            &[],
+            &[],
+            &booleans,
+            &[],
+            &bindings,
+            &[],
+        )
+        .expect("required invariant");
         assert_eq!(statuses.len(), 3);
         assert!(statuses.iter().all(|status| !status.terminal));
     }
@@ -10639,8 +11262,18 @@ mod tests {
     #[test]
     fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
         use super::{
-            feature_simple_hole_construction_groups, FeatureSimpleHoleRepeatedScalarLane,
+            feature_simple_hole_construction_groups, FeatureOperationLabel,
+            FeatureSimpleHoleRepeatedScalarLane,
             FeatureSimpleHoleRepeatedScalarLaneBlockReferences,
+        };
+        let label = |id: &str, ordinal: u32| FeatureOperationLabel {
+            id: id.into(),
+            section_link: "section#1".into(),
+            ordinal,
+            value: "SIMPLE HOLE".into(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: u64::from(ordinal),
         };
         let lane = |operation: &str| FeatureSimpleHoleRepeatedScalarLane {
             id: format!("lane-{operation}"),
@@ -10671,26 +11304,36 @@ mod tests {
             reference("operation#1-3", "block-4"),
             reference("operation#1-2", "block-4"),
         ];
-        let groups = feature_simple_hole_construction_groups(&lanes, &references);
+        // The native label arena is newest-first. The group must reverse that
+        // source order, rather than infer history from operation-label text.
+        let labels = [
+            label("operation#1-2", 0),
+            label("operation#1-3", 1),
+            label("operation#1-4", 2),
+        ];
+        let groups = feature_simple_hole_construction_groups(&labels, &lanes, &references);
         assert_eq!(groups.len(), 1);
         assert_eq!(
             groups[0].operation_labels,
-            ["operation#1-2", "operation#1-3"]
+            ["operation#1-3", "operation#1-2"]
         );
         assert_eq!(
             groups[0].scalar_lanes,
-            ["lane-operation#1-2", "lane-operation#1-3"]
+            ["lane-operation#1-3", "lane-operation#1-2"]
         );
         assert_eq!(
             groups[0].block_references,
-            ["reference-operation#1-2", "reference-operation#1-3"]
+            ["reference-operation#1-3", "reference-operation#1-2"]
         );
 
         let duplicate_references = [
             reference("operation#1-2", "block-4"),
             reference("operation#1-2", "block-4"),
         ];
-        assert!(feature_simple_hole_construction_groups(&lanes, &duplicate_references).is_empty());
+        assert!(
+            feature_simple_hole_construction_groups(&labels, &lanes, &duplicate_references)
+                .is_empty()
+        );
 
         let duplicate_lanes = [
             lane("operation#1-2"),
@@ -10703,10 +11346,24 @@ mod tests {
             reference("operation#1-3", "block-4"),
             reference("operation#1-4", "block-4"),
         ];
-        assert!(
-            feature_simple_hole_construction_groups(&duplicate_lanes, &shared_references)
-                .is_empty()
-        );
+        assert!(feature_simple_hole_construction_groups(
+            &labels,
+            &duplicate_lanes,
+            &shared_references
+        )
+        .is_empty());
+
+        let unknown_lanes = [lane("operation#1-8"), lane("operation#1-9")];
+        let unknown_references = [
+            reference("operation#1-8", "block-4"),
+            reference("operation#1-9", "block-4"),
+        ];
+        assert!(feature_simple_hole_construction_groups(
+            &labels,
+            &unknown_lanes,
+            &unknown_references
+        )
+        .is_empty());
     }
 
     #[test]
@@ -10892,6 +11549,75 @@ mod tests {
                 "newest-first",
                 "oldest-second",
                 "newest-second"
+            ]
+        );
+    }
+
+    #[test]
+    fn operation_history_groups_interleaved_sections_before_reversing() {
+        let label = |section: &str, ordinal, value: &str| super::FeatureOperationLabel {
+            id: format!("{section}-{ordinal}"),
+            section_link: section.to_string(),
+            ordinal,
+            value: value.to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: u64::from(ordinal),
+        };
+        let labels = [
+            label("first", 0, "newest-first"),
+            label("second", 0, "newest-second"),
+            label("first", 1, "oldest-first"),
+            label("second", 1, "oldest-second"),
+        ];
+
+        let values = super::feature_operation_chronological_labels(&labels)
+            .into_iter()
+            .map(|label| label.value.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            values,
+            [
+                "oldest-first",
+                "newest-first",
+                "oldest-second",
+                "newest-second"
+            ]
+        );
+    }
+
+    #[test]
+    fn operation_history_uses_serialized_offsets_for_section_and_member_order() {
+        let label =
+            |section: &str, ordinal, value: &str, source_offset| super::FeatureOperationLabel {
+                id: format!("{section}-{ordinal}"),
+                section_link: section.to_string(),
+                ordinal,
+                value: value.to_string(),
+                object_indices: [None; 4],
+                raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+                source_offset,
+            };
+        let labels = [
+            label("first", 1, "oldest-first", 210),
+            label("second", 1, "oldest-second", 110),
+            label("first", 0, "newest-first", 200),
+            label("second", 0, "newest-second", 100),
+        ];
+
+        let values = super::feature_operation_chronological_labels(&labels)
+            .into_iter()
+            .map(|label| label.value.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            values,
+            [
+                "oldest-second",
+                "newest-second",
+                "oldest-first",
+                "newest-first"
             ]
         );
     }
