@@ -476,6 +476,54 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
     malformed_path[record.origin + path_end] = 1;
     assert_eq!(resolved_coordinate_system(&malformed_path), None);
 
+    let mut endpoint_origin = Vec::new();
+    endpoint_origin.extend_from_slice(&[
+        0x2f, 0x80, 0x02, 0, 0, 0, 0x40, 0, 0, 0x75, 0, 0, 0, 0x75, 0, 0, 0,
+    ]);
+    endpoint_origin.extend_from_slice(&[0; 28]);
+    endpoint_origin.extend_from_slice(&[0xff; 16]);
+    endpoint_origin.extend_from_slice(&[0; 8]);
+    endpoint_origin.extend_from_slice(&0x0001_8528u32.to_le_bytes());
+    endpoint_origin.extend_from_slice(&[0; 7]);
+    endpoint_origin.extend_from_slice(&3u32.to_le_bytes());
+    endpoint_origin.extend_from_slice(&[0, 2, 0, 0]);
+    endpoint_origin.extend_from_slice(&0x01ee_b3c6u32.to_le_bytes());
+    endpoint_origin.extend_from_slice(&[
+        0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54, 0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2,
+        0x54,
+    ]);
+    endpoint_origin.extend_from_slice(&[0; 2]);
+    for index in 0..3u32 {
+        endpoint_origin.extend_from_slice(&(0x8001 + index as u16).to_le_bytes());
+        endpoint_origin.extend_from_slice(&[0; 2]);
+        endpoint_origin.extend_from_slice(&[0x38, 0x80, 0x3b, 0, 0x68, 1, 0, 0]);
+        endpoint_origin.extend_from_slice(&(800 + index).to_le_bytes());
+        endpoint_origin.extend_from_slice(&(20 + index).to_le_bytes());
+    }
+    endpoint_origin.extend_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
+    let endpoint_trailer = endpoint_origin.len();
+    endpoint_origin.extend_from_slice(&[0; 70]);
+    endpoint_origin.extend_from_slice(&1u32.to_le_bytes());
+    endpoint_origin.extend_from_slice(&[0; 4]);
+    endpoint_origin.extend_from_slice(&700u32.to_le_bytes());
+    endpoint_origin.extend_from_slice(&[0; 12]);
+    endpoint_origin.extend_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
+    endpoint_origin.extend_from_slice(&[0; 4]);
+    endpoint_origin.extend_from_slice(&7000u32.to_le_bytes());
+    endpoint_origin.extend_from_slice(&[0; 8]);
+    for value in [0.125_f64, -0.25, 0.5] {
+        endpoint_origin.extend_from_slice(&value.to_le_bytes());
+    }
+    let mut endpoint_frame = record.lane.native_payload[..record.origin].to_vec();
+    endpoint_frame.extend_from_slice(&endpoint_origin);
+    endpoint_frame.extend_from_slice(&record.lane.native_payload[record.origin + 151..]);
+    assert_eq!(
+        resolved_coordinate_system(&endpoint_frame),
+        resolved_coordinate_system(&record.lane.native_payload)
+    );
+    endpoint_frame[record.origin + endpoint_trailer] = 1;
+    assert_eq!(resolved_coordinate_system(&endpoint_frame), None);
+
     let mut ordinal_frame = record.lane.native_payload.clone();
     ordinal_frame.truncate(record.origin + 151);
     ordinal_frame.extend_from_slice(&2u16.to_le_bytes());

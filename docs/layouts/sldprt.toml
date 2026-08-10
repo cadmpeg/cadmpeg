@@ -4580,6 +4580,176 @@ contains = "fn coordinate_system_two_point_frame("
 note = "The parser requires two extended point records, validates the complete repeated cache, and constructs Y from the point displacement perpendicular to X."
 
 [[record]]
+name = "coordinate_system_endpoint_path_prefix"
+kind = "byte"
+section = "2"
+anchor = "An endpoint-path origin is used only when the coordinate-system object contains no fixed or component-path point origin"
+size = 110
+endianness = "little"
+note = "The counted compact component path starts immediately after this fixed prefix."
+
+[[record.field]]
+name = "family"
+offset = 0
+type = "bytes[17]"
+source = "spec"
+anchor = "begins with `2f 80 02 00 00 00 40 00 00 75 00 00 00 75 00 00 00`"
+
+[[record.field]]
+name = "zero_header"
+offset = 17
+type = "bytes[28]"
+source = "spec"
+anchor = "followed by 28 zero bytes"
+
+[[record.field]]
+name = "sentinel"
+offset = 45
+type = "bytes[16]"
+source = "spec"
+anchor = "sixteen `ff` bytes"
+
+[[record.field]]
+name = "zero_before_selector"
+offset = 61
+type = "bytes[8]"
+source = "spec"
+anchor = "and eight zero bytes"
+
+[[record.field]]
+name = "selector"
+offset = 69
+type = "u32"
+source = "spec"
+anchor = "Record +69 stores a nonzero non-sentinel u32 LE selector"
+
+[[record.field]]
+name = "zero_before_count"
+offset = 73
+type = "bytes[7]"
+source = "spec"
+anchor = "+73 stores seven zero bytes"
+
+[[record.field]]
+name = "path_entry_count"
+offset = 80
+type = "u32"
+source = "spec"
+anchor = "+80 stores a positive u32 LE path-entry count"
+
+[[record.field]]
+name = "path_kind"
+offset = 84
+type = "bytes[4]"
+source = "spec"
+anchor = "+84 stores `00 02 00 00`"
+
+[[record.field]]
+name = "token"
+offset = 88
+type = "u32"
+source = "spec"
+anchor = "+88 stores a nonzero non-sentinel u32 LE token"
+
+[[record.field]]
+name = "component_marker"
+offset = 92
+type = "bytes[16]"
+source = "spec"
+anchor = "+92 stores the duplicated compact component marker"
+
+[[record.field]]
+name = "zero_before_path"
+offset = 108
+type = "u16"
+source = "spec"
+anchor = "+108 stores two zero bytes"
+
+[[record]]
+name = "coordinate_system_endpoint_path_suffix"
+kind = "byte"
+section = "2"
+anchor = "Relative to the byte after that slot"
+size = 142
+endianness = "little"
+note = "Path-end-relative after the required eight-byte null slot."
+
+[[record.field]]
+name = "zero_header"
+offset = 0
+type = "bytes[70]"
+source = "spec"
+anchor = "70 zero bytes"
+
+[[record.field]]
+name = "one"
+offset = 70
+type = "u32"
+source = "spec"
+anchor = "u32 LE `1`"
+
+[[record.field]]
+name = "zero_before_object"
+offset = 74
+type = "u32"
+source = "spec"
+anchor = "four zero bytes"
+
+[[record.field]]
+name = "object_id"
+offset = 78
+type = "u32"
+source = "spec"
+anchor = "a nonzero non-sentinel u32 LE object ID"
+
+[[record.field]]
+name = "zero_before_handles"
+offset = 82
+type = "bytes[12]"
+source = "spec"
+anchor = "and twelve zero bytes precede the 48-byte solved suffix"
+
+[[record.field]]
+name = "handles"
+offset = 94
+type = "bytes[8]"
+source = "spec"
+anchor = "The solved suffix uses the component-path point handles"
+
+[[record.field]]
+name = "zero_before_generation"
+offset = 102
+type = "u32"
+source = "spec"
+anchor = "generation, zero padding"
+
+[[record.field]]
+name = "generation"
+offset = 106
+type = "u32"
+source = "spec"
+anchor = "generation, zero padding"
+
+[[record.field]]
+name = "zero_before_origin"
+offset = 110
+type = "bytes[8]"
+source = "spec"
+anchor = "generation, zero padding"
+
+[[record.field]]
+name = "origin"
+offset = 118
+type = "f64[3]"
+source = "spec"
+anchor = "finite origin-coordinate layout"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
+contains = "fn coordinate_system_endpoint_origins("
+note = "The parser validates the endpoint prefix, one counted path, the required null slot, and the complete path-relative solved suffix."
+
+[[record]]
 name = "coordinate_system_line_axis"
 kind = "byte"
 section = "2"

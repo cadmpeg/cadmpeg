@@ -1214,6 +1214,49 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires two extended point records, validates the complete repeated cache, and constructs Y from the point displacement perpendicular to X.
 
+## `coordinate_system_endpoint_path_prefix`
+
+Spec §2 · layout: byte offsets · size: 110 B
+
+The counted compact component path starts immediately after this fixed prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 17 | `family` | `bytes[17]` | little | spec | begins with `2f 80 02 00 00 00 40 00 00 75 00 00 00 75 00 00 00` |
+| 17 | 28 | `zero_header` | `bytes[28]` | little | spec | followed by 28 zero bytes |
+| 45 | 16 | `sentinel` | `bytes[16]` | little | spec | sixteen `ff` bytes |
+| 61 | 8 | `zero_before_selector` | `bytes[8]` | little | spec | and eight zero bytes |
+| 69 | 4 | `selector` | `u32` | little | spec | Record +69 stores a nonzero non-sentinel u32 LE selector |
+| 73 | 7 | `zero_before_count` | `bytes[7]` | little | spec | +73 stores seven zero bytes |
+| 80 | 4 | `path_entry_count` | `u32` | little | spec | +80 stores a positive u32 LE path-entry count |
+| 84 | 4 | `path_kind` | `bytes[4]` | little | spec | +84 stores `00 02 00 00` |
+| 88 | 4 | `token` | `u32` | little | spec | +88 stores a nonzero non-sentinel u32 LE token |
+| 92 | 16 | `component_marker` | `bytes[16]` | little | spec | +92 stores the duplicated compact component marker |
+| 108 | 2 | `zero_before_path` | `u16` | little | spec | +108 stores two zero bytes |
+
+## `coordinate_system_endpoint_path_suffix`
+
+Spec §2 · layout: byte offsets · size: 142 B
+
+Path-end-relative after the required eight-byte null slot.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 70 | `zero_header` | `bytes[70]` | little | spec | 70 zero bytes |
+| 70 | 4 | `one` | `u32` | little | spec | u32 LE `1` |
+| 74 | 4 | `zero_before_object` | `u32` | little | spec | four zero bytes |
+| 78 | 4 | `object_id` | `u32` | little | spec | a nonzero non-sentinel u32 LE object ID |
+| 82 | 12 | `zero_before_handles` | `bytes[12]` | little | spec | and twelve zero bytes precede the 48-byte solved suffix |
+| 94 | 8 | `handles` | `bytes[8]` | little | spec | The solved suffix uses the component-path point handles |
+| 102 | 4 | `zero_before_generation` | `u32` | little | spec | generation, zero padding |
+| 106 | 4 | `generation` | `u32` | little | spec | generation, zero padding |
+| 110 | 8 | `zero_before_origin` | `bytes[8]` | little | spec | generation, zero padding |
+| 118 | 24 | `origin` | `f64[3]` | little | spec | finite origin-coordinate layout |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser validates the endpoint prefix, one counted path, the required null slot, and the complete path-relative solved suffix.
+
 ## `coordinate_system_line_axis`
 
 Spec §2 · layout: byte offsets · size: 113 B

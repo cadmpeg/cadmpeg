@@ -6,7 +6,9 @@ use super::curves::{
     REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
 };
 use super::scalars::feature_object_name;
-use super::selections::{compact_component_path_end_at, component_face_reference_in_record};
+use super::selections::{
+    compact_component_path_end_at, component_face_reference_in_record, COMPACT_EDGE_VECTOR_MARKER,
+};
 use super::{CLASS_MARKER, NAME_MARKER};
 use crate::classification::{
     classify, native_object_class, principal_plane_with_siblings, FeatureClass, NativeClassKind,
@@ -803,6 +805,7 @@ enum CoordinateSystemOriginKind {
     Standard,
     Extended,
     ComponentPath,
+    EndpointPath,
 }
 
 #[derive(Clone, Copy)]
@@ -815,11 +818,82 @@ struct CoordinateSystemOrigin {
 }
 
 fn coordinate_system_origin(record: &[u8]) -> Option<(Point3, u32, usize)> {
-    let candidates = coordinate_system_origins(record);
+    let mut candidates = coordinate_system_origins(record);
+    if candidates.is_empty() {
+        candidates = coordinate_system_endpoint_origins(record);
+    }
     let [candidate] = candidates.as_slice() else {
         return None;
     };
     Some((candidate.point, candidate.generation, candidate.end))
+}
+
+fn coordinate_system_endpoint_origins(record: &[u8]) -> Vec<CoordinateSystemOrigin> {
+    const PREFIX: &[u8] = &[
+        0x2f, 0x80, 0x02, 0, 0, 0, 0x40, 0, 0, 0x75, 0, 0, 0, 0x75, 0, 0, 0,
+    ];
+    const NULL_SLOT: &[u8] = &[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0];
+    const HANDLES: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
+    record
+        .windows(COMPACT_EDGE_VECTOR_MARKER.len())
+        .enumerate()
+        .filter(|(_, bytes)| *bytes == COMPACT_EDGE_VECTOR_MARKER)
+        .filter_map(|(marker, _)| {
+            let prefix = marker.checked_sub(92)?;
+            if record.get(prefix..prefix + 17)? != PREFIX
+                || record.get(prefix + 17..prefix + 45)? != [0; 28]
+                || record.get(prefix + 45..prefix + 61)? != [0xff; 16]
+                || record.get(prefix + 61..prefix + 69)? != [0; 8]
+                || record.get(prefix + 73..prefix + 80)? != [0; 7]
+            {
+                return None;
+            }
+            let selector =
+                u32::from_le_bytes(record.get(prefix + 69..prefix + 73)?.try_into().ok()?);
+            let token = u32::from_le_bytes(record.get(prefix + 88..prefix + 92)?.try_into().ok()?);
+            if matches!(selector, 0 | u32::MAX) || matches!(token, 0 | u32::MAX) {
+                return None;
+            }
+            let path_end = compact_component_path_end_at(record, marker)?;
+            if record.get(path_end..path_end + 8)? != NULL_SLOT {
+                return None;
+            }
+            let trailer = path_end.checked_add(8)?;
+            if record.get(trailer..trailer + 70)? != [0; 70]
+                || record.get(trailer + 70..trailer + 74)? != 1u32.to_le_bytes()
+                || record.get(trailer + 74..trailer + 78)? != [0; 4]
+                || record.get(trailer + 82..trailer + 94)? != [0; 12]
+            {
+                return None;
+            }
+            let object =
+                u32::from_le_bytes(record.get(trailer + 78..trailer + 82)?.try_into().ok()?);
+            let handles = trailer.checked_add(94)?;
+            if matches!(object, 0 | u32::MAX)
+                || record.get(handles..handles + 8)? != HANDLES
+                || record.get(handles + 8..handles + 12)? != [0; 4]
+                || record.get(handles + 16..handles + 24)? != [0; 8]
+            {
+                return None;
+            }
+            let generation =
+                u32::from_le_bytes(record.get(handles + 12..handles + 16)?.try_into().ok()?);
+            if matches!(generation, 0 | u32::MAX) {
+                return None;
+            }
+            Some(CoordinateSystemOrigin {
+                point: Point3::new(
+                    finite_f64(record, handles + 24)? * 1000.0,
+                    finite_f64(record, handles + 32)? * 1000.0,
+                    finite_f64(record, handles + 40)? * 1000.0,
+                ),
+                generation,
+                start: prefix,
+                end: handles.checked_add(48)?,
+                kind: CoordinateSystemOriginKind::EndpointPath,
+            })
+        })
+        .collect()
 }
 
 fn coordinate_system_origins(record: &[u8]) -> Vec<CoordinateSystemOrigin> {
