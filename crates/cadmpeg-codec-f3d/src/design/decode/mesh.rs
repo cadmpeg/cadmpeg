@@ -15,7 +15,7 @@ use crate::design::decode::meta::{
     metadata_for_bulk_stream, typed_primary_frames, TypedPrimaryFrame,
 };
 use crate::ids;
-use crate::paramesh::decode_mesh_container;
+use crate::paramesh::{decode_mesh_container, MeshContainer};
 use cadmpeg_core::le::{f64_at, u32_at};
 use cadmpeg_core::CodecError;
 
@@ -60,7 +60,7 @@ pub(crate) struct MeshBody {
     pub(crate) attributes: Vec<crate::paramesh::MeshAttribute>,
 }
 
-/// A finite, orientation-preserving row-major affine map.
+/// A finite, nonsingular row-major affine map.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct MeshAffineTransform([f64; 16]);
 
@@ -75,7 +75,7 @@ impl MeshAffineTransform {
         let determinant = cells[0] * (cells[5] * cells[10] - cells[6] * cells[9])
             - cells[1] * (cells[4] * cells[10] - cells[6] * cells[8])
             + cells[2] * (cells[4] * cells[9] - cells[5] * cells[8]);
-        (determinant.is_finite() && determinant > 0.0).then_some(Self(cells))
+        (determinant.is_finite() && determinant != 0.0).then_some(Self(cells))
     }
 
     fn transform(self, point: [f64; 3]) -> cadmpeg_ir::math::Point3 {
@@ -137,6 +137,31 @@ struct MeshBodyRecord {
     guid_record_index: u32,
     scope_record_index: u32,
     transform: MeshAffineTransform,
+}
+
+impl MeshBody {
+    /// Project one decoded container through its joined Design body record.
+    fn from_container(
+        entry_name: &str,
+        design_stream: &str,
+        body: MeshBodyRecord,
+        container: MeshContainer,
+    ) -> Self {
+        Self {
+            id: ids::native_mesh_body_id(entry_name, body.byte_offset),
+            design_stream: design_stream.to_owned(),
+            design_scope_record_index: body.scope_record_index,
+            vertices: container
+                .vertices
+                .into_iter()
+                .map(|point| body.transform.transform(point))
+                .collect(),
+            // Placement changes coordinates only. Triangle tuples and corner
+            // selectors remain in their serialized container order.
+            triangles: container.triangles,
+            attributes: container.attributes,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -415,19 +440,12 @@ pub(crate) fn decode_mesh_bodies(
             });
             continue;
         };
-        outcomes.push(MeshContainerOutcome::Joined(MeshBody {
-            id: ids::native_mesh_body_id(&entry.name, body.byte_offset),
-            design_stream: design.stream.clone(),
-            design_scope_record_index: body.scope_record_index,
-            vertices: container
-                .vertices
-                .iter()
-                .copied()
-                .map(|point| body.transform.transform(point))
-                .collect(),
-            triangles: container.triangles,
-            attributes: container.attributes,
-        }));
+        outcomes.push(MeshContainerOutcome::Joined(MeshBody::from_container(
+            &entry.name,
+            &design.stream,
+            *body,
+            container,
+        )));
     }
     Ok(outcomes)
 }
@@ -686,7 +704,50 @@ mod tests {
     }
 
     #[test]
-    fn mesh_body_transform_refuses_mismatched_projective_and_reflected_pairs() {
+    fn reflected_mesh_placement_preserves_triangle_and_corner_order() {
+        let cells = [
+            -0.5, 0.0, 0.0, 1.0, 0.0, 0.25, 0.0, -2.0, 0.0, 0.0, 2.0, 0.5, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let transform = mesh_body_transform(&mesh_body_payload(cells)).expect("reflected map");
+        let container = MeshContainer {
+            fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
+            vertices: vec![[2.0, 8.0, 3.0], [0.0, 0.0, 0.0], [4.0, 4.0, -1.0]],
+            triangles: vec![[2, 0, 1]],
+            attributes: vec![crate::paramesh::MeshAttribute {
+                role: 4,
+                element_code: 4,
+                domain: crate::paramesh::MeshAttributeDomain::Corner,
+                item_size: Some(4),
+                values: (0..20).collect(),
+                indices: Some(vec![0, 2]),
+            }],
+        };
+        let body = MeshBody::from_container(
+            "mesh.paramesh",
+            "design-stream",
+            MeshBodyRecord {
+                byte_offset: 100,
+                guid_record_index: 10,
+                scope_record_index: 12,
+                transform,
+            },
+            container,
+        );
+
+        assert_eq!(
+            body.vertices,
+            [
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 65.0),
+                cadmpeg_ir::math::Point3::new(10.0, -20.0, 5.0),
+                cadmpeg_ir::math::Point3::new(-10.0, -10.0, -15.0),
+            ]
+        );
+        assert_eq!(body.triangles, [[2, 0, 1]]);
+        assert_eq!(body.attributes[0].indices, Some(vec![0, 2]));
+    }
+
+    #[test]
+    fn mesh_body_transform_refuses_mismatched_projective_and_singular_pairs() {
         let identity = [
             1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ];
@@ -699,8 +760,8 @@ mod tests {
         projective[12] = 1.0;
         assert!(mesh_body_transform(&mesh_body_payload(projective)).is_none());
 
-        let mut reflected = identity;
-        reflected[0] = -1.0;
-        assert!(mesh_body_transform(&mesh_body_payload(reflected)).is_none());
+        let mut singular = identity;
+        singular[0] = 0.0;
+        assert!(mesh_body_transform(&mesh_body_payload(singular)).is_none());
     }
 }
