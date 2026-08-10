@@ -5216,7 +5216,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
     <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="2" Pz="3" Q0="0.7071067811865476" Q1="0" Q2="0" Q3="0.7071067811865476"/></Property>
   </Properties></Object>
   <Object name="Pad"><Properties Count="2">
-    <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="Sketch" type="App::PropertyLink"><Link value="Sketch"/></Property>
     <Property name="Length" type="App::PropertyLength"><Float value="10"/></Property>
   </Properties></Object>
   <Object name="Pocket"><Properties Count="4">

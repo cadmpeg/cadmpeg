@@ -2334,14 +2334,16 @@ fn profile_ref(
 }
 
 fn profile_target<'a>(properties: &'a [&PropertyRecord]) -> Option<(&'a PropertyRecord, &'a str)> {
-    ["Profile", "Base", "Source"].iter().find_map(|name| {
-        let property = property(properties, name)?;
-        let target = property
-            .links
-            .iter()
-            .find_map(|link| link.object.as_deref())?;
-        (!target.is_empty()).then_some((property, target))
-    })
+    ["Profile", "Sketch", "Base", "Source"]
+        .iter()
+        .find_map(|name| {
+            let property = property(properties, name)?;
+            let target = property
+                .links
+                .iter()
+                .find_map(|link| link.object.as_deref())?;
+            (!target.is_empty()).then_some((property, target))
+        })
 }
 
 fn revolution_axis(properties: &[&PropertyRecord]) -> Option<RevolutionAxis> {
