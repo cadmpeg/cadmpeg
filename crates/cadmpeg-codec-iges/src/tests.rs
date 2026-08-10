@@ -114,6 +114,18 @@ fn over_width_lines_split_into_cards_and_retained_remainders() {
         .decode(&mut Cursor::new(padded.clone()), &DecodeOptions::default())
         .unwrap();
     assert_eq!(result.ir.model.points.len(), 1);
+    assert_eq!(result.report.transfer_ledger.entries.len(), 1);
+    let transfer = &result.report.transfer_ledger.entries[0];
+    assert_eq!(transfer.source, "D1");
+    assert_eq!(transfer.target.as_deref(), Some("iges:entity:directory#1"));
+    assert_eq!(
+        transfer.disposition,
+        cadmpeg_ir::report::TransferDisposition::Retained
+    );
+    assert_eq!(
+        transfer.note.as_deref(),
+        Some("native record retained; semantic projection emitted")
+    );
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses);
     assert!(validation.is_ok(), "{validation:#?}");
 
@@ -1779,6 +1791,12 @@ fn decode_rejects_a_copious_interpretation_that_disagrees_with_its_form() {
     assert_eq!(provenance.stream, "iges");
     assert_eq!(provenance.tag.as_deref(), Some("directory_entry:D1"));
     assert_eq!(bytes[provenance.offset as usize + 72], b'D');
+    let transfer = &result.report.transfer_ledger.entries[0];
+    assert_eq!(transfer.source, "D1");
+    assert_eq!(
+        transfer.note.as_deref(),
+        Some("native record retained; semantic projection omitted with an attributed loss")
+    );
 }
 
 #[test]

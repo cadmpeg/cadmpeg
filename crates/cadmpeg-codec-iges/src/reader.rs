@@ -6,7 +6,7 @@ use cadmpeg_core::decode::{DecodeContext, DecodeMode};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
-use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
+use cadmpeg_ir::report::{DecodeReport, LossNote, Severity, TransferDisposition, TransferLedger};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
@@ -226,6 +226,29 @@ fn decode_with_occurrence_limits(
             }
         }
     }
+    let mut transfer_ledger = TransferLedger::default();
+    for entry in directory.iter().filter(|entry| entry.entity_type != 0) {
+        let note = if options.container_only {
+            "native record retained; semantic projection was not requested"
+        } else if projection.decoded.contains(&entry.sequence) {
+            "native record retained; semantic projection emitted"
+        } else if crate::profile::envelope_a_admits(entry.entity_type, entry.form) {
+            "native record retained; semantic projection omitted with an attributed loss"
+        } else {
+            "native record retained; entity is outside the declared read envelope"
+        };
+        transfer_ledger.record(
+            format!("D{}", entry.sequence),
+            Some(format!("iges:entity:directory#{}", entry.sequence)),
+            TransferDisposition::Retained,
+            Some(note.into()),
+        );
+    }
+    transfer_ledger
+        .verify(&cadmpeg_ir::index::ModelIndex::new(&ir))
+        .map_err(|message| {
+            CodecError::Malformed(format!("IGES transfer ledger is inconsistent: {message}"))
+        })?;
     let mut notes = directory::summary_notes(&directory);
     notes.extend(parameter::summary_notes(&parameters));
     notes.extend(graph::summary_notes(&references));
@@ -236,7 +259,7 @@ fn decode_with_occurrence_limits(
             container_only: options.container_only,
             geometry_transferred,
             coverage: std::collections::BTreeMap::new(),
-            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            transfer_ledger,
             losses,
             notes,
         },

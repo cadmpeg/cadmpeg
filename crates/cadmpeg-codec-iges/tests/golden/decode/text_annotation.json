@@ -2301,7 +2301,23 @@
       "parameter_records=2",
       "parameter_tokens=59",
       "external_references=0"
-    ]
+    ],
+    "transfer_ledger": {
+      "entries": [
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D1",
+          "target": "iges:entity:directory#1"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D3",
+          "target": "iges:entity:directory#3"
+        }
+      ]
+    }
   },
   "source_fidelity": {
     "annotations": {},
