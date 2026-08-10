@@ -4301,11 +4301,12 @@ pub(crate) fn dependency_matches_input(
         .symbol
         .strip_prefix(&input.parameter)
         .is_some_and(|suffix| {
+            let suffix =
+                suffix.trim_start_matches(|character: char| character.is_ascii_whitespace());
             suffix.is_empty()
-                || suffix
-                    .as_bytes()
-                    .first()
-                    .is_some_and(u8::is_ascii_whitespace)
+                || suffix.strip_prefix('/').is_some_and(|ordinal| {
+                    !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+                })
         })
 }
 

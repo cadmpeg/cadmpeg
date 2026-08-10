@@ -13737,6 +13737,15 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         [("#1_", 10), ("#2_", 11)]
     );
 
+    let compact_ordinal = vec![
+        dependency("#1_", vec![reference(10)]),
+        dependency("#1_/2", vec![reference(10)]),
+        dependency("#2_", vec![reference(11)]),
+    ];
+    assert!(
+        crate::native::resolved_relation_program_inputs(&signature, &compact_ordinal).is_some()
+    );
+
     let zero = crate::native::CatiaRelationTypeSignature {
         inputs: Vec::new(),
         result_type: "Real".to_string(),
@@ -13763,6 +13772,15 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         &[
             dependency("#1_", vec![reference(10)]),
             dependency("#1_ /2", vec![reference(12)]),
+            dependency("#2_", vec![reference(11)])
+        ]
+    )
+    .is_none());
+    assert!(crate::native::resolved_relation_program_inputs(
+        &signature,
+        &[
+            dependency("#1_", vec![reference(10)]),
+            dependency("#1_ /ordinal", vec![reference(10)]),
             dependency("#2_", vec![reference(11)])
         ]
     )
