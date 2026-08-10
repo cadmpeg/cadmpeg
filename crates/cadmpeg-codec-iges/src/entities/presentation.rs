@@ -32,7 +32,7 @@ fn loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
             entry.form,
             message.into()
         ),
-        provenance: None,
+        provenance: Some(entry.loss_provenance()),
     }
 }
 

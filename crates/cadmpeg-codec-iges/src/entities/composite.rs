@@ -36,6 +36,7 @@ fn degraded_carrier_loss(entry: &DirectoryEntry, reason: &str) -> LossNote {
             entry.sequence
         ),
     )
+    .with_provenance(entry.loss_provenance())
 }
 
 fn point_for_vertex(ir: &CadIr, id: &VertexId) -> Option<Point3> {

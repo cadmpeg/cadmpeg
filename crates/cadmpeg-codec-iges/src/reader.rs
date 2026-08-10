@@ -205,7 +205,7 @@ fn decode_with_occurrence_limits(
                             entry.entity_type, entry.form
                         )
                     },
-                    provenance: None,
+                    provenance: Some(entry.loss_provenance()),
                 }),
         );
         charge_work(

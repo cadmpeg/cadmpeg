@@ -376,7 +376,7 @@ pub(super) fn entity_loss(entry: &DirectoryEntry, message: impl Into<String>) ->
             entry.form,
             message.into()
         ),
-        provenance: None,
+        provenance: Some(entry.loss_provenance()),
     }
 }
 

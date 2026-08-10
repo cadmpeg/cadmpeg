@@ -1758,18 +1758,26 @@ fn decode_closes_form_63_with_the_global_minimum_resolution() {
 
 #[test]
 fn decode_rejects_a_copious_interpretation_that_disagrees_with_its_form() {
+    let bytes = copious_data_file(11, b"106,2,2,0,0,0,1,0,0;", "00000000");
     let result = IgesCodec
-        .decode(
-            &mut Cursor::new(copious_data_file(11, b"106,2,2,0,0,0,1,0,0;", "00000000")),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .unwrap();
 
     assert!(result.ir.model.curves.is_empty());
-    assert!(result.report.losses.iter().any(|loss| {
-        loss.message
-            .contains("interpretation flag disagrees with the entity form")
-    }));
+    let loss = result
+        .report
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.message
+                .contains("interpretation flag disagrees with the entity form")
+        })
+        .expect("copious-data projection loss");
+    let provenance = loss.provenance.as_ref().expect("Directory provenance");
+    assert_eq!(provenance.format, "iges");
+    assert_eq!(provenance.stream, "iges");
+    assert_eq!(provenance.tag.as_deref(), Some("directory_entry:D1"));
+    assert_eq!(bytes[provenance.offset as usize + 72], b'D');
 }
 
 #[test]

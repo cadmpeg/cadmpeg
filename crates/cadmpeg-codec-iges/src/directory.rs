@@ -27,6 +27,7 @@ impl Status {
 /// Lossless typed Directory Entry fields.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DirectoryEntry {
+    pub(crate) source_offset: u64,
     pub(crate) sequence: u32,
     pub(crate) entity_type: i64,
     pub(crate) parameter_start: i64,
@@ -44,6 +45,17 @@ pub(crate) struct DirectoryEntry {
     pub(crate) reserved: [[u8; 8]; 2],
     pub(crate) label: [u8; 8],
     pub(crate) subscript: i64,
+}
+
+impl DirectoryEntry {
+    pub(crate) fn loss_provenance(&self) -> cadmpeg_ir::LossProvenance {
+        cadmpeg_ir::LossProvenance {
+            format: "iges".into(),
+            stream: "iges".into(),
+            offset: self.source_offset,
+            tag: Some(format!("directory_entry:D{}", self.sequence)),
+        }
+    }
 }
 
 fn malformed(sequence: u32, message: impl Into<String>) -> CodecError {
@@ -134,6 +146,7 @@ fn parse_pair(first: &PhysicalLine, second: &PhysicalLine) -> Result<DirectoryEn
         ));
     }
     Ok(DirectoryEntry {
+        source_offset: first.offset,
         sequence,
         entity_type,
         parameter_start: integer(first_fields[1], sequence, "Parameter Data start")?,
