@@ -197,14 +197,17 @@ fn is_native_sketch_geometry_class(class_name: &str) -> bool {
 /// framing, and evaluation are retained as native properties. The unique
 /// source record is retained as an unresolved native operand; no geometry,
 /// dimensional, or driving-parameter role is inferred from the range alone.
+/// The returned object-record identities are the exact range records
+/// represented by the emitted neutral constraints. The source operand remains
+/// unresolved by design.
 pub(crate) fn transfer_constraint_ranges(
     ir: &mut CadIr,
     native: &CatiaNative,
     feature_transfer: &DesignFeatureTransfer,
     graph_scope: Option<&HashSet<String>>,
-) -> usize {
+) -> HashSet<String> {
     let indexes = ConstraintIndexes::new(native, ir);
-    let mut transferred = 0;
+    let mut transferred = HashSet::new();
 
     for entity in &native.entity_records {
         let Some(range) = entity.constraint_range.as_ref() else {
@@ -250,7 +253,7 @@ pub(crate) fn transfer_constraint_ranges(
             metadata: None,
             native_ref: Some(entity.id.clone()),
         });
-        transferred += 1;
+        transferred.insert(entity.object_record.clone());
     }
 
     transferred
@@ -915,7 +918,7 @@ mod tests {
 
         assert_eq!(
             transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope)),
-            1
+            HashSet::from(["range-record".to_string()])
         );
         assert_eq!(ir.model.sketch_constraints.len(), 1);
         let constraint = &ir.model.sketch_constraints[0];
@@ -963,7 +966,7 @@ mod tests {
 
         assert_eq!(
             transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope)),
-            1
+            HashSet::from(["range-record".to_string()])
         );
         assert_eq!(ir.model.sketch_constraints.len(), 1);
     }
@@ -981,7 +984,7 @@ mod tests {
 
         assert_eq!(
             transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope)),
-            0
+            HashSet::new()
         );
         assert!(ir.model.sketch_constraints.is_empty());
     }
@@ -996,7 +999,7 @@ mod tests {
 
         assert_eq!(
             transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope)),
-            0
+            HashSet::new()
         );
         assert!(ir.model.sketch_constraints.is_empty());
     }
