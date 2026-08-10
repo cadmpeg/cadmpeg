@@ -9,6 +9,10 @@ use cadmpeg_ir::{CadIr, Check, Finding, NativeUnknownRecord, Severity};
 use crate::design::{
     DesignRecordIssue, PmDcExpression, PmDcExpressionKind, PmDcParameter, PmDcUnit, PmDcUnitKind,
 };
+use crate::sketch::{
+    PmDcDirection, PmDcSketch, PmDcSketchConstraint, PmDcSketchConstraintKind, PmDcSketchEntity,
+    PmDcSketchEntityKind, PmDcTransform, SketchRecordIssue,
+};
 
 use crate::native::{
     ActiveCarrierRecord, ActiveCarrierRecordState, AssemblyOccurrenceRecord,
@@ -48,6 +52,11 @@ const ARENAS: &[&str] = &[
     "pm_app_rendering_styles",
     "pm_dc_expressions",
     "pm_dc_parameters",
+    "pm_dc_directions",
+    "pm_dc_sketch_entities",
+    "pm_dc_sketch_constraints",
+    "pm_dc_sketches",
+    "pm_dc_transforms",
     "pm_dc_units",
     "pm_graphics_faces",
     "pm_graphics_style_collections",
@@ -68,6 +77,7 @@ const ARENAS: &[&str] = &[
     "segment_meta_issues",
     "segment_pairs",
     "segment_registry",
+    "sketch_record_issues",
     "storage_bands",
     "structural_issues",
     "tolerant_coedge_parameters",
@@ -140,6 +150,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_segments(&data, &mut findings);
     validate_active_carrier(&data, &mut findings);
     validate_design(&data, ir, &mut findings);
+    validate_sketches(&data, ir, &mut findings);
     unique(
         &mut findings,
         data.unknowns.iter().map(|record| record.id.0.as_str()),
@@ -322,6 +333,321 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
                 "inventor:pmdc:record#{}-{}",
                 issue.segment_token, issue.record_ordinal
             )),
+        ));
+    }
+}
+
+fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
+    let raw = data
+        .records
+        .iter()
+        .map(|record| {
+            (
+                (record.token.as_str(), record.ordinal),
+                record.type_id.as_str(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let record_is_exact = |token: &str, ordinal: u32, type_id: &str| {
+        raw.get(&(token, ordinal)).copied() == Some(type_id)
+    };
+    let references_resolve = |token: &str, references: &[u32]| {
+        references.iter().all(|reference| {
+            *reference == 0 || raw.contains_key(&(token, reference.saturating_sub(1)))
+        })
+    };
+    unique(
+        findings,
+        data.pm_dc_sketches
+            .iter()
+            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        "Inventor PmDc sketch",
+    );
+    unique(
+        findings,
+        data.pm_dc_sketch_entities
+            .iter()
+            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        "Inventor PmDc sketch entity",
+    );
+    unique(
+        findings,
+        data.pm_dc_transforms
+            .iter()
+            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        "Inventor PmDc transform",
+    );
+    unique(
+        findings,
+        data.pm_dc_sketch_constraints
+            .iter()
+            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        "Inventor PmDc sketch constraint",
+    );
+    unique(
+        findings,
+        data.pm_dc_directions
+            .iter()
+            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        "Inventor PmDc direction",
+    );
+    for sketch in &data.pm_dc_sketches {
+        let references = [
+            sketch.header.next.index,
+            sketch.header.context.index,
+            sketch.transform.index,
+            sketch.direction.index,
+        ]
+        .into_iter()
+        .chain(
+            sketch
+                .entities
+                .references
+                .iter()
+                .map(|reference| reference.index),
+        )
+        .chain(
+            sketch
+                .auxiliary
+                .iter()
+                .flat_map(|list| &list.references)
+                .map(|reference| reference.index),
+        )
+        .collect::<Vec<_>>();
+        if !record_is_exact(
+            &sketch.segment_token,
+            sketch.record_ordinal,
+            &sketch.type_id,
+        ) || !references_resolve(&sketch.segment_token, &references)
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc sketch record or reference does not resolve".into(),
+                Some(sketch.id.clone()),
+            ));
+        }
+    }
+    for entity in &data.pm_dc_sketch_entities {
+        let mut references = vec![
+            entity.header.next.index,
+            entity.header.context.index,
+            entity.sketch.index,
+        ];
+        let mut add_list = |list: &crate::sketch::PmDcReferenceList| {
+            references.extend(list.references.iter().map(|reference| reference.index));
+        };
+        match &entity.kind {
+            PmDcSketchEntityKind::Point {
+                endpoint_of,
+                center_of,
+                associations,
+                ..
+            } => {
+                add_list(endpoint_of);
+                add_list(center_of);
+                if let Some(associations) = associations {
+                    add_list(associations);
+                }
+            }
+            PmDcSketchEntityKind::Line {
+                points, auxiliary, ..
+            } => {
+                add_list(points);
+                for list in auxiliary {
+                    add_list(list);
+                }
+            }
+            PmDcSketchEntityKind::Circle {
+                points,
+                auxiliary,
+                center,
+                ..
+            }
+            | PmDcSketchEntityKind::Ellipse {
+                points,
+                auxiliary,
+                center,
+                ..
+            } => {
+                add_list(points);
+                for list in auxiliary {
+                    add_list(list);
+                }
+                references.push(center.index);
+            }
+        }
+        if !record_is_exact(
+            &entity.segment_token,
+            entity.record_ordinal,
+            &entity.type_id,
+        ) || !references_resolve(&entity.segment_token, &references)
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc sketch-entity record or reference does not resolve".into(),
+                Some(entity.id.clone()),
+            ));
+        }
+    }
+    for transform in &data.pm_dc_transforms {
+        if !record_is_exact(
+            &transform.segment_token,
+            transform.record_ordinal,
+            &transform.type_id,
+        ) || !references_resolve(
+            &transform.segment_token,
+            &[transform.header.next.index, transform.header.context.index],
+        ) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc transform record or reference does not resolve".into(),
+                Some(transform.id.clone()),
+            ));
+        }
+    }
+    for constraint in &data.pm_dc_sketch_constraints {
+        let header = &constraint.header;
+        let mut references = vec![
+            header.content.next.index,
+            header.content.context.index,
+            header.group.index,
+            header.parameter.index,
+        ];
+        for (key, _) in &header.scalar_map.entries {
+            references.push(key.index);
+        }
+        for (key, value) in &header.reference_map.entries {
+            references.extend([key.index, value.index]);
+        }
+        match constraint.kind {
+            PmDcSketchConstraintKind::Coincident { first, second }
+            | PmDcSketchConstraintKind::Parallel { first, second, .. }
+            | PmDcSketchConstraintKind::Perpendicular { first, second, .. }
+            | PmDcSketchConstraintKind::Tangent { first, second, .. } => {
+                references.extend([first.index, second.index]);
+            }
+            PmDcSketchConstraintKind::Horizontal { entity, .. }
+            | PmDcSketchConstraintKind::Vertical { entity, .. } => {
+                references.push(entity.index);
+            }
+            PmDcSketchConstraintKind::HorizontalDistance {
+                first,
+                second,
+                parameter,
+                ..
+            }
+            | PmDcSketchConstraintKind::VerticalDistance {
+                first,
+                second,
+                parameter,
+                ..
+            } => references.extend([first.index, second.index, parameter.index]),
+            PmDcSketchConstraintKind::Radius { entity, .. } => {
+                references.push(entity.index);
+            }
+            PmDcSketchConstraintKind::Diameter {
+                reference, entity, ..
+            } => references.extend([reference.index, entity.index]),
+            PmDcSketchConstraintKind::CircleCenter { entity, center } => {
+                references.extend([entity.index, center.index]);
+            }
+            PmDcSketchConstraintKind::EqualRadius { first, second } => {
+                references.extend([first.index, second.index]);
+            }
+        }
+        if !record_is_exact(
+            &constraint.segment_token,
+            constraint.record_ordinal,
+            &constraint.type_id,
+        ) || !references_resolve(&constraint.segment_token, &references)
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc sketch-constraint record or reference does not resolve".into(),
+                Some(constraint.id.clone()),
+            ));
+        }
+    }
+    for direction in &data.pm_dc_directions {
+        if !record_is_exact(
+            &direction.segment_token,
+            direction.record_ordinal,
+            &direction.type_id,
+        ) || !references_resolve(
+            &direction.segment_token,
+            &[direction.header.next.index, direction.header.context.index],
+        ) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc direction record or reference does not resolve".into(),
+                Some(direction.id.clone()),
+            ));
+        }
+    }
+    let native_sketches = data
+        .pm_dc_sketches
+        .iter()
+        .map(|record| record.id.as_str())
+        .collect::<HashSet<_>>();
+    let native_entities = data
+        .pm_dc_sketch_entities
+        .iter()
+        .map(|record| record.id.as_str())
+        .collect::<HashSet<_>>();
+    let native_constraints = data
+        .pm_dc_sketch_constraints
+        .iter()
+        .map(|record| record.id.as_str())
+        .collect::<HashSet<_>>();
+    for sketch in &ir.model.sketches {
+        if sketch
+            .native_ref
+            .as_deref()
+            .is_none_or(|reference| !native_sketches.contains(reference))
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral sketch does not resolve to its PmDc source record".into(),
+                Some(sketch.id.0.clone()),
+            ));
+        }
+    }
+    for entity in &ir.model.sketch_entities {
+        if entity
+            .native_ref
+            .as_deref()
+            .is_none_or(|reference| !native_entities.contains(reference))
+            || entity
+                .endpoint_refs
+                .iter()
+                .any(|reference| !native_entities.contains(reference.as_str()))
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral sketch entity does not resolve to its PmDc source records".into(),
+                Some(entity.id.0.clone()),
+            ));
+        }
+    }
+    for constraint in &ir.model.sketch_constraints {
+        if constraint
+            .native_ref
+            .as_deref()
+            .is_none_or(|reference| !native_constraints.contains(reference))
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral sketch constraint does not resolve to its PmDc source record"
+                    .into(),
+                Some(constraint.id.0.clone()),
+            ));
+        }
+    }
+    for issue in &data.sketch_record_issues {
+        findings.push(finding(
+            Check::NativeLinks,
+            format!("Inventor sketch record: {}", issue.detail),
+            Some(issue.id.clone()),
         ));
     }
 }
@@ -686,6 +1012,12 @@ struct NativeData {
     pm_dc_expressions: Vec<PmDcExpression>,
     pm_dc_units: Vec<PmDcUnit>,
     design_record_issues: Vec<DesignRecordIssue>,
+    pm_dc_sketches: Vec<PmDcSketch>,
+    pm_dc_sketch_entities: Vec<PmDcSketchEntity>,
+    pm_dc_sketch_constraints: Vec<PmDcSketchConstraint>,
+    pm_dc_transforms: Vec<PmDcTransform>,
+    pm_dc_directions: Vec<PmDcDirection>,
+    sketch_record_issues: Vec<SketchRecordIssue>,
     active_carrier: Vec<ActiveCarrierRecord>,
     unknowns: Vec<NativeUnknownRecord>,
 }
@@ -738,6 +1070,12 @@ impl NativeData {
             pm_dc_expressions: namespace.arena_as("pm_dc_expressions")?,
             pm_dc_units: namespace.arena_as("pm_dc_units")?,
             design_record_issues: namespace.arena_as("design_record_issues")?,
+            pm_dc_sketches: namespace.arena_as("pm_dc_sketches")?,
+            pm_dc_sketch_entities: namespace.arena_as("pm_dc_sketch_entities")?,
+            pm_dc_sketch_constraints: namespace.arena_as("pm_dc_sketch_constraints")?,
+            pm_dc_transforms: namespace.arena_as("pm_dc_transforms")?,
+            pm_dc_directions: namespace.arena_as("pm_dc_directions")?,
+            sketch_record_issues: namespace.arena_as("sketch_record_issues")?,
             active_carrier: namespace.arena_as("active_carrier")?,
             unknowns: namespace.arena_as("unknowns")?,
         })

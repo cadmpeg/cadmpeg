@@ -49,10 +49,18 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
     let presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
     let design_inventory = crate::design::inventory(ctx, &container.rse)?;
+    let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
     let mut ir = CadIr::empty(Units::default());
     let (design_parameters, unresolved_design_parameters) =
         crate::design::project_parameters(&design_inventory);
     ir.model.parameters = design_parameters;
+    let sketch_projection = crate::sketch::project(&sketch_inventory, &ir.model.parameters);
+    let unresolved_sketches = sketch_projection.unresolved_sketches;
+    let unresolved_sketch_entities = sketch_projection.unresolved_entities;
+    let unresolved_sketch_constraints = sketch_projection.unresolved_constraints;
+    ir.model.sketches = sketch_projection.sketches;
+    ir.model.sketch_entities = sketch_projection.entities;
+    ir.model.sketch_constraints = sketch_projection.constraints;
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "cfb_major_version".into(),
@@ -1192,6 +1200,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .saturating_add(design_inventory.expressions.len())
             .saturating_add(design_inventory.units.len())
             .saturating_add(design_inventory.issues.len())
+            .saturating_add(sketch_inventory.sketches.len())
+            .saturating_add(sketch_inventory.entities.len())
+            .saturating_add(sketch_inventory.transforms.len())
+            .saturating_add(sketch_inventory.directions.len())
+            .saturating_add(sketch_inventory.constraints.len())
+            .saturating_add(sketch_inventory.issues.len())
             .saturating_add(unpaired_segments.len())
             .saturating_add(1) as u64,
         "retain Inventor native structural records",
@@ -1236,6 +1250,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     namespace.set_arena("pm_dc_expressions", &design_inventory.expressions)?;
     namespace.set_arena("pm_dc_units", &design_inventory.units)?;
     namespace.set_arena("design_record_issues", &design_inventory.issues)?;
+    namespace.set_arena("pm_dc_sketches", &sketch_inventory.sketches)?;
+    namespace.set_arena("pm_dc_sketch_entities", &sketch_inventory.entities)?;
+    namespace.set_arena("pm_dc_transforms", &sketch_inventory.transforms)?;
+    namespace.set_arena("pm_dc_directions", &sketch_inventory.directions)?;
+    namespace.set_arena("pm_dc_sketch_constraints", &sketch_inventory.constraints)?;
+    namespace.set_arena("sketch_record_issues", &sketch_inventory.issues)?;
     namespace.set_arena("segment_pairs", &segment_pairs)?;
     namespace.set_arena("segment_meta", &segment_meta)?;
     namespace.set_arena("meta_sections", &meta_sections)?;
@@ -1435,11 +1455,31 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 ),
             ));
         }
+        if !sketch_inventory.issues.is_empty() {
+            losses.push(LossNote::new(
+                LossKind::DecodeDiagnostic,
+                format!(
+                    "{} typed Inventor sketch record(s) could not be parsed exactly.",
+                    sketch_inventory.issues.len()
+                ),
+            ));
+        }
         if unresolved_design_parameters != 0 {
             losses.push(LossNote::new(
                 LossKind::ParametricRecordOmitted,
                 format!(
                     "Retained {unresolved_design_parameters} Inventor parameter record(s) whose unit or expression graph is not closed."
+                ),
+            ));
+        }
+        if unresolved_sketches != 0
+            || unresolved_sketch_entities != 0
+            || unresolved_sketch_constraints != 0
+        {
+            losses.push(LossNote::new(
+                LossKind::FeatureHistoryRetained,
+                format!(
+                    "Retained {unresolved_sketches} Inventor sketch record(s), {unresolved_sketch_entities} sketch-entity record(s), and {unresolved_sketch_constraints} sketch-constraint record(s) whose neutral graph is not closed."
                 ),
             ));
         }
@@ -1618,6 +1658,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let appearance_binding_count = ir.model.appearance_bindings.len();
     let transferred_occurrence_count = ir.model.occurrences.len();
     let design_parameter_count = ir.model.parameters.len();
+    let transferred_sketch_count = ir.model.sketches.len();
+    let transferred_sketch_entity_count = ir.model.sketch_entities.len();
+    let transferred_sketch_constraint_count = ir.model.sketch_constraints.len();
     Ok(DecodeResult::new(
         ir,
         DecodeReport {
@@ -1677,6 +1720,27 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                     design_parameter_count,
                 ),
                 ("design_record_issues".into(), design_inventory.issues.len()),
+                ("pm_dc_sketches".into(), sketch_inventory.sketches.len()),
+                (
+                    "pm_dc_sketch_entities".into(),
+                    sketch_inventory.entities.len(),
+                ),
+                ("pm_dc_transforms".into(), sketch_inventory.transforms.len()),
+                ("pm_dc_directions".into(), sketch_inventory.directions.len()),
+                (
+                    "pm_dc_sketch_constraints".into(),
+                    sketch_inventory.constraints.len(),
+                ),
+                ("sketch_record_issues".into(), sketch_inventory.issues.len()),
+                ("sketches_transferred".into(), transferred_sketch_count),
+                (
+                    "sketch_entities_transferred".into(),
+                    transferred_sketch_entity_count,
+                ),
+                (
+                    "sketch_constraints_transferred".into(),
+                    transferred_sketch_constraint_count,
+                ),
                 ("external_references".into(), external_references.len()),
                 ("embedded_references".into(), embedded_references.len()),
                 ("ufrx_model_states".into(), ufrx_model_states.len()),

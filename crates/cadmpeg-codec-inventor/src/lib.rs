@@ -18,6 +18,7 @@ mod property_set;
 mod protein;
 mod records;
 mod rse;
+mod sketch;
 mod validate;
 
 use cadmpeg_container::compound::CompoundPrefixProbe;

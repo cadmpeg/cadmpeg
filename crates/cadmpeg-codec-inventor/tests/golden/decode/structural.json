@@ -83,8 +83,13 @@
           "meta_types": [],
           "pm_app_default_styles": [],
           "pm_app_rendering_styles": [],
+          "pm_dc_directions": [],
           "pm_dc_expressions": [],
           "pm_dc_parameters": [],
+          "pm_dc_sketch_constraints": [],
+          "pm_dc_sketch_entities": [],
+          "pm_dc_sketches": [],
+          "pm_dc_transforms": [],
           "pm_dc_units": [],
           "pm_graphics_faces": [],
           "pm_graphics_primary_color_styles": [],
@@ -115,6 +120,7 @@
           "segment_meta_issues": [],
           "segment_pairs": [],
           "segment_registry": [],
+          "sketch_record_issues": [],
           "storage_bands": [],
           "structural_issues": [
             {
@@ -153,7 +159,7 @@
           "vertex_ownerships": [],
           "wire_topologies": []
         },
-        "version": 19
+        "version": 20
       }
     },
     "source": {
@@ -191,8 +197,13 @@
       "face_color_appearances": 0,
       "pm_app_default_styles": 0,
       "pm_app_rendering_styles": 0,
+      "pm_dc_directions": 0,
       "pm_dc_expressions": 0,
       "pm_dc_parameters": 0,
+      "pm_dc_sketch_constraints": 0,
+      "pm_dc_sketch_entities": 0,
+      "pm_dc_sketches": 0,
+      "pm_dc_transforms": 0,
       "pm_dc_units": 0,
       "pm_graphics_faces": 0,
       "pm_graphics_primary_color_styles": 0,
@@ -216,6 +227,10 @@
       "rse_segment_meta_issues": 0,
       "rse_segment_pairs": 0,
       "rse_storage_bands": 0,
+      "sketch_constraints_transferred": 0,
+      "sketch_entities_transferred": 0,
+      "sketch_record_issues": 0,
+      "sketches_transferred": 0,
       "ufrx_model_states": 0,
       "ufrx_occurrences": 0
     },

@@ -859,7 +859,7 @@ fn unique_by_ordinal<'a, T>(
         .collect()
 }
 
-struct Cursor<'a> {
+pub(crate) struct Cursor<'a> {
     source: View<'a>,
     position: usize,
 }
@@ -870,16 +870,26 @@ struct ReferenceArray {
 }
 
 impl<'a> Cursor<'a> {
-    const fn new(source: View<'a>) -> Self {
+    pub(crate) const fn new(source: View<'a>) -> Self {
         Self {
             source,
             position: 0,
         }
     }
-    fn remaining(&self) -> usize {
+    pub(crate) fn remaining(&self) -> usize {
         self.source.window().len().saturating_sub(self.position)
     }
-    fn take(&mut self, len: usize, field: &str) -> Result<&'a [u8], CodecError> {
+    pub(crate) fn peek_u32(&self, field: &str) -> Result<u32, CodecError> {
+        Ok(u32::from_le_bytes(
+            self.source
+                .window()
+                .get(self.position..self.position.saturating_add(4))
+                .ok_or_else(|| CodecError::Malformed(format!("truncated Inventor PmDc {field}")))?
+                .try_into()
+                .expect("four-byte field"),
+        ))
+    }
+    pub(crate) fn take(&mut self, len: usize, field: &str) -> Result<&'a [u8], CodecError> {
         let end = self.position.checked_add(len).ok_or_else(|| {
             CodecError::Malformed(format!("Inventor PmDc {field} range overflows"))
         })?;
@@ -891,25 +901,25 @@ impl<'a> Cursor<'a> {
         self.position = end;
         Ok(value)
     }
-    fn u8(&mut self, field: &str) -> Result<u8, CodecError> {
+    pub(crate) fn u8(&mut self, field: &str) -> Result<u8, CodecError> {
         Ok(self.take(1, field)?[0])
     }
-    fn u16(&mut self, field: &str) -> Result<u16, CodecError> {
+    pub(crate) fn u16(&mut self, field: &str) -> Result<u16, CodecError> {
         Ok(u16::from_le_bytes(
             self.take(2, field)?.try_into().expect("two-byte field"),
         ))
     }
-    fn i16(&mut self, field: &str) -> Result<i16, CodecError> {
+    pub(crate) fn i16(&mut self, field: &str) -> Result<i16, CodecError> {
         Ok(i16::from_le_bytes(
             self.take(2, field)?.try_into().expect("two-byte field"),
         ))
     }
-    fn u32(&mut self, field: &str) -> Result<u32, CodecError> {
+    pub(crate) fn u32(&mut self, field: &str) -> Result<u32, CodecError> {
         Ok(u32::from_le_bytes(
             self.take(4, field)?.try_into().expect("four-byte field"),
         ))
     }
-    fn f64(&mut self, field: &str) -> Result<f64, CodecError> {
+    pub(crate) fn f64(&mut self, field: &str) -> Result<f64, CodecError> {
         let value = f64::from_le_bytes(self.take(8, field)?.try_into().expect("eight-byte field"));
         if !value.is_finite() {
             return Err(CodecError::Malformed(format!(
@@ -918,7 +928,7 @@ impl<'a> Cursor<'a> {
         }
         Ok(value)
     }
-    fn reference(&mut self, field: &str) -> Result<PmDcReference, CodecError> {
+    pub(crate) fn reference(&mut self, field: &str) -> Result<PmDcReference, CodecError> {
         let value = self.u32(field)?;
         Ok(PmDcReference {
             index: value & 0x7fff_ffff,
@@ -977,7 +987,7 @@ impl<'a> Cursor<'a> {
             metadata,
         })
     }
-    fn finish(&self, record: &str) -> Result<(), CodecError> {
+    pub(crate) fn finish(&self, record: &str) -> Result<(), CodecError> {
         if self.remaining() == 0 {
             Ok(())
         } else {

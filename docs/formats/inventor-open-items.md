@@ -76,11 +76,11 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 
 **Need.** Each additional style family requires an exact owner path, channel semantics, and precedence before transfer.
 
-### DE-01. Sketch and feature record graph
+### DE-01. Feature and history record graph
 
-**Question.** Which typed records define sketches, constraints, history order, feature operands, suppression, and result-body transitions?
+**Question.** Which typed records define history order, feature operands, suppression, and result-body transitions?
 
-**Known.** Numeric PmDc parameters have stable carrier-qualified identities, exact unit and expression graphs, evaluated values, and ordered parameter dependencies. Exact RSe frames provide type identifiers and record ranges for the remaining design records.
+**Known.** Numeric PmDc parameters and planar sketches have stable carrier-qualified identities. Planar point, line, circle, ellipse, placement, geometric-constraint, and dimensional-constraint graphs have exact record references and neutral identities. Exact RSe frames provide type identifiers and record ranges for the remaining design records.
 
 **Need.** Each neutral feature requires complete operation semantics and ordered operands.
 
@@ -91,6 +91,14 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 **Known.** A scalar parameter unit with one supported numerator, no denominator, and no derived-unit reference transfers with exact length, angle, or dimensionless semantics. Literal, parameter-reference, unary, and binary arithmetic expression records form a closed ordered graph.
 
 **Need.** Compound or derived units and function calls require exact dimensional and textual semantics before neutral transfer.
+
+### DE-03. Additional sketch geometry and relations
+
+**Question.** What does the planar-sketch `count_value` count, what locus semantics do nonempty constraint maps encode, and which PmDc records define circular arcs, splines, offset curves, projected geometry, text, pattern relations, and branched profile regions?
+
+**Known.** The `count_value` is the u32 field between sketch state and the type-8 reference array. Point, bounded-line, circle, and ellipse entities form closed planar sketch graphs. Coincident, parallel, perpendicular, tangent, horizontal, vertical, circle-center, equal-radius, radius, diameter, horizontal-distance, and vertical-distance relations with empty constraint maps have exact operands.
+
+**Need.** The count requires an exact referent before validation uses it. Nonempty constraint maps require exact locus semantics before neutral transfer. Each additional entity and relation requires its complete solved geometry, ordered operands, parameter role, and profile-boundary semantics.
 
 ## 5. Adjacent envelopes
 

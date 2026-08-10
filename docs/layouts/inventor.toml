@@ -6,6 +6,195 @@ endianness = "little"
 note = "Fixed prefixes and descriptors in the supported RSe schema-31, Meta Stream v8, Protein, UFRxDoc, and kernel-carrier envelope."
 
 [[record]]
+name = "pm_dc_content_header"
+kind = "byte"
+section = "12"
+anchor = "PmDc content records start with this 22-byte header"
+size = 22
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id u16"
+
+[[record.field]]
+name = "next_reference"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "next_reference u32"
+
+[[record.field]]
+name = "flags"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "flags u32"
+
+[[record.field]]
+name = "context_reference"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "context_reference u32"
+
+[[record.field]]
+name = "source_index"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "source_index u32"
+
+[[record]]
+name = "pm_dc_sketch_entity_header"
+kind = "byte"
+section = "12"
+anchor = "Planar sketch entities add"
+size = 30
+
+[[record.field]]
+name = "content_header"
+offset = 0
+type = "bytes[22]"
+source = "spec"
+anchor = "after the content header"
+
+[[record.field]]
+name = "entity_flags"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "entity_flags:u32"
+
+[[record.field]]
+name = "sketch_reference"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "sketch_reference:u32"
+
+[[record]]
+name = "pm_dc_reference_list_prefix"
+kind = "byte"
+section = "12"
+anchor = "A type-2 reference list starts with"
+size = 8
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u16[2]"
+source = "spec"
+anchor = "u16 values `2, 0x3000`"
+
+[[record.field]]
+name = "item_count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "and a u32 count"
+
+[[record]]
+name = "pm_dc_reference_array_prefix"
+kind = "byte"
+section = "12"
+anchor = "A type-8 reference array starts with"
+size = 8
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u16[2]"
+source = "spec"
+anchor = "u16 values `8, 0x3000`"
+
+[[record.field]]
+name = "item_count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "and a u32 count"
+
+[[record]]
+name = "pm_dc_constraint_prefix"
+kind = "byte"
+section = "12"
+anchor = "A planar constraint starts with"
+size = 30
+
+[[record.field]]
+name = "content_header"
+offset = 0
+type = "bytes[22]"
+source = "spec"
+anchor = "the content header"
+
+[[record.field]]
+name = "state"
+offset = 22
+type = "i32"
+source = "spec"
+anchor = "state:i32"
+
+[[record.field]]
+name = "group_reference"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "a group reference"
+
+[[record]]
+name = "pm_dc_constraint_v15_v16_header"
+kind = "byte"
+section = "12"
+anchor = "Segment major versions 15 and 16 store"
+size = 34
+
+[[record.field]]
+name = "constraint_prefix"
+offset = 0
+type = "bytes[30]"
+source = "spec"
+anchor = "starts with the content header, `state:i32`, and a group reference"
+
+[[record.field]]
+name = "parameter_reference"
+offset = 30
+type = "u32"
+source = "spec"
+anchor = "the parameter reference immediately after the group reference"
+
+[[record]]
+name = "pm_dc_constraint_map_prefix"
+kind = "byte"
+section = "12"
+anchor = "A type-6 map starts with"
+size = 8
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u16[2]"
+source = "spec"
+anchor = "u16 values `6, 0x3000`"
+
+[[record.field]]
+name = "item_count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "and a u32 count"
+
+[[record]]
 name = "pm_dc_parameter_prefix"
 kind = "byte"
 section = "11"

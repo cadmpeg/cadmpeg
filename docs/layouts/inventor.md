@@ -9,6 +9,75 @@ Table source: `docs/layouts/inventor.toml`.
 
 Fixed prefixes and descriptors in the supported RSe schema-31, Meta Stream v8, Protein, UFRxDoc, and kernel-carrier envelope.
 
+## `pm_dc_content_header`
+
+Spec §12 · layout: byte offsets · size: 22 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | header_value u32 |
+| 4 | 2 | `header_id` | `u16` | little | spec | header_id u16 |
+| 6 | 4 | `next_reference` | `u32` | little | spec | next_reference u32 |
+| 10 | 4 | `flags` | `u32` | little | spec | flags u32 |
+| 14 | 4 | `context_reference` | `u32` | little | spec | context_reference u32 |
+| 18 | 4 | `source_index` | `u32` | little | spec | source_index u32 |
+
+## `pm_dc_sketch_entity_header`
+
+Spec §12 · layout: byte offsets · size: 30 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 22 | `content_header` | `bytes[22]` | little | spec | after the content header |
+| 22 | 4 | `entity_flags` | `u32` | little | spec | entity_flags:u32 |
+| 26 | 4 | `sketch_reference` | `u32` | little | spec | sketch_reference:u32 |
+
+## `pm_dc_reference_list_prefix`
+
+Spec §12 · layout: byte offsets · size: 8 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `marker` | `u16[2]` | little | spec | u16 values `2, 0x3000` |
+| 4 | 4 | `item_count` | `u32` | little | spec | and a u32 count |
+
+## `pm_dc_reference_array_prefix`
+
+Spec §12 · layout: byte offsets · size: 8 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `marker` | `u16[2]` | little | spec | u16 values `8, 0x3000` |
+| 4 | 4 | `item_count` | `u32` | little | spec | and a u32 count |
+
+## `pm_dc_constraint_prefix`
+
+Spec §12 · layout: byte offsets · size: 30 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 22 | `content_header` | `bytes[22]` | little | spec | the content header |
+| 22 | 4 | `state` | `i32` | little | spec | state:i32 |
+| 26 | 4 | `group_reference` | `u32` | little | spec | a group reference |
+
+## `pm_dc_constraint_v15_v16_header`
+
+Spec §12 · layout: byte offsets · size: 34 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 30 | `constraint_prefix` | `bytes[30]` | little | spec | starts with the content header, `state:i32`, and a group reference |
+| 30 | 4 | `parameter_reference` | `u32` | little | spec | the parameter reference immediately after the group reference |
+
+## `pm_dc_constraint_map_prefix`
+
+Spec §12 · layout: byte offsets · size: 8 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `marker` | `u16[2]` | little | spec | u16 values `6, 0x3000` |
+| 4 | 4 | `item_count` | `u32` | little | spec | and a u32 count |
+
 ## `pm_dc_parameter_prefix`
 
 Spec §11 · layout: byte offsets · size: 26 B
