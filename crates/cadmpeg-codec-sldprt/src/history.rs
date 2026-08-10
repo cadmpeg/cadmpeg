@@ -5495,7 +5495,10 @@ mod history_reference_tests {
             ConfigurationFeatureState, DesignConfiguration, Feature as NeutralFeature,
             FeatureDefinition,
         };
-        use cadmpeg_ir::sketches::{Sketch, SketchId, SpatialSketch, SpatialSketchId};
+        use cadmpeg_ir::sketches::{
+            Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry,
+            SketchId, SpatialSketch, SpatialSketchId,
+        };
 
         let native_feature = feature("sketch-native", Some("7"), 0);
         let history = FeatureHistory {
@@ -5560,6 +5563,18 @@ mod history_reference_tests {
             profiles: Vec::new(),
             native_ref: Some("lane".into()),
         });
+        ir.model.sketch_entities.push(SketchEntity {
+            id: SketchEntityId("configuration-line".into()),
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: Some("line-marker".into()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                end: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            },
+        });
         ir.model.spatial_sketches.push(SpatialSketch {
             id: spatial_sketch_id.clone(),
             name: Some("spatial-native".into()),
@@ -5601,7 +5616,42 @@ mod history_reference_tests {
             ]),
             native_ref: None,
         });
-        let lane = feature_input_lane("lane", Some("0"));
+        let mut lane = feature_input_lane("lane", Some("0"));
+        lane.sketch_entities = vec![
+            crate::records::SketchInputEntity {
+                id: "line-marker".into(),
+                parent: lane.id.clone(),
+                feature_ref: Some("sketch-native".into()),
+                ordinal: 0,
+                offset: 10,
+                object_index: Some(1),
+                local_id: Some(1),
+                kind: crate::records::SketchInputKind::LineOrCircle,
+                state_value: None,
+                coordinates_m: None,
+                links: Vec::new(),
+                link_selector: None,
+            },
+            crate::records::SketchInputEntity {
+                id: "relation-marker".into(),
+                parent: lane.id.clone(),
+                feature_ref: Some("sketch-native".into()),
+                ordinal: 1,
+                offset: 20,
+                object_index: Some(2),
+                local_id: Some(2),
+                kind: crate::records::SketchInputKind::Relation(
+                    crate::records::SketchRelationKind::Horizontal,
+                ),
+                state_value: None,
+                coordinates_m: None,
+                links: vec![crate::records::SketchInputLink {
+                    local_id: 1,
+                    entity_ref: "line-marker".into(),
+                }],
+                link_selector: None,
+            },
+        ];
 
         project_configuration_sketch_states(
             &mut ir,
@@ -5625,6 +5675,14 @@ mod history_reference_tests {
                 sketch: Some(sketch),
             } if sketch == &spatial_sketch_id
         ));
+        assert!(ir.model.sketch_constraints.iter().any(|constraint| {
+            constraint.native_ref.as_deref() == Some("relation-marker")
+                && matches!(
+                    constraint.definition,
+                    SketchConstraintDefinition::Horizontal { ref entity }
+                        if entity.0 == "configuration-line"
+                )
+        }));
     }
 
     #[test]
@@ -11112,6 +11170,55 @@ pub(crate) fn project_configuration_sketch_states(
         crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
             &mut features,
             histories,
+            scoped_lanes,
+        );
+        crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
+            &mut ir.model.sketch_entities,
+            &ir.model.sketches,
+            &surfaces,
+            &features,
+            &parameters,
+            scoped_lanes,
+        );
+        crate::resolved_features::dimensions::project_marker_dimensioned_circles(
+            &mut ir.model.sketch_entities,
+            &mut ir.model.sketches,
+            &features,
+            &parameters,
+            scoped_lanes,
+        );
+        crate::resolved_features::relation_geometry::project_relation_point_geometry(
+            &mut ir.model.sketch_entities,
+            &ir.model.sketches,
+            &features,
+            scoped_lanes,
+        );
+        crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
+            &mut ir.model.sketch_entities,
+            &features,
+            &parameters,
+            scoped_lanes,
+        );
+        crate::resolved_features::relation_geometry::project_relation_solved_line_geometry(
+            &mut ir.model.sketch_entities,
+            &ir.model.sketches,
+            &features,
+            &parameters,
+            scoped_lanes,
+        );
+        crate::resolved_features::relation_geometry::project_relation_solved_point_geometry(
+            &mut ir.model.sketch_entities,
+            &ir.model.sketches,
+            &features,
+            &parameters,
+            scoped_lanes,
+        );
+        crate::resolved_features::relation_geometry::project_relation_bindings(
+            &mut ir.model.sketch_constraints,
+            &ir.model.sketches,
+            &features,
+            &ir.model.sketch_entities,
+            &parameters,
             scoped_lanes,
         );
         crate::resolved_features::holes::project_profiled_hole_constructions(

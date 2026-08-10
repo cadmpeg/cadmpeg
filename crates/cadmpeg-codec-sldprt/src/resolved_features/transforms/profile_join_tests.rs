@@ -5420,6 +5420,15 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         &constraint.definition,
         SketchConstraintDefinition::Distance { entities, .. } if entities.len() == 2
     )));
+    project_relation_bindings(
+        &mut constraints,
+        &[],
+        std::slice::from_ref(&feature),
+        &entities,
+        &parameters,
+        std::slice::from_ref(&lane),
+    );
+    assert_eq!(constraints.len(), 2);
 }
 
 #[test]
