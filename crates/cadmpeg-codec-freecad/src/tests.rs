@@ -670,10 +670,11 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/><Object type="Part::Feature" name="Source" id="2"/></Objects>
 <ObjectData Count="2"><Object name="Sketch"><Properties Count="4">
-<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="3">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="4">
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="1" EndX="1" EndY="1"/></Geometry>
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0.5" StartY="-1" EndX="0.5" EndY="2"/></Geometry>
+ <Geometry type="Part::GeomPoint"><Point X="2" Y="6"/></Geometry>
 </GeometryList></Property>
 <Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="Source" sub="Edge1"/><Link obj="Source" sub="Edge2"/></LinkSubList></Property>
 <Property name="ExternalGeo" type="Part::PropertyGeometryList"><GeometryList count="3">
@@ -696,7 +697,7 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
  <Constrain Type="13" First="0" FirstPos="2" Second="-3" SecondPos="0"/>
  <Constrain Type="7" First="-4" FirstPos="1" Second="0" SecondPos="1" Value="3" IsDriving="1"/>
  <Constrain Name="Repeated" Type="9" First="0" FirstPos="0" Value="0.5" IsDriving="1"/>
- <Constrain Name="Repeated" Type="8" First="1" FirstPos="1" Value="6" IsDriving="1"/>
+ <Constrain Name="Repeated" Type="8" First="3" FirstPos="1" Value="6" IsDriving="1"/>
 </ConstraintList></Property>
 </Properties></Object><Object name="Source"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let result = FcstdCodec
@@ -814,7 +815,7 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
             ref second,
             ..
         } if matches!(first, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.0.ends_with(":reference-root-point"))
-            && matches!(second, cadmpeg_ir::sketches::SketchLocus::Start(_))
+            && matches!(second, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.0.ends_with(":4"))
     ));
     let repeated_parameters = result
         .ir

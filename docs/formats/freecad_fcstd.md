@@ -258,7 +258,8 @@ constraint property and retain whether the value is driving. A dimension paramet
 one-based constraint index as its neutral name. Its persisted label remains source metadata and is
 an expression alias only when that label is unique in the sketch. A one-entity angle measures that
 entity from the horizontal sketch axis. A one-locus horizontal or vertical distance measures the
-locus from the sketch root point. Negative indices resolve through the
+locus from the sketch root point. The persisted endpoint-one selector of an isolated point resolves
+to the point entity, not to a nonexistent curve endpoint. Negative indices resolve through the
 ordered external-reference entities. Invalid indices, unresolved operands, and future family codes
 remain explicit native relations rather than being guessed.
 

@@ -1847,22 +1847,19 @@ fn resolve_operand(entity: i64, position: i64, entities: &[SketchEntity]) -> Opt
     if entity <= -3 {
         let external_index = usize::try_from(-entity - 3).ok()?;
         let suffix = format!(":external:{external_index}");
-        let id = entities
+        let entity = entities
             .iter()
-            .find(|candidate| candidate.id.0.ends_with(&suffix))?
-            .id
-            .clone();
-        return Some(match position {
-            0 => SketchLocus::Entity(id),
-            1 => SketchLocus::Start(id),
-            2 => SketchLocus::End(id),
-            3 => SketchLocus::Center(id),
-            _ => return None,
-        });
+            .find(|candidate| candidate.id.0.ends_with(&suffix))?;
+        return sketch_locus(entity, position);
     }
-    let id = entities.get(usize::try_from(entity).ok()?)?.id.clone();
+    sketch_locus(entities.get(usize::try_from(entity).ok()?)?, position)
+}
+
+fn sketch_locus(entity: &SketchEntity, position: i64) -> Option<SketchLocus> {
+    let id = entity.id.clone();
     Some(match position {
         0 => SketchLocus::Entity(id),
+        1 if matches!(entity.geometry, SketchGeometry::Point { .. }) => SketchLocus::Entity(id),
         1 => SketchLocus::Start(id),
         2 => SketchLocus::End(id),
         3 => SketchLocus::Center(id),
