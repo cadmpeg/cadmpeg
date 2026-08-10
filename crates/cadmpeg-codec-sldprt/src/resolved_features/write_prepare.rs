@@ -1432,12 +1432,7 @@ mod source_less_lane_tests {
     };
     use cadmpeg_ir::units::Units;
 
-    use super::{
-        append_coordinate_marker, append_coordinate_marker_link, append_generated_sketch_markers,
-        append_reference_marker, assemble_source_less_lanes, coordinate_marker_local_links,
-        generated_marker_relations, marker_local_links, validate_source_less_constraints,
-        GeneratedMarkerRelation,
-    };
+    use super::*;
 
     fn generated_sketch() -> Sketch {
         Sketch {

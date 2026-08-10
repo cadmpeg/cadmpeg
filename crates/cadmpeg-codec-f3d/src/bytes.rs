@@ -68,21 +68,6 @@ pub(crate) fn take_lp_utf8(bytes: &[u8], at: &mut usize) -> Option<String> {
     String::from_utf8(take_lp_u32_bytes(bytes, at)?.to_vec()).ok()
 }
 
-/// Take a u32-length-prefixed strict-UTF-8 string whose byte length is at most
-/// `max`, advancing `at`. The cursor advances past the four-byte prefix even
-/// when the length exceeds `max` or the payload is not valid UTF-8.
-pub(crate) fn take_lp_utf8_capped(bytes: &[u8], at: &mut usize, max: usize) -> Option<String> {
-    let count = usize::try_from(u32_at(bytes, *at)?).ok()?;
-    *at = at.checked_add(4)?;
-    if count > max {
-        return None;
-    }
-    let end = at.checked_add(count)?;
-    let value = std::str::from_utf8(bytes.get(*at..end)?).ok()?.to_owned();
-    *at = end;
-    Some(value)
-}
-
 /// One reference member of a Fusion segment record
 /// ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)
 /// "**References.**").

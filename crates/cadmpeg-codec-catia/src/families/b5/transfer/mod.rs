@@ -1168,11 +1168,7 @@ mod tests {
     }
     use super::surfaces::{rational_arc, revolution_surface, revolve_nurbs};
     use super::vertices::transfer_vertex_tolerances;
-    use super::{
-        build_plan, curve_on_parameter_range, native_pcurve_parameter_range,
-        referenced_surface_ids, resolved_surface_carrier_in_graph, transfer, CurvePlan,
-        ResolvedPcurveSurface, SurfacePlan,
-    };
+    use super::*;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::surface_point;
     use cadmpeg_ir::geometry::{

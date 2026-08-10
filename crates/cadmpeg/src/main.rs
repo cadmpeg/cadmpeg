@@ -208,6 +208,9 @@ enum InputFormat {
     Fcstd,
     /// Autodesk Fusion `.f3d`.
     F3d,
+    /// Autodesk Inventor `.ipt` or `.iam`.
+    #[value(alias = "ipt", alias = "iam")]
+    Inventor,
     /// `SolidWorks` `.sldprt`.
     Sldprt,
     /// CATIA V5 `.CATPart`.
@@ -243,6 +246,7 @@ impl InputFormat {
         match self {
             Self::Fcstd => ForcedInput::Codec("fcstd"),
             Self::F3d => ForcedInput::Codec("f3d"),
+            Self::Inventor => ForcedInput::Codec("inventor"),
             Self::Sldprt => ForcedInput::Codec("sldprt"),
             Self::Catpart => ForcedInput::Codec("catia"),
             Self::Nx => ForcedInput::Codec("nx"),

@@ -748,10 +748,7 @@ fn rodrigues(value: Vector3, axis: Vector3, angle: f64) -> Vector3 {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::{
-        active_miter, cap_frame, exact_orientation, mitered_local, split_profiles, DecodedCurve,
-        GeometryError, ANONYMOUS,
-    };
+    use super::*;
     use crate::chunks::ArchiveVersion;
     use crate::curves::Compound;
     use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};

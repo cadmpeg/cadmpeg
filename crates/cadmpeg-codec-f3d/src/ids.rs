@@ -700,11 +700,7 @@ native_record_id!(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        decode_identity_key_component, design_segment, native_design_type_id, native_scope,
-        neutral_face_appearance_binding_id, neutral_sketch_text_id, neutral_sketch_text_record_id,
-        same_native_occurrence, SCHEME_PREFIX,
-    };
+    use super::*;
 
     #[test]
     fn design_segment_joins_sibling_meta_and_bulk_stream_ids() {

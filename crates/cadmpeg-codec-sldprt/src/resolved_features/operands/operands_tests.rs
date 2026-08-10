@@ -1,9 +1,6 @@
 //! Tests for the `operands` module.
 
-use super::{
-    coordinate_line_endpoints_with_linked_point, resolve_operand_marker,
-    resolve_operand_marker_excluding, resolve_scalar_operand_markers,
-};
+use super::*;
 use crate::records::{
     FeatureInputOperand, FeatureInputOperandKind, SketchInputEntity, SketchInputKind,
     SketchInputLink, SketchRelationKind,

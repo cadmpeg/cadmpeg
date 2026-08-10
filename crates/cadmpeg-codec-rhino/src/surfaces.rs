@@ -1136,11 +1136,7 @@ fn close(a: Vector3, b: Vector3) -> bool {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::{
-        decode, periodic_knots, read_nurbs_curve, read_nurbs_curve_2d, read_nurbs_surface,
-        read_plane_surface, reconstruct_knots, revolution_nurbs, sum_nurbs, DecodedSurface,
-        CLIPPING_PLANE_SURFACE,
-    };
+    use super::*;
     use crate::chunks::{ArchiveVersion, BoundedReader};
     use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SurfaceGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};

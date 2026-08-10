@@ -1373,11 +1373,7 @@ fn text_value_allow_empty(bytes: &[u8]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        parse_runs, parse_runs_with_directory_offset, LegacyRoleName, LegacyRoleSelector,
-        LegacyRoleSelectorEncoding, CATALOG_OPEN, INTEGER_OPEN, NAMED_SCALAR_OPEN, SCALAR_OPEN,
-        SCHEMA_PROGRAM_FOOTER, SCHEMA_PROGRAM_PREFIX, STRING_OPEN, TEXT_OPEN, TYPE_OPEN,
-    };
+    use super::*;
     use crate::container;
 
     fn identity(bytes: &mut Vec<u8>, entity_id: u32) {

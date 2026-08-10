@@ -3506,10 +3506,7 @@ fn entity_suffix_framing(suffix: &[u8]) -> Option<CatiaEntitySuffixFraming> {
 
 #[cfg(test)]
 mod entity_suffix_framing_tests {
-    use super::{
-        entity_suffix_framing, CatiaEntitySuffixEscapedWord, CatiaEntitySuffixEscapedWordState,
-        CatiaEntitySuffixFraming,
-    };
+    use super::*;
 
     #[test]
     fn decodes_each_escaped_word_state() {

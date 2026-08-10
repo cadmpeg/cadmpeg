@@ -1618,10 +1618,7 @@ pub(crate) fn project_fixed_fillet(
 
 #[cfg(test)]
 mod radius_identity_tests {
-    use super::{
-        project_fixed_fillet, radius_edge_identity_group_candidates, resolved_edge_group,
-        unique_hem_transition_edge_candidate,
-    };
+    use super::*;
     use crate::records::{
         DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignParameterScope,
     };

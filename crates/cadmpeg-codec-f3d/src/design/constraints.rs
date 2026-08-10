@@ -840,10 +840,7 @@ fn equal_scalars(first: &[f64], second: &[f64]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        exact_circular_pattern, exact_rectangular_pattern, exact_text_relation, scalar_close,
-        translated_sketch_geometry_matches,
-    };
+    use super::*;
     use crate::records::{SketchConstraintKind, SketchRelation};
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{

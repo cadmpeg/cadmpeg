@@ -1,10 +1,6 @@
 //! Tests for the `operations` module.
 
-use super::{
-    enrich_history_split_line_modes, extrusion_operation, feature_inline_operation,
-    feature_inline_operation_fields, feature_operation_code, form_code_padding,
-    revolution_operation, FormCodePadding, SPLIT_LINE_MODE_PROPERTY, SPLIT_LINE_PROJECTION_MODE,
-};
+use super::*;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputLane,
     FeatureInputName,

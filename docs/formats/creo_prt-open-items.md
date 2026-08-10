@@ -316,6 +316,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** The neutral format model does not yet define a transfer for non-smooth, piecewise, or discrete function forms whose affine reduction does not resolve them.
 
+### SP-02. Other simultaneous-solve states
+
+**Question.** How must a simultaneous-solve block evaluate when an unknown does not have a previous numeric value?
+
+**Known.** The defined affine solver uses the ordered equations, declared unknowns, dimensions, and previous numeric values.
+
+**Need.** We must know the initialization rule to evaluate the block deterministically.
+
+**Note.** The closure commit adds symbolic dimension inference and hand-built expression tests. It does not provide a native Creo witness, an external parser, or an authoritative rule for initialization. The specification records that implementation choice as a PSB rule. Reopen until evidence settles the initialization rule.
+
 ### SP-03. Section-to-datum joins
 
 **Question.** Which additional fields join a section definition to its sketch datum when no unique bounded-source owner chain or generated-datum parent remains?
@@ -446,6 +456,16 @@ that assign a dimension value to a dimension-driven solver variable.
 
 **Need.** We must know the constraint to transfer it without inventing an axis.
 
+### SP-15. Unary type-33 incidence
+
+**Question.** What neutral constraint does a unary type-33 `skamp_ptr` incidence with flags 34 and a sense-10 bounded-curve operand represent?
+
+**Known.** The decoder retains the type, flags, sense, and bounded-curve identity.
+
+**Need.** We must know the constraint to transfer its design intent.
+
+**Note.** The closure commit only constructs this tuple in a unit test and asserts the intended neutral mapping. It supplies no native file witness or independent evidence that kind 33, flags 34, and sense 10 mean `Fixed`. The specification records the implementation's guess as settled. Reopen until the constraint meaning is evidenced.
+
 ### SP-16. Other `skamp_ptr` geometry families
 
 **Question.** What geometry family does each `skamp_ptr` entity code outside the defined point, endpoint-bearing curve, line, arc, and circle roles identify?
@@ -510,6 +530,16 @@ that assign a dimension value to a dimension-driven solver variable.
 
 **Need.** We must know the alternate datum to complete the sketch frame.
 
+### SP-24. Named `ActDatums` outline tokens
+
+**Question.** What scalar value does each `a5`, `9f`, `5c`, and `45` token encode in a named `ActDatums` outline?
+
+**Known.** `creo_prt.md` §6 "`ActDatums` stores datum-plane geometry as `act_datum_geoms → srf_array` records. Each section" defines the two-corner outline and its held-coordinate plane rule.
+
+**Need.** We must know the values to construct nonzero datum offsets and extents.
+
+**Note.** The closure assumes that the named-outline lane is identical to the tabulated-cylinder second-coordinate lane. The only evidence is a hand-built test decoded by that implementation; no native PSB sample or independent grammar establishes the prefix mapping. The specification records the lane reuse as settled. Reopen until the named-outline mapping is evidenced.
+
 ### SP-25. Other revolution termination selectors
 
 **Question.** How does each rotational-sweep selector other than the full-turn `angle_choice` form define its angular interval?
@@ -517,6 +547,16 @@ that assign a dimension value to a dimension-driven solver variable.
 **Known.** `creo_prt.md` §6 "In a class-916 or class-917 positional feature row, feature form `2` selects a" defines `ea 44 00 00` as a complete 360-degree revolution. Linear sweep extents include one-sided, symmetric, and two-sided spans.
 
 **Need.** We must know the selector semantics to trim a one-sided, symmetric, or two-sided revolution.
+
+### SP-38. Conflicting feature recipe candidates
+
+**Question.** Which byte-backed field selects the procedural recipe when one feature-state record contains more than one complete recipe name?
+
+**Known.** `protextrude`, `cutextrude`, `protrevolve`, and `cutrevolve` are recognized recipe names. A unique DEPDB recipe binding supplies the recipe and its feature identifier.
+
+**Need.** We must know the recipe discriminator and conflict rule to assign the feature family and Boolean effect.
+
+**Note.** `crates/cadmpeg-codec-creo/src/feature/operations.rs:287-303` falls back to `FEATURE_RECIPES.iter().find_map` when the binding count is not one. It accepts the first name in the static list, not a unique byte-backed candidate. If a record contains two recipe names or two bindings for one feature, the selected recipe can assign the wrong sweep family or Boolean effect.
 
 ## 4. Topology and appearance
 
@@ -535,6 +575,16 @@ that assign a dimension value to a dimension-driven solver variable.
 **Known.** Sparse DEPDB curve rows are one-sided topology views and retain their identifiers and suffix fields.
 
 **Need.** We must know the binding to reconstruct the final B-rep.
+
+### TP-03. Multi-loop classification
+
+**Question.** Which byte-backed field identifies an outer loop or an inner loop on a multi-loop face?
+
+**Known.** Parameter-space containment can classify loops only when complete pcurves and a surface chart are available.
+
+**Need.** We must know the field to classify loops when containment is unavailable.
+
+**Note.** The closure commit derives a common plane from solved boundary vertices and uses geometric containment. It does not identify the byte-backed field asked by this item, and its hand-built point test does not establish that coplanarity is the native ownership rule. Reopen until a native topology witness settles loop ownership.
 
 ### TP-04. Vertex-coordinate binding
 
@@ -648,6 +698,16 @@ that assign a dimension value to a dimension-driven solver variable.
 
 **Need.** We must know the values to construct the complete material.
 
+### TP-18. `MdlStatus` prefix meanings
+
+**Question.** What stored-name state does each `MdlStatus` prefix `o`, `x`, `y`, and `z` represent?
+
+**Known.** `creo_prt.md` §6 "Operation names end in" states that the prefix is not part of the operation-family name and does not select the current same-ID state. Byte order selects the current state.
+
+**Need.** We must know the prefix meanings to preserve the native state semantics.
+
+**Note.** The closure test only confirms that the current parser preserves prefixes and chooses the last hand-built record. It does not establish what `o`, `x`, `y`, and `z` mean or prove byte-order precedence in native `MdlStatus` data. The specification promotes that behavior without format evidence. Reopen until the state meanings and current-state selector are evidenced.
+
 ## 5. Packed persistence data
 
 ### PP-01. Packed `VisibGeom` records
@@ -690,6 +750,16 @@ that assign a dimension value to a dimension-driven solver variable.
 
 **Need.** We must know the other grammars to transfer their design data.
 
+### PP-06. Compressed `DispDataTable` dictionary
+
+**Question.** What initial dictionary and code-width state does the compressed `DispDataTable` variant use?
+
+**Known.** `creo_prt.md` §7 "DEPDB `crv_array` rows are sparse topology views with one-sided `[0, X1, F1, 0]` suffixes. They" defines `1f 9d 10` Unix-compress streams. `creo_prt.md` §8.3 "Unix-compress streams with header `1f 9d 10` grow code width" states that code 256 is a literal dictionary entry and not a clear code.
+
+**Need.** We must know the initial state to decompress the table deterministically.
+
+**Note.** The closure tests generate compressed streams with the implementation's chosen dictionary and width rules and decode them with the same implementation. No native `DispDataTable` byte stream or independent compressor/parser evidence is recorded. Passing those tests cannot verify the initial dictionary or width transition. Reopen until the framing rule is evidenced.
+
 ### PP-07. Compressed `DispDataTable` geometry binding
 
 **Question.** Which fields bind decompressed `DispDataTable` rows to model geometry?
@@ -713,3 +783,13 @@ that assign a dimension value to a dimension-driven solver variable.
 **Known.** A non-null pointer preserves the canonical driver-table entity identifier.
 
 **Need.** We must know the row semantics to transfer configuration parameters and values.
+
+### PP-12. Triangle-strip position-array selection
+
+**Question.** When one `prim_tristripsetwithatt` record contains complete `mv_p_xyz` and `mv_p_NxNyNzxyz` arrays, which array supplies the positions and normals?
+
+**Known.** `creo_prt.md` §8.4 defines `mv_p_xyz` as consecutive XYZ positions and `mv_p_NxNyNzxyz` as normal-position tuples. Both arrays can satisfy their declared scalar counts independently; the specification gives no conflict rule.
+
+**Need.** We must know the ownership and precedence rule to transfer the correct tessellation positions and normals.
+
+**Note.** `crates/cadmpeg-codec-creo/src/primdata.rs:69-95` scans complete arrays in byte order and accepts the first one. If both arrays contain different positions, the first array supplies the strip and the other representation is discarded; the normal-bearing array is ignored when `mv_p_xyz` appears first. No current item records this selection rule.

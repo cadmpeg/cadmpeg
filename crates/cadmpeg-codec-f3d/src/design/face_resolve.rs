@@ -687,10 +687,7 @@ pub(crate) fn sketch_point_depth(point: &SketchPoint) -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        bounded_face_candidate_by_boundary_cardinality, convergent_face_support,
-        stable_face_support_set,
-    };
+    use super::*;
     use crate::records::{
         DesignHistoricalFaceBoundaryContext, DesignHistoricalFaceLoopContext,
         DesignHistoricalFaceSupportContext,

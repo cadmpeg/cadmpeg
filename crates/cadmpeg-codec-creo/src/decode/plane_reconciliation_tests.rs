@@ -1,11 +1,4 @@
-use super::{
-    agreed_plane, agreed_plane_surface, agreed_topology_bound_plane, analytic_boundary_line,
-    analytic_curve_plane, dot, envelope_reconciled_plane_candidate,
-    frame_bound_outline_plane_candidate, held_coordinate_plane, plane_candidates,
-    topology_bound_line_plane, topology_bound_plane, transfer_topology_bound_planes, BoundaryLine,
-    Curve, CurveGeometry, CurveId, NurbsCurve, PlaneCandidate, PlaneChart, PlaneEquation, Point3,
-    SurfaceGeometry, SurfaceId, Vector3,
-};
+use super::*;
 use crate::surface::{
     LocalSystemClassification, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
 };

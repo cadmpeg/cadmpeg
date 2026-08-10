@@ -64,7 +64,7 @@ pub enum ByteTool {
     Struct(StructArgs),
     /// List ZIP entries with their physical offsets.
     Container(ContainerArgs),
-    /// Write one ZIP entry's decompressed bytes to a file or standard output.
+    /// Write one ZIP entry or CFB stream to a file or standard output.
     Extract(ExtractArgs),
     /// Compare two files byte for byte at the same offsets.
     Diff(DiffArgs),
@@ -224,9 +224,9 @@ pub struct ContainerArgs {
 /// Arguments for `cadmpeg inspect extract`.
 #[derive(Debug, Args)]
 pub struct ExtractArgs {
-    /// ZIP-based file to read.
+    /// ZIP or CFB file to read.
     pub file: PathBuf,
-    /// Exact entry name as printed by `inspect container` (quotes removed).
+    /// Exact entry or stream path (quotes removed).
     pub member: String,
     /// Output file for the extracted bytes; omit it or pass `-` to write
     /// them to standard output.

@@ -76,6 +76,11 @@ enum NativeSupportChart {
     Cone { axial_scale: f64 },
 }
 
+fn cone_axial_scale(sine: f64, cosine: f64, u_scale: f64) -> f64 {
+    let direction = if sine * cosine < 0.0 { -1.0 } else { 1.0 };
+    direction * cosine * u_scale * LEN_TO_MM
+}
+
 /// The native parameter chart of the support serialized at token `position`.
 fn native_support_chart(toks: &[Token], position: usize) -> NativeSupportChart {
     let mut cur = Cur::at(toks, position);
@@ -95,9 +100,8 @@ fn native_support_chart(toks: &[Token], position: usize) -> NativeSupportChart {
                 let sine = cur.take_f64()?;
                 let cosine = cur.take_f64()?;
                 let u_scale = cur.take_f64()?;
-                let direction = if sine * cosine < 0.0 { -1.0 } else { 1.0 };
                 Some(NativeSupportChart::Cone {
-                    axial_scale: direction * u_scale * LEN_TO_MM,
+                    axial_scale: cone_axial_scale(sine, cosine, u_scale),
                 })
             })();
             parsed.unwrap_or(NativeSupportChart::Canonical)
@@ -123,6 +127,40 @@ fn normalize_support_pcurve(chart: NativeSupportChart, pcurve: &mut NurbsPcurve)
             }
         }
     }
+}
+
+/// Convert a pcurve stored in a standalone analytic surface's native chart to
+/// the neutral chart used by [`SurfaceGeometry`].
+pub(crate) fn normalize_pcurve_for_surface_record(
+    surface_head: &str,
+    surface_tokens: &[Token],
+    pcurve: &mut NurbsPcurve,
+) {
+    let chart = match surface_head {
+        "plane" => NativeSupportChart::PlaneLengths,
+        "cone" => {
+            let values = surface_tokens
+                .iter()
+                .filter_map(|token| match token {
+                    Token::Double(value) => Some(*value),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            let Some((&sine, &cosine, &u_scale)) = values
+                .get(1)
+                .zip(values.get(2))
+                .zip(values.get(3))
+                .map(|((sine, cosine), u_scale)| (sine, cosine, u_scale))
+            else {
+                return;
+            };
+            NativeSupportChart::Cone {
+                axial_scale: cone_axial_scale(sine, cosine, u_scale),
+            }
+        }
+        _ => return,
+    };
+    normalize_support_pcurve(chart, pcurve);
 }
 
 fn required_support_pair(cur: &mut Cur<'_>) -> Option<([SurfaceGeometry; 2], [NurbsPcurve; 2])> {
@@ -398,6 +436,16 @@ pub fn pcurve_for_selector_resolving_refs(
     selector: i64,
     table: &SubtypeTable,
 ) -> Option<NurbsPcurve> {
+    pcurve_for_selector_with_chart(toks, selector, table).map(|(pcurve, _)| pcurve)
+}
+
+/// Decode a selector pcurve and report whether it remains in the standalone
+/// face surface's native parameter chart.
+pub(crate) fn pcurve_for_selector_with_chart(
+    toks: &[Token],
+    selector: i64,
+    table: &SubtypeTable,
+) -> Option<(NurbsPcurve, bool)> {
     let slot = match selector {
         1 | -1 => 0,
         2 | -2 => 1,
@@ -406,7 +454,7 @@ pub fn pcurve_for_selector_resolving_refs(
     let has_typed_construction = crate::nurbs::toks::owned_construction_subtype(toks).is_some();
     if let Some(decoded) = procedural_curve_resolving_refs(toks, table) {
         if let Some(pcurve) = selected_pcurve(&decoded, slot) {
-            return Some(pcurve);
+            return Some((pcurve, false));
         }
         if decoded.native_kind != "intcurve" {
             return None;
@@ -415,7 +463,9 @@ pub fn pcurve_for_selector_resolving_refs(
     if has_typed_construction {
         return None;
     }
-    (slot == 1).then(|| direct_pcurve_after_curve(toks))?
+    (slot == 1)
+        .then(|| direct_pcurve_after_curve(toks))?
+        .map(|pcurve| (pcurve, true))
 }
 
 fn selected_optional_pcurve(
@@ -3055,6 +3105,42 @@ mod cache_form_tests {
         assert_eq!(
             cone.control_points,
             [Point2::new(0.5, 30.0), Point2::new(-0.25, -45.0)]
+        );
+    }
+
+    #[test]
+    fn native_cone_chart_projects_generator_distance_onto_its_axis() {
+        let tokens = [
+            Token::Ident("cone".into()),
+            Token::Position([0.0; 3]),
+            Token::Vector3([0.0, 0.0, 1.0]),
+            Token::Vector3([1.0, 0.0, 0.0]),
+            Token::Double(1.0),
+            Token::True,
+            Token::False,
+            Token::Double(3.0_f64.sqrt() / 2.0),
+            Token::Double(0.5),
+            Token::Double(1.5),
+        ];
+        let NativeSupportChart::Cone { axial_scale } = native_support_chart(&tokens, 0) else {
+            panic!("cone tokens select a cone parameter chart");
+        };
+        assert_eq!(axial_scale, 7.5);
+    }
+
+    #[test]
+    fn standalone_cylinder_pcurve_uses_azimuth_and_axial_distance() {
+        let surface = [
+            Token::Double(1.0),
+            Token::Double(0.0),
+            Token::Double(1.0),
+            Token::Double(2.0),
+        ];
+        let mut pcurve = linear_pcurve([Point2::new(-0.5, 1.25), Point2::new(0.75, -2.0)]);
+        normalize_pcurve_for_surface_record("cone", &surface, &mut pcurve);
+        assert_eq!(
+            pcurve.control_points,
+            [Point2::new(1.25, -10.0), Point2::new(-2.0, 15.0)]
         );
     }
 

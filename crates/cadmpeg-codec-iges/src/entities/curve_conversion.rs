@@ -179,10 +179,7 @@ pub(crate) fn parabolic_arc_nurbs(
 
 #[cfg(test)]
 mod span_tests {
-    use super::{
-        angularly_equal, elliptical_arc_nurbs, parabolic_arc_nurbs, quarter_turn_spans,
-        ANGULAR_TOLERANCE,
-    };
+    use super::*;
     use cadmpeg_ir::eval::nurbs_curve_point;
     use cadmpeg_ir::math::{Point3, Vector3};
 

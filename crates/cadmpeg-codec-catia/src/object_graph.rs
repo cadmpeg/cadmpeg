@@ -1370,10 +1370,7 @@ fn classify(fields: &[PayloadField]) -> PayloadSubtype {
 
 #[cfg(test)]
 mod repeated_reference_suffix_tests {
-    use super::{
-        repeated_reference_suffix, ObjectPayload, PayloadField, ReferenceSchemaPreamble,
-        RepeatedReferenceSuffix,
-    };
+    use super::*;
 
     fn atom(value: u32, offset: usize) -> PayloadField {
         PayloadField::Atom { value, offset }

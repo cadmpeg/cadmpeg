@@ -35,13 +35,31 @@ fn text_sphere_stream(scale: f64) -> Vec<u8> {
 
 /// The same solid in the binary encoding, built token by token. The binary
 /// unit is centimetres, so the same 25 mm radius is stored as 2.5.
-fn binary_sphere_stream() -> Vec<u8> {
+#[derive(Clone, Copy)]
+enum BinaryFixtureKind {
+    Asm,
+    Acis,
+}
+
+fn binary_sphere_stream(kind: BinaryFixtureKind) -> Vec<u8> {
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(b"ASM BinaryFile8");
-    bytes.extend_from_slice(&23200u32.to_le_bytes());
-    bytes.extend_from_slice(&[0u8; 12]);
-    bytes.extend_from_slice(&2u64.to_le_bytes()); // entity count
-    bytes.extend_from_slice(&2u64.to_le_bytes()); // flags: revision 1, no history
+    let width = match kind {
+        BinaryFixtureKind::Asm => {
+            bytes.extend_from_slice(b"ASM BinaryFile8");
+            bytes.extend_from_slice(&23200u32.to_le_bytes());
+            bytes.extend_from_slice(&[0u8; 12]);
+            bytes.extend_from_slice(&2u64.to_le_bytes()); // entity count
+            bytes.extend_from_slice(&2u64.to_le_bytes()); // revision 1, no history
+            8
+        }
+        BinaryFixtureKind::Acis => {
+            bytes.extend_from_slice(b"ACIS BinaryFile");
+            for value in [21_800_u32, 0, 2, 2] {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+            4
+        }
+    };
     for text in ["Autodesk Neutron", "ASM 232.4.0.65535 OSX", "Synthetic"] {
         bytes.push(0x07);
         bytes.push(u8::try_from(text.len()).unwrap());
@@ -58,11 +76,19 @@ fn binary_sphere_stream() -> Vec<u8> {
     };
     let reference = |bytes: &mut Vec<u8>, value: i64| {
         bytes.push(0x0c);
-        bytes.extend_from_slice(&value.to_le_bytes());
+        if width == 8 {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        } else {
+            bytes.extend_from_slice(&i32::try_from(value).unwrap().to_le_bytes());
+        }
     };
     let long = |bytes: &mut Vec<u8>, value: i64| {
         bytes.push(0x04);
-        bytes.extend_from_slice(&value.to_le_bytes());
+        if width == 8 {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        } else {
+            bytes.extend_from_slice(&i32::try_from(value).unwrap().to_le_bytes());
+        }
     };
     let double = |bytes: &mut Vec<u8>, value: f64| {
         bytes.push(0x06);
@@ -158,8 +184,9 @@ fn detection_is_content_based() {
 #[test]
 fn both_encodings_decode_the_same_solid() {
     let text = decode_bytes(&text_sphere_stream(1.0));
-    let binary = decode_bytes(&binary_sphere_stream());
-    for result in [&text, &binary] {
+    let asm_binary = decode_bytes(&binary_sphere_stream(BinaryFixtureKind::Asm));
+    let acis_binary = decode_bytes(&binary_sphere_stream(BinaryFixtureKind::Acis));
+    for result in [&text, &asm_binary, &acis_binary] {
         assert_eq!(result.ir.model.bodies.len(), 1);
         assert_eq!(result.ir.model.shells.len(), 1);
         assert_eq!(result.ir.model.faces.len(), 1);
@@ -169,7 +196,8 @@ fn both_encodings_decode_the_same_solid() {
     // 25 stream units at scale 1 (mm) and 2.5 binary centimetres are both
     // 25 mm in the model.
     assert!((sphere_radius(&text) - 25.0).abs() < 1e-9);
-    assert!((sphere_radius(&binary) - 25.0).abs() < 1e-9);
+    assert!((sphere_radius(&asm_binary) - 25.0).abs() < 1e-9);
+    assert!((sphere_radius(&acis_binary) - 25.0).abs() < 1e-9);
 }
 
 #[test]
@@ -197,9 +225,10 @@ fn native_arenas_live_under_the_sat_namespace() {
 }
 
 #[test]
-fn an_acis_binary_stream_is_identified_and_reported() {
+fn an_unadmitted_acis_binary_band_is_identified_and_reported() {
     let mut bytes = b"ACIS BinaryFile".to_vec();
-    bytes.extend_from_slice(&[0u8; 32]);
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    bytes.extend_from_slice(&[0u8; 28]);
     let result = decode_bytes(&bytes);
     assert!(!result.report.geometry_transferred);
     assert!(result
@@ -207,6 +236,9 @@ fn an_acis_binary_stream_is_identified_and_reported() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("Spatial ACIS binary stream")));
+    let source = result.ir.source.as_ref().expect("source metadata");
+    assert_eq!(source.attributes["kernel_family"], "acis");
+    assert_eq!(source.attributes["acis_save_format_version"], "100");
     assert!(result.ir.model.bodies.is_empty());
 }
 

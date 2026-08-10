@@ -1,4 +1,4 @@
-# Autodesk ShapeManager (ASM) stream: Format Specification
+# ASM and ACIS kernel stream: Format Specification
 
 > **License:** This document is released under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/). Attribute to the cadmpeg project.
 
@@ -6,7 +6,7 @@
 
 Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/asm.md`](../layouts/asm.md), generated from `docs/layouts/asm.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
 
-An ASM stream is the Autodesk ShapeManager serialization of one B-rep model: a binary header, a table of framed records, and an optional construction-history partition. ASM and Spatial ACIS are two branches of one serialization family, and a stream identifies its branch: an ASM stream ends with `End-of-ASM-data` and carries Autodesk product strings with year-keyed versions, while an ACIS stream ends with `End-of-ACIS-data` and carries release-keyed versions. This document specifies the ASM branch. Fusion `.f3d` containers carry these streams in the binary and text encodings named in [`f3d.md`](f3d.md) §2.
+An ASM or Spatial ACIS stream serializes one B-rep model as a header, a table of framed records, and an optional construction-history partition. The stream identifies its branch through its binary magic or text terminator. Fusion `.f3d` containers carry ASM streams in the binary and text encodings named in [`f3d.md`](f3d.md) §2. Inventor part carriers can contain the ASM binary branch or the ACIS 217/218 binary branch.
 
 ## 1. ASM binary header
 
@@ -35,6 +35,18 @@ The string region begins at byte 47.
 | `27..31` | little-endian u32 flags; bit 0 is set iff the stream carries a history partition (§3) |
 
 The string region begins at byte 31.
+
+ACIS 217 and 218 binary streams use this 31-byte fixed prefix:
+
+| Bytes    | Meaning                                                                                |
+| -------- | -------------------------------------------------------------------------------------- |
+| `0..15`  | magic `ACIS BinaryFile`                                                                |
+| `15..19` | little-endian u32 ACIS save-format version (`major * 100 + minor`)                     |
+| `19..23` | little-endian u32 record count (`0` when unwritten)                                    |
+| `23..27` | little-endian u32 entity count                                                         |
+| `27..31` | little-endian u32 flags; bit 0 is set iff the stream carries a history partition (§3) |
+
+The ACIS string region begins at byte 31. Its three strings, three tolerance values, 32-bit SAB tags, RecordTable indexing, and solved/history boundary use the grammar below.
 
 In both widths the remaining header is a sequence rather than a fixed-offset structure:
 
@@ -98,7 +110,7 @@ The `asmheader` row participates in RecordTable indexing; the first following en
 
 ### 2.3 Version/product gates
 
-Non-ASM (pure ACIS) and SpaceClaim SAB streams use version-gated padding absent from ASM streams: attribute records skip 18 bytes when `ver > 15.0 && !ASM`; topology records skip bytes when `ver > 10.0 && !ASM` and `ver > 6.0`; SpaceClaim uses a `%`-delimited string interning scheme. The byte layouts in §§5–6 apply to ASM streams.
+Other pure ACIS and SpaceClaim SAB envelopes use separate version-gated record layouts and string interning. The byte layouts in §§5–6 apply to ASM streams and the ACIS 217/218 Inventor carrier envelope. Other ACIS save-format bands are not admitted by this grammar.
 
 ---
 
@@ -132,6 +144,8 @@ The class lineage is `Begin-of-ASM-History-Data`; `history_stream` is the second
 ```
 
 `stream_size == stream_size_duplicate`.
+
+An ACIS 217/218 history partition begins directly with the first exact `delta_state` record. The record framer establishes the preceding solved-record boundary; identifier bytes inside payload strings do not select it.
 
 ### 3.2 `delta_state` records
 
@@ -223,6 +237,7 @@ that exact edge list or free vertex and defaults to out when no match exists.
 **Face (81 B; +1 chunk if double-sided):**
 
 ```
++16 chunk[1] history / face flags
 +34 chunk[3] next_face
 +43 chunk[4] first_loop
 +52 chunk[5] owner_shell
@@ -231,6 +246,8 @@ that exact edge list or free vertex and defaults to out when no match exists.
 +80 chunk[9] sides  (0x0b=single)
 +81 chunk[10] containment       ← PRESENT ONLY IF chunk[9]=double
 ```
+
+A nonnegative `chunk[1]` value is the face's `asm_face_key`, used by embedding formats for Design-side joins. `-1` is a null key. The field is retained independently for every emitted face.
 
 `sides` and `containment` are separate enum chunks. Single-sided faces end after `sides`; double-sided faces carry `containment`.
 The sense token is relative to the native surface carrier. Decoding a reversed spline carrier or an inward-normal cone carrier reverses the sense in the normalized B-rep while retaining the native token; writing applies the same reversal back to the token.
@@ -352,7 +369,7 @@ Each layout is fixed-size. Offsets are record-relative from the `0x11` byte.
 
 **`plane`**: origin (`0x13`) + unit normal (`0x14`) + unit UV-reference direction (`0x14`). Evaluation `S(u,v) = origin + u·u_dir + v·v_dir`, `v_dir = normal × u_dir`.
 
-An embedded pcurve on a plane stores its first coordinate as a native length along `u_dir` and its second coordinate as a native length opposite `v_dir`. An embedded pcurve on a `cone` stores normalized axial distance first and azimuth angle second. Multiplying the first coordinate by `u_scale` gives signed axial distance along the native axis. Neutral projection converts plane coordinates to document length units and converts cone coordinates to `(azimuth, axial distance)`.
+An embedded or face-bound pcurve on a plane stores its first coordinate as a native length along `u_dir` and its second coordinate as a native length opposite `v_dir`. An embedded or face-bound pcurve on a `cone` stores normalized generator distance first and azimuth angle second. Let `sine`, `cosine`, and `u_scale` be the three stored cone chart fields after the ratio. The axial distance is `first × direction × cosine × u_scale`, where `direction` is `-1` when `sine × cosine < 0` and `1` otherwise. Neutral projection converts plane coordinates to document length units and converts cone coordinates to `(azimuth, axial distance)`.
 
 **`cone` (161 B, covers cylinders)**: order: origin (`0x13`), axis (`0x14`), `ref × r_major` (`0x14`, magnitude = base major radius), `ratio = r_minor/r_major` (f64, 1.0 = circular), `0x0b 0x0b`, `sin(half_angle)` (f64, 0 ⇒ cylinder), `cos(half_angle)` (f64), `u_scale` u-parameter scale (f64), 5×`0x0b`. A non-unit ratio defines an elliptical cone whose minor radius is `r_major · ratio`; zero sine with a non-unit ratio is an elliptical cylinder. **Half-angle rule:** `half_angle = asin(|sine|)`. The angle is the acute branch even when both stored sine and cosine are negative. **Sign rules:** the base major radius is the major-axis vector's magnitude; `u_scale` usually equals it but diverges on offset-derived surfaces and is not a radius. The signed major-radius slope `sine / cosine` is the radius change per unit axis distance: `r_major(d) = r_base + d · sine / cosine` at signed distance `d` along the axis from the origin. A negative `cosine` points the surface normal toward the axis; face senses are stored relative to that inward normal.
 

@@ -20,6 +20,7 @@ use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::hash::sha256_hex;
 
 use cadmpeg_asm::asm_header;
+use cadmpeg_asm::kernel_header::KernelHeader;
 
 pub(crate) const MAX_ARCHIVE_BYTES: u64 = 256 * 1024 * 1024;
 pub(crate) const MAX_INFLATED_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
@@ -175,7 +176,7 @@ pub struct BrepFacts {
     /// Uncompressed byte length.
     pub uncompressed_len: u64,
     /// Parsed ASM header, if the magic was present.
-    pub header: Option<asm_header::AsmHeader>,
+    pub header: Option<KernelHeader>,
     /// Exact byte boundary between solved records and construction history.
     pub solved_record_limit: Option<usize>,
     /// SHA-256 (lowercase hex) of the decompressed stream.
@@ -373,7 +374,7 @@ pub fn history_breps<'s>(scan: &'s ContainerScan<'_>) -> impl Iterator<Item = &'
     scan.breps.iter().filter(|brep| {
         brep.header
             .as_ref()
-            .is_some_and(asm_header::AsmHeader::has_history_partition)
+            .is_some_and(KernelHeader::has_history_partition)
     })
 }
 

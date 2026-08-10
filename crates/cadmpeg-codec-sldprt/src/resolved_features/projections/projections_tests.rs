@@ -1,9 +1,6 @@
 //! Tests for the `projections` module.
 
-use super::{
-    project_compact_surface_selections, project_unbound_cosmetic_thread_faces,
-    unique_cylindrical_face, unique_planar_face, unique_topological_cylindrical_face,
-};
+use super::*;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputComponentPathEntry, FeatureInputLane,
     FeatureInputSurfaceSelection,

@@ -21,86 +21,12 @@
 //! In both widths, three `0x06`-tagged little-endian f64s (`scale`, `resabs`,
 //! `resnor`) follow the strings, then the SAB record stream.
 
+use crate::kernel_header::{read_string_region, KernelHeader};
 use cadmpeg_core::le::u32_at;
 use cadmpeg_core::le::u64_at as read_le_u64;
 
-/// The recognized header fields of an ASM binary model stream.
-#[derive(Debug, Clone, PartialEq)]
-pub struct AsmHeader {
-    /// Integer width the stream declares (`4` or `8`), from `ASM BinaryFileN`.
-    pub width: u8,
-    /// ACIS save-format version (little-endian u32 at offset 15 in both
-    /// widths), encoded as `100 * major + minor`. This is independent of the
-    /// product build string carried later in the header.
-    pub save_format_version: Option<u32>,
-    /// Record-count word (little-endian u32 at offset 19; `0` when unwritten).
-    /// `BinaryFile4` only; the corresponding `BinaryFile8` region is zero.
-    pub record_count: Option<u32>,
-    /// Entity-count word: little-endian u32 at offset 23 (`BinaryFile4`) or
-    /// little-endian u64 at offset 31 (`BinaryFile8`).
-    pub entity_count: Option<u64>,
-    /// Flags word: little-endian u32 at offset 27 (`BinaryFile4`) or
-    /// little-endian u64 at offset 39 (`BinaryFile8`). Bit 0 denotes a history
-    /// partition and bits 1 to 7 hold the save format's revision number. Bits 8
-    /// and above are zero and are retained as uninterpreted format flags.
-    pub flags: Option<u64>,
-    /// `product_family`, e.g. `Autodesk Neutron`.
-    pub product_family: Option<String>,
-    /// `product_version_string`, e.g. `ASM 231.6.3.65535 OSX`.
-    pub product_version: Option<String>,
-    /// `save_date`, the last export/save time string.
-    pub save_date: Option<String>,
-    /// Kernel `scale` metadata slot. Coordinate decoding does not apply it.
-    pub scale: Option<f64>,
-    /// Absolute distance tolerance `resabs`.
-    pub linear: Option<f64>,
-    /// Normal tolerance `resnor`.
-    pub angular: Option<f64>,
-}
-
 /// The ASM magic prefix common to both widths.
 const MAGIC_PREFIX: &[u8] = b"ASM BinaryFile";
-
-/// Flag bit selecting the optional construction-history partition.
-pub const HISTORY_PARTITION_FLAG: u64 = 1;
-
-/// Flag bits 1 to 7, which hold the save format's revision number.
-pub const FORMAT_REVISION_FLAGS: u64 = 0xfe;
-
-/// Bit position of the low bit of [`FORMAT_REVISION_FLAGS`].
-const FORMAT_REVISION_SHIFT: u32 = 1;
-
-impl AsmHeader {
-    /// Major component of the encoded ACIS save-format version.
-    pub fn save_format_major(&self) -> Option<u32> {
-        self.save_format_version.map(|version| version / 100)
-    }
-
-    /// Minor component of the encoded ACIS save-format version.
-    pub fn save_format_minor(&self) -> Option<u32> {
-        self.save_format_version.map(|version| version % 100)
-    }
-
-    /// Whether the stream header declares a construction-history partition.
-    pub fn has_history_partition(&self) -> bool {
-        self.flags
-            .is_some_and(|flags| flags & HISTORY_PARTITION_FLAG != 0)
-    }
-
-    /// The save format's revision number, from flag bits 1 to 7.
-    pub fn format_revision(&self) -> Option<u32> {
-        self.flags
-            .map(|flags| ((flags & FORMAT_REVISION_FLAGS) >> FORMAT_REVISION_SHIFT) as u32)
-    }
-
-    /// Header flags outside the history-partition bit and the revision bits.
-    /// Bits 8 and above are zero. They are preserved exactly and deliberately
-    /// have no guessed semantic projection.
-    pub fn unassigned_flags(&self) -> Option<u64> {
-        self.flags
-            .map(|flags| flags & !(HISTORY_PARTITION_FLAG | FORMAT_REVISION_FLAGS))
-    }
-}
 
 /// Byte offset at which the three `0x07`-tagged product strings begin in a
 /// `BinaryFile8` header: directly after the save-format version at 15, the zero
@@ -139,12 +65,12 @@ fn string_region_start(bytes: &[u8]) -> Option<usize> {
 /// Parse the header of a decompressed ASM stream. Returns `None` if the magic
 /// is absent. Fields that cannot be read (short stream or unexpected tags) are
 /// left `None` rather than guessed.
-pub fn parse(bytes: &[u8]) -> Option<AsmHeader> {
+pub fn parse(bytes: &[u8]) -> Option<KernelHeader> {
     if !has_asm_magic(bytes) {
         return None;
     }
     let width = bytes[14] - b'0';
-    let mut header = AsmHeader {
+    let mut header = KernelHeader {
         width,
         save_format_version: None,
         record_count: None,
@@ -207,34 +133,6 @@ pub fn record_stream_start(bytes: &[u8]) -> Option<usize> {
     (strings.len() == 3 && doubles.len() == 3).then_some(cur)
 }
 
-/// Read up to three `0x07`-tagged strings then up to three `0x06`-tagged
-/// doubles starting at `start`. Returns what was read and the offset just past
-/// the last successfully read element.
-fn read_string_region(bytes: &[u8], start: usize) -> (Vec<String>, Vec<f64>, usize) {
-    let mut cur = start;
-    let mut strings = Vec::new();
-    while strings.len() < 3 {
-        match read_u8_string(bytes, cur) {
-            Some((s, next)) => {
-                strings.push(s);
-                cur = next;
-            }
-            None => break,
-        }
-    }
-    let mut doubles = Vec::new();
-    while doubles.len() < 3 {
-        match read_tagged_f64(bytes, cur) {
-            Some((v, next)) => {
-                doubles.push(v);
-                cur = next;
-            }
-            None => break,
-        }
-    }
-    (strings, doubles, cur)
-}
-
 /// The record that opens the serialized history partition.
 const HISTORY_PREAMBLE_RECORD: &str = "Begin-of-ASM-History-Data";
 
@@ -280,34 +178,4 @@ fn exact_identifier_at(bytes: &[u8], at: usize, expected: &str) -> bool {
     };
     usize::from(length) == expected.len()
         && payload.get(..usize::from(length)) == Some(expected.as_bytes())
-}
-
-/// Read a `0x07`-tagged UTF-8 string (tag byte, u8 length, bytes). Returns the
-/// decoded string and the offset just past it.
-fn read_u8_string(bytes: &[u8], at: usize) -> Option<(String, usize)> {
-    if *bytes.get(at)? != 0x07 {
-        return None;
-    }
-    let len = *bytes.get(at + 1)? as usize;
-    let start = at + 2;
-    let slice = bytes.get(start..start + len)?;
-    let s = std::str::from_utf8(slice).ok()?.to_string();
-    Some((s, start + len))
-}
-
-/// Read a `0x06`-tagged little-endian f64 (tag byte then 8 bytes). Returns the
-/// value and the offset just past it.
-fn read_tagged_f64(bytes: &[u8], at: usize) -> Option<(f64, usize)> {
-    if *bytes.get(at)? != 0x06 {
-        return None;
-    }
-    let slice = bytes.get(at + 1..at + 9)?;
-    Some((
-        f64::from_le_bytes(
-            slice
-                .try_into()
-                .expect("invariant: bytes.get(at+1..at+9) is an 8-byte slice"),
-        ),
-        at + 9,
-    ))
 }

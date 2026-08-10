@@ -143,6 +143,7 @@ dependencies = [
  "cadmpeg-codec-f3d",
  "cadmpeg-codec-freecad",
  "cadmpeg-codec-iges",
+ "cadmpeg-codec-inventor",
  "cadmpeg-codec-nx",
  "cadmpeg-codec-rhino",
  "cadmpeg-codec-sat",
@@ -208,9 +209,9 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-protein",
  "lzma-rs",
  "memchr",
- "roxmltree",
  "schemars",
  "serde",
  "serde-value",
@@ -247,6 +248,23 @@ dependencies = [
  "serde_json",
  "sha2",
  "toml",
+]
+
+[[package]]
+name = "cadmpeg-codec-inventor"
+version = "0.4.0"
+dependencies = [
+ "cadmpeg-asm",
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "cadmpeg-protein",
+ "encoding_rs",
+ "flate2",
+ "schemars",
+ "serde",
+ "serde_json",
+ "zip",
 ]
 
 [[package]]
@@ -347,6 +365,17 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror",
+]
+
+[[package]]
+name = "cadmpeg-protein"
+version = "0.4.0"
+dependencies = [
+ "cadmpeg-core",
+ "flate2",
+ "roxmltree",
+ "serde",
+ "zip",
 ]
 
 [[package]]

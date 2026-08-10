@@ -10,15 +10,17 @@
 //! [`cadmpeg_asm::brep`] into the neutral model arenas, with the kernel-side
 //! native records under the `sat` namespace.
 //!
-//! A Spatial ACIS binary stream (`ACIS BinaryFile` magic) uses version-gated
-//! layouts the ASM decoders do not cover; it is identified and reported
-//! without a decode attempt. A text stream frames on either branch
-//! terminator, and its decode outcome — not the terminator — decides whether
-//! the report carries geometry or an unsupported-branch finding.
+//! Spatial ACIS 217 and 218 binary streams use the 32-bit SAB header and the
+//! same record decoder. Other ACIS binary header bands remain identified but
+//! unsupported. A text stream frames on either branch terminator, and its
+//! decode outcome decides whether the report carries geometry.
 
+use cadmpeg_asm::acis_header;
 use cadmpeg_asm::asm_header;
+use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
 use cadmpeg_asm::ids::IdFormat;
+use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::{sab, sat};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
@@ -31,17 +33,12 @@ use std::collections::BTreeMap;
 /// The stable format identifier and native namespace.
 const FORMAT: &str = "sat";
 
-/// The Spatial ACIS binary magic prefix. The ASM decoders do not cover the
-/// version-gated ACIS binary layouts, so the stream is identified and
-/// reported without a decode attempt.
-const ACIS_BINARY_MAGIC: &[u8] = b"ACIS BinaryFile";
-
 /// The stream encoding a byte prefix selects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StreamKind {
     /// `ASM BinaryFile4`/`ASM BinaryFile8` SAB.
     AsmBinary,
-    /// `ACIS BinaryFile` SAB (identified, not decoded).
+    /// `ACIS BinaryFile` 32-bit SAB.
     AcisBinary,
     /// Text header lines.
     Text,
@@ -53,7 +50,7 @@ fn classify(prefix: &[u8]) -> StreamKind {
     if asm_header::has_asm_magic(prefix) {
         return StreamKind::AsmBinary;
     }
-    if prefix.starts_with(ACIS_BINARY_MAGIC) {
+    if acis_header::has_acis_magic(prefix) {
         return StreamKind::AcisBinary;
     }
     if looks_like_text_stream(prefix) {
@@ -112,7 +109,7 @@ impl Codec for SatCodec {
         match kind {
             StreamKind::AsmBinary => {
                 if let Some(header) = asm_header::parse(bytes) {
-                    header_attributes(&header, &mut attributes);
+                    header_attributes(&header, "asm", &mut attributes);
                     if header.has_history_partition() {
                         notes.push(
                             "the stream declares a construction-history partition; decode reads \
@@ -123,15 +120,26 @@ impl Codec for SatCodec {
                 }
             }
             StreamKind::AcisBinary => {
-                notes.push(
-                    "Spatial ACIS binary stream: identified, and its version-gated layouts are \
-                     not decoded"
-                        .to_string(),
-                );
+                if let Some(header) = acis_header::parse(bytes) {
+                    header_attributes(&header, "acis", &mut attributes);
+                    if !matches!(header.save_format_major(), Some(217 | 218)) {
+                        notes.push("the ACIS binary save-format band is not decoded".into());
+                    } else if header.has_history_partition() {
+                        notes.push(
+                            "the stream declares a construction-history partition; decode reads \
+                             the solved partition"
+                                .into(),
+                        );
+                    }
+                }
             }
             StreamKind::Text => match sat::parse(bytes) {
                 Ok(stream) => {
-                    header_attributes(&stream.header.as_asm_header(), &mut attributes);
+                    let family = match stream.dialect {
+                        sat::Dialect::Asm => "asm",
+                        sat::Dialect::Acis => "acis",
+                    };
+                    header_attributes(&stream.header.as_kernel_header(), family, &mut attributes);
                     attributes.insert("scale".to_string(), format!("{}", stream.header.scale));
                     attributes.insert("records".to_string(), stream.records.len().to_string());
                     attributes.insert(
@@ -179,12 +187,9 @@ impl Codec for SatCodec {
     ) -> Result<DecodeResult, CodecError> {
         let bytes = root.window();
         match classify(bytes) {
-            StreamKind::AsmBinary => decode_binary(ctx, bytes),
+            StreamKind::AsmBinary => decode_asm_binary(ctx, bytes),
             StreamKind::Text => decode_text(ctx, bytes),
-            StreamKind::AcisBinary => Ok(unsupported_result(
-                "Spatial ACIS binary stream: the ASM decoders do not cover its version-gated \
-                 layouts, so the stream is identified and not decoded",
-            )),
+            StreamKind::AcisBinary => decode_acis_binary(ctx, bytes),
             StreamKind::Unknown => Err(CodecError::Malformed(
                 "not an ASM stream: no binary magic and no text header lines".to_string(),
             )),
@@ -192,15 +197,19 @@ impl Codec for SatCodec {
     }
 }
 
-fn header_attributes(header: &asm_header::AsmHeader, attributes: &mut BTreeMap<String, String>) {
+fn header_attributes(
+    header: &KernelHeader,
+    family: &str,
+    attributes: &mut BTreeMap<String, String>,
+) {
     if let Some(version) = header.save_format_version {
         attributes.insert("acis_save_format_version".to_string(), version.to_string());
     }
     if let Some(count) = header.entity_count {
-        attributes.insert("asm_entity_count".to_string(), count.to_string());
+        attributes.insert("kernel_entity_count".to_string(), count.to_string());
     }
     if let Some(flags) = header.flags {
-        attributes.insert("asm_flags".to_string(), flags.to_string());
+        attributes.insert("kernel_flags".to_string(), flags.to_string());
     }
     if let Some(family) = &header.product_family {
         attributes.insert("product_family".to_string(), family.clone());
@@ -211,9 +220,10 @@ fn header_attributes(header: &asm_header::AsmHeader, attributes: &mut BTreeMap<S
     if let Some(date) = &header.save_date {
         attributes.insert("save_date".to_string(), date.clone());
     }
+    attributes.insert("kernel_family".to_string(), family.to_string());
 }
 
-fn decode_binary(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, CodecError> {
+fn decode_asm_binary(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, CodecError> {
     let header = asm_header::parse(bytes).ok_or_else(|| {
         CodecError::Malformed("ASM binary magic without a parseable header".to_string())
     })?;
@@ -238,7 +248,43 @@ fn decode_binary(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, 
         DecodePurpose::Model,
     );
     let mut attributes = BTreeMap::new();
-    header_attributes(&header, &mut attributes);
+    header_attributes(&header, "asm", &mut attributes);
+    attributes.insert("encoding".to_string(), "binary".to_string());
+    build_result(ctx, brep, attributes, &header, None)
+}
+
+fn decode_acis_binary(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, CodecError> {
+    let header = acis_header::parse(bytes).ok_or_else(|| {
+        CodecError::Malformed("ACIS binary magic without a parseable header".to_string())
+    })?;
+    if !matches!(header.save_format_major(), Some(217 | 218)) {
+        let mut attributes = BTreeMap::new();
+        header_attributes(&header, "acis", &mut attributes);
+        attributes.insert("encoding".to_string(), "binary".to_string());
+        return Ok(unsupported_result(
+            "Spatial ACIS binary stream: this save-format band is not decoded",
+            attributes,
+        ));
+    }
+    let start = acis_header::record_stream_start(bytes).ok_or_else(|| {
+        CodecError::Malformed("ACIS binary header without a record stream".to_string())
+    })?;
+    let framed = match acis_header::solved_record_limit(bytes) {
+        Some(limit) => sab::frame(bytes, start, limit, 4),
+        None => sab::frame_history(bytes, start, bytes.len(), 4),
+    };
+    let records = framed
+        .map_err(|error| CodecError::Malformed(format!("ACIS SAB framing failed: {error}")))?;
+    let brep = decode_with_header(
+        &records,
+        bytes,
+        Some(header.clone()),
+        "stream",
+        IdFormat(FORMAT),
+        DecodePurpose::Model,
+    );
+    let mut attributes = BTreeMap::new();
+    header_attributes(&header, "acis", &mut attributes);
     attributes.insert("encoding".to_string(), "binary".to_string());
     build_result(ctx, brep, attributes, &header, None)
 }
@@ -246,7 +292,7 @@ fn decode_binary(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, 
 fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, CodecError> {
     let stream = sat::parse(bytes)
         .map_err(|error| CodecError::Malformed(format!("text stream parse failed: {error}")))?;
-    let header = stream.header.as_asm_header();
+    let header = stream.header.as_kernel_header();
     let brep = decode_with_header(
         &stream.records,
         bytes,
@@ -256,7 +302,11 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, Co
         DecodePurpose::Model,
     );
     let mut attributes = BTreeMap::new();
-    header_attributes(&header, &mut attributes);
+    let family = match stream.dialect {
+        sat::Dialect::Asm => "asm",
+        sat::Dialect::Acis => "acis",
+    };
+    header_attributes(&header, family, &mut attributes);
     attributes.insert("encoding".to_string(), "text".to_string());
     attributes.insert("scale".to_string(), format!("{}", stream.header.scale));
     let dialect = match stream.dialect {
@@ -271,7 +321,7 @@ fn build_result(
     ctx: &DecodeContext<'_>,
     brep: AsmBrep,
     attributes: BTreeMap<String, String>,
-    header: &asm_header::AsmHeader,
+    header: &KernelHeader,
     text_dialect: Option<&str>,
 ) -> Result<DecodeResult, CodecError> {
     let mut ir = CadIr::empty(Units::default());
@@ -283,64 +333,13 @@ fn build_result(
         ir.tolerances = Tolerances { linear, angular };
     }
 
-    ir.model.bodies = brep.bodies;
-    ir.model.regions = brep.regions;
-    ir.model.shells = brep.shells;
-    ir.model.faces = brep.faces;
-    ir.model.loops = brep.loops;
-    ir.model.coedges = brep.coedges;
-    ir.model.edges = brep.edges;
-    ir.model.vertices = brep.vertices;
-    ir.model.points = brep.points;
-    ir.model.surfaces = brep.surfaces;
-    ir.model.curves = brep.curves;
-    ir.model.pcurves = brep.pcurves;
-    ir.model.procedural_surfaces = brep.procedural_surfaces;
-    ir.model.procedural_curves = brep.procedural_curves;
-    ir.model.attributes = brep.attributes;
-    ctx.charge_entities(ir.model.entity_count() as u64, "admit ASM entities")?;
-
-    let namespace = ir.native.namespace_mut(FORMAT);
-    namespace.version = 1;
-    let store = |error: cadmpeg_ir::NativeConvertError| {
-        CodecError::Malformed(format!("native arena serialization failed: {error}"))
-    };
-    namespace
-        .set_arena("edge_continuities", &brep.edge_continuities)
-        .map_err(store)?;
-    namespace
-        .set_arena("edge_ownerships", &brep.edge_ownerships)
-        .map_err(store)?;
-    namespace
-        .set_arena("vertex_ownerships", &brep.vertex_ownerships)
-        .map_err(store)?;
-    namespace
-        .set_arena("face_sidedness", &brep.face_sidedness)
-        .map_err(store)?;
-    namespace
-        .set_arena("tolerant_vertex_tails", &brep.tolerant_vertex_tails)
-        .map_err(store)?;
-    namespace
-        .set_arena("tolerant_edge_tails", &brep.tolerant_edge_tails)
-        .map_err(store)?;
-    namespace
-        .set_arena(
-            "tolerant_coedge_parameters",
-            &brep.tolerant_coedge_parameters,
-        )
-        .map_err(store)?;
-    namespace
-        .set_arena("mesh_surface_sentinels", &brep.mesh_surface_sentinels)
-        .map_err(store)?;
-    namespace
-        .set_arena("wire_topologies", &brep.wire_topologies)
-        .map_err(store)?;
-    namespace
-        .set_arena("transform_hints", &brep.transform_hints)
-        .map_err(store)?;
-    namespace
-        .set_arena("body_native_keys", &brep.body_native_keys)
-        .map_err(store)?;
+    let AsmTransferRemainder {
+        body_keys: _,
+        face_keys: _,
+        unknowns,
+        stats,
+        annotation_records: _,
+    } = transfer_into_ir(ctx, &mut ir, FORMAT, 1, brep)?;
 
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
@@ -359,22 +358,22 @@ fn build_result(
             provenance: None,
         });
     }
-    if brep.stats.unknown_surface_faces > 0 {
+    if stats.unknown_surface_faces > 0 {
         losses.push(LossNote {
             code: LossKind::GeometryNotTransferred,
             severity: Severity::Warning,
             message: format!(
                 "{} face(s) rest on procedural surface constructions without a decoded carrier",
-                brep.stats.unknown_surface_faces
+                stats.unknown_surface_faces
             ),
             provenance: None,
         });
     }
     let mut coverage = BTreeMap::new();
-    coverage.insert("unknown_records".to_string(), brep.unknowns.len());
+    coverage.insert("unknown_records".to_string(), unknowns.len());
     coverage.insert(
         "unknown_surface_faces".to_string(),
-        brep.stats.unknown_surface_faces,
+        stats.unknown_surface_faces,
     );
     let report = DecodeReport {
         format: FORMAT.to_string(),
@@ -388,7 +387,7 @@ fn build_result(
 
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
     source_fidelity
-        .attach_native_unknown_records(&mut ir, FORMAT, brep.unknowns)
+        .attach_native_unknown_records(&mut ir, FORMAT, unknowns)
         .map_err(|error| {
             CodecError::Malformed(format!("unknown-record retention failed: {error}"))
         })?;
@@ -396,11 +395,11 @@ fn build_result(
 }
 
 /// A result for an identified stream the decoders do not cover.
-fn unsupported_result(message: &str) -> DecodeResult {
+fn unsupported_result(message: &str, attributes: BTreeMap<String, String>) -> DecodeResult {
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(SourceMeta {
         format: FORMAT.to_string(),
-        attributes: BTreeMap::new(),
+        attributes,
     });
     let report = DecodeReport {
         format: FORMAT.to_string(),

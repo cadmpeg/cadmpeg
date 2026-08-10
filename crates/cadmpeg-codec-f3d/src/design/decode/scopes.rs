@@ -5663,10 +5663,7 @@ mod mirror_tests {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        exact_pattern_identity_wrapper, exact_work_point_position, parse_parameter_scope,
-        POINT_DATA_TYPE_GUID,
-    };
+    use super::*;
     use crate::design::decode::sketch::IndexedRecordOffsets;
     use crate::records::{DesignParameterScope, DesignRecordHeader};
     use std::collections::HashMap;

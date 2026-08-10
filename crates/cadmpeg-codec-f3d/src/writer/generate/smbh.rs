@@ -25,7 +25,7 @@ use super::native_bytes::{
 use super::native_geometry::{
     native_cacheless_procedural_curve, native_cacheless_procedural_surface, native_nurbs_curve,
     native_nurbs_surface, native_pcurve, native_procedural_curve, native_procedural_surface,
-    native_ref_pcurve_companion, native_smbh_header, pcurve_uses_ref_form,
+    native_ref_pcurve_companion, native_smbh_header, pcurve_support_geometry, pcurve_uses_ref_form,
 };
 use super::preconditions::{
     validate_source_less_body_kinds, validate_source_less_wire_vertices, WireVerticesValidated,
@@ -486,10 +486,11 @@ pub(crate) fn encode_planar_triangle_smbh(
     let ref_pcurve_start = native_record_index(pcurve_start, model.pcurves.len())?;
     let mut ref_pcurve_ordinal = 0usize;
     for pcurve in &model.pcurves {
+        let support = pcurve_support_geometry(model, &pcurve.id)?;
         let companion_ref = pcurve_uses_ref_form(pcurve)?
             .then(|| native_record_index(ref_pcurve_start, ref_pcurve_ordinal))
             .transpose()?;
-        native_pcurve(&mut records, pcurve, companion_ref)?;
+        native_pcurve(&mut records, pcurve, companion_ref, support)?;
         ref_pcurve_ordinal += usize::from(companion_ref.is_some());
         records.push(0x11);
     }
@@ -498,7 +499,8 @@ pub(crate) fn encode_planar_triangle_smbh(
         .iter()
         .filter(|pcurve| pcurve_uses_ref_form(pcurve).is_ok_and(|value| value))
     {
-        native_ref_pcurve_companion(&mut records, pcurve)?;
+        let support = pcurve_support_geometry(model, &pcurve.id)?;
+        native_ref_pcurve_companion(&mut records, pcurve, support)?;
         records.push(0x11);
     }
 
@@ -1959,10 +1961,11 @@ fn encode_multi_face_shell_smbh(
     let ref_pcurve_start = native_record_index(pcurve_start, model.pcurves.len())?;
     let mut ref_pcurve_ordinal = 0usize;
     for pcurve in &model.pcurves {
+        let support = pcurve_support_geometry(model, &pcurve.id)?;
         let companion_ref = pcurve_uses_ref_form(pcurve)?
             .then(|| native_record_index(ref_pcurve_start, ref_pcurve_ordinal))
             .transpose()?;
-        native_pcurve(&mut records, pcurve, companion_ref)?;
+        native_pcurve(&mut records, pcurve, companion_ref, support)?;
         ref_pcurve_ordinal += usize::from(companion_ref.is_some());
         records.push(0x11);
     }
@@ -1971,7 +1974,8 @@ fn encode_multi_face_shell_smbh(
         .iter()
         .filter(|pcurve| pcurve_uses_ref_form(pcurve).is_ok_and(|value| value))
     {
-        native_ref_pcurve_companion(&mut records, pcurve)?;
+        let support = pcurve_support_geometry(model, &pcurve.id)?;
+        native_ref_pcurve_companion(&mut records, pcurve, support)?;
         records.push(0x11);
     }
 

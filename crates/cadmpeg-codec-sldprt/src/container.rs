@@ -10,7 +10,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
 use cadmpeg_core::le::u32_at as u32_le;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::hash::sha256_hex;
@@ -271,15 +272,24 @@ impl ContainerScan<'_> {
 /// The outer header magic length (`file_id` + `version`).
 const OUTER_HEADER_LEN: usize = 8;
 const COMPOUND_FILE_MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+const WRAPPED_PAYLOAD_MAGIC: [u8; 16] = [
+    0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef, 0x99,
+];
 
 /// Test whether a prefix contains the container marker after its outer header.
 ///
 /// This structural check does not validate block framing or CRC-32.
 pub fn looks_like_sldprt(prefix: &[u8]) -> bool {
-    if prefix.starts_with(&COMPOUND_FILE_MAGIC)
-        && contains_utf16le_ascii(prefix, b"ISolidWorksInformation")
-    {
-        return true;
+    if prefix.starts_with(&COMPOUND_FILE_MAGIC) {
+        return CompoundPrefixProbe::inspect(prefix)
+            .paths()
+            .is_some_and(|paths| {
+                paths.iter().any(|path| {
+                    path.rsplit('/')
+                        .next()
+                        .is_some_and(|name| name.eq_ignore_ascii_case("ISolidWorksInformation"))
+                })
+            });
     }
     if prefix.len() < OUTER_HEADER_LEN + MARKER.len() {
         return false;
@@ -294,25 +304,18 @@ pub fn looks_like_compound_file(prefix: &[u8]) -> bool {
     prefix.starts_with(&COMPOUND_FILE_MAGIC)
 }
 
-fn contains_utf16le_ascii(haystack: &[u8], text: &[u8]) -> bool {
-    let mut encoded = Vec::with_capacity(text.len() * 2);
-    for byte in text {
-        encoded.extend_from_slice(&[*byte, 0]);
-    }
-    contains(haystack, &encoded)
-}
-
 /// Scan an in-memory `.sldprt` image.
 ///
 /// Truncated input produces a scan containing every structure that could be
 /// validated; missing outer-header bytes yield version zero.
 pub fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
     if bytes.starts_with(&COMPOUND_FILE_MAGIC) {
-        let compound_streams = crate::compound::streams(bytes)
-            .unwrap_or_default()
-            .into_iter()
-            .map(compound_stream)
-            .collect();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let compound_streams = DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .ok()
+            .and_then(|(ctx, root)| compound_streams(&ctx, root).ok())
+            .unwrap_or_default();
         return ContainerScan {
             source_image: bytes,
             version: 0,
@@ -359,19 +362,25 @@ pub fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
     }
 }
 
-fn compound_stream(stream: crate::compound::Stream) -> CompoundStream {
-    let located_streams = crate::parasolid::extract_streams_with_offsets(&stream.bytes);
+fn compound_stream(
+    path: String,
+    directory_id: u32,
+    start_sector: u32,
+    bytes: Vec<u8>,
+    decoded_bytes: Option<Vec<u8>>,
+) -> CompoundStream {
+    let located_streams = crate::parasolid::extract_streams_with_offsets(&bytes);
     let ps_stream_offsets = located_streams.iter().map(|(offset, _)| *offset).collect();
     let ps_streams = located_streams
         .into_iter()
         .map(|(_, payload)| payload)
         .collect();
     CompoundStream {
-        path: stream.path,
-        directory_id: stream.directory_id,
-        start_sector: stream.start_sector,
-        payload: stream.bytes,
-        decoded_payload: stream.decoded_bytes,
+        path,
+        directory_id,
+        start_sector,
+        payload: bytes,
+        decoded_payload: decoded_bytes,
         ps_streams,
         ps_stream_offsets,
     }
@@ -382,11 +391,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
     if !root.window().starts_with(&COMPOUND_FILE_MAGIC) {
         return Ok(scan_bytes(root.window()));
     }
-    let compound_streams = crate::compound::streams_budgeted(ctx, root)?
-        .unwrap_or_default()
-        .into_iter()
-        .map(compound_stream)
-        .collect();
+    let compound_streams = compound_streams(ctx, root)?;
     Ok(ContainerScan {
         source_image: root.window(),
         version: 0,
@@ -395,6 +400,94 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         cache_cells: Vec::new(),
         compound_streams,
     })
+}
+
+fn compound_streams<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+) -> Result<Vec<CompoundStream>, CodecError> {
+    let snapshot = CompoundSnapshot::new(ctx, root)?;
+    snapshot
+        .entries()
+        .iter()
+        .filter_map(|entry| match entry {
+            CompoundEntry::Stream(stream) => Some(stream),
+            CompoundEntry::Storage(_) => None,
+        })
+        .map(|entry| {
+            let view = snapshot.open(ctx, entry)?;
+            let payload = ctx.copy_retained(
+                view.window(),
+                "retain SolidWorks CFB stream",
+                Some(view.location()),
+            )?;
+            let decoded = decode_wrapped_payload_budgeted(ctx, view)?;
+            Ok(compound_stream(
+                entry.path().to_owned(),
+                entry.id().directory_id(),
+                entry.start_sector(),
+                payload,
+                decoded,
+            ))
+        })
+        .collect()
+}
+
+fn decode_wrapped_payload_budgeted<'a>(
+    ctx: &DecodeContext<'a>,
+    source: View<'a>,
+) -> Result<Option<Vec<u8>>, CodecError> {
+    let payload = source.window();
+    if payload.get(..16) != Some(&WRAPPED_PAYLOAD_MAGIC) {
+        return Ok(None);
+    }
+    let Some(uncompressed_size) = u32_le(payload, 16).map(u64::from) else {
+        return Ok(None);
+    };
+    let Some(compressed_size) = u32_le(payload, 20).and_then(|size| usize::try_from(size).ok())
+    else {
+        return Ok(None);
+    };
+    if uncompressed_size == 0 || compressed_size == 0 {
+        return Ok(None);
+    }
+    let Some(member_end) = 24usize.checked_add(compressed_size) else {
+        return Ok(None);
+    };
+    let Some(member) = payload.get(24..member_end) else {
+        return Ok(None);
+    };
+    let mut decoder = flate2::read::ZlibDecoder::new(member);
+    let mut writer = ctx.begin_expand(source, ExpandSpec::Exact(uncompressed_size))?;
+    let mut chunk = [0_u8; 16 * 1024];
+    loop {
+        let Ok(read) = decoder.read(&mut chunk) else {
+            return Ok(None);
+        };
+        if read == 0 {
+            break;
+        }
+        if let Err(error) = writer.write(&chunk[..read]) {
+            return match error {
+                CodecError::ResourceLimit(_) => Err(error),
+                _ => Ok(None),
+            };
+        }
+    }
+    if decoder.total_in() as usize != compressed_size {
+        return Ok(None);
+    }
+    let decoded = match writer.finalize() {
+        Ok(decoded) => decoded,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
+    };
+    ctx.copy_retained(
+        decoded.window(),
+        "retain decoded SolidWorks CFB stream",
+        Some(source.location()),
+    )
+    .map(Some)
 }
 
 /// A block plus the preamble length needed to advance past it.

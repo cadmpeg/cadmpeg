@@ -27,31 +27,7 @@ use cadmpeg_ir::roundtrip::{
 };
 use cadmpeg_ir::{CadIr, WritePath};
 
-use super::{
-    f3d_with_configuration, f3d_with_smbh, f3d_with_smbh_and_protein, synthetic_comp_spl_sur_smbh,
-    synthetic_cyl_spl_sur_smbh, synthetic_exact_spl_sur_smbh, synthetic_free_vertex_body_smbh,
-    synthetic_full_rolling_ball_smbh, synthetic_g2_blend_spl_sur_smbh,
-    synthetic_geometry_bf4_nurbs_smbh, synthetic_geometry_bf4_smbh, synthetic_geometry_smbh,
-    synthetic_geometry_with_attribute_smbh, synthetic_geometry_with_body_color_smbh,
-    synthetic_geometry_with_compound_curve_smbh, synthetic_geometry_with_degenerate_curve_smbh,
-    synthetic_geometry_with_exact_curve_smbh, synthetic_geometry_with_face_color_smbh,
-    synthetic_geometry_with_helix_curve_smbh, synthetic_geometry_with_history_smbh,
-    synthetic_geometry_with_law_curve_smbh, synthetic_geometry_with_mesh_surface_smbh,
-    synthetic_geometry_with_pcurve_smbh, synthetic_geometry_with_projection_smbh,
-    synthetic_geometry_with_rational_pcurve_smbh, synthetic_geometry_with_ref_pcurve_smbh,
-    synthetic_geometry_with_silhouette_smbh, synthetic_geometry_with_sketch_link_smbh,
-    synthetic_geometry_with_spring_smbh, synthetic_geometry_with_subset_curve_smbh,
-    synthetic_geometry_with_surface_intersection_smbh, synthetic_geometry_with_surface_offset_smbh,
-    synthetic_geometry_with_transform_smbh, synthetic_helix_surface_smbh,
-    synthetic_law_spl_sur_smbh, synthetic_loft_spl_sur_smbh,
-    synthetic_minimal_deformable_surface_smbh, synthetic_mixed_face_wire_body_smbh,
-    synthetic_net_spl_sur_smbh, synthetic_off_spl_sur_smbh, synthetic_profile_first_sweep_smbh,
-    synthetic_rot_spl_sur_smbh, synthetic_ruled_spl_sur_smbh, synthetic_scaled_compound_loft_smbh,
-    synthetic_skin_spl_sur_smbh, synthetic_smbh, synthetic_sub_spl_sur_smbh,
-    synthetic_sum_spl_sur_smbh, synthetic_t_spl_sur_smbh, synthetic_taper_spl_sur_smbh,
-    synthetic_variable_blend_smbh, synthetic_vertex_blend_smbh, synthetic_wire_body_smbh, F3dCodec,
-    InspectOptions, SketchLinkForm, TestEncode,
-};
+use super::*;
 
 /// Covering fixture set as `(golden name, full .f3d bytes)`.
 // Fifty-three entries, one per line block, appended in the order a reader adds a

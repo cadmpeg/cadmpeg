@@ -3,10 +3,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use zip::CompressionMethod;
+
+static NEXT_ARCHIVE_SNAPSHOT_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Compression methods supported by [`ArchiveSnapshot::open`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,6 +63,7 @@ pub struct EntryRecord {
     pub data_start: u64,
     /// Physical start of the central-directory record.
     pub central_start: u64,
+    snapshot_id: u64,
 }
 
 impl EntryRecord {
@@ -77,6 +81,7 @@ impl EntryRecord {
 #[derive(Debug)]
 pub struct ArchiveSnapshot<'a> {
     root: View<'a>,
+    snapshot_id: u64,
     entries: Vec<EntryRecord>,
     by_name: BTreeMap<String, usize>,
 }
@@ -86,6 +91,7 @@ impl<'a> ArchiveSnapshot<'a> {
     pub fn new(root: View<'a>) -> Result<Self, CodecError> {
         let mut archive = zip::ZipArchive::new(Cursor::new(root.window()))
             .map_err(|error| CodecError::Malformed(format!("not a readable ZIP: {error}")))?;
+        let snapshot_id = NEXT_ARCHIVE_SNAPSHOT_ID.fetch_add(1, AtomicOrdering::Relaxed);
         let mut names = BTreeSet::new();
         let mut entries = Vec::with_capacity(archive.len());
         for index in 0..archive.len() {
@@ -114,6 +120,7 @@ impl<'a> ArchiveSnapshot<'a> {
                 header_start: file.header_start(),
                 data_start,
                 central_start: file.central_header_start(),
+                snapshot_id,
             };
             for offset in [
                 record.header_start,
@@ -138,6 +145,7 @@ impl<'a> ArchiveSnapshot<'a> {
             .collect();
         Ok(Self {
             root,
+            snapshot_id,
             entries,
             by_name,
         })
@@ -159,14 +167,27 @@ impl<'a> ArchiveSnapshot<'a> {
         ctx: &DecodeContext<'a>,
         entry: &EntryRecord,
     ) -> Result<View<'a>, CodecError> {
+        if entry.snapshot_id != self.snapshot_id {
+            return Err(CodecError::Malformed(
+                "ZIP entry handle does not belong to this snapshot".into(),
+            ));
+        }
         let end = entry.data_end()?;
+        let archive_start = u64::try_from(self.root.start())
+            .map_err(|_| CodecError::Malformed("ZIP root offset does not fit u64".into()))?;
+        let absolute_start = archive_start.checked_add(entry.data_start).ok_or_else(|| {
+            CodecError::Malformed(format!("ZIP data range overflows for {}", entry.name))
+        })?;
+        let absolute_end = archive_start.checked_add(end).ok_or_else(|| {
+            CodecError::Malformed(format!("ZIP data range overflows for {}", entry.name))
+        })?;
         match entry.compression {
             EntryCompression::Stored => {
                 let view = ctx.register_slice(
                     self.root,
                     ByteRange {
-                        start: entry.data_start,
-                        end,
+                        start: absolute_start,
+                        end: absolute_end,
                     },
                 )?;
                 if view.window().len() as u64 != entry.uncompressed_size {
@@ -184,10 +205,10 @@ impl<'a> ArchiveSnapshot<'a> {
                 Ok(view)
             }
             EntryCompression::Deflate | EntryCompression::Zstd => {
-                let start = usize::try_from(entry.data_start).map_err(|_| {
+                let start = usize::try_from(absolute_start).map_err(|_| {
                     CodecError::Malformed("ZIP data offset does not fit memory".into())
                 })?;
-                let end = usize::try_from(end).map_err(|_| {
+                let end = usize::try_from(absolute_end).map_err(|_| {
                     CodecError::Malformed("ZIP data offset does not fit memory".into())
                 })?;
                 let source = self.root.child(start, end).ok_or_else(|| {
@@ -720,5 +741,59 @@ mod tests {
                 .window(),
             b"Zstandard payload"
         );
+    }
+
+    #[test]
+    fn snapshot_rejects_entry_handles_from_another_snapshot() {
+        let bytes = archive_bytes();
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("archive fits root policy");
+        let first = ArchiveSnapshot::new(root).expect("first archive snapshot");
+        let second = ArchiveSnapshot::new(root).expect("second archive snapshot");
+        let foreign = second.entry("stored.bin").expect("foreign entry exists");
+        assert!(first.open(&ctx, foreign).is_err());
+
+        let owned = first
+            .entry("stored.bin")
+            .expect("owned entry exists")
+            .clone();
+        assert_eq!(
+            first
+                .open(&ctx, &owned)
+                .expect("owned clone opens")
+                .window(),
+            b"stored"
+        );
+    }
+
+    #[test]
+    fn snapshot_opens_entries_from_a_nonzero_root_view() {
+        let archive = archive_bytes();
+        let mut bytes = b"prefix".to_vec();
+        let start = bytes.len();
+        bytes.extend_from_slice(&archive);
+        let end = bytes.len();
+        bytes.extend_from_slice(b"suffix");
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("outer bytes fit root policy");
+        let nested = root.child(start, end).expect("archive child range");
+        let snapshot = ArchiveSnapshot::new(nested).expect("nested archive snapshots");
+
+        for (name, expected) in [
+            ("stored.bin", b"stored".as_slice()),
+            ("deflated.bin", b"deflated payload".as_slice()),
+            ("zstd.bin", b"Zstandard payload".as_slice()),
+        ] {
+            let entry = snapshot.entry(name).expect("entry exists");
+            assert_eq!(
+                snapshot
+                    .open(&ctx, entry)
+                    .expect("nested entry opens")
+                    .window(),
+                expected
+            );
+        }
     }
 }

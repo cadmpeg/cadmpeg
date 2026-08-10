@@ -2,16 +2,64 @@
 //! Schema-driven decoding of Protein `InstanceProperties` records.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 
 use cadmpeg_core::CodecError;
-
-use crate::bytes::take_lp_utf8_capped;
+use serde::{Deserialize, Serialize};
 
 const PAGE_SIZE: usize = 0x88;
 const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
 const CONTINUATION_MARKER: &[u8] = b"\x80\x00\x00\x00";
 const TERMINAL_MARKER: &[u8] = b"\xff\xff\xff\xff";
+const MAX_SCHEMA_BYTES: u64 = 128 * 1024 * 1024;
+
+fn take_lp_utf8_capped(bytes: &[u8], at: &mut usize, max: usize) -> Option<String> {
+    let count = usize::try_from(cadmpeg_core::le::u32_at(bytes, *at)?).ok()?;
+    *at = at.checked_add(4)?;
+    if count > max {
+        return None;
+    }
+    let end = at.checked_add(count)?;
+    let value = std::str::from_utf8(bytes.get(*at..end)?).ok()?.to_owned();
+    *at = end;
+    Some(value)
+}
+
+fn read_entry_bounded(
+    entry: &mut impl Read,
+    declared_size: u64,
+    name: &str,
+) -> Result<Vec<u8>, CodecError> {
+    if declared_size > MAX_SCHEMA_BYTES {
+        return Err(CodecError::Malformed(format!(
+            "Protein schema {name} exceeds the {MAX_SCHEMA_BYTES}-byte limit"
+        )));
+    }
+    let mut bytes = Vec::new();
+    let mut limited = entry.take(MAX_SCHEMA_BYTES + 1);
+    let mut chunk = [0_u8; 16 * 1024];
+    loop {
+        let read = limited.read(&mut chunk)?;
+        if read == 0 {
+            break;
+        }
+        bytes.try_reserve(read).map_err(|_| {
+            cadmpeg_core::decode::refuse_local_limit(
+                "Protein schema allocation",
+                MAX_SCHEMA_BYTES,
+                bytes.len().saturating_add(read) as u64,
+                None,
+            )
+        })?;
+        bytes.extend_from_slice(&chunk[..read]);
+    }
+    if bytes.len() as u64 > MAX_SCHEMA_BYTES {
+        return Err(CodecError::Malformed(format!(
+            "Protein schema {name} exceeds the {MAX_SCHEMA_BYTES}-byte limit"
+        )));
+    }
+    Ok(bytes)
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Carrier {
@@ -43,25 +91,38 @@ struct Schema {
 }
 
 /// One typed property decoded according to its packaged schema.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct DecodedProperty {
-    pub(crate) value: PropertyValue,
-    pub(crate) connections: Vec<String>,
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DecodedProperty {
+    /// Decoded property value.
+    pub value: PropertyValue,
+    /// Connected asset identifiers in serialized order.
+    pub connections: Vec<String>,
 }
 
 /// A schema-defined Protein property value.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum PropertyValue {
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum PropertyValue {
+    /// Boolean scalar.
     Boolean(bool),
+    /// Unsigned integer scalar.
     Integer(u32),
+    /// Unitless floating-point scalar.
     Float(f64),
+    /// Floating-point distance with its serialized unit code.
     Distance {
+        /// Serialized Protein unit code.
         unit: u32,
+        /// Distance value in the serialized unit.
         value: f64,
     },
+    /// UTF-8 string.
     String(String),
+    /// Four-channel floating-point color.
     Color([f64; 4]),
+    /// Reference carrier whose target is held by its connection list.
     Reference,
+    /// Ordered texture URI values.
     TextureUri(Vec<String>),
     /// A member declared `allowmultiplevalues="true"` on a carrier other than
     /// `TextureURI`: a `u32` count followed by that many carrier values.
@@ -69,33 +130,76 @@ pub(crate) enum PropertyValue {
 }
 
 /// One paged Protein instance record.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct DecodedRecord {
-    pub(crate) schema: String,
-    pub(crate) guid: String,
-    pub(crate) base: String,
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DecodedRecord {
+    /// Zero-based logical-record ordinal in the paged instance stream.
+    pub ordinal: u64,
+    /// Schema identifier selected by the record.
+    pub schema: String,
+    /// Asset instance GUID.
+    pub guid: String,
+    /// Base asset identifier.
+    pub base: String,
     /// Library holding the preset this asset instantiates: a GUID for a shipped
     /// library, a path for a user library.
-    pub(crate) asset_lib_id: String,
-    pub(crate) properties: BTreeMap<String, DecodedProperty>,
+    pub asset_lib_id: String,
+    /// Properties keyed by schema property identifier.
+    pub properties: BTreeMap<String, DecodedProperty>,
 }
 
-/// Decode every `InstanceProperties` record in the paged `instance` stream
-/// using the schemas packaged in the same Protein archive. Records whose value
-/// block cannot be consumed are dropped; page framing keeps the remaining
-/// records decodable.
-pub(crate) fn decode(protein: &[u8], instance: &[u8]) -> Result<Vec<DecodedRecord>, CodecError> {
+/// One paged instance record rejected by schema-driven decoding.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RejectedRecord {
+    /// Zero-based logical-record ordinal in the paged instance stream.
+    pub ordinal: u64,
+    /// Deterministic structural or schema error.
+    pub detail: String,
+}
+
+/// Complete schema-driven result for one paged instance stream.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct DecodeOutcome {
+    /// Successfully decoded records in serialized order.
+    pub records: Vec<DecodedRecord>,
+    /// Records whose page boundary was valid but whose value block was not.
+    pub rejected: Vec<RejectedRecord>,
+}
+
+/// Decode every valid `InstanceProperties` record in the paged `instance`
+/// stream using the schemas packaged in the same Protein archive.
+///
+/// Use [`decode_detailed`] when rejected logical records must be accounted.
+pub fn decode(protein: &[u8], instance: &[u8]) -> Result<Vec<DecodedRecord>, CodecError> {
+    Ok(decode_detailed(protein, instance)?.records)
+}
+
+/// Decode every `InstanceProperties` record and account for each rejected
+/// logical record without discarding later valid records.
+pub fn decode_detailed(protein: &[u8], instance: &[u8]) -> Result<DecodeOutcome, CodecError> {
     let schemas = schemas(protein)?;
     let Some(pages) = paged_records(instance) else {
-        return Ok(Vec::new());
+        return Err(CodecError::Malformed(
+            "Protein InstanceProperties page framing is invalid".into(),
+        ));
     };
-    let mut records = Vec::new();
-    for record in pages {
-        if let Ok(Some(record)) = decode_record(&record, &schemas) {
-            records.push(record);
+    let mut outcome = DecodeOutcome::default();
+    for (ordinal, record) in pages.into_iter().enumerate() {
+        let ordinal = u64::try_from(ordinal).map_err(|_| {
+            CodecError::Malformed("Protein logical-record ordinal exceeds u64".into())
+        })?;
+        match decode_record(&record, &schemas, ordinal) {
+            Ok(Some(record)) => outcome.records.push(record),
+            Ok(None) => outcome.rejected.push(RejectedRecord {
+                ordinal,
+                detail: "Protein instance record header is malformed".into(),
+            }),
+            Err(error) => outcome.rejected.push(RejectedRecord {
+                ordinal,
+                detail: error.to_string(),
+            }),
         }
     }
-    Ok(records)
+    Ok(outcome)
 }
 
 /// Split a paged `InstanceProperties` stream into logical records.
@@ -116,8 +220,8 @@ fn paged_records(bytes: &[u8]) -> Option<Vec<Vec<u8>>> {
     let mut current: Option<Vec<u8>> = None;
     for page in bytes[16..].chunks_exact(PAGE_SIZE) {
         if page.get(4..8) == Some(RECORD_MARKER) {
-            if let Some(record) = current.take() {
-                records.push(record);
+            if current.is_some() {
+                return None;
             }
             let mut record = RECORD_MARKER.to_vec();
             record.extend_from_slice(&page[8..]);
@@ -133,14 +237,11 @@ fn paged_records(bytes: &[u8]) -> Option<Vec<Vec<u8>>> {
             return None;
         }
     }
-    if let Some(record) = current {
-        records.push(record);
-    }
-    Some(records)
+    current.is_none().then_some(records)
 }
 
 /// Whether the Protein archive packages schema XML documents.
-pub(crate) fn has_schemas(protein: &[u8]) -> bool {
+pub fn has_schemas(protein: &[u8]) -> bool {
     let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(protein)) else {
         return false;
     };
@@ -160,16 +261,23 @@ fn schemas(protein: &[u8]) -> Result<HashMap<String, Schema>, CodecError> {
         CodecError::Malformed(format!("cannot open nested Protein ZIP: {error}"))
     })?;
     let mut schemas = HashMap::new();
+    let mut entry_names = BTreeSet::new();
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).map_err(|error| {
             CodecError::Malformed(format!("cannot read nested Protein entry: {error}"))
         })?;
+        if !entry_names.insert(entry.name().to_owned()) {
+            return Err(CodecError::Malformed(format!(
+                "Protein archive defines entry {} more than once",
+                entry.name()
+            )));
+        }
         if !is_schema_entry(entry.name()) {
             continue;
         }
         let size = entry.size();
         let name = entry.name().to_owned();
-        let bytes = crate::container::read_entry_bounded(&mut entry, size, &name)?;
+        let bytes = read_entry_bounded(&mut entry, size, &name)?;
         let xml = std::str::from_utf8(&bytes).map_err(|error| {
             CodecError::Malformed(format!("Protein schema {name} is not UTF-8: {error}"))
         })?;
@@ -265,6 +373,7 @@ fn property_closure(
 fn decode_record(
     record: &[u8],
     schemas: &HashMap<String, Schema>,
+    ordinal: u64,
 ) -> Result<Option<DecodedRecord>, CodecError> {
     if !record.starts_with(RECORD_MARKER) {
         return Ok(None);
@@ -318,6 +427,7 @@ fn decode_record(
         )));
     }
     Ok(Some(DecodedRecord {
+        ordinal,
         schema,
         guid,
         base,
@@ -412,16 +522,23 @@ fn read_value(
         Carrier::Integer | Carrier::Choice => {
             PropertyValue::Integer(u32::from_le_bytes(take(bytes, at).ok_or_else(malformed)?))
         }
-        Carrier::Float => {
-            PropertyValue::Float(f64::from_le_bytes(take(bytes, at).ok_or_else(malformed)?))
-        }
+        Carrier::Float => PropertyValue::Float(finite_value(
+            f64::from_le_bytes(take(bytes, at).ok_or_else(malformed)?),
+            id,
+        )?),
         Carrier::UnitFloat => {
             take::<4>(bytes, at).ok_or_else(malformed)?;
-            PropertyValue::Float(f64::from_le_bytes(take(bytes, at).ok_or_else(malformed)?))
+            PropertyValue::Float(finite_value(
+                f64::from_le_bytes(take(bytes, at).ok_or_else(malformed)?),
+                id,
+            )?)
         }
         Carrier::Distance => PropertyValue::Distance {
             unit: u32::from_le_bytes(take(bytes, at).ok_or_else(malformed)?),
-            value: f64::from_le_bytes(take(bytes, at).ok_or_else(malformed)?),
+            value: finite_value(
+                f64::from_le_bytes(take(bytes, at).ok_or_else(malformed)?),
+                id,
+            )?,
         },
         Carrier::String | Carrier::Uuid | Carrier::Url => {
             PropertyValue::String(take_lp_utf8_capped(bytes, at, 1_048_576).ok_or_else(malformed)?)
@@ -429,13 +546,23 @@ fn read_value(
         Carrier::Color => {
             let mut rgba = [0.0; 4];
             for value in &mut rgba {
-                *value = f64::from_le_bytes(take(bytes, at).ok_or_else(malformed)?);
+                *value = finite_value(
+                    f64::from_le_bytes(take(bytes, at).ok_or_else(malformed)?),
+                    id,
+                )?;
             }
             PropertyValue::Color(rgba)
         }
         Carrier::Reference => PropertyValue::Reference,
         Carrier::TextureUri => return read_texture_uri(bytes, at, id),
     })
+}
+
+fn finite_value(value: f64, id: &str) -> Result<f64, CodecError> {
+    value
+        .is_finite()
+        .then_some(value)
+        .ok_or_else(|| CodecError::Malformed(format!("Protein property {id} is not finite")))
 }
 
 /// The connection block that follows every connectable member and every
@@ -484,6 +611,8 @@ fn take<const N: usize>(bytes: &[u8], at: &mut usize) -> Option<[u8; N]> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)] // A failed synthetic decode is the test failure.
+
     use std::io::Write;
 
     use super::*;
@@ -673,6 +802,51 @@ mod tests {
     }
 
     #[test]
+    fn detailed_decode_accounts_for_a_rejected_record_and_continues() {
+        let protein = schema_archive(&[(
+            "Schemas/SimpleSchema.xml",
+            r#"<Schema><UID val="SimpleSchema"/><String id="comment"/></Schema>"#,
+        )]);
+        let record = |guid: &str| {
+            let mut bytes = Vec::new();
+            for value in ["SimpleSchema", guid, "Simple", ""] {
+                push_lp(&mut bytes, value);
+            }
+            push_lp(&mut bytes, &"x".repeat(160));
+            bytes
+        };
+        let first = record("first-guid");
+        let malformed = vec![0xff; 160];
+        let third = record("third-guid");
+        let instance = paged_stream(&[&first, &malformed, &third]);
+
+        let outcome = decode_detailed(&protein, &instance).expect("framed records decode");
+        assert_eq!(
+            outcome
+                .records
+                .iter()
+                .map(|record| (record.ordinal, record.guid.as_str()))
+                .collect::<Vec<_>>(),
+            [(0, "first-guid"), (2, "third-guid")]
+        );
+        assert_eq!(outcome.rejected.len(), 1);
+        assert_eq!(outcome.rejected[0].ordinal, 1);
+        assert!(!outcome.rejected[0].detail.is_empty());
+        assert_eq!(decode(&protein, &instance).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn detailed_decode_rejects_invalid_page_framing() {
+        let protein = schema_archive(&[(
+            "Schemas/SimpleSchema.xml",
+            r#"<Schema><UID val="SimpleSchema"/><String id="comment"/></Schema>"#,
+        )]);
+        let error = decode_detailed(&protein, &[0; 16])
+            .expect_err("a header without any complete page is malformed");
+        assert!(error.to_string().contains("page framing is invalid"));
+    }
+
+    #[test]
     fn texture_records_omit_the_advanced_map_channel_id() {
         let protein = schema_archive(&[(
             "Schemas/BitmapSchema.xml",
@@ -734,6 +908,14 @@ mod tests {
         let mut truncated = stream.clone();
         truncated.truncate(16 + PAGE_SIZE + 1);
         assert!(paged_records(&truncated).is_none());
+
+        let mut missing_terminal = stream.clone();
+        missing_terminal.truncate(16 + PAGE_SIZE);
+        assert!(paged_records(&missing_terminal).is_none());
+
+        let mut repeated_start = stream[..16 + PAGE_SIZE].to_vec();
+        repeated_start.extend_from_slice(&stream[16..16 + PAGE_SIZE]);
+        assert!(paged_records(&repeated_start).is_none());
     }
 
     /// Lay records out as `InstanceProperties.bin` does: a 16-byte stream header,
@@ -777,7 +959,9 @@ mod tests {
     }
 
     fn schema_archive(entries: &[(&str, &str)]) -> Vec<u8> {
-        let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored)
+            .system(zip::System::Unix);
         let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
         for (name, xml) in entries {
             archive.start_file(name, options).expect("start schema");

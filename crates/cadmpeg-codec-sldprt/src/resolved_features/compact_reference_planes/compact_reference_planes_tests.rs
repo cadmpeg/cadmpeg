@@ -1,9 +1,6 @@
 //! Tests for the `compact_reference_planes` module.
 
-use super::{
-    compact_component_plane_frame, compact_profile_reference_plane_source,
-    compact_reference_plane_source, CompactReferencePlaneIndex,
-};
+use super::*;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 #[test]

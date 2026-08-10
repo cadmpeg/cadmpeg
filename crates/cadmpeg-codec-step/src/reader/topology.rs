@@ -1568,10 +1568,7 @@ fn drop_committed_surfaces(draft: &mut ModelDraft, session: &CommitSession, ir: 
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        drop_committed_surfaces, endpoint_parameter_transform, materialize_pcurve_variant,
-        pcurve_endpoint_fit, pcurve_selection_seeds, SelectedPcurve,
-    };
+    use super::*;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::draft::{CommitSession, ModelDraft};
     use cadmpeg_ir::geometry::{NurbsSurface, Pcurve, PcurveGeometry, Surface, SurfaceGeometry};

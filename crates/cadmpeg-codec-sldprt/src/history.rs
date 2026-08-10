@@ -10170,12 +10170,7 @@ fn format_f64_literal(value: f64) -> String {
 
 #[cfg(test)]
 mod literal_tests {
-    use super::{
-        apply_parameter_function, bare_text_parameter_literal, compare_parameter_values,
-        dimension_display, exact_integer_f64, exponentiate_parameter_value, format_f64_literal,
-        formatted_text_dimension_literal, parse_length_mm, parse_parameter_literal,
-        rewrite_parameter_expression, DimensionDisplay, ParameterExpressionParser, ParameterValue,
-    };
+    use super::*;
 
     #[test]
     fn native_scalar_literals_are_compact_and_bit_exact() {

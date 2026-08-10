@@ -3640,10 +3640,7 @@ mod tests {
     use cadmpeg_ir::units::Units;
     use sha2::{Digest, Sha256};
 
-    use super::{
-        brep_loop_type, brep_trim_type, object_attributes_payload, utf16, vertex_point,
-        CHANNEL_COLOR, CHANNEL_CURVATURE, CHANNEL_SURFACE_PARAMETERS, CHANNEL_UV,
-    };
+    use super::*;
     use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
 
     #[test]

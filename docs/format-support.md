@@ -42,6 +42,7 @@ A **proven** score satisfies every criterion for the declared envelope:
 | --------------------------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | FreeCAD `.FCStd` (schema 4, file 1)                                   | **L5 tested**  | deterministic retained writes, checked edits, source-less typed application graphs                                         |
 | Autodesk Fusion `.f3d`                                                | **L4 tested**  | native replay + patch + broad source-less generation, procedural carriers, ACT/Design/history records                      |
+| Autodesk Inventor `.ipt`/`.iam` (CFB v3, RSe 31, Meta Stream 8)       | **L1 claimed** | typed part carriers, parameters, planar sketches, and closed extrude, hole, fillet, and chamfer operation branches          |
 | SolidWorks `.sldprt`                                                  | **L4 tested**  | typed features, sketches, parameters, configurations, native replay + bounded generation                                   |
 | Rhino `.3dm` (archive 50/60/70/80)                                    | **L1 tested**  | partial typed geometry, topology, presentation, and bounded source-less native writing                                     |
 | CATIA V5 `.CATPart` (standard-nested band)                            | **L2 claimed** | conditionally connected B-rep, closed zero-entity topology lowering                                                          |
@@ -57,6 +58,23 @@ A **proven** score satisfies every criterion for the declared envelope:
 | IGES 5.1/5.2/5.3 Fixed ASCII mechanical/document                      | **L8 tested**  | bounded semantic writing and application checks remain extras; L9 gate open |
 
 Each current score applies to the envelope described in its profile.
+
+## Autodesk Inventor `.ipt` and `.iam`
+
+**Model:** CFB document with RSe segment databases, exact M/B record frames, OLE properties, Protein assets, external references, and an embedded part-kernel carrier
+
+**Primary structural envelope:** CFB version 3, RSe database schema 31, Meta Stream version 8, exact zlib members, the defined forward/backward metadata sections, and versioned B-record trailers. CFB version 4, other RSe schemas, and other Meta Stream versions are separate envelopes.
+
+**Ladder: L1 claimed.** Structural detection requires directory evidence. The codec enumerates the complete CFB hierarchy, versioned databases, registry and revision tables, exact segment pairs, metadata tables, typed bulk records, OLE property sets, previews when present, Protein package entries and decoded catalog assets, and `UFRxDoc` external references. Optional or unknown segments remain named native records.
+
+- **Part geometry: extra above L1.** One typed active carrier in one `PmBRep` segment transfers through `cadmpeg-asm`. The kernel header controls width, units, tolerances, and SAB framing. Kernel unknown records and source annotations are retained. An empty or invalid decoded carrier produces blocking `geometry_not_transferred`.
+- **ACIS 217/218 part carriers: L3 claimed.** The 32-bit ACIS header and solved SAB partition transfer through the same direct and embedded kernel decoder. Connected B-rep validation and direct-carrier parity pass for this finite envelope. Other ACIS save-format bands remain retained and produce blocking `geometry_not_transferred`.
+- **Assemblies: partial extra.** A `UFRxDoc` occurrence transfers when its external file reference, `AmDc` occurrence identity, and active finite affine `AmGraphics` placement form one exact join. Placement translations convert from centimetres to millimetres. Suppressed occurrences transfer with hidden visibility and may use an identity placement when graphics are absent. External prototypes remain unresolved, no persisted path is opened, and local prototypes and nested parent links remain untransferred.
+- **Materials: partial extra.** Shared Protein schema decoding produces typed native assets and neutral appearance definitions. One exact `PmApp` default-style-to-rendering-style-to-asset join binds the selected appearance to transferred part bodies. One exact `PmGraphics` face-to-style-collection-to-primary-color join creates a direct face appearance that overrides the body default. Other style and texture families remain native.
+- **Design intent: partial extra.** Closed scalar parameter graphs and closed planar point, line, circle, ellipse, and constraint graphs transfer with native cross-links. Extrude, hole, constant-radius edge fillet, and equal-distance edge chamfer operations transfer only when every required typed property, dimension, native selection, placement, and result-body reference resolves. Each transferred result has a native intermediate-body identity. Suppression and dependency state remain unresolved, so this extra does not claim L4.
+- **Write:** None. The codec has no encoder, replay path, or patch path.
+
+See [`formats/inventor.md`](formats/inventor.md) and [`formats/inventor-open-items.md`](formats/inventor-open-items.md).
 
 ## Status terms
 

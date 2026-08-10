@@ -84,6 +84,21 @@ pub struct FaceSidedness {
     pub containment: Option<FaceContainment>,
 }
 
+/// Native Design-join key stored on one ASM face record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct FaceNativeKey {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved face carrying the key.
+    pub face: FaceId,
+    /// Source SAB face record index.
+    pub record_index: u32,
+    /// Non-negative Design-join key; absence is the native `-1` null value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asm_face_key: Option<u64>,
+}
+
 /// Native leading tolerance slots retained from one tolerant ASM vertex
 /// record. The record's three f64 tolerance slots are three independent
 /// tolerance evaluations, each using `-1` as its unset sentinel; the third

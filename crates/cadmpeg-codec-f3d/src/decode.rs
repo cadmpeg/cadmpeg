@@ -15,7 +15,8 @@
 //! metadata-only document. The report marks geometry and topology as blocking,
 //! and retained source data remains available for native replay.
 
-use crate::native::F3dNative;
+use crate::native::{F3dNative, F3D_NATIVE_VERSION};
+use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationBuilder;
@@ -1331,7 +1332,7 @@ fn try_decode_text_model(
         // Facts for the report and source attributes. The header carries the
         // stream's own unit; the decoded token values are already in the
         // centimetre convention.
-        let mut header = stream.header.as_asm_header();
+        let mut header = stream.header.as_kernel_header();
         header.scale = Some(stream.header.scale);
         parts.push((
             BrepFacts {
@@ -1370,7 +1371,7 @@ fn finish_model_decode<'a>(
     ctx: &DecodeContext<'a>,
     scan: &ContainerScan<'a>,
     primary_model_brep: &BrepFacts,
-    mut brep: Brep,
+    brep: Brep,
     body_visibilities: Vec<crate::records::BodyVisibility>,
     undecoded_candidates: usize,
 ) -> Result<DecodeResult, CodecError> {
@@ -1386,8 +1387,15 @@ fn finish_model_decode<'a>(
         });
     }
     let decoded_materials = materials::decode_with_bodies(scan, &brep.asm.body_keys)?;
-    let annotation_records = std::mem::take(&mut brep.asm.annotation_records);
-    let (mut ir, mut native, unknowns) = build_geometry_ir(scan, primary_model_brep, brep);
+    let (mut ir, mut native, asm_remainder) =
+        build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
+    let AsmTransferRemainder {
+        body_keys: _,
+        face_keys: _,
+        unknowns,
+        stats: _,
+        annotation_records,
+    } = asm_remainder;
     let (subds, subd_losses) = crate::tsm::decode(scan)?;
     ir.model.subds = subds;
     let mesh_projection = project_mesh_bodies(scan, &mut ir, &mut report)?;
@@ -3630,49 +3638,33 @@ fn try_decode_brep(
 
 /// Assemble the IR document from the decoded B-rep graph.
 fn build_geometry_ir(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     primary_model_brep: &BrepFacts,
     brep: Brep,
-) -> (CadIr, F3dNative, Vec<UnknownRecord>) {
+) -> Result<(CadIr, F3dNative, AsmTransferRemainder), CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let (source, tolerances) = source_and_tolerances(scan, primary_model_brep);
     ir.source = Some(source);
     ir.tolerances = tolerances;
-
-    ir.model.bodies = brep.asm.bodies;
-    ir.model.regions = brep.asm.regions;
-    ir.model.shells = brep.asm.shells;
-    ir.model.faces = brep.asm.faces;
-    ir.model.loops = brep.asm.loops;
-    ir.model.coedges = brep.asm.coedges;
-    ir.model.edges = brep.asm.edges;
-    ir.model.vertices = brep.asm.vertices;
-    ir.model.points = brep.asm.points;
-    ir.model.surfaces = brep.asm.surfaces;
-    ir.model.curves = brep.asm.curves;
-    ir.model.pcurves = brep.asm.pcurves;
-    ir.model.procedural_surfaces = brep.asm.procedural_surfaces;
-    ir.model.procedural_curves = brep.asm.procedural_curves;
-    let native = F3dNative {
-        body_native_keys: brep.asm.body_native_keys,
-        sketch_curve_links: brep.sketch_curve_links,
-        persistent_design_links: brep.persistent_design_links,
-        persistent_subentity_tags: brep.persistent_subentity_tags,
-        edge_continuities: brep.asm.edge_continuities,
-        edge_ownerships: brep.asm.edge_ownerships,
-        vertex_ownerships: brep.asm.vertex_ownerships,
-        face_sidedness: brep.asm.face_sidedness,
-        tolerant_vertex_tails: brep.asm.tolerant_vertex_tails,
-        tolerant_edge_tails: brep.asm.tolerant_edge_tails,
-        tolerant_coedge_parameters: brep.asm.tolerant_coedge_parameters,
-        mesh_surface_sentinels: brep.asm.mesh_surface_sentinels,
-        wire_topologies: brep.asm.wire_topologies,
-        transform_hints: brep.asm.transform_hints,
-        creation_timestamps: brep.creation_timestamps,
-        ..F3dNative::default()
-    };
-    ir.model.attributes = brep.asm.attributes;
-    (ir, native, brep.asm.unknowns)
+    let Brep {
+        asm,
+        sketch_curve_links,
+        persistent_design_links,
+        persistent_subentity_tags,
+        creation_timestamps,
+    } = brep;
+    let remainder = transfer_into_ir(ctx, &mut ir, "f3d", F3D_NATIVE_VERSION, asm)?;
+    let mut native = F3dNative::load(
+        ir.native
+            .namespace("f3d")
+            .expect("ASM transfer creates the requested native namespace"),
+    )?;
+    native.sketch_curve_links = sketch_curve_links;
+    native.persistent_design_links = persistent_design_links;
+    native.persistent_subentity_tags = persistent_subentity_tags;
+    native.creation_timestamps = creation_timestamps;
+    Ok((ir, native, remainder))
 }
 
 /// Source metadata attributes and kernel tolerances from the primary model BREP header.
@@ -4209,12 +4201,7 @@ fn apply_appearance_base_colors(ir: &mut CadIr) {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        apply_appearance_base_colors, bind_mesh_feature_definitions,
-        container_only_dimension_parameters, design_projection_gaps,
-        feature_definition_is_incomplete, incomplete_feature_families, mesh_attribute_channels,
-        unresolved_dimension_companion_count, DesignProjectionGaps, MeshProjection,
-    };
+    use super::*;
     use crate::native::F3dNative;
     use crate::records::{
         DesignBodyBinding, DesignDimensionLocusPair, DesignDimensionNullLocusPair,

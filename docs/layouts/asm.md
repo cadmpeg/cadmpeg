@@ -7,7 +7,7 @@
 Source of truth: [`docs/formats/asm.md`](../../docs/formats/asm.md).
 Table source: `docs/layouts/asm.toml`.
 
-Covers the two ASM stream headers (§1), the SAB tag inventory (§2.1), the
+Covers the two ASM stream headers and ACIS 217/218 header (§1), the SAB tag inventory (§2.1), the
 fixed-size ASM topology records (§5.2, §5.3), and the analytic geometry
 carriers (§6.2, §6.3) as ordered token slots. Procedural spline carriers are
 variable-length token graphs and are listed under "Not tabulated".
@@ -79,6 +79,24 @@ Cross-checked against code:
 
 - `docs/formats/asm.md` — The declared 31-byte size is the spec's own stated start of the string region.
 
+## `acisheader_binaryfile4`
+
+Spec §1 · layout: byte offsets · size: 31 B
+
+Fixed 32-bit ACIS prefix; the tagged string region begins at byte 31.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 15 | `magic` | `bytes[15]` | little | spec | `0..15` \| magic `ACIS BinaryFile` |
+| 15 | 4 | `save_format_version` | `u32` | little | spec | `15..19` \| little-endian u32 ACIS save-format version (`major * 100 + minor`) |
+| 19 | 4 | `record_count` | `u32` | little | spec | `19..23` \| little-endian u32 record count (`0` when unwritten) |
+| 23 | 4 | `entity_count` | `u32` | little | spec | `23..27` \| little-endian u32 entity count |
+| 27 | 4 | `flags` | `u32` | little | spec | `27..31` \| little-endian u32 flags; bit 0 is set iff the stream carries a history partition (§3) |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-asm/src/acis_header.rs` — The ACIS parser uses the declared 31-byte fixed prefix.
+
 ## `body`
 
 Spec §5.2 · layout: byte offsets · size: 61 B
@@ -136,6 +154,7 @@ Single-sided faces end after `sides`. A double-sided face carries one further ch
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 16 | 9 | `chunk1_history_face_flags` | `sab_ref8` | little | spec | +16 chunk[1] history / face flags |
 | 34 | 9 | `chunk3_next_face` | `sab_ref8` | little | spec | +34 chunk[3] next_face |
 | 43 | 9 | `chunk4_first_loop` | `sab_ref8` | little | spec | +43 chunk[4] first_loop |
 | 52 | 9 | `chunk5_owner_shell` | `sab_ref8` | little | spec | +52 chunk[5] owner_shell |
@@ -145,7 +164,8 @@ Single-sided faces end after `sides`. A double-sided face carries one further ch
 
 Unstated regions:
 
-- `0..34` (34 B): Record head and `chunk[0..=2]`; the spec states no offsets for them.
+- `0..16` (16 B): Record head and `chunk[0]`; the spec states no offsets for them.
+- `25..34` (9 B): `chunk[2]`. Unnamed in the spec; the extent follows from the 9-byte chunk stride between the stated `chunk[1]` and `chunk[3]` offsets.
 - `61..70` (9 B): `chunk[6]`. Unnamed in the spec; the extent follows from the stated `chunk[5]` @+52 and `chunk[7]` @+70 offsets.
 
 ## `coedge`
