@@ -78,6 +78,7 @@
           "external_references": [],
           "face_native_keys": [],
           "face_sidedness": [],
+          "feature_record_issues": [],
           "mesh_surface_sentinels": [],
           "meta_sections": [],
           "meta_types": [],
@@ -85,6 +86,8 @@
           "pm_app_rendering_styles": [],
           "pm_dc_directions": [],
           "pm_dc_expressions": [],
+          "pm_dc_feature_terminators": [],
+          "pm_dc_features": [],
           "pm_dc_parameters": [],
           "pm_dc_sketch_constraints": [],
           "pm_dc_sketch_entities": [],
@@ -159,7 +162,7 @@
           "vertex_ownerships": [],
           "wire_topologies": []
         },
-        "version": 20
+        "version": 21
       }
     },
     "source": {
@@ -195,10 +198,13 @@
       "embedded_references": 0,
       "external_references": 0,
       "face_color_appearances": 0,
+      "feature_record_issues": 0,
       "pm_app_default_styles": 0,
       "pm_app_rendering_styles": 0,
       "pm_dc_directions": 0,
       "pm_dc_expressions": 0,
+      "pm_dc_feature_terminators": 0,
+      "pm_dc_features": 0,
       "pm_dc_parameters": 0,
       "pm_dc_sketch_constraints": 0,
       "pm_dc_sketch_entities": 0,

@@ -195,6 +195,62 @@ source = "spec"
 anchor = "and a u32 count"
 
 [[record]]
+name = "pm_dc_feature_prefix"
+kind = "byte"
+section = "13"
+anchor = "Its fixed prefix contains"
+size = 38
+
+[[record.field]]
+name = "content_header"
+offset = 0
+type = "bytes[22]"
+source = "spec"
+anchor = "the 22-byte content header"
+
+[[record.field]]
+name = "state"
+offset = 22
+type = "i32"
+source = "spec"
+anchor = "state:i32"
+
+[[record.field]]
+name = "outline_value"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "outline_value:u32"
+
+[[record.field]]
+name = "property_list_prefix"
+offset = 30
+type = "bytes[8]"
+source = "spec"
+anchor = "a type-2 property-reference list prefix"
+
+[[record]]
+name = "pm_dc_feature_terminator"
+kind = "byte"
+section = "13"
+anchor = "Its 26-byte payload contains"
+size = 26
+
+[[record.field]]
+name = "content_header"
+offset = 0
+type = "bytes[22]"
+source = "spec"
+anchor = "the 22-byte content header"
+
+[[record.field]]
+name = "state"
+offset = 22
+type = "i32"
+source = "spec"
+anchor = "followed by `state:i32`"
+
+[[record]]
 name = "pm_dc_parameter_prefix"
 kind = "byte"
 section = "11"

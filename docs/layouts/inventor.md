@@ -78,6 +78,26 @@ Spec §12 · layout: byte offsets · size: 8 B
 | 0 | 4 | `marker` | `u16[2]` | little | spec | u16 values `6, 0x3000` |
 | 4 | 4 | `item_count` | `u32` | little | spec | and a u32 count |
 
+## `pm_dc_feature_prefix`
+
+Spec §13 · layout: byte offsets · size: 38 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 22 | `content_header` | `bytes[22]` | little | spec | the 22-byte content header |
+| 22 | 4 | `state` | `i32` | little | spec | state:i32 |
+| 26 | 4 | `outline_value` | `u32` | little | spec | outline_value:u32 |
+| 30 | 8 | `property_list_prefix` | `bytes[8]` | little | spec | a type-2 property-reference list prefix |
+
+## `pm_dc_feature_terminator`
+
+Spec §13 · layout: byte offsets · size: 26 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 22 | `content_header` | `bytes[22]` | little | spec | the 22-byte content header |
+| 22 | 4 | `state` | `i32` | little | spec | followed by `state:i32` |
+
 ## `pm_dc_parameter_prefix`
 
 Spec §11 · layout: byte offsets · size: 26 B

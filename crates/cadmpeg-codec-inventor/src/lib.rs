@@ -10,6 +10,7 @@ mod database;
 mod decode;
 mod design;
 mod external_reference;
+mod feature;
 mod kernel;
 mod materials;
 mod native;

@@ -15,7 +15,8 @@ use cadmpeg_ir::sketches::{
 use serde::{Deserialize, Serialize};
 
 use crate::pmdc::{
-    content_header, reference_list, Cursor, PmDcContentHeader, PmDcReference, PmDcReferenceList,
+    content_header, reference_list, type_id_string, Cursor, PmDcContentHeader, PmDcReference,
+    PmDcReferenceList,
 };
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
@@ -427,16 +428,6 @@ identify_record!(PmDcSketchEntity, "sketch-entity");
 identify_record!(PmDcTransform, "transform");
 identify_record!(PmDcDirection, "direction");
 identify_record!(PmDcSketchConstraint, "sketch-constraint");
-
-fn type_id_string(value: [u8; 16]) -> String {
-    use std::fmt::Write as _;
-
-    let mut result = String::with_capacity(32);
-    for byte in value {
-        write!(result, "{byte:02x}").expect("writing to a string cannot fail");
-    }
-    result
-}
 
 fn parse_sketch(
     ctx: &DecodeContext<'_>,

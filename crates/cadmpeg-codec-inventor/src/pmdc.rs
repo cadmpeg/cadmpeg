@@ -5,6 +5,16 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
+pub(crate) fn type_id_string(value: [u8; 16]) -> String {
+    use std::fmt::Write as _;
+
+    let mut result = String::with_capacity(32);
+    for byte in value {
+        write!(result, "{byte:02x}").expect("writing to a string cannot fail");
+    }
+    result
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct PmDcReference {
     pub(crate) index: u32,
@@ -155,7 +165,7 @@ pub(crate) fn reference_list(
         )));
     }
     let count = cursor.u32(&format!("{field} count"))? as usize;
-    ctx.charge_collection_items(count as u64, "admit Inventor sketch references")?;
+    ctx.charge_collection_items(count as u64, "admit Inventor PmDc references")?;
     let metadata = if count == 0 {
         None
     } else if marker == 8 {

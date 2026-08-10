@@ -9,6 +9,7 @@ use cadmpeg_ir::{CadIr, Check, Finding, NativeUnknownRecord, Severity};
 use crate::design::{
     DesignRecordIssue, PmDcExpression, PmDcExpressionKind, PmDcParameter, PmDcUnit, PmDcUnitKind,
 };
+use crate::feature::{FeatureRecordIssue, PmDcFeature, PmDcFeatureTerminator};
 use crate::sketch::{
     PmDcDirection, PmDcSketch, PmDcSketchConstraint, PmDcSketchConstraintKind, PmDcSketchEntity,
     PmDcSketchEntityKind, PmDcTransform, SketchRecordIssue,
@@ -41,6 +42,7 @@ const ARENAS: &[&str] = &[
     "design_record_issues",
     "embedded_references",
     "external_references",
+    "feature_record_issues",
     "edge_continuities",
     "edge_ownerships",
     "face_sidedness",
@@ -52,6 +54,8 @@ const ARENAS: &[&str] = &[
     "pm_app_default_styles",
     "pm_app_rendering_styles",
     "pm_dc_expressions",
+    "pm_dc_feature_terminators",
+    "pm_dc_features",
     "pm_dc_parameters",
     "pm_dc_directions",
     "pm_dc_sketch_entities",
@@ -152,6 +156,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_active_carrier(&data, &mut findings);
     validate_design(&data, ir, &mut findings);
     validate_sketches(&data, ir, &mut findings);
+    validate_features(&data, &mut findings);
     unique(
         &mut findings,
         data.unknowns.iter().map(|record| record.id.0.as_str()),
@@ -653,6 +658,84 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     }
 }
 
+fn validate_features(data: &NativeData, findings: &mut Vec<Finding>) {
+    let raw = data
+        .records
+        .iter()
+        .map(|record| {
+            (
+                (record.token.as_str(), record.ordinal),
+                record.type_id.as_str(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let resolves = |token: &str, reference: u32| {
+        reference == 0 || raw.contains_key(&(token, reference.saturating_sub(1)))
+    };
+    unique(
+        findings,
+        data.pm_dc_features
+            .iter()
+            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        "Inventor PmDc feature",
+    );
+    unique(
+        findings,
+        data.pm_dc_feature_terminators
+            .iter()
+            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        "Inventor PmDc feature terminator",
+    );
+    for feature in &data.pm_dc_features {
+        let references = [feature.header.next.index, feature.header.context.index]
+            .into_iter()
+            .chain(
+                feature
+                    .properties
+                    .references
+                    .iter()
+                    .map(|reference| reference.index),
+            );
+        if raw.get(&(feature.segment_token.as_str(), feature.record_ordinal))
+            != Some(&feature.type_id.as_str())
+            || references
+                .into_iter()
+                .any(|reference| !resolves(&feature.segment_token, reference))
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc feature record or reference does not resolve".into(),
+                Some(feature.id.clone()),
+            ));
+        }
+    }
+    for terminator in &data.pm_dc_feature_terminators {
+        let references = [
+            terminator.header.next.index,
+            terminator.header.context.index,
+        ];
+        if raw.get(&(terminator.segment_token.as_str(), terminator.record_ordinal))
+            != Some(&terminator.type_id.as_str())
+            || references
+                .into_iter()
+                .any(|reference| !resolves(&terminator.segment_token, reference))
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc feature-terminator record or reference does not resolve".into(),
+                Some(terminator.id.clone()),
+            ));
+        }
+    }
+    for issue in &data.feature_record_issues {
+        findings.push(finding(
+            Check::NativeLinks,
+            format!("Inventor feature record: {}", issue.detail),
+            Some(issue.id.clone()),
+        ));
+    }
+}
+
 fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
     unique(
         findings,
@@ -1019,6 +1102,9 @@ struct NativeData {
     pm_dc_transforms: Vec<PmDcTransform>,
     pm_dc_directions: Vec<PmDcDirection>,
     sketch_record_issues: Vec<SketchRecordIssue>,
+    pm_dc_features: Vec<PmDcFeature>,
+    pm_dc_feature_terminators: Vec<PmDcFeatureTerminator>,
+    feature_record_issues: Vec<FeatureRecordIssue>,
     active_carrier: Vec<ActiveCarrierRecord>,
     unknowns: Vec<NativeUnknownRecord>,
 }
@@ -1077,6 +1163,9 @@ impl NativeData {
             pm_dc_transforms: namespace.arena_as("pm_dc_transforms")?,
             pm_dc_directions: namespace.arena_as("pm_dc_directions")?,
             sketch_record_issues: namespace.arena_as("sketch_record_issues")?,
+            pm_dc_features: namespace.arena_as("pm_dc_features")?,
+            pm_dc_feature_terminators: namespace.arena_as("pm_dc_feature_terminators")?,
+            feature_record_issues: namespace.arena_as("feature_record_issues")?,
             active_carrier: namespace.arena_as("active_carrier")?,
             unknowns: namespace.arena_as("unknowns")?,
         })

@@ -50,6 +50,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
     let design_inventory = crate::design::inventory(ctx, &container.rse)?;
     let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
+    let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
     let mut ir = CadIr::empty(Units::default());
     let (design_parameters, unresolved_design_parameters) =
         crate::design::project_parameters(&design_inventory);
@@ -1206,6 +1207,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .saturating_add(sketch_inventory.directions.len())
             .saturating_add(sketch_inventory.constraints.len())
             .saturating_add(sketch_inventory.issues.len())
+            .saturating_add(feature_inventory.features.len())
+            .saturating_add(feature_inventory.terminators.len())
+            .saturating_add(feature_inventory.issues.len())
             .saturating_add(unpaired_segments.len())
             .saturating_add(1) as u64,
         "retain Inventor native structural records",
@@ -1256,6 +1260,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     namespace.set_arena("pm_dc_directions", &sketch_inventory.directions)?;
     namespace.set_arena("pm_dc_sketch_constraints", &sketch_inventory.constraints)?;
     namespace.set_arena("sketch_record_issues", &sketch_inventory.issues)?;
+    namespace.set_arena("pm_dc_features", &feature_inventory.features)?;
+    namespace.set_arena("pm_dc_feature_terminators", &feature_inventory.terminators)?;
+    namespace.set_arena("feature_record_issues", &feature_inventory.issues)?;
     namespace.set_arena("segment_pairs", &segment_pairs)?;
     namespace.set_arena("segment_meta", &segment_meta)?;
     namespace.set_arena("meta_sections", &meta_sections)?;
@@ -1461,6 +1468,24 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 format!(
                     "{} typed Inventor sketch record(s) could not be parsed exactly.",
                     sketch_inventory.issues.len()
+                ),
+            ));
+        }
+        if !feature_inventory.issues.is_empty() {
+            losses.push(LossNote::new(
+                LossKind::DecodeDiagnostic,
+                format!(
+                    "{} typed Inventor feature record(s) could not be parsed exactly.",
+                    feature_inventory.issues.len()
+                ),
+            ));
+        }
+        if !feature_inventory.features.is_empty() {
+            losses.push(LossNote::new(
+                LossKind::FeatureHistoryRetained,
+                format!(
+                    "Retained {} typed Inventor feature record(s) without neutral operation semantics.",
+                    feature_inventory.features.len()
                 ),
             ));
         }
@@ -1732,6 +1757,15 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                     sketch_inventory.constraints.len(),
                 ),
                 ("sketch_record_issues".into(), sketch_inventory.issues.len()),
+                ("pm_dc_features".into(), feature_inventory.features.len()),
+                (
+                    "pm_dc_feature_terminators".into(),
+                    feature_inventory.terminators.len(),
+                ),
+                (
+                    "feature_record_issues".into(),
+                    feature_inventory.issues.len(),
+                ),
                 ("sketches_transferred".into(), transferred_sketch_count),
                 (
                     "sketch_entities_transferred".into(),

@@ -8,7 +8,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId, ParameterValue};
 use serde::{Deserialize, Serialize};
 
-use crate::pmdc::{Cursor, PmDcReference};
+use crate::pmdc::{type_id_string, Cursor, PmDcReference};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const EXPRESSION_VALUE_TYPE: [u8; 16] = id(0xf8a7_7a04);
@@ -29,16 +29,6 @@ const fn id(time_low: u32) -> [u8; 16] {
         first[0], first[1], first[2], first[3], 0xd2, 0x11, 0x8f, 0x09, 0xc0, 0x00, 0x5a, 0x9a,
         0x23, 0x78, 0xd0, 0x4f,
     ]
-}
-
-fn format_type_id(value: [u8; 16]) -> String {
-    use std::fmt::Write as _;
-
-    let mut result = String::with_capacity(32);
-    for byte in value {
-        write!(result, "{byte:02x}").expect("writing to a string cannot fail");
-    }
-    result
 }
 
 const PARAMETER_FULL_TYPE: [u8; 16] = [
@@ -227,7 +217,7 @@ pub(crate) fn inventory(
                 parse_parameter(ctx, record.payload, version).map(|mut value| {
                     value.segment_token = segment.pair.token.as_str().into();
                     value.record_ordinal = record.ordinal;
-                    value.type_id = format_type_id(record.type_id);
+                    value.type_id = type_id_string(record.type_id);
                     value.id = format!(
                         "inventor:pmdc:parameter#{}-{}",
                         value.segment_token, value.record_ordinal
@@ -238,7 +228,7 @@ pub(crate) fn inventory(
                 parse_binary_expression(record.payload, version, operation).map(|mut value| {
                     value.segment_token = segment.pair.token.as_str().into();
                     value.record_ordinal = record.ordinal;
-                    value.type_id = format_type_id(record.type_id);
+                    value.type_id = type_id_string(record.type_id);
                     value.id = format!(
                         "inventor:pmdc:expression#{}-{}",
                         value.segment_token, value.record_ordinal
@@ -249,7 +239,7 @@ pub(crate) fn inventory(
                 parse_unary_expression(record.payload, version, operation).map(|mut value| {
                     value.segment_token = segment.pair.token.as_str().into();
                     value.record_ordinal = record.ordinal;
-                    value.type_id = format_type_id(record.type_id);
+                    value.type_id = type_id_string(record.type_id);
                     value.id = format!(
                         "inventor:pmdc:expression#{}-{}",
                         value.segment_token, value.record_ordinal
@@ -260,7 +250,7 @@ pub(crate) fn inventory(
                 parse_value_expression(record.payload, version).map(|mut value| {
                     value.segment_token = segment.pair.token.as_str().into();
                     value.record_ordinal = record.ordinal;
-                    value.type_id = format_type_id(record.type_id);
+                    value.type_id = type_id_string(record.type_id);
                     value.id = format!(
                         "inventor:pmdc:expression#{}-{}",
                         value.segment_token, value.record_ordinal
@@ -271,7 +261,7 @@ pub(crate) fn inventory(
                 parse_reference_expression(record.payload, version).map(|mut value| {
                     value.segment_token = segment.pair.token.as_str().into();
                     value.record_ordinal = record.ordinal;
-                    value.type_id = format_type_id(record.type_id);
+                    value.type_id = type_id_string(record.type_id);
                     value.id = format!(
                         "inventor:pmdc:expression#{}-{}",
                         value.segment_token, value.record_ordinal
@@ -282,7 +272,7 @@ pub(crate) fn inventory(
                 parse_unit_definition(ctx, record.payload, version).map(|mut value| {
                     value.segment_token = segment.pair.token.as_str().into();
                     value.record_ordinal = record.ordinal;
-                    value.type_id = format_type_id(record.type_id);
+                    value.type_id = type_id_string(record.type_id);
                     value.id = format!(
                         "inventor:pmdc:unit#{}-{}",
                         value.segment_token, value.record_ordinal
@@ -294,7 +284,7 @@ pub(crate) fn inventory(
                     |mut value| {
                         value.segment_token = segment.pair.token.as_str().into();
                         value.record_ordinal = record.ordinal;
-                        value.type_id = format_type_id(record.type_id);
+                        value.type_id = type_id_string(record.type_id);
                         value.id = format!(
                             "inventor:pmdc:unit#{}-{}",
                             value.segment_token, value.record_ordinal
@@ -312,7 +302,7 @@ pub(crate) fn inventory(
                         segment.pair.token.as_str(),
                         record.ordinal
                     ),
-                    type_id: format_type_id(record.type_id),
+                    type_id: type_id_string(record.type_id),
                     segment_token: segment.pair.token.as_str().into(),
                     record_ordinal: record.ordinal,
                     detail: error.to_string(),

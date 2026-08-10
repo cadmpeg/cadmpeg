@@ -80,7 +80,7 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 
 **Question.** Which typed records define history order, feature operands, suppression, and result-body transitions?
 
-**Known.** Numeric PmDc parameters and planar sketches have stable carrier-qualified identities. Planar point, line, circle, ellipse, placement, geometric-constraint, and dimensional-constraint graphs have exact record references and neutral identities. Exact RSe frames provide type identifiers and record ranges for the remaining design records.
+**Known.** Numeric PmDc parameters, planar sketches, generic feature records, and end-of-features records have stable carrier-qualified identities. A generic feature record supplies an ordered property-reference vector. Planar point, line, circle, ellipse, placement, geometric-constraint, and dimensional-constraint graphs have exact record references and neutral identities. Exact RSe frames provide type identifiers and record ranges for the remaining design records.
 
 **Need.** Each neutral feature requires complete operation semantics and ordered operands.
 
