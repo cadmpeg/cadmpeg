@@ -237,6 +237,7 @@ pub(crate) fn transfer(
         } else if is_pattern(&object.type_name) {
             pattern_definition(
                 &object.type_name,
+                &object.id,
                 &owned,
                 &feature_ids,
                 objects,
@@ -381,6 +382,16 @@ pub(crate) fn transfer(
                 properties: BTreeMap::new(),
             }
         };
+        let semantic_dependencies = match &definition {
+            FeatureDefinition::Pattern { seeds, .. } => seeds
+                .iter()
+                .filter_map(|seed| match seed {
+                    PatternSeed::Feature(feature) => Some(feature.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        };
         let definition = post_processed_definition(definition, &owned);
         append_operation_parameters(&mut ir.model.parameters, object, &owned);
         let outputs = payloads
@@ -411,7 +422,7 @@ pub(crate) fn transfer(
             .collect::<Vec<_>>();
         let mut seen_dependencies = BTreeSet::new();
         dependency_objects.retain(|(dependency, _)| seen_dependencies.insert(*dependency));
-        let dependencies = dependency_objects
+        let mut dependencies = dependency_objects
             .into_iter()
             .filter_map(|(dependency, declared)| {
                 feature_ids
@@ -425,7 +436,16 @@ pub(crate) fn transfer(
                     .is_some_and(|ordinal| *ordinal < feature_ordinals[object.id.as_str()])
             })
             .map(|(dependency, _)| dependency)
-            .collect();
+            .collect::<Vec<_>>();
+        for dependency in semantic_dependencies {
+            if !dependencies.contains(&dependency)
+                && ordinal_by_feature
+                    .get(&dependency)
+                    .is_some_and(|ordinal| *ordinal < feature_ordinals[object.id.as_str()])
+            {
+                dependencies.push(dependency);
+            }
+        }
         let parent = parent_by_member
             .get(object.id.as_str())
             .filter(|parent| {
@@ -4130,6 +4150,7 @@ fn enumeration_label(properties: &[&PropertyRecord], name: &str) -> Option<Strin
 
 fn pattern_definition(
     kind: &str,
+    owner: &str,
     properties: &[&PropertyRecord],
     features: &HashMap<&str, FeatureId>,
     objects: &[ObjectRecord],
@@ -4137,16 +4158,38 @@ fn pattern_definition(
 ) -> Option<FeatureDefinition> {
     let originals = property(properties, "Originals")
         .filter(|property| !property.links.is_empty())
-        .or_else(|| property(properties, "BaseFeature"))?;
-    let seeds = originals
-        .links
-        .iter()
-        .filter_map(|link| link.object.as_deref())
-        .filter_map(|object| features.get(object).cloned())
-        .collect::<Vec<_>>();
-    if seeds.is_empty() || seeds.len() != originals.links.len() {
-        return None;
-    }
+        .or_else(|| {
+            property(properties, "BaseFeature").filter(|property| {
+                property.links.iter().any(|link| {
+                    link.object
+                        .as_deref()
+                        .is_some_and(|object| !object.is_empty())
+                })
+            })
+        });
+    let seeds = if let Some(originals) = originals {
+        let seeds = originals
+            .links
+            .iter()
+            .filter_map(|link| link.object.as_deref())
+            .filter_map(|object| features.get(object).cloned())
+            .collect::<Vec<_>>();
+        if seeds.is_empty() || seeds.len() != originals.links.len() {
+            return None;
+        }
+        seeds
+    } else if let Some(seeds) =
+        multi_transform_stage_seeds(owner, features, objects, properties_by_owner)
+    {
+        seeds
+    } else {
+        vec![implicit_body_predecessor(
+            owner,
+            features,
+            objects,
+            properties_by_owner,
+        )?]
+    };
 
     let pattern = if kind.ends_with("MultiTransform") {
         let transformations = property(properties, "Transformations")?;
@@ -4182,6 +4225,54 @@ fn pattern_definition(
     Some(FeatureDefinition::Pattern {
         seeds: seeds.into_iter().map(PatternSeed::Feature).collect(),
         pattern,
+    })
+}
+
+fn multi_transform_stage_seeds(
+    stage: &str,
+    features: &HashMap<&str, FeatureId>,
+    objects: &[ObjectRecord],
+    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+) -> Option<Vec<FeatureId>> {
+    objects.iter().find_map(|consumer| {
+        let owned = properties_by_owner.get(consumer.id.as_str())?;
+        let transformations = property(owned, "Transformations")?;
+        transformations
+            .links
+            .iter()
+            .any(|link| link.object.as_deref() == Some(stage))
+            .then_some(())?;
+        let originals = property(owned, "Originals")
+            .filter(|property| !property.links.is_empty())
+            .or_else(|| property(owned, "BaseFeature"))?;
+        let seeds = originals
+            .links
+            .iter()
+            .filter_map(|link| link.object.as_deref())
+            .map(|object| features.get(object).cloned())
+            .collect::<Option<Vec<_>>>()?;
+        (!seeds.is_empty()).then_some(seeds)
+    })
+}
+
+fn implicit_body_predecessor(
+    owner: &str,
+    features: &HashMap<&str, FeatureId>,
+    objects: &[ObjectRecord],
+    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+) -> Option<FeatureId> {
+    objects.iter().find_map(|object| {
+        let owned = properties_by_owner.get(object.id.as_str())?;
+        let members = body_membership_property(owned)?;
+        let position = members
+            .links
+            .iter()
+            .position(|link| link.object.as_deref() == Some(owner))?;
+        members.links[..position]
+            .iter()
+            .rev()
+            .filter_map(|link| link.object.as_deref())
+            .find_map(|member| features.get(member).cloned())
     })
 }
 

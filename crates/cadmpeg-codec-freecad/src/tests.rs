@@ -2488,14 +2488,15 @@ fn transfers_stored_and_external_part_feature_families() {
 #[test]
 fn resolves_datum_references_for_polar_and_mirror_patterns() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="5">
+<Objects Count="6">
  <Object type="Part::Box" name="Seed" id="1"/>
  <Object type="App::Line" name="Axis" id="2"/>
  <Object type="App::Plane" name="Plane" id="3"/>
  <Object type="PartDesign::PolarPattern" name="Ring" id="4"/>
  <Object type="PartDesign::Mirrored" name="Mirror" id="5"/>
+ <Object type="PartDesign::Body" name="Body" id="6"/>
 </Objects>
-<ObjectData Count="5">
+<ObjectData Count="6">
  <Object name="Seed"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
  <Object name="Axis"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="2" Pz="3" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
  <Object name="Plane"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="4" Py="5" Pz="6" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
@@ -2507,8 +2508,11 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
   <Property name="Occurrences" type="App::PropertyInteger"><Integer value="4"/></Property>
  </Properties></Object>
  <Object name="Mirror"><Properties Count="2">
-  <Property name="BaseFeature" type="App::PropertyLink"><Link value="Seed"/></Property>
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="0"/></Property>
   <Property name="MirrorPlane" type="App::PropertyLinkSub"><LinkSub value="Plane" count="1"><Sub value=""/></LinkSub></Property>
+ </Properties></Object>
+ <Object name="Body"><Properties Count="1">
+  <Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="Seed"/><Link value="Mirror"/></LinkList></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -2567,14 +2571,14 @@ fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
 <ObjectData Count="4">
  <Object name="Seed"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
  <Object name="Linear"><Properties Count="5">
-  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="0"/></Property>
   <Property name="Direction" type="App::PropertyVector"><Vector x="1" y="0" z="0"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property>
   <Property name="Length" type="App::PropertyLength"><Float value="8"/></Property>
   <Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property>
  </Properties></Object>
  <Object name="Scaled"><Properties Count="3">
-  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="0"/></Property>
   <Property name="Factor" type="App::PropertyFloat"><Float value="2.5"/></Property>
   <Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property>
  </Properties></Object>
