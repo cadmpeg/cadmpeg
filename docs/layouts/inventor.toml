@@ -1,0 +1,214 @@
+# SPDX-License-Identifier: Apache-2.0
+schema = 1
+format = "inventor"
+spec = "docs/formats/inventor.md"
+endianness = "little"
+note = "Fixed prefixes and descriptors in the supported RSe schema-31, Meta Stream v8, Protein, UFRxDoc, and kernel-carrier envelope."
+
+[[record]]
+name = "rse_database_prefix"
+kind = "byte"
+section = "2"
+anchor = "An `RSeDb` stream starts with"
+size = 56
+
+[[record.field]]
+name = "database_id"
+offset = 0
+type = "bytes[16]"
+source = "spec"
+anchor = "16-byte database identifier"
+
+[[record.field]]
+name = "schema"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "a u32 schema"
+
+[[record.field]]
+name = "created_by"
+offset = 20
+type = "bytes[8]"
+source = "spec"
+anchor = "an 8-byte creation-version tuple"
+
+[[record.field]]
+name = "created_filetime"
+offset = 28
+type = "u64"
+source = "spec"
+anchor = "a u64 creation FILETIME"
+
+[[record.field]]
+name = "saved_by"
+offset = 36
+type = "bytes[8]"
+source = "spec"
+anchor = "an 8-byte save-version tuple"
+
+[[record.field]]
+name = "saved_filetime"
+offset = 44
+type = "u64"
+source = "spec"
+anchor = "a u64 save FILETIME"
+
+[[record.field]]
+name = "note_code_units"
+offset = 52
+type = "u32"
+source = "spec"
+anchor = "a u32-counted UTF-16LE note"
+
+[[record]]
+name = "bulk_envelope"
+kind = "byte"
+section = "4"
+anchor = "A `B<token>` stream starts with"
+size = 18
+
+[[record.field]]
+name = "prefix"
+offset = 0
+type = "bytes[16]"
+source = "spec"
+anchor = "a 16-byte prefix"
+
+[[record.field]]
+name = "form"
+offset = 16
+type = "u16"
+source = "spec"
+anchor = "a u16 form"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/rse.rs"
+contains = "let header = bytes"
+note = "The bulk parser reads the 18-byte fixed envelope before the exact zlib member."
+
+[[record]]
+name = "meta_body_prefix"
+kind = "byte"
+section = "3"
+anchor = "The inflated body starts with seven u16 values"
+size = 14
+
+[[record.field]]
+name = "values"
+offset = 0
+type = "u16[7]"
+source = "spec"
+anchor = "seven u16 values"
+
+[[record]]
+name = "meta_type_descriptor"
+kind = "byte"
+section = "3"
+anchor = "A type descriptor contains"
+size = 28
+
+[[record.field]]
+name = "type_id"
+offset = 0
+type = "bytes[16]"
+source = "spec"
+anchor = "a 16-byte type identifier"
+
+[[record.field]]
+name = "field_0_kind"
+offset = 16
+type = "u16"
+source = "spec"
+anchor = "two `(u16, u32)` field pairs"
+
+[[record.field]]
+name = "field_0_value"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "two `(u16, u32)` field pairs"
+
+[[record.field]]
+name = "field_1_kind"
+offset = 22
+type = "u16"
+source = "spec"
+anchor = "two `(u16, u32)` field pairs"
+
+[[record.field]]
+name = "field_1_value"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "two `(u16, u32)` field pairs"
+
+[[record]]
+name = "kernel_carrier_header"
+kind = "byte"
+section = "5"
+anchor = "The record payload starts with"
+size = 14
+
+[[record.field]]
+name = "header_state"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "u32 header state"
+
+[[record.field]]
+name = "header_kind"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "u16 header kind"
+
+[[record.field]]
+name = "header_value"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "u32 header value"
+
+[[record.field]]
+name = "schema"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "u32 schema"
+
+[[record]]
+name = "protein_header"
+kind = "byte"
+section = "7"
+anchor = "The root `Protein` stream starts with"
+size = 4
+
+[[record.field]]
+name = "payload_len"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "a u32 payload length"
+
+[[record]]
+name = "ufrx_header"
+kind = "byte"
+section = "8"
+anchor = "`UFRxDoc` schema 11 starts with"
+size = 4
+
+[[record.field]]
+name = "schema"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "a u16 schema"
+
+[[record.field]]
+name = "section_version_count"
+offset = 2
+type = "u16"
+source = "spec"
+anchor = "a u16 section-version count"

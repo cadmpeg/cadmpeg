@@ -51,8 +51,10 @@ Every encoder returns an `ExportReport` with its format id, entity census, loss 
 | `cadmpeg-ir`            | `CadIr` version 5, validation, diff, codec traits, reports, and source-fidelity sidecars.                                              |
 | `cadmpeg-core`    | Shared decode budgets, arenas, views, container summaries, and I/O helpers.                                                            |
 | `cadmpeg-container`     | Shared archive and compression helpers for container codecs.                                                                           |
+| `cadmpeg-protein`       | Shared schema and paged instance-property decoding for Protein asset packages.                                                         |
 | `cadmpeg-codec-freecad` | FreeCAD `.FCStd` read and semantic write for the schema-4/file-1 envelope.                                                             |
 | `cadmpeg-codec-f3d`     | Fusion `.f3d` inspection, ASM/SAB geometry, design records, retained replay, and selected native edits.                                |
+| `cadmpeg-codec-inventor`| Inventor `.ipt`/`.iam` compound, RSe, ASM part geometry, property, reference, and Protein catalog decode.                               |
 | `cadmpeg-codec-sldprt`  | SolidWorks `.sldprt` container, Parasolid B-rep, features, retained replay, and semantic writing.                                      |
 | `cadmpeg-codec-rhino`   | Rhino `.3dm` read and write for archive 50/60/70/80.                                                                                   |
 | `cadmpeg-codec-catia`   | CATIA V5 `.CATPart` layout inspection and carrier decode; conditional topology on the standard-nested band.                            |

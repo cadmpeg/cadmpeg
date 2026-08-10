@@ -19,6 +19,8 @@ cadmpeg-asm = { path = "../cadmpeg-asm" }
 cadmpeg-core = { path = "../cadmpeg-core" }
 cadmpeg-container = { path = "../cadmpeg-container" }
 cadmpeg-codec-f3d = { path = "../cadmpeg-codec-f3d" }
+cadmpeg-codec-inventor = { path = "../cadmpeg-codec-inventor" }
+cadmpeg-protein = { path = "../cadmpeg-protein" }
 cadmpeg-codec-freecad = { path = "../cadmpeg-codec-freecad" }
 cadmpeg-codec-sldprt = { path = "../cadmpeg-codec-sldprt", features = ["fuzzing"] }
 cadmpeg-codec-catia = { path = "../cadmpeg-codec-catia", features = ["fuzzing"] }
@@ -47,6 +49,27 @@ path = "src/bin/generate_fcstd_seeds.rs"
 [[bin]]
 name = "f3d_container"
 path = "fuzz_targets/f3d_container.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "inventor_codec"
+path = "fuzz_targets/inventor_codec.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "compound_snapshot"
+path = "fuzz_targets/compound_snapshot.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "protein_decode"
+path = "fuzz_targets/protein_decode.rs"
 test = false
 doc = false
 bench = false

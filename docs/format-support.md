@@ -42,6 +42,7 @@ A **proven** score satisfies every criterion for the declared envelope:
 | --------------------------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | FreeCAD `.FCStd` (schema 4, file 1)                                   | **L5 tested**  | deterministic retained writes, checked edits, source-less typed application graphs                                         |
 | Autodesk Fusion `.f3d`                                                | **L4 tested**  | native replay + patch + broad source-less generation, procedural carriers, ACT/Design/history records                      |
+| Autodesk Inventor `.ipt`/`.iam` (CFB v3, RSe 31, Meta Stream 8)       | **L1 claimed** | typed active ASM part-carrier transfer and unbound Protein appearance catalogs                                             |
 | SolidWorks `.sldprt`                                                  | **L4 tested**  | typed features, sketches, parameters, configurations, native replay + bounded generation                                   |
 | Rhino `.3dm` (archive 50/60/70/80)                                    | **L1 tested**  | partial typed geometry, topology, presentation, and bounded source-less native writing                                     |
 | CATIA V5 `.CATPart` (standard-nested band)                            | **L2 claimed** | conditionally connected B-rep                                                                                              |
@@ -57,6 +58,23 @@ A **proven** score satisfies every criterion for the declared envelope:
 | IGES 5.1/5.2/5.3 Fixed ASCII mechanical/document                      | **L8 tested**  | bounded semantic writing and application checks remain extras; L9 gate open |
 
 Each current score applies to the envelope described in its profile.
+
+## Autodesk Inventor `.ipt` and `.iam`
+
+**Model:** CFB document with RSe segment databases, exact M/B record frames, OLE properties, Protein assets, external references, and an embedded part-kernel carrier
+
+**Primary structural envelope:** CFB version 3, RSe database schema 31, Meta Stream version 8, exact zlib members, the defined forward/backward metadata sections, and versioned B-record trailers. CFB version 4, other RSe schemas, and other Meta Stream versions are separate envelopes.
+
+**Ladder: L1 claimed.** Structural detection requires directory evidence. The codec enumerates the complete CFB hierarchy, versioned databases, registry and revision tables, exact segment pairs, metadata tables, typed bulk records, OLE property sets, previews when present, Protein package entries and decoded catalog assets, and `UFRxDoc` external references. Optional or unknown segments remain named native records.
+
+- **Part geometry: extra above L1.** One typed active carrier in one `PmBRep` segment transfers through `cadmpeg-asm`. The kernel header controls width, units, tolerances, and SAB framing. ASM unknown records and source annotations are retained. An empty or invalid decoded carrier produces blocking `geometry_not_transferred`. No kernel-version envelope has an L2 or L3 score until its complete validation and direct-carrier parity gate passes.
+- **Legacy ACIS: retained.** A typed `ACIS BinaryFile` carrier retains its exact range, digest, and bounded bytes and produces blocking `geometry_not_transferred`.
+- **Assemblies: structural.** External document references remain unresolved and no persisted path is opened. Occurrence identity, hierarchy, and placements remain untransferred because the external-reference occurrence count does not define those fields.
+- **Materials: catalog only.** Shared Protein schema decoding produces typed native assets and neutral appearance definitions. No body or face receives an appearance without a typed assignment record.
+- **Design intent: retained.** Exact record frames expose stable segment and record identities. Feature and history operation semantics are not projected.
+- **Write:** None. The codec has no encoder, replay path, or patch path.
+
+See [`formats/inventor.md`](formats/inventor.md) and [`formats/inventor-open-items.md`](formats/inventor-open-items.md).
 
 ## Status terms
 
