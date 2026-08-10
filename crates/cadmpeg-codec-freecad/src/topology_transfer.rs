@@ -1420,7 +1420,15 @@ fn transform_digest(transform: Transform) -> String {
     let mut bytes = Vec::with_capacity(16 * 8);
     for row in transform.rows {
         for value in row {
-            bytes.extend_from_slice(&value.to_bits().to_le_bytes());
+            // TopLoc locations can encode the same placement through different
+            // factor chains. Matrix composition then leaves sub-picometre
+            // roundoff even though OCCT treats the occurrences as identical.
+            // Canonicalize with one decimal digit of margin around the codec's
+            // transform-equivalence tolerance so shared topology receives one
+            // occurrence identity even when roundoff crosses zero.
+            let rounded = (value * 1.0e11).round() / 1.0e11;
+            let canonical = if rounded == 0.0 { 0.0 } else { rounded };
+            bytes.extend_from_slice(&canonical.to_bits().to_le_bytes());
         }
     }
     sha256_hex(&bytes)[..16].to_owned()
@@ -1518,7 +1526,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn occurrence_key_uses_the_identity_transform_equivalence_rule() {
+    fn occurrence_keys_canonicalize_equivalent_transform_roundoff() {
         let mut positive = Transform::identity();
         positive.rows[0][3] = 0.5e-12;
         let mut negative = Transform::identity();
@@ -1532,9 +1540,30 @@ mod tests {
             OccurrenceKey::new(7, positive).0,
             occurrence_label(7, positive)
         );
-        assert_ne!(
+        assert_eq!(
             SourceOccurrenceKey::new(7, positive),
             SourceOccurrenceKey::new(7, negative)
+        );
+
+        let mut composed = Transform::identity();
+        composed.rows[0][3] = 258.75;
+        composed.rows[2][3] = -1.4e-14;
+        let mut direct = Transform::identity();
+        direct.rows[0][3] = 258.75;
+
+        assert_eq!(
+            OccurrenceKey::new(14, composed),
+            OccurrenceKey::new(14, direct)
+        );
+        assert_eq!(
+            SourceOccurrenceKey::new(14, composed),
+            SourceOccurrenceKey::new(14, direct)
+        );
+
+        direct.rows[2][3] = 1.0e-8;
+        assert_ne!(
+            OccurrenceKey::new(14, composed),
+            OccurrenceKey::new(14, direct)
         );
     }
 
