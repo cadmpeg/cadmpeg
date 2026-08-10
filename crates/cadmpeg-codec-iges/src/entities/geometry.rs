@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Point and analytic curve entity projection.
 
+use super::curve_conversion::angularly_equal;
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::{Global, RealPrecision};
 use crate::parameter::ParameterRecord;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve};
 use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, PointId, RegionId, ShellId, VertexId};
@@ -13,7 +14,115 @@ use cadmpeg_ir::{CadIr, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_TRANSFORM_DEPTH: usize = 64;
-const TRANSFORM_TOLERANCE: f64 = 1.0e-10;
+const COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
+
+#[derive(Clone, Copy)]
+pub(crate) struct DeclaredInterval {
+    lower: f64,
+    upper: f64,
+}
+
+impl DeclaredInterval {
+    fn outward(lower: f64, upper: f64) -> Self {
+        Self {
+            lower: lower.next_down(),
+            upper: upper.next_up(),
+        }
+    }
+
+    pub(crate) fn around(value: f64, uncertainty: f64) -> Self {
+        if uncertainty == 0.0 {
+            Self {
+                lower: value,
+                upper: value,
+            }
+        } else {
+            Self::outward(value - uncertainty, value + uncertainty)
+        }
+    }
+
+    pub(crate) fn add(self, other: Self) -> Self {
+        Self::outward(self.lower + other.lower, self.upper + other.upper)
+    }
+
+    pub(crate) fn subtract(self, other: Self) -> Self {
+        Self::outward(self.lower - other.upper, self.upper - other.lower)
+    }
+
+    pub(crate) fn multiply(self, other: Self) -> Self {
+        let products = [
+            self.lower * other.lower,
+            self.lower * other.upper,
+            self.upper * other.lower,
+            self.upper * other.upper,
+        ];
+        Self::outward(
+            products.into_iter().fold(f64::INFINITY, f64::min),
+            products.into_iter().fold(f64::NEG_INFINITY, f64::max),
+        )
+    }
+
+    pub(crate) fn scale(self, factor: f64) -> Self {
+        self.multiply(Self::around(factor, 0.0))
+    }
+
+    pub(crate) fn contains(self, value: f64) -> bool {
+        self.lower <= value && value <= self.upper
+    }
+
+    pub(crate) fn overlaps(self, other: Self) -> bool {
+        self.lower <= other.upper && other.lower <= self.upper
+    }
+}
+
+pub(crate) fn declared_unit_vector(
+    record: &ParameterRecord,
+    start: usize,
+    vector: Vector3,
+    precision: RealPrecision,
+) -> bool {
+    if !vector.norm().is_finite() {
+        return false;
+    }
+    let values = [vector.x, vector.y, vector.z];
+    let components = std::array::from_fn::<_, 3, _>(|offset| {
+        DeclaredInterval::around(
+            values[offset],
+            record.number_uncertainty(start + offset, values[offset], precision),
+        )
+    });
+    components
+        .into_iter()
+        .fold(DeclaredInterval::around(0.0, 0.0), |sum, component| {
+            sum.add(component.multiply(component))
+        })
+        .contains(1.0)
+}
+
+pub(crate) fn declared_orthogonal_vectors(
+    record: &ParameterRecord,
+    left_start: usize,
+    left: Vector3,
+    right_start: usize,
+    right: Vector3,
+    precision: RealPrecision,
+) -> bool {
+    let left_values = [left.x, left.y, left.z];
+    let right_values = [right.x, right.y, right.z];
+    (0..3)
+        .fold(DeclaredInterval::around(0.0, 0.0), |sum, offset| {
+            let left = DeclaredInterval::around(
+                left_values[offset],
+                record.number_uncertainty(left_start + offset, left_values[offset], precision),
+            );
+            let right = DeclaredInterval::around(
+                right_values[offset],
+                record.number_uncertainty(right_start + offset, right_values[offset], precision),
+            );
+            sum.add(left.multiply(right))
+        })
+        .contains(0.0)
+}
 
 #[derive(Clone, Copy)]
 pub(crate) struct Affine {
@@ -105,6 +214,7 @@ pub(crate) fn resolve_transform(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     length_factor: f64,
+    precision: RealPrecision,
     path: &mut BTreeSet<u32>,
 ) -> Result<Affine, String> {
     if sequence == 0 {
@@ -155,43 +265,95 @@ pub(crate) fn resolve_transform(
         for index in [3, 7, 11] {
             values[index] *= length_factor;
         }
-        let columns = [
-            [values[0], values[4], values[8]],
-            [values[1], values[5], values[9]],
-            [values[2], values[6], values[10]],
-        ];
-        let column_dot = |left: usize, right: usize| {
-            (0..3)
-                .map(|row| columns[left][row] * columns[right][row])
-                .sum::<f64>()
+        let coefficient_intervals = std::array::from_fn::<_, 9, _>(|offset| {
+            let row = offset / 3;
+            let column = offset % 3;
+            let value_index = row * 4 + column;
+            DeclaredInterval::around(
+                values[value_index],
+                record.number_uncertainty(value_index + 1, values[value_index], precision),
+            )
+        });
+        let interval = |row: usize, column: usize| coefficient_intervals[row * 3 + column];
+        let column_dot_interval = |left: usize, right: usize| {
+            (0..3).fold(DeclaredInterval::around(0.0, 0.0), |sum, row| {
+                sum.add(interval(row, left).multiply(interval(row, right)))
+            })
         };
-        if (0..3).any(|column| (column_dot(column, column) - 1.0).abs() > TRANSFORM_TOLERANCE)
+        if (0..3).any(|column| !column_dot_interval(column, column).contains(1.0))
             || [(0, 1), (0, 2), (1, 2)]
                 .into_iter()
-                .any(|(left, right)| column_dot(left, right).abs() > TRANSFORM_TOLERANCE)
+                .any(|(left, right)| !column_dot_interval(left, right).contains(0.0))
         {
             return Err(format!(
-                "transformation D{sequence} linear part is not orthonormal"
+                "transformation D{sequence} linear part is not orthonormal within its declared numeric precision"
             ));
         }
-        let determinant = values[0] * (values[5] * values[10] - values[6] * values[9])
-            - values[1] * (values[4] * values[10] - values[6] * values[8])
-            + values[2] * (values[4] * values[9] - values[5] * values[8]);
+        let determinant_interval = interval(0, 0)
+            .multiply(
+                interval(1, 1)
+                    .multiply(interval(2, 2))
+                    .subtract(interval(1, 2).multiply(interval(2, 1))),
+            )
+            .subtract(
+                interval(0, 1).multiply(
+                    interval(1, 0)
+                        .multiply(interval(2, 2))
+                        .subtract(interval(1, 2).multiply(interval(2, 0))),
+                ),
+            )
+            .add(
+                interval(0, 2).multiply(
+                    interval(1, 0)
+                        .multiply(interval(2, 1))
+                        .subtract(interval(1, 1).multiply(interval(2, 0))),
+                ),
+            );
         let expected_determinant = if entry.form == 0 { 1.0 } else { -1.0 };
-        if (determinant - expected_determinant).abs() > TRANSFORM_TOLERANCE {
+        if !determinant_interval.contains(expected_determinant) {
             return Err(format!(
-                "transformation D{sequence} determinant {determinant} disagrees with form {}",
+                "transformation D{sequence} determinant disagrees with form {} within its declared numeric precision",
                 entry.form
             ));
         }
+
+        let raw_columns = [
+            Vector3::new(values[0], values[4], values[8]),
+            Vector3::new(values[1], values[5], values[9]),
+            Vector3::new(values[2], values[6], values[10]),
+        ];
+        let first = normalized(raw_columns[0])
+            .ok_or_else(|| format!("transformation D{sequence} first axis cannot be normalized"))?;
+        let second_projection = dot(first, raw_columns[1]);
+        let second_residual = Vector3::new(
+            raw_columns[1].x - first.x * second_projection,
+            raw_columns[1].y - first.y * second_projection,
+            raw_columns[1].z - first.z * second_projection,
+        );
+        let second = normalized(second_residual).ok_or_else(|| {
+            format!("transformation D{sequence} second axis cannot be normalized")
+        })?;
+        let perpendicular = cross(first, second);
+        let third = Vector3::new(
+            perpendicular.x * expected_determinant,
+            perpendicular.y * expected_determinant,
+            perpendicular.z * expected_determinant,
+        );
         let local = Affine {
             rows: [
-                [values[0], values[1], values[2], values[3]],
-                [values[4], values[5], values[6], values[7]],
-                [values[8], values[9], values[10], values[11]],
+                [first.x, second.x, third.x, values[3]],
+                [first.y, second.y, third.y, values[7]],
+                [first.z, second.z, third.z, values[11]],
             ],
         };
-        let parent = resolve_transform(entry.transform, entries, records, length_factor, path)?;
+        let parent = resolve_transform(
+            entry.transform,
+            entries,
+            records,
+            length_factor,
+            precision,
+            path,
+        )?;
         Ok(parent.compose(local))
     })();
     path.remove(&sequence);
@@ -214,7 +376,7 @@ pub(super) fn entity_loss(entry: &DirectoryEntry, message: impl Into<String>) ->
             entry.form,
             message.into()
         ),
-        provenance: None,
+        provenance: Some(entry.loss_provenance()),
     }
 }
 
@@ -290,7 +452,7 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "direction is zero or non-finite"));
             continue;
         }
-        if entry.status.subordinate != 1 {
+        if !entry.status.is_physically_dependent() {
             losses.push(entity_loss(
                 entry,
                 "Direction Entity is not marked physically dependent",
@@ -309,10 +471,7 @@ pub(crate) fn project_geometry(
         .filter(|entry| entry.entity_type == 100 && entry.form == 0)
     {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -337,6 +496,7 @@ pub(crate) fn project_geometry(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         ) {
             Ok(transform) => transform,
@@ -349,11 +509,11 @@ pub(crate) fn project_geometry(
         let basis_y = transform.vector(Vector3::new(0.0, 1.0, 0.0));
         let scale_x = basis_x.norm();
         let scale_y = basis_y.norm();
-        let scale_tolerance = scale_x.max(scale_y).max(1.0) * TRANSFORM_TOLERANCE;
+        let scale_tolerance = scale_x.max(scale_y).max(1.0) * COMPUTATION_TOLERANCE;
         if !scale_x.is_finite()
             || !scale_y.is_finite()
             || (scale_x - scale_y).abs() > scale_tolerance
-            || dot(basis_x, basis_y).abs() > scale_x * scale_y * TRANSFORM_TOLERANCE
+            || dot(basis_x, basis_y).abs() > scale_x * scale_y * COMPUTATION_TOLERANCE
         {
             losses.push(entity_loss(
                 entry,
@@ -378,8 +538,7 @@ pub(crate) fn project_geometry(
         };
         let radius_tolerance = global
             .minimum_resolution_mm()
-            .unwrap_or_default()
-            .max(radius.max(end_radius).max(1.0) * TRANSFORM_TOLERANCE);
+            .max(radius.max(end_radius).max(1.0) * COMPUTATION_TOLERANCE);
         if !end_radius.is_finite() || (end_radius - radius).abs() > radius_tolerance {
             losses.push(entity_loss(
                 entry,
@@ -394,7 +553,7 @@ pub(crate) fn project_geometry(
         let mut angle = dot(axis, cross(ref_direction, end_direction))
             .atan2(dot(ref_direction, end_direction))
             .rem_euclid(std::f64::consts::TAU);
-        if angle <= 1.0e-14 {
+        if angularly_equal(angle, 0.0) {
             angle = std::f64::consts::TAU;
         }
         let stem = format!("D{}", entry.sequence);
@@ -454,10 +613,7 @@ pub(crate) fn project_geometry(
         .filter(|entry| entry.entity_type == 116 && entry.form == 0)
     {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -472,6 +628,7 @@ pub(crate) fn project_geometry(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         ) {
             Ok(transform) => transform,
@@ -507,10 +664,7 @@ pub(crate) fn project_geometry(
         .filter(|entry| entry.entity_type == 110 && (0..=2).contains(&entry.form))
     {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -535,6 +689,7 @@ pub(crate) fn project_geometry(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         ) {
             Ok(transform) => transform,
@@ -613,10 +768,7 @@ pub(crate) fn project_geometry(
         .filter(|entry| entry.entity_type == 126 && (0..=5).contains(&entry.form))
     {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -705,9 +857,19 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "weights are not strictly positive"));
             continue;
         }
-        let equal_weights = native_weights
-            .first()
-            .is_some_and(|first| native_weights.iter().all(|weight| weight == first));
+        let precision = global.real_precision();
+        let uncertainty =
+            |index: usize, value: f64| record.number_uncertainty(index, value, precision);
+        let equal_within_significance =
+            |left_index: usize, left: f64, right_index: usize, right: f64| {
+                (left - right).abs()
+                    <= uncertainty(left_index, left) + uncertainty(right_index, right)
+            };
+        let equal_weights = native_weights.first().is_some_and(|first| {
+            native_weights.iter().enumerate().all(|(offset, weight)| {
+                equal_within_significance(weight_start, *first, weight_start + offset, *weight)
+            })
+        });
         let polynomial = flags[2] == Some(1);
         if polynomial && !equal_weights {
             losses.push(entity_loss(entry, "polynomial spline has unequal weights"));
@@ -720,16 +882,38 @@ pub(crate) fn project_geometry(
             ));
             continue;
         };
-        let Some(parameter_range) = collect_numbers(range_start, 2) else {
+        let Some(mut parameter_range) = collect_numbers(range_start, 2) else {
             losses.push(entity_loss(
                 entry,
                 "parameter range is missing or non-finite",
             ));
             continue;
         };
-        if parameter_range[0] > parameter_range[1]
-            || parameter_range[0] < knots[degree_usize]
-            || parameter_range[1] > knots[control_count]
+        let domain_start = knots[degree_usize];
+        let domain_end = knots[control_count];
+        if parameter_range[0] < domain_start
+            && equal_within_significance(
+                range_start,
+                parameter_range[0],
+                knot_start + degree_usize,
+                domain_start,
+            )
+        {
+            parameter_range[0] = domain_start;
+        }
+        if parameter_range[1] > domain_end
+            && equal_within_significance(
+                range_start + 1,
+                parameter_range[1],
+                knot_start + control_count,
+                domain_end,
+            )
+        {
+            parameter_range[1] = domain_end;
+        }
+        if parameter_range[0] >= parameter_range[1]
+            || parameter_range[0] < domain_start
+            || parameter_range[1] > domain_end
         {
             losses.push(entity_loss(
                 entry,
@@ -742,6 +926,7 @@ pub(crate) fn project_geometry(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         ) {
             Ok(transform) => transform,
@@ -851,7 +1036,7 @@ pub(crate) fn project_geometry(
     decoded.extend(splines.decoded);
     losses.extend(splines.losses);
     wire_edges.extend(splines.wire_edges);
-    let composites = super::composite::project(ir, directory, parameters);
+    let composites = super::composite::project(ir, directory, parameters, global);
     handled.extend(composites.handled);
     decoded.extend(composites.decoded);
     losses.extend(composites.losses);

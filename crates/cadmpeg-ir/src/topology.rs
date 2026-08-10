@@ -94,8 +94,21 @@ pub struct Region {
     pub id: RegionId,
     /// Owning body.
     pub body: BodyId,
-    /// Boundary shells (typically one outer, plus voids).
+    /// Ordered boundary shells. For a solid region, the first shell is the
+    /// exterior boundary and all subsequent shells bound voids.
     pub shells: Vec<ShellId>,
+}
+
+impl Region {
+    /// Exterior boundary of a solid region.
+    pub fn exterior_shell(&self) -> Option<&ShellId> {
+        self.shells.first()
+    }
+
+    /// Ordered void boundaries of a solid region.
+    pub fn void_shells(&self) -> impl Iterator<Item = &ShellId> {
+        self.shells.iter().skip(1)
+    }
 }
 
 /// An oriented boundary of a region.

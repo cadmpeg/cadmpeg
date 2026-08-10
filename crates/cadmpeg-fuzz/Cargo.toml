@@ -503,6 +503,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "iges_writer"
+path = "fuzz_targets/iges_writer.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "rhino_chunks"
 path = "fuzz_targets/rhino_chunks.rs"
 test = false

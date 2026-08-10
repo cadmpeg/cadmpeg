@@ -1,37 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Constructive-solid primitive validation and native semantic ownership.
 
-use super::geometry::{entity_loss, resolve_transform, Projection};
+use super::geometry::{
+    declared_orthogonal_vectors, declared_unit_vector, entity_loss, resolve_transform, Projection,
+};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
-use crate::parameter::{ParameterRecord, TokenValue};
+use crate::parameter::ParameterRecord;
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
-fn number_or(record: &ParameterRecord, index: usize, default: f64) -> Option<f64> {
-    match record.tokens.get(index).map(|token| &token.value) {
-        None | Some(TokenValue::Omitted) => Some(default),
-        Some(TokenValue::Integer(_) | TokenValue::Real(_)) => record.number(index),
-        Some(TokenValue::String(_)) => None,
-    }
-}
-
 fn vector_or(record: &ParameterRecord, start: usize, default: Vector3) -> Option<Vector3> {
     Some(Vector3::new(
-        number_or(record, start, default.x)?,
-        number_or(record, start + 1, default.y)?,
-        number_or(record, start + 2, default.z)?,
+        record.number_or(start, default.x)?,
+        record.number_or(start + 1, default.y)?,
+        record.number_or(start + 2, default.z)?,
     ))
-}
-
-fn unit(vector: Vector3) -> bool {
-    vector.norm().is_finite() && (vector.norm() - 1.0).abs() <= 1.0e-10
-}
-
-fn orthogonal(left: Vector3, right: Vector3) -> bool {
-    (left.x * right.x + left.y * right.y + left.z * right.z).abs() <= 1.0e-10
 }
 
 fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
@@ -72,6 +58,58 @@ enum BooleanTerm {
     Operation,
 }
 
+fn subtree_contains_brep(
+    sequence: u32,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    boolean_definitions: &BTreeMap<u32, Vec<BooleanTerm>>,
+    path: &mut BTreeSet<u32>,
+    memo: &mut BTreeMap<u32, bool>,
+) -> Option<bool> {
+    if let Some(contains) = memo.get(&sequence) {
+        return Some(*contains);
+    }
+    if !path.insert(sequence) {
+        return None;
+    }
+    let result = (|| {
+        let entry = entries.get(&sequence)?;
+        match entry.entity_type {
+            186 => Some(true),
+            180 => boolean_definitions
+                .get(&sequence)?
+                .iter()
+                .try_fold(false, |contains, term| match term {
+                    BooleanTerm::Operand(target) => subtree_contains_brep(
+                        *target,
+                        entries,
+                        records,
+                        boolean_definitions,
+                        path,
+                        memo,
+                    )
+                    .map(|child_contains| contains || child_contains),
+                    BooleanTerm::Operation => Some(contains),
+                }),
+            430 if entry.form == 1 => {
+                let target = records
+                    .get(&sequence)
+                    .and_then(|record| pointer(record, 1))?;
+                entries
+                    .get(&target)
+                    .is_some_and(|target| target.entity_type == 186)
+                    .then_some(true)
+            }
+            _ => Some(false),
+        }
+    })();
+    path.remove(&sequence);
+    if let Some(contains) = result {
+        memo.insert(sequence, contains);
+    }
+    result
+}
+
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -98,15 +136,13 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         if resolve_transform(
             entry.transform,
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         )
         .is_err()
@@ -124,13 +160,9 @@ pub(super) fn project(
             154 => (1..=2)
                 .map(|index| record.number(index))
                 .collect::<Option<Vec<_>>>(),
-            156 => [
-                record.number(1),
-                record.number(2),
-                number_or(record, 3, 0.0),
-            ]
-            .into_iter()
-            .collect::<Option<Vec<_>>>(),
+            156 => [record.number(1), record.number(2), record.number_or(3, 0.0)]
+                .into_iter()
+                .collect::<Option<Vec<_>>>(),
             158 => record.number(1).map(|value| vec![value]),
             160 => (1..=2)
                 .map(|index| record.number(index))
@@ -207,13 +239,23 @@ pub(super) fn project(
             x_axis_start.and_then(|start| vector_or(record, start, Vector3::new(1.0, 0.0, 0.0)));
         let z_axis =
             z_axis_start.and_then(|start| vector_or(record, start, Vector3::new(0.0, 0.0, 1.0)));
+        let precision = global.real_precision();
         if x_axis_start.is_some() != x_axis.is_some()
             || z_axis_start.is_some() != z_axis.is_some()
-            || x_axis.is_some_and(|axis| !unit(axis))
-            || z_axis.is_some_and(|axis| !unit(axis))
-            || x_axis
+            || x_axis_start
+                .zip(x_axis)
+                .is_some_and(|(start, axis)| !declared_unit_vector(record, start, axis, precision))
+            || z_axis_start
                 .zip(z_axis)
-                .is_some_and(|(x_axis, z_axis)| !orthogonal(x_axis, z_axis))
+                .is_some_and(|(start, axis)| !declared_unit_vector(record, start, axis, precision))
+            || x_axis_start
+                .zip(x_axis)
+                .zip(z_axis_start.zip(z_axis))
+                .is_some_and(|((x_start, x_axis), (z_start, z_axis))| {
+                    !declared_orthogonal_vectors(
+                        record, x_start, x_axis, z_start, z_axis, precision,
+                    )
+                })
         {
             losses.push(entity_loss(entry, "primitive axes are not orthonormal"));
             continue;
@@ -230,10 +272,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(profile) = pointer(record, 1).filter(|sequence| {
             ir.model
                 .curves
@@ -243,8 +282,9 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "solid profile curve pointer is invalid"));
             continue;
         };
-        let Some(amount) =
-            number_or(record, 2, 1.0).filter(|value| value.is_finite() && *value > 0.0)
+        let Some(amount) = record
+            .number_or(2, 1.0)
+            .filter(|value| value.is_finite() && *value > 0.0)
         else {
             losses.push(entity_loss(entry, "solid sweep amount is invalid"));
             continue;
@@ -264,15 +304,13 @@ pub(super) fn project(
         let direction = vector_or(record, direction_start, Vector3::new(0.0, 0.0, 1.0));
         if origin.is_none_or(|origin| {
             !origin.x.is_finite() || !origin.y.is_finite() || !origin.z.is_finite()
-        }) || direction.is_none_or(|direction| !unit(direction))
-        {
+        }) || direction.is_none_or(|direction| {
+            !declared_unit_vector(record, direction_start, direction, global.real_precision())
+        }) {
             losses.push(entity_loss(entry, "solid sweep axis is invalid"));
             continue;
         }
-        let Some(closed) = global
-            .minimum_resolution_mm()
-            .and_then(|tolerance| profile_closed(ir, profile, tolerance))
-        else {
+        let Some(closed) = profile_closed(ir, profile, global.minimum_resolution_mm()) else {
             losses.push(entity_loss(
                 entry,
                 "solid profile endpoints are unavailable",
@@ -293,6 +331,7 @@ pub(super) fn project(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         )
         .is_err()
@@ -356,6 +395,7 @@ pub(super) fn project(
         boolean_definitions.insert(entry.sequence, terms);
     }
     let mut visited = BTreeSet::new();
+    let mut brep_content = BTreeMap::new();
     for (sequence, terms) in &boolean_definitions {
         let entry = entries[sequence];
         let operands_valid = terms.iter().all(|term| match term {
@@ -367,11 +407,17 @@ pub(super) fn project(
                 ) || (entry.form == 1 && target_entry.entity_type == 186)
             }),
         });
-        let has_brep = terms.iter().any(|term| match term {
-            BooleanTerm::Operand(target) => entries
-                .get(target)
-                .is_some_and(|target_entry| target_entry.entity_type == 186),
-            BooleanTerm::Operation => false,
+        let has_brep = terms.iter().try_fold(false, |contains, term| match term {
+            BooleanTerm::Operand(target) => subtree_contains_brep(
+                *target,
+                &entries,
+                &records,
+                &boolean_definitions,
+                &mut BTreeSet::new(),
+                &mut brep_content,
+            )
+            .map(|child_contains| contains || child_contains),
+            BooleanTerm::Operation => Some(contains),
         });
         let cyclic = super::directed_cycle(*sequence, &mut visited, |sequence| {
             boolean_definitions
@@ -386,22 +432,20 @@ pub(super) fn project(
                 })
                 .collect()
         });
-        if !operands_valid || (entry.form == 1) != has_brep || cyclic {
+        if !operands_valid || has_brep != Some(entry.form == 1) || cyclic {
             losses.push(entity_loss(
                 entry,
                 "Boolean operands, form, or reference acyclicity is invalid",
             ));
             continue;
         }
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         if resolve_transform(
             entry.transform,
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         )
         .is_err()
@@ -443,15 +487,13 @@ pub(super) fn project(
             ));
             continue;
         }
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         if resolve_transform(
             entry.transform,
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         )
         .is_err()

@@ -1637,7 +1637,9 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#3"
+              ],
               "parameter_bytes": [
                 52,
                 49,
@@ -1807,7 +1809,16 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-212-or-type-312-or-type-402",
+                  "kind": "parameter",
+                  "parameter_index": 10,
+                  "raw_pointer": 3,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#3"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -1916,7 +1927,9 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#1"
+              ],
               "parameter_bytes": [
                 52,
                 48,
@@ -2022,7 +2035,16 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-410-form-0-or-1",
+                  "kind": "parameter",
+                  "parameter_index": 3,
+                  "raw_pointer": 1,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#1"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -2117,7 +2139,9 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#7"
+              ],
               "parameter_bytes": [
                 52,
                 49,
@@ -2287,7 +2311,16 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-212-or-type-312-or-type-402",
+                  "kind": "parameter",
+                  "parameter_index": 10,
+                  "raw_pointer": 7,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#7"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -2388,7 +2421,9 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#5"
+              ],
               "parameter_bytes": [
                 52,
                 48,
@@ -2526,7 +2561,16 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-410-form-0-or-1",
+                  "kind": "parameter",
+                  "parameter_index": 3,
+                  "raw_pointer": 5,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#5"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -2566,9 +2610,11 @@
           "procedural_solids": [],
           "product_occurrence_expansion": [
             {
+              "depth_limit": 64,
               "emitted": 0,
               "id": "iges:product:occurrence-expansion#state",
-              "limit": 100,
+              "issues": [],
+              "output_limit": 100000,
               "truncated": false
             }
           ],
@@ -2708,8 +2754,37 @@
       "entity.410.form.0=2",
       "parameter_records=4",
       "parameter_tokens=36",
-      "external_references=0"
-    ]
+      "external_references=0",
+      "references.resolved=4"
+    ],
+    "transfer_ledger": {
+      "entries": [
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D1",
+          "target": "iges:entity:directory#1"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D3",
+          "target": "iges:entity:directory#3"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D5",
+          "target": "iges:entity:directory#5"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D7",
+          "target": "iges:entity:directory#7"
+        }
+      ]
+    }
   },
   "source_fidelity": {
     "annotations": {},

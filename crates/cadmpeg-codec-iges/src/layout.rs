@@ -5,7 +5,7 @@ use crate::card;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
 use cadmpeg_ir::codec::Confidence;
 use std::collections::BTreeMap;
-use std::io::SeekFrom;
+use std::io::{ErrorKind, SeekFrom};
 
 const DETECTION_PREFIX_BYTES: usize = 512;
 
@@ -17,37 +17,27 @@ pub(crate) enum Representation {
     Unknown,
 }
 
-fn physical_line(input: &[u8]) -> Option<(&[u8], &[u8])> {
-    let end = input
-        .iter()
-        .position(|byte| matches!(byte, b'\r' | b'\n'))?;
-    let ending = usize::from(input[end] == b'\r' && input.get(end + 1) == Some(&b'\n')) + 1;
-    Some((&input[..end], &input[end + ending..]))
-}
-
 fn compressed_ascii(prefix: &[u8]) -> bool {
-    let Some((flag, rest)) = physical_line(prefix) else {
+    let Some(flag) = prefix.get(..80) else {
         return false;
     };
-    let Some((start, _)) = physical_line(rest) else {
-        return false;
-    };
-    flag.len() == 80
-        && flag[72] == b'C'
-        && flag.iter().all(|byte| (b' '..=b'~').contains(byte))
-        && start.len() == 80
-        && start[72] == b'S'
-        && start[73..80] == *b"      1"
+    flag[72] == b'C' && flag.iter().all(|byte| (b' '..=b'~').contains(byte))
 }
 
 fn binary(prefix: &[u8]) -> bool {
     let Some(flag) = prefix.get(..80) else {
         return false;
     };
-    let count = &flag[1..5];
     flag[0] == b'B'
-        && (count == 75_u32.to_be_bytes() || count == 75_u32.to_le_bytes())
+        && flag[1..5] == 75_u32.to_be_bytes()
+        && flag[11] == b'B'
+        && flag[16] == b'S'
+        && flag[21] == b'G'
+        && flag[26] == b'D'
+        && flag[31] == b'P'
+        && flag[36] == b'T'
         && flag[72] == b'B'
+        && flag[73..79].iter().all(|byte| matches!(byte, b' ' | b'0'))
         && flag[79] == b'1'
 }
 
@@ -75,7 +65,15 @@ pub(crate) fn confidence(prefix: &[u8]) -> Confidence {
 pub(crate) fn classify(reader: &mut dyn ReadSeek) -> Result<Representation, CodecError> {
     let position = reader.stream_position()?;
     let mut prefix = vec![0; DETECTION_PREFIX_BYTES];
-    let count = reader.read(&mut prefix)?;
+    let mut count = 0;
+    while count < prefix.len() {
+        match reader.read(&mut prefix[count..]) {
+            Ok(0) => break,
+            Ok(read) => count += read,
+            Err(error) if error.kind() == ErrorKind::Interrupted => {}
+            Err(error) => return Err(CodecError::Io(error)),
+        }
+    }
     prefix.truncate(count);
     reader.seek(SeekFrom::Start(position))?;
     Ok(classify_prefix(&prefix))

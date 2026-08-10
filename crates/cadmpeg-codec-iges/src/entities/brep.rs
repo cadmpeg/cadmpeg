@@ -219,13 +219,8 @@ pub(super) fn project(
     let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
-    let Some(factor) = global.length_factor_mm() else {
-        return BrepProjection {
-            handled,
-            decoded,
-            losses,
-        };
-    };
+    let factor = global.length_factor_mm();
+    let tolerance = global.minimum_resolution_mm();
     let mut vertex_lists = BTreeMap::<u32, Vec<Point3>>::new();
     let mut edge_lists = BTreeMap::<u32, Vec<EdgeDefinition>>::new();
     let mut loops = BTreeMap::<u32, Vec<LoopUse>>::new();
@@ -642,6 +637,7 @@ pub(super) fn project(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         ) {
             Ok(transform) => (entry.transform != 0).then(|| transform.body_transform()),
@@ -772,20 +768,18 @@ pub(super) fn project(
                                 })
                             };
                             let expected = vertex_lists[vertex_list][*vertex_index];
-                            if !global.minimum_resolution_mm().is_some_and(|tolerance| {
-                                pcurves_agree(
-                                    ir,
-                                    pcurves,
-                                    &SurfaceSupport {
-                                        id: &surface_id,
-                                        geometry: &support_geometry,
-                                        factor,
-                                    },
-                                    expected,
-                                    expected,
-                                    tolerance,
-                                )
-                            }) {
+                            if !pcurves_agree(
+                                ir,
+                                pcurves,
+                                &SurfaceSupport {
+                                    id: &surface_id,
+                                    geometry: &support_geometry,
+                                    factor,
+                                },
+                                expected,
+                                expected,
+                                tolerance,
+                            ) {
                                 losses.push(entity_loss(
                                     entry,
                                     "loop vertex-use pcurves disagree with the pole vertex",
@@ -799,7 +793,7 @@ pub(super) fn project(
                                 pcurves,
                                 &support_geometry,
                                 factor,
-                                global.minimum_resolution_mm(),
+                                Some(tolerance),
                                 &format!(
                                     "iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"
                                 ),
@@ -838,20 +832,18 @@ pub(super) fn project(
                         } else {
                             (natural_end, natural_start)
                         };
-                        if !global.minimum_resolution_mm().is_some_and(|tolerance| {
-                            pcurves_agree(
-                                ir,
-                                pcurves,
-                                &SurfaceSupport {
-                                    id: &surface_id,
-                                    geometry: &support_geometry,
-                                    factor,
-                                },
-                                expected_start,
-                                expected_end,
-                                tolerance,
-                            )
-                        }) {
+                        if !pcurves_agree(
+                            ir,
+                            pcurves,
+                            &SurfaceSupport {
+                                id: &surface_id,
+                                geometry: &support_geometry,
+                                factor,
+                            },
+                            expected_start,
+                            expected_end,
+                            tolerance,
+                        ) {
                             losses.push(entity_loss(
                                 entry,
                                 "loop edge-use pcurves disagree with the edge vertices",
@@ -883,14 +875,10 @@ pub(super) fn project(
                                             evaluation::curve(&curve.geometry, range[0]);
                                         let evaluated_end =
                                             evaluation::curve(&curve.geometry, range[1]);
-                                        global.minimum_resolution_mm().is_some_and(|tolerance| {
-                                            evaluated_start.is_some_and(|point| {
-                                                evaluation::distance(point, natural_start)
-                                                    <= tolerance
-                                            }) && evaluated_end.is_some_and(|point| {
-                                                evaluation::distance(point, natural_end)
-                                                    <= tolerance
-                                            })
+                                        evaluated_start.is_some_and(|point| {
+                                            evaluation::distance(point, natural_start) <= tolerance
+                                        }) && evaluated_end.is_some_and(|point| {
+                                            evaluation::distance(point, natural_end) <= tolerance
                                         })
                                     })
                             });
@@ -928,7 +916,7 @@ pub(super) fn project(
                             pcurves,
                             &support_geometry,
                             factor,
-                            global.minimum_resolution_mm(),
+                            Some(tolerance),
                             &format!("iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"),
                         ) else {
                             valid = false;

@@ -84,7 +84,7 @@ impl Codec for IgesCodec {
 
     fn inspect_impl(
         &self,
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let mut reader = Cursor::new(root.window());
@@ -100,10 +100,22 @@ impl Codec for IgesCodec {
             }
             layout::Representation::FixedAscii => {}
         }
-        let scan = card::scan(root.window())?;
+        ctx.charge_work(root.window().len() as u64, "iges_inspect_card_scan")?;
+        let _scan_storage = ctx.reserve_scoped(
+            root.window().len() as u64,
+            "iges_inspect_card_storage",
+            None,
+        )?;
+        let scan = card::scan_with_context(root.window(), Some(ctx))?;
         let global = global::parse(&scan)?;
         let directory = directory::parse(&scan)?;
-        let parameters = parameter::assemble(&scan, &directory, &global)?;
+        ctx.charge_entities(directory.len() as u64, "iges_inspect_directory_entries")?;
+        let parameters = parameter::assemble_with_context(&scan, &directory, &global, Some(ctx))?;
+        let parameter_tokens = parameters
+            .iter()
+            .map(|record| record.tokens.len() as u64)
+            .sum();
+        ctx.charge_work(parameter_tokens, "iges_inspect_parameter_parse")?;
         let references = graph::build(&directory);
         let mut summary = card::summarize(&scan);
         summary.notes.extend(global.summary_notes());
@@ -126,6 +138,7 @@ impl Codec for IgesCodec {
                     container_only: ctx.container_only(),
                     policy: *ctx.policy(),
                 },
+                ctx,
             ),
             representation @ (layout::Representation::CompressedAscii
             | layout::Representation::Binary) => Err(layout::unsupported_error(representation)),

@@ -36,21 +36,6 @@ fn presentation_form(form: i64) -> bool {
     matches!(form, 20 | 21 | 31..=38 | 40)
 }
 
-fn close(left: Point3, right: Point3) -> bool {
-    let scale = left
-        .x
-        .abs()
-        .max(left.y.abs())
-        .max(left.z.abs())
-        .max(right.x.abs())
-        .max(right.y.abs())
-        .max(right.z.abs())
-        .max(1.0);
-    (left.x - right.x).abs() <= scale * 1.0e-10
-        && (left.y - right.y).abs() <= scale * 1.0e-10
-        && (left.z - right.z).abs() <= scale * 1.0e-10
-}
-
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -76,10 +61,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 106 && expected_interpretation(entry.form).is_some())
     {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -136,6 +118,7 @@ pub(super) fn project(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         ) {
             Ok(transform) => transform,
@@ -218,17 +201,26 @@ pub(super) fn project(
             decoded.insert(entry.sequence);
             continue;
         }
-        if entry.form == 63 && !close(points[0], points[points.len() - 1]) {
+        let resolution = global.minimum_resolution_mm();
+        if entry.form == 63 && points[0].distance(points[points.len() - 1]) > resolution {
             losses.push(entity_loss(
                 entry,
-                "simple closed path endpoints are not coincident",
+                "simple closed path endpoints disagree beyond the minimum resolution",
             ));
             continue;
         }
-        if points.windows(2).any(|pair| close(pair[0], pair[1])) {
-            losses.push(entity_loss(entry, "linear path has a zero-length segment"));
+        if entry.form == 63
+            && points
+                .windows(2)
+                .any(|pair| pair[0].distance(pair[1]) <= resolution)
+        {
+            losses.push(entity_loss(
+                entry,
+                "simple closed path has coincident consecutive points",
+            ));
             continue;
         }
+        let topology_tolerance = (entry.form == 63 && resolution > 0.0).then_some(resolution);
         let parameter_end = (points.len() - 1) as f64;
         let mut knots = vec![0.0, 0.0];
         knots.extend((1..points.len() - 1).map(|value| value as f64));
@@ -239,33 +231,35 @@ pub(super) fn project(
         let start_point = PointId(format!("iges:model:point#{stem}-start"));
         let end_point = PointId(format!("iges:model:point#{stem}-end"));
         let start_vertex = VertexId(format!("iges:model:vertex#{stem}-start"));
-        let end_vertex = VertexId(format!("iges:model:vertex#{stem}-end"));
+        let end_vertex = if entry.form == 63 {
+            start_vertex.clone()
+        } else {
+            VertexId(format!("iges:model:vertex#{stem}-end"))
+        };
         let curve = CurveId(format!("iges:model:curve#{stem}"));
         let edge = EdgeId(format!("iges:model:edge#{stem}"));
-        ir.model.points.extend([
-            Point {
-                source_object: None,
-                id: start_point.clone(),
-                position: start,
-            },
-            Point {
+        ir.model.points.push(Point {
+            source_object: None,
+            id: start_point.clone(),
+            position: start,
+        });
+        ir.model.vertices.push(Vertex {
+            id: start_vertex.clone(),
+            point: start_point,
+            tolerance: topology_tolerance,
+        });
+        if entry.form != 63 {
+            ir.model.points.push(Point {
                 source_object: None,
                 id: end_point.clone(),
                 position: end,
-            },
-        ]);
-        ir.model.vertices.extend([
-            Vertex {
-                id: start_vertex.clone(),
-                point: start_point,
-                tolerance: None,
-            },
-            Vertex {
+            });
+            ir.model.vertices.push(Vertex {
                 id: end_vertex.clone(),
                 point: end_point,
-                tolerance: None,
-            },
-        ]);
+                tolerance: topology_tolerance,
+            });
+        }
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Nurbs(NurbsCurve {
@@ -283,7 +277,7 @@ pub(super) fn project(
             start: start_vertex,
             end: end_vertex,
             param_range: Some([0.0, parameter_end]),
-            tolerance: None,
+            tolerance: topology_tolerance,
         });
         wire_edges.push(edge);
         decoded.insert(entry.sequence);
