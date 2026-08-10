@@ -140,6 +140,18 @@ pub enum ListItem {
     },
 }
 
+/// One allocation row in a `0x3c` bulk table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct BulkTableRow {
+    /// Row identity encoded by the compact, paged, or escaped atom form.
+    pub row_id: u32,
+    /// Fixed-width little-endian allocation handle.
+    pub handle: u32,
+    /// Byte offset of the row's `0x81` tag within the payload.
+    pub offset: usize,
+}
+
 /// One schema-free field in a `7C0A` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -184,6 +196,8 @@ pub enum PayloadField {
         count: u32,
         /// Little-endian table row count.
         table_count: u32,
+        /// Complete allocation rows in serialized order.
+        rows: Vec<BulkTableRow>,
         /// Byte offset within the payload.
         offset: usize,
     },
@@ -1102,24 +1116,32 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                     continue;
                 };
                 let table_at = at + 1 + advance;
-                let table_count = u32_le(bytes, table_at).unwrap_or(u32::MAX);
-                if usize::try_from(table_count)
-                    .ok()
-                    .is_some_and(|count| count <= bytes.len())
-                {
-                    fields.push(PayloadField::BulkTable {
-                        count,
-                        table_count,
-                        offset,
-                    });
-                    at = table_at + 4;
-                } else {
+                let Some(table_count) = u32_le(bytes, table_at) else {
                     fields.push(PayloadField::Atom {
                         value: 0x3c,
                         offset,
                     });
                     at += 1;
+                    continue;
+                };
+                let table_end = table_at.checked_add(4)?;
+                if table_count <= u32::try_from(bytes.len().saturating_sub(table_end)).unwrap_or(0)
+                {
+                    let (rows, end) = parse_bulk_table_rows(bytes, table_end, table_count)?;
+                    fields.push(PayloadField::BulkTable {
+                        count,
+                        table_count,
+                        rows,
+                        offset,
+                    });
+                    at = end;
+                    continue;
                 }
+                fields.push(PayloadField::Atom {
+                    value: 0x3c,
+                    offset,
+                });
+                at += 1;
             }
             0x3b => {
                 if bytes.get(at + 1) == Some(&0xfe) {
@@ -1233,6 +1255,56 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
             fields,
         },
     )
+}
+
+fn parse_bulk_table_rows(
+    bytes: &[u8],
+    mut at: usize,
+    table_count: u32,
+) -> Option<(Vec<BulkTableRow>, usize)> {
+    let count = usize::try_from(table_count).ok()?;
+    let mut rows = Vec::with_capacity(count.min(bytes.len()));
+    for _ in 0..count {
+        let offset = at;
+        if bytes.get(at) != Some(&0x81) {
+            return None;
+        }
+        at += 1;
+        let row_id = bulk_row_id(bytes, &mut at)?;
+        if bytes.get(at) != Some(&0x80) {
+            return None;
+        }
+        let handle = u32_le(bytes, at + 1)?;
+        at += 5;
+        rows.push(BulkTableRow {
+            row_id,
+            handle,
+            offset,
+        });
+    }
+    Some((rows, at))
+}
+
+fn bulk_row_id(bytes: &[u8], at: &mut usize) -> Option<u32> {
+    let start = *at;
+    let mut candidates = Vec::new();
+    if let Some((value, consumed)) = atom(bytes, start) {
+        let end = start.checked_add(consumed)?;
+        if bytes.get(end) == Some(&0x80) && end.checked_add(5)? <= bytes.len() {
+            candidates.push((value, end));
+        }
+    }
+    if bytes.get(start) == Some(&0x80) {
+        let end = start.checked_add(5)?;
+        if end.checked_add(5)? <= bytes.len() && bytes.get(end) == Some(&0x80) {
+            candidates.push((u32_le(bytes, start + 1)?, end));
+        }
+    }
+    let [(value, end)] = candidates.as_slice() else {
+        return None;
+    };
+    *at = *end;
+    Some(*value)
 }
 
 fn blob_end(bytes: &[u8], at: usize) -> Option<usize> {

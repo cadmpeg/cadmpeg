@@ -33,6 +33,10 @@ pub(crate) struct FamilyOutput {
     pub(crate) report: DecodeReport,
     pub(crate) annotations: Annotations,
     pub(crate) unknowns: Vec<UnknownRecord>,
+    /// The neutral face population was emitted from standard FBB face rows.
+    /// This provenance is required before the row color sequence can bind
+    /// positionally; a container variant alone is not sufficient.
+    pub(crate) standard_face_population: bool,
 }
 
 /// One entry in the ordered decode route table.

@@ -101,6 +101,37 @@ fn fbb_only_pipeline_transfers_carriers_without_inventing_topology() {
 }
 
 #[test]
+fn fbb_only_pipeline_attaches_complete_boundary_topology() {
+    let bytes = fbb_only_quad_catpart();
+    let scan = crate::container::scan_bytes(bytes.clone());
+    assert_eq!(scan.variant, Variant::FbbOnly);
+    assert_eq!(scan.census.edge_delimiters, 0);
+
+    let result = decode(bytes);
+    assert!(result.report.geometry_transferred);
+    assert_eq!(result.ir.model.points.len(), 4);
+    assert_eq!(result.ir.model.surfaces.len(), 1);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.loops.len(), 1);
+    assert_eq!(result.ir.model.edges.len(), 4);
+    assert_eq!(result.ir.model.coedges.len(), 4);
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT),
+        1
+    );
+    assert!(!result.report.losses.iter().any(|loss| {
+        loss.severity == Severity::Blocking
+            && matches!(
+                loss.code.category(),
+                LossCategory::Geometry | LossCategory::Topology
+            )
+    }));
+    assert_valid(&result);
+}
+
+#[test]
 fn zero_entity_pipeline_binds_parametric_support_without_a_cached_curve() {
     let bytes = zero_entity_cylinder_parametric_support_catpart();
     assert_eq!(

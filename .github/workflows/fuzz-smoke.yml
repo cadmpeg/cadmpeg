@@ -36,7 +36,17 @@ jobs:
       # cargo-fuzz needs nightly-only flags (`-Zsanitizer=address`, sancov
       # coverage), and the proxy propagates `RUSTUP_TOOLCHAIN` to the inner
       # `cargo build` it spawns.
+      #
+      # CARGO_BUILD_JOBS=2: ASAN-instrumented release compiles of the codec
+      # crates peak at several GB per rustc process. The ubuntu-latest runner
+      # has 4 cores and 16 GB, and the `jobs = 6` cap in .cargo/config.toml
+      # lets six of them run at once, so the kernel OOM-killer terminates the
+      # runner worker mid-build ("shutdown signal", exit 143). The
+      # cargo-job-count action used by other workflows would still allow 4,
+      # which is too close to the limit for instrumented builds.
       - name: Build fuzz targets (no run)
+        env:
+          CARGO_BUILD_JOBS: "2"
         run: cargo +nightly fuzz build --fuzz-dir crates/cadmpeg-fuzz
 
       - name: Run each fuzz target briefly

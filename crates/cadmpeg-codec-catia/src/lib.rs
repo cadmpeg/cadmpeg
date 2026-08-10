@@ -44,6 +44,7 @@
 pub(crate) mod analytic;
 mod appearance;
 pub(crate) mod assemble;
+mod boundary_roles;
 pub(crate) mod catalog;
 pub(crate) mod container;
 pub(crate) mod coverage;
@@ -56,6 +57,7 @@ pub(crate) mod legacy_entity;
 pub(crate) mod native;
 pub(crate) mod nurbs;
 pub(crate) mod object_graph;
+pub(crate) mod sketch;
 pub(crate) mod solve;
 pub(crate) mod value_block;
 pub(crate) mod variant;

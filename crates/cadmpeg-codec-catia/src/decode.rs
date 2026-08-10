@@ -28,6 +28,7 @@ use crate::entity_table;
 use crate::families;
 use crate::formula;
 use crate::native::{CatiaNative, CatiaObjectGraph};
+use crate::sketch;
 
 fn configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usize) {
     (
@@ -68,6 +69,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
                     out.report,
                     out.annotations,
                     out.unknowns,
+                    out.standard_face_population,
                 );
             }
         }
@@ -75,7 +77,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
 
     let (ir, annotations, unknowns) = build_metadata_ir(&scan);
     let report = build_container_report(&scan, false);
-    finish_decode(ctx, &scan, ir, report, annotations, unknowns)
+    finish_decode(ctx, &scan, ir, report, annotations, unknowns, false)
 }
 
 fn finish_decode(
@@ -85,9 +87,11 @@ fn finish_decode(
     mut report: DecodeReport,
     mut annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
+    standard_face_population: bool,
 ) -> Result<DecodeResult, CodecError> {
     ctx.charge_entities(ir.model.entity_count() as u64, "admit CATIA entities")?;
-    let native = CatiaNative::decode(&scan.data);
+    let consolidated_record_ranges = container::consolidated_record_ranges(scan);
+    let native = CatiaNative::decode_with_record_ranges(&scan.data, &consolidated_record_ranges);
     let modeling_graph_scope = modeling_graph_scope(
         !scan.outer_container_declarations.is_empty(),
         &native.object_graphs,
@@ -104,6 +108,18 @@ fn finish_decode(
         .collect::<HashSet<_>>();
     let design_feature_transfer =
         design_feature::transfer_design_features(&mut ir, &native, modeling_graph_scope.as_ref());
+    let transferred_native_sketch_entity_records = sketch::transfer_native_sketch_entities(
+        &mut ir,
+        &native,
+        &design_feature_transfer,
+        modeling_graph_scope.as_ref(),
+    );
+    let transferred_constraint_range_records = sketch::transfer_constraint_ranges(
+        &mut ir,
+        &native,
+        &design_feature_transfer,
+        modeling_graph_scope.as_ref(),
+    );
     let formula_transfer = formula::transfer_parameters(
         &mut ir,
         &native,
@@ -115,7 +131,9 @@ fn finish_decode(
         &mut ir,
         &native,
         modeling_graph_scope.as_ref(),
-        scan.brep.as_deref(),
+        standard_face_population
+            .then_some(scan.main_data_stream.as_deref().or(scan.brep.as_deref()))
+            .flatten(),
     );
     let object_record_count: usize = native
         .object_graphs
@@ -903,6 +921,29 @@ fn finish_decode(
         .iter()
         .filter(|record| record.relation_program_instance.is_some())
         .count();
+    let relation_program_output_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter(|instance| instance.output_entity.is_some())
+        .count();
+    let resolved_relation_program_output_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|instance| instance.output_entity.as_ref())
+        .filter(|output| output.entity.is_some())
+        .count();
+    let null_relation_program_output_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|instance| instance.output_entity.as_ref())
+        .filter(|output| output.is_null)
+        .count();
+    let unresolved_relation_program_output_count = relation_program_output_count
+        - resolved_relation_program_output_count
+        - null_relation_program_output_count;
     let relation_program_reference_incidence_count = native
         .entity_records
         .iter()
@@ -1541,6 +1582,8 @@ fn finish_decode(
         .collect::<HashSet<_>>();
     let transferred_design_records = transferred_formula_design_records
         .union(&transferred_design_feature_records)
+        .chain(transferred_native_sketch_entity_records.intersection(&structurally_owned_records))
+        .chain(transferred_constraint_range_records.intersection(&structurally_owned_records))
         .cloned()
         .collect::<HashSet<_>>();
     let unresolved_object_record_count = modeling_object_records
@@ -1580,6 +1623,17 @@ fn finish_decode(
                 .id
                 .0
                 .starts_with("catia:consolidated:line-profile-curve#")
+        })
+        .count();
+    let transferred_native_sketch_entity_count = ir
+        .model
+        .sketch_entities
+        .iter()
+        .filter(|entity| {
+            matches!(
+                &entity.geometry,
+                cadmpeg_ir::sketches::SketchGeometry::Native { .. }
+            )
         })
         .count();
     report.coverage.extend([
@@ -1644,6 +1698,10 @@ fn finish_decode(
             native.consolidated_parameter_points.len(),
         ),
         (
+            "decoded_consolidated_plane_carrier_count".to_string(),
+            native.consolidated_plane_carriers.len(),
+        ),
+        (
             "decoded_consolidated_pcurve_count".to_string(),
             native.consolidated_pcurves.len(),
         ),
@@ -1688,7 +1746,12 @@ fn finish_decode(
             ir.model
                 .procedural_surfaces
                 .iter()
-                .filter(|surface| surface.id.0.starts_with("catia:standard:revolution#"))
+                .filter(|surface| {
+                    surface
+                        .id
+                        .0
+                        .starts_with("catia:consolidated:surface-revolution#")
+                })
                 .count(),
         ),
         (
@@ -1709,6 +1772,22 @@ fn finish_decode(
                 .zero_entity_edge_strides
                 .iter()
                 .map(|stride| stride.allocations.len())
+                .sum(),
+        ),
+        (
+            "decoded_zero_entity_edge_stride_topology_ref_count".to_string(),
+            native
+                .zero_entity_edge_strides
+                .iter()
+                .map(|stride| stride.topology_refs.len())
+                .sum(),
+        ),
+        (
+            "decoded_zero_entity_edge_stride_surface_support_ref_count".to_string(),
+            native
+                .zero_entity_edge_strides
+                .iter()
+                .map(|stride| stride.surface_support_refs.len())
                 .sum(),
         ),
         (
@@ -2354,6 +2433,22 @@ fn finish_decode(
             relation_program_instance_count,
         ),
         (
+            "decoded_relation_program_output_count".to_string(),
+            relation_program_output_count,
+        ),
+        (
+            "decoded_resolved_relation_program_output_count".to_string(),
+            resolved_relation_program_output_count,
+        ),
+        (
+            "decoded_null_relation_program_output_count".to_string(),
+            null_relation_program_output_count,
+        ),
+        (
+            "unresolved_relation_program_output_count".to_string(),
+            unresolved_relation_program_output_count,
+        ),
+        (
             "decoded_relation_program_reference_incidence_count".to_string(),
             relation_program_reference_incidence_count,
         ),
@@ -2895,6 +2990,14 @@ fn finish_decode(
             ir.model.features.len(),
         ),
         (
+            "transferred_feature_parent_count".to_string(),
+            ir.model
+                .features
+                .iter()
+                .filter(|feature| feature.parent.is_some())
+                .count(),
+        ),
+        (
             "transferred_parameter_count".to_string(),
             ir.model.parameters.len(),
         ),
@@ -2919,8 +3022,37 @@ fn finish_decode(
             transferred_formula_design_records.len(),
         ),
         (
+            "transferred_definition_chain_parameter_count".to_string(),
+            formula_transfer.definition_chain_parameter_count,
+        ),
+        (
             "transferred_principal_plane_record_count".to_string(),
             transferred_principal_plane_records.len(),
+        ),
+        (
+            "transferred_native_operation_count".to_string(),
+            design_feature_transfer.native_operation_records.len(),
+        ),
+        (
+            "transferred_native_operation_definition_value_count".to_string(),
+            design_feature_transfer.native_operation_definition_value_count,
+        ),
+        (
+            "transferred_native_operation_definition_chain_value_count".to_string(),
+            design_feature_transfer.native_operation_definition_chain_value_count,
+        ),
+        (
+            "transferred_native_operation_parameter_count".to_string(),
+            ir.model
+                .features
+                .iter()
+                .filter_map(|feature| match &feature.definition {
+                    cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } => {
+                        Some(parameters.len())
+                    }
+                    _ => None,
+                })
+                .sum(),
         ),
         (
             "unresolved_design_record_count".to_string(),
@@ -2933,6 +3065,10 @@ fn finish_decode(
         (
             "transferred_sketch_entity_count".to_string(),
             ir.model.sketch_entities.len(),
+        ),
+        (
+            "transferred_native_sketch_entity_count".to_string(),
+            transferred_native_sketch_entity_count,
         ),
         (
             "transferred_sketch_constraint_count".to_string(),
@@ -3132,7 +3268,7 @@ fn finish_decode(
             code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} legacy design run(s) with {legacy_schema_program_count} complete compact schema program(s), containing {legacy_schema_identifier_count} complete identifier packet(s), and {legacy_entity_identity_count} source-ordered entity identity marker(s), comprising {legacy_identity_lead_81_count} lead-81, {legacy_identity_lead_82_count} lead-82, {legacy_identity_lead_e5_count} lead-E5, and {legacy_identity_lead_fd_count} lead-FD record(s), {legacy_role_selector_count} complete schema role selector(s), including {legacy_selected_role_count} unresolved schema-selected role name(s) and {legacy_role_field_binding_count} immediate schema-field binding(s), {legacy_schema_field_count} complete role-bounded schema field(s), {legacy_text_field_count} complete schema text field(s), including {legacy_e3_role_tail_text_field_count} with E3 paged-role tails and {legacy_role_text_field_count} role-bound text field(s), {legacy_relation_count} typed expression/signature pair(s), including {legacy_parameter_relation_count} with exact parameter identities, {legacy_synchronous_state_count} relation update-state field(s), comprising {legacy_synchronous_relation_count} synchronous and {legacy_asynchronous_relation_count} asynchronous state(s), {legacy_type_descriptor_count} type descriptor(s), including {legacy_literal_type_descriptor_count} literal name(s), {legacy_scalar_value_count} typed scalar evaluation(s), including {legacy_named_scalar_value_count} named scalar(s), {legacy_string_value_count} string value(s), including {legacy_named_string_value_count} named string(s), and {legacy_integer_value_count} signed integer value(s), including {legacy_named_integer_value_count} named integer(s); {} uniquely named, literal-typed parameter(s), including {} resolved through descriptor selectors, and {} closed zero-input formula(s) transferred, while remaining selector semantics, unbound relation ownership and parameters, unresolved selector types, feature semantics, and feature history remain unresolved.",
+                "CATIA native data retains {} legacy design run(s) with {legacy_schema_program_count} complete compact schema program(s), containing {legacy_schema_identifier_count} complete identifier packet(s), and {legacy_entity_identity_count} source-ordered entity identity marker(s), comprising {legacy_identity_lead_81_count} lead-81, {legacy_identity_lead_82_count} lead-82, {legacy_identity_lead_e5_count} lead-E5, and {legacy_identity_lead_fd_count} lead-FD record(s), {legacy_role_selector_count} complete schema role selector(s), including {legacy_selected_role_count} unresolved schema-selected role name(s) and {legacy_role_field_binding_count} immediate schema-field binding(s), {legacy_schema_field_count} complete role-bounded schema field(s), {legacy_text_field_count} complete schema text field(s), including {legacy_e3_role_tail_text_field_count} with E3 paged-role tails and {legacy_role_text_field_count} role-bound text field(s), {legacy_relation_count} typed expression/signature pair(s), including {legacy_parameter_relation_count} with exact parameter identities, {legacy_synchronous_state_count} relation update-state field(s), comprising {legacy_synchronous_relation_count} synchronous and {legacy_asynchronous_relation_count} asynchronous state(s), {legacy_type_descriptor_count} type descriptor(s), including {legacy_literal_type_descriptor_count} literal name(s), {legacy_scalar_value_count} typed scalar evaluation(s), including {legacy_named_scalar_value_count} named scalar(s), {legacy_string_value_count} string value(s), including {legacy_named_string_value_count} named string(s), and {legacy_integer_value_count} signed integer value(s), including {legacy_named_integer_value_count} named integer(s); {} uniquely named, literal-typed parameter(s), including {} resolved through descriptor selectors, and {} local-input legacy formula(s) transferred, while remaining selector semantics, unbound relation ownership and parameters, unresolved selector types, feature semantics, and feature history remain unresolved.",
                 native.legacy_entity_runs.len(),
                 formula_transfer.legacy_parameter_count,
                 formula_transfer.legacy_selector_parameter_count,
@@ -3146,7 +3282,7 @@ fn finish_decode(
             code: cadmpeg_ir::report::LossKind::AttributesNotTransferred,
             severity: Severity::Warning,
             message: format!(
-                "CATIA native data retains {} visualization value block(s), {value_field_count} encoded field(s), and {value_selection_count} schema-selected presentation value(s); {} display-color packet(s) remain without a proven neutral binding ({} packet(s) transferred), while other visualization fields remain native.",
+                "CATIA native data retains {} visualization value block(s), {value_field_count} encoded field(s), and {value_selection_count} schema-selected presentation value(s); {} display-color packet(s) remain without a proven typed face or body target ({} packet(s) transferred), while other visualization fields remain native.",
                 native.value_blocks.len(),
                 appearance_transfer.unresolved_packets,
                 appearance_transfer.transferred_packets,

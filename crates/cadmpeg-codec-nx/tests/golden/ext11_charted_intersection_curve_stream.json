@@ -247,6 +247,41 @@
                 "chordal_error": 0.00001,
                 "count": 2,
                 "ext_support_uv": [
+                  null,
+                  null
+                ],
+                "framing": "direct",
+                "id": "nx:s0:chart-record#20-501",
+                "inflated_offset": 501,
+                "native_parameters": null,
+                "parameter_errors": [
+                  -31415800000000.0,
+                  -31415800000000.0
+                ],
+                "point_layout": "xyz3",
+                "points": [
+                  [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    10.0,
+                    0.0,
+                    0.0
+                  ]
+                ],
+                "stream_ordinal": 0,
+                "xmt": 20
+              },
+              {
+                "angular_error": 0.001,
+                "base_parameter": 0.0,
+                "base_scale": 1.0,
+                "chart_count": 2,
+                "chordal_error": 0.00001,
+                "count": 2,
+                "ext_support_uv": [
                   [
                     [
                       0.0,
@@ -269,8 +304,8 @@
                   ]
                 ],
                 "framing": "direct",
-                "id": "nx:s0:chart-record#20-501",
-                "inflated_offset": 501,
+                "id": "nx:s1:chart-record#20-67",
+                "inflated_offset": 67,
                 "native_parameters": [
                   2.0,
                   5.0
@@ -292,8 +327,67 @@
                     0.0
                   ]
                 ],
-                "stream_ordinal": 0,
+                "stream_ordinal": 1,
                 "xmt": 20
+              }
+            ],
+            "parasolid_deltas_records": [
+              {
+                "byte_len": 34,
+                "family": "TERM_USE",
+                "id": "nx:s1:deltas-record#303-21",
+                "inflated_offset": 303,
+                "kind": 41,
+                "node_id": null,
+                "position": null,
+                "references": [],
+                "stream_ordinal": 1,
+                "xmt": 21
+              },
+              {
+                "byte_len": 34,
+                "family": "TERM_USE",
+                "id": "nx:s1:deltas-record#337-22",
+                "inflated_offset": 337,
+                "kind": 41,
+                "node_id": null,
+                "position": null,
+                "references": [],
+                "stream_ordinal": 1,
+                "xmt": 22
+              },
+              {
+                "byte_len": 41,
+                "family": "SUPPORT_UV",
+                "id": "nx:s1:deltas-record#371-23",
+                "inflated_offset": 371,
+                "kind": 204,
+                "node_id": null,
+                "position": null,
+                "references": [],
+                "stream_ordinal": 1,
+                "xmt": 23
+              },
+              {
+                "byte_len": 236,
+                "family": "CHART",
+                "id": "nx:s1:deltas-record#67-20",
+                "inflated_offset": 67,
+                "kind": 40,
+                "node_id": null,
+                "position": null,
+                "references": [],
+                "stream_ordinal": 1,
+                "xmt": 20
+              }
+            ],
+            "parasolid_deltas_residual_spans": [
+              {
+                "byte_len": 67,
+                "id": "nx:s1:deltas-residual#0",
+                "inflated_offset": 0,
+                "sha256": "b01e0f1bbecc6116af143073421185dfbddb9b35ec76aa1c8958391ab066efa3",
+                "stream_ordinal": 1
               }
             ],
             "parasolid_intersection_records": [
@@ -326,9 +420,24 @@
                 "count": 4,
                 "framing": "direct",
                 "id": "nx:s0:support-uv-record#23",
-                "inflated_offset": 805,
+                "inflated_offset": 677,
                 "marker": 2,
                 "stream_ordinal": 0,
+                "values": [
+                  0.0,
+                  0.0,
+                  0.01,
+                  0.0
+                ],
+                "xmt": 23
+              },
+              {
+                "count": 4,
+                "framing": "direct",
+                "id": "nx:s1:support-uv-record#23",
+                "inflated_offset": 371,
+                "marker": 2,
+                "stream_ordinal": 1,
                 "values": [
                   0.0,
                   0.0,
@@ -344,7 +453,7 @@
                 "form": "L?",
                 "framing": "direct",
                 "id": "nx:s0:term-use-record#21",
-                "inflated_offset": 737,
+                "inflated_offset": 609,
                 "point": [
                   0.0,
                   0.0,
@@ -358,13 +467,41 @@
                 "form": "L?",
                 "framing": "direct",
                 "id": "nx:s0:term-use-record#22",
-                "inflated_offset": 771,
+                "inflated_offset": 643,
                 "point": [
                   10.0,
                   0.0,
                   0.0
                 ],
                 "stream_ordinal": 0,
+                "xmt": 22
+              },
+              {
+                "count": 1,
+                "form": "L?",
+                "framing": "direct",
+                "id": "nx:s1:term-use-record#21",
+                "inflated_offset": 303,
+                "point": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "stream_ordinal": 1,
+                "xmt": 21
+              },
+              {
+                "count": 1,
+                "form": "L?",
+                "framing": "direct",
+                "id": "nx:s1:term-use-record#22",
+                "inflated_offset": 337,
+                "point": [
+                  10.0,
+                  0.0,
+                  0.0
+                ],
+                "stream_ordinal": 1,
                 "xmt": 22
               }
             ],
@@ -376,6 +513,9 @@
                   "nx:s0:crv#0",
                   "nx:s0:intersection-crv#0"
                 ]
+              },
+              {
+                "id": "nx:container:parasolid#1"
               }
             ]
           },
@@ -384,12 +524,17 @@
       },
       "source": {
         "attributes": {
-          "deltas_streams": "0",
+          "deltas.0.bytes_decoded": "345",
+          "deltas.0.full.CHART": "1",
+          "deltas.0.full.SUPPORT_UV": "1",
+          "deltas.0.full.TERM_USE": "2",
+          "deltas.0.grammar": "typed_status_framed_records",
+          "deltas_streams": "1",
           "directory_entries": "1",
-          "file_size": "465",
+          "file_size": "654",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "451",
+          "footer_offset": "640",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -415,11 +560,16 @@
           "code": "carrier_summary",
           "message": "Decoded 1 POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, metres → millimetres), 1 analytic surface carrier(s) (1 plane, 0 cylinder, 0 cone, 0 sphere, 0 torus), and 2 analytic curve carrier(s) (1 line, 0 circle, 0 ellipse). All parameters are byte-exact at the document's millimetre scale.",
           "severity": "info"
+        },
+        {
+          "code": "decode_diagnostic",
+          "message": "1 Parasolid deltas stream(s) were processed in validated UG_PART segment order. Equal-schema deltas were paired with the preceding partition. Exact-key BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact non-topology replacements and tombstones were applied using the last event for each key within each current body-sequence interval. Validated partition topology remained authoritative, including any point, curve, or surface carrier still referenced by surviving topology. Complete ENTITY_51, ENTITY_52, ENTITY_53, and ENTITY_54 records were retained for native attribute extraction. Every completely bounded full record, compact tombstone, and BODY revision envelope was retained as an individually identified native event with its source bounds and decoded identities; BODY state tails retain exact bounded bytes and digests. Complete transmit headers retain their description, schema, consecutive identities, and exact bytes. Terminal two- and four-null-reference trailers retain their exact stream boundary and bytes. Count-selected numeric tails after term-use endpoints were retained with their ordered finite binary64 values. Maximal event gaps containing only typed stream-local references, framed reference/type maps, and complete four-reference state packets, reference-marker packets, and inline schema declarations were retained in order. Spans outside those events were retained with exact inflated-stream bounds and digests. Semantic intersection and NURBS records were retained in the semantic lane. Every terminal tombstone resolved to an exact current or earlier-added key.",
+          "severity": "info"
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 451, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
-        "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 640, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "embedded streams: 1 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
     },
@@ -431,6 +581,9 @@
             "fields": {
               "links": "derived"
             }
+          },
+          "nx:container:parasolid#1": {
+            "entity": "derived"
           },
           "nx:s0:crv#0": {
             "entity": "byte_exact",
@@ -492,6 +645,11 @@
             "offset": 76,
             "stream": 1,
             "tag": "partition"
+          },
+          "nx:container:parasolid#1": {
+            "offset": 436,
+            "stream": 1,
+            "tag": "deltas"
           },
           "nx:s0:body#2": {
             "offset": 70,
@@ -562,16 +720,26 @@
         "streams": [
           "nx:parasolid#0:partition",
           "nx:container",
+          "nx:parasolid#1:deltas",
+          "nx:s1",
           "nx:s0"
         ]
       },
       "retained_records": [
         {
-          "byte_len": 846,
-          "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AAAMAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAMAAAAAAAEAAgABAAQAAQABAAwAAQAOAAQAAAAAAAA/Kjbi6xxDLQABAAEABQADAAYrAAAAAAAAAAAAAAAPAAUAAAAAAAAABwAEAAEAEQAHAAAABQAHAAcACgABAAgADAAAKwAQAAgAAAAAAAA/M6kqMFUyYQAHAAAAAAAMAAAAAAAAADIABgAAAAAAAAAAAAAAAAAAKwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAkAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEgAKAAAAAAAAAAAAAAAAAAs/Gjbi6xxDLQAAABMADAAAAAAAAAAAAAAAAAAdAAsAAAAAAAAAAAAAAAA/hHrhR64Uez+UeuFHrhR7P564UeuFHrgAJgAMAAAAAAABAAAAAAAAAAArAAYAAQAUABUAFgAXACgAAAACABQAAAAAAAAAAD/wAAAAAAAAAAAAAj7k+LWI42jxP1BiTdLxqfzCvJKPmW4AAMK8ko+ZbgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAD+EeuFHrhR7AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQBQAAAAAAAAAKQAAAAEAFUw/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACkAAAABABZMPz+EeuFHrhR7AAAAAAAAAAAAAAAAAAAAAADMAAAABAAXAgAAAAAAAAAAAAAAAAAAAAA/hHrhR64UewAAAAAAAAAA",
+          "byte_len": 718,
+          "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AAAMAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAMAAAAAAAEAAgABAAQAAQABAAwAAQAOAAQAAAAAAAA/Kjbi6xxDLQABAAEABQADAAYrAAAAAAAAAAAAAAAPAAUAAAAAAAAABwAEAAEAEQAHAAAABQAHAAcACgABAAgADAAAKwAQAAgAAAAAAAA/M6kqMFUyYQAHAAAAAAAMAAAAAAAAADIABgAAAAAAAAAAAAAAAAAAKwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAkAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEgAKAAAAAAAAAAAAAAAAAAs/Gjbi6xxDLQAAABMADAAAAAAAAAAAAAAAAAAdAAsAAAAAAAAAAAAAAAA/hHrhR64Uez+UeuFHrhR7P564UeuFHrgAJgAMAAAAAAABAAAAAAAAAAArAAYAAQAUABUAFgAXACgAAAACABQAAAAAAAAAAD/wAAAAAAAAAAAAAj7k+LWI42jxP1BiTdLxqfzCvJKPmW4AAMK8ko+ZbgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP4R64UeuFHsAAAAAAAAAAAAAAAAAAAAAACkAAAABABVMPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAApAAAAAQAWTD8/hHrhR64UewAAAAAAAAAAAAAAAAAAAAAAzAAAAAQAFwIAAAAAAAAAAAAAAAAAAAAAP4R64UeuFHsAAAAAAAAAAA==",
           "id": "nx:container:parasolid#0",
           "offset": 76,
-          "sha256": "76b41cbb6c5cfaa094e24e78d44f7899174521c3fa1c931110c5c5620b7c2bb9",
+          "sha256": "369aadaa2ee46e37e93b382390d962d69d560d8d1117657ad28eab22802db5a5",
+          "stream": "nx:container"
+        },
+        {
+          "byte_len": 412,
+          "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChkZWx0YXMpIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AAAoAAAAAgAUAAAAAAAAAAA/8AAAAAAAAAAAAAI+5Pi1iONo8T9QYk3S8an8wrySj5luAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAA/hHrhR64UewAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAUAAAAAAAAACkAAAABABVMPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAApAAAAAQAWTD8/hHrhR64UewAAAAAAAAAAAAAAAAAAAAAAzAAAAAQAFwIAAAAAAAAAAAAAAAAAAAAAP4R64UeuFHsAAAAAAAAAAA==",
+          "id": "nx:container:parasolid#1",
+          "offset": 436,
+          "sha256": "f8a2793489c60c03b861330362830b2a6ff4ac709be177728ee0d26dcac843bf",
           "stream": "nx:container"
         }
       ],
@@ -586,11 +754,11 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 375,
+        "compressed_size": 564,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 375
+        "uncompressed_size": 564
       },
       {
         "attributes": {
@@ -618,13 +786,36 @@
         "compression": "zlib",
         "name": "parasolid#0",
         "role": "parasolid-stream",
-        "uncompressed_size": 846
+        "uncompressed_size": 718
+      },
+      {
+        "attributes": {
+          "file_offset": "436",
+          "kind": "deltas",
+          "records.body": "0",
+          "records.delta.full.chart": "1",
+          "records.delta.full.support_uv": "1",
+          "records.delta.full.term_use": "2",
+          "records.edge": "0",
+          "records.face": "0",
+          "records.fin": "0",
+          "records.loop": "0",
+          "records.region": "0",
+          "records.shell": "0",
+          "records.vertex": "0",
+          "schema": "SCH_TEST_1_9999"
+        },
+        "compressed_size": 0,
+        "compression": "zlib",
+        "name": "parasolid#1",
+        "role": "parasolid-stream",
+        "uncompressed_size": 412
       }
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 451, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
-      "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 640, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "embedded streams: 1 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]
   }

@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode point and analytic geometry records from Parasolid neutral-binary data.
 //!
-//! The scanners recognize points; planes, cylinders, cones, spheres, and tori;
-//! and lines, circles, and ellipses. They validate record bounds, finite values,
-//! plausible scanner magnitudes, radii, and direction vectors before returning a
+//! The scanners recognize complete fixed records for points; planes, cylinders,
+//! cones, spheres, and tori; and lines, circles, and ellipses. They validate
+//! record bounds, finite values, radii, and direction vectors before returning a
 //! carrier.
 //!
 //! Parasolid stores these fields as big-endian metre values. Returned coordinates
 //! and radii are in millimetres; unit vectors and curve parameters are unchanged.
-//! The scanners test supported field shifts caused by extended references and
-//! omit candidates that fail validation. Use [`crate::topology`] to resolve
-//! returned record offsets into topology.
+//! Fixed-record framing resolves the optional envelope escape, every extended
+//! XMT in the common header, and the record boundary before geometry validation.
+//! Use [`crate::topology`] to resolve returned record offsets into topology.
 #![deny(clippy::disallowed_methods)]
 
 use cadmpeg_core::be::{f64_at as read_f64, vec3_at as read_vec3};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-/// Candidate byte shifts from expanded leading references. Envelope escapes are
-/// resolved by the fixed-record graph, where their independent shift is known.
-const SHIFTS: [usize; 6] = [0, 2, 4, 6, 8, 10];
+use crate::framing::{
+    fixed_len, fixed_record_boundary, fixed_record_candidates, read_sequence_at, FixedRecordFrame,
+};
 
 /// A decoded analytic surface and its source offset.
 #[derive(Debug, Clone)]
@@ -49,37 +49,16 @@ pub struct DecodedPoint {
 }
 
 /// The analytic surface type tags and their fixed record lengths ([spec §4.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#41-fixed-record-families)).
-const SURFACE_TAGS: [(u8, usize); 5] = [
-    (0x32, 91),  // plane
-    (0x33, 99),  // cylinder
-    (0x34, 115), // cone
-    (0x35, 99),  // sphere
-    (0x36, 107), // torus
-];
-
-/// The analytic curve type tags and their fixed record lengths ([spec §4.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#41-fixed-record-families)).
-const CURVE_TAGS: [(u8, usize); 3] = [
-    (0x1e, 67),  // line
-    (0x1f, 99),  // circle
-    (0x20, 107), // ellipse
-];
-
+#[derive(Clone)]
 enum AnalyticRecord {
     Point(DecodedPoint),
     Surface(DecodedSurface),
     Curve(DecodedCurve),
 }
 
-#[derive(Clone, Copy)]
-enum DecodeContext {
-    Scanner,
-    Graph,
-}
-
 /// Decode validated point records in source order.
 ///
-/// Positions are returned in millimetres. Malformed and out-of-range candidates
-/// are skipped.
+/// Positions are returned in millimetres. Malformed candidates are skipped.
 pub fn points(stream: &[u8]) -> Vec<DecodedPoint> {
     analytic_records(stream)
         .into_iter()
@@ -121,28 +100,27 @@ fn analytic_records(stream: &[u8]) -> Vec<AnalyticRecord> {
             continue;
         }
         let kind = stream[p + 1];
-        let candidate = if kind == 0x1d {
-            decode_point(stream, p)
-                .map(|(point, shift)| (AnalyticRecord::Point(point), p + 40 + shift))
-        } else if let Some((_, len)) = SURFACE_TAGS.iter().find(|(tag, _)| *tag == kind) {
-            decode_surface(stream, p, kind).map(|(geometry, shift)| {
-                (
-                    AnalyticRecord::Surface(DecodedSurface { pos: p, geometry }),
-                    p + *len + shift,
-                )
-            })
-        } else if let Some((_, len)) = CURVE_TAGS.iter().find(|(tag, _)| *tag == kind) {
-            decode_curve(stream, p, kind).map(|(geometry, shift)| {
-                (
-                    AnalyticRecord::Curve(DecodedCurve { pos: p, geometry }),
-                    p + *len + shift,
-                )
-            })
-        } else {
-            None
+        let Some(len) = fixed_len(kind) else {
+            p += 1;
+            continue;
         };
-        if let Some((record, end)) = candidate {
+        if !is_analytic_kind(kind) {
+            p += 1;
+            continue;
+        }
+        let frames = fixed_record_candidates(stream, p, kind, len);
+        let candidates = frames
+            .iter()
+            .copied()
+            .filter_map(|frame| analytic_candidate(stream, p, kind, frame))
+            .collect::<Vec<_>>();
+        if let Some((record, end)) = select_analytic_candidate(stream, &candidates) {
             out.push(record);
+            p = end;
+        } else if let Some(end) = frames.iter().map(|frame| frame.end).max() {
+            // A complete structural frame owns its bytes even when its analytic
+            // payload fails validation. Do not rescan those bytes as another
+            // carrier; an unresolved or ambiguous frame is skipped atomically.
             p = end;
         } else {
             p += 1;
@@ -151,57 +129,61 @@ fn analytic_records(stream: &[u8]) -> Vec<AnalyticRecord> {
     out
 }
 
-fn decode_point(stream: &[u8], p: usize) -> Option<(DecodedPoint, usize)> {
-    SHIFTS.into_iter().find_map(|shift| {
-        let xyz = read_vec3(stream, p + 16 + shift)?;
-        (xyz.iter().all(|value| {
-            value.is_finite() && value.abs() < 1.0e3 && (*value == 0.0 || value.abs() >= 1.0e-100)
-        }) && xyz.iter().any(|value| *value != 0.0))
-        .then_some((
-            DecodedPoint {
-                pos: p,
-                position: mm_point(xyz),
-            },
-            shift,
-        ))
-    })
+fn is_analytic_kind(kind: u8) -> bool {
+    matches!(kind, 0x1d | 0x1e..=0x20 | 0x32..=0x36)
 }
 
-/// Decode an analytic surface at tag position `p`, trying each candidate shift and
-/// returning the first whose payload passes the kind's validation gate.
-fn decode_surface(stream: &[u8], p: usize, kind: u8) -> Option<(SurfaceGeometry, usize)> {
-    for sh in SHIFTS {
-        let b = p + sh;
-        let geom = match kind {
-            0x32 => plane(stream, b, DecodeContext::Scanner),
-            0x33 => cylinder(stream, b, DecodeContext::Scanner),
-            0x34 => cone(stream, b, DecodeContext::Scanner),
-            0x35 => sphere(stream, b, DecodeContext::Scanner),
-            0x36 => torus(stream, b, DecodeContext::Scanner),
-            _ => None,
-        };
-        if let Some(geometry) = geom {
-            return Some((geometry, sh));
-        }
-    }
-    None
+struct AnalyticCandidate {
+    frame: FixedRecordFrame,
+    record: AnalyticRecord,
 }
 
-/// Decode an analytic curve at tag position `p`, trying each candidate shift.
-fn decode_curve(stream: &[u8], p: usize, kind: u8) -> Option<(CurveGeometry, usize)> {
-    for sh in SHIFTS {
-        let b = p + sh;
-        let geom = match kind {
-            0x1e => line(stream, b, DecodeContext::Scanner),
-            0x1f => circle(stream, b, DecodeContext::Scanner),
-            0x20 => ellipse(stream, b, DecodeContext::Scanner),
-            _ => None,
-        };
-        if let Some(geometry) = geom {
-            return Some((geometry, sh));
+fn analytic_candidate(
+    stream: &[u8],
+    pos: usize,
+    kind: u8,
+    frame: FixedRecordFrame,
+) -> Option<AnalyticCandidate> {
+    let record_bytes = stream.get(pos..frame.end)?;
+    let record = match kind {
+        0x1d => {
+            let mut at = pos + 8 + frame.shift;
+            read_sequence_at(stream, &mut at, 4)?;
+            let xyz = read_vec3(stream, at)?;
+            xyz.iter()
+                .all(|value| value.is_finite() && (*value * 1000.0).is_finite())
+                .then_some(AnalyticRecord::Point(DecodedPoint {
+                    pos,
+                    position: mm_point(xyz),
+                }))?
         }
+        0x32..=0x36 => decode_surface_record(record_bytes, kind, frame.shift + frame.payload_shift)
+            .map(|geometry| AnalyticRecord::Surface(DecodedSurface { pos, geometry }))?,
+        0x1e..=0x20 => decode_curve_record(record_bytes, kind, frame.shift + frame.payload_shift)
+            .map(|geometry| AnalyticRecord::Curve(DecodedCurve { pos, geometry }))?,
+        _ => return None,
+    };
+    Some(AnalyticCandidate { frame, record })
+}
+
+fn select_analytic_candidate(
+    stream: &[u8],
+    candidates: &[AnalyticCandidate],
+) -> Option<(AnalyticRecord, usize)> {
+    match candidates {
+        [] => None,
+        [candidate] => Some((candidate.record.clone(), candidate.frame.end)),
+        [direct, escaped] => {
+            let direct_boundary = fixed_record_boundary(stream, direct.frame.end);
+            let escaped_boundary = fixed_record_boundary(stream, escaped.frame.end);
+            match (direct_boundary, escaped_boundary) {
+                (true, false) => Some((direct.record.clone(), direct.frame.end)),
+                (false, true) => Some((escaped.record.clone(), escaped.frame.end)),
+                _ => None,
+            }
+        }
+        _ => None,
     }
-    None
 }
 
 /// Decode a graph-owned analytic surface at its resolved payload shift.
@@ -212,11 +194,11 @@ pub(crate) fn decode_surface_record(
 ) -> Option<SurfaceGeometry> {
     let b = shift;
     match kind {
-        0x32 => plane(record, b, DecodeContext::Graph),
-        0x33 => cylinder(record, b, DecodeContext::Graph),
-        0x34 => cone(record, b, DecodeContext::Graph),
-        0x35 => sphere(record, b, DecodeContext::Graph),
-        0x36 => torus(record, b, DecodeContext::Graph),
+        0x32 => plane(record, b),
+        0x33 => cylinder(record, b),
+        0x34 => cone(record, b),
+        0x35 => sphere(record, b),
+        0x36 => torus(record, b),
         _ => None,
     }
 }
@@ -225,20 +207,20 @@ pub(crate) fn decode_surface_record(
 pub(crate) fn decode_curve_record(record: &[u8], kind: u8, shift: usize) -> Option<CurveGeometry> {
     let b = shift;
     match kind {
-        0x1e => line(record, b, DecodeContext::Graph),
-        0x1f => circle(record, b, DecodeContext::Graph),
-        0x20 => ellipse(record, b, DecodeContext::Graph),
+        0x1e => line(record, b),
+        0x1f => circle(record, b),
+        0x20 => ellipse(record, b),
         _ => None,
     }
 }
 
 // --- Surface decoders (offsets from the common header, [§5.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#51-ownership-graph) / [§6.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#61-analytic-curves-and-surfaces)) ---
 
-fn plane(s: &[u8], b: usize, context: DecodeContext) -> Option<SurfaceGeometry> {
+fn plane(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     let origin = read_vec3(s, b + 19)?;
     let normal = read_vec3(s, b + 43)?;
     let x_axis = read_vec3(s, b + 67)?;
-    if !is_orthonormal_frame(normal, x_axis) || !valid_position(origin, context) {
+    if !is_orthonormal_frame(normal, x_axis) || !valid_position(origin) {
         return None;
     }
     Some(SurfaceGeometry::Plane {
@@ -248,15 +230,12 @@ fn plane(s: &[u8], b: usize, context: DecodeContext) -> Option<SurfaceGeometry> 
     })
 }
 
-fn cylinder(s: &[u8], b: usize, context: DecodeContext) -> Option<SurfaceGeometry> {
+fn cylinder(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     let origin = read_vec3(s, b + 19)?;
     let axis = read_vec3(s, b + 43)?;
     let radius = read_f64(s, b + 67)?;
     let x_axis = read_vec3(s, b + 75)?;
-    if !is_orthonormal_frame(axis, x_axis)
-        || !valid_position(origin, context)
-        || !valid_radius(radius, context)
-    {
+    if !is_orthonormal_frame(axis, x_axis) || !valid_position(origin) || !valid_radius(radius) {
         return None;
     }
     Some(SurfaceGeometry::Cylinder {
@@ -267,16 +246,14 @@ fn cylinder(s: &[u8], b: usize, context: DecodeContext) -> Option<SurfaceGeometr
     })
 }
 
-fn cone(s: &[u8], b: usize, context: DecodeContext) -> Option<SurfaceGeometry> {
+fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     let origin = read_vec3(s, b + 19)?;
     let axis = read_vec3(s, b + 43)?;
     let radius = read_f64(s, b + 67)?;
     let sin_half = read_f64(s, b + 75)?;
     let cos_half = read_f64(s, b + 83)?;
     let x_axis = read_vec3(s, b + 91)?;
-    if !is_orthonormal_frame(axis, x_axis)
-        || !valid_position(origin, context)
-        || !valid_cone_radius(radius, context)
+    if !is_orthonormal_frame(axis, x_axis) || !valid_position(origin) || !valid_cone_radius(radius)
     {
         return None;
     }
@@ -300,15 +277,12 @@ fn cone(s: &[u8], b: usize, context: DecodeContext) -> Option<SurfaceGeometry> {
     })
 }
 
-fn sphere(s: &[u8], b: usize, context: DecodeContext) -> Option<SurfaceGeometry> {
+fn sphere(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     let center = read_vec3(s, b + 19)?;
     let radius = read_f64(s, b + 43)?;
     let axis = read_vec3(s, b + 51)?;
     let x_axis = read_vec3(s, b + 75)?;
-    if !is_orthonormal_frame(axis, x_axis)
-        || !valid_position(center, context)
-        || !valid_radius(radius, context)
-    {
+    if !is_orthonormal_frame(axis, x_axis) || !valid_position(center) || !valid_radius(radius) {
         return None;
     }
     Some(SurfaceGeometry::Sphere {
@@ -319,7 +293,7 @@ fn sphere(s: &[u8], b: usize, context: DecodeContext) -> Option<SurfaceGeometry>
     })
 }
 
-fn torus(s: &[u8], b: usize, context: DecodeContext) -> Option<SurfaceGeometry> {
+fn torus(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
     let center = read_vec3(s, b + 19)?;
     let axis = read_vec3(s, b + 43)?;
     let major = read_f64(s, b + 67)?;
@@ -328,9 +302,9 @@ fn torus(s: &[u8], b: usize, context: DecodeContext) -> Option<SurfaceGeometry> 
     // A horn torus (major == minor) is valid; both radii must be positive and
     // finite. A zero major radius is degenerate and rejected.
     if !is_orthonormal_frame(axis, x_axis)
-        || !valid_position(center, context)
-        || !valid_radius(major, context)
-        || !valid_radius(minor, context)
+        || !valid_position(center)
+        || !valid_radius(major)
+        || !valid_radius(minor)
     {
         return None;
     }
@@ -345,10 +319,10 @@ fn torus(s: &[u8], b: usize, context: DecodeContext) -> Option<SurfaceGeometry> 
 
 // --- Curve decoders ---
 
-fn line(s: &[u8], b: usize, context: DecodeContext) -> Option<CurveGeometry> {
+fn line(s: &[u8], b: usize) -> Option<CurveGeometry> {
     let origin = read_vec3(s, b + 19)?;
     let direction = read_vec3(s, b + 43)?;
-    if !is_unit(direction) || !valid_position(origin, context) {
+    if !is_unit(direction) || !valid_position(origin) {
         return None;
     }
     Some(CurveGeometry::Line {
@@ -357,15 +331,12 @@ fn line(s: &[u8], b: usize, context: DecodeContext) -> Option<CurveGeometry> {
     })
 }
 
-fn circle(s: &[u8], b: usize, context: DecodeContext) -> Option<CurveGeometry> {
+fn circle(s: &[u8], b: usize) -> Option<CurveGeometry> {
     let center = read_vec3(s, b + 19)?;
     let normal = read_vec3(s, b + 43)?;
     let x_axis = read_vec3(s, b + 67)?;
     let radius = read_f64(s, b + 91)?;
-    if !is_orthonormal_frame(normal, x_axis)
-        || !valid_position(center, context)
-        || !valid_radius(radius, context)
-    {
+    if !is_orthonormal_frame(normal, x_axis) || !valid_position(center) || !valid_radius(radius) {
         return None;
     }
     Some(CurveGeometry::Circle {
@@ -376,16 +347,16 @@ fn circle(s: &[u8], b: usize, context: DecodeContext) -> Option<CurveGeometry> {
     })
 }
 
-fn ellipse(s: &[u8], b: usize, context: DecodeContext) -> Option<CurveGeometry> {
+fn ellipse(s: &[u8], b: usize) -> Option<CurveGeometry> {
     let center = read_vec3(s, b + 19)?;
     let normal = read_vec3(s, b + 43)?;
     let x_axis = read_vec3(s, b + 67)?;
     let major = read_f64(s, b + 91)?;
     let minor = read_f64(s, b + 99)?;
-    if !is_orthonormal_frame(normal, x_axis) || !valid_position(center, context) {
+    if !is_orthonormal_frame(normal, x_axis) || !valid_position(center) {
         return None;
     }
-    if !valid_radius(major, context) || !valid_radius(minor, context) || minor > major {
+    if !valid_radius(major) || !valid_radius(minor) || minor > major {
         return None;
     }
     Some(CurveGeometry::Ellipse {
@@ -415,26 +386,17 @@ fn is_orthonormal_frame(axis: [f64; 3], x_axis: [f64; 3]) -> bool {
         && (axis[0] * x_axis[0] + axis[1] * x_axis[1] + axis[2] * x_axis[2]).abs() < 1.0e-6
 }
 
-fn valid_position(v: [f64; 3], context: DecodeContext) -> bool {
-    v.iter().all(|coordinate| {
-        coordinate.is_finite()
-            && (*coordinate * 1000.0).is_finite()
-            && (matches!(context, DecodeContext::Graph) || coordinate.abs() < 1.0e3)
-    })
+fn valid_position(v: [f64; 3]) -> bool {
+    v.iter()
+        .all(|coordinate| coordinate.is_finite() && (*coordinate * 1000.0).is_finite())
 }
 
-fn valid_radius(radius: f64, context: DecodeContext) -> bool {
-    radius.is_finite()
-        && (radius * 1000.0).is_finite()
-        && radius > 0.0
-        && (matches!(context, DecodeContext::Graph) || (radius > 1.0e-9 && radius < 1.0e3))
+fn valid_radius(radius: f64) -> bool {
+    radius.is_finite() && (radius * 1000.0).is_finite() && radius > 0.0
 }
 
-fn valid_cone_radius(radius: f64, context: DecodeContext) -> bool {
-    radius.is_finite()
-        && (radius * 1000.0).is_finite()
-        && radius >= 0.0
-        && (matches!(context, DecodeContext::Graph) || radius <= 1.0e3)
+fn valid_cone_radius(radius: f64) -> bool {
+    radius.is_finite() && (radius * 1000.0).is_finite() && radius >= 0.0
 }
 
 fn mm_point(v: [f64; 3]) -> Point3 {

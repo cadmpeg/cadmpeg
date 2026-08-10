@@ -2356,10 +2356,10 @@
           "active_body_selector": "rmfastload_object_id_membership",
           "deltas_streams": "0",
           "directory_entries": "2",
-          "file_size": "3416",
+          "file_size": "3432",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "3402",
+          "footer_offset": "3418",
           "header_entry_count": "2",
           "jpeg_preview_count": "0",
           "parasolid_schema": "SCH_TEST_1_9999",
@@ -2391,7 +2391,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 3402, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 3418, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 2 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "Parasolid schema: SCH_TEST_1_9999"
       ]
@@ -3591,11 +3591,11 @@
           "file_offset": "3181",
           "region": "HEADER"
         },
-        "compressed_size": 221,
+        "compressed_size": 237,
         "compression": "none",
         "name": "/Root/FastLoad/RMFastLoad",
         "role": "active-body-index",
-        "uncompressed_size": 221
+        "uncompressed_size": 237
       },
       {
         "attributes": {
@@ -3656,7 +3656,7 @@
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 3402, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 3418, 2 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 2 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "Parasolid schema: SCH_TEST_1_9999"
     ]

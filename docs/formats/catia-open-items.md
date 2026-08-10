@@ -82,14 +82,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know their roles to validate and write the body.
 
-### DI-07. Compound relation-program result binding
-
-**Question.** Which compound relation-program frame slot selects the `paramout` result entity?
-
-**Known.** `catia.md` §7.3 "A compact compound relation-program instance is" and `catia.md` §7.3 "A separator-form compound relation-program instance is" defines lead-`12` and lead-`54` relation-program frames. A complete typed expression and its source symbols give the ordered inputs. The program identity, repeated reference, lead-`12` `ref(h)` context identity, and lead-`54` trailing identity remain distinct incidences. A selected entity class does not by itself assign a result.
-
-**Need.** We must know the result slot to transfer a relation with an output.
-
 ### DI-08. Legacy relation `body` selector
 
 **Question.** What identity space does a nonlocal `body` selector on a legacy typed relation use?
@@ -105,30 +97,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `catia.md` §7.1 "A typed relation consists of" defines the local identity case. A `param` selector inside the containing run can select the relation parameter.
 
 **Need.** We must resolve a nonlocal selector to bind the relation result.
-
-### DI-10. Evaluated `String` relation inputs
-
-**Question.** Which string-value entity supplies each typed `String` relation input?
-
-**Known.** `catia.md` §7.1 "A legacy string-value packet is" defines named and evaluated string-value packets. A complete relation program can bind ordered source symbols.
-
-**Need.** We must join the source symbol to its string packet to evaluate the relation.
-
-### DI-11. Evaluated `String` relation results
-
-**Question.** Which string-value entity stores the result of a typed `String` relation?
-
-**Known.** `catia.md` §7.1 "A typed relation consists of" and `catia.md` §7.1 "A legacy string-value packet is" defines string packets and typed relation result signatures. The type signature does not select the result packet.
-
-**Need.** We must know the result entity to transfer the evaluated value.
-
-### DI-12. Typed `Boolean` value production
-
-**Question.** What byte production stores the scalar value of a typed `Boolean` parameter?
-
-**Known.** `catia.md` §7.3 "A complete entity-record suffix value begins" defines scalar, unset, atom, control, and schema-selected object values. Boolean-named field classes can contain compound object payloads.
-
-**Need.** We must know the scalar production to transfer a Boolean parameter.
 
 ### DI-13. Active configuration state
 
@@ -170,14 +138,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the roles to transfer sketch membership and geometry.
 
-### DI-18. Constraint-range owner
-
-**Question.** Which individual constraint owns each complete `Range`/`CstAttr_Dimension` or `Range`/`ComplexCst` value?
-
-**Known.** `catia.md` §7.3 "A lead-`2` constraint-range entity has exactly two value selectors" defines both range forms and retains incoming payload references and object-head storage selectors as distinct incidences. `ListAggregator` references can include unrelated and repeated identities.
-
-**Need.** We must know the owner to assign a range to a neutral constraint.
-
 ### DI-19. Sketch placement
 
 **Question.** Which fields give a constructed sketch placement frame? Which fields give a support-face sketch placement frame?
@@ -214,9 +174,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How do operation fields, definition-bound values, and structurally owned operand objects form one feature instance?
 
-**Known.** `catia.md` §7.3 "All `7C09` records in one graph carrying the same `owner_ref`" defines each incidence independently. An operation-named field class or owner group does not assign feature identity, operands, outputs, or replay order.
+**Known.** `catia.md` §7.3 "All `7C09` records in one graph carrying the same `owner_ref`" defines each incidence independently. A complete two-definition value chain with a supported second role transfers one typed parameter, but it does not assign that parameter to an operation role. An operation-named field class or field vocabulary does not assign feature identity, operands, outputs, or replay order. An exact separator-form owner declaration for an admitted operation class, with matching class entry, owner entity, and structural owner, establishes one opaque feature identity and its source order; it does not assign the operation's semantic inputs.
 
-**Need.** We must know the binding to transfer an ordered design feature.
+**Need.** We must know the operation-specific binding that transfers profiles, directions, extents, outputs, and regeneration dependencies for each admitted feature family.
 
 ## 3. Standard nested `V5_CFV2`
 
@@ -235,6 +195,8 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `catia.md` §6.2 "Frames an explicit rolling-ball surface jet." defines the knots and the value, first-derivative, and second-derivative blocks. The continuation has more than one length class.
 
 **Need.** We must know its lanes and terminal fields to read and write the complete record.
+
+**Note.** The enclosing frame closes the continuation after the three aligned jet blocks; its fields remain unresolved. The decoder transfers the complete known jet without imposing a fixed continuation-size limit. The `a8` parser instead requires the 59-byte tail that the specification states.
 
 ### SN-03. Width-coded class-`0x5e` header token
 
@@ -292,14 +254,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the coding to reconstruct and write the cached curve.
 
-### SN-10. Logical vertex to `05 08 01` allocation
-
-**Question.** Which byte relation assigns each logical vertex component to a `05 08 01` allocation row?
-
-**Known.** `catia.md` §5.4 "Standard `u16be` edge rows are handle sequences" defines the logical-corner quotient and physical endpoint ports independently of coordinate-row allocation.
-
-**Need.** We must know the allocation relation for byte-faithful writing.
-
 ### SN-11. Standard 3D spline cache
 
 **Question.** How does the separate standard 3D spline cache encode its poles and knots?
@@ -310,19 +264,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### SN-12. Consolidated persistent-tag namespace
 
-**Question.** How does an `op1` or absolute persistent CGM tag select a serialized record outside the exact class-`0x19` analytic-circle binding?
+**Question.** How does an `op1` or absolute persistent CGM tag select a serialized record outside the exact class-`0x19` circle and embedded type-`3` cylinder bindings?
 
-**Known.** `catia.md` §6.3 "When the `op1` support identity equals" defines the exact unique class-`0x19` binding. The decoder retains other persistent identities.
+**Known.** `catia.md` §6.3 "When the `op1` support identity equals" defines the exact unique class-`0x19` binding and the unique embedded type-`3` cylinder binding. The decoder retains other persistent identities.
 
 **Need.** We must resolve the namespace to bind other consolidated curve and support records.
-
-### SN-13. Standard `0x60` local tag binding
-
-**Question.** How does a standard `0x60` row local allocation tag bind to its native edge record when no edge node has the same curve identity?
-
-**Known.** `catia.md` §5.5 `edge_support_row` defines exact identity binding and the endpoint-incidence fallback.
-
-**Need.** We must know the remaining binding to transfer the native edge carrier.
 
 ### SN-14. Multiple FBB face groups
 
@@ -339,14 +285,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `catia.md` §5.6 "**Circle/arc endpoints by support intersection:**" defines arc selection when one of these witnesses fixes the branch.
 
 **Need.** We must know the remaining selector to reconstruct the arc.
-
-### SN-16. Class-`0x20` persistent reference
-
-**Question.** How does the `op1` or persistent-tag reference in an `a5 03 20` record select a serialized record?
-
-**Known.** `catia.md` §6.3 "`b2 03 20` is the B-family form" defines the pcurve payload and support binding for exact identity and chart matches.
-
-**Need.** We must resolve other references to bind the pcurve support.
 
 ### SN-17. Class-`0x62` owner bounds
 
@@ -420,21 +358,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the object role to assign the owner to a feature or face.
 
-### SN-26. Revolution profile allocation identity
-
-**Question.** How does the `u16le` profile allocation identity in a `b2 03 2d` revolution record select its native profile record?
-
-**Known.** `catia.md` §5.15 "The `00 33 30` byte is only" defines the axis frame, angular chart, and exact unique profile-interval binding.
-
-**Need.** We must resolve the directrix identity when the interval binding is not unique.
-
 ### SN-27. Consolidated class-`0x27` plane carrier
 
-**Question.** What are the fields of a `b2`, `b3`, or `b4 03 27` record, and which of them does its second payload byte select?
+**Question.** What semantic roles do the four tail scalars of an `ec` class-`0x27` record have, and what supplies its missing plane axis frame?
 
-**Known.** The payload is that byte pair followed by a whole number of `f64le` values. The count changes with the second byte: `e4` gives 7 values, `c4` gives 8, and `ec` gives 6. A decoded value group holds an in-plane point, an in-plane unit direction with one component absent, and a trailing triple. No decoder reads the class.
+**Known.** A complete `b2`, `b3`, or `b4 03 27` frame has payload marker `b4`, a selector, and a nonempty finite f64 lane. Selector `e4` carries seven values as a two-coordinate point, a two-coordinate direction with an omitted third component, and a three-scalar tail. Selector `c4` carries eight values as a two-coordinate point, a three-coordinate direction, and a three-scalar tail. Selector `ec` carries six values as a two-coordinate point and a four-scalar tail. Other selectors retain their complete finite scalar lanes without a neutral plane layout. The direction-bearing `e4` and `c4` layouts define a plane frame with origin `(point_x,point_y,0)`, the stored unit direction as `u_axis`, global Z as the second chart axis, and `unit(u_axis×Z)` as the normal. Their tails are finite with a positive first scalar and an increasing final pair. A direction-bearing carrier binds a consolidated pcurve side only when endpoint lifts select exactly one carrier and reach the object-stream vertices. A directionless `ec` carrier is retained in the native namespace and does not supply a neutral plane support.
 
-**Need.** A consolidated edge side whose carrier is one of these records has no bound support. `catia.md` §6.3 "A resolved edge block binds" then recovers the side's chart relation to a standard plane face from the block's shared 3D loci, which needs that face to exist. A side with no standard face keeps no pcurve.
+**Need.** Resolve the `ec` tail roles and its axis-frame source before transferring that layout as a neutral plane support.
 
 ## 4. Object stream
 
@@ -461,6 +391,8 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** Closed endpoint chains fix coedge traversal. They do not fix this face-level sign.
 
 **Need.** We must know the sign to orient the neutral face.
+
+**Note.** `b5::transfer::faces` writes `Sense::Forward` for every object-stream face and leaves the `sense` field at the face entity's `Inferred` exactness. The sign remains unresolved; the transfer loss note names the gauge.
 
 ### OS-04. Object-stream body kind
 
@@ -510,14 +442,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the difference to validate and write the record.
 
-### OS-10. Exact pcurve suffix scalar
-
-**Question.** What does the positive scalar in the exact `b5 03 21` pcurve suffix control?
-
-**Known.** `catia.md` §6.7 "`b5 03 21` (pcurve):" defines the pcurve geometry and parameter interval independently of this scalar.
-
-**Need.** We must know the role to make the complete pcurve record.
-
 ### OS-11. Class-`0x2c` auxiliary scalars
 
 **Question.** What does each decreasing auxiliary scalar in class-`0x2c` terminal forms `01 09` and `01 15` control?
@@ -550,34 +474,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the construction to transfer the result without using an incorrect cone offset.
 
-### OS-15. Class-`0x34` elided pole program
-
-**Question.** Where does an `a8 03 34` freeform surface keep its pole grid when the record stores a fixed 141-byte program in place of the inline grid, and what does that program encode?
-
-**Known.** `catia.md` §6.1 "Payload: `degU` and `K_U`" and §6.7 "An `a8 03 34` surface with an unresolved indirect pole program" define the header lanes and the identity-bearing fallback. The header gives the degrees, distinct knots, multiplicities, and pole cardinalities, so the expected inline grid width is `u_count * v_count * 24` bytes. The program replaces that grid. The lane that follows the V multiplicities is:
-
-| Payload offset | Width | Type | Value |
-| -------------- | ----- | ---- | ----- |
-| `+0` | 1 | `u8` | `05` |
-| `+1` | 1 | `u8` | `4n+1` control |
-| `+2` | 1 | `u8` | `05` |
-| `+3` | 1 | `u8` | `4n+1` control |
-| `+4` | 8 | `f64le` | zero |
-| `+12` | 8 | `f64le` | positive scalar |
-| `+20` | 8 | `f64le` | zero |
-| `+28` | 8 | `f64le` | positive scalar, equal to the V knot span |
-| `+36` | 8 | `f64le` | one |
-| `+44` | 8 | `f64le` | zero |
-| `+52` | 8 | `f64le` | one |
-| `+60` | 8 | `f64le` | zero |
-| `+68` | 3 | `u8{3}` | `01 01 01` |
-| `+71` | 64 | `u8{64}` | zero |
-| `+135` | 6 | `u8{6}` | `01 00 01 00 07 07` |
-
-The program is exactly 141 bytes and the byte after it starts the next object frame. An A8 wrapper carrying this program owns a nested length-closed `b5 03` run holding the face, loop, pcurve, edge, and vertex records of the face that the carrier bounds.
-
-**Need.** We must know the pole source to evaluate the carrier. Without it no pcurve on the carrier lifts, no incident edge takes a vertex locus, and the owning face stays outside the transferred B-rep (FV-09).
-
 ## 5. Zero-entity `a9 03`
 
 ### ZE-01. Class-`0x5fxx` face terminal control
@@ -594,6 +490,8 @@ The program is exactly 141 bytes and the byte after it starts the next object fr
 
 **Known.** `catia.md` §8 "Record families:" defines these record populations and their owner-local identities independently.
 
+The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−2` values belong to the `0638`/`2569` topology namespace, while `X` and `Y` select the two adjacent surface-support slots.
+
 **Need.** We must know the association to build neutral coedges.
 
 ### ZE-03. Physical-edge endpoint binding
@@ -604,47 +502,7 @@ The program is exactly 141 bytes and the byte after it starts the next object fr
 
 **Need.** We must know the binding to build neutral edges and vertices.
 
-### ZE-04. `5e 1a` allocation namespaces
-
-**Question.** What does each independent `T`, `X`, and `Y` allocation in the `5e 1a` tuple `[T,X,Y,T−1,T−2]` select?
-
-**Known.** `catia.md` §8 "A `5e1a` edge-stride record contains" defines the tuple relation and retains all five identities.
-
-**Need.** We must know the namespaces to bind the edge, supports, and incidences.
-
 ## 6. E5 `0D 03`
-
-### E5-01. `0xa0` circle branch
-
-**Question.** Which field selects the circle branch of an `0xa0` wrapper?
-
-**Known.** `catia.md` §9 "Framing `E5 0D 03 <cls> <sub> <payload_size_u16le> 00 00 00 <record_id_u32le> <payload>`, stride" and `catia.md` §9 "Classes: `0x01` body" defines the admitted `0xa0` wrapper and analytic circle primitive.
-
-**Need.** We must know the selector to choose the correct circle arc.
-
-### E5-02. `0xa0` co-parametric mapping
-
-**Question.** What is the general parameter mapping from an `0xa0` wrapper to its primitive?
-
-**Known.** For the cone subset, `q_circle = (R/ca_q_scale) * q_ca`.
-
-**Need.** We must know the other mappings to trim the primitive correctly.
-
-### E5-03. Plane-cap digon orientation
-
-**Question.** Which fields orient a plane-cap digon?
-
-**Known.** `catia.md` §9 "**E5 orientation** is" defines the E5 incidence graph and the non-degenerate orientation equations.
-
-**Need.** We must know the fields to orient the cap when its boundary is a digon.
-
-### E5-04. Rank-deficient plane frame
-
-**Question.** How is a rank-deficient E5 plane frame completed?
-
-**Known.** The decoder retains the stored frame lanes. The general frame equation requires independent axes.
-
-**Need.** We must know the completion rule to construct the plane.
 
 ### E5-05. Root orientation signs
 
@@ -685,6 +543,14 @@ The program is exactly 141 bytes and the byte after it starts the next object fr
 **Known.** The five references and the containing record boundary are defined.
 
 **Need.** We must know the trailing fields to interpret and write the edge use.
+
+### E5-10. Component orientation gauge
+
+**Question.** Which field gives the global sign of a connected parity component?
+
+**Known.** `catia.md` §9 "**E5 orientation** is" gives "its global sign follows majority `face_trailer_sign` alignment, with the first serialized loop as the stable gauge when the alignment count ties." That rule is a decoder procedure and names no field. Two decoded sign populations are unread: the loop trailer holds `3*edge_count+4` signed ternary words and only `ref_aligned_signs[1]` is used, and the root `0x08` tape holds one sign for each face and no code reads it.
+
+**Need.** The sign reverses the cyclic member order of every loop in the component and toggles every member sense, which gives an inverted shell. The result stays radially coherent, so no gate rejects it, and the transfer loss note affirms that face and loop orientation transfer. We must know the field to fix the sign without a vote.
 
 ## 7. FBB-only and float-packed variants
 
@@ -751,28 +617,6 @@ The program is exactly 141 bytes and the byte after it starts the next object fr
 **Known.** `catia.md` §11 "A nested-`V5_CFV2` file without a standard FBB spine" defines the admitted marker family. Marker bytes can also occur inside numeric payloads.
 
 **Need.** We must know the delimiter grammar to separate adjacent surface records without a false marker match.
-
-### FV-09. Isolated face on a pole-elided freeform carrier
-
-**Question.** What recovers the endpoint loci of a face whose `a8 03 34` carrier stores no inline pole grid, so that the face joins the transferred B-rep instead of the residual `topology_not_transferred` loss?
-
-**Known.** `catia.md` §6.7 "**Object-stream topology:**" fixes loop membership: a `b5 03 5f` face's loop references select its `62` nodes, and a `62` allocation that no face references is outside the B-rep. That rule accounts for every `62` allocation of an object-stream body. `catia.md` §6.7 "An `a8 03 34` surface with an unresolved indirect pole program" keeps such a carrier as an identity-bearing surface node. A class-`21` pcurve on that carrier lifts to no 3D endpoint, so no `5e` edge on it acquires a vertex locus, its `62` loop fails the endpoint conjunct, and the owning `5f` face leaves the connected graph. The face's own `5d`, `05`, `06`, `21`, and `5e` records are all structurally complete; only the carrier geometry is missing. OS-15 holds the carrier grammar.
-
-**Need.** We must recover the carrier geometry, or another endpoint source, to transfer the face. Until then the exclusion is correct and must not be relaxed: transferring the face would require invented vertex coordinates.
-
-**Note.** Until this tree the resolved graph did not reach the document at all. `assemble::neutral_model_is_admissible` judged the candidate model before `cadmpeg-ir` sorts each arena by entity id, and a `b5 03` id embeds an unpadded decimal `object_id`, so `catia:b5:face#10` preceded `catia:b5:face#9` and every topology arena failed the strict arena-order check together. The route then fell back to bare surface carriers. The gate now canonicalizes the candidate first, which is the form `DecodeResult::new` publishes. No identity change was needed: a cross-reference is an id string, so arena order carries no reference semantics.
-
-**Note.** The decode report measures the residual directly. `resolved_object_stream_face_terminal_control_*_count` and `resolved_object_stream_loop_framing_controls_*_count` sum the graph faces and loops; `transferred_object_stream_face_count` and `transferred_object_stream_loop_count` give the counts the transfer keeps. The difference is this item. Two counts of the same route measure different layers and must not be compared: the graph arenas hold every resolvable pcurve and surface record, while the neutral arenas hold only the records the reference-closed subset adopts.
-
-### FV-10. Float-packed fixture validity
-
-**Question.** What object-stream and analytic-carrier records must a synthesized float-packed inner-no-FBB input contain to be a valid specimen of the variant?
-
-**Known.** `catia.md` §6.7 "For `b5 03 29`, the 185-byte payload is" fixes the cone chart and §6.7 "`b5 03 5d` (vertex identity)" fixes the native vertex-identity chain. The committed golden fixtures for this variant satisfy neither and reach no geometry path, so no golden fixture exercises the object-stream transfer route. Route coverage is a programmatically synthesized object stream held in the crate's tests, which decodes end to end through the container.
-
-**Need.** We must know the minimum valid record set to synthesize golden fixtures that hold the object-stream route under snapshot.
-
-**Note.** Loop membership no longer blocks this item. `catia.md` §6.7 "**Object-stream topology:**" fixes the rule a fixture must satisfy: each `62` node is named by exactly one `5f` face, its trailing reference is that face's carrier, and its `n_refs` equals `2*edge_count+1`. The remaining blocker is the `5d` identity chain, which needs a `5d`, a class-`05` roster, class-`06` parameter incidences, and `05 08 01` vertex rows that agree with the lifted pcurve endpoints of every incident edge. A fixture that omits the chain reaches the same excluded state as FV-09 and proves nothing about the route.
 
 ## 8. Appearance
 

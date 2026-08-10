@@ -9,10 +9,10 @@
 //!
 //! Support level: [L3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
 //! for selected or terminal-lineage-resolved body images; L2 for unresolved
-//! multi-partition history. `RMFastLoad` body selection is a conservative
-//! membership heuristic (intersect with topology node IDs; require sufficient
-//! hit ratio or dominance; otherwise decline and fall back to terminal lineage
-//! when complete).
+//! multi-partition history. `RMFastLoad` body selection retains every body
+//! whose complete nonempty topology node-ID set is covered by the active
+//! object-ID set; when no body has that complete membership, it declines and
+//! falls back to terminal lineage when complete.
 //!
 //! # Decode a part
 //!
@@ -75,6 +75,7 @@ pub mod container;
 pub mod decode;
 pub mod deltas;
 pub mod evaluation;
+mod framing;
 pub mod geometry;
 pub mod intersection;
 mod jt;

@@ -44,6 +44,17 @@ impl StreamKind {
     pub fn is_parasolid(self) -> bool {
         !matches!(self, StreamKind::Preview)
     }
+
+    /// Return the `CHART_s` Hvec layout required by this stream kind.
+    pub(crate) fn chart_point_layout(self) -> Option<crate::intersection::ChartPointLayout> {
+        match self {
+            StreamKind::Partition | StreamKind::Plain => {
+                Some(crate::intersection::ChartPointLayout::Xyz3)
+            }
+            StreamKind::Deltas => Some(crate::intersection::ChartPointLayout::Ext11),
+            StreamKind::Preview => None,
+        }
+    }
 }
 
 /// A located and inflated stream from the canonical part payload.

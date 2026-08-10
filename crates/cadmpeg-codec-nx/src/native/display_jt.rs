@@ -852,7 +852,8 @@ pub(crate) fn jt9_topology_high_degree_lane_count(
     let mut match_count = 0usize;
     let mut matched_lane_count = 0usize;
     let mut cursor = prefix_end;
-    for lane_count in 1..=64 {
+    let mut lane_count = 1usize;
+    while cursor < representation.len() {
         let Some((_, _, byte_len)) = representation
             .get(cursor..)
             .and_then(|bytes| crate::jt::frame_int32_cdp2(bytes, 0))
@@ -904,6 +905,7 @@ pub(crate) fn jt9_topology_high_degree_lane_count(
             match_count += 1;
             matched_lane_count = lane_count;
         }
+        lane_count = lane_count.checked_add(1)?;
     }
     (match_count == 1).then_some(matched_lane_count)
 }
@@ -4821,6 +4823,11 @@ mod tests {
         assert_eq!(
             super::jt9_topology_high_degree_lane_count(&populated, 10),
             Some(13)
+        );
+        let beyond_legacy_ceiling = representation(65, 20);
+        assert_eq!(
+            super::jt9_topology_high_degree_lane_count(&beyond_legacy_ceiling, 10),
+            Some(65)
         );
         assert_eq!(
             super::jt9_topology_high_degree_lane_count(&populated, 11),

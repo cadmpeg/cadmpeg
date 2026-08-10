@@ -5,10 +5,14 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::{PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, EdgeId, FaceId, LoopId, PcurveId, RegionId, ShellId, SurfaceId,
+    BodyId, CoedgeId, EdgeId, FaceId, LoopId, PcurveId, RegionId, ShellId, SurfaceId, VertexId,
 };
-use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Face, Loop, Region, Sense, Shell};
+use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Face, Loop, LoopBoundaryRole, Region, Sense, Shell, VertexUse,
+};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::B5Graph;
@@ -192,6 +196,143 @@ pub(super) fn orient_loop_members(
     Some(oriented)
 }
 
+fn b5_plane_point(
+    origin: Point3,
+    u_axis: cadmpeg_ir::math::Vector3,
+    v_axis: cadmpeg_ir::math::Vector3,
+    uv: Point2,
+) -> Point3 {
+    Point3::new(
+        origin.x + uv.u * u_axis.x + uv.v * v_axis.x,
+        origin.y + uv.u * u_axis.y + uv.v * v_axis.y,
+        origin.z + uv.u * u_axis.z + uv.v * v_axis.z,
+    )
+}
+
+fn b5_planar_loop_points(
+    ir: &CadIr,
+    graph: &B5Graph,
+    loop_id: u32,
+    loop_orientation: &OrientedLoop,
+    surface_id: &SurfaceId,
+    pcurve_uses: &HashMap<(u32, usize), (PcurveId, [f64; 2])>,
+) -> Option<Vec<Point3>> {
+    let surface = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == *surface_id)?;
+    let SurfaceGeometry::Plane {
+        origin,
+        normal,
+        u_axis,
+    } = &surface.geometry
+    else {
+        return None;
+    };
+    let normal = normal.unit()?;
+    let u_axis = u_axis.unit()?;
+    if normal.dot(u_axis).abs() > 1e-8 {
+        return None;
+    }
+    let v_axis = normal.cross(u_axis).unit()?;
+    let loop_ = graph.loops.get(&loop_id)?;
+    let mut points = Vec::with_capacity(loop_.edges.len());
+    for &member in &loop_orientation.member_order {
+        let edge = loop_.edges[member];
+        let endpoints = graph.edge_vertices.get(&edge)?;
+        let endpoint_indices = if loop_orientation.reversed[member] {
+            [endpoints[1], endpoints[0]]
+        } else {
+            *endpoints
+        };
+        let [Some(start), Some(end)] = endpoint_indices.map(|index| {
+            super::b5_vertex_point(graph, index)
+                .map(|point| Point3::new(point[0], point[1], point[2]))
+        }) else {
+            return None;
+        };
+        let (pcurve_id, parameter_range) = pcurve_uses.get(&(loop_id, member))?;
+        if !parameter_range
+            .iter()
+            .all(|parameter| parameter.is_finite())
+            || parameter_range[0] == parameter_range[1]
+        {
+            return None;
+        }
+        let pcurve = ir
+            .model
+            .pcurves
+            .iter()
+            .find(|pcurve| pcurve.id == *pcurve_id)?;
+        let PcurveGeometry::Line {
+            origin: uv_origin,
+            direction,
+        } = &pcurve.geometry
+        else {
+            return None;
+        };
+        let uv_endpoints = parameter_range.map(|parameter| {
+            Point2::new(
+                uv_origin.u + parameter * direction.u,
+                uv_origin.v + parameter * direction.v,
+            )
+        });
+        let lifted = uv_endpoints.map(|uv| b5_plane_point(*origin, u_axis, v_axis, uv));
+        let forward_error = lifted[0].distance(start).max(lifted[1].distance(end));
+        let reverse_error = lifted[1].distance(start).max(lifted[0].distance(end));
+        let error = forward_error.min(reverse_error);
+        if !error.is_finite() || error > 2e-3 {
+            return None;
+        }
+        points.push(start);
+    }
+    Some(points)
+}
+
+fn b5_boundary_roles(
+    ir: &CadIr,
+    graph: &B5Graph,
+    face: &super::super::graph::B5Face,
+    loop_orientation: &BTreeMap<u32, OrientedLoop>,
+    surface_ids: &HashMap<u32, SurfaceId>,
+    pcurve_uses: &HashMap<(u32, usize), (PcurveId, [f64; 2])>,
+) -> Vec<LoopBoundaryRole> {
+    if face.loops.len() == 1 {
+        return vec![LoopBoundaryRole::Outer];
+    }
+    let unspecified = vec![LoopBoundaryRole::Unspecified; face.loops.len()];
+    let Some(surface_id) = surface_ids.get(&face.surface) else {
+        return unspecified;
+    };
+    let Some(boundaries) = face
+        .loops
+        .iter()
+        .map(|loop_id| {
+            b5_planar_loop_points(
+                ir,
+                graph,
+                *loop_id,
+                loop_orientation.get(loop_id)?,
+                surface_id,
+                pcurve_uses,
+            )
+        })
+        .collect::<Option<Vec<_>>>()
+    else {
+        return unspecified;
+    };
+    let Some(surface) = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == *surface_id)
+    else {
+        return unspecified;
+    };
+    crate::boundary_roles::classify_planar_boundary_roles(&surface.geometry, &boundaries)
+}
+
 /// Emit the single body, its ownership-derived regions and shells, and every
 /// face with its loops and coedges, closing radial-next rings by shared edge.
 pub(super) fn emit_faces(
@@ -276,6 +417,8 @@ pub(super) fn emit_faces(
             "catia:b5:shell#{}",
             ownership.face_components[face_index]
         ));
+        let boundary_roles =
+            b5_boundary_roles(ir, graph, face, loop_orientation, surface_ids, pcurve_uses);
         annotate(
             annotations,
             &face_id,
@@ -286,7 +429,6 @@ pub(super) fn emit_faces(
         annotations
             .derived(&face_id, "shell")
             .derived(&face_id, "surface")
-            .derived(&face_id, "sense")
             .derived(&face_id, "loops");
         ir.model.faces.push(Face {
             id: face_id.clone(),
@@ -302,7 +444,7 @@ pub(super) fn emit_faces(
             color: None,
             tolerance: None,
         });
-        for loop_id_value in &face.loops {
+        for (loop_position, loop_id_value) in face.loops.iter().enumerate() {
             let loop_ = &graph.loops[loop_id_value];
             let orientation = &loop_orientation[loop_id_value];
             let senses = &orientation.reversed;
@@ -315,6 +457,19 @@ pub(super) fn emit_faces(
                 .iter()
                 .map(|member| coedge_ids_by_member[*member].clone())
                 .collect();
+            let vertex_uses: Vec<VertexUse> = member_order
+                .iter()
+                .map(|&member| {
+                    let edge = loop_.edges[member];
+                    let endpoints = graph.edge_vertices[&edge];
+                    let endpoint = endpoints[1 - usize::from(senses[member])];
+                    VertexUse {
+                        vertex: VertexId(format!("catia:b5:vertex#{endpoint}")),
+                        after: Some(coedge_ids_by_member[member].clone()),
+                        pcurves: Vec::new(),
+                    }
+                })
+                .collect();
             annotate(
                 annotations,
                 &loop_id,
@@ -324,13 +479,21 @@ pub(super) fn emit_faces(
             );
             annotations
                 .derived(&loop_id, "face")
-                .derived(&loop_id, "coedges");
+                .derived(&loop_id, "coedges")
+                .derived(&loop_id, "vertex_uses");
+            let boundary_role = boundary_roles
+                .get(loop_position)
+                .copied()
+                .unwrap_or_default();
+            if boundary_role != LoopBoundaryRole::Unspecified {
+                annotations.derived(&loop_id, "boundary_role");
+            }
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
-                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                boundary_role,
                 coedges: coedge_ids.clone(),
-                vertex_uses: Vec::new(),
+                vertex_uses,
             });
             for (position, &member) in member_order.iter().enumerate() {
                 let edge = loop_.edges[member];
@@ -392,5 +555,152 @@ pub(super) fn emit_faces(
             let radial = occurrences[(position + 1) % occurrences.len()];
             ir.model.coedges[arena_index].radial_next = ir.model.coedges[radial].id.clone();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeMap, HashMap};
+
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::{Pcurve, PcurveGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::ids::{PcurveId, SurfaceId};
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::topology::LoopBoundaryRole;
+    use cadmpeg_ir::units::Units;
+
+    use super::super::super::graph::{B5Face, B5Graph, B5Loop, B5LoopMetadata};
+    use super::{b5_boundary_roles, OrientedLoop};
+
+    #[test]
+    fn planar_line_pcurve_faces_derive_roles_from_containment() {
+        let outer = [
+            [0.0, 0.0, 0.0],
+            [5.0, 0.0, 0.0],
+            [5.0, 5.0, 0.0],
+            [0.0, 5.0, 0.0],
+        ];
+        let inner = [
+            [1.0, 1.0, 0.0],
+            [2.0, 1.0, 0.0],
+            [2.0, 2.0, 0.0],
+            [1.0, 2.0, 0.0],
+        ];
+        let points = outer.into_iter().chain(inner).collect::<Vec<_>>();
+        let mut edge_vertices = BTreeMap::new();
+        let mut loops = BTreeMap::new();
+        let mut pcurves = Vec::new();
+        let mut pcurve_uses = HashMap::new();
+        let mut orientations = BTreeMap::new();
+        for (loop_id, vertices, edge_base, pcurve_base) in
+            [(2, 0..4, 100, 1000), (3, 4..8, 200, 2000)]
+        {
+            let vertices = vertices.collect::<Vec<_>>();
+            let mut loop_pcurves = Vec::new();
+            let mut loop_edges = Vec::new();
+            for member in 0..4 {
+                let start = vertices[member];
+                let end = vertices[(member + 1) % vertices.len()];
+                let edge = edge_base + member as u32;
+                let pcurve = pcurve_base + member as u32;
+                edge_vertices.insert(edge, [start, end]);
+                loop_edges.push(edge);
+                loop_pcurves.push(pcurve);
+                let start_point = points[start];
+                let end_point = points[end];
+                pcurves.push(Pcurve {
+                    id: PcurveId(format!("pc#{pcurve}")),
+                    geometry: PcurveGeometry::Line {
+                        origin: Point2::new(start_point[0], start_point[1]),
+                        direction: Point2::new(
+                            end_point[0] - start_point[0],
+                            end_point[1] - start_point[1],
+                        ),
+                    },
+                    wrapper_reversed: None,
+                    native_tail_flags: None,
+                    parameter_range: Some([0.0, 1.0]),
+                    fit_tolerance: None,
+                });
+                pcurve_uses.insert(
+                    (loop_id, member),
+                    (PcurveId(format!("pc#{pcurve}")), [0.0, 1.0]),
+                );
+            }
+            loops.insert(
+                loop_id,
+                B5Loop {
+                    object_id: loop_id,
+                    pcurves: loop_pcurves,
+                    edges: loop_edges,
+                    metadata: B5LoopMetadata {
+                        framing_controls: [0, 0],
+                        edge_controls: vec![[0, 0, 0]; 4],
+                        extension: None,
+                    },
+                    surface: 10,
+                },
+            );
+            orientations.insert(
+                loop_id,
+                OrientedLoop {
+                    member_order: vec![0, 1, 2, 3],
+                    reversed: vec![false; 4],
+                    pcurve_reversed: vec![false; 4],
+                },
+            );
+        }
+        let graph = B5Graph {
+            complete: true,
+            faces: vec![B5Face {
+                object_id: 1,
+                surface: 10,
+                loops: vec![3, 2],
+                terminal_control: Some(3),
+            }],
+            face_records: BTreeMap::new(),
+            loops,
+            pcurves: BTreeMap::new(),
+            opaque_pcurves: BTreeMap::new(),
+            implicit_pcurves: BTreeMap::new(),
+            surfaces: BTreeMap::new(),
+            surface_aliases: BTreeMap::new(),
+            offset_surfaces: BTreeMap::new(),
+            extrusion_surfaces: BTreeMap::new(),
+            supported_surfaces: BTreeMap::new(),
+            parameter_incidences: BTreeMap::new(),
+            edges: BTreeMap::new(),
+            vertex_incidence_links: BTreeMap::new(),
+            vertex_points: points,
+            logical_vertex_points: Vec::new(),
+            logical_vertex_refs: Vec::new(),
+            edge_vertices,
+            edge_parameter_incidences: BTreeMap::new(),
+            vertex_tolerances: BTreeMap::new(),
+            profiles: BTreeMap::new(),
+        };
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId("surface#10".to_string()),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        ir.model.pcurves = pcurves;
+
+        assert_eq!(
+            b5_boundary_roles(
+                &ir,
+                &graph,
+                &graph.faces[0],
+                &orientations,
+                &HashMap::from([(10, SurfaceId("surface#10".to_string()))]),
+                &pcurve_uses,
+            ),
+            vec![LoopBoundaryRole::Inner, LoopBoundaryRole::Outer]
+        );
     }
 }

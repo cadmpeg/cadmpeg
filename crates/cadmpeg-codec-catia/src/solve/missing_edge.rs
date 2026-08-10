@@ -2,11 +2,9 @@
 //!
 //! Recovers unmatched edge-row placements against serialized face coverage.
 
-#[cfg(test)]
-use crate::families::standard::fbb::parse_fbb_edge_tables;
 use crate::families::standard::fbb::{
-    boundary_cycles, largest_fbb_run, parse_edge_tables, parse_edge_tables_scoped_at,
-    parse_trim_chain, parse_vertex_table,
+    boundary_cycles, largest_fbb_run, parse_edge_tables, parse_fbb_edge_tables,
+    parse_standard_edge_tables, parse_trim_chain, parse_vertex_table, selected_standard_run,
 };
 use crate::families::standard::topology::{incidence_cycles, EdgeRow, TrimRecord};
 #[cfg(test)]
@@ -24,13 +22,13 @@ use std::sync::Arc;
 /// possible.
 #[must_use]
 pub fn standard_edge_rows(bytes: &[u8]) -> Option<Vec<EdgeRow>> {
-    let (_, _, after_faces) = largest_fbb_run(bytes)?;
+    let (_, _, after_faces) = selected_standard_run(bytes)?;
     parse_edge_tables(bytes, after_faces).map(|(rows, _)| rows)
 }
 
 pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
-    let (_, _, after_faces) = largest_fbb_run(bytes)?;
-    let (edge_rows, _, _) = parse_edge_tables_scoped_at(bytes, after_faces)?;
+    let (_, _, after_faces) = selected_standard_run(bytes)?;
+    let (edge_rows, _) = parse_standard_edge_tables(bytes, after_faces)?;
     edge_rows
         .iter()
         .enumerate()
@@ -42,7 +40,6 @@ pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]
         .collect()
 }
 
-#[cfg(test)]
 pub(crate) fn fbb_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     let (_, _, after_faces) = largest_fbb_run(bytes)?;
     let (edge_rows, scopes, _, _) = parse_fbb_edge_tables(bytes, after_faces)?;
@@ -64,13 +61,20 @@ pub(crate) fn fbb_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
         .collect()
 }
 
+/// Select the endpoint-identity grammar belonging to the detected spine
+/// family. Standard rows use row-local endpoint ports; FBB-only rows use
+/// table-scoped complete-boundary handles.
+pub(crate) fn edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+    standard_edge_port_identities(bytes).or_else(|| fbb_edge_port_identities(bytes))
+}
+
 /// Collapse physical edge endpoints through every exact trim-mesh occurrence.
 /// The returned component identifiers are compact and stable within this
 /// result; they are not coordinate-row indices.
 #[must_use]
 pub fn standard_mesh_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     let analysis = standard_mesh_analysis(bytes)?;
-    let local_ports = standard_edge_port_identities(bytes)?;
+    let local_ports = edge_port_identities(bytes)?;
     mesh_edge_ports(&analysis, &local_ports)
 }
 
@@ -229,7 +233,7 @@ struct StandardMeshAnalysis {
 }
 
 fn standard_mesh_analysis(bytes: &[u8]) -> Option<StandardMeshAnalysis> {
-    let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
+    let (face_start, face_count, after_faces) = selected_standard_run(bytes)?;
     let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
     let mut solutions = Vec::new();
     for width in [1, 2, 3] {
@@ -419,10 +423,17 @@ pub(crate) fn resolve_standard_duplicate_edge_faces(
     serialized: &[[usize; 2]],
     allowed_faces: &[Vec<usize>],
 ) -> Option<Vec<[usize; 2]>> {
-    let face_count = largest_fbb_run(bytes)?.1;
+    let face_count = selected_standard_run(bytes)?.1;
     unique_duplicate_face_assignment(serialized, allowed_faces, face_count, |assignment| {
         standard_mesh_boundary_assignments(bytes, assignment, None).is_some()
     })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum FaceEndpointClosureOutcome {
+    Closed,
+    Rejected,
+    Exhausted,
 }
 
 /// Test whether one face can select endpoint pairs that form closed cycles.
@@ -431,7 +442,7 @@ pub(crate) fn face_endpoint_candidates_close(
     edge_faces: &[[usize; 2]],
     candidates: &[Vec<[usize; 2]>],
     face: usize,
-) -> bool {
+) -> FaceEndpointClosureOutcome {
     const MAX_STATES: usize = 65_536;
 
     fn pair_fits(degrees: &HashMap<usize, u8>, pair: [usize; 2]) -> bool {
@@ -497,7 +508,7 @@ pub(crate) fn face_endpoint_candidates_close(
     }
 
     if edge_faces.len() != candidates.len() {
-        return false;
+        return FaceEndpointClosureOutcome::Rejected;
     }
     let edges = edge_faces
         .iter()
@@ -505,7 +516,7 @@ pub(crate) fn face_endpoint_candidates_close(
         .filter_map(|(edge, faces)| faces.contains(&face).then_some(edge))
         .collect::<Vec<_>>();
     if edges.is_empty() {
-        return false;
+        return FaceEndpointClosureOutcome::Rejected;
     }
     let mut selected = vec![[0; 2]; candidates.len()];
     let mut degrees = HashMap::new();
@@ -518,10 +529,10 @@ pub(crate) fn face_endpoint_candidates_close(
         options.sort_unstable();
         options.dedup();
         match options.as_slice() {
-            [] => return false,
+            [] => return FaceEndpointClosureOutcome::Rejected,
             [pair] => {
                 if !pair_fits(&degrees, *pair) {
-                    return false;
+                    return FaceEndpointClosureOutcome::Rejected;
                 }
                 selected[edge] = *pair;
                 adjust(&mut degrees, *pair, true);
@@ -530,7 +541,11 @@ pub(crate) fn face_endpoint_candidates_close(
         }
     }
     branches.sort_unstable_by_key(|(edge, options)| (options.len(), *edge));
-    search(&edges, &branches, 0, &mut selected, &mut degrees, &mut 0).unwrap_or(false)
+    match search(&edges, &branches, 0, &mut selected, &mut degrees, &mut 0) {
+        Some(true) => FaceEndpointClosureOutcome::Closed,
+        Some(false) => FaceEndpointClosureOutcome::Rejected,
+        None => FaceEndpointClosureOutcome::Exhausted,
+    }
 }
 
 pub(crate) fn resolve_edge_faces_from_runs(
@@ -608,7 +623,7 @@ impl StandardMeshBoundaryContext {
             return None;
         }
         let coverage = mesh_face_coverage(&analysis, edge_faces)?;
-        let local_ports = standard_edge_port_identities(bytes)?;
+        let local_ports = edge_port_identities(bytes)?;
         let edge_ports = mesh_edge_ports(&analysis, &local_ports)?;
         let edge_runs = mesh_edge_runs(&analysis)?;
         let cycle_lengths = analysis
@@ -726,25 +741,45 @@ fn mesh_face_coverage(
     }) {
         return None;
     }
+    let mut occurrences_by_cycle = cycles
+        .iter()
+        .map(|face_cycles| vec![Vec::<(usize, MeshEdgeOccurrence)>::new(); face_cycles.len()])
+        .collect::<Vec<_>>();
+    let mut present_edges_by_face = vec![HashSet::<usize>::new(); cycles.len()];
+    for (edge, values) in occurrences.iter().enumerate() {
+        for &occurrence in values {
+            let face_cycles = occurrences_by_cycle.get_mut(occurrence.face)?;
+            let cycle_occurrences = face_cycles.get_mut(occurrence.cycle)?;
+            cycle_occurrences.push((edge, occurrence));
+            present_edges_by_face[occurrence.face].insert(edge);
+        }
+    }
+    let mut edges_by_face = vec![Vec::new(); cycles.len()];
+    for (edge, faces) in edge_faces.iter().copied().enumerate() {
+        for face in faces {
+            if face >= cycles.len() {
+                return None;
+            }
+        }
+        edges_by_face[faces[0]].push(edge);
+        if faces[1] != faces[0] {
+            edges_by_face[faces[1]].push(edge);
+        }
+    }
     let mut coverage = Vec::with_capacity(cycles.len());
     for (face, face_cycles) in cycles.iter().enumerate() {
         let mut gaps = Vec::new();
         for (cycle_index, cycle) in face_cycles.iter().enumerate() {
             let mut covered = vec![false; cycle.len()];
-            for (edge, values) in occurrences.iter().enumerate() {
-                for occurrence in values
-                    .iter()
-                    .filter(|occurrence| occurrence.face == face && occurrence.cycle == cycle_index)
-                {
-                    let (start, segment_count) =
-                        edge_rows[edge].boundary_span(occurrence.start, cycle.len())?;
-                    for offset in 0..segment_count {
-                        let slot = &mut covered[(start + offset) % cycle.len()];
-                        if *slot {
-                            return None;
-                        }
-                        *slot = true;
+            for &(edge, occurrence) in &occurrences_by_cycle[face][cycle_index] {
+                let (start, segment_count) =
+                    edge_rows[edge].boundary_span(occurrence.start, cycle.len())?;
+                for offset in 0..segment_count {
+                    let slot = &mut covered[(start + offset) % cycle.len()];
+                    if *slot {
+                        return None;
                     }
+                    *slot = true;
                 }
             }
             if covered.iter().all(|value| !*value) {
@@ -768,16 +803,10 @@ fn mesh_face_coverage(
                 }
             }
         }
-        let missing_edges = edge_rows
+        let missing_edges = edges_by_face[face]
             .iter()
-            .enumerate()
-            .filter_map(|(edge, _)| {
-                (edge_faces[edge].contains(&face)
-                    && !occurrences[edge]
-                        .iter()
-                        .any(|occurrence| occurrence.face == face))
-                .then_some(edge)
-            })
+            .copied()
+            .filter(|edge| !present_edges_by_face[face].contains(edge))
             .collect();
         coverage.push(MeshFaceCoverage {
             face,
@@ -1862,7 +1891,7 @@ pub fn parse_standard_mesh_selection(
     selected_assignments: &[usize],
     edge_directions: &[Vec<Vec<bool>>],
 ) -> Option<StandardTopology> {
-    let (_, face_count, after_faces) = largest_fbb_run(bytes)?;
+    let (_, face_count, after_faces) = selected_standard_run(bytes)?;
     let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
     let assignments = standard_mesh_boundary_assignments(bytes, edge_faces, None)?;
@@ -2015,7 +2044,7 @@ pub fn standard_mesh_prune_endpoint_candidates(
     if edge_faces.len() != edge_candidates.len() {
         return None;
     }
-    let (_, _, after_faces) = largest_fbb_run(bytes)?;
+    let (_, _, after_faces) = selected_standard_run(bytes)?;
     let (_, vertex_header) = parse_edge_tables(bytes, after_faces)?;
     let point_count = parse_vertex_table(bytes, vertex_header)?.len();
     let complete_domain = (0..point_count)
@@ -2131,7 +2160,7 @@ fn standard_mesh_assignment_corner_points(
     }
     let runs = standard_mesh_edge_runs(bytes)?;
     let assignments = standard_mesh_missing_edge_assignments(bytes, edge_faces, None, true)?;
-    let (face_start, face_count, _) = largest_fbb_run(bytes)?;
+    let (face_start, face_count, _) = selected_standard_run(bytes)?;
     let cycle_solutions = [1, 2, 3]
         .into_iter()
         .filter_map(|width| parse_trim_chain(bytes, face_start, face_count, width))
@@ -2879,9 +2908,10 @@ pub(crate) fn motif_port_points(
             at += 2;
             continue;
         }
-        at += 1;
+        return None;
     }
-    (seen.len() == vertex_count
+    (at == trims.len()
+        && seen.len() == vertex_count
         && seen.values().copied().collect::<HashSet<_>>().len() == vertex_count)
         .then_some(seen)
 }
