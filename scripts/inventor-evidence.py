@@ -22,7 +22,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -36,7 +35,6 @@ FREE = 0xFFFF_FFFF
 EOC = 0xFFFF_FFFE
 FAT_SECTOR = 0xFFFF_FFFD
 DIFAT_SECTOR = 0xFFFF_FFFC
-NO_STREAM = FREE
 KERNEL_RECORD_TYPE_ID = bytes.fromhex("5c5945f6d5113313100060a6bba647b5")
 V3_MAX_FILE_SIZE = 0x8000_0000
 RANGE_LOCK_START = 0x7FFF_FF00
@@ -57,17 +55,6 @@ def u32(data: bytes, offset: int) -> int:
     if offset < 0 or offset + 4 > len(data):
         raise EvidenceError("truncated u32")
     return int.from_bytes(data[offset : offset + 4], "little")
-
-
-def u64(data: bytes, offset: int) -> int:
-    if offset < 0 or offset + 8 > len(data):
-        raise EvidenceError("truncated u64")
-    return int.from_bytes(data[offset : offset + 8], "little")
-
-
-def i16(data: bytes, offset: int) -> int:
-    value = u16(data, offset)
-    return value - 0x1_0000 if value & 0x8000 else value
 
 
 def digest(data: bytes) -> str:
@@ -710,7 +697,7 @@ def parse_database(stream: Stream) -> tuple[int, tuple[int, int, int]]:
         value = (data[cursor[0]], data[cursor[0] + 1], data[cursor[0] + 2])
         cursor[0] += 8
         return value
-    created = version()
+    _created = version()
     if cursor[0] + 8 > len(data):
         raise EvidenceError("RSe database creation time is truncated")
     cursor[0] += 8
@@ -975,8 +962,6 @@ def frame_records(
     cursor[0] += 4
     if marker != FREE:
         raise EvidenceError("RSe bulk stream has an invalid trailer marker")
-    if cursor[0] != len(expanded):
-        raise EvidenceError("RSe bulk stream has trailing bytes")
     return records, stream_trailer_start
 
 
@@ -1022,6 +1007,9 @@ class DocumentEvidence:
     segments: list[dict] = field(default_factory=list)
     carriers: list[dict] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    active_carrier_index: int | None = None
+    active_carrier_state: str = "not_applicable"
+    active_carrier_detail: str | None = None
 
     def parse(self) -> "DocumentEvidence":
         for path, stream in sorted(self.cfb.streams.items()):
@@ -1155,7 +1143,41 @@ class DocumentEvidence:
                 if record.type_id == KERNEL_RECORD_TYPE_ID:
                     self.carriers.append(self._carrier_json(token, segment_kind, version_major, record))
             self.segments.append(segment)
+        self._select_active_carrier()
         return self
+
+    def _select_active_carrier(self) -> None:
+        document_kind = self.envelope()["document_kind"]
+        if document_kind != "part":
+            self.active_carrier_state = "not_applicable"
+            return
+        brep_segments = [segment for segment in self.segments if segment.get("kind") == "pm_brep"]
+        if len(brep_segments) != 1:
+            self.active_carrier_state = "unavailable"
+            self.active_carrier_detail = (
+                f"part document has {len(brep_segments)} PmBRep segments; expected one"
+            )
+            return
+        candidates = [
+            index
+            for index, carrier in enumerate(self.carriers)
+            if carrier.get("segment_kind") == "pm_brep"
+        ]
+        if len(candidates) != 1:
+            self.active_carrier_state = "unavailable"
+            self.active_carrier_detail = (
+                f"PmBRep contains {len(candidates)} typed kernel-carrier records; expected one"
+            )
+            return
+        index = candidates[0]
+        carrier = self.carriers[index]
+        if carrier.get("state") != "framed":
+            self.active_carrier_state = "unavailable"
+            self.active_carrier_detail = carrier.get("detail")
+            return
+        carrier["active"] = True
+        self.active_carrier_index = index
+        self.active_carrier_state = "selected"
 
     def _carrier_json(
         self, token: str, segment_kind: str, version_major: int, record: RecordInfo
@@ -1212,6 +1234,7 @@ class DocumentEvidence:
             "record_payload_length": len(payload),
             "state": state,
             "family": family,
+            "active": False,
             "carrier": {
                 "offset": record.payload_offset + 14,
                 "length": len(carrier),
@@ -1281,6 +1304,11 @@ class DocumentEvidence:
             "databases": self.databases,
             "segments": strip_bytes(self.segments),
             "carriers": strip_bytes(self.carriers),
+            "active_carrier": {
+                "state": self.active_carrier_state,
+                "index": self.active_carrier_index,
+                "detail": self.active_carrier_detail,
+            },
             "errors": self.errors,
         }
 
@@ -1458,9 +1486,24 @@ def compare_carriers(
         "attributes",
     )
     comparisons = []
+    active = [
+        (index, carrier)
+        for index, carrier in enumerate(evidence.carriers)
+        if carrier.get("active")
+    ]
+    if not active:
+        return {
+            "source_ordinal": evidence.ordinal,
+            "comparisons": [
+                {
+                    "state": evidence.active_carrier_state,
+                    "detail": evidence.active_carrier_detail,
+                }
+            ],
+        }
     with tempfile.TemporaryDirectory(prefix="inventor-evidence-") as directory:
         temporary = Path(directory)
-        for carrier_index, carrier in enumerate(evidence.carriers):
+        for carrier_index, carrier in active:
             carrier_bytes = carrier.get("carrier_bytes", b"")
             if carrier.get("state") != "framed" or not carrier_bytes:
                 comparisons.append(
@@ -1473,7 +1516,7 @@ def compare_carriers(
             wrapper_report = temporary / f"wrapper-{carrier_index}-validation.json"
             direct_report = temporary / f"direct-{carrier_index}-validation.json"
             carrier_path.write_bytes(carrier_bytes)
-            wrapper_status, wrapper_json = load_json_command(
+            wrapper_status, _wrapper_json = load_json_command(
                 [
                     str(cadmpeg),
                     "decode",
@@ -1486,7 +1529,7 @@ def compare_carriers(
                 ],
                 timeout,
             )
-            direct_status, direct_json = load_json_command(
+            direct_status, _direct_json = load_json_command(
                 [
                     str(cadmpeg),
                     "decode",
@@ -1533,14 +1576,18 @@ def compare_carriers(
                 try:
                     wrapper_model = json.loads(wrapper_cadir.read_text())
                     direct_model = json.loads(direct_cadir.read_text())
-                    wrapper_geometry = {
-                        key: wrapper_model.get("model", {}).get(key, [])
-                        for key in geometry_keys
-                    }
-                    direct_geometry = {
-                        key: direct_model.get("model", {}).get(key, [])
-                        for key in geometry_keys
-                    }
+                    wrapper_geometry = normalize_geometry(
+                        {
+                            key: wrapper_model.get("model", {}).get(key, [])
+                            for key in geometry_keys
+                        }
+                    )
+                    direct_geometry = normalize_geometry(
+                        {
+                            key: direct_model.get("model", {}).get(key, [])
+                            for key in geometry_keys
+                        }
+                    )
                     semantic_equal = normalize_strings(
                         wrapper_geometry,
                         (("inventor:", "kernel:"), ("sat:", "kernel:")),
@@ -1584,6 +1631,21 @@ def compare_carriers(
                 }
             )
     return {"source_ordinal": evidence.ordinal, "comparisons": comparisons}
+
+
+def normalize_geometry(value):
+    if not isinstance(value, dict):
+        return value
+    normalized = dict(value)
+    faces = normalized.get("faces")
+    if isinstance(faces, list):
+        normalized["faces"] = [
+            {key: item for key, item in face.items() if key != "color"}
+            if isinstance(face, dict)
+            else face
+            for face in faces
+        ]
+    return normalized
 
 
 def process(args: argparse.Namespace) -> dict:

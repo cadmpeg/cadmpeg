@@ -22,9 +22,11 @@ Run a census with:
 python3 scripts/inventor-evidence.py --root INPUT_ROOT --output RESULT.json
 ```
 
-`--compare --cadmpeg PATH` adds wrapper/direct-carrier semantic and validation
-comparisons. It uses one temporary carrier file per comparison and applies the
-configured `--timeout` independently to every command.
+`--compare --cadmpeg PATH` adds active-carrier wrapper/direct semantic and
+validation comparisons. It normalizes codec id namespaces and excludes
+presentation-only geometry color fields from the shared geometry fingerprint.
+It uses one temporary carrier file per comparison and applies the configured
+`--timeout` independently to every command.
 
 `--sweep --cadmpeg PATH` runs inspect, decode, and validate in desktop and
 service profiles, in salvage and strict modes, and repeats decode and validate

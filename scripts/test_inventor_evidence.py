@@ -168,12 +168,13 @@ def metadata(payload_length: int) -> bytes:
     return bytes(data)
 
 
-def bulk(payload: bytes) -> bytes:
+def bulk(payload: bytes, stream_trailer: bytes = b"") -> bytes:
     expanded = bytearray()
     push32(expanded, 0)
     expanded.extend(payload)
     push32(expanded, len(payload))
     push32(expanded, evidence.FREE)
+    expanded.extend(stream_trailer)
     return bytes(bytes(16) + (0x0104).to_bytes(2, "little") + zlib.compress(expanded))
 
 
@@ -208,7 +209,7 @@ def synthetic_primary() -> bytes:
     }
     carrier_value = carrier()
     streams["meta"] = metadata(len(carrier_value))
-    streams["bulk"] = bulk(carrier_value)
+    streams["bulk"] = bulk(carrier_value, b"\x07\x08")
     mini_stream = bytearray()
     mini_fat = [evidence.FREE] * 128
     allocation: dict[str, tuple[int, int]] = {}
@@ -319,6 +320,39 @@ def synthetic_v4_regular() -> bytes:
 
 
 class EvidenceTest(unittest.TestCase):
+    def test_active_carrier_selection_is_scoped_to_pm_brep(self) -> None:
+        reader = evidence.CompoundReader(b"", 1 << 20)
+        reader.major = 3
+        reader.sector_size = 512
+        document = evidence.DocumentEvidence(
+            0,
+            reader,
+            "RSeStorage",
+            segments=[{"kind": "pm_dc"}, {"kind": "pm_brep"}],
+            carriers=[
+                {"segment_kind": "pm_dc", "state": "framed", "active": False},
+                {"segment_kind": "pm_brep", "state": "framed", "active": False},
+            ],
+        )
+
+        document._select_active_carrier()
+
+        self.assertEqual(document.active_carrier_state, "selected")
+        self.assertEqual(document.active_carrier_index, 1)
+        self.assertFalse(document.carriers[0]["active"])
+        self.assertTrue(document.carriers[1]["active"])
+
+    def test_geometry_comparison_ignores_face_color_only(self) -> None:
+        geometry = {
+            "faces": [{"id": "face", "color": {"r": 1.0}}],
+            "attributes": [{"id": "attribute", "color": {"r": 0.5}}],
+        }
+
+        normalized = evidence.normalize_geometry(geometry)
+
+        self.assertEqual(normalized["faces"], [{"id": "face"}])
+        self.assertEqual(normalized["attributes"], geometry["attributes"])
+
     def test_metadata_section7_short_form_is_framed(self) -> None:
         blocks, type_ids = evidence.parse_meta_body(metadata_body(1, short_section7=True))
         self.assertEqual(blocks, [(True, 1)])
@@ -346,8 +380,16 @@ class EvidenceTest(unittest.TestCase):
         carrier = evidence_result.carriers[0]
         self.assertEqual(carrier["family"], "asm")
         self.assertEqual(carrier["state"], "framed")
+        self.assertTrue(carrier["active"])
+        self.assertEqual(evidence_result.as_json()["active_carrier"]["state"], "selected")
         self.assertEqual(carrier["carrier"]["length"], len(carrier["carrier_bytes"]))
         self.assertEqual(len(evidence_result.bulks["seg"].records), 1)
+        self.assertEqual(
+            evidence_result.bulks["seg"].expanded[
+                evidence_result.bulks["seg"].stream_trailer_start :
+            ],
+            bytes.fromhex("ffffffff0708"),
+        )
 
     def test_primary_carrier_parity_when_cli_is_built(self) -> None:
         cadmpeg = Path("target/debug/cadmpeg")
@@ -359,6 +401,11 @@ class EvidenceTest(unittest.TestCase):
             document = evidence.locate_document(path.read_bytes(), 0, 1 << 20)
             result = evidence.compare_carriers(path, document, cadmpeg, 30)
         comparison = result["comparisons"][0]
+        self.assertEqual(comparison["state"], "compared")
+        self.assertEqual(comparison["wrapper_decode_status"], 0)
+        self.assertEqual(comparison["direct_decode_status"], 0)
+        self.assertEqual(comparison["wrapper_validation_status"], 0)
+        self.assertEqual(comparison["direct_validation_status"], 0)
         self.assertTrue(comparison["semantic_model_equal"])
         self.assertTrue(comparison["validation_findings_equal"])
 
@@ -372,6 +419,20 @@ class EvidenceTest(unittest.TestCase):
             document = evidence.locate_document(path.read_bytes(), 0, 1 << 20)
             result = evidence.cli_sweep(path, document.ordinal, cadmpeg, 30)
         self.assertEqual(len(result["runs"]), 4)
+        self.assertTrue(
+            all(
+                run["inspect"]["status"] == 0
+                and all(
+                    item["status"] == (0 if run["mode"] == "salvage" else 2)
+                    for item in run["decode"]
+                )
+                and all(
+                    item["status"] == (0 if run["mode"] == "salvage" else 2)
+                    for item in run["validate"]
+                )
+                for run in result["runs"]
+            )
+        )
         self.assertTrue(all(run["decode_deterministic"] for run in result["runs"]))
         self.assertTrue(all(run["validate_deterministic"] for run in result["runs"]))
 
