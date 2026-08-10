@@ -9,7 +9,8 @@ Table source: `docs/layouts/f3d.toml`.
 
 Covers the fixed Design-segment headers, parameter-owner prefix, and body-map prefix, the named solid-primitive prologue,
 the ParaMesh entry-name, container-GUID, body graph, collection, texture table,
-feature scope, wrapper, and Scene records,
+feature scope, current and shifted Extrude operation and extent sections,
+wrapper, and Scene records,
 the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, the
 compact `Loft` prefix and nested profile-region frames, the class-418
 `SplitFace` prefix, the grouped recipe-reference prefix, the three `Combine`
@@ -985,6 +986,59 @@ Unstated regions:
 
 - `0..55` (55 B): The fixed placement envelope precedes the explicit marker block.
 - `194..341` (147 B): The carrier tail is not assigned a semantic field.
+
+## `current_extrude_operation_fields`
+
+Spec §3.1 · layout: byte offsets · size: 42 B
+
+Offsets are relative to the result-operation u32 of a current reference-aware Extrude scope. The seven variable-width nullable reference slots follow at offset 42.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `operation` | `u32` | little | spec | stores its result-operation u32 |
+| 4 | 4 | `direction` | `u32` | little | spec | The two immediately following u32 values are the travel direction and the face-extend option |
+| 8 | 4 | `face_extend` | `u32` | little | spec | The two immediately following u32 values are the travel direction and the face-extend option |
+| 12 | 1 | `direction_reversed` | `u8` | little | spec | Offset `operation + 12` is the direction-reversal Boolean |
+| 13 | 1 | `geometry_kind` | `u8` | little | spec | offset `operation + 13` is the geometry-kind Boolean |
+| 14 | 1 | `start_support` | `u8` | little | spec | offset `operation + 14` is the start-support byte |
+| 15 | 3 | `zero_run_3` | `bytes[3]` | little | spec | stores three zero bytes at `operation + 15` through `operation + 17` |
+| 18 | 24 | `profile_normal` | `f64[3]` | little | spec | Its profile normal is three contiguous unit-length f64 values at `operation + 18` |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The current Extrude parser anchors the profile-normal and nullable-slot run at the tabulated offset.
+
+## `current_extrude_non_target_extent_pair`
+
+Spec §3.1 · layout: byte offsets · size: 17 B
+
+Offsets are relative to the first-side extent u32. This frame applies when the first-side extent is not the to-entity value 2.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `first_side_extent` | `u32` | little | spec | A first-side value other than `2` |
+| 4 | 9 | `zero_run_9` | `bytes[9]` | little | spec | is followed by nine zero bytes |
+| 13 | 4 | `second_side_extent` | `u32` | little | spec | the second-side value at first-side offset `+13` |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The current Extrude parser verifies the nine-byte zero run before reading the second-side value.
+
+## `current_extrude_shape_target_extent_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 9 B
+
+Offsets are relative to the repeated target-group ordinal. The target payload follows the first-side extent; the second-side extent is four bytes before the scope reference-count field.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `target_scope_reference_ordinal` | `u32` | little | spec | A u32 zero-based scope-reference ordinal immediately after the seventh slot |
+| 4 | 1 | `zero_separator` | `u8` | little | spec | one zero byte follows the ordinal |
+| 5 | 4 | `first_side_extent` | `u32` | little | spec | the first-side value `2` follows that byte |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The current Extrude parser retains the exact ordinal offset and advances five bytes to the first-side extent.
 
 ## `shifted_extrude_prologue`
 

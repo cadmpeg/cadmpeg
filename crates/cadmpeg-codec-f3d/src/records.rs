@@ -587,7 +587,7 @@ pub enum DesignExtrudeOperation {
 pub enum DesignExtrudeExtent {
     /// Travel a signed fixed distance on the first side of the profile.
     OneSidedDistance,
-    /// Travel on the first side until reaching a selected face.
+    /// Travel on the first side until reaching a selected face or shape.
     OneSidedToFace,
     /// Travel independent fixed distances on both sides of the profile.
     TwoSidedDistance,
@@ -632,6 +632,16 @@ pub struct DesignExtrudePrologueReference {
     pub operation_prefix_marker_offset: Option<u64>,
 }
 
+/// Scope-reference ordinal repeated before a whole-body Extrude target extent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignExtrudeTargetOrdinal {
+    /// Zero-based ordinal in the enclosing scope reference table.
+    pub scope_reference_ordinal: u32,
+    /// Byte offset of `scope_reference_ordinal`.
+    pub scope_reference_ordinal_offset: u64,
+}
+
 /// Fixed fields preceding an Extrude parameter scope's reference table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -668,13 +678,24 @@ pub enum DesignExtrudePrologue {
         operation: DesignExtrudeOperation,
         /// Byte offset of `operation`.
         operation_offset: u64,
-        /// Raw side-count and termination discriminators.
-        extent_discriminators: [u32; 2],
+        /// Raw travel-direction and face-extension values.
+        #[serde(alias = "extent_discriminators")]
+        direction_face_extend_values: [u32; 2],
+        /// Per-side extent discriminators stored after the profile normal and reference slots.
+        #[serde(default)]
+        side_extent_discriminators: [u32; 2],
+        /// Byte offsets parallel to `side_extent_discriminators`.
+        #[serde(default)]
+        side_extent_discriminator_offsets: [u64; 2],
+        /// Repeated target-group ordinal in the whole-body target form.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        first_side_target_ordinal: Option<DesignExtrudeTargetOrdinal>,
         /// Decoded extent form.
         extent: DesignExtrudeExtent,
-        /// Byte offsets parallel to `extent_discriminators`.
-        extent_discriminator_offsets: [u64; 2],
-        /// Whether a one-sided to-face extent travels opposite the profile normal.
+        /// Byte offsets parallel to `direction_face_extend_values`.
+        #[serde(alias = "extent_discriminator_offsets")]
+        direction_face_extend_offsets: [u64; 2],
+        /// Direction-reversal state.
         direction_reversed: bool,
         /// Byte offset of `direction_reversed`.
         direction_reversed_offset: u64,

@@ -126,14 +126,14 @@ use crate::records::{
     DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionRecipeRecord,
     DesignDirectFaceOperation, DesignDraftOperation, DesignEdgeIdentityOperand, DesignEntityHeader,
     DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
-    DesignExtrudePrologue, DesignExtrudeSelectionGroup, DesignExtrudeStart, DesignFaceOperand,
-    DesignFaceRecipeNode, DesignFaceRecipeStructure, DesignFeatureTimeline,
-    DesignFixedChamferParameters, DesignFixedExtrudeDistance, DesignFixedExtrudeParameters,
-    DesignFixedExtrudeScalar, DesignFixedFilletParameters, DesignHoleConstruction, DesignParameter,
-    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
-    DesignPathFeatureConstruction, DesignRecipeReference, DesignRecordHeader,
-    DesignRuledSurfaceCorner, DesignRuledSurfaceMethod, DesignScaleOperation,
-    DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
+    DesignExtrudePrologue, DesignExtrudeSelectionGroup, DesignExtrudeStart,
+    DesignExtrudeTargetOrdinal, DesignFaceOperand, DesignFaceRecipeNode, DesignFaceRecipeStructure,
+    DesignFeatureTimeline, DesignFixedChamferParameters, DesignFixedExtrudeDistance,
+    DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletParameters,
+    DesignHoleConstruction, DesignParameter, DesignParameterCompanion, DesignParameterKind,
+    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
+    DesignRecipeReference, DesignRecordHeader, DesignRuledSurfaceCorner, DesignRuledSurfaceMethod,
+    DesignScaleOperation, DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
     DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
     DesignSurfaceOffsetSupport, DesignSurfaceStitchOperation, DesignThreadConstruction,
     DesignThreadForm, DesignTopologyRecipeSide, LostEdgeReference, PersistentSubentityTag,
@@ -185,23 +185,24 @@ fn set_extrude_extent(scope: &mut DesignParameterScope, extent: DesignExtrudeExt
         }
         DesignExtrudePrologue::ReferenceAware {
             extent: value,
-            extent_discriminators,
+            direction_face_extend_values,
+            side_extent_discriminators,
+            first_side_target_ordinal,
             ..
         } => {
             *value = extent;
-            *extent_discriminators = match extent {
-                DesignExtrudeExtent::OneSidedToFace => [1, 1],
-                DesignExtrudeExtent::OneSidedDistance => [1, 2],
-                DesignExtrudeExtent::TwoSidedDistance => [2, 0],
-                DesignExtrudeExtent::SymmetricDistance => [3, 2],
-                DesignExtrudeExtent::SymmetricThroughAll => {
-                    panic!("reference-aware test prologue does not decode this extent")
-                }
-                DesignExtrudeExtent::OneSidedThroughNext
-                | DesignExtrudeExtent::OneSidedThroughAll => {
-                    panic!("reference-aware test prologue does not decode this extent")
-                }
+            (direction_face_extend_values[0], *side_extent_discriminators) = match extent {
+                DesignExtrudeExtent::OneSidedDistance => (1, [1, 0]),
+                DesignExtrudeExtent::OneSidedToFace => (1, [2, 0]),
+                DesignExtrudeExtent::OneSidedThroughNext => (1, [3, 0]),
+                DesignExtrudeExtent::OneSidedThroughAll => (1, [4, 0]),
+                DesignExtrudeExtent::TwoSidedDistance => (2, [1, 1]),
+                DesignExtrudeExtent::SymmetricDistance => (3, [1, 0]),
+                DesignExtrudeExtent::SymmetricThroughAll => (3, [4, 4]),
             };
+            if extent != DesignExtrudeExtent::OneSidedToFace {
+                *first_side_target_ordinal = None;
+            }
         }
         DesignExtrudePrologue::LegacyShifted {
             extent: value,
@@ -5538,9 +5539,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         reference: None,
         operation: DesignExtrudeOperation::NewBody,
         operation_offset: 28,
-        extent_discriminators: [1, 2],
+        direction_face_extend_values: [1, 2],
+        side_extent_discriminators: [1, 0],
+        side_extent_discriminator_offsets: [77, 90],
+        first_side_target_ordinal: None,
         extent: DesignExtrudeExtent::OneSidedDistance,
-        extent_discriminator_offsets: [32, 36],
+        direction_face_extend_offsets: [32, 36],
         direction_reversed: false,
         direction_reversed_offset: 40,
         solid_operation: true,
@@ -7743,12 +7747,13 @@ fn localized_sketch_scope_retains_its_generic_reference_table() {
 fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     let scope = |kind: &str,
                  operation: u32,
-                 extent: (u32, u32),
+                 direction_face_extend: (u32, u32),
                  direction_reversed: u8,
                  structural_constant: u8,
                  start: u8,
                  reference_padding: Option<usize>,
                  reference_marker: bool,
+                 current_side_extents: Option<((u32, u32), bool)>,
                  legacy_side_extents: Option<((u32, u32), bool)>,
                  legacy_reference_count_offset: Option<usize>| {
         let mut bytes = Vec::new();
@@ -7771,14 +7776,48 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             bytes[operation_offset - 1] = 1;
         }
         bytes[operation_offset..operation_offset + 4].copy_from_slice(&operation.to_le_bytes());
-        bytes[operation_offset + 4..operation_offset + 8].copy_from_slice(&extent.0.to_le_bytes());
-        bytes[operation_offset + 8..operation_offset + 12].copy_from_slice(&extent.1.to_le_bytes());
+        bytes[operation_offset + 4..operation_offset + 8]
+            .copy_from_slice(&direction_face_extend.0.to_le_bytes());
+        bytes[operation_offset + 8..operation_offset + 12]
+            .copy_from_slice(&direction_face_extend.1.to_le_bytes());
         bytes[operation_offset + 12] = direction_reversed;
         bytes[operation_offset + 13] = structural_constant;
         bytes[operation_offset + 14] = start;
+        if let Some((side_extents, target_ordinal)) = current_side_extents {
+            let profile_normal_offset = operation_offset + 18;
+            bytes[profile_normal_offset + 16..profile_normal_offset + 24]
+                .copy_from_slice(&1.0f64.to_le_bytes());
+            let reference_slots_offset = profile_normal_offset + 24;
+            let first_side_extent_offset = if target_ordinal {
+                assert_eq!(side_extents.0, 2);
+                let target_slot_offset = reference_slots_offset + 6;
+                bytes[target_slot_offset] = 1;
+                bytes[target_slot_offset + 1..target_slot_offset + 5]
+                    .copy_from_slice(&reference_padding.map_or(55, |_| 77_u32).to_le_bytes());
+                let target_ordinal_offset = target_slot_offset + 11;
+                bytes[target_ordinal_offset..target_ordinal_offset + 4]
+                    .copy_from_slice(&0u32.to_le_bytes());
+                target_ordinal_offset + 5
+            } else {
+                reference_slots_offset + 7
+            };
+            let reference_count_offset = 180;
+            bytes.resize(reference_count_offset, 0);
+            let second_side_extent_offset = if side_extents.0 == 2 {
+                reference_count_offset - 4
+            } else {
+                first_side_extent_offset + 13
+            };
+            bytes[first_side_extent_offset..first_side_extent_offset + 4]
+                .copy_from_slice(&side_extents.0.to_le_bytes());
+            bytes[second_side_extent_offset..second_side_extent_offset + 4]
+                .copy_from_slice(&side_extents.1.to_le_bytes());
+        }
         if legacy_side_extents.is_some() {
             let reference_count_offset = legacy_reference_count_offset.unwrap_or_else(|| {
-                if legacy_side_extents.is_some_and(|(_, widened)| widened) || extent.0 == 2 {
+                if legacy_side_extents.is_some_and(|(_, widened)| widened)
+                    || direction_face_extend.0 == 2
+                {
                     272
                 } else {
                     252
@@ -7786,14 +7825,15 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             });
             bytes.resize(reference_count_offset, 0);
         }
-        let compact_two_sided = legacy_reference_count_offset == Some(283) && extent.0 == 2;
+        let compact_two_sided =
+            legacy_reference_count_offset == Some(283) && direction_face_extend.0 == 2;
         if compact_two_sided {
             for reference_at in [139, 170, 185] {
                 bytes[reference_at] = 1;
                 bytes[reference_at + 1..reference_at + 5].copy_from_slice(&55u32.to_le_bytes());
             }
         } else if legacy_side_extents.is_some_and(|(_, widened)| widened)
-            || legacy_side_extents.is_some() && extent.0 == 2
+            || legacy_side_extents.is_some() && direction_face_extend.0 == 2
         {
             for reference_at in [139, 159, 182] {
                 bytes[reference_at] = 1;
@@ -7814,7 +7854,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         bytes.extend_from_slice(b"261");
         bytes.extend_from_slice(&12u32.to_le_bytes());
         if let Some((side_extents, widened)) = legacy_side_extents {
-            if widened && extent.0 != 2 {
+            if widened && direction_face_extend.0 != 2 {
                 bytes[106..110].copy_from_slice(&1u32.to_le_bytes());
                 bytes[110..114].copy_from_slice(&0u32.to_le_bytes());
             }
@@ -7822,7 +7862,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
                 (166, 181)
             } else if legacy_reference_count_offset == Some(294) {
                 (116, 129)
-            } else if extent.0 == 2 {
+            } else if direction_face_extend.0 == 2 {
                 (155, 178)
             } else if widened {
                 (116, if side_extents.0 == 2 { 268 } else { 130 })
@@ -7843,16 +7883,31 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header).unwrap()
     };
 
-    let direct = scope("Extrude", 1, (1, 2), 0, 1, 0, None, false, None, None);
+    let direct = scope(
+        "Extrude",
+        1,
+        (1, 2),
+        0,
+        1,
+        0,
+        None,
+        false,
+        Some(((1, 0), false)),
+        None,
+        None,
+    );
     assert_eq!(
         direct.extrude_prologue,
         Some(DesignExtrudePrologue::ReferenceAware {
             reference: None,
             operation: DesignExtrudeOperation::Join,
             operation_offset: 28,
-            extent_discriminators: [1, 2],
+            direction_face_extend_values: [1, 2],
+            side_extent_discriminators: [1, 0],
+            side_extent_discriminator_offsets: [77, 90],
+            first_side_target_ordinal: None,
             extent: DesignExtrudeExtent::OneSidedDistance,
-            extent_discriminator_offsets: [32, 36],
+            direction_face_extend_offsets: [32, 36],
             direction_reversed: false,
             direction_reversed_offset: 40,
             solid_operation: true,
@@ -7861,7 +7916,19 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             start_offset: 42,
         })
     );
-    let referenced = scope("Extrude", 3, (2, 0), 0, 1, 1, Some(8), false, None, None);
+    let referenced = scope(
+        "Extrude",
+        3,
+        (2, 0),
+        0,
+        1,
+        1,
+        Some(8),
+        false,
+        Some(((1, 1), false)),
+        None,
+        None,
+    );
     assert_eq!(
         referenced.extrude_prologue,
         Some(DesignExtrudePrologue::ReferenceAware {
@@ -7874,9 +7941,12 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             }),
             operation: DesignExtrudeOperation::Intersect,
             operation_offset: 38,
-            extent_discriminators: [2, 0],
+            direction_face_extend_values: [2, 0],
+            side_extent_discriminators: [1, 1],
+            side_extent_discriminator_offsets: [87, 100],
+            first_side_target_ordinal: None,
             extent: DesignExtrudeExtent::TwoSidedDistance,
-            extent_discriminator_offsets: [42, 46],
+            direction_face_extend_offsets: [42, 46],
             direction_reversed: false,
             direction_reversed_offset: 50,
             solid_operation: true,
@@ -7885,7 +7955,19 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             start_offset: 52,
         })
     );
-    let compact_reference = scope("Extrude", 2, (1, 2), 0, 1, 2, Some(7), false, None, None);
+    let compact_reference = scope(
+        "Extrude",
+        2,
+        (1, 2),
+        0,
+        1,
+        2,
+        Some(7),
+        false,
+        Some(((1, 0), false)),
+        None,
+        None,
+    );
     let Some(DesignExtrudePrologue::ReferenceAware {
         reference: Some(reference),
         operation_offset,
@@ -7897,7 +7979,19 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert_eq!(reference.trailing_zero_count, 7);
     assert_eq!(operation_offset, 37);
 
-    let marked_reference = scope("Extrude", 1, (1, 2), 0, 1, 0, Some(8), true, None, None);
+    let marked_reference = scope(
+        "Extrude",
+        1,
+        (1, 2),
+        0,
+        1,
+        0,
+        Some(8),
+        true,
+        Some(((1, 0), false)),
+        None,
+        None,
+    );
     let Some(DesignExtrudePrologue::ReferenceAware {
         reference: Some(reference),
         operation_offset,
@@ -7910,7 +8004,19 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert_eq!(reference.operation_prefix_marker_offset, Some(37));
     assert_eq!(operation_offset, 38);
 
-    let to_face = scope("Extrusion", 2, (1, 1), 1, 1, 2, None, false, None, None);
+    let to_face = scope(
+        "Extrusion",
+        2,
+        (1, 1),
+        1,
+        1,
+        2,
+        None,
+        false,
+        Some(((2, 0), false)),
+        None,
+        None,
+    );
     assert_eq!(to_face.kind, "Extrusion");
     let Some(prologue) = to_face.extrude_prologue else {
         panic!("to-face Extrude prologue");
@@ -7918,6 +8024,71 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert_eq!(prologue.extent(), Some(DesignExtrudeExtent::OneSidedToFace));
     assert!(prologue.direction_reversed());
     assert_eq!(prologue.start(), DesignExtrudeStart::FromFace);
+
+    let same_face_extend_blind = scope(
+        "Extrude",
+        2,
+        (1, 1),
+        0,
+        1,
+        0,
+        None,
+        false,
+        Some(((1, 0), false)),
+        None,
+        None,
+    );
+    assert_eq!(
+        same_face_extend_blind
+            .extrude_prologue
+            .and_then(DesignExtrudePrologue::extent),
+        Some(DesignExtrudeExtent::OneSidedDistance)
+    );
+    let same_face_extend_through_all = scope(
+        "Extrude",
+        2,
+        (1, 1),
+        0,
+        1,
+        0,
+        None,
+        false,
+        Some(((4, 0), false)),
+        None,
+        None,
+    );
+    assert_eq!(
+        same_face_extend_through_all
+            .extrude_prologue
+            .and_then(DesignExtrudePrologue::extent),
+        Some(DesignExtrudeExtent::OneSidedThroughAll)
+    );
+    let target_ordinal = scope(
+        "Extrude",
+        2,
+        (1, 1),
+        0,
+        1,
+        0,
+        None,
+        false,
+        Some(((2, 0), true)),
+        None,
+        None,
+    );
+    assert!(matches!(
+        target_ordinal.extrude_prologue,
+        Some(DesignExtrudePrologue::ReferenceAware {
+            side_extent_discriminators: [2, 0],
+            side_extent_discriminator_offsets: [92, 176],
+            first_side_target_ordinal: Some(crate::records::DesignExtrudeTargetOrdinal {
+                scope_reference_ordinal: 0,
+                scope_reference_ordinal_offset: 87,
+            }),
+            extent: DesignExtrudeExtent::OneSidedToFace,
+            ..
+        })
+    ));
 
     let shifted_distance = scope(
         "Extrude",
@@ -7928,6 +8099,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         0,
         None,
         false,
+        None,
         Some(((1, 0), false)),
         None,
     );
@@ -7946,6 +8118,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         0,
         None,
         false,
+        None,
         Some(((1, 0), true)),
         None,
     );
@@ -7971,6 +8144,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         0,
         None,
         false,
+        None,
         Some(((1, 0), true)),
         Some(283),
     );
@@ -7991,6 +8165,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         0,
         None,
         false,
+        None,
         Some(((1, 1), false)),
         None,
     );
@@ -8009,6 +8184,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         0,
         None,
         false,
+        None,
         Some(((1, 1), false)),
         Some(283),
     );
@@ -8030,6 +8206,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         0,
         None,
         false,
+        None,
         Some(((4, 0), false)),
         None,
     );
@@ -8048,6 +8225,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         0,
         None,
         false,
+        None,
         Some(((2, 0), true)),
         None,
     );
@@ -8075,6 +8253,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             0,
             None,
             false,
+            None,
             Some(((2, 0), false)),
             Some(reference_count_offset),
         );
@@ -8097,6 +8276,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         0,
         None,
         false,
+        None,
         Some(((4, 4), true)),
         Some(294),
     );
@@ -8118,12 +8298,28 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         0,
         None,
         false,
+        None,
         Some(((0, 0), false)),
         None,
     );
     assert_eq!(invalid_absent_first_side.extrude_prologue, None);
 
-    let unrecognized = scope("Extrude", 2, (3, 0), 0, 1, 0, None, false, None, None);
+    let contradictory_direction_and_sides = scope(
+        "Extrude",
+        2,
+        (2, 0),
+        0,
+        1,
+        0,
+        None,
+        false,
+        Some(((1, 0), false)),
+        None,
+        None,
+    );
+    assert_eq!(contradictory_direction_and_sides.extrude_prologue, None);
+
+    let unrecognized = scope("Extrude", 2, (3, 0), 0, 1, 0, None, false, None, None, None);
     assert_eq!(unrecognized.kind, "Extrude");
     assert_eq!(unrecognized.extrude_prologue, None);
     assert_eq!(
@@ -8137,6 +8333,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             None,
             false,
             Some(((1, 0), false)),
+            None,
             None,
         )
         .extrude_prologue,
@@ -8153,6 +8350,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         false,
         Some(((1, 0), false)),
         None,
+        None,
     )
     .extrude_prologue
     .expect("sheet Extrude prologue");
@@ -8168,6 +8366,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             None,
             false,
             Some(((1, 0), false)),
+            None,
             None,
         )
         .extrude_prologue,
@@ -10200,9 +10399,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         reference: None,
         operation: DesignExtrudeOperation::Cut,
         operation_offset: 1028,
-        extent_discriminators: [1, 2],
+        direction_face_extend_values: [1, 2],
+        side_extent_discriminators: [1, 0],
+        side_extent_discriminator_offsets: [1077, 1090],
+        first_side_target_ordinal: None,
         extent: DesignExtrudeExtent::OneSidedDistance,
-        extent_discriminator_offsets: [1032, 1036],
+        direction_face_extend_offsets: [1032, 1036],
         direction_reversed: false,
         direction_reversed_offset: 1040,
         solid_operation: true,
@@ -18387,9 +18589,12 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
             reference: None,
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 128,
-            extent_discriminators: [1, 2],
+            direction_face_extend_values: [1, 2],
+            side_extent_discriminators: [1, 0],
+            side_extent_discriminator_offsets: [177, 190],
+            first_side_target_ordinal: None,
             extent: DesignExtrudeExtent::OneSidedDistance,
-            extent_discriminator_offsets: [132, 136],
+            direction_face_extend_offsets: [132, 136],
             direction_reversed: false,
             direction_reversed_offset: 140,
             solid_operation: true,
@@ -18765,9 +18970,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             reference: None,
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 128,
-            extent_discriminators: [1, 2],
+            direction_face_extend_values: [1, 2],
+            side_extent_discriminators: [1, 0],
+            side_extent_discriminator_offsets: [177, 190],
+            first_side_target_ordinal: None,
             extent: DesignExtrudeExtent::OneSidedDistance,
-            extent_discriminator_offsets: [132, 136],
+            direction_face_extend_offsets: [132, 136],
             direction_reversed: false,
             direction_reversed_offset: 140,
             solid_operation: true,
@@ -18908,6 +19116,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             ..
         } if profile == &neutral_sketch_id(&placement)
     ));
+    let reference_aware_prologue = scope.extrude_prologue;
     let Some(DesignExtrudePrologue::ReferenceAware {
         solid_operation, ..
     }) = scope.extrude_prologue.as_mut()
@@ -19323,6 +19532,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         }
     ));
 
+    scope.extrude_prologue = reference_aware_prologue;
+    set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
     set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedToFace);
     let mut target_shape_group = body_group.clone();
     target_shape_group.id = "f3d:Design/BulkStream.dat:operand-group#105".into();
@@ -19332,6 +19543,22 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     target_shape_group.member_offsets = vec![1026];
     target_shape_group.role = 0x0000_0005_0000_0000;
     target_shape_group.extrude_role = None;
+    let Some(DesignExtrudePrologue::ReferenceAware {
+        first_side_target_ordinal,
+        ..
+    }) = scope.extrude_prologue.as_mut()
+    else {
+        panic!("reference-aware target-shape Extrude prologue");
+    };
+    *first_side_target_ordinal = Some(DesignExtrudeTargetOrdinal {
+        scope_reference_ordinal: target_shape_group.scope_reference_ordinal,
+        scope_reference_ordinal_offset: 187,
+    });
+    let mut unrelated_target_group = target_shape_group.clone();
+    unrelated_target_group.id = "f3d:Design/BulkStream.dat:operand-group#106".into();
+    unrelated_target_group.record_index = 106;
+    unrelated_target_group.scope_reference_ordinal = 3;
+    unrelated_target_group.members = vec![202];
     let mut target_shape_operand = DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:body-recipe-operand#201".into(),
         scope_record_index: scope.record_index,
@@ -19371,7 +19598,11 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     let unresolved_target_shape = project_extrude(
         &scope,
         &[(0, &taper)],
-        &[body_group.clone(), target_shape_group.clone()],
+        &[
+            body_group.clone(),
+            target_shape_group.clone(),
+            unrelated_target_group.clone(),
+        ],
         &[],
         std::slice::from_ref(&placement),
         std::slice::from_ref(&target_shape_operand),
@@ -19398,7 +19629,11 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     let target_shape = project_extrude(
         &scope,
         &[(0, &taper)],
-        &[body_group.clone(), target_shape_group.clone()],
+        &[
+            body_group.clone(),
+            target_shape_group.clone(),
+            unrelated_target_group,
+        ],
         &[],
         std::slice::from_ref(&placement),
         std::slice::from_ref(&target_shape_operand),

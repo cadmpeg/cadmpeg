@@ -2990,16 +2990,19 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     Some(records::DesignExtrudePrologue::ReferenceAware {
                         reference,
                         operation_offset,
-                        extent_discriminators,
+                        direction_face_extend_values,
+                        side_extent_discriminators,
+                        side_extent_discriminator_offsets,
+                        first_side_target_ordinal,
                         extent,
-                        extent_discriminator_offsets: extent_offsets,
+                        direction_face_extend_offsets,
                         direction_reversed_offset,
                         solid_operation_offset,
                         start_offset,
                         ..
                     }),
                 ) => {
-                    reference.map_or(
+                    let prefix_valid = reference.map_or(
                         operation_offset == scope.byte_offset.saturating_add(28),
                         |reference| {
                             let padding_end = reference
@@ -3022,21 +3025,83 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 && marker_valid
                                 && scope.reference_members.contains(&reference.record_index)
                         },
-                    ) && matches!(
-                        (extent_discriminators, extent),
-                        ([1, 1], records::DesignExtrudeExtent::OneSidedToFace)
-                            | ([1, 2], records::DesignExtrudeExtent::OneSidedDistance)
-                            | ([2, 0], records::DesignExtrudeExtent::TwoSidedDistance)
-                            | ([3, 2], records::DesignExtrudeExtent::SymmetricDistance)
-                    ) && extent_offsets
-                        == [
-                            operation_offset.saturating_add(4),
-                            operation_offset.saturating_add(8),
-                        ]
+                    );
+                    let target_ordinal_valid = first_side_target_ordinal.is_none_or(|target| {
+                        usize::try_from(target.scope_reference_ordinal)
+                            .ok()
+                            .and_then(|ordinal| scope.reference_members.get(ordinal).copied())
+                            .is_some_and(|record_index| {
+                                let mut groups = native
+                                    .design_construction_operand_groups
+                                    .iter()
+                                    .filter(|group| {
+                                        design_stream(&group.id) == native_stream
+                                            && group.scope_record_index == scope.record_index
+                                            && group.record_index == record_index
+                                            && group.scope_reference_ordinal
+                                                == target.scope_reference_ordinal
+                                            && group.role == 0x0000_0005_0000_0000
+                                            && group.extrude_role.is_none()
+                                            && group.extrude_face_role.is_none()
+                                    });
+                                target.scope_reference_ordinal_offset.checked_add(5)
+                                    == Some(side_extent_discriminator_offsets[0])
+                                    && groups.next().is_some()
+                                    && groups.next().is_none()
+                            })
+                    });
+                    let target_prefix_length = if first_side_target_ordinal.is_some() {
+                        5
+                    } else {
+                        0
+                    };
+                    let first_side_offset_valid = side_extent_discriminator_offsets[0]
+                        .checked_sub(
+                            operation_offset
+                                .saturating_add(49)
+                                .saturating_add(target_prefix_length),
+                        )
+                        .is_some_and(|slot_expansion| {
+                            slot_expansion <= 70 && slot_expansion.is_multiple_of(10)
+                        });
+                    let second_side_offset_valid = side_extent_discriminator_offsets[1]
+                        == if side_extent_discriminators[0] == 2 {
+                            scope.reference_count_offset.saturating_sub(4)
+                        } else {
+                            side_extent_discriminator_offsets[0].saturating_add(13)
+                        };
+                    prefix_valid
+                        && matches!(direction_face_extend_values[0], 1..=3)
+                        && matches!(
+                            (
+                                direction_face_extend_values[0],
+                                side_extent_discriminators,
+                                extent,
+                            ),
+                            (1, [1, 0], records::DesignExtrudeExtent::OneSidedDistance)
+                                | (1, [2, 0], records::DesignExtrudeExtent::OneSidedToFace)
+                                | (1, [3, 0], records::DesignExtrudeExtent::OneSidedThroughNext)
+                                | (1, [4, 0], records::DesignExtrudeExtent::OneSidedThroughAll)
+                                | (2, [1, 1], records::DesignExtrudeExtent::TwoSidedDistance)
+                                | (3, [1, 0], records::DesignExtrudeExtent::SymmetricDistance)
+                                | (3, [4, 4], records::DesignExtrudeExtent::SymmetricThroughAll)
+                        )
+                        && first_side_target_ordinal
+                            .is_none_or(|_| side_extent_discriminators[0] == 2)
+                        && target_ordinal_valid
+                        && first_side_offset_valid
+                        && second_side_offset_valid
+                        && direction_face_extend_offsets
+                            == [
+                                operation_offset.saturating_add(4),
+                                operation_offset.saturating_add(8),
+                            ]
                         && start_offset == operation_offset.saturating_add(14)
                         && solid_operation_offset == operation_offset.saturating_add(13)
                         && direction_reversed_offset == operation_offset.saturating_add(12)
-                        && extent_offsets[1] < scope.reference_count_offset
+                        && side_extent_discriminator_offsets[1]
+                            .checked_add(4)
+                            .is_some_and(|end| end <= scope.reference_count_offset)
                 }
                 (
                     true,

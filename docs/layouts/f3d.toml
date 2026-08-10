@@ -8,7 +8,8 @@ endianness = "little"
 note = """
 Covers the fixed Design-segment headers, parameter-owner prefix, and body-map prefix, the named solid-primitive prologue,
 the ParaMesh entry-name, container-GUID, body graph, collection, texture table,
-feature scope, wrapper, and Scene records,
+feature scope, current and shifted Extrude operation and extent sections,
+wrapper, and Scene records,
 the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, the
 compact `Loft` prefix and nested profile-region frames, the class-418
 `SplitFace` prefix, the grouped recipe-reference prefix, the three `Combine`
@@ -2824,6 +2825,143 @@ anchor = "stores 16 row-major f64 values at offset 66"
 offset = 194
 size = 147
 note = "The carrier tail is not assigned a semantic field."
+
+[[record]]
+name = "current_extrude_operation_fields"
+kind = "byte"
+section = "3.1"
+anchor = "The current reference-aware layout stores three zero bytes at `operation + 15` through `operation + 17`"
+size = 42
+note = "Offsets are relative to the result-operation u32 of a current reference-aware Extrude scope. The seven variable-width nullable reference slots follow at offset 42."
+
+[[record.field]]
+name = "operation"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "stores its result-operation u32"
+
+[[record.field]]
+name = "direction"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "The two immediately following u32 values are the travel direction and the face-extend option"
+
+[[record.field]]
+name = "face_extend"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "The two immediately following u32 values are the travel direction and the face-extend option"
+
+[[record.field]]
+name = "direction_reversed"
+offset = 12
+type = "u8"
+source = "spec"
+anchor = "Offset `operation + 12` is the direction-reversal Boolean"
+
+[[record.field]]
+name = "geometry_kind"
+offset = 13
+type = "u8"
+source = "spec"
+anchor = "offset `operation + 13` is the geometry-kind Boolean"
+
+[[record.field]]
+name = "start_support"
+offset = 14
+type = "u8"
+source = "spec"
+anchor = "offset `operation + 14` is the start-support byte"
+
+[[record.field]]
+name = "zero_run_3"
+offset = 15
+type = "bytes[3]"
+source = "spec"
+anchor = "stores three zero bytes at `operation + 15` through `operation + 17`"
+
+[[record.field]]
+name = "profile_normal"
+offset = 18
+type = "f64[3]"
+source = "spec"
+anchor = "Its profile normal is three contiguous unit-length f64 values at `operation + 18`"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+contains = "let profile_normal_offset = operation_offset.checked_add(18)?;"
+note = "The current Extrude parser anchors the profile-normal and nullable-slot run at the tabulated offset."
+
+[[record]]
+name = "current_extrude_non_target_extent_pair"
+kind = "byte"
+section = "3.1"
+anchor = "A first-side value other than `2` is followed by nine zero bytes and the second-side value at first-side offset `+13`"
+size = 17
+note = "Offsets are relative to the first-side extent u32. This frame applies when the first-side extent is not the to-entity value 2."
+
+[[record.field]]
+name = "first_side_extent"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "A first-side value other than `2`"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 4
+type = "bytes[9]"
+source = "spec"
+anchor = "is followed by nine zero bytes"
+
+[[record.field]]
+name = "second_side_extent"
+offset = 13
+type = "u32"
+source = "spec"
+anchor = "the second-side value at first-side offset `+13`"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+contains = "let second_side_extent_offset = first_side_extent_offset.checked_add(13)?;"
+note = "The current Extrude parser verifies the nine-byte zero run before reading the second-side value."
+
+[[record]]
+name = "current_extrude_shape_target_extent_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A u32 zero-based scope-reference ordinal immediately after the seventh slot names the same target-group record"
+size = 9
+note = "Offsets are relative to the repeated target-group ordinal. The target payload follows the first-side extent; the second-side extent is four bytes before the scope reference-count field."
+
+[[record.field]]
+name = "target_scope_reference_ordinal"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "A u32 zero-based scope-reference ordinal immediately after the seventh slot"
+
+[[record.field]]
+name = "zero_separator"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "one zero byte follows the ordinal"
+
+[[record.field]]
+name = "first_side_extent"
+offset = 5
+type = "u32"
+source = "spec"
+anchor = "the first-side value `2` follows that byte"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+contains = "scope_reference_ordinal_offset: extent_cursor as u64"
+note = "The current Extrude parser retains the exact ordinal offset and advances five bytes to the first-side extent."
 
 [[record]]
 name = "shifted_extrude_prologue"

@@ -24,17 +24,18 @@ use crate::records::{
     DesignCopyPasteComponentOperation, DesignDirectFaceOperation, DesignDraftOperation,
     DesignEdgeFlangeHeightExtent, DesignEdgeFlangeOperation, DesignEntityHeader,
     DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue,
-    DesignExtrudePrologueReference, DesignExtrudeStart, DesignFixedChamferDistance,
-    DesignFixedChamferParameters, DesignFixedExtrudeDistance, DesignFixedExtrudeParameters,
-    DesignFixedExtrudeScalar, DesignFixedFilletGroup, DesignFixedFilletParameters,
-    DesignHemOperation, DesignHemParameterOwners, DesignHoleConstruction, DesignMirrorConstruction,
-    DesignMoveOperation, DesignParameter, DesignParameterOwner, DesignParameterScope,
-    DesignPathFeatureConstruction, DesignRecordHeader, DesignRectangularPatternConstruction,
-    DesignRectangularPatternInstances, DesignRuledSurfaceCorner, DesignRuledSurfaceMethod,
-    DesignRuledSurfaceOperation, DesignScaleOperation, DesignSheetMetalHeightDatum,
-    DesignSolidPrimitive, DesignSurfaceExtendMethod, DesignSurfaceExtendOperation,
-    DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport, DesignSurfaceStitchOperation,
-    DesignThreadConstruction, DesignThreadForm, DesignWorkAxisConstruction,
+    DesignExtrudePrologueReference, DesignExtrudeStart, DesignExtrudeTargetOrdinal,
+    DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeDistance,
+    DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletGroup,
+    DesignFixedFilletParameters, DesignHemOperation, DesignHemParameterOwners,
+    DesignHoleConstruction, DesignMirrorConstruction, DesignMoveOperation, DesignParameter,
+    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
+    DesignRectangularPatternConstruction, DesignRectangularPatternInstances,
+    DesignRuledSurfaceCorner, DesignRuledSurfaceMethod, DesignRuledSurfaceOperation,
+    DesignScaleOperation, DesignSheetMetalHeightDatum, DesignSolidPrimitive,
+    DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
+    DesignSurfaceOffsetSupport, DesignSurfaceStitchOperation, DesignThreadConstruction,
+    DesignThreadForm, DesignWorkAxisConstruction,
 };
 use cadmpeg_core::le::{f64_at, f64s_at, u16_at, u32_at, u64_at as read_u64};
 use cadmpeg_core::CodecError;
@@ -5942,7 +5943,7 @@ fn exact_extrude_prologue(
     reference_count_at: usize,
     reference_members: &[u32],
 ) -> Option<DesignExtrudePrologue> {
-    exact_current_extrude_prologue(bytes, start, reference_members)
+    exact_current_extrude_prologue(bytes, start, reference_count_at, reference_members)
         .or_else(|| {
             exact_legacy_shifted_extrude_prologue(
                 bytes,
@@ -6021,6 +6022,7 @@ fn exact_legacy_distance_extrude_prologue(
 fn exact_current_extrude_prologue(
     bytes: &[u8],
     start: usize,
+    reference_count_at: usize,
     reference_members: &[u32],
 ) -> Option<DesignExtrudePrologue> {
     let direct_offset = start.checked_add(28)?;
@@ -6043,12 +6045,10 @@ fn exact_current_extrude_prologue(
                 && reference_members.contains(&record_index)
                 && matches!(u32_at(bytes, *operation_offset), Some(1..=4))
                 && matches!(
-                    (
-                        u32_at(bytes, operation_offset.saturating_add(4)),
-                        u32_at(bytes, operation_offset.saturating_add(8))
-                    ),
-                    (Some(1), Some(1 | 2)) | (Some(2), Some(0)) | (Some(3), Some(2))
+                    u32_at(bytes, operation_offset.saturating_add(4)),
+                    Some(1..=3)
                 )
+                && u32_at(bytes, operation_offset.saturating_add(8)).is_some()
                 && matches!(bytes.get(operation_offset.saturating_add(12)), Some(0 | 1))
                 && matches!(bytes.get(operation_offset.saturating_add(13)), Some(0 | 1))
                 && matches!(bytes.get(operation_offset.saturating_add(14)), Some(0..=2))
@@ -6084,19 +6084,15 @@ fn exact_current_extrude_prologue(
         4 => DesignExtrudeOperation::NewBody,
         _ => return None,
     };
-    let side_offset = operation_offset.checked_add(4)?;
-    let termination_offset = operation_offset.checked_add(8)?;
-    let extent_discriminators = [
-        u32_at(bytes, side_offset)?,
-        u32_at(bytes, termination_offset)?,
+    let direction_offset = operation_offset.checked_add(4)?;
+    let face_extend_offset = operation_offset.checked_add(8)?;
+    let direction_face_extend_values = [
+        u32_at(bytes, direction_offset)?,
+        u32_at(bytes, face_extend_offset)?,
     ];
-    let extent = match extent_discriminators {
-        [1, 1] => DesignExtrudeExtent::OneSidedToFace,
-        [1, 2] => DesignExtrudeExtent::OneSidedDistance,
-        [2, 0] => DesignExtrudeExtent::TwoSidedDistance,
-        [3, 2] => DesignExtrudeExtent::SymmetricDistance,
-        _ => return None,
-    };
+    if !matches!(direction_face_extend_values[0], 1..=3) {
+        return None;
+    }
     let direction_reversed_offset = operation_offset.checked_add(12)?;
     let direction_reversed = match bytes.get(direction_reversed_offset)? {
         0 => false,
@@ -6116,13 +6112,89 @@ fn exact_current_extrude_prologue(
         2 => DesignExtrudeStart::FromFace,
         _ => return None,
     };
+    let profile_normal_offset = operation_offset.checked_add(18)?;
+    if bytes.get(operation_offset.checked_add(15)?..profile_normal_offset)? != [0; 3] {
+        return None;
+    }
+    let profile_normal = f64s_at(bytes, profile_normal_offset, 3)?;
+    let profile_normal_squared = profile_normal
+        .iter()
+        .map(|component| component * component)
+        .sum::<f64>();
+    if profile_normal
+        .iter()
+        .any(|component| !component.is_finite())
+        || (profile_normal_squared - 1.0).abs() > 1.0e-12
+    {
+        return None;
+    }
+    let mut extent_cursor = profile_normal_offset.checked_add(24)?;
+    let mut final_slot_reference = None;
+    for slot_ordinal in 0..7 {
+        match bytes.get(extent_cursor)? {
+            0 => extent_cursor = extent_cursor.checked_add(1)?,
+            1 => {
+                let record_index = marked_record_reference(bytes, extent_cursor)?;
+                if !reference_members.contains(&record_index) {
+                    return None;
+                }
+                if slot_ordinal == 6 {
+                    final_slot_reference = Some(record_index);
+                }
+                extent_cursor = extent_cursor.checked_add(11)?;
+            }
+            _ => return None,
+        }
+    }
+    let first_side_target_ordinal = final_slot_reference.and_then(|record_index| {
+        let scope_reference_ordinal = u32_at(bytes, extent_cursor)?;
+        let ordinal = usize::try_from(scope_reference_ordinal).ok()?;
+        if reference_members.get(ordinal) != Some(&record_index)
+            || bytes.get(extent_cursor.checked_add(4)?) != Some(&0)
+            || u32_at(bytes, extent_cursor.checked_add(5)?) != Some(2)
+        {
+            return None;
+        }
+        Some(DesignExtrudeTargetOrdinal {
+            scope_reference_ordinal,
+            scope_reference_ordinal_offset: extent_cursor as u64,
+        })
+    });
+    if first_side_target_ordinal.is_some() {
+        extent_cursor = extent_cursor.checked_add(5)?;
+    }
+    let first_side_extent_offset = extent_cursor;
+    let first_side_extent = u32_at(bytes, first_side_extent_offset)?;
+    let second_side_extent_offset = if first_side_extent == 2 {
+        reference_count_at.checked_sub(4)?
+    } else {
+        let second_side_extent_offset = first_side_extent_offset.checked_add(13)?;
+        if bytes.get(first_side_extent_offset.checked_add(4)?..second_side_extent_offset)? != [0; 9]
+        {
+            return None;
+        }
+        second_side_extent_offset
+    };
+    if second_side_extent_offset < first_side_extent_offset.checked_add(4)?
+        || second_side_extent_offset.checked_add(4)? > reference_count_at
+    {
+        return None;
+    }
+    let side_extent_discriminators = [first_side_extent, u32_at(bytes, second_side_extent_offset)?];
+    let extent = exact_extrude_extent(direction_face_extend_values[0], side_extent_discriminators)?;
     Some(DesignExtrudePrologue::ReferenceAware {
         reference,
         operation,
         operation_offset: operation_offset as u64,
-        extent_discriminators,
+        direction_face_extend_values,
+        side_extent_discriminators,
+        side_extent_discriminator_offsets: [
+            first_side_extent_offset as u64,
+            second_side_extent_offset as u64,
+        ],
+        first_side_target_ordinal,
         extent,
-        extent_discriminator_offsets: [side_offset as u64, termination_offset as u64],
+        direction_face_extend_offsets: [direction_offset as u64, face_extend_offset as u64],
         direction_reversed,
         direction_reversed_offset: direction_reversed_offset as u64,
         solid_operation,
@@ -6130,6 +6202,22 @@ fn exact_current_extrude_prologue(
         start,
         start_offset: start_offset as u64,
     })
+}
+
+fn exact_extrude_extent(
+    direction: u32,
+    side_extent_discriminators: [u32; 2],
+) -> Option<DesignExtrudeExtent> {
+    match (direction, side_extent_discriminators) {
+        (1, [1, 0]) => Some(DesignExtrudeExtent::OneSidedDistance),
+        (1, [2, 0]) => Some(DesignExtrudeExtent::OneSidedToFace),
+        (1, [3, 0]) => Some(DesignExtrudeExtent::OneSidedThroughNext),
+        (1, [4, 0]) => Some(DesignExtrudeExtent::OneSidedThroughAll),
+        (2, [1, 1]) => Some(DesignExtrudeExtent::TwoSidedDistance),
+        (3, [1, 0]) => Some(DesignExtrudeExtent::SymmetricDistance),
+        (3, [4, 4]) => Some(DesignExtrudeExtent::SymmetricThroughAll),
+        _ => None,
+    }
 }
 
 fn exact_legacy_shifted_extrude_prologue(
@@ -6198,17 +6286,6 @@ fn exact_legacy_shifted_extrude_prologue(
         }
         Some([first_side_extent_offset, second_side_extent_offset])
     };
-    let extent_for =
-        |discriminators: [u32; 2]| match (direction_face_extend_values[0], discriminators) {
-            (1, [1, 0]) => Some(DesignExtrudeExtent::OneSidedDistance),
-            (1, [2, 0]) => Some(DesignExtrudeExtent::OneSidedToFace),
-            (1, [3, 0]) => Some(DesignExtrudeExtent::OneSidedThroughNext),
-            (1, [4, 0]) => Some(DesignExtrudeExtent::OneSidedThroughAll),
-            (2, [1, 1]) => Some(DesignExtrudeExtent::TwoSidedDistance),
-            (3, [1, 0]) => Some(DesignExtrudeExtent::SymmetricDistance),
-            (3, [4, 4]) => Some(DesignExtrudeExtent::SymmetricThroughAll),
-            _ => None,
-        };
     let candidate = |first_side_extent_offset: usize, default_second_offset: usize| {
         if first_side_extent_offset.checked_add(4)? > reference_count_at {
             return None;
@@ -6224,13 +6301,18 @@ fn exact_legacy_shifted_extrude_prologue(
         }
         let offsets = [first_side_extent_offset, second_side_extent_offset];
         let discriminators = [u32_at(bytes, offsets[0])?, u32_at(bytes, offsets[1])?];
-        extent_for(discriminators).map(|extent| (offsets, discriminators, extent))
+        exact_extrude_extent(direction_face_extend_values[0], discriminators)
+            .map(|extent| (offsets, discriminators, extent))
     };
     let (side_extent_discriminator_offsets, side_extent_discriminators, extent) =
         if direction_face_extend_values[0] == 2 {
             let offsets = two_sided_offsets()?;
             let discriminators = [u32_at(bytes, offsets[0])?, u32_at(bytes, offsets[1])?];
-            (offsets, discriminators, extent_for(discriminators)?)
+            (
+                offsets,
+                discriminators,
+                exact_extrude_extent(direction_face_extend_values[0], discriminators)?,
+            )
         } else {
             let (first_offset, second_offset) = match reference_count_at.checked_sub(start)? {
                 252 | 262 | 263 => (106, 110),

@@ -29,12 +29,12 @@ use crate::records::{
     ConstructionRecipeKind, DesignBodyBinding, DesignBodyRecipeOperand, DesignCoilExtent,
     DesignCoilSection, DesignCoilSectionPlacement, DesignConstructionOperandGroup,
     DesignDirectFaceOperation, DesignEdgeIdentityOperand, DesignEdgeOperand, DesignExtrudeExtent,
-    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeStart,
-    DesignFaceOperand, DesignFeatureTimeline, DesignFilletRadiusGroup, DesignFilletRadiusLaw,
-    DesignFixedExtrudeDistance, DesignParameter, DesignParameterKind, DesignParameterOwner,
-    DesignParameterScope, DesignPathFeatureConstruction, DesignSketchPlacement,
-    DesignSolidPrimitive, DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport,
-    SketchCurveGeometry, SketchCurveIdentity,
+    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudePrologue,
+    DesignExtrudeStart, DesignFaceOperand, DesignFeatureTimeline, DesignFilletRadiusGroup,
+    DesignFilletRadiusLaw, DesignFixedExtrudeDistance, DesignParameter, DesignParameterKind,
+    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
+    DesignSketchPlacement, DesignSolidPrimitive, DesignSurfaceOffsetOperation,
+    DesignSurfaceOffsetSupport, SketchCurveGeometry, SketchCurveIdentity,
 };
 use cadmpeg_core::le::{u32_at, u64_at as read_u64};
 use cadmpeg_core::CodecError;
@@ -6164,19 +6164,29 @@ pub(crate) fn project_extrude(
         .filter(|group| group.extrude_face_role == Some(DesignExtrudeFaceRole::Termination))
         .copied()
         .collect::<Vec<_>>();
+    let prologue = scope.extrude_prologue?;
+    let first_side_target_ordinal = match prologue {
+        DesignExtrudePrologue::ReferenceAware {
+            first_side_target_ordinal,
+            ..
+        } => first_side_target_ordinal.map(|target| target.scope_reference_ordinal),
+        DesignExtrudePrologue::LegacyDistance { .. }
+        | DesignExtrudePrologue::LegacyShifted { .. } => None,
+    };
     let target_shape_groups = scope_groups
         .iter()
         .filter(|group| {
             group.role == 0x0000_0005_0000_0000
                 && group.extrude_role.is_none()
                 && group.extrude_face_role.is_none()
+                && first_side_target_ordinal
+                    .is_none_or(|ordinal| group.scope_reference_ordinal == ordinal)
         })
         .copied()
         .collect::<Vec<_>>();
     if start_groups.len() + termination_groups.len() != face_groups.len() {
         return None;
     }
-    let prologue = scope.extrude_prologue?;
     let start = match prologue.start() {
         DesignExtrudeStart::ProfilePlane if start_groups.is_empty() => {
             if profile_offset.is_some() {

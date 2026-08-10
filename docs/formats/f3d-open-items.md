@@ -260,16 +260,6 @@ The arc grammar and the line grammar read the same twelve f64 at the same offset
 
 **Need.** A stream that appends the current copy after the superseded copy makes every one of these records decode to the pre-edit content: a sketch text keeps its earlier string, height, and anchor, and a sketch point keeps its earlier coordinates. The decoder emits one record and records no loss, so no consumer can detect the substitution. The rule that marks the live copy settles the item. Until then the two copies must decode to equal content, or the record must be withheld with a loss.
 
-### DR-37. Extent carrier of the current Extrude prologue
-
-**Question.** Which per-side words carry the extent form of a current-generation `Extrude` prologue?
-
-**Known.** `f3d.md` §3.1 "An `Extrude` or `Extrusion` scope stores its result-operation" states that the two u32 after the operation are the travel direction and the face-extend option and that "they are not an extent pair". It gives direction values `1 = one side`, `2 = two sides`, and `3 = symmetric`. `f3d.md` §3.1 "The extent form is carried by" puts the two per-side extent words after the profile normal and the scope reference slots, with values `0 = absent`, `1 = distance`, and `2 = to entity with an offset`.
-
-**Conflict.** `exact_current_extrude_prologue` in `design/decode/scopes.rs` names the pair at `operation + 4` and `operation + 8` `extent_discriminators` and takes the extent form from it: `[1, 1]` gives a one-sided to-face extent, `[1, 2]` a one-sided distance, `[2, 0]` a two-sided distance, and `[3, 2]` a symmetric distance. The first element of each pair reproduces the direction enum the specification gives. The mapping of the second element also opposes the extent enum, because it takes `1` as a to-face extent where the extent enum gives `1` as a distance. `exact_legacy_shifted_extrude_prologue` reads the same pair, names it `direction_face_extend_values`, and takes the extents from separate per-side offsets. `validate.rs` repeats the same four pairs, so the validator confirms the decoder and not the format.
-
-**Need.** The two readings disagree about which words carry the extent. A one-sided blind extrude whose face-extend option is `1` decodes as a to-face extrude, and the projector then requires a termination group that the record does not hold. The decision names the correct offsets for the current form.
-
 ### DR-38. Extent of the legacy-distance Extrude dialect
 
 **Question.** Which field carries the extent form of the legacy-distance `Extrude` prologue?
