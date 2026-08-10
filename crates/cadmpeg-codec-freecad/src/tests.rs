@@ -3260,10 +3260,10 @@ fn reports_attributable_native_design_blockers() {
 fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2" Dependencies="1">
+ <ObjectDeps Name="Pad" Count="0"/>
  <ObjectDeps Name="Sheet" Count="0"/>
- <ObjectDeps Name="Pad" Count="1"><Dep Name="Sheet"/></ObjectDeps>
- <Object type="Spreadsheet::Sheet" name="Sheet" id="1"/>
  <Object type="PartDesign::Pad" name="Pad" id="2"/>
+ <Object type="Spreadsheet::Sheet" name="Sheet" id="1"/>
 </Objects>
 <ObjectData Count="2">
  <Object name="Sheet"><Properties Count="3"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="2" xlink="1">

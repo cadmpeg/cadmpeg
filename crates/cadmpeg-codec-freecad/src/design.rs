@@ -472,6 +472,10 @@ fn feature_ordinals<'a>(
         .iter()
         .map(|object| (object.id.as_str(), *object))
         .collect::<HashMap<_, _>>();
+    let object_by_name = design_objects
+        .iter()
+        .map(|object| (object.name.as_str(), *object))
+        .collect::<HashMap<_, _>>();
     let object_by_feature = design_objects
         .iter()
         .map(|object| (feature_id(object), object.id.as_str()))
@@ -504,6 +508,21 @@ fn feature_ordinals<'a>(
                             || emitted.contains(dependency.as_str())
                     });
                 if !declared_ready {
+                    return false;
+                }
+                let expressions_ready = properties_by_owner
+                    .get(object.id.as_str())
+                    .into_iter()
+                    .flatten()
+                    .flat_map(|property| &property.values)
+                    .filter_map(|value| value.attributes.get("expression"))
+                    .flat_map(|expression| expression_identifiers(expression))
+                    .filter_map(|identifier| identifier.split_once('.').map(|(owner, _)| owner))
+                    .filter_map(|owner| object_by_name.get(owner))
+                    .all(|dependency| {
+                        dependency.id == object.id || emitted.contains(dependency.id.as_str())
+                    });
+                if !expressions_ready {
                     return false;
                 }
                 if is_body(&object.type_name) {
