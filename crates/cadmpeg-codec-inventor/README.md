@@ -6,8 +6,8 @@ Protein, external-reference, presentation, and design-record layers. Supported
 part kernel carriers transfer through [`cadmpeg-asm`][asm]. The codec is
 read-only: it has no Inventor writer, replay path, or patch path.
 
-Overall support is **L1 claimed** for the primary CFB v3, RSe schema 31, Meta
-Stream 8 envelope. ACIS 217/218 part carriers have a separate **L3 claimed**
+Overall support is **L1** for the primary CFB v3, RSe schema 31, Meta
+Stream 8 envelope. ACIS 217/218 part carriers have a separate **L3**
 geometry profile. The finite support claims and extras are maintained in the
 [format-support profile][support].
 
@@ -88,15 +88,15 @@ apply the primary grammar.
 
 The decode result combines neutral IR with the `inventor` native namespace.
 
-| Layer | Transfer |
-| --- | --- |
-| Container | CFB hierarchy, stream sizes, allocation facts, segment pairs, and physical ranges. |
-| RSe | Database identity, registry, revisions, Meta Stream tables, exact B-record frames, typed record identities, and bounded unknown records. |
-| Properties | OLE property sets, FMTIDs, code pages supported by the decoder, typed scalar values, thumbnails with recognized image signatures, and unmapped native properties. |
-| Protein | Absent, empty, or packaged state; safe ZIP entry inventory; schema-driven asset records and rejected instance positions through `cadmpeg-protein`. |
-| References | `UFRxDoc` external document identities, persisted paths, model states, occurrence identifiers, and unresolved external prototypes. The codec never opens those paths. |
-| Presentation | Document-default appearance and supported body/face style joins, with explicit losses for unresolved assignments. |
-| Design | Parameters, planar sketch graphs, typed feature records, and closed extrude, hole, constant-radius fillet, and equal-distance chamfer branches when every typed operand and result-body join resolves. |
+| Layer        | Transfer                                                                                                                                                                                               |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Container    | CFB hierarchy, stream sizes, allocation facts, segment pairs, and physical ranges.                                                                                                                     |
+| RSe          | Database identity, registry, revisions, Meta Stream tables, exact B-record frames, typed record identities, and bounded unknown records.                                                               |
+| Properties   | OLE property sets, FMTIDs, code pages supported by the decoder, typed scalar values, thumbnails with recognized image signatures, and unmapped native properties.                                      |
+| Protein      | Absent, empty, or packaged state; safe ZIP entry inventory; schema-driven asset records and rejected instance positions through `cadmpeg-protein`.                                                     |
+| References   | `UFRxDoc` external document identities, persisted paths, model states, occurrence identifiers, and unresolved external prototypes. The codec never opens those paths.                                  |
+| Presentation | Document-default appearance and supported body/face style joins, with explicit losses for unresolved assignments.                                                                                      |
+| Design       | Parameters, planar sketch graphs, typed feature records, and closed extrude, hole, constant-radius fillet, and equal-distance chamfer branches when every typed operand and result-body join resolves. |
 
 ## Part geometry
 

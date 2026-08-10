@@ -12,14 +12,14 @@ DEPDB section layouts recognized by the container scanner. This is not yet a
 closed support envelope: supported Creo release bounds, required and optional
 section combinations, and the admitted geometry and feature-family matrix have
 not been fixed. Until that matrix is closed and exercised by representative
-fixtures, claims above L1 remain unproven.
+fixtures, scores above L1 remain blocked.
 
 ## Cumulative gates
 
 | Level | Required evidence                                                                                                                  | Current result         | Remaining gate                                                                                                                                                                                  |
 | ----- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | L0    | Signature and part-kind detection; bounded container metadata; preview or tessellation when present                                | Pass in implementation | Representative release-band fixtures                                                                                                                                                            |
-| L1    | Section/stream navigation; ND and DEPDB dispatch; bounded Unix-compress expansion; version/layout reporting; named opaque sections | Claimed                | Close the release and layout envelope and verify every admitted section combination                                                                                                             |
+| L1    | Section/stream navigation; ND and DEPDB dispatch; bounded Unix-compress expansion; version/layout reporting; named opaque sections | Pass                   | Close the release and layout envelope and verify every admitted section combination                                                                                                             |
 | L2    | Placed points; analytic and NURBS curves and surfaces; correct units and parameterization across the envelope                      | Incomplete             | Remaining positional curve and surface bodies, prototype-instance joins, spline joins, type-26 placements, and lane-specific scalar forms                                                       |
 | L3    | Connected bodies through vertices with ownership, orientation, trimming, placements, and transforms; unknown carriers permitted    | Incomplete             | Complete face-instance partitioning, rowless face-use binding, loop classification, vertex coordinates, and shell-to-body ownership                                                             |
 | L4    | Typed feature operations, sketches, ordering, dependencies, profiles, directions, and extents                                      | Incomplete             | Resolve the remaining operation families and incomplete operands, including chamfer, draft, mirror, boundary, ambiguous surface-merge quilt-to-surface joins, and non-default sweep termination |
@@ -339,7 +339,7 @@ fixtures, claims above L1 remain unproven.
 2. Manifest representative fixtures for every admitted matrix cell, including
    negative and ambiguity cases.
 3. Record per-fixture geometry, topology, design, and configuration loss
-   expectations and require no blocking loss through the claimed level.
+   expectations and require no blocking loss through the scored level.
    The decode report's coverage map records unique, transferred, and
    untransferred visible surface- and curve-row counts. Surface counts are
    partitioned by family; curve counts are partitioned by raw type byte because
@@ -424,5 +424,5 @@ fixtures, claims above L1 remain unproven.
    unresolved reference raises a decode loss note.
 5. Run malformed-input and fuzz gates for every admitted parser family.
 
-The current public score remains L1 claimed. Capabilities above L1 are extras
+The current public score remains L1. Capabilities above L1 are extras
 until every cumulative gate through their level passes for a closed envelope.
