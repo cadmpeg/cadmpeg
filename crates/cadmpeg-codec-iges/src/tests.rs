@@ -224,6 +224,22 @@ fn inspect_enforces_iges_parser_resource_limits() {
 }
 
 #[test]
+fn semantic_decode_barrier_rejects_invalid_cadir() {
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.vertices.push(Vertex {
+        id: VertexId("iges:model:vertex#invalid".into()),
+        point: PointId("iges:model:point#missing".into()),
+        tolerance: None,
+    });
+
+    let error = crate::reader::reject_invalid_semantic_ir(&ir, &[]).unwrap_err();
+
+    assert!(error.to_string().contains("referential_integrity"));
+    assert!(error.to_string().contains("iges:model:vertex#invalid"));
+    assert!(error.to_string().contains("iges:model:point#missing"));
+}
+
+#[test]
 fn blank_directory_status_defaults_to_zero_fields() {
     let result = IgesCodec
         .decode(

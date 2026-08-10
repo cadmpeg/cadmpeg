@@ -208,6 +208,12 @@ fn decode_with_occurrence_limits(
                     provenance: None,
                 }),
         );
+        charge_work(
+            ctx,
+            ir.model.entity_count() as u64,
+            "iges_semantic_validation",
+        )?;
+        reject_invalid_semantic_ir(&ir, &losses)?;
     }
     let mut notes = directory::summary_notes(&directory);
     notes.extend(parameter::summary_notes(&parameters));
@@ -225,6 +231,28 @@ fn decode_with_occurrence_limits(
         },
         source_fidelity,
     ))
+}
+
+pub(crate) fn reject_invalid_semantic_ir(
+    ir: &CadIr,
+    losses: &[LossNote],
+) -> Result<(), CodecError> {
+    let validation = cadmpeg_ir::validate(ir, losses.to_vec());
+    let Some(finding) = validation
+        .findings
+        .iter()
+        .find(|finding| finding.severity >= Severity::Error)
+    else {
+        return Ok(());
+    };
+    let entity = finding
+        .entity
+        .as_deref()
+        .map_or(String::new(), |entity| format!(" for {entity}"));
+    Err(CodecError::Malformed(format!(
+        "IGES semantic projection produced invalid CADIR: {}{entity}: {}",
+        finding.check, finding.message
+    )))
 }
 
 #[cfg(test)]
