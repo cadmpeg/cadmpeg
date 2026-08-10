@@ -9,8 +9,10 @@ use cadmpeg_ir::math::Vector3;
 
 const PLANE_REFERENCE_HEADER_LEN: usize = 94;
 const DIRECTION_FRAME_PREFIX_LEN: usize = 24;
-const DIRECTION_FRAME_LEN: usize = 120;
-const DIRECTION_OFFSET: usize = 96;
+const ALIGNED_DIRECTION_FRAME_LEN: usize = 120;
+const ALIGNED_DIRECTION_OFFSET: usize = 96;
+const EXTENDED_DIRECTION_FRAME_LEN: usize = 153;
+const EXTENDED_DIRECTION_OFFSET: usize = 129;
 const MAX_PATH_CELLS: usize = 65;
 
 #[derive(Clone, Debug)]
@@ -144,12 +146,12 @@ fn draft_plane_reference_at(
 fn unique_draft_direction(payload: &[u8], start: usize, end: usize) -> Option<Vector3> {
     const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     let final_frame_start = end
-        .checked_sub(DIRECTION_FRAME_LEN)
+        .checked_sub(ALIGNED_DIRECTION_FRAME_LEN)
         .filter(|end| *end >= start)?;
     let mut candidates = (start..=final_frame_start)
         .filter(|offset| payload.get(*offset..*offset + HANDLES.len()) == Some(HANDLES.as_slice()))
         .filter_map(|offset| {
-            let frame = payload.get(offset..offset + DIRECTION_FRAME_LEN)?;
+            let frame = payload.get(offset..end)?;
             if frame[8..12] != [0; 4]
                 || frame[12..16] == [0; 4]
                 || frame[16..DIRECTION_FRAME_PREFIX_LEN] != [0; 8]
@@ -160,19 +162,27 @@ fn unique_draft_direction(payload: &[u8], start: usize, end: usize) -> Option<Ve
                 let value = f64::from_le_bytes(frame.get(relative..relative + 8)?.try_into().ok()?);
                 value.is_finite().then_some(value)
             };
-            if !(DIRECTION_FRAME_PREFIX_LEN..DIRECTION_FRAME_LEN)
+            if !(DIRECTION_FRAME_PREFIX_LEN..ALIGNED_DIRECTION_FRAME_LEN)
                 .step_by(8)
                 .all(|relative| scalar(relative).is_some())
             {
                 return None;
             }
-            let direction = Vector3::new(
-                scalar(DIRECTION_OFFSET)?,
-                scalar(DIRECTION_OFFSET + 8)?,
-                scalar(DIRECTION_OFFSET + 16)?,
-            );
-            let norm = direction.norm();
-            ((norm - 1.0).abs() <= 1.0e-9).then_some(canonical_unit_direction(direction))
+            let direction_at = |relative: usize| {
+                let direction = Vector3::new(
+                    scalar(relative)?,
+                    scalar(relative + 8)?,
+                    scalar(relative + 16)?,
+                );
+                let norm = direction.norm();
+                ((norm - 1.0).abs() <= 1.0e-9).then_some(canonical_unit_direction(direction))
+            };
+            direction_at(ALIGNED_DIRECTION_OFFSET).or_else(|| {
+                (frame.len() >= EXTENDED_DIRECTION_FRAME_LEN
+                    && frame[ALIGNED_DIRECTION_FRAME_LEN..EXTENDED_DIRECTION_OFFSET] == [0; 9])
+                    .then(|| direction_at(EXTENDED_DIRECTION_OFFSET))
+                    .flatten()
+            })
         })
         .collect::<Vec<_>>();
     candidates.dedup();
@@ -267,6 +277,35 @@ mod tests {
             text: None,
             content: Vec::new(),
         }
+    }
+
+    #[test]
+    fn extended_draft_direction_uses_its_unaligned_discriminated_vector() {
+        let mut payload = vec![0; 8];
+        let frame = payload.len();
+        payload.extend([0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
+        payload.extend(0u32.to_le_bytes());
+        payload.extend(5000u32.to_le_bytes());
+        payload.extend([0; 8]);
+        for value in [
+            -1.0f64, 1.0, 1.0, -1.0, 0.25, -0.5, 0.75, -1.0, 0.0, 0.0, 0.0, 0.0,
+        ] {
+            payload.extend(value.to_le_bytes());
+        }
+        payload.extend([0; 9]);
+        for value in [0.0f64, -1.0, 0.0] {
+            payload.extend(value.to_le_bytes());
+        }
+        let end = payload.len();
+        assert_eq!(
+            end - frame,
+            EXTENDED_DIRECTION_FRAME_LEN,
+            "named fields define the fixed frame length"
+        );
+        assert_eq!(
+            unique_draft_direction(&payload, frame, end),
+            Some(Vector3::new(0.0, -1.0, 0.0))
+        );
     }
 
     #[test]

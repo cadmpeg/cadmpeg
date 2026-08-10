@@ -388,7 +388,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** Which native fields identify the drafted faces, neutral plane, pull direction, draft mode, and outward flag when a Draft interval does not use the declared plane-reference vector layout?
 
-**Known.** `sldprt.md` §2 "A Draft feature-input interval uses the lane-scoped `moPlaneRef_w` token" defines the complete plane-reference vector and addressed direction-frame form. Keywords independently retains an explicit `Outward` Boolean.
+**Known.** `sldprt.md` §2 "A Draft feature-input interval uses the lane-scoped `moPlaneRef_w` token" defines the complete plane-reference vector and the aligned and extended addressed direction-frame forms. Keywords independently retains an explicit `Outward` Boolean.
 
 **Need.** We must decode alternate compact Draft layouts and recover the native outward flag and operation mode when Keywords omits them.
 

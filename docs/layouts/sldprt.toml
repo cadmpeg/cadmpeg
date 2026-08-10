@@ -5271,10 +5271,10 @@ contains = "const PLANE_REFERENCE_HEADER_LEN: usize = 94;"
 note = "The parser locates the 16-byte component marker at prefix offset +94."
 
 [[record]]
-name = "draft_direction_frame"
+name = "draft_aligned_direction_frame"
 kind = "byte"
 section = "2"
-anchor = "A unique addressed direction frame between the first component vector and the next plane-reference record supplies the pull direction"
+anchor = "In the 120-byte aligned form, the xyz pull-direction unit vector is the final three values"
 size = 120
 endianness = "little"
 
@@ -5314,12 +5314,68 @@ name = "pull_direction"
 offset = 96
 type = "f64[3]"
 source = "spec"
-anchor = "The xyz pull-direction unit vector occupies frame offsets +96, +104, and +112"
+anchor = "the xyz pull-direction unit vector is the final three values at +96, +104, and +112"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs"
-contains = "const DIRECTION_OFFSET: usize = 96;"
+contains = "const ALIGNED_DIRECTION_OFFSET: usize = 96;"
 note = "The parser reads and validates the unit pull-direction triple at +96."
+
+[[record]]
+name = "draft_extended_direction_frame"
+kind = "byte"
+section = "2"
+anchor = "In the 153-byte extended form, the aligned direction slots are not a unit vector"
+size = 153
+endianness = "little"
+
+[[record.field]]
+name = "handles"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "The frame starts with `c7 cf ff ff c7 cf ff ff`"
+
+[[record.field]]
+name = "zero_at_8"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "u32 zero"
+
+[[record.field]]
+name = "address"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "a nonzero u32 address"
+
+[[record.gap]]
+offset = 16
+size = 8
+note = "Zero bytes."
+
+[[record.gap]]
+offset = 24
+size = 96
+note = "Twelve finite f64 LE values; the final three do not form a unit vector in this form."
+
+[[record.gap]]
+offset = 120
+size = 9
+note = "Zero-byte extended-form discriminator."
+
+[[record.field]]
+name = "pull_direction"
+offset = 129
+type = "f64[3]"
+source = "spec"
+anchor = "an unaligned xyz unit vector occupies +129, +137, and +145"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs"
+contains = "const EXTENDED_DIRECTION_OFFSET: usize = 129;"
+note = "The parser reads the extended-form pull direction only after the nine-byte zero discriminator."
 
 # --- Not tabulated ---------------------------------------------------------
 

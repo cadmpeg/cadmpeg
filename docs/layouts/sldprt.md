@@ -1425,7 +1425,7 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs` — The parser locates the 16-byte component marker at prefix offset +94.
 
-## `draft_direction_frame`
+## `draft_aligned_direction_frame`
 
 Spec §2 · layout: byte offsets · size: 120 B
 
@@ -1434,7 +1434,7 @@ Spec §2 · layout: byte offsets · size: 120 B
 | 0 | 8 | `handles` | `bytes[8]` | little | spec | The frame starts with `c7 cf ff ff c7 cf ff ff` |
 | 8 | 4 | `zero_at_8` | `u32` | little | spec | u32 zero |
 | 12 | 4 | `address` | `u32` | little | spec | a nonzero u32 address |
-| 96 | 24 | `pull_direction` | `f64[3]` | little | spec | The xyz pull-direction unit vector occupies frame offsets +96, +104, and +112 |
+| 96 | 24 | `pull_direction` | `f64[3]` | little | spec | the xyz pull-direction unit vector is the final three values at +96, +104, and +112 |
 
 Unstated regions:
 
@@ -1444,6 +1444,27 @@ Unstated regions:
 Cross-checked against code:
 
 - `crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs` — The parser reads and validates the unit pull-direction triple at +96.
+
+## `draft_extended_direction_frame`
+
+Spec §2 · layout: byte offsets · size: 153 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `handles` | `bytes[8]` | little | spec | The frame starts with `c7 cf ff ff c7 cf ff ff` |
+| 8 | 4 | `zero_at_8` | `u32` | little | spec | u32 zero |
+| 12 | 4 | `address` | `u32` | little | spec | a nonzero u32 address |
+| 129 | 24 | `pull_direction` | `f64[3]` | little | spec | an unaligned xyz unit vector occupies +129, +137, and +145 |
+
+Unstated regions:
+
+- `16..24` (8 B): Zero bytes.
+- `24..120` (96 B): Twelve finite f64 LE values; the final three do not form a unit vector in this form.
+- `120..129` (9 B): Zero-byte extended-form discriminator.
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/drafts.rs` — The parser reads the extended-form pull direction only after the nine-byte zero discriminator.
 
 ## Not tabulated
 
