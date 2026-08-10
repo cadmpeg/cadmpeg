@@ -120,14 +120,6 @@ from a conformant file.
 
 ## 5. Surfaces and topology
 
-### TP-07. Type 144 with a zero outer-boundary flag requires a literal zero pointer
-
-**Question.** May the Type 144 outer pointer field be omitted when the outer-boundary flag is zero?
-
-**Known.** `trimming.rs:432-438` refuses the entity when `record.integer(4) != Some(0)`. An omitted field gives `None`, which is not `Some(0)`, so `144,PTS,0,1,,PT1;` is refused with the message "trimmed-surface parameter-domain outer boundary has a nonzero pointer", which names a pointer that is not present.
-
-**Need.** We need the rule for an omitted `PTO`, and a message that names the condition that occurred.
-
 ### TP-08. Independent Type 141 and Type 142 entities are reported as losses
 
 **Question.** Must every boundary entity be consumed by a trimmed surface?

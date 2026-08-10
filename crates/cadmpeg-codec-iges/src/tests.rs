@@ -5869,6 +5869,10 @@ fn trimmed_plane_with_inner_loop_file() -> Vec<u8> {
 }
 
 fn trimmed_plane_with_inner_loop_and_outer_pcurve(outer_pcurve: &str) -> Vec<u8> {
+    trimmed_plane_with_boundaries(outer_pcurve, "144,1,1,1,7,13;")
+}
+
+fn trimmed_plane_with_boundaries(outer_pcurve: &str, trimmed_parameters: &str) -> Vec<u8> {
     let outer = "106,1,5,0,0,0,1,0,1,1,0,1,0,0;";
     let inner = "106,1,5,0,0.25,0.25,0.75,0.25,0.75,0.75,0.25,0.75,0.25,0.25;";
     owned_test_file(&[
@@ -5926,12 +5930,12 @@ fn trimmed_plane_with_inner_loop_and_outer_pcurve(outer_pcurve: &str) -> Vec<u8>
             form: 0,
             label: "ANNULUS".into(),
             status: "00000000",
-            parameters: "144,1,1,1,7,13;".into(),
+            parameters: trimmed_parameters.into(),
         },
     ])
 }
 
-fn parameter_domain_trimmed_surface_file() -> Vec<u8> {
+fn parameter_domain_trimmed_surface_file(trimmed_surface_parameters: &str) -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
             entity_type: 128,
@@ -5947,7 +5951,7 @@ fn parameter_domain_trimmed_surface_file() -> Vec<u8> {
             form: 0,
             label: "DOMAIN".into(),
             status: "00000000",
-            parameters: "144,1,0,0,0;".into(),
+            parameters: trimmed_surface_parameters.into(),
         },
     ])
 }
@@ -6036,9 +6040,54 @@ fn decode_classifies_explicit_outer_and_inner_trimmed_surface_loops() {
 
 #[test]
 fn decode_preserves_parameter_domain_as_implicit_outer_boundary() {
+    for parameters in ["144,1,0,0,0;", "144,1,0,0,;", "144,1,0,0;"] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(parameter_domain_trimmed_surface_file(parameters)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let face = result
+            .ir
+            .model
+            .faces
+            .iter()
+            .find(|face| face.id.0 == "iges:model:face#D3")
+            .unwrap_or_else(|| {
+                panic!("parameters={parameters} losses={:#?}", result.report.losses)
+            });
+        assert!(face.loops.is_empty());
+        assert!(
+            result.report.losses.is_empty(),
+            "parameters={parameters} losses={:#?}",
+            result.report.losses
+        );
+        let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
+fn decode_rejects_a_nonzero_implicit_outer_boundary_pointer() {
     let result = IgesCodec
         .decode(
-            &mut Cursor::new(parameter_domain_trimmed_surface_file()),
+            &mut Cursor::new(parameter_domain_trimmed_surface_file("144,1,0,0,3;")),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result.report.losses.iter().any(|loss| loss
+        .message
+        .contains("outer-boundary pointer is neither zero nor omitted")));
+}
+
+#[test]
+fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_plane_with_boundaries(
+                "106,1,5,0,0,0,1,0,1,1,0,1,0,0;",
+                "144,1,0,1,,13;",
+            )),
             &DecodeOptions::default(),
         )
         .unwrap();
@@ -6047,16 +6096,20 @@ fn decode_preserves_parameter_domain_as_implicit_outer_boundary() {
         .model
         .faces
         .iter()
-        .find(|face| face.id.0 == "iges:model:face#D3")
+        .find(|face| face.id.0 == "iges:model:face#D15")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report.losses));
-    assert!(face.loops.is_empty());
-    assert!(
-        result.report.losses.is_empty(),
-        "{:#?}",
-        result.report.losses
+    assert_eq!(face.loops.len(), 1);
+    let loop_ = result
+        .ir
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id == face.loops[0])
+        .unwrap();
+    assert_eq!(
+        loop_.boundary_role,
+        cadmpeg_ir::topology::LoopBoundaryRole::Inner
     );
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
-    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]

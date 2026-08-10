@@ -6,7 +6,7 @@ use super::evaluation;
 use super::geometry::entity_loss;
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
-use crate::parameter::ParameterRecord;
+use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_ir::draft::ModelDraft;
 use cadmpeg_ir::geometry::{Pcurve, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{
@@ -442,10 +442,13 @@ pub(super) fn project(
                         continue;
                     };
                     sequences.push(outer);
-                } else if record.integer(4) != Some(0) {
+                } else if !matches!(
+                    record.tokens.get(4).map(|token| &token.value),
+                    None | Some(TokenValue::Omitted | TokenValue::Integer(0))
+                ) {
                     losses.push(entity_loss(
                         entry,
-                        "trimmed-surface parameter-domain outer boundary has a nonzero pointer",
+                        "trimmed-surface parameter-domain outer-boundary pointer is neither zero nor omitted",
                     ));
                     continue;
                 }
