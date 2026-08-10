@@ -260,16 +260,6 @@ The arc grammar and the line grammar read the same twelve f64 at the same offset
 
 **Need.** A stream that appends the current copy after the superseded copy makes every one of these records decode to the pre-edit content: a sketch text keeps its earlier string, height, and anchor, and a sketch point keeps its earlier coordinates. The decoder emits one record and records no loss, so no consumer can detect the substitution. The rule that marks the live copy settles the item. Until then the two copies must decode to equal content, or the record must be withheld with a loss.
 
-### DR-36. Parameter-owner frame length
-
-**Question.** What gives the serialized length of an indexed parameter-owner frame?
-
-**Known.** `f3d.md` §3.1 "Every dimension or feature-input parameter has an indexed owner frame" gives the owner as a member sequence with an optional three-byte variant block. It gives no length. `decode_parameter_owners` in `design/decode/parameters.rs` supplies the length from the ordered list `[108, 107, 104, 103, 101, 100, 99]` and keeps the first length whose fixed-member checks hold. `parse_parameter_owner` then reads every field from a per-length offset table.
-
-The owner is one logical indexed record delimited by two headers that carry the same record index, as `f3d.md` §3.1 "A parameter scope is one logical indexed record" states for a scope. The paired header therefore gives the frame end. `decode_parameter_owners` holds the complete header map and does not use it. `exact_fixed_scalar` in `design/decode/scopes.rs` measures the length from the record boundaries in the same way this function must.
-
-**Need.** A frame whose length is not in the list produces no owner, no companion, no dimension frame, and no feature parameter, and no loss is recorded. A frame whose bytes satisfy a longer arm before the correct arm shifts every field offset and gives the parameter and companion joins a wrong record index. The validator compares the owner value against the parameter value and catches the second case only. `f3d.md` §3.1 "The standard `Loft` scope stores its result operation" names a 105-byte scalar frame that the list does not hold.
-
 ### DR-37. Extent carrier of the current Extrude prologue
 
 **Question.** Which per-side words carry the extent form of a current-generation `Extrude` prologue?

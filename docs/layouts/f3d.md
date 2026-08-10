@@ -7,7 +7,7 @@
 Source of truth: [`docs/formats/f3d.md`](../../docs/formats/f3d.md).
 Table source: `docs/layouts/f3d.toml`.
 
-Covers the fixed Design-segment headers and body-map prefix, the named solid-primitive prologue,
+Covers the fixed Design-segment headers, parameter-owner prefix, and body-map prefix, the named solid-primitive prologue,
 the ParaMesh entry-name, container-GUID, body graph, collection, texture table,
 feature scope, wrapper, and Scene records,
 the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, the
@@ -35,6 +35,27 @@ The 11-byte size is the spec's own "eleven-byte indexed header". §3.1 states th
 Cross-checked against code:
 
 - `docs/formats/f3d.md` — The 11-byte total is stated independently in the companion-record paragraph of the same section.
+
+## `design_parameter_owner_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 39 B
+
+Offsets are relative to the parameter-owner primary header. The selected scalar envelope starts at offset 39.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | an eleven-byte indexed header |
+| 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | eight zero bytes |
+| 19 | 1 | `one_marker` | `u8` | little | spec | `01 + u32 1` |
+| 20 | 4 | `one_value` | `u32` | little | spec | `01 + u32 1` |
+| 24 | 1 | `scope_marker` | `u8` | little | spec | `01 + u32 scope_record_index` |
+| 25 | 4 | `scope_record_index` | `u32` | little | spec | `01 + u32 scope_record_index` |
+| 29 | 6 | `zero_run_6` | `bytes[6]` | little | spec | six zero bytes |
+| 35 | 4 | `local_ordinal` | `u32` | little | spec | `u32 local_ordinal` |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs` — The structural owner parser starts the selected scalar envelope after the tabulated prefix.
 
 ## `design_body_map_prefix_10`
 

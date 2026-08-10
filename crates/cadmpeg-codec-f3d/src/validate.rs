@@ -6325,14 +6325,21 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && owner.companion_record_index == owner.record_index.saturating_add(1);
         let companion_first = owner.companion_record_index == owner.record_index.saturating_add(1)
             && owner.parameter_record_index == owner.record_index.saturating_add(2);
+        let frame_layout = match (
+            owner.frame_length,
+            owner.evaluated_value_offset.checked_sub(owner.byte_offset),
+            owner.variant,
+        ) {
+            (99 | 103, Some(40), None) | (100, Some(41), None) | (107, Some(44), None) => true,
+            (101, Some(41), Some(variant))
+            | (104, Some(40), Some(variant))
+            | (108, Some(44), Some(variant)) => variant <= 1,
+            _ => false,
+        };
         let valid = owner.class_tag.len() == 3
             && owner.class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            && owner.variant.is_none_or(|variant| variant <= 1)
             && owner.evaluated_value.is_finite()
-            && matches!(
-                owner.evaluated_value_offset.checked_sub(owner.byte_offset),
-                Some(40 | 41 | 44)
-            )
+            && frame_layout
             && (owner_first || parameter_first || companion_first)
             && record_indices.contains(&(native_stream, owner.scope_record_index))
             && record_indices.contains(&(native_stream, owner.parameter_record_index))

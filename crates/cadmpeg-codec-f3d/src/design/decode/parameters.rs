@@ -5,7 +5,7 @@ use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::{role, ContainerScan};
 use crate::design::decode::body::decode_stream;
 use crate::design::decode::dimension_frames::companion_owned_interval;
-use crate::design::decode::sketch::next_indexed_record_offset;
+use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::ids::{self, native_stream};
 use crate::records::{
     ConstructionRecipe, DesignEntityHeader, DesignParameter, DesignParameterCompanion,
@@ -284,53 +284,97 @@ fn valid_design_parameter_family(discriminator: Option<u64>, source_kind: &str, 
     }
 }
 
-/// Decode the fixed-width owner frame for every owned Design parameter.
+/// Decode the exact same-index-delimited owner frame for every owned Design
+/// parameter.
 pub fn decode_parameter_owners(
     scan: &ContainerScan,
     parameters: &[DesignParameter],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignParameterOwner>, CodecError> {
-    let headers = headers
+    if parameters
         .iter()
-        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
-        .collect::<HashMap<_, _>>();
+        .all(|parameter| parameter.owner_record_index.is_none())
+    {
+        return Ok(Vec::new());
+    }
+    let mut headers_by_stream = HashMap::<&str, HashMap<u32, &DesignRecordHeader>>::new();
+    for header in headers {
+        let Some(stream) = native_stream(&header.id) else {
+            continue;
+        };
+        if headers_by_stream
+            .entry(stream)
+            .or_default()
+            .insert(header.record_index, header)
+            .is_some()
+        {
+            return Err(CodecError::Malformed(format!(
+                "Fusion Design stream has duplicate primary headers for record {}",
+                header.record_index
+            )));
+        }
+    }
+    let mut streams = HashMap::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+    {
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let stream = ids::native_scope(&entry.name);
+        if streams
+            .insert(stream, (entry, IndexedRecordOffsets::build(bytes)))
+            .is_some()
+        {
+            return Err(CodecError::Malformed(
+                "F3D contains duplicate Design BulkStream identities".into(),
+            ));
+        }
+    }
     let mut out = Vec::new();
     for parameter in parameters {
         let Some(owner_index) = parameter.owner_record_index else {
             continue;
         };
-        let Some(scope) = native_stream(&parameter.id) else {
-            continue;
+        let malformed = |invariant: &str| {
+            CodecError::Malformed(format!(
+                "Fusion Design parameter {} owner {} {invariant}",
+                parameter.record_index, owner_index
+            ))
         };
-        let Some(header) = headers.get(&(scope, owner_index)) else {
-            continue;
-        };
-        let entry = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && parameter
-                    .id
-                    .starts_with(&ids::native_scope_prefix(&entry.name))
-        });
-        let Some(entry) = entry else {
-            continue;
-        };
+        let scope = native_stream(&parameter.id)
+            .ok_or_else(|| malformed("has no Design stream identity"))?;
+        let header = headers_by_stream
+            .get(scope)
+            .and_then(|headers| headers.get(&owner_index))
+            .copied()
+            .ok_or_else(|| malformed("has no primary indexed header"))?;
+        let (entry, records) = streams
+            .get(scope)
+            .ok_or_else(|| malformed("has no containing Design BulkStream"))?;
         let bytes = scan.entry_bytes(&entry.name)?;
-        let at = usize::try_from(header.byte_offset).ok();
-        let owner = at.and_then(|at| {
-            [108, 107, 104, 103, 101, 100, 99]
-                .into_iter()
-                .find_map(|length| {
-                    at.checked_add(length)
-                        .and_then(|end| bytes.get(at..end))
-                        .and_then(parse_parameter_owner)
-                })
-        });
-        let Some(mut owner) = owner else {
-            continue;
-        };
+        let at = usize::try_from(header.byte_offset)
+            .map_err(|_| malformed("primary header offset exceeds the platform address space"))?;
+        let end = records
+            .frames(owner_index)
+            .find_map(|(start, end)| (start == at).then_some(end))
+            .ok_or_else(|| malformed("has no following same-index paired header"))?;
+        let frame = bytes
+            .get(at..end)
+            .ok_or_else(|| malformed("frame lies outside its Design BulkStream"))?;
+        let mut owner = parse_parameter_owner(frame)
+            .ok_or_else(|| malformed("does not match the parameter-owner grammar"))?;
+        if owner.record_index != owner_index
+            || owner.parameter_record_index != parameter.record_index
+        {
+            return Err(malformed("does not link back to its referencing parameter"));
+        }
         owner.id = ids::native_design_parameter_owner_id(&entry.name, header.byte_offset);
         owner.byte_offset = header.byte_offset;
-        owner.evaluated_value_offset += header.byte_offset;
+        owner.evaluated_value_offset = owner
+            .evaluated_value_offset
+            .checked_add(header.byte_offset)
+            .ok_or_else(|| malformed("evaluated-value offset overflows u64"))?;
         out.push(owner);
     }
     out.sort_by_key(|owner| owner.id.clone());
@@ -346,206 +390,91 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner
         || frame.get(19..24) != Some(&[1, 1, 0, 0, 0])
         || frame.get(24) != Some(&1)
         || frame.get(29..35) != Some(&[0; 6])
-        || (!matches!(frame.len(), 107 | 108) && frame.get(39) != Some(&0))
-        || (matches!(frame.len(), 107 | 108)
-            && (frame.get(39) != Some(&1) || frame.get(40..44) != Some(&[0; 4])))
-    {
-        return None;
-    }
-    let (
-        evaluated_value,
-        parameter_marker,
-        parameter_index,
-        parameter_tail,
-        owned_ordinal,
-        repeated_scope_marker,
-        repeated_scope_index,
-        repeated_scope_tail,
-        variant_fields,
-        companion_marker,
-        companion_index,
-        companion_tail,
-        final_scope_marker,
-        final_scope_index,
-        final_scope_tail,
-    ) = match frame.len() {
-        104 => (
-            f64_at(frame, 40)?,
-            48,
-            49,
-            53..59,
-            59,
-            67,
-            68,
-            72..78,
-            Some((78, 79, 80)),
-            81,
-            82,
-            86..93,
-            93,
-            94,
-            98..104,
-        ),
-        101 if frame.get(40) == Some(&1) => (
-            f64::from(u32_at(frame, 41)?),
-            45,
-            46,
-            50..56,
-            56,
-            64,
-            65,
-            69..75,
-            Some((75, 76, 77)),
-            78,
-            79,
-            83..90,
-            90,
-            91,
-            95..101,
-        ),
-        100 if frame.get(40) == Some(&1) => (
-            f64::from(u32_at(frame, 41)?),
-            45,
-            46,
-            50..56,
-            56,
-            64,
-            65,
-            69..77,
-            None,
-            77,
-            78,
-            82..89,
-            89,
-            90,
-            94..100,
-        ),
-        103 => (
-            f64_at(frame, 40)?,
-            48,
-            49,
-            53..59,
-            59,
-            67,
-            68,
-            72..80,
-            None,
-            80,
-            81,
-            85..92,
-            92,
-            93,
-            97..103,
-        ),
-        99 => (
-            f64::from(u32_at(frame, 40)?),
-            44,
-            45,
-            49..55,
-            55,
-            63,
-            64,
-            68..76,
-            None,
-            76,
-            77,
-            81..88,
-            88,
-            89,
-            93..99,
-        ),
-        107 => (
-            f64_at(frame, 44)?,
-            52,
-            53,
-            57..63,
-            63,
-            71,
-            72,
-            76..84,
-            None,
-            84,
-            85,
-            89..96,
-            96,
-            97,
-            101..107,
-        ),
-        108 => (
-            f64_at(frame, 44)?,
-            52,
-            53,
-            57..63,
-            63,
-            71,
-            72,
-            76..82,
-            Some((82, 83, 84)),
-            85,
-            86,
-            90..97,
-            97,
-            98,
-            102..108,
-        ),
-        _ => return None,
-    };
-    if frame.get(parameter_marker) != Some(&1)
-        || frame.get(parameter_tail) != Some(&[0; 6])
-        || frame.get(owned_ordinal + 4..repeated_scope_marker) != Some(&[0; 4])
-        || frame.get(repeated_scope_marker) != Some(&1)
-        || frame
-            .get(repeated_scope_tail)
-            .is_none_or(|tail| tail.iter().any(|byte| *byte != 0))
-        || variant_fields.is_some_and(|(marker, _, tail)| {
-            frame.get(marker) != Some(&1) || frame.get(tail) != Some(&0)
-        })
-        || frame.get(companion_marker) != Some(&1)
-        || frame.get(companion_tail) != Some(&[0; 7])
-        || frame.get(final_scope_marker) != Some(&1)
-        || frame.get(final_scope_tail) != Some(&[0; 6])
     {
         return None;
     }
     let record_index = u32_at(frame, 7)?;
-    let parameter_record_index = u32_at(frame, parameter_index)?;
-    let companion_record_index = u32_at(frame, companion_index)?;
-    let owner_first = parameter_record_index == record_index.checked_add(1)?
-        && companion_record_index == record_index.checked_add(2)?;
-    let parameter_first = record_index == parameter_record_index.checked_add(1)?
-        && companion_record_index == record_index.checked_add(1)?;
-    let companion_first = companion_record_index == record_index.checked_add(1)?
-        && parameter_record_index == record_index.checked_add(2)?;
     let scope_record_index = u32_at(frame, 25)?;
-    if u32_at(frame, repeated_scope_index)? != scope_record_index
-        || u32_at(frame, final_scope_index)? != scope_record_index
-        || !(owner_first || parameter_first || companion_first)
-        || !evaluated_value.is_finite()
+
+    // Parse the fixed suffix backward from the exact paired-header boundary.
+    // This prevents a valid shorter prefix from being accepted as the record.
+    let final_scope_marker = frame.len().checked_sub(11)?;
+    let companion_marker = final_scope_marker.checked_sub(12)?;
+    if frame.get(final_scope_marker) != Some(&1)
+        || u32_at(frame, final_scope_marker + 1) != Some(scope_record_index)
+        || frame.get(final_scope_marker + 5..frame.len()) != Some(&[0; 6])
+        || frame.get(companion_marker) != Some(&1)
+        || frame.get(companion_marker + 5..final_scope_marker) != Some(&[0; 7])
     {
         return None;
     }
+
+    let without_variant = companion_marker.checked_sub(13).and_then(|at| {
+        (frame.get(at) == Some(&1)
+            && u32_at(frame, at + 1) == Some(scope_record_index)
+            && frame.get(at + 5..companion_marker) == Some(&[0; 8]))
+        .then_some((at, None))
+    });
+    let with_variant = companion_marker.checked_sub(14).and_then(|at| {
+        let variant = *frame.get(at + 12)?;
+        (frame.get(at) == Some(&1)
+            && u32_at(frame, at + 1) == Some(scope_record_index)
+            && frame.get(at + 5..at + 11) == Some(&[0; 6])
+            && frame.get(at + 11) == Some(&1)
+            && variant <= 1
+            && frame.get(at + 13) == Some(&0))
+        .then_some((at, Some(variant)))
+    });
+    if without_variant.is_some() == with_variant.is_some() {
+        return None;
+    }
+    let (repeated_scope_marker, variant) = without_variant.or(with_variant)?;
+
+    let owned_ordinal_offset = repeated_scope_marker.checked_sub(8)?;
+    let parameter_marker = owned_ordinal_offset.checked_sub(11)?;
+    if frame.get(owned_ordinal_offset + 4..repeated_scope_marker) != Some(&[0; 4])
+        || frame.get(parameter_marker) != Some(&1)
+        || frame.get(parameter_marker + 5..owned_ordinal_offset) != Some(&[0; 6])
+    {
+        return None;
+    }
+
+    let scalar = frame.get(39..parameter_marker)?;
+    let (evaluated_value, evaluated_value_offset) = match scalar.len() {
+        9 if scalar.first() == Some(&0) => (f64_at(frame, 40)?, 40),
+        6 if scalar.get(..2) == Some(&[0, 1]) => (f64::from(u32_at(frame, 41)?), 41),
+        5 if scalar.first() == Some(&0) && variant.is_none() => (f64::from(u32_at(frame, 40)?), 40),
+        13 if scalar.first() == Some(&1) && scalar.get(1..5) == Some(&[0; 4]) => {
+            (f64_at(frame, 44)?, 44)
+        }
+        _ => return None,
+    };
+    let parameter_record_index = u32_at(frame, parameter_marker + 1)?;
+    let companion_record_index = u32_at(frame, companion_marker + 1)?;
+    let consecutive = |first: u32, second: u32, third: u32| {
+        first.checked_add(1) == Some(second) && second.checked_add(1) == Some(third)
+    };
+    if !evaluated_value.is_finite()
+        || !(consecutive(record_index, parameter_record_index, companion_record_index)
+            || consecutive(parameter_record_index, record_index, companion_record_index)
+            || consecutive(record_index, companion_record_index, parameter_record_index))
+    {
+        return None;
+    }
+
     Some(DesignParameterOwner {
         id: String::new(),
         byte_offset: 0,
+        frame_length: u64::try_from(frame.len()).ok()?,
         class_tag,
         record_index,
         scope_record_index,
         local_ordinal: u32_at(frame, 35)?,
         evaluated_value,
-        // The frame length already selected the field layout above, and any
-        // length outside that set returned there. The remaining lengths 99,
-        // 103, and 104 all read the evaluated value at 40; only the counted
-        // form at 101, the compact typed-counted form at 100, and the tagged
-        // forms at 107 and 108 shift it. A new layout arm above must add its
-        // own offset here rather than inherit 40.
-        evaluated_value_offset: match frame.len() {
-            100 | 101 => 41,
-            107 | 108 => 44,
-            _ => 40,
-        },
+        evaluated_value_offset,
         parameter_record_index,
-        owned_ordinal: u32_at(frame, owned_ordinal)?,
-        variant: variant_fields.and_then(|(_, value, _)| frame.get(value).copied()),
+        owned_ordinal: u32_at(frame, owned_ordinal_offset)?,
+        variant,
         companion_record_index,
     })
 }

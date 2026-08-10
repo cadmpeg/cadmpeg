@@ -2536,6 +2536,7 @@ fn tagged_scalar_variant_parameter_owner_frame() -> Vec<u8> {
 #[test]
 fn parameter_owner_frame_has_repeated_scope_and_both_record_orders() {
     let parsed = parse_parameter_owner(&parameter_owner_frame()).unwrap();
+    assert_eq!(parsed.frame_length, 104);
     assert_eq!(parsed.record_index, 44);
     assert_eq!(parsed.scope_record_index, 12);
     assert_eq!(parsed.local_ordinal, 2);
@@ -2558,18 +2559,16 @@ fn parameter_owner_frame_has_repeated_scope_and_both_record_orders() {
     assert!(parse_parameter_owner(&malformed).is_none());
 }
 
-/// A parameter-owner frame length outside the six layouts carries no known
-/// field positions, so it declines. The evaluated-value offset therefore never
-/// reaches a length the layout match did not accept, and the three lengths that
-/// take its default all hold the value at 40.
 #[test]
-fn a_parameter_owner_frame_of_an_unlisted_length_declines() {
+fn parameter_owner_requires_its_complete_structural_suffix() {
     for build in [
         parameter_owner_frame as fn() -> Vec<u8>,
         compact_parameter_owner_frame,
         counted_parameter_owner_frame,
+        compact_typed_counted_parameter_owner_frame,
         compact_counted_parameter_owner_frame,
         tagged_scalar_parameter_owner_frame,
+        tagged_scalar_variant_parameter_owner_frame,
     ] {
         let frame = build();
         assert!(parse_parameter_owner(&frame).is_some());
@@ -2597,6 +2596,7 @@ fn a_parameter_owner_frame_of_an_unlisted_length_declines() {
 fn compact_parameter_owner_omits_the_variant_slot() {
     let parsed =
         parse_parameter_owner(&compact_parameter_owner_frame()).expect("compact parameter owner");
+    assert_eq!(parsed.frame_length, 103);
     assert_eq!(parsed.record_index, 6653);
     assert_eq!(parsed.scope_record_index, 6644);
     assert_eq!(parsed.parameter_record_index, 6654);
@@ -2610,6 +2610,7 @@ fn compact_parameter_owner_omits_the_variant_slot() {
 fn counted_parameter_owner_uses_typed_u32_scalar() {
     let parsed =
         parse_parameter_owner(&counted_parameter_owner_frame()).expect("counted parameter owner");
+    assert_eq!(parsed.frame_length, 101);
     assert_eq!(parsed.evaluated_value, 6.0);
     assert_eq!(parsed.evaluated_value_offset, 41);
     assert_eq!(parsed.parameter_record_index, 45);
@@ -2620,6 +2621,7 @@ fn counted_parameter_owner_uses_typed_u32_scalar() {
 fn compact_typed_counted_parameter_owner_omits_variant_slot() {
     let parsed = parse_parameter_owner(&compact_typed_counted_parameter_owner_frame())
         .expect("compact typed counted parameter owner");
+    assert_eq!(parsed.frame_length, 100);
     assert_eq!(parsed.record_index, 44);
     assert_eq!(parsed.scope_record_index, 12);
     assert_eq!(parsed.local_ordinal, 0);
@@ -2637,6 +2639,7 @@ fn compact_counted_parameter_owner_omits_type_and_variant_markers() {
     frame[45..49].copy_from_slice(&46u32.to_le_bytes());
     frame[77..81].copy_from_slice(&45u32.to_le_bytes());
     let parsed = parse_parameter_owner(&frame).expect("compact counted parameter owner");
+    assert_eq!(parsed.frame_length, 99);
     assert_eq!(parsed.evaluated_value, 6.0);
     assert_eq!(parsed.evaluated_value_offset, 40);
     assert_eq!(parsed.parameter_record_index, 46);
@@ -2648,6 +2651,7 @@ fn compact_counted_parameter_owner_omits_type_and_variant_markers() {
 fn tagged_scalar_parameter_owner_carries_a_scalar_type_prefix() {
     let parsed = parse_parameter_owner(&tagged_scalar_parameter_owner_frame())
         .expect("tagged scalar parameter owner");
+    assert_eq!(parsed.frame_length, 107);
     assert_eq!(parsed.evaluated_value, 6.0);
     assert_eq!(parsed.evaluated_value_offset, 44);
     assert_eq!(parsed.parameter_record_index, 45);
@@ -2659,6 +2663,7 @@ fn tagged_scalar_parameter_owner_carries_a_scalar_type_prefix() {
 fn tagged_scalar_parameter_owner_can_carry_a_variant_slot() {
     let parsed = parse_parameter_owner(&tagged_scalar_variant_parameter_owner_frame())
         .expect("tagged scalar variant parameter owner");
+    assert_eq!(parsed.frame_length, 108);
     assert_eq!(parsed.evaluated_value, 0.8);
     assert_eq!(parsed.evaluated_value_offset, 44);
     assert_eq!(parsed.parameter_record_index, 45);
@@ -3205,6 +3210,7 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     let owner = DesignParameterOwner {
         id: "f3d:Design/BulkStream.dat:design-parameter-owner#300".into(),
         byte_offset: pair.paired_byte_offset + 59,
+        frame_length: 104,
         class_tag: "292".into(),
         record_index: 300,
         scope_record_index: 10,
@@ -4150,6 +4156,7 @@ fn parameter_scope_parses_named_variable_tail() {
         DesignParameterOwner {
             id: "f3d:test:owner#327".into(),
             byte_offset: 0,
+            frame_length: 104,
             class_tag: "272".into(),
             record_index: 327,
             scope_record_index: 12,
@@ -4164,6 +4171,7 @@ fn parameter_scope_parses_named_variable_tail() {
         DesignParameterOwner {
             id: "f3d:test:owner#330".into(),
             byte_offset: 0,
+            frame_length: 104,
             class_tag: "272".into(),
             record_index: 330,
             scope_record_index: 12,
@@ -6173,6 +6181,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let indexed_owner = DesignParameterOwner {
         id: "f3d:Design/BulkStream.dat:parameter-owner#97".into(),
         byte_offset: 0,
+        frame_length: 104,
         class_tag: "292".into(),
         record_index: 97,
         scope_record_index: chamfer_scope.record_index,
@@ -6257,6 +6266,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let indexed_angle = DesignParameterOwner {
         id: indexed_revolve_scope.id.clone(),
         byte_offset: 0,
+        frame_length: 104,
         class_tag: "372".into(),
         record_index: indexed_angle_record_index,
         scope_record_index: indexed_revolve_scope.record_index,
@@ -6304,6 +6314,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let legacy_angle = DesignParameterOwner {
         id: legacy_revolve_scope.id.clone(),
         byte_offset: 0,
+        frame_length: 104,
         class_tag: "372".into(),
         record_index: legacy_angle_record_index,
         scope_record_index: legacy_revolve_scope.record_index,
@@ -7135,6 +7146,7 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
         DesignParameterOwner {
             id: format!("f3d:Design/BulkStream.dat:owner#{record_index}"),
             byte_offset: u64::from(record_index),
+            frame_length: 104,
             class_tag: "272".into(),
             record_index,
             scope_record_index,
@@ -8988,6 +9000,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         |record_index: u32, parameter_record_index: u32| crate::records::DesignParameterOwner {
             id: format!("{stream}:design-parameter-owner#{record_index}"),
             byte_offset: 0,
+            frame_length: 104,
             class_tag: "000".into(),
             record_index,
             scope_record_index: 382,
@@ -9159,6 +9172,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         |record_index: u32, parameter_record_index: u32| crate::records::DesignParameterOwner {
             id: format!("{stream}:design-parameter-owner#{record_index}"),
             byte_offset: 0,
+            frame_length: 104,
             class_tag: "000".into(),
             record_index,
             scope_record_index: 382,
@@ -9564,6 +9578,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
         DesignParameterOwner {
             id: format!("{stream}:design-parameter-owner#{record_index}"),
             byte_offset: 0,
+            frame_length: 104,
             class_tag: "000".into(),
             record_index,
             scope_record_index,
@@ -15545,6 +15560,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
     let owner = DesignParameterOwner {
         id: format!("{stream}:design-parameter-owner#21"),
         byte_offset: 0,
+        frame_length: 104,
         class_tag: "292".into(),
         record_index: 21,
         scope_record_index: 10,
@@ -16136,6 +16152,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     let owner = DesignParameterOwner {
         id: format!("{stream}:design-parameter-owner#21"),
         byte_offset: 0,
+        frame_length: 104,
         class_tag: "292".into(),
         record_index: 21,
         scope_record_index: 10,
@@ -16997,6 +17014,7 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
     let owner = |stream: &str| DesignParameterOwner {
         id: format!("f3d:{stream}:design-parameter-owner#0"),
         byte_offset: 0,
+        frame_length: 104,
         class_tag: "305".into(),
         record_index: 9,
         scope_record_index: 10,
@@ -17111,6 +17129,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     let owner = DesignParameterOwner {
         id: format!("{stream}:design-parameter-owner#21"),
         byte_offset: 0,
+        frame_length: 104,
         class_tag: "292".into(),
         record_index: 21,
         scope_record_index: 10,
@@ -18535,6 +18554,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
     let owner = |record_index, parameter_record_index, scope_record_index| DesignParameterOwner {
         id: format!("f3d:Design/BulkStream.dat:owner#{record_index}"),
         byte_offset: 0,
+        frame_length: 104,
         class_tag: "292".into(),
         record_index,
         scope_record_index,
@@ -21930,6 +21950,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
     let owner = |record_index, parameter_record_index, scope_record_index| DesignParameterOwner {
         id: format!("f3d:native:owner#{record_index}"),
         byte_offset: 0,
+        frame_length: 104,
         class_tag: "292".into(),
         record_index,
         scope_record_index,
@@ -23580,6 +23601,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         DesignParameterOwner {
             id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
             byte_offset: 0,
+            frame_length: 104,
             class_tag: "457".into(),
             record_index,
             scope_record_index,
@@ -24092,6 +24114,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         DesignParameterOwner {
             id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
             byte_offset: 0,
+            frame_length: 104,
             class_tag: "457".into(),
             record_index,
             scope_record_index,

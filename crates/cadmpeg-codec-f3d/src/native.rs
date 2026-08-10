@@ -1187,7 +1187,7 @@ pub struct F3dNative {
     /// Fixed prefixes of indexed records paired with parameter owners.
     #[serde(default)]
     pub design_parameter_companions: Vec<DesignParameterCompanion>,
-    /// Fixed-width owner frames for indexed Design parameters.
+    /// Same-index-delimited owner frames for indexed Design parameters.
     #[serde(default)]
     pub design_parameter_owners: Vec<DesignParameterOwner>,
     /// Sketch and construction-operation records that scope parameters.

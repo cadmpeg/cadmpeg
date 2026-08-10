@@ -6,7 +6,7 @@ format = "f3d"
 spec = "docs/formats/f3d.md"
 endianness = "little"
 note = """
-Covers the fixed Design-segment headers and body-map prefix, the named solid-primitive prologue,
+Covers the fixed Design-segment headers, parameter-owner prefix, and body-map prefix, the named solid-primitive prologue,
 the ParaMesh entry-name, container-GUID, body graph, collection, texture table,
 feature scope, wrapper, and Scene records,
 the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, the
@@ -55,6 +55,75 @@ anchor = "then `u32 record_index`"
 path = "docs/formats/f3d.md"
 contains = "Its eleven-byte indexed header"
 note = "The 11-byte total is stated independently in the companion-record paragraph of the same section."
+
+[[record]]
+name = "design_parameter_owner_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "All owner forms share an eleven-byte indexed header, eight zero bytes, `01 + u32 1`, `01 + u32 scope_record_index`, six zero bytes, `u32 local_ordinal`, a scalar envelope"
+size = 39
+note = "Offsets are relative to the parameter-owner primary header. The selected scalar envelope starts at offset 39."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "an eleven-byte indexed header"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes"
+
+[[record.field]]
+name = "one_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "`01 + u32 1`"
+
+[[record.field]]
+name = "one_value"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "`01 + u32 1`"
+
+[[record.field]]
+name = "scope_marker"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "`01 + u32 scope_record_index`"
+
+[[record.field]]
+name = "scope_record_index"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "`01 + u32 scope_record_index`"
+
+[[record.field]]
+name = "zero_run_6"
+offset = 29
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes"
+
+[[record.field]]
+name = "local_ordinal"
+offset = 35
+type = "u32"
+source = "spec"
+anchor = "`u32 local_ordinal`"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
+contains = "let scalar = frame.get(39..parameter_marker)?;"
+note = "The structural owner parser starts the selected scalar envelope after the tabulated prefix."
 
 [[record]]
 name = "design_body_map_prefix_10"

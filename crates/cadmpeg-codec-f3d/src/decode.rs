@@ -5512,6 +5512,7 @@ mod tests {
         native.design_parameter_owners.push(DesignParameterOwner {
             id: format!("{stream}:design-parameter-owner#20"),
             byte_offset: 120,
+            frame_length: 104,
             class_tag: "292".into(),
             record_index: 20,
             scope_record_index: 1,

@@ -223,7 +223,7 @@ pub struct DesignParameter {
     pub evaluated_value_offset: u64,
 }
 
-/// Fixed-width indexed record that owns one Design parameter.
+/// Indexed record that owns one Design parameter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignParameterOwner {
@@ -231,6 +231,9 @@ pub struct DesignParameterOwner {
     pub id: String,
     /// Byte offset of the indexed record header in its Design `BulkStream`.
     pub byte_offset: u64,
+    /// Byte length from the primary header to its same-index paired header.
+    #[serde(default)]
+    pub frame_length: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
     pub class_tag: String,
     /// Source indexed-record identity.
