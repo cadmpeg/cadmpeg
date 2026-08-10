@@ -476,10 +476,11 @@ fn feature_ordinals<'a>(
         .iter()
         .map(|object| (feature_id(object), object.id.as_str()))
         .collect::<HashMap<_, _>>();
-    let source_ordinals = design_objects
+    let mut source_ordinals = design_objects
         .iter()
         .map(|object| object.order as u64)
         .collect::<Vec<_>>();
+    source_ordinals.sort_unstable();
     let mut emitted = BTreeSet::new();
     let mut ordinals = HashMap::new();
 
@@ -524,8 +525,15 @@ fn feature_ordinals<'a>(
                     })
                     .filter(|(property_name, dependency)| {
                         object_by_id.get(dependency).is_some_and(|dependency| {
-                            matches!(*property_name, "BaseFeature" | "Originals" | "Profile")
-                                || source_order[&feature_id(dependency)] < object.order
+                            matches!(
+                                *property_name,
+                                "BaseFeature"
+                                    | "Originals"
+                                    | "Path"
+                                    | "Profile"
+                                    | "Sections"
+                                    | "Spine"
+                            ) || source_order[&feature_id(dependency)] < object.order
                         })
                     })
                     .all(|(_, dependency)| emitted.contains(dependency))
