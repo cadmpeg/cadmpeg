@@ -251,6 +251,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         }
         entities
     };
+    ensure_version_support(&entities, version)?;
     resolve_entity_references(&mut entities)?;
     if entities.is_empty() {
         return Err(CodecError::NotImplemented(
@@ -264,6 +265,26 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         counts,
         losses,
     })
+}
+
+fn ensure_version_support(
+    entities: &[Entity],
+    version: crate::IgesVersion,
+) -> Result<(), CodecError> {
+    if version != crate::IgesVersion::V5_3 {
+        if let Some(entity) = entities
+            .iter()
+            .find(|entity| entity.type_code == 514 && entity.form == 2)
+        {
+            return Err(CodecError::NotImplemented(format!(
+                "IGES {} does not define emitted entity Type {} Form {}",
+                version.name(),
+                entity.type_code,
+                entity.form
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn has_trimmed_sheet_topology(ir: &CadIr) -> bool {

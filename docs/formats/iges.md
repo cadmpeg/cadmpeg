@@ -30,6 +30,8 @@ Global fields declare the sender and receiver identifiers, native file name, gen
 
 Units flags `1` through `11` select inches, millimetres, other named units, feet, miles, metres, kilometres, mils, microns, centimetres, and microinches. A units flag of `3` requires the exact uppercase Hollerith payload `IN`, `INCH`, `MM`, `FT`, `MI`, `M`, `KM`, `MIL`, `UM`, `CM`, or `UIN`. Padding and letter-case changes do not name a standard unit. For every other units flag, the units-name field is informational and does not override the flag. Length-valued fields are converted from the declared units and model scale only when projected to neutral IR. Native values remain unchanged. The specification version field is `9` for IGES 5.1, `10` for IGES 5.2, and `11` for IGES 5.3.
 
+Semantic output for IGES 5.1 and 5.2 uses the same emitted entity and form set except that neither version defines the open Shell Entity Type 514 Form 2. IGES 5.3 admits that form. Selecting 5.1 or 5.2 for a model that requires an open shell refuses the write before any bytes are produced. Closed-shell manifold B-rep Types 186 and 502 through 514 Form 1 and pointer-defined analytic surface Types 190 through 198 are available in all three targets.
+
 Global Hollerith values are byte strings. The source image and physical-card arena retain every byte. A sender-product or native-file-name payload that is valid UTF-8 becomes the corresponding source attribute. Any other payload becomes `sender_product_bytes_hex` or `native_file_name_bytes_hex` with lowercase hexadecimal bytes, so metadata is not silently removed.
 
 ## Directory Entry section

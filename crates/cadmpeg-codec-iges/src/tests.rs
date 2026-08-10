@@ -11101,6 +11101,31 @@ fn encode_emits_and_decodes_the_requested_legacy_iges_targets() {
 }
 
 #[test]
+fn encode_rejects_open_shells_before_iges_5_3() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_non_manifold_open_shell_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    for version in [IgesVersion::V5_1, IgesVersion::V5_2] {
+        let error = IgesEncoder::new(IgesWriteOptions { version })
+            .plan(EncodeInput {
+                ir: &decoded.ir,
+                fidelity: None,
+            })
+            .err()
+            .expect("legacy target must reject an open shell");
+        assert!(
+            error
+                .to_string()
+                .contains("does not define emitted entity Type 514 Form 2"),
+            "{version:?}: {error}"
+        );
+    }
+}
+
+#[test]
 fn encode_does_not_replay_a_source_with_the_wrong_version() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())

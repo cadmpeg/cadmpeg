@@ -124,16 +124,6 @@ from a conformant file.
 
 ## 7. Write path
 
-### WR-05. The target version changes one digit only
-
-**Question.** What does `IgesWriteOptions::version` constrain?
-
-**Known.** `version.global_flag()` at `writer.rs:4740` is the only use of `version` in the synthesis path. `surface_entities` emits Types 190 through 198 and `brep_entities` emits Types 186 and 502 through 514 for every target.
-
-**Note.** A caller that selects 5.1 for a legacy receiver gets a file whose Global field 23 says 9 and whose Directory holds entities that the declared version may not define. Which of Types 186, 190 through 198, and 502 through 514 postdate 5.1 is not verified against the specification text.
-
-**Need.** We need the entity set of each target version, and a refusal when the model needs an entity the target does not define.
-
 ### WR-06. The analytic surface family is fixed with no fallback
 
 **Question.** Which IGES surface entity should a generated file use for each analytic surface?
