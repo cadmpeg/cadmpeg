@@ -14209,21 +14209,6 @@ fn compact_planar_line_uses_its_implicit_normal() {
     assert_eq!(end, Point3::new(5.0, -8.75, 0.0));
     assert_eq!(direction, Vector3::new(0.0, -1.0, 0.0));
     assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
-
-    let mut referenced = vec![0u8; 133];
-    referenced.push(1);
-    referenced.extend_from_slice(&42u32.to_le_bytes());
-    referenced.extend_from_slice(&[0; 6]);
-    referenced.extend_from_slice(&bytes[133..]);
-    assert_eq!(
-        crate::design::decode::sketch::decode_referenced_analytic(&referenced),
-        Some(SketchCurveGeometry::Line {
-            start,
-            end,
-            direction,
-            normal,
-        })
-    );
 }
 
 #[test]

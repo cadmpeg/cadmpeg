@@ -10722,7 +10722,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     let mut native = f3d_native_mut(&mut source_less);
     native.design_types = vec![
         SegmentType {
-            id: "generated:sketch-object#0".into(),
+            id: "generated:sketch-type-00-object#0".into(),
             byte_offset: 0,
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
             entity_ids: vec![277],
@@ -10735,10 +10735,10 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             version_offset: 0,
         },
         SegmentType {
-            id: "generated:sketch-relation-type#0".into(),
+            id: "generated:sketch-type-01-relation#0".into(),
             byte_offset: 1,
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
-            entity_ids: Vec::new(),
+            entity_ids: vec![33],
             entity_id_offsets: Vec::new(),
             type_guid: "60403D47-0C49-49B0-BDE8-1679608164A2".into(),
             type_guid_offset: 0,
@@ -10747,13 +10747,65 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             version: 1,
             version_offset: 0,
         },
+        SegmentType {
+            id: "generated:sketch-type-02-point#0".into(),
+            byte_offset: 2,
+            module: "Geometry".into(),
+            entity_ids: vec![100],
+            entity_id_offsets: Vec::new(),
+            type_guid: "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB".into(),
+            type_guid_offset: 0,
+            base_type_guid: None,
+            base_type_guid_offset: None,
+            version: 11,
+            version_offset: 0,
+        },
+        SegmentType {
+            id: "generated:sketch-type-03-line#0".into(),
+            byte_offset: 3,
+            module: "Geometry".into(),
+            entity_ids: vec![600],
+            entity_id_offsets: Vec::new(),
+            type_guid: "DCA267ED-D615-4934-B64F-AD805E8003E2".into(),
+            type_guid_offset: 0,
+            base_type_guid: None,
+            base_type_guid_offset: None,
+            version: 2,
+            version_offset: 0,
+        },
+        SegmentType {
+            id: "generated:sketch-type-04-circular#0".into(),
+            byte_offset: 4,
+            module: "Geometry".into(),
+            entity_ids: vec![601],
+            entity_id_offsets: Vec::new(),
+            type_guid: "F0130424-8B7E-4092-93C9-1CA807482534".into(),
+            type_guid_offset: 0,
+            base_type_guid: None,
+            base_type_guid_offset: None,
+            version: 0,
+            version_offset: 0,
+        },
+        SegmentType {
+            id: "generated:sketch-type-05-nurbs#0".into(),
+            byte_offset: 5,
+            module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
+            entity_ids: vec![602],
+            entity_id_offsets: Vec::new(),
+            type_guid: "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B".into(),
+            type_guid_offset: 0,
+            base_type_guid: None,
+            base_type_guid_offset: None,
+            version: 3,
+            version_offset: 0,
+        },
     ];
     native.design_entity_headers = vec![DesignEntityHeader {
         id: "generated:sketch-header#0".into(),
         byte_offset: 0,
         entity_suffix: 277,
         entity_id: "0_277".into(),
-        class_tag: "269".into(),
+        class_tag: "256".into(),
         optional_slot_present: true,
         module: Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: Some(584),
@@ -10768,7 +10820,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         id: "generated:sketch-point#0".into(),
         record_index: 100,
         owner_reference: None,
-        class_tag: "360".into(),
+        class_tag: "258".into(),
         byte_offset: 0,
         coordinate_offset: 89,
         entity_genesis: Some(900),
@@ -10782,7 +10834,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             id: "generated:sketch-curve#0".into(),
             record_index: 600,
             owner_reference: None,
-            class_tag: "361".into(),
+            class_tag: "259".into(),
             byte_offset: 0,
             geometry_offset: 133,
             entity_genesis: Some(901),
@@ -10799,7 +10851,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             id: "generated:sketch-curve#1".into(),
             record_index: 601,
             owner_reference: None,
-            class_tag: "362".into(),
+            class_tag: "260".into(),
             byte_offset: 0,
             geometry_offset: 133,
             entity_genesis: None,
@@ -10818,7 +10870,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             id: "generated:sketch-curve#2".into(),
             record_index: 602,
             owner_reference: None,
-            class_tag: "363".into(),
+            class_tag: "261".into(),
             byte_offset: 0,
             geometry_offset: 133,
             entity_genesis: None,
@@ -13040,6 +13092,20 @@ fn generated_design_metastream(records: &[(u64, u64)]) -> Vec<u8> {
                 crate::records::DESIGN_MODULE_BODY,
                 &[899],
             ),
+            (
+                "F0130424-8B7E-4092-93C9-1CA807482534",
+                base,
+                0,
+                "Geometry",
+                &[],
+            ),
+            (
+                "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B",
+                base,
+                3,
+                crate::records::DESIGN_MODULE_SKETCH,
+                &[],
+            ),
         ],
         records,
     )
@@ -13365,7 +13431,7 @@ fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     }
     let mut curve = vec![0u8; 229];
     curve[0..4].copy_from_slice(&3u32.to_le_bytes());
-    curve[4..7].copy_from_slice(b"361");
+    curve[4..7].copy_from_slice(b"264");
     curve[7..11].copy_from_slice(&600u32.to_le_bytes());
     curve[20] = 1;
     curve[21..25].copy_from_slice(&2u32.to_le_bytes());
@@ -13424,7 +13490,7 @@ fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
 
     let mut alternate_curve = vec![0u8; 443];
     alternate_curve[0..4].copy_from_slice(&3u32.to_le_bytes());
-    alternate_curve[4..7].copy_from_slice(b"363");
+    alternate_curve[4..7].copy_from_slice(b"265");
     alternate_curve[7..11].copy_from_slice(&800u32.to_le_bytes());
     alternate_curve[20] = 1;
     alternate_curve[21..25].copy_from_slice(&3u32.to_le_bytes());
@@ -25408,11 +25474,11 @@ fn decode_transfers_generated_protein_appearance() {
     assert!(result.report.losses.iter().any(|loss| loss
         .message
         .contains("source parametric edge reference(s) were marked")));
-    assert_eq!(f3d_native(&result.ir).design_types.len(), 8);
+    assert_eq!(f3d_native(&result.ir).design_types.len(), 10);
     let sketch = f3d_native(&result.ir)
         .design_types
         .iter()
-        .find(|design_type| design_type.module == crate::records::DESIGN_MODULE_SKETCH)
+        .find(|design_type| design_type.entity_ids.contains(&277))
         .cloned()
         .unwrap();
     assert_eq!(sketch.entity_ids, vec![277]);

@@ -153,11 +153,11 @@ pub(crate) fn stream_types_by_entity<'a>(
         .collect()
 }
 
-/// Type GUID and record version keyed by the segment-local dynamic class tag.
+/// Complete type-table row keyed by the segment-local dynamic class tag.
 pub(crate) fn stream_types_by_class_tag<'a>(
     types: &'a [SegmentType],
     bulk_entry_name: &str,
-) -> HashMap<u32, (&'a str, u32)> {
+) -> HashMap<u32, &'a SegmentType> {
     let Some(prefix) = bulk_entry_name.strip_suffix("BulkStream.dat") else {
         return HashMap::new();
     };
@@ -167,10 +167,7 @@ pub(crate) fn stream_types_by_class_tag<'a>(
         .filter(|design_type| native_stream(&design_type.id) == Some(meta_scope.as_str()))
         .enumerate()
         .filter_map(|(ordinal, design_type)| {
-            Some((
-                u32::try_from(ordinal).ok()?.checked_add(256)?,
-                (design_type.type_guid.as_str(), design_type.version),
-            ))
+            Some((u32::try_from(ordinal).ok()?.checked_add(256)?, design_type))
         })
         .collect()
 }

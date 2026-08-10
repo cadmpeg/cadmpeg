@@ -1092,7 +1092,9 @@ pub fn decode_sketch_relations(
                 .parse::<u32>()
                 .ok()
                 .and_then(|class_tag| stream_types.get(&class_tag))
-                .and_then(|(type_guid, version)| SketchRelationClass::of(type_guid, *version));
+                .and_then(|design_type| {
+                    SketchRelationClass::of(&design_type.type_guid, design_type.version)
+                });
             let parsed = class.and_then(|class| parse_classed_sketch_relation(payload, class));
             let Some(parsed) = parsed else {
                 continue;
@@ -1441,11 +1443,11 @@ pub fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, Code
             let Some(record_index) = u32_at(bytes, after_tag) else {
                 break;
             };
-            let Some((_, class_version)) = class_tag
+            let Some(class_version) = class_tag
                 .parse::<u32>()
                 .ok()
                 .and_then(|class_tag| stream_types.get(&class_tag))
-                .copied()
+                .map(|design_type| design_type.version)
             else {
                 at += 1;
                 continue;
@@ -2137,6 +2139,58 @@ fn decode_sketch_point_variant(
     ))
 }
 
+const SKETCH_LINE_TYPES: [(&str, u32, &str); 5] = [
+    ("DCA267ED-D615-4934-B64F-AD805E8003E2", 2, "Geometry"),
+    ("EA3B930A-3383-4AD3-BE25-4B2814EA3985", 0, "Geometry"),
+    ("AE42BAB6-643F-4169-A33C-529C8E0A4D84", 0, "Geometry"),
+    ("F279874A-17AB-43DA-BF8E-80259802D06E", 0, "Geometry"),
+    ("58751243-FEA8-41E6-BBC9-37960EB8164B", 0, "Geometry"),
+];
+const SKETCH_CIRCULAR_TYPES: [(&str, u32, &str); 2] = [
+    ("F0130424-8B7E-4092-93C9-1CA807482534", 0, "Geometry"),
+    ("FF23079A-D99C-47AB-940E-2F4E18F022AB", 2, "Geometry"),
+];
+const SKETCH_NURBS_TYPE_GUID: &str = "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B";
+const SKETCH_TEXT_FRAME_LINE_TYPE_GUID: &str = "16DEFC4D-1816-4FB0-8E39-9BDA23954248";
+
+/// Geometry grammar selected by a sketch curve's stable type identity and
+/// record version. Dynamic class tags are segment-local table ordinals and do
+/// not identify a family without this resolution.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SketchCurveClass {
+    Line,
+    Circular,
+    Nurbs,
+    TextFrameLine,
+}
+
+impl SketchCurveClass {
+    fn of(type_guid: &str, version: u32, module: &str) -> Option<Self> {
+        let matches = |(known_guid, known_version, known_module): &(&str, u32, &str)| {
+            version == *known_version
+                && module == *known_module
+                && type_guid.eq_ignore_ascii_case(known_guid)
+        };
+        if SKETCH_LINE_TYPES.iter().any(matches) {
+            Some(Self::Line)
+        } else if SKETCH_CIRCULAR_TYPES.iter().any(matches) {
+            Some(Self::Circular)
+        } else if type_guid.eq_ignore_ascii_case(SKETCH_NURBS_TYPE_GUID)
+            && version == 3
+            && module == "MSketch"
+        {
+            Some(Self::Nurbs)
+        } else if type_guid.eq_ignore_ascii_case(SKETCH_TEXT_FRAME_LINE_TYPE_GUID)
+            && version == 0
+            && module == "MSketch"
+        {
+            Some(Self::TextFrameLine)
+        } else {
+            None
+        }
+    }
+}
+
 /// Decode every sketch-curve record ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata), `crv_primary_id`/
 /// `crv_secondary_id`) from each design `BulkStream` entry in `scan`: the
 /// curve's persistent primary and secondary identities plus its NURBS, circular
@@ -2145,11 +2199,13 @@ pub fn decode_sketch_curve_identities(
     scan: &ContainerScan,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
     let mut out = Vec::new();
+    let types = decode_types(scan)?;
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
+        let stream_types = stream_types_by_class_tag(&types, &entry.name);
         let mut emitted = std::collections::HashSet::new();
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut at = 0usize;
@@ -2175,53 +2231,30 @@ pub fn decode_sketch_curve_identities(
                 continue;
             };
             if emitted.insert(record_index) {
-                let geometry_payload = payload
-                    .get(geometry_shift..)
-                    .expect("invariant: geometry_shift (0 or 52) is <= payload.len() (checked >= 133 by the at + 133 <= bytes.len() loop guard)");
-                let (geometry, geometry_offset, owner_scan_from) =
-                    if let Some((geometry, end)) = decode_legacy_sketch_nurbs(geometry_payload) {
-                        (Some(geometry), geometry_shift + 133, geometry_shift + end)
-                    } else if let Some((geometry, end)) = decode_sketch_nurbs(geometry_payload) {
-                        (Some(geometry), geometry_shift + 133, geometry_shift + end)
-                    } else if let Some(geometry) = decode_circular_arc(geometry_payload) {
-                        (
-                            Some(geometry),
-                            geometry_shift + 133,
-                            geometry_shift + 133 + 12 * 8,
+                let curve_class = class_tag
+                    .parse::<u32>()
+                    .ok()
+                    .and_then(|class_tag| stream_types.get(&class_tag))
+                    .and_then(|design_type| {
+                        SketchCurveClass::of(
+                            &design_type.type_guid,
+                            design_type.version,
+                            &design_type.module,
                         )
-                    } else if let Some(geometry) = decode_line(geometry_payload) {
+                    });
+                let parsed_geometry = curve_class.and_then(|curve_class| {
+                    decode_sketch_curve_geometry(payload, geometry_shift, record_index, curve_class)
+                });
+                let (geometry, geometry_offset, owner_scan_from) = parsed_geometry.map_or(
+                    (None, geometry_shift + 133, geometry_shift + 133),
+                    |parsed| {
                         (
-                            Some(geometry),
-                            geometry_shift + 133,
-                            geometry_shift + 133 + 12 * 8,
+                            Some(parsed.geometry),
+                            parsed.geometry_offset,
+                            parsed.owner_scan_from,
                         )
-                    } else if let Some(geometry) = decode_compact_planar_line(geometry_payload) {
-                        (
-                            Some(geometry),
-                            geometry_shift + 133,
-                            geometry_shift + 133 + 9 * 8,
-                        )
-                    } else if let Some(geometry) = decode_referenced_analytic(geometry_payload) {
-                        let shifted = geometry_payload
-                            .get(11..)
-                            .expect("referenced analytic decoder validated its 11-byte prefix");
-                        let scalar_count = if decode_compact_planar_line(shifted).is_some() {
-                            9
-                        } else {
-                            12
-                        };
-                        (
-                            Some(geometry),
-                            geometry_shift + 11 + 133,
-                            geometry_shift + 11 + 133 + scalar_count * 8,
-                        )
-                    } else if let Some((geometry, end)) =
-                        decode_text_frame_line(payload, geometry_shift, record_index)
-                    {
-                        (Some(geometry), end - 12 * 8, end)
-                    } else {
-                        (None, geometry_shift + 133, geometry_shift + 133)
-                    };
+                    },
+                );
                 out.push(SketchCurveIdentity {
                     id: ids::native_sketch_curve_identity_id(&entry.name, at),
                     record_index,
@@ -2593,6 +2626,60 @@ fn decode_sketch_curve_identity_variant(
     ))
 }
 
+struct DecodedSketchCurveGeometry {
+    geometry: SketchCurveGeometry,
+    geometry_offset: usize,
+    owner_scan_from: usize,
+}
+
+fn decode_sketch_curve_geometry(
+    payload: &[u8],
+    geometry_shift: usize,
+    record_index: u32,
+    class: SketchCurveClass,
+) -> Option<DecodedSketchCurveGeometry> {
+    let geometry_payload = payload.get(geometry_shift..)?;
+    let decoded = match class {
+        SketchCurveClass::Line => {
+            if let Some((geometry, scalar_count)) = decode_line_family(geometry_payload) {
+                Some((geometry, 133, 133 + scalar_count * 8))
+            } else {
+                let referenced = referenced_analytic_payload(geometry_payload)?;
+                let (geometry, scalar_count) = decode_line_family(referenced)?;
+                Some((geometry, 11 + 133, 11 + 133 + scalar_count * 8))
+            }
+        }
+        SketchCurveClass::Circular => {
+            if let Some(geometry) = decode_circular_arc(geometry_payload) {
+                Some((geometry, 133, 133 + 12 * 8))
+            } else {
+                let referenced = referenced_analytic_payload(geometry_payload)?;
+                Some((
+                    decode_circular_arc(referenced)?,
+                    11 + 133,
+                    11 + 133 + 12 * 8,
+                ))
+            }
+        }
+        SketchCurveClass::Nurbs => decode_legacy_sketch_nurbs(geometry_payload)
+            .or_else(|| decode_sketch_nurbs(geometry_payload))
+            .map(|(geometry, end)| (geometry, 133, end)),
+        SketchCurveClass::TextFrameLine => {
+            let (geometry, end) = decode_text_frame_line(payload, geometry_shift, record_index)?;
+            Some((
+                geometry,
+                end.checked_sub(geometry_shift + 12 * 8)?,
+                end.checked_sub(geometry_shift)?,
+            ))
+        }
+    }?;
+    Some(DecodedSketchCurveGeometry {
+        geometry: decoded.0,
+        geometry_offset: geometry_shift + decoded.1,
+        owner_scan_from: geometry_shift + decoded.2,
+    })
+}
+
 fn decode_circular_arc(payload: &[u8]) -> Option<SketchCurveGeometry> {
     let values = (0..12)
         .map(|ordinal| f64_at(payload, 133 + ordinal * 8))
@@ -2625,14 +2712,11 @@ fn decode_circular_arc(payload: &[u8]) -> Option<SketchCurveGeometry> {
     })
 }
 
-pub(crate) fn decode_referenced_analytic(payload: &[u8]) -> Option<SketchCurveGeometry> {
+fn referenced_analytic_payload(payload: &[u8]) -> Option<&[u8]> {
     if payload.get(133) != Some(&1) || payload.get(138..144) != Some(&[0; 6]) {
         return None;
     }
-    let shifted = payload.get(11..)?;
-    decode_circular_arc(shifted)
-        .or_else(|| decode_line(shifted))
-        .or_else(|| decode_compact_planar_line(shifted))
+    payload.get(11..)
 }
 
 /// Decode a text-frame boundary line after its two point references and
@@ -2868,6 +2952,12 @@ pub(crate) fn decode_compact_planar_line(payload: &[u8]) -> Option<SketchCurveGe
         return None;
     }
     decode_line_components(&values, Vector3::new(0.0, 0.0, 1.0))
+}
+
+fn decode_line_family(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
+    decode_line(payload)
+        .map(|geometry| (geometry, 12))
+        .or_else(|| decode_compact_planar_line(payload).map(|geometry| (geometry, 9)))
 }
 
 fn decode_line_values(payload: &[u8], values_at: usize) -> Option<SketchCurveGeometry> {
@@ -3500,6 +3590,127 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
         reference_offsets,
         end: cursor,
     })
+}
+
+#[cfg(test)]
+mod curve_class_tests {
+    use super::{
+        decode_circular_arc, decode_line, decode_sketch_curve_geometry, SketchCurveClass,
+        SKETCH_CIRCULAR_TYPES, SKETCH_LINE_TYPES, SKETCH_NURBS_TYPE_GUID,
+        SKETCH_TEXT_FRAME_LINE_TYPE_GUID,
+    };
+    use crate::records::SketchCurveGeometry;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    fn analytic_payload(values: [f64; 12]) -> Vec<u8> {
+        let mut payload = vec![0; 133];
+        for value in values {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        payload
+    }
+
+    #[test]
+    fn stable_type_guid_selects_line_when_the_scalar_payload_also_accepts_as_an_arc() {
+        let payload = analytic_payload([
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            1.0,
+            0.0,
+            0.0,
+            std::f64::consts::FRAC_1_SQRT_2,
+            0.0,
+            std::f64::consts::FRAC_1_SQRT_2,
+        ]);
+        assert!(decode_line(&payload).is_some());
+        assert!(decode_circular_arc(&payload).is_some());
+
+        let line = decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Line)
+            .expect("typed line payload");
+        assert_eq!(line.geometry_offset, 133);
+        assert_eq!(line.owner_scan_from, 229);
+        assert_eq!(
+            line.geometry,
+            SketchCurveGeometry::Line {
+                start: Point3::new(0.0, 0.0, 0.0),
+                end: Point3::new(0.0, 0.0, 10.0),
+                direction: Vector3::new(0.0, 0.0, 1.0),
+                normal: Vector3::new(1.0, 0.0, 0.0),
+            }
+        );
+
+        let circular = decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Circular)
+            .expect("typed circular payload");
+        assert!(matches!(circular.geometry, SketchCurveGeometry::Arc { .. }));
+    }
+
+    #[test]
+    fn typed_line_accepts_the_referenced_compact_planar_form() {
+        let mut payload = vec![0; 133];
+        payload.push(1);
+        payload.extend_from_slice(&42u32.to_le_bytes());
+        payload.extend_from_slice(&[0; 6]);
+        for value in [0.5, 0.875, 0.0, 0.0, -1.75, 0.0, 0.0, -1.0, 0.0] {
+            payload.extend_from_slice(&f64::to_le_bytes(value));
+        }
+        payload.push(1);
+        payload.extend_from_slice(&37u32.to_le_bytes());
+        payload.extend_from_slice(&[0; 6]);
+
+        let parsed = decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Line)
+            .expect("typed referenced compact line");
+        assert_eq!(parsed.geometry_offset, 144);
+        assert_eq!(parsed.owner_scan_from, 216);
+        assert!(matches!(parsed.geometry, SketchCurveGeometry::Line { .. }));
+    }
+
+    #[test]
+    fn curve_type_versions_select_only_their_settled_grammars() {
+        for (type_guid, version, module) in SKETCH_LINE_TYPES {
+            assert_eq!(
+                SketchCurveClass::of(type_guid, version, module),
+                Some(SketchCurveClass::Line)
+            );
+        }
+        for (type_guid, version, module) in SKETCH_CIRCULAR_TYPES {
+            assert_eq!(
+                SketchCurveClass::of(type_guid, version, module),
+                Some(SketchCurveClass::Circular)
+            );
+        }
+        assert_eq!(
+            SketchCurveClass::of(SKETCH_NURBS_TYPE_GUID, 3, "MSketch"),
+            Some(SketchCurveClass::Nurbs)
+        );
+        assert_eq!(
+            SketchCurveClass::of(SKETCH_TEXT_FRAME_LINE_TYPE_GUID, 0, "MSketch"),
+            Some(SketchCurveClass::TextFrameLine)
+        );
+        assert_eq!(
+            SketchCurveClass::of(SKETCH_LINE_TYPES[0].0, 3, "Geometry"),
+            None
+        );
+        assert_eq!(
+            SketchCurveClass::of(SKETCH_CIRCULAR_TYPES[0].0, 1, "Geometry"),
+            None
+        );
+        assert_eq!(
+            SketchCurveClass::of(SKETCH_NURBS_TYPE_GUID, 2, "MSketch"),
+            None
+        );
+        assert_eq!(
+            SketchCurveClass::of(SKETCH_TEXT_FRAME_LINE_TYPE_GUID, 1, "MSketch"),
+            None
+        );
+        assert_eq!(
+            SketchCurveClass::of(SKETCH_LINE_TYPES[0].0, 2, "MSketch"),
+            None
+        );
+    }
 }
 
 #[cfg(test)]

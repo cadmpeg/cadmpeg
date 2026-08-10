@@ -242,16 +242,6 @@ Documents exist with two unplaced ordinal-one carriers whose component GUIDs are
 
 **Need.** The reading decides whether the component GUID or the component-record reference is the component definition's identity. If several records may describe one definition, the validator claim is too strong and the neutral component identity must come from the GUID alone. If not, one of the two carriers belongs to a second definition and the GUID is not an identity. Nothing yet separates the two readings, so the validator keeps the stronger claim and reports the second carrier.
 
-### DR-34. Sketch-curve geometry-family discriminator
-
-**Question.** Which stored field selects the geometry family of a sketch-curve record?
-
-**Known.** `f3d.md` §3.1 "A sketch-curve record contains" gives the circle-and-arc record class `F0130424-8B7E-4092-93C9-1CA807482534`. It names no class for a line and none for a NURBS. `decode_sketch_curve_identities` in `design/decode/sketch.rs` reads the record's class tag and does not resolve it against the segment type table. It selects the family with an ordered chain: legacy NURBS, NURBS, circular arc, line, compact planar line, then referenced analytic. The first grammar that accepts wins.
-
-The arc grammar and the line grammar read the same twelve f64 at the same offset and give them different meanings. The arc grammar is first. It accepts when the second and fourth triples are unit vectors, the two are orthogonal, the radius is positive, and the angular interval is nonzero. A line record whose stored displacement has unit length and whose stored auxiliary direction is orthogonal to it satisfies the arc grammar. `f3d.md` §3.1 "A sketch-line geometry payload begins with" states that an imported sketch can keep a stale auxiliary direction, so the two conditions are not exclusive.
-
-**Need.** The decoder must select the family from a stored field. A line that decodes as an arc gives the profile loop a wrong endpoint incidence, and the spatial-sketch classifier then puts the curve in the wrong branch. The line and NURBS record classes settle the item.
-
 ### DR-35. Live copy of a repeated record index
 
 **Question.** Which copy of a record index is the live copy when a Design stream holds more than one copy that parses?
