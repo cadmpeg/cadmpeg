@@ -619,12 +619,15 @@ pub fn project_spatial_sketch_constraints(
             }
             let scope = native_stream(&relation.id)?;
             let (sketch, placement) = sketches.get(&(scope, relation.owner_reference))?;
-            let member_entities = relation
-                .members
+            // The second relation run is the semantic member order. The first
+            // run interleaves per-member relation ordinals and has no role
+            // order, so it cannot define a neutral spatial constraint.
+            let semantic_entities = relation
+                .return_members
                 .iter()
                 .map(|record_index| projected.get(&(scope, *record_index)).copied())
                 .collect::<Option<Vec<_>>>()?;
-            let members = member_entities
+            let members = semantic_entities
                 .iter()
                 .map(|entity| entity.id.clone())
                 .collect::<Vec<_>>();
@@ -634,7 +637,7 @@ pub fn project_spatial_sketch_constraints(
             }
             let definition = match relation.constraint_kinds[0] {
                 SketchConstraintKind::Coincident => {
-                    let [first, second] = member_entities.as_slice() else {
+                    let [first, second] = semantic_entities.as_slice() else {
                         return None;
                     };
                     let point_on_surface = match (&first.geometry, &second.geometry) {
@@ -690,7 +693,7 @@ pub fn project_spatial_sketch_constraints(
                     Definition::SplineGroup { entities: members }
                 }
                 SketchConstraintKind::Tangent => {
-                    let [first, second] = member_entities.as_slice() else {
+                    let [first, second] = semantic_entities.as_slice() else {
                         return None;
                     };
                     let curve = |geometry: &SpatialSketchGeometry| {
@@ -711,7 +714,7 @@ pub fn project_spatial_sketch_constraints(
                     }
                 }
                 SketchConstraintKind::Midpoint => {
-                    let [first, second] = member_entities.as_slice() else {
+                    let [first, second] = semantic_entities.as_slice() else {
                         return None;
                     };
                     let (point, line, position, start, end) =
@@ -744,7 +747,7 @@ pub fn project_spatial_sketch_constraints(
                     }
                 }
                 SketchConstraintKind::Horizontal | SketchConstraintKind::Vertical => {
-                    let [entity] = member_entities.as_slice() else {
+                    let [entity] = semantic_entities.as_slice() else {
                         return None;
                     };
                     let SpatialSketchGeometry::Line { start, end } = entity.geometry else {

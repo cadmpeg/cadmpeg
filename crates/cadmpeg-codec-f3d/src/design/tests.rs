@@ -14796,6 +14796,8 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             persistent_id: 10,
         });
     curve_point_coincidence.member_offsets.push(40);
+    curve_point_coincidence.return_members.push(175);
+    curve_point_coincidence.return_member_offsets.push(95);
     curve_point_coincidence.state = 1;
     curve_point_coincidence.constraint_kinds = vec![SketchConstraintKind::Coincident];
     let mut midpoint = curve_point_coincidence.clone();
@@ -14808,6 +14810,23 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     curvature.id = "f3d:native:relation#704".into();
     curvature.state = 0x200;
     curvature.constraint_kinds = vec![SketchConstraintKind::Curvature];
+    let mut spline_group = relation(
+        705,
+        218,
+        SketchRelationOperand::Curve {
+            record_index: 218,
+            primary_id: 21,
+            secondary_id: 0,
+        },
+    );
+    // Reverse the first run so only the specified semantic run can satisfy the
+    // assertion below.
+    spline_group.members = vec![218, 217];
+    spline_group.member_offsets = vec![25, 40];
+    spline_group.return_members = vec![217, 218];
+    spline_group.return_member_offsets = vec![80, 95];
+    spline_group.state = 0x8000_0000;
+    spline_group.constraint_kinds = vec![SketchConstraintKind::SplineGroup];
     let mut horizontal_point = relation(
         701,
         175,
@@ -14840,6 +14859,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             curve_point_coincidence,
             midpoint,
             curvature,
+            spline_group,
         ],
         &entities,
     );
@@ -14881,7 +14901,15 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             ref native_kind,
             ref entities,
             ..
-        } if native_kind == "curvature" && entities.len() == 3
+        } if native_kind == "curvature" && entities.len() == 4
+    ));
+    assert!(matches!(
+        constraints[5].definition,
+        SketchConstraintDefinition::SplineGroup { ref entities }
+            if entities == &[
+                neutral_sketch_curve_id(&sketches[0].id, 20, 0),
+                neutral_sketch_curve_id(&sketches[0].id, 21, 0),
+            ]
     ));
     let line = entities
         .iter()
@@ -15048,7 +15076,8 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         auxiliary_references: Vec::new(),
         auxiliary_reference_offsets: Vec::new(),
         rectangular_counted_reference_count: None,
-        members: vec![103, 104],
+        // The first run deliberately disagrees with the semantic order below.
+        members: vec![104, 103],
         resolved_members: Vec::new(),
         member_offsets: Vec::new(),
         owner_reference_offset: 0,
@@ -15183,7 +15212,10 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
             definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::SplineGroup { entities },
             ..
-        }) if entities.len() == 2
+        }) if entities == &[
+            crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 3, 0),
+            crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 4, 0),
+        ]
     ));
     assert!(matches!(
         constraints.get(1),
@@ -22358,10 +22390,10 @@ fn genesis_relation_record(
     out.extend_from_slice(&[0u8; 8]);
     out.push(1);
     out.extend_from_slice(&u32::try_from(members.len()).unwrap().to_le_bytes());
-    for (reference, role) in members {
+    for (reference, relation_ordinal) in members {
         push_reference(&mut out, *reference);
         out.extend_from_slice(&[0u8; 6]);
-        out.extend_from_slice(&role.to_le_bytes());
+        out.extend_from_slice(&relation_ordinal.to_le_bytes());
     }
     push_genesis_block(&mut out, genesis);
     out.extend_from_slice(auxiliary);
@@ -22378,7 +22410,7 @@ fn genesis_relation_record(
 }
 
 #[test]
-fn genesis_relation_parses_u64_text_frame_mask_and_member_roles() {
+fn genesis_relation_parses_u64_text_frame_mask_and_relation_ordinals() {
     let mut auxiliary = Vec::new();
     push_reference(&mut auxiliary, 2394);
     auxiliary.extend_from_slice(&[0u8; 6]);

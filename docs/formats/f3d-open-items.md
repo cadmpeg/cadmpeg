@@ -260,16 +260,6 @@ The arc grammar and the line grammar read the same twelve f64 at the same offset
 
 **Need.** A stream that appends the current copy after the superseded copy makes every one of these records decode to the pre-edit content: a sketch text keeps its earlier string, height, and anchor, and a sketch point keeps its earlier coordinates. The decoder emits one record and records no loss, so no consumer can detect the substitution. The rule that marks the live copy settles the item. Until then the two copies must decode to equal content, or the record must be withheld with a loss.
 
-### DR-60. Member order of a spline-group constraint
-
-**Question.** Which reference run gives the member order of a neutral spline-group constraint?
-
-**Conflict.** `f3d.md` §3.1 "The two reference runs hold the same members." states that "Only the second run is in semantic order" and that "The first run holds the same members in an unrelated order, so its last entry does not name the spline". `project_spatial_sketch_constraints` in `design/sketch_project.rs` builds the neutral spline-group members from the first run. `constraints.rs` makes the same choice for a planar sketch. The control-polygon inference earlier in `sketch_project.rs` uses the second run and states the rule in its comment.
-
-**Known.** `cadmpeg-ir` documents the neutral field as the ordered spline-group members. The validator checks the member count only.
-
-**Need.** A spline group of three or more members carries an order the specification calls unrelated, and its last entry is not the spline. A consumer that reads the last entry as the spline curve, or that rebuilds the control polygon from adjacent pairs, gets the wrong entity.
-
 ### DR-61. u64 values in a cross-document `Combine` selector tail
 
 **Question.** What do the two u64 values around the fixed `u32 48` in a cross-document `Combine` body-selector tail mean?

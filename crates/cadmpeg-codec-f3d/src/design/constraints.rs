@@ -18,7 +18,7 @@ use cadmpeg_ir::math::Point2;
 use std::collections::{HashMap, HashSet};
 
 /// Project each native relation as an exact atomic constraint or an explicitly
-/// native aggregate when its member roles do not determine neutral loci.
+/// native aggregate when its semantic members do not prove neutral loci.
 pub fn project_sketch_constraints(
     placements: &[DesignSketchPlacement],
     parameters: &[DesignParameter],
@@ -136,24 +136,23 @@ pub fn project_sketch_constraints(
     let projected_constraints = relations.iter().filter_map(|relation| {
         let scope = native_stream(&relation.id)?;
         let sketch = sketches.get(&(scope, relation.owner_reference))?.clone();
-        let member_entities = relation
+        let input_entities = relation
             .members
             .iter()
             .filter_map(|record_index| projected.get(&(scope, *record_index)).copied())
             .collect::<Vec<_>>();
-        if relation.constraint_kinds == [SketchConstraintKind::SplineGroup]
-            && member_entities.is_empty()
-        {
-            return None;
-        }
-        let return_entities = relation
+        // The second reference run is the relation's semantic member order.
+        // The interleaved first run is retained separately because
+        // circular-pattern decoding verifies both reference sets before using
+        // the semantic order.
+        let semantic_entities = relation
             .return_members
             .iter()
             .filter_map(|record_index| projected.get(&(scope, *record_index)).copied())
             .collect::<Vec<_>>();
         let exact = relation.unknown_constraint_bits == 0
             && relation.constraint_kinds.len() == 1
-            && member_entities.len() == relation.members.len();
+            && semantic_entities.len() == relation.return_members.len();
         let native_entities = || {
             relation
                 .members
@@ -170,22 +169,22 @@ pub fn project_sketch_constraints(
         let definition = (if exact {
             let kind = relation.constraint_kinds[0];
             let loci = if kind == SketchConstraintKind::Coincident {
-                exact_coincident_loci(&member_entities)
+                exact_coincident_loci(&semantic_entities)
             } else {
                 None
             };
-            loci.or_else(|| exact_atomic_constraint(kind, &member_entities))
+            loci.or_else(|| exact_atomic_constraint(kind, &semantic_entities))
         } else {
             None
         })
-        .or_else(|| exact_rectangular_pattern(relation, scope, parameters, &return_entities))
+        .or_else(|| exact_rectangular_pattern(relation, scope, parameters, &semantic_entities))
         .or_else(|| {
             exact_circular_pattern(
                 relation,
                 scope,
                 parameters,
-                &member_entities,
-                &return_entities,
+                &input_entities,
+                &semantic_entities,
             )
         })
         .or_else(|| exact_offset_constraint(relation, scope, &projected))
@@ -559,12 +558,12 @@ pub(crate) fn exact_circular_pattern(
     {
         return None;
     }
-    // Member roles are relation-specific metadata and do not by themselves
-    // classify a member as center, seed, or generated. Anchor the partition to
-    // geometry instead: require the member and returned id sets to be equal and
-    // duplicate-free, then let the rotation search below pick the center/seed/
-    // generated split. Ambiguity (more than one viable center) falls through to
-    // the caller's lossless native fallback rather than guessing.
+    // Relation ordinals are per-member counters and do not classify a member as
+    // center, seed, or generated. Anchor the partition to geometry instead:
+    // require the member and returned id sets to be equal and duplicate-free,
+    // then let the rotation search below pick the center/seed/generated split.
+    // Ambiguity (more than one viable center) falls through to the caller's
+    // lossless native fallback rather than guessing.
     let member_ids = members
         .iter()
         .map(|entity| &entity.id)
@@ -1282,7 +1281,7 @@ mod tests {
     }
 
     #[test]
-    fn circular_pattern_resolves_independently_of_member_role_values() {
+    fn circular_pattern_resolves_independently_of_relation_ordinals() {
         let entity = |id: &str, geometry| cadmpeg_ir::sketches::SketchEntity {
             id: SketchEntityId(id.into()),
             sketch: SketchId("generated:sketch#0".into()),
@@ -1310,8 +1309,8 @@ mod tests {
         let seed = circle("generated:circle#seed", 0.0);
         let middle = circle("generated:circle#middle", std::f64::consts::TAU / 3.0);
         let last = circle("generated:circle#last", 2.0 * std::f64::consts::TAU / 3.0);
-        // Role codes are deliberately uninformative here: all zero. The geometry
-        // must still resolve the center/seed/generated partition.
+        // Relation ordinals are deliberately uninformative here: all zero. The
+        // geometry must still resolve the center/seed/generated partition.
         let relation = SketchRelation {
             id: "f3d:native:sketch-relation#circular".into(),
             record_index: 10,

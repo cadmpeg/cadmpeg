@@ -4755,7 +4755,8 @@ pub struct SketchRelation {
     /// for other relation classes and native data that did not retain it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rectangular_counted_reference_count: Option<u32>,
-    /// Record indices of the entities related by this relation.
+    /// First reference run, interleaved with per-member relation ordinals.
+    /// Its order does not define relation operand order.
     pub members: Vec<u32>,
     /// Member records resolved to typed sketch identities where available.
     #[serde(default)]
@@ -4785,8 +4786,7 @@ pub struct SketchRelation {
     /// Class-specific pattern or text payload decoded from the auxiliary run.
     #[serde(default)]
     pub pattern: Option<SketchPatternDefinition>,
-    /// Record indices of entities returned or affected by this relation, distinct
-    /// from `members`.
+    /// Second reference run in semantic member order.
     pub return_members: Vec<u32>,
     /// Return-member records resolved to typed sketch identities where available.
     #[serde(default)]
