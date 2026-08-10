@@ -657,6 +657,48 @@ fn sense_of(marker: u8) -> Sense {
     }
 }
 
+fn edge_parameter_range(
+    carrier: &Carrier,
+    endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
+) -> Option<([f64; 2], bool)> {
+    const TOLERANCE_MM: f64 = 1.0e-7;
+
+    let range = carrier.parameter_range?;
+    let range = match &carrier.geometry {
+        CarrierGeometry::Curve(CurveGeometry::Line { .. }) => {
+            range.map(|parameter| parameter * LEN_TO_MM)
+        }
+        _ => range,
+    };
+    let range = if range[0] <= range[1] {
+        range
+    } else {
+        [range[1], range[0]]
+    };
+    let Some(endpoints) = endpoints else {
+        return Some((range, false));
+    };
+    let CarrierGeometry::Curve(geometry) = &carrier.geometry else {
+        return None;
+    };
+    let evaluated = range.map(|parameter| cadmpeg_ir::eval::curve_point(geometry, parameter));
+    let [Some(first), Some(second)] = evaluated else {
+        return None;
+    };
+    let distance = |left: cadmpeg_ir::math::Point3, right: cadmpeg_ir::math::Point3| {
+        (left.x - right.x)
+            .hypot(left.y - right.y)
+            .hypot(left.z - right.z)
+    };
+    if distance(first, endpoints[0]).max(distance(second, endpoints[1])) <= TOLERANCE_MM {
+        Some((range, false))
+    } else if distance(first, endpoints[1]).max(distance(second, endpoints[0])) <= TOLERANCE_MM {
+        Some((range, true))
+    } else {
+        None
+    }
+}
+
 /// Resolve the coedge that defines an edge's stored direction.
 ///
 /// Bare records carry an explicit coedge attr in `refs[0]`. Prefixed records
@@ -1064,6 +1106,7 @@ fn decode_graph(
     // curve kind; a nonzero-but-untyped carrier is counted as loss.
     let mut emitted_curves: HashSet<u16> = HashSet::new();
     let mut edge_endpoint_positions = HashMap::<u16, [cadmpeg_ir::math::Point3; 2]>::new();
+    let mut reversed_edge_orientation = HashSet::<u16>::new();
     let mut edge_attrs: Vec<u16> = edge_ends.keys().copied().collect();
     edge_attrs.sort_unstable();
     for e in edge_attrs {
@@ -1088,7 +1131,7 @@ fn decode_graph(
         if !resolved_endpoints && closed_circle_point.is_none() {
             continue;
         }
-        let (start_id, end_id) = if let Some(position) = closed_circle_point {
+        let (mut start_id, mut end_id) = if let Some(position) = closed_circle_point {
             let point_id = id_closed_point(e);
             let vertex_id = id_closed_vertex(e);
             annotations
@@ -1126,6 +1169,16 @@ fn decode_graph(
             if let (Some(start), Some(end)) = (position(start_v), position(end_v)) {
                 edge_endpoint_positions.insert(e, [start, end]);
             }
+        }
+        let parameter_range = carriers.curve(curve_attr).and_then(|carrier| {
+            edge_parameter_range(carrier, edge_endpoint_positions.get(&e).copied())
+        });
+        if parameter_range.is_some_and(|(_, reversed)| reversed) {
+            std::mem::swap(&mut start_id, &mut end_id);
+            if let Some(endpoints) = edge_endpoint_positions.get_mut(&e) {
+                endpoints.swap(0, 1);
+            }
+            reversed_edge_orientation.insert(e);
         }
         let eu = t.edge_uses.get(&e);
         let mut curve = None;
@@ -1177,9 +1230,7 @@ fn decode_graph(
             curve,
             start: start_id,
             end: end_id,
-            param_range: carriers
-                .curve(curve_attr)
-                .and_then(|carrier| carrier.parameter_range),
+            param_range: parameter_range.map(|(range, _)| range),
             tolerance: None,
         });
     }
@@ -1293,6 +1344,13 @@ fn decode_graph(
                         }])
                     })
                     .unwrap_or_default();
+                let mut sense = sense_of(ce.marker.unwrap_or(0x2b));
+                if reversed_edge_orientation.contains(&edge_attr) {
+                    sense = match sense {
+                        Sense::Forward => Sense::Reversed,
+                        Sense::Reversed => Sense::Forward,
+                    };
+                }
                 out.coedges.push(Coedge {
                     id: CoedgeId(id_coedge(ce_attr)),
                     owner_loop: LoopId(id_loop(*loop_attr)),
@@ -1300,7 +1358,7 @@ fn decode_graph(
                     next: CoedgeId(id_coedge(next)),
                     previous: CoedgeId(id_coedge(prev)),
                     radial_next: partner.unwrap_or_else(|| CoedgeId(id_coedge(ce_attr))),
-                    sense: sense_of(ce.marker.unwrap_or(0x2b)),
+                    sense,
                     use_curve: None,
                     use_curve_parameter_range: None,
                     pcurves,
@@ -4414,6 +4472,33 @@ mod tests {
     use crate::brep::entity;
     use crate::brep::topology::{Record, Tables};
     use cadmpeg_ir::topology::Color;
+
+    #[test]
+    fn line_edge_parameters_convert_from_metres_to_millimetres() {
+        let carrier = crate::brep::Carrier {
+            attr: 1,
+            offset: 0,
+            end: 0,
+            geometry: crate::brep::CarrierGeometry::Curve(
+                cadmpeg_ir::geometry::CurveGeometry::Line {
+                    origin: cadmpeg_ir::math::Point3::new(0.0, 17.5, 0.0),
+                    direction: cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0),
+                },
+            ),
+            frame: None,
+            parameter_range: Some([-0.014, 0.0165]),
+            orientation_reversed: false,
+        };
+
+        let endpoints = [
+            cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
+            cadmpeg_ir::math::Point3::new(0.0, 31.5, 0.0),
+        ];
+        assert_eq!(
+            super::edge_parameter_range(&carrier, Some(endpoints)),
+            Some(([-14.0, 16.5], true))
+        );
+    }
 
     fn topology_record(attr: u16, refs: Vec<u16>) -> Record {
         Record {

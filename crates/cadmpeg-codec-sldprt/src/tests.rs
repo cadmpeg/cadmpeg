@@ -8942,8 +8942,9 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
             .iter()
             .find(|edge| edge.curve.as_ref().is_some_and(|id| id.0.ends_with("#192")))
             .and_then(|edge| edge.param_range),
-        Some([0.0, 1.0])
+        Some([0.0, 1000.0])
     );
+    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]
