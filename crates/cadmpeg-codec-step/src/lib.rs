@@ -48,10 +48,12 @@
 //! header and DATA section after acceptance, an I/O failure can leave partial
 //! output.
 
+mod archive;
 mod geometry;
 pub mod lex;
 pub mod parse;
 mod reader;
+mod signature;
 pub mod strings;
 mod writer;
 
@@ -166,6 +168,20 @@ impl StepSchema {
         }
     }
 
+    fn ap242_edition(identifier: &str) -> Option<&'static str> {
+        const NAME: &str = "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF";
+        let (name, oid) = split_schema_identifier(identifier)?;
+        if !name.eq_ignore_ascii_case(NAME) {
+            return None;
+        }
+        match oid.as_deref() {
+            Some([1, 0, 10303, 442, 1, 1, 4]) => Some("edition 1"),
+            Some([1, 0, 10303, 442, 3, 1, 4]) => Some("edition 2"),
+            Some([1, 0, 10303, 442, 4, 1, 4]) => Some("edition 3"),
+            _ => None,
+        }
+    }
+
     const fn supports_tessellation(self) -> bool {
         matches!(
             self,
@@ -211,6 +227,22 @@ impl StepSchema {
             ),
         }
     }
+}
+
+fn split_schema_identifier(identifier: &str) -> Option<(&str, Option<Vec<i64>>)> {
+    let identifier = identifier.trim();
+    let Some(open) = identifier.rfind('{') else {
+        return Some((identifier, None));
+    };
+    if !identifier.ends_with('}') || identifier[..open].trim().is_empty() {
+        return None;
+    }
+    let oid = identifier[open + 1..identifier.len() - 1]
+        .split_whitespace()
+        .map(str::parse::<i64>)
+        .collect::<Result<Vec<i64>, _>>()
+        .ok()?;
+    (!oid.is_empty()).then(|| (identifier[..open].trim_end(), Some(oid)))
 }
 
 /// Failure returned while streaming STEP output.
@@ -367,7 +399,11 @@ struct Builder<'a> {
     default_product_definition_shape: Option<Ref>,
     body_shape_refs: HashMap<String, Ref>,
     body_item_refs: HashMap<String, Vec<Ref>>,
+    body_step_item_refs: HashMap<String, Vec<Ref>>,
+    product_step_refs: HashMap<String, Ref>,
+    occurrence_step_refs: HashMap<String, Ref>,
     tessellation_step_refs: HashMap<String, Ref>,
+    pmi_step_refs: HashMap<String, Ref>,
     written_appearance_bindings: BTreeSet<String>,
     unstyled_colors: usize,
     unwritten_geometry_carriers: BTreeSet<String>,
@@ -514,7 +550,11 @@ impl<'a> Builder<'a> {
             default_product_definition_shape: None,
             body_shape_refs: HashMap::new(),
             body_item_refs: HashMap::new(),
+            body_step_item_refs: HashMap::new(),
+            product_step_refs: HashMap::new(),
+            occurrence_step_refs: HashMap::new(),
             tessellation_step_refs: HashMap::new(),
+            pmi_step_refs: HashMap::new(),
             written_appearance_bindings: BTreeSet::new(),
             unstyled_colors: 0,
             unwritten_geometry_carriers: BTreeSet::new(),
@@ -632,8 +672,8 @@ impl<'a> Builder<'a> {
         self.emit_visibility();
         self.emit_tessellations(context);
         self.emit_presentation(context);
-        self.emit_layers();
         self.emit_pmi(context);
+        self.emit_layers();
         self.note_unrepresented();
     }
 
@@ -723,8 +763,9 @@ impl<'a> Builder<'a> {
         // color is its own override when present, otherwise the color of the
         // body that owns it. Whole-solid styling is intentionally not emitted:
         // common OCCT/VTK-based viewers (f3d, CAD Assistant) read STEP surface
-        // colors only from ADVANCED_FACE and ignore MANIFOLD_SOLID_BREP, so a
-        // body color left at the solid level renders as the viewer default.
+        // colors only from ADVANCED_FACE and ignore MANIFOLD_SOLID_BREP. A
+        // body with no emitted face instead uses its emitted shape carrier so
+        // wire and reduced bodies retain a writable whole-body color.
         let mut style_refs: HashMap<String, Ref> = HashMap::new();
         let mut styled = Vec::new();
         let mut faces: Vec<(String, Ref)> = self
@@ -783,12 +824,13 @@ impl<'a> Builder<'a> {
                 AppearanceTarget::Curve(id) => (self.curve_refs.get(id.as_str()).copied(), "curve"),
                 AppearanceTarget::Edge(id) => (self.edge_refs.get(id.as_str()).copied(), "curve"),
                 AppearanceTarget::Point(id) => (self.point_refs.get(id.as_str()).copied(), "point"),
+                AppearanceTarget::Vertex(id) => {
+                    (self.vertex_refs.get(id.as_str()).copied(), "point")
+                }
                 AppearanceTarget::Tessellation(id) => {
                     (self.tessellation_step_refs.get(id).copied(), "surface")
                 }
-                AppearanceTarget::Body(_)
-                | AppearanceTarget::Vertex(_)
-                | AppearanceTarget::Source { .. } => continue,
+                AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
             };
             let Some(target) = target else {
                 let target_id = match &binding.target {
@@ -797,10 +839,9 @@ impl<'a> Builder<'a> {
                     AppearanceTarget::Curve(id) => id.0.clone(),
                     AppearanceTarget::Edge(id) => id.0.clone(),
                     AppearanceTarget::Point(id) => id.0.clone(),
+                    AppearanceTarget::Vertex(id) => id.0.clone(),
                     AppearanceTarget::Tessellation(id) => id.clone(),
-                    AppearanceTarget::Body(_)
-                    | AppearanceTarget::Vertex(_)
-                    | AppearanceTarget::Source { .. } => continue,
+                    AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
                 };
                 direct_unstyled.insert(target_id);
                 continue;
@@ -818,9 +859,48 @@ impl<'a> Builder<'a> {
                     .emit("STYLED_ITEM", &format!("'color',({style}),{target}")),
             );
         }
+        for (body_id, spec) in &body_colors {
+            if styled_bodies.contains(body_id) {
+                continue;
+            }
+            let mut targets = self
+                .body_item_refs
+                .get(*body_id)
+                .cloned()
+                .unwrap_or_default();
+            if targets.is_empty() {
+                targets.extend(self.body_shape_refs.get(*body_id).copied());
+            }
+            if targets.is_empty() {
+                continue;
+            }
+            if let Some(binding_id) = spec.binding_id {
+                self.written_appearance_bindings
+                    .insert(binding_id.to_string());
+            }
+            let name = spec
+                .appearance
+                .and_then(|appearance| appearance.name.as_deref())
+                .unwrap_or("");
+            let style = if self
+                .bodies
+                .get(*body_id)
+                .is_some_and(|body| body.kind == BodyKind::Wire)
+            {
+                self.curve_style(spec.color, name, &mut style_refs)
+            } else {
+                self.surface_style(spec.color, name, &mut style_refs)
+            };
+            styled.extend(targets.into_iter().map(|target| {
+                self.emitter
+                    .emit("STYLED_ITEM", &format!("'color',({style}),{target}"))
+            }));
+            styled_bodies.insert(body_id);
+        }
         // A color is unrepresented when no emitted ADVANCED_FACE could carry it:
         // a face override whose face was skipped, or a body whose faces were all
-        // skipped (hidden bodies or faces without an explicit STEP surface).
+        // skipped (hidden bodies or faces without an explicit STEP surface),
+        // and no whole-body carrier was emitted.
         let emitted: BTreeSet<&str> = self.face_step_refs.keys().map(String::as_str).collect();
         let mut unstyled_targets = face_colors
             .keys()
@@ -955,34 +1035,85 @@ impl<'a> Builder<'a> {
             let mut assigned = Vec::new();
             let mut unsupported = 0usize;
             for item in layer.items {
-                let reference = match item {
-                    PresentationItem::Body { body } => {
-                        self.body_shape_refs.get(body.as_str()).copied()
-                    }
-                    PresentationItem::Face { face } => {
-                        self.face_step_refs.get(face.as_str()).copied()
-                    }
-                    PresentationItem::Edge { edge } => self.edge_refs.get(edge.as_str()).copied(),
-                    PresentationItem::Vertex { vertex } => {
-                        self.vertex_refs.get(vertex.as_str()).copied()
-                    }
-                    PresentationItem::Curve { curve } => {
-                        self.curve_refs.get(curve.as_str()).copied()
-                    }
-                    PresentationItem::Surface { surface } => {
-                        self.surface_refs.get(surface.as_str()).copied()
-                    }
-                    PresentationItem::Point { .. }
-                    | PresentationItem::Product { .. }
-                    | PresentationItem::Occurrence { .. }
-                    | PresentationItem::Pmi { .. }
-                    | PresentationItem::Tessellation { .. }
-                    | PresentationItem::Source { .. } => None,
+                let references = match item {
+                    PresentationItem::Body { body } => self
+                        .body_item_refs
+                        .get(body.as_str())
+                        .cloned()
+                        .filter(|references| !references.is_empty())
+                        .or_else(|| {
+                            self.body_shape_refs
+                                .get(body.as_str())
+                                .copied()
+                                .map(|reference| vec![reference])
+                        })
+                        .unwrap_or_default(),
+                    PresentationItem::Face { face } => self
+                        .face_step_refs
+                        .get(face.as_str())
+                        .copied()
+                        .into_iter()
+                        .collect(),
+                    PresentationItem::Edge { edge } => self
+                        .edge_refs
+                        .get(edge.as_str())
+                        .copied()
+                        .into_iter()
+                        .collect(),
+                    PresentationItem::Vertex { vertex } => self
+                        .vertex_refs
+                        .get(vertex.as_str())
+                        .copied()
+                        .into_iter()
+                        .collect(),
+                    PresentationItem::Curve { curve } => self
+                        .curve_refs
+                        .get(curve.as_str())
+                        .copied()
+                        .into_iter()
+                        .collect(),
+                    PresentationItem::Surface { surface } => self
+                        .surface_refs
+                        .get(surface.as_str())
+                        .copied()
+                        .into_iter()
+                        .collect(),
+                    PresentationItem::Product { product } => self
+                        .product_step_refs
+                        .get(product.as_str())
+                        .copied()
+                        .into_iter()
+                        .collect(),
+                    PresentationItem::Occurrence { occurrence } => self
+                        .occurrence_step_refs
+                        .get(occurrence.as_str())
+                        .copied()
+                        .into_iter()
+                        .collect(),
+                    PresentationItem::Pmi { annotation } => self
+                        .pmi_step_refs
+                        .get(annotation.as_str())
+                        .copied()
+                        .into_iter()
+                        .collect(),
+                    PresentationItem::Point { point } => self
+                        .point_refs
+                        .get(point.as_str())
+                        .copied()
+                        .into_iter()
+                        .collect(),
+                    PresentationItem::Source { .. } => Vec::new(),
+                    PresentationItem::Tessellation { tessellation } => self
+                        .tessellation_step_refs
+                        .get(&tessellation)
+                        .copied()
+                        .into_iter()
+                        .collect(),
                 };
-                if let Some(reference) = reference {
-                    assigned.push(reference);
-                } else {
+                if references.is_empty() {
                     unsupported += 1;
+                } else {
+                    assigned.extend(references);
                 }
             }
             if unsupported > 0 {
@@ -1164,21 +1295,29 @@ impl<'a> Builder<'a> {
                 .as_deref()
                 .or(product.source_name.as_deref())
                 .unwrap_or(product_id);
+            let description = product.description.as_deref().unwrap_or("");
             let product_ref = self.emitter.emit(
                 "PRODUCT",
                 &format!(
-                    "{},{},'',({product_context})",
+                    "{},{},{},({product_context})",
                     string(product_id),
-                    string(name)
+                    string(name),
+                    string(description)
                 ),
             );
+            self.product_step_refs
+                .insert(product.id.0.clone(), product_ref);
             let formation = self.emitter.emit(
                 "PRODUCT_DEFINITION_FORMATION",
                 &format!("'','',{product_ref}"),
             );
             let definition = self.emitter.emit(
                 "PRODUCT_DEFINITION",
-                &format!("{},'',{formation},{definition_context}", string(product_id)),
+                &format!(
+                    "{},{},{formation},{definition_context}",
+                    string(product_id),
+                    string(description)
+                ),
             );
             let shape = self
                 .emitter
@@ -1215,12 +1354,17 @@ impl<'a> Builder<'a> {
 
         for occurrence in occurrences {
             let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
-                if !is_identity(&occurrence.transform.rows) {
+                let transform = if occurrence.link_transform.unwrap_or(false) {
+                    occurrence.transform.compose(occurrence.prototype_transform)
+                } else {
+                    occurrence.transform
+                };
+                if !is_identity(&transform.rows) || occurrence.scale != [1.0; 3] {
                     self.loss(
                         LossKind::BodyTransformNotApplied,
                         Severity::Warning,
                         format!(
-                            "root occurrence '{}' has a non-identity placement",
+                            "root occurrence '{}' has a placement or scale that is not representable",
                             occurrence.id
                         ),
                     );
@@ -1286,6 +1430,8 @@ impl<'a> Builder<'a> {
                     string(occurrence_name)
                 ),
             );
+            self.occurrence_step_refs
+                .insert(occurrence.id.0.clone(), usage);
             let usage_shape = self
                 .emitter
                 .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{usage}"));
@@ -1380,7 +1526,20 @@ impl<'a> Builder<'a> {
                 .bodies
                 .get(region.body.as_str())
                 .map_or(BodyKind::General, |body| body.kind);
-            if body_kind == BodyKind::Wire {
+            let has_surface_topology = region.shells.iter().any(|shell_id| {
+                self.shells
+                    .get(shell_id.as_str())
+                    .is_some_and(|shell| !shell.faces.is_empty())
+            });
+            let has_wire_topology = region.shells.iter().any(|shell_id| {
+                self.shells.get(shell_id.as_str()).is_some_and(|shell| {
+                    !shell.wire_edges.is_empty() || !shell.free_vertices.is_empty()
+                })
+            });
+            let mixed_wire = body_kind == BodyKind::General && has_wire_topology;
+            if body_kind == BodyKind::Wire
+                || (body_kind == BodyKind::General && !has_surface_topology)
+            {
                 if let Some(item) = self.emit_wire_region(region) {
                     let shape_item = self.place_body_item(&region.body, item, context);
                     items.push(shape_item);
@@ -1391,6 +1550,10 @@ impl<'a> Builder<'a> {
                         .entry(region.body.0.clone())
                         .or_default()
                         .push(shape_item);
+                    self.body_step_item_refs
+                        .entry(region.body.0.clone())
+                        .or_default()
+                        .push(item);
                     self.body_step_refs
                         .entry(region.body.0.clone())
                         .or_insert(item);
@@ -1460,9 +1623,35 @@ impl<'a> Builder<'a> {
                 .entry(region.body.0.clone())
                 .or_default()
                 .push(shape_item);
+            self.body_step_item_refs
+                .entry(region.body.0.clone())
+                .or_default()
+                .push(item);
             self.body_step_refs
                 .entry(region.body.0.clone())
                 .or_insert(if closed { item } else { outer });
+            if mixed_wire {
+                if let Some(item) = self.emit_wire_region(region) {
+                    let shape_item = self.place_body_item(&region.body, item, context);
+                    items.push(shape_item);
+                    self.body_shape_refs
+                        .entry(region.body.0.clone())
+                        .or_insert(shape_item);
+                    self.body_item_refs
+                        .entry(region.body.0.clone())
+                        .or_default()
+                        .push(shape_item);
+                    self.body_step_item_refs
+                        .entry(region.body.0.clone())
+                        .or_default()
+                        .push(item);
+                    self.body_step_refs
+                        .entry(region.body.0.clone())
+                        .or_insert(item);
+                } else {
+                    self.empty_wire_regions.insert(region.id.0.clone());
+                }
+            }
         }
         items
     }
@@ -1540,6 +1729,12 @@ impl<'a> Builder<'a> {
         for body in &self.ir.model.bodies {
             if body.visible != Some(false) {
                 continue;
+            }
+            if let Some(references) = self.body_step_item_refs.get(body.id.as_str()) {
+                if !references.is_empty() {
+                    hidden.extend(references.iter().copied());
+                    continue;
+                }
             }
             if let Some(reference) = self.body_step_refs.get(body.id.as_str()).copied() {
                 hidden.push(reference);
@@ -1740,6 +1935,39 @@ impl<'a> Builder<'a> {
                 let kind = self.bodies.get(body.as_str())?.kind;
                 matches!(kind, BodyKind::Solid | BodyKind::Sheet).then_some((kind, link))
             });
+            if let Some(body) = &mesh.body {
+                if linked_body.is_none() {
+                    self.omit(
+                        LossKind::TopologyNotTransferred,
+                        Severity::Warning,
+                        format!(
+                            "tessellation '{}' body '{}' has no writable AP242 tessellation link",
+                            mesh.id, body
+                        ),
+                    );
+                }
+            }
+            let mut reduced_fields = Vec::new();
+            if !mesh.faces.is_empty() {
+                reduced_fields.push(format!("{} face ownership link(s)", mesh.faces.len()));
+            }
+            if mesh.chordal_deflection.is_some() {
+                reduced_fields.push("chordal deflection".to_string());
+            }
+            if !mesh.channels.is_empty() {
+                reduced_fields.push(format!("{} data channel(s)", mesh.channels.len()));
+            }
+            if !reduced_fields.is_empty() {
+                self.omit(
+                    LossKind::AttributesNotTransferred,
+                    Severity::Info,
+                    format!(
+                        "tessellation '{}' reduced unsupported metadata: {}",
+                        mesh.id,
+                        reduced_fields.join(", ")
+                    ),
+                );
+            }
             let item = if let Some((kind, link)) = linked_body {
                 let triangles = mesh
                     .triangles
@@ -1922,7 +2150,11 @@ impl<'a> Builder<'a> {
         let flag = if same_sense { ".T." } else { ".F." };
         let advanced_face = self.emitter.emit(
             "ADVANCED_FACE",
-            &format!("'',{},{surf_ref},{flag}", refs(&bound_refs)),
+            &format!(
+                "{},{},{surf_ref},{flag}",
+                string(face.name.as_deref().unwrap_or("")),
+                refs(&bound_refs)
+            ),
         );
         self.face_step_refs
             .insert(face_id.to_string(), advanced_face);
@@ -2378,6 +2610,34 @@ impl<'a> Builder<'a> {
                     ),
                 ))
             }
+            ProceduralSurfaceDefinition::Subset {
+                support,
+                parameter_ranges,
+                u_sense: Some(u_sense),
+                v_sense: Some(v_sense),
+            } => {
+                let support = self.emit_surface(support.as_str())?;
+                Some(self.emitter.emit(
+                    "RECTANGULAR_TRIMMED_SURFACE",
+                    &format!(
+                        "'',{support},{},{},{},{},{},{}",
+                        real(parameter_ranges[0][0]),
+                        real(parameter_ranges[0][1]),
+                        real(parameter_ranges[1][0]),
+                        real(parameter_ranges[1][1]),
+                        if *u_sense { ".T." } else { ".F." },
+                        if *v_sense { ".T." } else { ".F." },
+                    ),
+                ))
+            }
+            ProceduralSurfaceDefinition::Replica { source, transform } => {
+                let source = self.emit_surface(source.as_str())?;
+                let operator = geometry::transformation_operator(&mut self.emitter, *transform);
+                Some(
+                    self.emitter
+                        .emit("SURFACE_REPLICA", &format!("'',{source},{operator}")),
+                )
+            }
             ProceduralSurfaceDefinition::DegenerateTorus { select_outer } => {
                 let SurfaceGeometry::Torus {
                     center,
@@ -2486,16 +2746,31 @@ impl<'a> Builder<'a> {
             ProceduralCurveDefinition::Subset {
                 source,
                 parameter_range: [start, end],
+                sense,
             } => {
                 let source = self.emit_curve(source.as_str())?;
+                let (start, end) = if *sense {
+                    (*start, *end)
+                } else {
+                    (*end, *start)
+                };
                 Some(self.emitter.emit(
                     "TRIMMED_CURVE",
                     &format!(
-                        "'',{source},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),.T.,.PARAMETER.",
-                        real(*start),
-                        real(*end)
+                        "'',{source},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),{},.PARAMETER.",
+                        real(start),
+                        real(end),
+                        if *sense { ".T." } else { ".F." }
                     ),
                 ))
+            }
+            ProceduralCurveDefinition::Replica { source, transform } => {
+                let source = self.emit_curve(source.as_str())?;
+                let operator = geometry::transformation_operator(&mut self.emitter, *transform);
+                Some(
+                    self.emitter
+                        .emit("CURVE_REPLICA", &format!("'',{source},{operator}")),
+                )
             }
             ProceduralCurveDefinition::SpatialOffset {
                 source,
@@ -2727,7 +3002,11 @@ impl<'a> Builder<'a> {
                 PmiDefinition::GeometricTolerance {
                     tolerance,
                     magnitude,
+                    defined_unit,
+                    defined_area_unit,
+                    defined_area_second_unit,
                     datum_system,
+                    modifiers,
                 } => {
                     let kind_exact = !matches!(tolerance, GeometricToleranceKind::Other(value) if value != "geometric_tolerance");
                     let entity = match tolerance {
@@ -2735,6 +3014,7 @@ impl<'a> Builder<'a> {
                         GeometricToleranceKind::Flatness => "FLATNESS_TOLERANCE",
                         GeometricToleranceKind::Roundness => "ROUNDNESS_TOLERANCE",
                         GeometricToleranceKind::Cylindricity => "CYLINDRICITY_TOLERANCE",
+                        GeometricToleranceKind::Coaxiality => "COAXIALITY_TOLERANCE",
                         GeometricToleranceKind::LineProfile => "LINE_PROFILE_TOLERANCE",
                         GeometricToleranceKind::SurfaceProfile => "SURFACE_PROFILE_TOLERANCE",
                         GeometricToleranceKind::Angularity => "ANGULARITY_TOLERANCE",
@@ -2747,23 +3027,74 @@ impl<'a> Builder<'a> {
                         GeometricToleranceKind::TotalRunout => "TOTAL_RUNOUT_TOLERANCE",
                         GeometricToleranceKind::Other(_) => continue,
                     };
-                    let measure = self.emit_pmi_measure(*magnitude);
                     let aspect = target_ref(annotation).unwrap_or(fallback_aspect);
-                    // Datum references are carried by the complex
-                    // GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE subtype. Until
-                    // that complex entity is modeled, refuse it through the
-                    // unwritten-PMI accounting instead of emitting an invalid
-                    // fifth parameter on the simple tolerance entity.
-                    if datum_system.is_some() {
+                    let modifier_values = Self::emit_geometric_tolerance_modifiers(modifiers);
+                    if !modifiers.is_empty() && modifier_values.is_none() {
                         continue;
                     }
-                    let tolerance_ref = self.emitter.emit(
-                        entity,
-                        &format!(
-                            "{},'',{measure},{aspect}",
-                            string(annotation.name.as_deref().unwrap_or(""))
-                        ),
-                    );
+                    let area_unit =
+                        Self::emit_geometric_tolerance_area_unit(defined_area_unit.as_deref());
+                    if defined_area_unit.is_some() && area_unit.is_none()
+                        || defined_area_second_unit.is_some() && area_unit.is_none()
+                    {
+                        continue;
+                    }
+                    let datum_ref = datum_system
+                        .as_ref()
+                        .and_then(|id| annotation_refs.get(id).copied());
+                    if datum_system.is_some() && datum_ref.is_none() {
+                        continue;
+                    }
+                    let measure = self.emit_pmi_measure(*magnitude);
+                    let tolerance_ref = if datum_ref.is_none()
+                        && modifiers.is_empty()
+                        && defined_unit.is_none()
+                        && area_unit.is_none()
+                    {
+                        self.emitter.emit(
+                            entity,
+                            &format!(
+                                "{},'',{measure},{aspect}",
+                                string(annotation.name.as_deref().unwrap_or(""))
+                            ),
+                        )
+                    } else {
+                        let mut parts = vec![format!(
+                            "GEOMETRIC_TOLERANCE({},{},{measure},{aspect})",
+                            string(annotation.name.as_deref().unwrap_or("")),
+                            "''"
+                        )];
+                        if area_unit.is_some() || defined_unit.is_some() {
+                            let defined_unit = defined_unit.as_ref().map_or_else(
+                                || "$".into(),
+                                |unit| self.emit_pmi_measure(*unit).to_string(),
+                            );
+                            parts.push(format!(
+                                "GEOMETRIC_TOLERANCE_WITH_DEFINED_UNIT({defined_unit})"
+                            ));
+                        }
+                        if let Some(area_unit) = area_unit {
+                            let second_unit = defined_area_second_unit.as_ref().map_or_else(
+                                || "$".into(),
+                                |unit| self.emit_pmi_measure(*unit).to_string(),
+                            );
+                            parts.push(format!(
+                                "GEOMETRIC_TOLERANCE_WITH_DEFINED_AREA_UNIT(.{area_unit}.,{second_unit})"
+                            ));
+                        }
+                        if let Some(datum) = datum_ref {
+                            parts.push(format!(
+                                "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE(({datum}))"
+                            ));
+                        }
+                        if let Some(modifiers) = modifier_values {
+                            parts
+                                .push(format!("GEOMETRIC_TOLERANCE_WITH_MODIFIERS(({modifiers}))"));
+                        }
+                        parts.push(format!("{entity}()"));
+                        self.emitter
+                            .emit_raw("GEOMETRIC_TOLERANCE", &format!("({})", parts.join(" ")))
+                    };
                     annotation_refs.insert(annotation.id.clone(), tolerance_ref);
                     self.written_pmi += usize::from(targets_exact(annotation) && kind_exact);
                 }
@@ -2845,30 +3176,157 @@ impl<'a> Builder<'a> {
                 }
             }
         }
+        for (annotation, reference) in annotation_refs {
+            self.pmi_step_refs.insert(annotation.0, reference);
+        }
     }
 
     fn emit_datum_modifiers(&mut self, source: &[String]) -> Option<String> {
+        const SIMPLE: &[&str] = &[
+            "free_state",
+            "basic",
+            "translation",
+            "least_material_requirement",
+            "maximum_material_requirement",
+            "point",
+            "line",
+            "plane",
+            "orientation",
+            "any_cross_section",
+            "any_longitudinal_section",
+            "contacting_feature",
+            "distance_variable",
+            "degree_of_freedom_constraint_x",
+            "degree_of_freedom_constraint_y",
+            "degree_of_freedom_constraint_z",
+            "degree_of_freedom_constraint_u",
+            "degree_of_freedom_constraint_v",
+            "degree_of_freedom_constraint_w",
+            "minor_diameter",
+            "major_diameter",
+            "pitch_diameter",
+        ];
+        const WITH_VALUE: &[&str] = &[
+            "circular_or_cylindrical",
+            "spherical",
+            "distance",
+            "projected",
+        ];
+        enum Modifier {
+            Simple(String),
+            WithValue { kind: String, value: f64 },
+        }
+        let parsed = source
+            .iter()
+            .map(|modifier| {
+                if let Some((kind, value)) = modifier.split_once(':') {
+                    let kind = kind.to_ascii_lowercase();
+                    let value = value.parse::<f64>().ok()?;
+                    if !value.is_finite() {
+                        return None;
+                    }
+                    WITH_VALUE
+                        .contains(&kind.as_str())
+                        .then_some(Modifier::WithValue { kind, value })
+                } else {
+                    let modifier = modifier.to_ascii_lowercase();
+                    SIMPLE
+                        .contains(&modifier.as_str())
+                        .then_some(Modifier::Simple(modifier))
+                }
+            })
+            .collect::<Option<Vec<_>>>()?;
         let mut modifiers = Vec::with_capacity(source.len());
-        for modifier in source {
-            if let Some((kind, value)) = modifier.split_once(':') {
-                let value = value.parse::<f64>().ok()?;
-                let measure = self.emit_pmi_measure(cadmpeg_ir::PmiValue {
-                    value,
-                    quantity: cadmpeg_ir::PmiQuantity::Length,
-                });
-                modifiers.push(
-                    self.emitter
-                        .emit(
-                            "DATUM_REFERENCE_MODIFIER_WITH_VALUE",
-                            &format!(".{}.,{measure}", kind.to_ascii_uppercase()),
-                        )
-                        .to_string(),
-                );
-            } else {
-                modifiers.push(format!(".{}.", modifier.to_ascii_uppercase()));
+        for modifier in parsed {
+            match modifier {
+                Modifier::WithValue { kind, value } => {
+                    let measure = self.emit_pmi_measure(cadmpeg_ir::PmiValue {
+                        value,
+                        quantity: cadmpeg_ir::PmiQuantity::Length,
+                    });
+                    modifiers.push(
+                        self.emitter
+                            .emit(
+                                "DATUM_REFERENCE_MODIFIER_WITH_VALUE",
+                                &format!(".{}.,{measure}", kind.to_ascii_uppercase()),
+                            )
+                            .to_string(),
+                    );
+                }
+                Modifier::Simple(modifier) => {
+                    modifiers.push(format!(".{}.", modifier.to_ascii_uppercase()));
+                }
             }
         }
         Some(modifiers.join(","))
+    }
+
+    fn emit_geometric_tolerance_modifiers(source: &[String]) -> Option<String> {
+        const SUPPORTED: &[&str] = &[
+            "any_cross_section",
+            "associated_least_square_feature",
+            "associated_maximum_inscribed_feature",
+            "associated_minimum_inscribed_feature",
+            "associated_minmax_feature",
+            "associated_tangent_feature",
+            "circle_a",
+            "common_zone",
+            "continuous_features",
+            "derived_feature",
+            "each_element",
+            "each_radial_element",
+            "free_state",
+            "individually",
+            "least_material_requirement",
+            "line_element",
+            "major_diameter",
+            "maximum_material_requirement",
+            "minor_diameter",
+            "not_convex",
+            "offset_zone",
+            "peak_height",
+            "pitch_diameter",
+            "reciprocity_requirement",
+            "reference_least_square_feature_with_external_material_constraint",
+            "reference_least_square_feature_with_internal_material_constraint",
+            "reference_least_square_feature_without_constraint",
+            "reference_maximum_inscribed_feature",
+            "reference_minimax_feature_with_external_material_constraint",
+            "reference_minimax_feature_with_internal_material_constraint",
+            "reference_minimax_feature_without_constraint",
+            "reference_minimum_circumscribed_feature",
+            "separate_requirement",
+            "separate_zones",
+            "standard_deviation",
+            "statistical_tolerance",
+            "stock",
+            "tangent_plane",
+            "total_range_deviations",
+            "united_feature",
+            "unspecified_angular_tolerance_zone_offset",
+            "unspecified_linear_tolerance_zone_offset",
+            "valley_depth",
+            "variable_angle",
+        ];
+        source
+            .iter()
+            .map(|modifier| {
+                let normalized = modifier.to_ascii_lowercase();
+                SUPPORTED
+                    .contains(&normalized.as_str())
+                    .then(|| format!(".{}.", normalized.to_ascii_uppercase()))
+            })
+            .collect::<Option<Vec<_>>>()
+            .map(|modifiers| modifiers.join(","))
+    }
+
+    fn emit_geometric_tolerance_area_unit(source: Option<&str>) -> Option<String> {
+        let source = source?;
+        matches!(
+            source.to_ascii_lowercase().as_str(),
+            "circular" | "square" | "rectangular" | "cylindrical" | "spherical"
+        )
+        .then(|| source.to_ascii_lowercase())
     }
 
     fn emit_pmi_measure(&mut self, value: cadmpeg_ir::PmiValue) -> Ref {
@@ -2908,6 +3366,142 @@ impl<'a> Builder<'a> {
     }
 
     fn note_unrepresented(&mut self) {
+        let mut referenced_shells = BTreeSet::new();
+        let mut referenced_faces = BTreeSet::new();
+        let mut referenced_loops = BTreeSet::new();
+        let mut referenced_coedges = BTreeSet::new();
+        let mut referenced_edges = BTreeSet::new();
+        let mut referenced_vertices = BTreeSet::new();
+        for region in &self.ir.model.regions {
+            for shell_id in &region.shells {
+                if !referenced_shells.insert(shell_id.as_str()) {
+                    continue;
+                }
+                let Some(shell) = self.shells.get(shell_id.as_str()).copied() else {
+                    continue;
+                };
+                for edge_id in &shell.wire_edges {
+                    referenced_edges.insert(edge_id.as_str());
+                    if let Some(edge) = self.edges.get(edge_id.as_str()).copied() {
+                        referenced_vertices.insert(edge.start.as_str());
+                        referenced_vertices.insert(edge.end.as_str());
+                    }
+                }
+                referenced_vertices.extend(
+                    shell
+                        .free_vertices
+                        .iter()
+                        .map(cadmpeg_ir::ids::VertexId::as_str),
+                );
+                for face_id in &shell.faces {
+                    if !referenced_faces.insert(face_id.as_str()) {
+                        continue;
+                    }
+                    let Some(face) = self.faces.get(face_id.as_str()).copied() else {
+                        continue;
+                    };
+                    for loop_id in &face.loops {
+                        if !referenced_loops.insert(loop_id.as_str()) {
+                            continue;
+                        }
+                        let Some(loop_) = self.loops.get(loop_id.as_str()).copied() else {
+                            continue;
+                        };
+                        referenced_vertices
+                            .extend(loop_.vertex_uses.iter().map(|use_| use_.vertex.as_str()));
+                        for vertex_use in &loop_.vertex_uses {
+                            if let Some(after) = &vertex_use.after {
+                                referenced_coedges.insert(after.as_str());
+                            }
+                        }
+                        for coedge_id in &loop_.coedges {
+                            if !referenced_coedges.insert(coedge_id.as_str()) {
+                                continue;
+                            }
+                            let Some(coedge) = self.coedges.get(coedge_id.as_str()).copied() else {
+                                continue;
+                            };
+                            referenced_edges.insert(coedge.edge.as_str());
+                            if let Some(edge) = self.edges.get(coedge.edge.as_str()).copied() {
+                                referenced_vertices.insert(edge.start.as_str());
+                                referenced_vertices.insert(edge.end.as_str());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let omitted_bodies = self
+            .ir
+            .model
+            .bodies
+            .iter()
+            .filter(|body| !self.body_shape_refs.contains_key(body.id.as_str()))
+            .count();
+        let omitted_shells = self
+            .ir
+            .model
+            .shells
+            .iter()
+            .filter(|shell| !referenced_shells.contains(shell.id.as_str()))
+            .count();
+        let omitted_faces = self
+            .ir
+            .model
+            .faces
+            .iter()
+            .filter(|face| !referenced_faces.contains(face.id.as_str()))
+            .count();
+        let omitted_loops = self
+            .ir
+            .model
+            .loops
+            .iter()
+            .filter(|loop_| !referenced_loops.contains(loop_.id.as_str()))
+            .count();
+        let omitted_coedges = self
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| !referenced_coedges.contains(coedge.id.as_str()))
+            .count();
+        let omitted_edges = self
+            .ir
+            .model
+            .edges
+            .iter()
+            .filter(|edge| !referenced_edges.contains(edge.id.as_str()))
+            .count();
+        let omitted_vertices = self
+            .ir
+            .model
+            .vertices
+            .iter()
+            .filter(|vertex| !referenced_vertices.contains(vertex.id.as_str()))
+            .count();
+        let omitted_topology = [
+            ("body", omitted_bodies),
+            ("shell", omitted_shells),
+            ("face", omitted_faces),
+            ("loop", omitted_loops),
+            ("coedge", omitted_coedges),
+            ("edge", omitted_edges),
+            ("vertex", omitted_vertices),
+        ];
+        if omitted_topology.iter().any(|(_, count)| *count > 0) {
+            let details = omitted_topology
+                .iter()
+                .filter(|(_, count)| *count > 0)
+                .map(|(kind, count)| format!("{count} {kind}(s)"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.omit(
+                LossKind::TopologyNotTransferred,
+                Severity::Warning,
+                format!("topology not reachable from any emitted region shape item: {details}"),
+            );
+        }
         let nonstandard_analytic_surfaces = self
             .ir
             .model
@@ -3173,6 +3767,100 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        let pcurve_use_metadata_count = self
+            .ir
+            .model
+            .coedges
+            .iter()
+            .flat_map(|coedge| &coedge.pcurves)
+            .chain(
+                self.ir
+                    .model
+                    .loops
+                    .iter()
+                    .flat_map(|loop_| &loop_.vertex_uses)
+                    .flat_map(|vertex_use| &vertex_use.pcurves),
+            )
+            .filter(|use_| use_.isoparametric.is_some() || use_.parameter_range.is_some())
+            .count();
+        if pcurve_use_metadata_count > 0 {
+            self.omit(
+                LossKind::PcurveOmitted,
+                Severity::Info,
+                format!(
+                    "{pcurve_use_metadata_count} pcurve use(s) carry native-only parameter metadata not represented in STEP"
+                ),
+            );
+        }
+        let coedge_use_curve_metadata_count = self
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| {
+                coedge.use_curve.is_some() || coedge.use_curve_parameter_range.is_some()
+            })
+            .count();
+        if coedge_use_curve_metadata_count > 0 {
+            self.loss(
+                LossKind::AttributesNotTransferred,
+                Severity::Info,
+                format!(
+                    "{coedge_use_curve_metadata_count} coedge-local 3D curve use(s) were not represented in STEP"
+                ),
+            );
+        }
+        // EDGE_CURVE carries its bounded domain through the two vertex
+        // endpoints. The IR parameter interval is a derived parameterization
+        // detail, not a separate STEP attribute, so it is not a loss here.
+        let topology_metadata = [
+            (
+                "face tolerance",
+                self.ir
+                    .model
+                    .faces
+                    .iter()
+                    .filter(|face| face.tolerance.is_some())
+                    .count(),
+            ),
+            (
+                "edge tolerance",
+                self.ir
+                    .model
+                    .edges
+                    .iter()
+                    .filter(|edge| edge.tolerance.is_some())
+                    .count(),
+            ),
+            (
+                "vertex tolerance",
+                self.ir
+                    .model
+                    .vertices
+                    .iter()
+                    .filter(|vertex| vertex.tolerance.is_some())
+                    .count(),
+            ),
+        ];
+        let topology_metadata_count = topology_metadata
+            .iter()
+            .map(|(_, count)| count)
+            .sum::<usize>();
+        if topology_metadata_count > 0 {
+            let details = topology_metadata
+                .iter()
+                .filter(|(_, count)| *count > 0)
+                .map(|(kind, count)| format!("{kind}={count}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.loss(
+                LossKind::AttributesNotTransferred,
+                Severity::Info,
+                format!(
+                    "{topology_metadata_count} topology metadata value(s) were not represented in STEP: {details}"
+                ),
+            );
+        }
         if !self.ir.model.subds.is_empty() {
             self.omit(
                 LossKind::SubdOmitted,
@@ -3181,6 +3869,209 @@ impl<'a> Builder<'a> {
                     "{} subdivision surface(s) were omitted because this STEP writer \
                      does not encode SubD control cages",
                     self.ir.model.subds.len()
+                ),
+            );
+        }
+        let design_arenas = [
+            ("feature", self.ir.model.features.len()),
+            (
+                "feature input topology",
+                self.ir.model.feature_input_topologies.len(),
+            ),
+            (
+                "feature result topology",
+                self.ir.model.feature_result_topologies.len(),
+            ),
+            ("configuration", self.ir.model.configurations.len()),
+            ("parameter", self.ir.model.parameters.len()),
+            ("sketch", self.ir.model.sketches.len()),
+            ("sketch entity", self.ir.model.sketch_entities.len()),
+            ("sketch constraint", self.ir.model.sketch_constraints.len()),
+            ("spatial sketch", self.ir.model.spatial_sketches.len()),
+            (
+                "spatial sketch entity",
+                self.ir.model.spatial_sketch_entities.len(),
+            ),
+            (
+                "spatial sketch constraint",
+                self.ir.model.spatial_sketch_constraints.len(),
+            ),
+            ("spreadsheet", self.ir.model.spreadsheets.len()),
+        ];
+        let design_record_count = design_arenas.iter().map(|(_, count)| count).sum::<usize>();
+        if design_record_count > 0 {
+            let details = design_arenas
+                .iter()
+                .filter(|(_, count)| *count > 0)
+                .map(|(kind, count)| format!("{kind}={count}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.loss(
+                LossKind::ParametricRecordOmitted,
+                Severity::Info,
+                format!(
+                    "{design_record_count} parametric/design record(s) were not represented in STEP: {details}"
+                ),
+            );
+        }
+        let presentation_arenas = [
+            ("drawing", self.ir.model.drawings.len()),
+            (
+                "presentation document",
+                self.ir.model.presentation_documents.len(),
+            ),
+            ("view presentation", self.ir.model.view_presentations.len()),
+        ];
+        let presentation_record_count = presentation_arenas
+            .iter()
+            .map(|(_, count)| count)
+            .sum::<usize>();
+        if presentation_record_count > 0 {
+            let details = presentation_arenas
+                .iter()
+                .filter(|(_, count)| *count > 0)
+                .map(|(kind, count)| format!("{kind}={count}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.loss(
+                LossKind::AttributesNotTransferred,
+                Severity::Info,
+                format!(
+                    "{presentation_record_count} drawing/presentation record(s) were not represented in STEP: {details}"
+                ),
+            );
+        }
+        if !self.ir.model.semantic_annotations.is_empty() {
+            self.omit(
+                LossKind::PmiOmitted,
+                Severity::Warning,
+                format!(
+                    "{} semantic annotation(s) were not represented in STEP",
+                    self.ir.model.semantic_annotations.len()
+                ),
+            );
+        }
+        if !self.ir.model.assets.is_empty() {
+            self.omit(
+                LossKind::AssetNotTransferred,
+                Severity::Info,
+                format!(
+                    "{} document asset(s) were not represented in STEP",
+                    self.ir.model.assets.len()
+                ),
+            );
+        }
+        if !self.ir.model.assembly_joints.is_empty() {
+            self.omit(
+                LossKind::AssemblyPlacementsNotTransferred,
+                Severity::Info,
+                format!(
+                    "{} assembly joint(s) were not represented in STEP",
+                    self.ir.model.assembly_joints.len()
+                ),
+            );
+        }
+        let non_part_products = self
+            .ir
+            .model
+            .product_definitions
+            .iter()
+            .filter(|product| {
+                !matches!(
+                    &product.kind,
+                    cadmpeg_ir::products::ProductDefinitionKind::Part
+                )
+            })
+            .count();
+        if non_part_products > 0 {
+            self.loss(
+                LossKind::MetadataNotTransferred,
+                Severity::Info,
+                format!(
+                    "{non_part_products} product definition(s) use a non-part kind not represented in STEP"
+                ),
+            );
+        }
+        let bom_property_count = self
+            .ir
+            .model
+            .product_definitions
+            .iter()
+            .map(|product| product.bom_properties.len())
+            .sum::<usize>();
+        if bom_property_count > 0 {
+            self.loss(
+                LossKind::MetadataNotTransferred,
+                Severity::Info,
+                format!(
+                    "{bom_property_count} product BOM property value(s) were not represented in STEP"
+                ),
+            );
+        }
+        let external_occurrences = self
+            .ir
+            .model
+            .occurrences
+            .iter()
+            .filter(|occurrence| {
+                matches!(
+                    &occurrence.prototype,
+                    cadmpeg_ir::products::PrototypeReference::External { .. }
+                )
+            })
+            .count();
+        if external_occurrences > 0 {
+            self.omit(
+                LossKind::AssemblyComponentsExternal,
+                Severity::Warning,
+                format!(
+                    "{external_occurrences} occurrence(s) reference external product definitions and were not represented in STEP"
+                ),
+            );
+        }
+        let unresolved_occurrences = self
+            .ir
+            .model
+            .occurrences
+            .iter()
+            .filter(|occurrence| {
+                matches!(
+                    &occurrence.prototype,
+                    cadmpeg_ir::products::PrototypeReference::Unresolved
+                )
+            })
+            .count();
+        if unresolved_occurrences > 0 {
+            self.omit(
+                LossKind::MetadataNotTransferred,
+                Severity::Warning,
+                format!(
+                    "{unresolved_occurrences} occurrence(s) have no writable product definition"
+                ),
+            );
+        }
+        let occurrence_metadata = self
+            .ir
+            .model
+            .occurrences
+            .iter()
+            .map(|occurrence| {
+                usize::from(!occurrence.linked_subelements.is_empty())
+                    + usize::from(occurrence.visible.is_some())
+                    + usize::from(occurrence.element_component.is_some())
+                    + usize::from(occurrence.claim_child.is_some())
+                    + usize::from(occurrence.copy_on_change.is_some())
+                    + usize::from(occurrence.copy_on_change_source.is_some())
+                    + usize::from(occurrence.copy_on_change_group.is_some())
+                    + usize::from(occurrence.copy_on_change_touched.is_some())
+            })
+            .sum::<usize>();
+        if occurrence_metadata > 0 {
+            self.loss(
+                LossKind::MetadataNotTransferred,
+                Severity::Info,
+                format!(
+                    "{occurrence_metadata} occurrence metadata value(s) were not represented in STEP"
                 ),
             );
         }
@@ -3238,6 +4129,19 @@ impl<'a> Builder<'a> {
                 .iter()
                 .filter(|tessellation| {
                     tessellation
+                        .source_object
+                        .as_ref()
+                        .is_some_and(|source| source.format != "step")
+                })
+                .count();
+        let source_object_count = source_object_count
+            + self
+                .ir
+                .model
+                .points
+                .iter()
+                .filter(|point| {
+                    point
                         .source_object
                         .as_ref()
                         .is_some_and(|source| source.format != "step")
@@ -3436,9 +4340,9 @@ impl Codec for StepCodec {
     }
 
     fn detect(&self, prefix: &[u8]) -> Confidence {
-        if prefix.starts_with(b"ISO-10303-21;") {
+        if starts_with_step_magic(prefix) {
             Confidence::High
-        } else if is_part28_xml(prefix) {
+        } else if archive::has_root_marker(prefix) || is_part28_xml(prefix) {
             Confidence::Medium
         } else {
             Confidence::No
@@ -3447,17 +4351,20 @@ impl Codec for StepCodec {
 
     fn inspect_impl(
         &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         root: cadmpeg_core::decode::View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let bytes = root.window();
+        if archive::has_zip_magic(bytes) {
+            return inspect_zip(ctx, root);
+        }
         refuse_alternate_encoding(bytes)?;
         if self.detect(bytes) == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
         }
-        let (exchange, diagnostics) =
-            parse::parse(bytes).map_err(|error| CodecError::Malformed(error.to_string()))?;
-        let (decoded, opaque_offsets) = reader::inspect_exchange(bytes, &exchange, &diagnostics);
+        let (mut exchange, diagnostics) = parse::parse_with_context(bytes, ctx)?;
+        let (decoded, opaque_offsets) =
+            reader::inspect_exchange(bytes, &mut exchange, &diagnostics, Some(ctx))?;
         let mut entries = vec![ContainerEntry {
             name: "HEADER".into(),
             role: "metadata".into(),
@@ -3554,9 +4461,13 @@ impl Codec for StepCodec {
                 attributes,
             });
         }
-        if exchange.signature.is_some() {
+        for (index, _) in exchange.signatures.iter().enumerate() {
             entries.push(ContainerEntry {
-                name: "SIGNATURE".into(),
+                name: if index == 0 {
+                    "SIGNATURE".into()
+                } else {
+                    format!("SIGNATURE[{index}]")
+                },
                 role: "signature".into(),
                 compression: "none".into(),
                 compressed_size: 0,
@@ -3564,46 +4475,16 @@ impl Codec for StepCodec {
                 attributes: BTreeMap::default(),
             });
         }
-        let schema = exchange
-            .header
-            .iter()
-            .find(|record| record.name == "FILE_SCHEMA")
-            .map_or_else(
-                || "unspecified".into(),
-                |record| {
-                    fn strings(value: &parse::Value, out: &mut Vec<String>) {
-                        match value {
-                            parse::Value::String(bytes) => {
-                                if let Ok(value) = strings::decode(bytes) {
-                                    out.push(value);
-                                }
-                            }
-                            parse::Value::List(values) => {
-                                for value in values {
-                                    strings(value, out);
-                                }
-                            }
-                            parse::Value::Typed(_, value) => strings(value, out),
-                            _ => {}
-                        }
-                    }
-                    let mut names = Vec::new();
-                    record
-                        .parameters
-                        .iter()
-                        .for_each(|value| strings(value, &mut names));
-                    names.join(",")
-                },
-            );
-        let edition = if schema.contains("442 4") {
-            "edition 3"
-        } else if schema.contains("442 3") {
-            "edition 2"
-        } else if schema.contains("442 1") {
-            "edition 1"
+        let identifiers = reader::schema_identifiers(&exchange);
+        let schema = if identifiers.is_empty() {
+            "unspecified".into()
         } else {
-            "edition unspecified"
+            identifiers.join(",")
         };
+        let edition = identifiers
+            .first()
+            .and_then(|identifier| StepSchema::ap242_edition(identifier))
+            .unwrap_or("edition unspecified");
         let mut notes = vec![format!("schema {schema}; {edition}")];
         notes.extend(diagnostics.into_iter().map(|diagnostic| diagnostic.message));
         Ok(ContainerSummary {
@@ -3620,6 +4501,9 @@ impl Codec for StepCodec {
         root: cadmpeg_core::decode::View<'_>,
     ) -> Result<DecodeResult, CodecError> {
         let bytes = root.window();
+        if archive::has_zip_magic(bytes) {
+            return decode_zip(ctx, root);
+        }
         refuse_alternate_encoding(bytes)?;
         if self.detect(bytes) == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
@@ -3630,16 +4514,118 @@ impl Codec for StepCodec {
                 container_only: ctx.container_only(),
                 policy: *ctx.policy(),
             },
+            ctx,
         )
     }
 }
 
-fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
-    if bytes.starts_with(b"PK\x03\x04") {
-        return Err(CodecError::NotImplemented(
-            "STEP Part 21 ZIP container".into(),
-        ));
+fn starts_with_step_magic(bytes: &[u8]) -> bool {
+    let mut at = 0;
+    loop {
+        while bytes.get(at).is_some_and(u8::is_ascii_whitespace) {
+            at += 1;
+        }
+        if bytes.get(at..at + 2) != Some(b"/*") {
+            break;
+        }
+        let Some(relative_end) = bytes[at + 2..]
+            .windows(2)
+            .position(|window| window == b"*/")
+        else {
+            return false;
+        };
+        at += relative_end + 4;
     }
+    let magic = b"ISO-10303-21;";
+    bytes
+        .get(at..at + magic.len())
+        .is_some_and(|candidate| candidate.eq_ignore_ascii_case(magic))
+}
+
+fn inspect_zip(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    root: cadmpeg_core::decode::View<'_>,
+) -> Result<ContainerSummary, CodecError> {
+    let (archive, root_view) = archive::open_root(ctx, root)?;
+    let root_summary = StepCodec::default().inspect_impl(ctx, root_view)?;
+    let resource_notes = archive::root_reference_notes(&archive, root_view.window())?;
+    let entry_count = archive.entries().len();
+    let root_entry = archive
+        .entry(archive::ROOT_NAME)
+        .expect("validated STEP ZIP root");
+    let root_data_offset = root_entry.data_start;
+    let logical_entries = root_summary
+        .entries
+        .iter()
+        .map(|entry| entry.name.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
+    let mut entries = archive.container_entries(archive::classify_entry);
+    if let Some(root_entry) = entries
+        .iter_mut()
+        .find(|entry| entry.name == archive::ROOT_NAME)
+    {
+        root_entry
+            .attributes
+            .insert("logical_sections".into(), logical_entries);
+    }
+    let mut notes = vec![
+        format!("root {}", archive::ROOT_NAME),
+        format!("archive entries={entry_count}; root data offset={root_data_offset}"),
+    ];
+    notes.extend(root_summary.notes);
+    notes.extend(resource_notes);
+    Ok(ContainerSummary {
+        format: "step".into(),
+        container_kind: "iso-10303-21-zip".into(),
+        entries,
+        notes,
+    })
+}
+
+fn decode_zip(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    root: cadmpeg_core::decode::View<'_>,
+) -> Result<DecodeResult, CodecError> {
+    let (archive, root_view) = archive::open_root(ctx, root)?;
+    let resource_notes = archive::root_reference_notes(&archive, root_view.window())?;
+    let entry_count = archive.entries().len();
+    let root_entry = archive
+        .entry(archive::ROOT_NAME)
+        .expect("validated STEP ZIP root");
+    let root_data_offset = root_entry.data_start;
+    let mut result = reader::decode(
+        root_view.window(),
+        DecodeOptions {
+            container_only: ctx.container_only(),
+            policy: *ctx.policy(),
+        },
+        ctx,
+    )?;
+    if let Some(source) = &mut result.ir.source {
+        source
+            .attributes
+            .insert("container_kind".into(), "iso-10303-21-zip".into());
+        source
+            .attributes
+            .insert("archive_root".into(), archive::ROOT_NAME.into());
+        source
+            .attributes
+            .insert("archive_entries".into(), entry_count.to_string());
+        source.attributes.insert(
+            "archive_root_data_offset".into(),
+            root_data_offset.to_string(),
+        );
+    }
+    result.report.notes.push(format!(
+        "container root {}; archive entries={entry_count}",
+        archive::ROOT_NAME
+    ));
+    result.report.notes.extend(resource_notes);
+    Ok(result)
+}
+
+fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
     if bytes.starts_with(b"\x89HDF\r\n\x1a\n") {
         return Err(CodecError::NotImplemented(
             "STEP Part 26 binary/HDF5 encoding".into(),

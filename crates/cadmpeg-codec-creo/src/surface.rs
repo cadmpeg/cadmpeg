@@ -234,6 +234,49 @@ impl SurfacePrototypeRecord {
     pub fn field(&self, name: &str) -> Option<&SurfaceNamedParameter> {
         self.parameters.iter().find(|field| field.name == name)
     }
+
+    /// Return the chart-origin vector carried by a `tab_cyl` local system.
+    pub(crate) fn tabulated_cylinder_chart_origin(&self) -> Option<[f64; 3]> {
+        if self.declared_family != "tab_cyl" || self.family != SurfacePrototypeFamily::Extrusion {
+            return None;
+        }
+        let SurfaceNamedValue::ScalarArray {
+            dimensions: 4,
+            count: 3,
+            values,
+            ..
+        } = &self.field("local_sys")?.value
+        else {
+            return None;
+        };
+        if values.len() != 12 {
+            return None;
+        }
+        if values.iter().all(|value| value.is_some_and(f64::is_finite)) {
+            return Some([values[9]?, values[10]?, values[11]?]);
+        }
+        let compact_chart = values[..7]
+            .iter()
+            .all(|value| value.is_some_and(|value| value == 0.0))
+            && values[7..10]
+                .iter()
+                .all(|value| value.is_some_and(f64::is_finite))
+            && values[10..12].iter().all(Option::is_none);
+        compact_chart.then_some([values[7]?, values[8]?, values[9]?])
+    }
+
+    /// Return the four contiguous control-point IDs in a `tab_cyl` prototype.
+    pub(crate) fn tabulated_cylinder_control_point_ids(&self) -> Option<[u32; 4]> {
+        if self.declared_family != "tab_cyl" || self.family != SurfacePrototypeFamily::Extrusion {
+            return None;
+        }
+        let SurfaceNamedValue::ContiguousEntityReferences { entity_ids, .. } =
+            &self.field("c_pnts")?.value
+        else {
+            return None;
+        };
+        entity_ids.as_slice().try_into().ok()
+    }
 }
 
 /// Structural boundary that terminates a positional surface parameter body.
@@ -790,8 +833,15 @@ impl SurfaceParameterRecord {
         (type_byte == 0x24).then_some(())?;
         self.repeated_diameter_type24_round_frame(cache)
             .or_else(|| self.type24_held_coordinate_round_frame())
-            .or_else(|| self.type24_single_diameter_round_frame())
-            .or_else(|| self.type24_square_radial_round_frame())
+            .or_else(|| {
+                match (
+                    self.type24_single_diameter_round_frame(),
+                    self.type24_square_radial_round_frame(),
+                ) {
+                    (Some(frame), None) | (None, Some(frame)) => Some(frame),
+                    (Some(_), Some(_)) | (None, None) => None,
+                }
+            })
     }
 
     fn terminal_scalar_frame_has_owned_end(
@@ -1844,6 +1894,53 @@ pub fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
     rows_with_boundaries(payload, BOUNDARY_TYPES)
 }
 
+/// Discover rows and their containing frame bounds from complete counted
+/// `srf_array` frames.
+pub(crate) fn counted_row_bounds(payload: &[u8]) -> Vec<(SurfaceRow, usize)> {
+    let frames = surface_array_frames(payload);
+    if frames.is_empty() {
+        return Vec::new();
+    }
+    let candidates = rows(payload);
+    let mut result = Vec::new();
+    for frame in frames {
+        let selected = candidates
+            .iter()
+            .filter(|row| row.offset >= frame.start && row.offset < frame.end)
+            .collect::<Vec<_>>();
+        if selected.len() == frame.count {
+            result.extend(selected.into_iter().cloned().map(|row| (row, frame.end)));
+        }
+    }
+    result.sort_by_key(|(row, _)| row.offset);
+    result
+}
+
+/// Return the byte bounds of complete counted `srf_array` frames.
+///
+/// A named prototype and its positional rows share one frame. Incomplete
+/// frames are excluded so a prototype cannot join to a row in a neighboring
+/// frame through section-wide adjacency.
+pub(crate) fn complete_surface_array_bounds(payload: &[u8]) -> Vec<(usize, usize)> {
+    let frames = surface_array_frames(payload);
+    if frames.is_empty() {
+        return Vec::new();
+    }
+    let rows = rows(payload);
+    frames
+        .into_iter()
+        .filter(|frame| {
+            frame.count != 0
+                && rows
+                    .iter()
+                    .filter(|row| row.offset >= frame.start && row.offset < frame.end)
+                    .count()
+                    == frame.count
+        })
+        .map(|frame| (frame.start, frame.end))
+        .collect()
+}
+
 /// Discover rows from a DEPDB `Sld_Xsections` surface namespace.
 /// Named prototype rows use boundary type `00`; positional replays use `06`.
 #[must_use]
@@ -1879,20 +1976,26 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[u8]) -> Vec<SurfaceRow
             value(b"feat_id\0"),
             value(b"next_geom_ptr\0"),
         ) {
-            let reversed = find_in(payload, b"orient\0", start, end)
+            let Some(orientation) = find_in(payload, b"orient\0", start, end)
                 .and_then(|at| payload.get(at + b"orient\0".len()))
-                == Some(&0xf6);
-            let boundary_type = find_in(payload, b"boundary_type\0", start, end)
+                .copied()
+                .filter(|byte| matches!(byte, 0x01 | 0xf6))
+            else {
+                continue;
+            };
+            let Some(boundary_type) = find_in(payload, b"boundary_type\0", start, end)
                 .and_then(|at| payload.get(at + b"boundary_type\0".len()))
                 .copied()
                 .filter(|byte| BOUNDARY_TYPES.contains(byte))
-                .unwrap_or(0);
+            else {
+                continue;
+            };
             result.push(SurfaceRow {
                 id,
                 type_byte,
                 kind,
                 feature_id,
-                reversed,
+                reversed: orientation == 0xf6,
                 boundary_type,
                 next_surface,
                 offset: id_offset,
@@ -3665,11 +3768,7 @@ fn decode_local_system_cylinder_frame(
         *value = decoded;
         cursor = next;
     }
-    let radius_start = (cursor..body.len()).find(|start| {
-        scalar::decode(body, *start)
-            .is_some_and(|(value, end)| end == body.len() && value.is_finite() && value > 0.0)
-    })?;
-    let (radius, _) = scalar::decode(body, radius_start)?;
+    let (radius_start, radius) = unique_terminal_positive_scalar(body, cursor)?;
     let frames = (cursor..radius_start)
         .filter_map(|start| {
             scalar::decode_positional_plane_local_system_slots(
@@ -4214,19 +4313,11 @@ fn decode_local_system_suffix_cylinder_frame(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<PositionalCylinderFrame> {
-    let radius_starts = (1..body.len())
-        .filter_map(|start| {
-            let (radius, end) = scalar::decode(body, start)?;
-            (end == body.len() && radius.is_finite() && radius > 0.0).then_some((start, radius))
-        })
-        .collect::<Vec<_>>();
-    let [(radius_start, radius)] = radius_starts.as_slice() else {
-        return None;
-    };
-    let frames = (0..*radius_start)
+    let (radius_start, radius) = unique_terminal_positive_scalar(body, 1)?;
+    let frames = (0..radius_start)
         .filter_map(|start| {
             scalar::decode_positional_cylinder_local_system_slots(
-                body.get(start..*radius_start)?,
+                body.get(start..radius_start)?,
                 cache,
             )
         })
@@ -4250,7 +4341,7 @@ fn decode_local_system_suffix_cylinder_frame(
     let [slots] = frames.as_slice() else {
         return None;
     };
-    cylinder_frame_from_local_system(slots, *radius)
+    cylinder_frame_from_local_system(slots, radius)
 }
 
 fn decode_compound_local_system_cylinder_frame(
@@ -4331,11 +4422,7 @@ fn decode_zero_support_cylinder_origin_radius(
     zero_support: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<([f64; 3], f64)> {
-    let radius_start = (start..body.len()).find(|candidate| {
-        scalar::decode(body, *candidate)
-            .is_some_and(|(value, end)| end == body.len() && value.is_finite() && value > 0.0)
-    })?;
-    let (radius, _) = scalar::decode(body, radius_start)?;
+    let (radius_start, radius) = unique_terminal_positive_scalar(body, start)?;
     let origins = (start + zero_support.len()..radius_start)
         .filter_map(|origin_start| {
             (body.get(origin_start - zero_support.len()..origin_start) == Some(zero_support)).then(
@@ -4347,6 +4434,19 @@ fn decode_zero_support_cylinder_origin_radius(
         return None;
     };
     Some((*origin, radius))
+}
+
+fn unique_terminal_positive_scalar(body: &[u8], start: usize) -> Option<(usize, f64)> {
+    let candidates = (start..body.len())
+        .filter_map(|offset| {
+            let (value, end) = scalar::decode(body, offset)?;
+            (end == body.len() && value.is_finite() && value > 0.0).then_some((offset, value))
+        })
+        .collect::<Vec<_>>();
+    let [(offset, value)] = candidates.as_slice() else {
+        return None;
+    };
+    Some((*offset, *value))
 }
 
 fn decode_positional_cylinder_origin(
@@ -6190,6 +6290,19 @@ mod tests {
     }
 
     #[test]
+    fn tabulated_cylinder_control_point_field_expands_contiguous_ids() {
+        let payload = b"srf_prim_ptr(tab_cyl)\0\
+            \xe0\x00c_pnts\0\xf8\x04\xf7\x50\xfb";
+
+        let records = named_prototype_records(payload);
+
+        assert_eq!(
+            records[0].tabulated_cylinder_control_point_ids(),
+            Some([80, 81, 82, 83])
+        );
+    }
+
+    #[test]
     fn counted_parameters_expand_compact_zero_runs() {
         let body = [0xe4, 0xe5, 0x0f, 0xe6];
 
@@ -6881,12 +6994,28 @@ mod tests {
             &scalar::ScalarCache::default()
         )
         .is_none());
+        let mut ambiguous_terminal = body[..body.len() - 3].to_vec();
+        ambiguous_terminal.extend_from_slice(&[0x46, 0, 0, 0, 0, 0, 0, 0xe4]);
+        assert!(decode_local_system_suffix_cylinder_frame(
+            &ambiguous_terminal,
+            &scalar::ScalarCache::default()
+        )
+        .is_none());
         let mut nonorthogonal = body;
         nonorthogonal[68..71].copy_from_slice(&[41, 227, 51]);
         assert!(
             decode_positional_cylinder_frame(&nonorthogonal, &scalar::ScalarCache::default())
                 .is_none()
         );
+    }
+
+    #[test]
+    fn terminal_positive_scalar_requires_a_unique_boundary() {
+        let unique = [0x46, 0, 0, 0, 0, 0, 0, 0];
+        assert_eq!(unique_terminal_positive_scalar(&unique, 0), Some((0, 2.0)));
+
+        let ambiguous = [0x46, 0, 0, 0, 0, 0x2f, 0x10, 0];
+        assert!(unique_terminal_positive_scalar(&ambiguous, 0).is_none());
     }
 
     #[test]
@@ -7659,6 +7788,18 @@ mod tests {
         assert_eq!(frame.ref_direction, [0.0, 1.0, 0.0]);
         assert_eq!(frame.radius, 1.0);
         assert!((frame.length.expect("bounded carrier") - 31.25_f64.sqrt() * 5.0).abs() < 1e-12);
+
+        let collision_body = [
+            0x2f, 0x00, 0x00, 0x2f, 0x10, 0x00, 0x0f, 0x0f, 0x0f, 0x2f, 0x00, 0x00, 0x2f, 0x00,
+            0x00, 0x2f, 0x10, 0x00,
+        ];
+        let mut collision_payload = vec![7, 0x24, 4, 0x01, 0, 0];
+        collision_payload.extend_from_slice(&collision_body);
+        collision_payload.push(0xe3);
+        let collision = parameter_records(&collision_payload).remove(0);
+        assert!(collision.type24_single_diameter_round_frame().is_some());
+        assert!(collision.type24_square_radial_round_frame().is_some());
+        assert!(collision.positional_cylinder_frame.is_none());
 
         let unbounded_body = [
             0x18, 0x2d, 0x5f, 0x25, 0xa4, 0x69, 0xd7, 0x34, 0x2d, 0x00, 0x12, 0x00, 0x2d, 0x67,

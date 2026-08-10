@@ -11,10 +11,12 @@ use super::endpoints::{
     compact_legacy_curve_endpoint_indices, extended_compact_indexed_curve_endpoint_indices,
     marker_is_selected_construction_line, wide_indexed_curve_endpoint_indices,
 };
-use super::markers::{current_reverse_incidence_endpoint_offsets, linked_profile_point};
+use super::markers::{
+    current_reverse_incidence_endpoint_offsets, linked_profile_point, relation_bindings_scoped,
+};
 use super::operands::resolve_scalar_operand_markers;
 use super::reference_geometry::explicit_reference_plane_frame;
-use super::relation_records::relation_instances;
+use super::relation_records::{feature_intervals, relation_instances};
 use super::scalars::feature_object_name;
 use super::selections::{
     compact_body_selections, compact_edge_selections, compact_surface_selections,
@@ -25,6 +27,7 @@ use super::typed_relations::{legacy_terminal_indexed_profile_line, marker_curve_
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_ir::features::{FeatureDefinition, Length, PathRef, PatternKind, PatternSeed};
+use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::SketchId;
 use std::collections::{HashMap, HashSet};
@@ -85,13 +88,14 @@ pub(crate) fn bind_pattern_inputs(
                 let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
                     continue;
                 };
-                if !matches!(
-                    model_features[model_index].definition,
-                    FeatureDefinition::Pattern {
-                        pattern: PatternKind::Unresolved { .. },
-                        ..
-                    }
-                ) {
+                let (needs_plane, needs_seeds) = match &model_features[model_index].definition {
+                    FeatureDefinition::Pattern { seeds, pattern, .. } => (
+                        matches!(pattern, PatternKind::Unresolved { .. }),
+                        seeds.is_empty(),
+                    ),
+                    _ => continue,
+                };
+                if !needs_plane && !needs_seeds {
                     continue;
                 }
                 let start = usize::try_from(starts[start_index].0).ok();
@@ -100,10 +104,14 @@ pub(crate) fn bind_pattern_inputs(
                     continue;
                 };
                 let object = &lane.native_payload[start..end];
-                let Ok(Some((origin, normal, _))) = explicit_reference_plane_frame(object) else {
+                if needs_plane {
+                    if let Ok(Some((origin, normal, _))) = explicit_reference_plane_frame(object) {
+                        mirror_plane_assignments.push((model_index, origin, normal));
+                    }
+                }
+                if !needs_seeds {
                     continue;
-                };
-                mirror_plane_assignments.push((model_index, origin, normal));
+                }
                 let seed_candidates = (0..object
                     .len()
                     .saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
@@ -475,6 +483,109 @@ pub(crate) fn bind_pattern_inputs(
     }
 }
 
+fn mirror_plane_from_surface(geometry: &SurfaceGeometry) -> Option<(Point3, Vector3)> {
+    match geometry {
+        SurfaceGeometry::Plane { origin, normal, .. } => Some((*origin, normal.unit()?)),
+        SurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
+            let (origin, normal) = mirror_plane_from_surface(basis)?;
+            Some((
+                transform.apply_point(origin),
+                transform.apply_normal(normal)?,
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// Bind mirror planes selected by persistent feature-local face identity.
+pub(crate) fn bind_mirror_surface_planes(
+    features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+    face_identities: &[(String, u32, u32)],
+    faces: &[cadmpeg_ir::topology::Face],
+    surfaces: &[cadmpeg_ir::geometry::Surface],
+) {
+    let mirror_native_refs = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter(|feature| feature.input_class.as_deref() == Some("moMirrorPattern_c"))
+        .map(|feature| feature.id.as_str())
+        .collect::<HashSet<_>>();
+    let mut faces_by_identity = HashMap::<(u32, u32), Vec<&str>>::new();
+    for (face, source, local) in face_identities {
+        let candidates = faces_by_identity.entry((*source, *local)).or_default();
+        if !candidates.contains(&face.as_str()) {
+            candidates.push(face);
+        }
+    }
+    let faces_by_id = faces
+        .iter()
+        .map(|face| (face.id.0.as_str(), face))
+        .collect::<HashMap<_, _>>();
+    let surfaces_by_id = surfaces
+        .iter()
+        .map(|surface| (surface.id.0.as_str(), surface))
+        .collect::<HashMap<_, _>>();
+
+    for feature in features {
+        let FeatureDefinition::Pattern {
+            pattern: slot @ PatternKind::Unresolved { .. },
+            ..
+        } = &mut feature.definition
+        else {
+            continue;
+        };
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        if !mirror_native_refs.contains(native_ref) {
+            continue;
+        }
+        let mut candidates = Vec::new();
+        for selection in lanes
+            .iter()
+            .filter(|lane| !is_supplemental_config_lane(lane))
+            .flat_map(|lane| &lane.surface_selections)
+            .filter(|selection| selection.feature_ref == native_ref)
+        {
+            let Some(component) = selection.components.last() else {
+                continue;
+            };
+            let source = u32::from_le_bytes(
+                component.type_signature[4..8]
+                    .try_into()
+                    .expect("four-byte feature source ID slice"),
+            );
+            let Some(local) = component.local_id else {
+                continue;
+            };
+            let Some([face_id]) = faces_by_identity.get(&(source, local)).map(Vec::as_slice) else {
+                continue;
+            };
+            let Some(surface) = faces_by_id
+                .get(face_id)
+                .and_then(|face| surfaces_by_id.get(face.surface.0.as_str()))
+            else {
+                continue;
+            };
+            let Some(plane) = mirror_plane_from_surface(&surface.geometry) else {
+                continue;
+            };
+            if !candidates.contains(&plane) {
+                candidates.push(plane);
+            }
+        }
+        let [(origin, normal)] = candidates.as_slice() else {
+            continue;
+        };
+        *slot = PatternKind::Mirror {
+            plane_origin: *origin,
+            plane_normal: *normal,
+        };
+    }
+}
+
 pub(crate) fn bind_sweep_adjacent_profiles(
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
@@ -737,6 +848,9 @@ pub(super) fn finalize_lane_bindings(
             .cloned()
             .flatten();
     }
+    let intervals = feature_intervals(histories, lane);
+    lane.relation_bindings =
+        relation_bindings_scoped(&lane.id, &lane.classes, &lane.scalars, &intervals);
     lane.relation_instances = relation_instances(histories, lane);
     lane.body_selections = compact_body_selections(histories, lane);
     lane.edge_selections = compact_edge_selections(histories, lane);

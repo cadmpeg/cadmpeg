@@ -180,6 +180,17 @@
         "severity": "info"
       },
       {
+        "code": "decode_diagnostic",
+        "message": "container.instance-definition-degraded: retained 1 malformed, ambiguous, or checksum-degraded instance-definition record(s); first: instance definition CRC mismatch at offset 179",
+        "provenance": {
+          "format": "rhino",
+          "offset": 111,
+          "stream": "",
+          "tag": "INSTANCE_DEFINITION_TABLE"
+        },
+        "severity": "warning"
+      },
+      {
         "code": "unsupported_object_family",
         "message": "object.family-not-transferred: retained 1 object record(s) for class f9cfb638-b9d4-4340-87e3-c56e7865d96a; geometry is not decoded",
         "provenance": {
@@ -189,6 +200,11 @@
           "tag": "OBJECT_RECORD/class=f9cfb638-b9d4-4340-87e3-c56e7865d96a/type=0x00001000"
         },
         "severity": "warning"
+      },
+      {
+        "code": "integrity_failure",
+        "message": "container.integrity-failure: CRC mismatch at offset 534 for typecode 0x20008070: expected 0x0, got 0x9d88d481",
+        "severity": "error"
       },
       {
         "code": "decode_diagnostic",

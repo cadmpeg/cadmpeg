@@ -16,7 +16,7 @@
 use std::collections::HashMap;
 
 use cadmpeg_core::be::{f64_at, u16_at};
-use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use super::LEN_TO_MM;
@@ -55,6 +55,9 @@ fn unit3(bytes: &[u8], at: usize) -> Option<Vector3> {
     let x = f64_at(bytes, at)?;
     let y = f64_at(bytes, at + 8)?;
     let z = f64_at(bytes, at + 16)?;
+    if !(x.is_finite() && y.is_finite() && z.is_finite()) {
+        return None;
+    }
     let norm = (x * x + y * y + z * z).sqrt();
     if (norm - 1.0).abs() > 1.0e-9 {
         return None;
@@ -66,8 +69,7 @@ fn point_mm(bytes: &[u8], at: usize) -> Option<Point3> {
     let x = f64_at(bytes, at)?;
     let y = f64_at(bytes, at + 8)?;
     let z = f64_at(bytes, at + 16)?;
-    if !(x.is_finite() && y.is_finite() && z.is_finite()) || x.abs().max(y.abs()).max(z.abs()) > 1e6
-    {
+    if !(x.is_finite() && y.is_finite() && z.is_finite()) {
         return None;
     }
     Some(Point3::new(x * LEN_TO_MM, y * LEN_TO_MM, z * LEN_TO_MM))
@@ -127,6 +129,86 @@ pub(crate) fn scan_sweep_carriers(bytes: &[u8]) -> HashMap<u16, SweepCarrier> {
     out
 }
 
+/// Convert an exact analytic sweep profile to its exact rational NURBS form.
+///
+/// The nine poles are four rational quadratic quarter arcs. Odd poles are the
+/// intersections of adjacent endpoint tangents and therefore carry weight
+/// `sqrt(2) / 2`.
+pub(crate) fn profile_nurbs(geometry: &CurveGeometry) -> Option<NurbsCurve> {
+    let (center, axis, major, major_radius, minor_radius) = match geometry {
+        CurveGeometry::Nurbs(curve) => return Some(curve.clone()),
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => (*center, *axis, *ref_direction, *radius, *radius),
+        CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => (
+            *center,
+            *axis,
+            *major_direction,
+            *major_radius,
+            *minor_radius,
+        ),
+        _ => return None,
+    };
+    let axis = axis.unit()?;
+    let major = major.unit()?;
+    if !(major_radius.is_finite()
+        && minor_radius.is_finite()
+        && major_radius > 0.0
+        && minor_radius > 0.0
+        && axis.dot(major).abs() <= 1.0e-9)
+    {
+        return None;
+    }
+    let minor = axis.cross(major).unit()?;
+    let half_sqrt2 = std::f64::consts::SQRT_2 / 2.0;
+    let mut control_points = Vec::with_capacity(9);
+    let mut weights = Vec::with_capacity(9);
+    for index in 0..9 {
+        let angle = index as f64 * std::f64::consts::FRAC_PI_4;
+        let (sin, cos) = angle.sin_cos();
+        let tangent_scale = if index % 2 == 0 {
+            1.0
+        } else {
+            std::f64::consts::SQRT_2
+        };
+        control_points.push(
+            center
+                .translated(major, tangent_scale * major_radius * cos)
+                .translated(minor, tangent_scale * minor_radius * sin),
+        );
+        weights.push(if index % 2 == 0 { 1.0 } else { half_sqrt2 });
+    }
+    Some(NurbsCurve {
+        degree: 2,
+        knots: vec![
+            0.0,
+            0.0,
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+            std::f64::consts::FRAC_PI_2,
+            std::f64::consts::PI,
+            std::f64::consts::PI,
+            3.0 * std::f64::consts::FRAC_PI_2,
+            3.0 * std::f64::consts::FRAC_PI_2,
+            2.0 * std::f64::consts::PI,
+            2.0 * std::f64::consts::PI,
+            2.0 * std::f64::consts::PI,
+        ],
+        control_points,
+        weights: Some(weights),
+        periodic: false,
+    })
+}
+
 /// Build the ruled NURBS patch of a swept surface over `v` in
 /// `[v_start, v_end]` millimetres of travel along the unit direction.
 pub(crate) fn swept_nurbs(
@@ -162,7 +244,7 @@ pub(crate) fn swept_nurbs(
         v_count: 2,
         control_points: control,
         weights,
-        u_periodic: false,
+        u_periodic: profile.periodic,
         v_periodic: false,
     })
 }
@@ -244,7 +326,7 @@ pub(crate) fn spun_nurbs(profile: &NurbsCurve, base: Point3, axis: Vector3) -> N
         v_count: 9,
         control_points: control,
         weights: Some(weights),
-        u_periodic: false,
+        u_periodic: profile.periodic,
         v_periodic: true,
     }
 }
@@ -252,6 +334,8 @@ pub(crate) fn spun_nurbs(profile: &NurbsCurve, base: Point3, axis: Vector3) -> N
 #[cfg(test)]
 mod tests {
     use std::f64::consts::{FRAC_PI_2, SQRT_2};
+
+    use cadmpeg_ir::eval::nurbs_curve_point;
 
     use super::*;
 
@@ -312,13 +396,113 @@ mod tests {
         assert!(scan_sweep_carriers(&bytes).is_empty());
     }
 
+    #[test]
+    fn rejects_non_finite_direction() {
+        let mut bytes = header(0x43, 9, 5);
+        for v in [f64::NAN, 0.0, 1.0] {
+            bytes.extend_from_slice(&v.to_be_bytes());
+        }
+        assert!(scan_sweep_carriers(&bytes).is_empty());
+    }
+
+    #[test]
+    fn accepts_finite_axis_points_without_a_coordinate_cutoff() {
+        let mut bytes = header(0x44, 12, 6);
+        for v in [2.0e6f64, -3.0e6, 4.0e6, 0.0, 0.0, 1.0] {
+            bytes.extend_from_slice(&v.to_be_bytes());
+        }
+        let carriers = scan_sweep_carriers(&bytes);
+        let carrier = carriers.get(&12).expect("spun carrier");
+        let SweepKind::Spun { base, .. } = &carrier.kind else {
+            panic!("expected spun kind");
+        };
+        assert_eq!(*base, Point3::new(2.0e9, -3.0e9, 4.0e9));
+    }
+
+    fn eval_curve(curve: &NurbsCurve, parameter: f64) -> Point3 {
+        nurbs_curve_point(
+            curve.degree,
+            &curve.knots,
+            &curve.control_points,
+            curve.weights.as_deref(),
+            parameter,
+        )
+        .expect("evaluable curve")
+    }
+
+    #[test]
+    fn analytic_ellipse_profile_has_exact_rational_form() {
+        let geometry = CurveGeometry::Ellipse {
+            center: Point3::new(3.0, -2.0, 7.0),
+            axis: Vector3::new(0.0, 0.0, 2.0),
+            major_direction: Vector3::new(4.0, 0.0, 0.0),
+            major_radius: 5.0,
+            minor_radius: 2.0,
+        };
+        let curve = profile_nurbs(&geometry).expect("ellipse NURBS");
+
+        assert_eq!(curve.degree, 2);
+        assert_eq!(curve.control_points.len(), 9);
+        assert!(!curve.periodic, "the representation is endpoint-clamped");
+        for parameter in [0.0, 0.3, FRAC_PI_2, 2.4, std::f64::consts::PI, 5.7] {
+            let point = eval_curve(&curve, parameter);
+            let center_y = -2.0;
+            let ellipse = ((point.x - 3.0) / 5.0).powi(2) + ((point.y - center_y) / 2.0).powi(2);
+            assert!((ellipse - 1.0).abs() < 1.0e-12, "ellipse value {ellipse}");
+            assert!((point.z - 7.0).abs() < 1.0e-12);
+        }
+        assert_eq!(eval_curve(&curve, 0.0), Point3::new(8.0, -2.0, 7.0));
+        let quarter = eval_curve(&curve, FRAC_PI_2);
+        assert!((quarter.x - 3.0).abs() < 1.0e-12);
+        assert!(quarter.y.abs() < 1.0e-12);
+        assert!((quarter.z - 7.0).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn analytic_circle_profile_has_exact_rational_form() {
+        let geometry = CurveGeometry::Circle {
+            center: Point3::new(-1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 2.0, 0.0),
+            ref_direction: Vector3::new(0.0, 0.0, 4.0),
+            radius: 6.0,
+        };
+        let curve = profile_nurbs(&geometry).expect("circle NURBS");
+
+        for parameter in [0.0, 0.7, FRAC_PI_2, 3.4, 5.9] {
+            let point = eval_curve(&curve, parameter);
+            let radius = ((point.x + 1.0).powi(2) + (point.z - 3.0).powi(2)).sqrt();
+            assert!((radius - 6.0).abs() < 1.0e-12, "radius {radius}");
+            assert!((point.y - 2.0).abs() < 1.0e-12);
+        }
+    }
+
+    #[test]
+    fn analytic_profile_rejects_invalid_frame_or_radius() {
+        for geometry in [
+            CurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 1.0),
+                radius: 1.0,
+            },
+            CurveGeometry::Ellipse {
+                center: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                major_direction: Vector3::new(1.0, 0.0, 0.0),
+                major_radius: 1.0,
+                minor_radius: 0.0,
+            },
+        ] {
+            assert!(profile_nurbs(&geometry).is_none());
+        }
+    }
+
     fn eval_surface(surface: &NurbsSurface, u_parameter: f64, v_parameter: f64) -> Point3 {
         // De Boor via basis functions (dense evaluation, test only).
         fn basis(knots: &[f64], degree: usize, count: usize, t: f64) -> Vec<f64> {
-            let mut n = vec![0.0f64; count];
             // Find span.
             let mut out = vec![0.0f64; count];
-            for i in 0..count {
+            for (i, value) in out.iter_mut().enumerate() {
                 // Cox-de Boor recursive (inefficient but fine for tests).
                 fn cox(knots: &[f64], i: usize, p: usize, t: f64) -> f64 {
                     if p == 0 {
@@ -344,8 +528,7 @@ mod tests {
                         value
                     }
                 }
-                out[i] = cox(knots, i, degree, t);
-                n[i] = out[i];
+                *value = cox(knots, i, degree, t);
             }
             out
         }

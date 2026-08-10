@@ -5,7 +5,54 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::math::{Point3, Vector3};
+use crate::math::{Point2, Point3, Vector3};
+
+/// A 3×3 row-major affine transform applied to two-dimensional geometry.
+///
+/// The explicit matrix preserves source coefficients. Validation checks the
+/// affine bottom row.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct Transform2 {
+    /// Row-major 3×3 matrix; `rows[2]` is normally `[0, 0, 1]`.
+    pub rows: [[f64; 3]; 3],
+}
+
+impl Transform2 {
+    /// The identity transform.
+    pub fn identity() -> Self {
+        Transform2 {
+            rows: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        }
+    }
+
+    /// Whether every matrix coefficient is finite.
+    pub fn is_finite(&self) -> bool {
+        self.rows.iter().flatten().all(|value| value.is_finite())
+    }
+
+    /// Whether this is a finite affine transform.
+    pub fn is_affine(&self) -> bool {
+        self.is_finite() && self.rows[2] == [0.0, 0.0, 1.0]
+    }
+
+    /// Applies this affine transform to a two-dimensional point.
+    pub fn apply_point(self, point: Point2) -> Point2 {
+        Point2::new(
+            self.rows[0][0] * point.u + self.rows[0][1] * point.v + self.rows[0][2],
+            self.rows[1][0] * point.u + self.rows[1][1] * point.v + self.rows[1][2],
+        )
+    }
+
+    /// Applies this transform's linear component to a two-dimensional vector.
+    pub fn apply_vector(self, vector: Point2) -> Point2 {
+        Point2::new(
+            self.rows[0][0] * vector.u + self.rows[0][1] * vector.v,
+            self.rows[1][0] * vector.u + self.rows[1][1] * vector.v,
+        )
+    }
+}
 
 /// A 4×4 row-major affine transform applied to a body's geometry.
 ///

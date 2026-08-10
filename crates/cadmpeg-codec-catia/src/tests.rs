@@ -11,6 +11,7 @@
 )]
 
 use std::io::Cursor;
+use std::mem::size_of;
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
 
@@ -126,6 +127,7 @@ fn assert_every_entity_has_v1_annotation(ir: &CadIr, annotations: &Annotations) 
     check!(&ir.model.points);
     check!(&ir.model.surfaces);
     check!(&ir.model.curves);
+    check!(&ir.model.pcurves);
     let unknowns = ir.native_unknowns("catia").unwrap();
     check!(&unknowns);
     assert_eq!(annotations.provenance.len(), entity_count);
@@ -164,6 +166,78 @@ pub(crate) fn standard_quad_topology_stream() -> Vec<u8> {
         }
     }
     bytes
+}
+
+pub(crate) fn fbb_only_quad_topology_stream() -> Vec<u8> {
+    let standard = standard_quad_topology_stream();
+    let fbb_start = standard
+        .windows(4)
+        .position(|marker| marker == [0x30, 0x04, 0x04, 0xff])
+        .expect("FBB face row");
+    let mut bytes = standard[..fbb_start + 8].to_vec();
+    bytes[1] = 0x4c;
+    let mut frame = Vec::new();
+    for value in [0.0f32, 0.0, 1.0] {
+        frame.extend_from_slice(&le_f32(value));
+    }
+    bytes.splice(8..8, frame);
+    let delimiter = [0x10, 0xf4, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
+    for (kind, rows) in [
+        (1, [[10u16, 11, 12], [12, 13, 14]]),
+        (2, [[14u16, 15, 16], [16, 17, 10]]),
+    ] {
+        bytes.extend_from_slice(&[0x01, kind, 2]);
+        for row in rows {
+            bytes.extend_from_slice(&[0x02, 3]);
+            for handle in row {
+                bytes.extend_from_slice(&handle.to_be_bytes());
+            }
+        }
+        bytes.extend_from_slice(&delimiter);
+    }
+    bytes.extend_from_slice(&[0x01, 0x06, 0x04]);
+    for xyz in [
+        [0.0f32, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in xyz {
+            bytes.extend_from_slice(&le_f32(value));
+        }
+    }
+    bytes
+}
+
+fn fbb_only_quad_surface_stream() -> Vec<u8> {
+    let mut bytes = vec![0x11, 0x22, 0x33, 0x00, 0x02, 0x00, 0x33, 0x32];
+    bytes.resize(49, 0);
+    bytes[48] = 0x01;
+    for (tag, center) in [
+        (1u8, [0.5f32, 0.0]),
+        (2, [1.0, 0.5]),
+        (3, [0.5, 1.0]),
+        (4, [0.0, 0.5]),
+    ] {
+        bytes.extend_from_slice(&[0x60, tag, 0, 0, 0x00, 0x12, 0x00, 0x33, 0x37]);
+        for value in [center[0], center[1], 0.0, 0.5] {
+            bytes.extend_from_slice(&be_f32(value));
+        }
+        bytes.extend_from_slice(&[0, 0]);
+    }
+    bytes.extend_from_slice(&[0xff, 0x11, 0x22, 0x33, 0x00, 0x02, 0x00, 0x33, 0x32]);
+    for value in [0.5f32, 0.5, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 2.0] {
+        bytes.extend_from_slice(&le_f32(value));
+    }
+    bytes
+}
+
+pub(crate) fn fbb_only_quad_catpart() -> Vec<u8> {
+    standard_catpart_from_streams(
+        &fbb_only_quad_topology_stream(),
+        &fbb_only_quad_surface_stream(),
+    )
 }
 
 #[test]
@@ -582,6 +656,22 @@ pub(crate) fn le_f64(v: f64) -> [u8; 8] {
     v.to_le_bytes()
 }
 
+fn compact_uint_bytes(value: u32) -> Vec<u8> {
+    if value <= 63 {
+        return vec![u8::try_from(value * 4 + 1).expect("single-byte compact integer")];
+    }
+    let width = if u16::try_from(value).is_ok() {
+        2
+    } else if value <= 0x00ff_ffff {
+        3
+    } else {
+        4
+    };
+    let mut bytes = vec![u8::try_from(width * 4).expect("compact integer width")];
+    bytes.extend_from_slice(&value.to_le_bytes()[..width]);
+    bytes
+}
+
 /// A `MainDataStream` physical payload: two FBB spine rows, two empty standard
 /// edge tables, and a counted table of three `05 08 01` vertex records.
 fn main_stream() -> Vec<u8> {
@@ -677,6 +767,29 @@ fn descriptor(name: &str, phys_off: u32, phys_len: u32) -> Vec<u8> {
 /// header and the directory placed after them.
 fn standard_catpart() -> Vec<u8> {
     standard_catpart_from_streams(&main_stream(), &surf_stream())
+}
+
+#[test]
+fn consolidated_record_sources_follow_physical_stream_extents() {
+    let scan = crate::container::scan_bytes(standard_catpart());
+    let inner = scan.inner.as_ref().expect("inner stream directory");
+    let expected = inner
+        .descriptors
+        .iter()
+        .flat_map(|descriptor| {
+            descriptor.extents.iter().map(|extent| {
+                let start = inner.inner + extent.phys_off as usize;
+                start..start + extent.phys_len as usize
+            })
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        crate::container::consolidated_record_ranges(&scan),
+        expected
+    );
+    assert!(crate::container::consolidated_record_ranges(&scan)
+        .iter()
+        .all(|range| !range.contains(&inner.inner)));
 }
 
 fn standard_catpart_from_streams(main: &[u8], surf: &[u8]) -> Vec<u8> {
@@ -939,8 +1052,9 @@ fn zero_entity_nurbs_catpart() -> Vec<u8> {
     f[..8].copy_from_slice(OUTER_MAGIC);
     let record = f.len();
     f.extend_from_slice(&[0xa9, 0x03, 0x34, 0xc8]);
-    // The nominal record is 212 bytes, but the inline pole grid extends past it.
-    f.resize(record + 4 + 300, 0);
+    // The nominal record is 212 bytes, but the fixed 7×7 pole grid extends
+    // past it and starts at logical offset +167.
+    f.resize(record + 167 + 49 * 24, 0);
     let write_f64 = |f: &mut [u8], at: usize, value: f64| {
         f[record + at..record + at + 8].copy_from_slice(&le_f64(value));
     };
@@ -948,19 +1062,23 @@ fn zero_entity_nurbs_catpart() -> Vec<u8> {
         f[record + at] = 0x10;
         f[record + at + 1..record + at + 5].copy_from_slice(&value.to_le_bytes());
     };
-    write_f64(&mut f, 23, 0.0);
-    write_f64(&mut f, 31, 1.0);
-    write_token(&mut f, 39, 3);
-    write_token(&mut f, 44, 3);
-    write_f64(&mut f, 50, 0.0);
-    write_f64(&mut f, 58, 1.0);
-    write_token(&mut f, 66, 3);
-    write_token(&mut f, 71, 3);
-    for i in 0..9 {
-        let at = 79 + i * 24;
+    for (index, value) in [0.0, 0.25, 0.5, 0.75, 1.0].into_iter().enumerate() {
+        write_f64(&mut f, 23 + index * 8, value);
+        write_f64(&mut f, 99 + index * 8, value);
+    }
+    for (index, value) in [4, 1, 1, 1, 4].into_iter().enumerate() {
+        write_token(&mut f, 63 + index * 5, value);
+        write_token(&mut f, 139 + index * 5, value);
+    }
+    write_token(&mut f, 88, 1);
+    write_token(&mut f, 93, 1);
+    f[record + 98] = 0x04;
+    f[record + 164..record + 167].copy_from_slice(&[0x08, 0x00, 0x00]);
+    for i in 0..49 {
+        let at = 167 + i * 24;
         write_f64(&mut f, at, i as f64);
-        write_f64(&mut f, at + 8, (i / 3) as f64);
-        write_f64(&mut f, at + 16, (i % 3) as f64);
+        write_f64(&mut f, at + 8, (i / 7) as f64);
+        write_f64(&mut f, at + 16, (i % 7) as f64);
     }
     f
 }
@@ -1066,17 +1184,80 @@ pub(crate) fn a8_surface_stream() -> Vec<u8> {
     record
 }
 
-pub(crate) fn a8_elided_surface_stream() -> Vec<u8> {
-    let mut bytes = a8_surface_stream();
-    bytes.truncate(59);
+pub(crate) fn a8_surface_stream_with_u_count(u_count: u32) -> Vec<u8> {
+    assert!(u_count >= 2);
+    let mut payload = vec![0, 9, 0, 0];
+    payload.extend_from_slice(&compact_uint_bytes(u_count));
+    payload.push(1);
+    for knot in 0..u_count {
+        payload.extend_from_slice(&le_f64(f64::from(knot)));
+    }
+    for knot in 0..u_count {
+        let multiplicity = if knot == 0 || knot + 1 == u_count {
+            3
+        } else {
+            1
+        };
+        payload.extend_from_slice(&compact_uint_bytes(multiplicity));
+    }
+    payload.extend_from_slice(&[9, 0, 0, 9, 1]);
+    payload.extend_from_slice(&[le_f64(0.0), le_f64(1.0)].concat());
+    payload.extend_from_slice(&[13, 13, 1]);
+    let u_poles = u_count + 1;
+    for pole in 0..u_poles * 3 {
+        payload.extend_from_slice(&le_f64(f64::from(pole)));
+        payload.extend_from_slice(&le_f64(0.0));
+        payload.extend_from_slice(&le_f64(0.0));
+    }
+    let mut record = vec![0xa8, 0x03, 0x34];
+    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.extend_from_slice(&0xdeca_fbad_u32.to_le_bytes());
+    record.extend_from_slice(&payload);
+    record
+}
+
+pub(crate) fn a8_surface_tail() -> Vec<u8> {
     let mut tail = vec![0; 141];
     tail[..4].copy_from_slice(&[0x05, 0x21, 0x05, 0x05]);
-    bytes.extend_from_slice(&tail);
+    for (offset, value) in [
+        (4, 0.0),
+        (12, 1.0),
+        (20, 0.0),
+        (28, 1.0),
+        (36, 1.0),
+        (44, 0.0),
+        (52, 1.0),
+        (60, 0.0),
+    ] {
+        tail[offset..offset + 8].copy_from_slice(&le_f64(value));
+    }
+    tail[68..71].copy_from_slice(&[0x01, 0x01, 0x01]);
+    tail[135..141].copy_from_slice(&[0x01, 0x00, 0x01, 0x00, 0x07, 0x07]);
+    tail
+}
+
+pub(crate) fn a8_inline_tail_surface_stream() -> Vec<u8> {
+    let mut bytes = a8_surface_stream();
+    bytes.extend_from_slice(&a8_surface_tail());
+    let payload_len = u32::try_from(bytes.len() - 11).unwrap();
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+    bytes
+}
+
+pub(crate) fn a8_elided_surface_stream() -> Vec<u8> {
+    const SURFACE: u32 = 100;
+
+    let mut bytes = a8_surface_stream();
+    bytes.truncate(59);
+    bytes[7..11].copy_from_slice(&SURFACE.to_le_bytes());
+    bytes.extend_from_slice(&a8_surface_tail());
     let payload_len = u32::try_from(bytes.len() - 11).unwrap();
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
     let mut pcurve_payload = vec![0; 58];
     pcurve_payload[0] = 0x81;
+    pcurve_payload[1] = 0x18;
+    pcurve_payload[2..4].copy_from_slice(&(SURFACE as u16).to_le_bytes());
     pcurve_payload[57] = 0x07;
     bytes.extend_from_slice(&[0xb5, 0x03, 0x21, 58, 1, 0, 0, 0]);
     bytes.extend_from_slice(&pcurve_payload);
@@ -1085,7 +1266,7 @@ pub(crate) fn a8_elided_surface_stream() -> Vec<u8> {
             bytes.extend_from_slice(&coordinate.to_le_bytes());
         }
     }
-    bytes.extend_from_slice(&[0xb5, 0x03, 0x5e, 0, 2, 0, 0, 0]);
+    bytes.extend_from_slice(&[0xb5, 0x03, 0x5e, 0, 2, 0, 0, 0, 0, 0]);
     bytes
 }
 
@@ -1127,8 +1308,78 @@ pub(crate) fn a8_pcurve_stream() -> Vec<u8> {
     record
 }
 
+pub(crate) fn a8_pcurve_stream_with_count(count: u32) -> Vec<u8> {
+    assert!(count >= 2);
+    let mut payload = vec![0, 0x18, 0x34, 0x12, 21, 0, 0];
+    payload.extend_from_slice(&compact_uint_bytes(count));
+    payload.push(0x0c);
+    for site in 0..count {
+        payload.extend_from_slice(&le_f64(f64::from(site)));
+    }
+    for site in 0..count {
+        let multiplicity = if site == 0 || site + 1 == count { 6 } else { 3 };
+        payload.extend_from_slice(&compact_uint_bytes(multiplicity));
+    }
+    payload.extend_from_slice(&compact_uint_bytes(count));
+    payload.push(1);
+    for array in 0..4 {
+        for _ in 0..count {
+            let value = if array == 2 { 1.0 } else { 0.0 };
+            payload.extend_from_slice(&le_f64(value));
+        }
+    }
+    payload.push(0x05);
+    for _ in 0..count {
+        payload.extend_from_slice(&le_f64(0.0));
+    }
+    for _ in 0..count {
+        payload.extend_from_slice(&le_f64(0.0));
+    }
+    payload.extend_from_slice(&le_f64(0.0));
+    payload.extend_from_slice(&le_f64(f64::from(count - 1)));
+    payload.push(0x07);
+    let mut record = vec![0xa8, 0x03, 0x20];
+    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.extend_from_slice(&0x5678u32.to_le_bytes());
+    record.extend_from_slice(&payload);
+    record
+}
+
 pub(crate) fn a5_pcurve_stream() -> Vec<u8> {
     a5_pcurve_stream_with_uv([0.0, 1.0], [0.0, 1.0])
+}
+
+pub(crate) fn a5_pcurve_stream_with_count(count: u32) -> Vec<u8> {
+    assert!(count >= 2);
+    let mut payload = vec![0x08, 0x34, 0x12, 21];
+    payload.extend_from_slice(&compact_uint_bytes(count));
+    payload.extend_from_slice(&[0x08, 9]);
+    for site in 0..count {
+        payload.extend_from_slice(&le_f64(f64::from(site)));
+    }
+    payload.extend_from_slice(&compact_uint_bytes(count));
+    payload.push(2);
+    for array in 0..4 {
+        for _ in 0..count {
+            let value = if array == 2 { 1.0 } else { 0.0 };
+            payload.extend_from_slice(&le_f64(value));
+        }
+    }
+    payload.push(0x05);
+    for _ in 0..count {
+        payload.extend_from_slice(&le_f64(0.0));
+    }
+    for _ in 0..count {
+        payload.extend_from_slice(&le_f64(0.0));
+    }
+    payload.extend_from_slice(&le_f64(0.0));
+    payload.extend_from_slice(&le_f64(f64::from(count - 1)));
+    payload.push(0x07);
+    let mut record = vec![0xa5, 0x03, 0x20];
+    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.push(0x05);
+    record.extend_from_slice(&payload);
+    record
 }
 
 pub(crate) fn a6_pcurve_stream() -> Vec<u8> {
@@ -1146,6 +1397,31 @@ pub(crate) fn b2_pcurve_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x20, u8::try_from(payload.len()).unwrap(), 0x05];
     record.extend_from_slice(payload);
     record
+}
+
+pub(crate) fn b2_plane_carrier_stream() -> Vec<u8> {
+    let layouts = [
+        (0xe4, vec![10.0, 20.0, 1.0, 0.0, 5.0, -2.0, 3.0]),
+        (0xc4, vec![10.0, 20.0, 1.0, 0.0, 0.0, 5.0, -2.0, 3.0]),
+        (0xec, vec![10.0, 20.0, -2.0, 5.0, -2.0, 3.0]),
+    ];
+    let mut bytes = Vec::new();
+    for (selector, values) in layouts {
+        let payload_len = 2 + values.len() * size_of::<f64>();
+        bytes.extend_from_slice(&[
+            0xb2,
+            0x03,
+            0x27,
+            u8::try_from(payload_len).expect("class-27 fixture payload"),
+            0x05,
+            0xb4,
+            selector,
+        ]);
+        for value in values {
+            bytes.extend_from_slice(&le_f64(value));
+        }
+    }
+    bytes
 }
 
 pub(crate) fn b2_parameter_point_stream() -> Vec<u8> {
@@ -1563,7 +1839,16 @@ pub(crate) fn b2_group_stream() -> Vec<u8> {
 }
 
 pub(crate) fn a5_pcurve_stream_with_uv(u: [f64; 2], v: [f64; 2]) -> Vec<u8> {
-    let mut payload = vec![0x08, 0x34, 0x12, 21, 9, 0x08, 9];
+    a5_pcurve_stream_with_support_and_uv(0x1234, u, v)
+}
+
+pub(crate) fn a5_pcurve_stream_with_support_and_uv(
+    support_id: u32,
+    u: [f64; 2],
+    v: [f64; 2],
+) -> Vec<u8> {
+    let mut payload = compact_uint_bytes(support_id);
+    payload.extend_from_slice(&[21, 9, 0x08, 9]);
     for value in [0.0f64, 1.0] {
         payload.extend_from_slice(&le_f64(value));
     }
@@ -1734,8 +2019,23 @@ pub(crate) fn b2_topology_edge_run_stream() -> Vec<u8> {
 }
 
 pub(crate) fn a5_native_edge_run_stream(curve: u8, start: u8, end: u8) -> Vec<u8> {
+    a5_native_edge_run_stream_with_support(curve, start, end, 0x1234)
+}
+
+pub(crate) fn a5_native_edge_run_stream_with_support(
+    curve: u8,
+    start: u8,
+    end: u8,
+    support_id: u32,
+) -> Vec<u8> {
     assert!(curve >= 3);
-    let mut bytes = a5_edge_block_stream();
+    let mut bytes = a5_pcurve_stream_with_support_and_uv(support_id, [0.0, 1.0], [0.0, 1.0]);
+    bytes.extend_from_slice(&a5_pcurve_stream_with_support_and_uv(
+        support_id,
+        [0.0, 1.0],
+        [0.0, 1.0],
+    ));
+    bytes.extend_from_slice(&b2_edge_parameter_stream_for(0.0, 1.0));
     bytes.extend_from_slice(&a5_native_edge_identity_stream(curve, start, end));
     bytes
 }
@@ -1785,6 +2085,31 @@ pub(crate) fn a5_cylinder_bound_edge_stream() -> Vec<u8> {
         }
     }
     bytes
+}
+
+#[test]
+fn consolidated_support_resolution_withholds_cross_family_matches() {
+    let mut bytes = a5_cone_bound_edge_stream();
+    let cylinder = crate::families::b2::records::b2_cylinders(&b2_cylinder_stream())
+        .into_iter()
+        .next()
+        .expect("one cylinder carrier");
+    bytes.extend_from_slice(&b2_cylinder_stream());
+    for uv in [[0.0, 2.0], [1.0, 3.0]] {
+        let point = crate::families::b2::records::b2_cylinder_point(&cylinder, uv)
+            .expect("cylinder endpoint");
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in [point.x, point.y, point.z] {
+            bytes.extend_from_slice(&(value as f32).to_le_bytes());
+        }
+    }
+
+    let resolved = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
+    let [edge] = resolved.as_slice() else {
+        panic!("one consolidated edge block");
+    };
+    assert_eq!(edge.supports, [None, None]);
+    assert!(edge.shared_loci.is_none());
 }
 
 pub(crate) fn a5_nurbs_bound_edge_stream(offset: f64) -> Vec<u8> {
@@ -1975,11 +2300,15 @@ fn b2_construction_use_stream_for(domain: [f64; 4]) -> Vec<u8> {
 }
 
 pub(crate) fn b2_embedded_cylinder_stream() -> Vec<u8> {
+    b2_embedded_cylinder_stream_with_object_id(0x5678)
+}
+
+pub(crate) fn b2_embedded_cylinder_stream_with_object_id(object_id: u32) -> Vec<u8> {
     let standalone = b2_cylinder_stream();
     let mut record = vec![
         0xb2, 0x03, 0x60, 0x02, 0x05, 0x81, 0x0d, 0xb4, 0x03, 0x28, 0x5a,
     ];
-    record.extend_from_slice(&[0x08, 0x78, 0x56]);
+    record.extend_from_slice(&compact_uint_bytes(object_id));
     record.extend_from_slice(&standalone[5..]);
     record
 }
@@ -2082,12 +2411,31 @@ fn object_graph_vm_stream() -> Vec<u8> {
     object_graph_from_records(&[
         object_graph_record(
             &[0x1c, 0x01, 0x82, 0x80, 0xff, 0xff, 0xff, 0xff, 0x83],
-            &[
-                0x3b, 0x83, 0x81, 0x85, 0x80, 0x86, 0xd1, 0x09, 0x3c, 0x82, 1, 0, 0, 0, 0x0d, 0xfe,
-            ],
+            &[0x3b, 0x83, 0x81, 0x85, 0x80, 0x86, 0xd1, 0x09, 0xfe],
         ),
         object_graph_record(&[0x04, 0x01, 0x82, 0x83], &[0xfe]),
     ])
+}
+
+fn object_graph_ambiguous_3c_stream() -> Vec<u8> {
+    object_graph_from_records(&[object_graph_record(
+        &[0x1c, 0x01, 0x82, 0x80, 0xff, 0xff, 0xff, 0xff, 0x83],
+        &[
+            0x3c, 0x80, 0x01, 0x00, 0x00, 0x00, 0x81, 0x80, 0x80, 0x00, 0x00, 0x00, 0x80, 0x2f,
+            0x69, 0x00, 0x00, 0xfe,
+        ],
+    )])
+}
+
+fn object_graph_bulk_table_stream() -> Vec<u8> {
+    object_graph_from_records(&[object_graph_record(
+        &[0x1c, 0x01, 0x82, 0x80, 0xff, 0xff, 0xff, 0xff, 0x83],
+        &[
+            0x3c, 0x80, 0x03, 0x00, 0x00, 0x00, 0x81, 0x91, 0x80, 0x2f, 0x69, 0x00, 0x00, 0x81,
+            0xd2, 0x00, 0x80, 0x31, 0x69, 0x00, 0x00, 0x81, 0x80, 0x01, 0x14, 0x00, 0x00, 0x80,
+            0x33, 0x69, 0x00, 0x00, 0x3a, 0x85, 0xfe,
+        ],
+    )])
 }
 
 fn catalog_stream(entries: &[&str]) -> Vec<u8> {
@@ -2371,6 +2719,22 @@ fn standard_catpart_with_relation_program_instance(
     context_entity_id: u32,
     stored_self_entity_id: u32,
 ) -> Vec<u8> {
+    standard_catpart_with_relation_program_instance_class(
+        program_entity_id,
+        repeated_reference_entity_id,
+        context_entity_id,
+        stored_self_entity_id,
+        "body",
+    )
+}
+
+fn standard_catpart_with_relation_program_instance_class(
+    program_entity_id: u32,
+    repeated_reference_entity_id: u32,
+    context_entity_id: u32,
+    stored_self_entity_id: u32,
+    context_class: &str,
+) -> Vec<u8> {
     let mut instance_payload = Vec::new();
     let reference = |payload: &mut Vec<u8>, value: u32| {
         payload.push(0x32);
@@ -2401,7 +2765,11 @@ fn standard_catpart_with_relation_program_instance(
     atom(&mut instance_payload, stored_self_entity_id);
     instance_payload.push(0xfe);
 
-    standard_catpart_with_relation_program_payload(&[0x12, 0x8a, 0x80], &instance_payload)
+    standard_catpart_with_relation_program_payload(
+        &[0x12, 0x8a, 0x80],
+        &instance_payload,
+        context_class,
+    )
 }
 
 fn standard_catpart_with_lead54_relation_program_instance(
@@ -2409,6 +2777,22 @@ fn standard_catpart_with_lead54_relation_program_instance(
     repeated_reference_entity_id: u32,
     trailing_entity_id: u32,
     stored_self_entity_id: u32,
+) -> Vec<u8> {
+    standard_catpart_with_lead54_relation_program_instance_class(
+        program_entity_id,
+        repeated_reference_entity_id,
+        trailing_entity_id,
+        stored_self_entity_id,
+        "body",
+    )
+}
+
+fn standard_catpart_with_lead54_relation_program_instance_class(
+    program_entity_id: u32,
+    repeated_reference_entity_id: u32,
+    trailing_entity_id: u32,
+    stored_self_entity_id: u32,
+    context_class: &str,
 ) -> Vec<u8> {
     let mut instance_payload = Vec::new();
     let reference = |payload: &mut Vec<u8>, value: u32| {
@@ -2441,10 +2825,15 @@ fn standard_catpart_with_lead54_relation_program_instance(
     standard_catpart_with_relation_program_payload(
         &[0x54, 0x01, 0x82, 0x80, 0x81],
         &instance_payload,
+        context_class,
     )
 }
 
-fn standard_catpart_with_relation_program_payload(head: &[u8], instance_payload: &[u8]) -> Vec<u8> {
+fn standard_catpart_with_relation_program_payload(
+    head: &[u8],
+    instance_payload: &[u8],
+    context_class: &str,
+) -> Vec<u8> {
     let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 4, 0, 0, 0];
     let mut expression_value = Vec::new();
     for ordinal in 5_u32..=10 {
@@ -2466,7 +2855,7 @@ fn standard_catpart_with_relation_program_payload(head: &[u8], instance_payload:
         "catalogManager",
         "catalogLinks",
         "",
-        "body",
+        context_class,
         "Boolean",
         "log(min(100,max(20*#1_,#2_)/#2_))/log(100)/2",
         "ParserVersion",
@@ -2645,6 +3034,10 @@ fn standard_catpart_with_definition_value(
 }
 
 fn standard_catpart_with_definition_chain_value(suffix: &[u8]) -> Vec<u8> {
+    standard_catpart_with_definition_chain_type("Real", suffix)
+}
+
+fn standard_catpart_with_definition_chain_type(value_type: &str, suffix: &[u8]) -> Vec<u8> {
     let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 5, 0, 0, 0];
     let records = [object_graph_record(&[0x16, 0x84, 0x81, 0x81], &[0xfe])];
     let mut entity = entity_table_record_with_definition_and_value(1, &definition, &[0xfe]);
@@ -2661,7 +3054,7 @@ fn standard_catpart_with_definition_chain_value(suffix: &[u8]) -> Vec<u8> {
         "catalogLinks",
         "",
         "FeatureFEDGE",
-        "Real",
+        value_type,
     ]));
     let mut file = standard_catpart();
     file.splice(16..16, stream);
@@ -3222,6 +3615,22 @@ pub(crate) fn a6_surface_stream() -> Vec<u8> {
 }
 
 fn a5_surface_stream_with_poles(poles: [[f64; 3]; 4]) -> Vec<u8> {
+    a5_surface_record_with_tail(poles, &a5_surface_tail())
+}
+
+pub(crate) fn a5_surface_stream_with_tail(tail: &[u8]) -> Vec<u8> {
+    a5_surface_record_with_tail(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0],
+            [2.0, 1.0, 0.0],
+            [3.0, 1.0, 1.0],
+        ],
+        tail,
+    )
+}
+
+fn a5_surface_record_with_tail(poles: [[f64; 3]; 4], tail: &[u8]) -> Vec<u8> {
     let mut record = Vec::new();
     record.extend_from_slice(&[0xa5, 0x03, 0x34]);
     record.extend_from_slice(&0u32.to_le_bytes());
@@ -3238,11 +3647,55 @@ fn a5_surface_stream_with_poles(poles: [[f64; 3]; 4]) -> Vec<u8> {
             record.extend_from_slice(&le_f64(value));
         }
     }
-    record.extend_from_slice(&[0x05, 0x01, 0x05, 0x01]);
-    record.extend(std::iter::repeat_n(0u8, 64));
+    record.extend_from_slice(tail);
     let payload_len = u32::try_from(record.len() - 8).unwrap();
     record[3..7].copy_from_slice(&payload_len.to_le_bytes());
     record
+}
+
+fn a5_surface_parameter_tail(flags: [u8; 3], continuation: &[f64], suffix: &[u8]) -> Vec<u8> {
+    let mut tail = vec![0x05, 0x05, 0x05, 0x05];
+    for value in [0.0f64, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0] {
+        tail.extend_from_slice(&le_f64(value));
+    }
+    tail.extend_from_slice(&flags);
+    for value in continuation {
+        tail.extend_from_slice(&le_f64(*value));
+    }
+    tail.extend_from_slice(suffix);
+    tail
+}
+
+pub(crate) fn a5_surface_short_tail() -> Vec<u8> {
+    a5_surface_parameter_tail(
+        [0x01, 0x01, 0x01],
+        &[0.0; 7],
+        &[0x01, 0x00, 0x01, 0x00, 0x07, 0x07],
+    )
+}
+
+pub(crate) fn a5_surface_tail() -> Vec<u8> {
+    a5_surface_parameter_tail(
+        [0x01, 0x01, 0x01],
+        &[0.0; 8],
+        &[0x01, 0x00, 0x01, 0x00, 0x07, 0x07],
+    )
+}
+
+pub(crate) fn a5_surface_extrapolated_tail() -> Vec<u8> {
+    a5_surface_parameter_tail(
+        [0x05, 0x05, 0x01],
+        &[0.25, 0.5, 0.25, 0.75, 0.5, 0.75, 0.5, 1.0],
+        &[0x09, 0x00, 0x09, 0x01, 0x05, 0x07, 0x07],
+    )
+}
+
+pub(crate) fn a5_surface_extrapolated_short_tail() -> Vec<u8> {
+    a5_surface_parameter_tail(
+        [0x05, 0x05, 0x01],
+        &[0.25, 0.5, 0.25, 0.75, 0.5, 0.75, 0.5, 1.0],
+        &[0x09, 0x00, 0x09, 0x00, 0x07, 0x07],
+    )
 }
 
 pub(crate) fn a5_rational_surface_stream() -> Vec<u8> {
@@ -3259,39 +3712,37 @@ pub(crate) fn a5_rational_surface_stream() -> Vec<u8> {
 }
 
 pub(crate) fn a5_freeform_curve_stream() -> Vec<u8> {
-    let mut payload = vec![9, 21, 9, 0x0c];
-    for value in [0.0f64, 1.0] {
-        payload.extend_from_slice(&le_f64(value));
+    a5_freeform_curve_stream_with_count(2)
+}
+
+pub(crate) fn a5_freeform_curve_stream_with_count(count: u32) -> Vec<u8> {
+    let mut payload = compact_uint_bytes(count);
+    payload.push(21);
+    payload.extend_from_slice(&compact_uint_bytes(count));
+    payload.push(0x0c);
+    for site in 0..count {
+        payload.extend_from_slice(&le_f64(f64::from(site)));
     }
-    let sites = [
-        [
-            1.0f64,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            std::f64::consts::FRAC_PI_2,
-        ],
-        [
-            2.0,
-            0.0,
-            0.0,
-            0.0,
-            2.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            std::f64::consts::FRAC_PI_2,
-        ],
-    ];
     for block in 0..3 {
-        for site in sites {
-            for value in if block == 0 { site } else { [0.0; 10] } {
+        for site in 0..count {
+            let radius = if site == 0 { 1.0 } else { 2.0 };
+            let values = if block == 0 {
+                [
+                    radius,
+                    0.0,
+                    0.0,
+                    0.0,
+                    radius,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    std::f64::consts::FRAC_PI_2,
+                ]
+            } else {
+                [0.0; 10]
+            };
+            for value in values {
                 payload.extend_from_slice(&le_f64(value));
             }
         }
@@ -3313,16 +3764,29 @@ pub(crate) fn a6_freeform_curve_stream() -> Vec<u8> {
 }
 
 pub(crate) fn a5_guide_curve_stream() -> Vec<u8> {
-    let mut payload = vec![9, 21, 9, 0x0c];
-    payload.extend_from_slice(&le_f64(0.0));
-    payload.extend_from_slice(&le_f64(1.0));
-    let positions = [
-        [0.0f64, 0.0, 0.0, 1.0, 0.0, 0.0],
-        [2.0, 3.0, 4.0, 2.0, 4.0, 4.0],
-    ];
+    a5_guide_curve_stream_with_count(2)
+}
+
+pub(crate) fn a5_guide_curve_stream_with_count(count: u32) -> Vec<u8> {
+    let mut payload = compact_uint_bytes(count);
+    payload.push(21);
+    payload.extend_from_slice(&compact_uint_bytes(count));
+    payload.push(0x0c);
+    for site in 0..count {
+        payload.extend_from_slice(&le_f64(f64::from(site)));
+    }
     for block in 0..3 {
-        for site in positions {
-            for value in if block == 0 { site } else { [0.0; 6] } {
+        for site in 0..count {
+            let values = if block == 0 {
+                if site == 0 {
+                    [0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+                } else {
+                    [2.0, 3.0, 4.0, 2.0, 4.0, 4.0]
+                }
+            } else {
+                [0.0; 6]
+            };
+            for value in values {
                 payload.extend_from_slice(&le_f64(value));
             }
         }
@@ -3336,11 +3800,22 @@ pub(crate) fn a5_guide_curve_stream() -> Vec<u8> {
 }
 
 pub(crate) fn a8_freeform_curve_stream() -> Vec<u8> {
-    let mut payload = vec![0, 9, 21, 0, 0, 9, 0x0c];
-    for value in [0.0f64, 1.0] {
-        payload.extend_from_slice(&le_f64(value));
+    a8_freeform_curve_stream_with_count(2)
+}
+
+pub(crate) fn a8_freeform_curve_stream_with_count(count: u32) -> Vec<u8> {
+    let mut payload = vec![0];
+    payload.extend_from_slice(&compact_uint_bytes(count));
+    payload.extend_from_slice(&[21, 0, 0]);
+    payload.extend_from_slice(&compact_uint_bytes(count));
+    payload.push(0x0c);
+    for site in 0..count {
+        payload.extend_from_slice(&le_f64(f64::from(site)));
     }
-    payload.extend_from_slice(&[25, 25]);
+    for site in 0..count {
+        let multiplicity = if site == 0 || site + 1 == count { 6 } else { 3 };
+        payload.extend_from_slice(&compact_uint_bytes(multiplicity));
+    }
     let sites = [
         [
             1.0f64,
@@ -3368,8 +3843,17 @@ pub(crate) fn a8_freeform_curve_stream() -> Vec<u8> {
         ],
     ];
     for block in 0..3 {
-        for site in sites {
-            for value in if block == 0 { site } else { [0.0; 10] } {
+        for site in 0..count {
+            let values = if block == 0 {
+                if site == 0 {
+                    sites[0]
+                } else {
+                    sites[1]
+                }
+            } else {
+                [0.0; 10]
+            };
+            for value in values {
                 payload.extend_from_slice(&le_f64(value));
             }
         }
@@ -3683,7 +4167,8 @@ fn scan_parses_directory_and_identifies_standard() {
     // The BREP stream is MainDataStream followed by SurfacicReps.
     assert!(brep.windows(3).any(|w| w == [0x05, 0x08, 0x01]));
     assert!(brep.windows(3).any(|w| w == [0x00, 0x33, 0x33]));
-    assert!(scan.census.fbb_runs >= 2);
+    assert_eq!(scan.census.fbb_runs, 1);
+    assert_eq!(scan.census.fbb_face_rows, 2);
     assert!(scan.census.edge_delimiters >= 1);
     assert_eq!(scan.census.vertex_markers, 3);
 }
@@ -3696,6 +4181,20 @@ fn flagged_fbb_marker_is_structural() {
     assert!(!crate::container::is_fbb_row(&[
         0x20, 0x04, 0x04, 0xff, 0xff, 0xc4, 0xb2, 0xaa,
     ]));
+}
+
+#[test]
+fn fbb_census_separates_groups_from_face_rows() {
+    let row = [0x30, 0x04, 0x04, 0xff, 0, 1, 2, 3];
+    let mut body = row.to_vec();
+    body.extend_from_slice(&row);
+    body.extend_from_slice(&[0xaa; 8]);
+    body.extend_from_slice(&row);
+
+    assert_eq!(crate::container::fbb_run_ranges(&body), vec![0..16, 24..32]);
+    let scan = crate::container::scan_bytes(standard_catpart());
+    assert_eq!(scan.census.fbb_runs, 1);
+    assert_eq!(scan.census.fbb_face_rows, 2);
 }
 
 #[test]
@@ -4618,6 +5117,7 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_string() {
             "Cilas Evans".to_string()
         ))
     );
+    assert_eq!(parameter.expression, "\"Cilas Evans\"");
     assert_eq!(
         decoded
             .report
@@ -4630,6 +5130,96 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_string() {
             .coverage_count(crate::coverage::DECODED_LEGACY_NAMED_STRING_VALUE_COUNT),
         1
     );
+}
+
+#[test]
+fn decode_transfers_an_input_bound_legacy_string_formula() {
+    fn named_string(bytes: &mut Vec<u8>, entity_id: u32, name: &str, value: &str) {
+        bytes.push(0xea);
+        bytes.extend(entity_id.to_le_bytes());
+        bytes.extend([0x81, 0xfd, 0x8c]);
+        bytes.extend([5, b'n', b'a', b'm', b'e', 0xd1]);
+        bytes.push(u8::try_from(entity_id - 1).expect("small name selector"));
+        bytes.extend(b"\xe8\x00\x12\x01");
+        bytes.push(u8::try_from(name.len() + 1).expect("short parameter name"));
+        bytes.extend(name.as_bytes());
+        bytes.push(0xfe);
+        bytes.extend(b"\xfe\x84\x92\x82");
+        bytes.extend([7, b'S', b't', b'r', b'i', b'n', b'g', 0x83]);
+        bytes.extend(b"\xfe\x85\x93\x82\xfe");
+        bytes.push(u8::try_from(value.len() + 1).expect("short string value"));
+        bytes.extend(value.as_bytes());
+    }
+
+    fn relation_field(bytes: &mut Vec<u8>, role: &str, selector: &[u8], value: &str) {
+        bytes.push(u8::try_from(role.len() + 1).expect("short relation role"));
+        bytes.extend(role.as_bytes());
+        bytes.extend(selector);
+        bytes.extend(b"\xe8\x00\x12\x01");
+        bytes.push(u8::try_from(value.len() + 1).expect("short relation text"));
+        bytes.extend(value.as_bytes());
+        bytes.push(0xfe);
+    }
+
+    let mut bytes = zero_entity_catpart();
+    bytes.push(0xea);
+    bytes.extend(1_u32.to_le_bytes());
+    bytes.extend([0x81, 0xfd, 0x8c]);
+    relation_field(
+        &mut bytes,
+        "body",
+        &[0x80, 1, 0, 0, 0],
+        "#3_ = #1_ + \"-\" + #2_",
+    );
+    relation_field(
+        &mut bytes,
+        "param",
+        &[0xd1, 3],
+        "(#1_ : #In String,#2_ : #In String,#3_ : #Out String) : VoidType\n",
+    );
+    named_string(&mut bytes, 2, "#1_", "left");
+    named_string(&mut bytes, 3, "#2_", "right");
+    named_string(&mut bytes, 4, "Result", "left-right");
+    bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode input-bound legacy string formula");
+    let result = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Result")
+        .expect("legacy formula result parameter");
+    assert_eq!(
+        result.value,
+        Some(cadmpeg_ir::ParameterValue::String("left-right".to_string()))
+    );
+    assert_eq!(result.expression, "#1_ + \"-\" + #2_");
+    let dependency_names = result
+        .dependencies
+        .iter()
+        .map(|dependency| {
+            decoded
+                .ir
+                .model
+                .parameters
+                .iter()
+                .find(|parameter| parameter.id == *dependency)
+                .expect("legacy formula dependency")
+                .name
+                .as_str()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(dependency_names, ["#1_", "#2_"]);
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
+        1
+    );
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -4780,6 +5370,7 @@ fn decode_transfers_intrinsically_typed_evaluated_string_and_integer_parameters(
             "Revision-1".to_string()
         ))
     );
+    assert_eq!(string.expression, "\"Revision-1\"");
     assert_eq!(string.properties["value_type"], "String");
     assert_eq!(integer.name, "Search");
     assert_eq!(
@@ -5094,6 +5685,125 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
 }
 
 #[test]
+fn decode_transfers_a_zero_input_legacy_output_assignment() {
+    fn legacy_output_assignment(
+        expression: &str,
+        stored: Option<f64>,
+        parameter_type: &str,
+        output_type: &str,
+    ) -> Vec<u8> {
+        let mut bytes = zero_entity_catpart();
+        bytes.push(0xea);
+        bytes.extend(1_u32.to_le_bytes());
+        bytes.push(0x81);
+        bytes.extend([0xfd, 0x8c]);
+        let signature = format!("(#1_ : #Out {output_type}) : VoidType\n");
+        for (role, selector, value) in [
+            ("body", 1_u32, expression),
+            ("param", 4_u32, signature.as_str()),
+        ] {
+            bytes.push(u8::try_from(role.len() + 1).expect("short role"));
+            bytes.extend(role.as_bytes());
+            bytes.push(0x80);
+            bytes.extend(selector.to_le_bytes());
+            bytes.extend(b"\xe8\x00\x12\x01");
+            bytes.push(u8::try_from(value.len() + 1).expect("short text"));
+            bytes.extend(value.as_bytes());
+            bytes.push(0xfe);
+        }
+        bytes.push(0xea);
+        bytes.extend(4_u32.to_le_bytes());
+        bytes.push(0x81);
+        bytes.extend([0xfd, 0x8c]);
+        bytes.extend([5, b'n', b'a', b'm', b'e', 0xd1, 8]);
+        bytes.extend(b"\xe8\x00\x12\x01");
+        bytes.extend([7, b'R', b'e', b's', b'u', b'l', b't', 0xfe]);
+        bytes.extend(b"\xfe\x84\x92\x82");
+        bytes.push(u8::try_from(parameter_type.len() + 1).expect("short type"));
+        bytes.extend(parameter_type.as_bytes());
+        bytes.push(0x83);
+        bytes.extend(b"\xfe\x84\x88\x82\xfe");
+        if let Some(stored) = stored {
+            bytes.push(0xe6);
+            bytes.extend(stored.to_bits().to_le_bytes());
+        } else {
+            bytes.push(0xe7);
+        }
+        bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+        bytes
+    }
+
+    let transferred = CatiaCodec
+        .decode(
+            &mut Cursor::new(legacy_output_assignment(
+                "#1_ = 2+3",
+                Some(5.0),
+                "Real",
+                "Real",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode output assignment");
+    let [parameter] = transferred.ir.model.parameters.as_slice() else {
+        panic!("one legacy output parameter")
+    };
+    assert_eq!(parameter.expression, "2+3");
+    assert_eq!(
+        transferred
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
+        1
+    );
+
+    let unset = CatiaCodec
+        .decode(
+            &mut Cursor::new(legacy_output_assignment("#1_ = 2+3", None, "Real", "Real")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode unset output assignment");
+    assert_eq!(unset.ir.model.parameters[0].expression, "2+3");
+    assert_eq!(unset.ir.model.parameters[0].value, None);
+
+    let mismatched_value = CatiaCodec
+        .decode(
+            &mut Cursor::new(legacy_output_assignment(
+                "#1_ = 2+3",
+                Some(6.0),
+                "Real",
+                "Real",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode mismatched output assignment");
+    assert_eq!(mismatched_value.ir.model.parameters[0].expression, "6");
+    assert_eq!(
+        mismatched_value
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
+        0
+    );
+
+    let mismatched_type = CatiaCodec
+        .decode(
+            &mut Cursor::new(legacy_output_assignment(
+                "#1_ = 2+3",
+                None,
+                "LENGTH",
+                "Real",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode type-mismatched output assignment");
+    assert!(mismatched_type.ir.model.parameters[0].expression.is_empty());
+    assert_eq!(
+        mismatched_type
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
+        0
+    );
+}
+
+#[test]
 fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
     fn legacy_string_constant(expression: &str, stored: &str) -> Vec<u8> {
         let mut bytes = zero_entity_catpart();
@@ -5166,7 +5876,10 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
             &DecodeOptions::default(),
         )
         .expect("decode mismatched legacy string formula");
-    assert!(mismatched.ir.model.parameters[0].expression.is_empty());
+    assert_eq!(
+        mismatched.ir.model.parameters[0].expression,
+        "\"Cilas Evans\""
+    );
     assert_eq!(
         mismatched
             .report
@@ -5338,11 +6051,14 @@ fn decode_zero_entity_transfers_inline_nurbs_surface() {
     assert_eq!(result.ir.model.surfaces.len(), 1);
     match &result.ir.model.surfaces[0].geometry {
         SurfaceGeometry::Nurbs(surface) => {
-            assert_eq!((surface.u_degree, surface.v_degree), (2, 2));
-            assert_eq!((surface.u_count, surface.v_count), (3, 3));
-            assert_eq!(surface.u_knots, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-            assert_eq!(surface.control_points.len(), 9);
-            assert_eq!(surface.control_points[8].x, 8.0);
+            assert_eq!((surface.u_degree, surface.v_degree), (3, 3));
+            assert_eq!((surface.u_count, surface.v_count), (7, 7));
+            assert_eq!(
+                surface.u_knots,
+                vec![0.0, 0.0, 0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0, 1.0]
+            );
+            assert_eq!(surface.control_points.len(), 49);
+            assert_eq!(surface.control_points[48].x, 48.0);
         }
         other => panic!("expected NURBS surface, got {other:?}"),
     }
@@ -5417,6 +6133,13 @@ fn e5_torus_topology_stream() -> Vec<u8> {
         support.extend_from_slice(&le_f64(1.0));
         append_e5_record(&mut bytes, 0xc0, 70 + index as u32, &support);
     }
+
+    let mut bound_payload = vec![0x84, 0xbc, 0xbd, 0xbe, 0xbf, 0x84];
+    for parameter in [0.0_f64, 1.0, 0.0, 1.0] {
+        bound_payload.extend_from_slice(&le_f64(parameter));
+        bound_payload.extend_from_slice(&0_u32.to_le_bytes());
+    }
+    append_e5_record(&mut bytes, 0x0e, 0, &bound_payload);
 
     for (index, (start, end)) in [(10u8, 20u8), (20, 30), (30, 40), (40, 10)]
         .into_iter()
@@ -5641,6 +6364,213 @@ pub(crate) fn b5_closed_triangle_stream_over_edges(edges: [u32; 3]) -> Vec<u8> {
     bytes
 }
 
+/// Build the closed-triangle object stream with the complete native endpoint
+/// chain: `5e` edges reference `5d` vertices and `06` endpoint incidences;
+/// each `5d` points through one `05` roster to the two incident `06` records.
+pub(crate) fn b5_closed_triangle_stream_with_native_vertex_chain() -> Vec<u8> {
+    const SURFACE: u32 = 100;
+    let pcurves = [
+        (200u32, [0.0, 0.0], [1.0, 0.0]),
+        (201, [1.0, 0.0], [0.0, 1.0]),
+        (202, [0.0, 1.0], [0.0, 0.0]),
+    ];
+
+    let mut bytes = Vec::new();
+    append_b5_record(&mut bytes, 0x27, SURFACE, &b5_plane_payload([0.0; 3]));
+    for (id, start, end) in pcurves {
+        append_b5_record(
+            &mut bytes,
+            0x21,
+            id,
+            &b5_linear_pcurve_payload(
+                u16::try_from(SURFACE).expect("support surface id fits a `u16`"),
+                start,
+                end,
+            ),
+        );
+    }
+    append_b5_closed_triangle_native_vertex_chain(
+        &mut bytes,
+        SURFACE,
+        pcurves.map(|(id, _, _)| id),
+    );
+    bytes
+}
+
+/// Append the native endpoint and face chain shared by analytic and freeform
+/// support carriers in the object-stream topology fixtures.
+fn append_b5_closed_triangle_native_vertex_chain(
+    bytes: &mut Vec<u8>,
+    surface: u32,
+    pcurves: [u32; 3],
+) {
+    const LOOP: u32 = 400;
+    const FACE: u32 = 500;
+    const VERTICES: [u32; 3] = [600, 601, 602];
+    const ROSTERS: [u32; 3] = [800, 801, 802];
+    const INCIDENCES: [u32; 3] = [700, 701, 702];
+    let edges = [
+        (
+            300u32,
+            pcurves[0],
+            VERTICES[0],
+            VERTICES[1],
+            INCIDENCES[0],
+            INCIDENCES[1],
+        ),
+        (
+            301,
+            pcurves[1],
+            VERTICES[1],
+            VERTICES[2],
+            INCIDENCES[1],
+            INCIDENCES[2],
+        ),
+        (
+            302,
+            pcurves[2],
+            VERTICES[2],
+            VERTICES[0],
+            INCIDENCES[2],
+            INCIDENCES[0],
+        ),
+    ];
+
+    for (id, pcurve, start_vertex, end_vertex, start_incidence, end_incidence) in edges {
+        let mut payload = vec![0x85];
+        for reference in [
+            pcurve,
+            start_vertex,
+            end_vertex,
+            start_incidence,
+            end_incidence,
+        ] {
+            payload.extend_from_slice(&b5_object_ref(reference));
+        }
+        payload.push(0x2a);
+        append_b5_record(bytes, 0x5e, id, &payload);
+    }
+
+    let mut loop_payload = vec![0x87];
+    for (pcurve, (edge, _, _, _, _, _)) in pcurves.into_iter().zip(edges) {
+        loop_payload.extend_from_slice(&b5_object_ref(pcurve));
+        loop_payload.extend_from_slice(&b5_object_ref(edge));
+    }
+    loop_payload.extend_from_slice(&b5_object_ref(surface));
+    loop_payload.extend_from_slice(&[0x83, 0x05, 0x05, 0x03]);
+    for _ in 0..pcurves.len() {
+        loop_payload.extend_from_slice(&[0x01, 0x00, 0xff, 0xff, 0x01, 0x00]);
+    }
+    loop_payload.push(0x01);
+    append_b5_record(bytes, 0x62, LOOP, &loop_payload);
+
+    let mut face_payload = vec![0x82];
+    face_payload.extend_from_slice(&b5_object_ref(surface));
+    face_payload.extend_from_slice(&b5_object_ref(LOOP));
+    face_payload.push(0x05);
+    append_b5_record(bytes, 0x5f, FACE, &face_payload);
+
+    for (vertex, roster) in VERTICES.into_iter().zip(ROSTERS) {
+        let mut payload = vec![0x81];
+        payload.extend_from_slice(&b5_object_ref(roster));
+        payload.push(0x04);
+        append_b5_record(bytes, 0x5d, vertex, &payload);
+    }
+    for (roster, incidence_ids) in ROSTERS.into_iter().zip([
+        [INCIDENCES[0], INCIDENCES[2]],
+        [INCIDENCES[1], INCIDENCES[0]],
+        [INCIDENCES[2], INCIDENCES[1]],
+    ]) {
+        let mut payload = vec![0x82];
+        for incidence in incidence_ids {
+            payload.extend_from_slice(&b5_object_ref(incidence));
+        }
+        append_b5_record(bytes, 0x05, roster, &payload);
+    }
+    for ((id, curves), parameters) in INCIDENCES
+        .into_iter()
+        .zip([
+            [pcurves[0], pcurves[2]],
+            [pcurves[0], pcurves[1]],
+            [pcurves[1], pcurves[2]],
+        ])
+        .zip([[0.0, 1.0], [1.0, 0.0], [1.0, 0.0]])
+    {
+        let mut payload = vec![0x82];
+        for curve in curves {
+            payload.extend_from_slice(&b5_object_ref(curve));
+        }
+        payload.push(0x82);
+        for parameter in parameters {
+            payload.extend_from_slice(&le_f64(parameter));
+            payload.push(0x81);
+        }
+        append_b5_record(bytes, 0x06, id, &payload);
+    }
+
+    for point in [[0.0f32, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in point {
+            bytes.extend_from_slice(&le_f32(value));
+        }
+    }
+}
+
+/// Build an elided-pole freeform surface with one external grid allocation and
+/// the complete native endpoint chain required to transfer its face.
+pub(crate) fn a8_elided_surface_stream_with_native_vertex_chain() -> Vec<u8> {
+    const SURFACE: u32 = 100;
+
+    let mut bytes = a8_surface_stream();
+    bytes.truncate(59);
+    bytes[7..11].copy_from_slice(&SURFACE.to_le_bytes());
+    bytes.extend_from_slice(&a8_surface_tail());
+    let payload_len = u32::try_from(bytes.len() - 11).expect("small A8 payload");
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+
+    append_b5_record(
+        &mut bytes,
+        0x21,
+        200,
+        &b5_linear_pcurve_payload(
+            u16::try_from(SURFACE).expect("support surface id fits a `u16`"),
+            [0.0, 0.0],
+            [1.0, 0.0],
+        ),
+    );
+    for u in 0..3 {
+        for v in 0..3 {
+            for coordinate in [f64::from(u) * 0.5, f64::from(v) * 0.5, 0.0] {
+                bytes.extend_from_slice(&le_f64(coordinate));
+            }
+        }
+    }
+    append_b5_record(
+        &mut bytes,
+        0x18,
+        201,
+        &b5_analytic_line_pcurve_payload(
+            u16::try_from(SURFACE).expect("support surface id fits a `u16`"),
+            [1.0, 0.0],
+            [-1.0, 1.0],
+            [0.0, 1.0],
+        ),
+    );
+    append_b5_record(
+        &mut bytes,
+        0x18,
+        202,
+        &b5_analytic_line_pcurve_payload(
+            u16::try_from(SURFACE).expect("support surface id fits a `u16`"),
+            [0.0, 1.0],
+            [0.0, -1.0],
+            [0.0, 1.0],
+        ),
+    );
+    append_b5_closed_triangle_native_vertex_chain(&mut bytes, SURFACE, [200, 201, 202]);
+    bytes
+}
+
 #[test]
 fn decode_geometry_fallback_transfers_an_external_a8_pole_grid() {
     let file = object_main_catpart(&a8_elided_surface_stream());
@@ -5653,6 +6583,47 @@ fn decode_geometry_fallback_transfers_an_external_a8_pole_grid() {
     };
     assert_eq!(surface.control_points.len(), 9);
     assert_eq!(surface.control_points[8], Point3::new(8.0, 2.0, 2.0));
+}
+
+#[test]
+fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topology() {
+    let stream = a8_elided_surface_stream_with_native_vertex_chain();
+    let graph = crate::families::b5::graph::parse(&stream).expect("generated A8 topology");
+    assert!(graph.complete);
+    assert_eq!(graph.faces.len(), 1);
+    assert_eq!(graph.loops.len(), 1);
+    assert_eq!(graph.pcurves.len(), 3);
+    assert_eq!(graph.edges.len(), 3);
+    assert_eq!(graph.logical_vertex_refs, [600, 601, 602]);
+    assert_eq!(
+        graph.logical_vertex_points,
+        vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+    );
+
+    let result = CatiaCodec
+        .decode(
+            &mut Cursor::new(object_main_catpart(&stream)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode elided A8 surface topology");
+    assert_eq!(result.ir.model.surfaces.len(), 1);
+    let SurfaceGeometry::Nurbs(surface) = &result.ir.model.surfaces[0].geometry else {
+        panic!("NURBS surface");
+    };
+    assert_eq!(surface.control_points[8], Point3::new(1.0, 1.0, 0.0));
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.vertices.len(), 3);
+    assert_eq!(result.ir.model.edges.len(), 3);
+    assert_eq!(result.ir.model.pcurves.len(), 3);
+    assert!(result.report.losses.iter().all(|loss| {
+        !matches!(
+            loss.code.category(),
+            cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
+        ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
+    }));
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]
@@ -5852,6 +6823,111 @@ fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA parameter point");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
+fn native_namespace_retains_all_consolidated_plane_carrier_layouts() {
+    let plane_stream = b2_plane_carrier_stream();
+    let native = crate::native::CatiaNative::decode(&plane_stream);
+    let [direction2, direction3, tail] = native.consolidated_plane_carriers.as_slice() else {
+        panic!("three consolidated plane carriers")
+    };
+    assert_eq!(
+        [direction2.selector, direction3.selector, tail.selector],
+        [0xe4, 0xc4, 0xec]
+    );
+    assert!(matches!(
+        &direction2.payload,
+        crate::native::CatiaConsolidatedPlaneCarrierPayload::PointDirection2 {
+            point: [10.0, 20.0],
+            direction: [1.0, 0.0],
+            tail: [5.0, -2.0, 3.0],
+        }
+    ));
+    assert!(matches!(
+        &direction3.payload,
+        crate::native::CatiaConsolidatedPlaneCarrierPayload::PointDirection3 {
+            point: [10.0, 20.0],
+            direction: [1.0, 0.0, 0.0],
+            tail: [5.0, -2.0, 3.0],
+        }
+    ));
+    assert!(matches!(
+        &tail.payload,
+        crate::native::CatiaConsolidatedPlaneCarrierPayload::PointTail {
+            point: [10.0, 20.0],
+            tail: [-2.0, 5.0, -2.0, 3.0],
+        }
+    ));
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store CATIA plane carriers");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA plane carriers"),
+        native
+    );
+
+    let mut invalid = native;
+    invalid.consolidated_plane_carriers[0].selector = 0xc4;
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA plane carrier");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+
+    let mut file = standard_catpart();
+    file.splice(16..16, plane_stream);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode CATIA plane carrier coverage");
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_PLANE_CARRIER_COUNT),
+        3
+    );
+}
+
+#[test]
+fn native_namespace_retains_unclassified_consolidated_plane_carrier_lanes() {
+    let mut stream = b2_plane_carrier_stream();
+    let values = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+    stream.extend_from_slice(&[
+        0xb2,
+        0x03,
+        0x27,
+        2 + u8::try_from(values.len() * 8).expect("scalar lane fixture"),
+        0x05,
+        0xb4,
+        0x40,
+    ]);
+    for value in values {
+        stream.extend_from_slice(&le_f64(value));
+    }
+
+    let native = crate::native::CatiaNative::decode(&stream);
+    let Some(carrier) = native.consolidated_plane_carriers.get(3) else {
+        panic!("unclassified consolidated plane carrier")
+    };
+    assert_eq!(carrier.selector, 0x40);
+    assert!(matches!(
+        &carrier.payload,
+        crate::native::CatiaConsolidatedPlaneCarrierPayload::ScalarLane { values: lane }
+            if lane == &values
+    ));
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store unclassified plane carrier");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load unclassified plane carrier"),
+        native
+    );
 }
 
 #[test]
@@ -6140,7 +7216,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
             curve
                 .id
                 .0
-                .starts_with("catia:standard:revolution-directrix#")
+                .starts_with("catia:consolidated:surface-revolution-directrix#")
         })
         .expect("transferred revolution directrix");
     assert!(matches!(
@@ -6159,7 +7235,12 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         .model
         .procedural_surfaces
         .iter()
-        .find(|surface| surface.id.0.starts_with("catia:standard:revolution#"))
+        .find(|surface| {
+            surface
+                .id
+                .0
+                .starts_with("catia:consolidated:surface-revolution#")
+        })
         .expect("transferred revolution construction");
     assert!(decoded.ir.model.surfaces.iter().any(|surface| {
         surface.id == revolution.surface
@@ -6256,6 +7337,61 @@ fn decode_transfers_exact_consolidated_line_profiles() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("consolidated line-profile record(s)")));
+}
+
+#[test]
+fn decode_routes_a_line_profile_only_nested_stream_to_a_wire() {
+    let file = standard_catpart_from_streams(&b2_line_profile_stream(), &[]);
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode line-profile-only nested stream");
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CONSOLIDATED_LINE_PROFILE_COUNT),
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage_count(cadmpeg_ir::CoverageKey(
+            "attached_standalone_wire_edge_count"
+        )),
+        1
+    );
+    assert_eq!(decoded.ir.model.edges[0].param_range, Some([-4.0, 9.0]));
+    assert_eq!(
+        decoded.ir.model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Wire
+    );
+    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_routes_a_resolved_revolution_only_nested_stream_to_freeform() {
+    let file = standard_catpart_from_streams(&b2_resolved_revolution_stream(), &[]);
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode revolution-only nested stream");
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CONSOLIDATED_REVOLUTION_COUNT),
+        1
+    );
+    let revolution = decoded
+        .ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|surface| surface.id.0 == "catia:consolidated:surface-revolution#0")
+        .expect("transferred freeform revolution");
+    assert!(matches!(
+        revolution.definition,
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
+            parameter_interval: Some([-4.0, 9.0]),
+            ..
+        }
+    ));
+    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -6725,6 +7861,8 @@ fn native_namespace_retains_separate_zero_entity_topology_registries() {
     };
     assert_eq!(edge_stride.record_ordinal, 1);
     assert_eq!(edge_stride.allocations, [5, 7, 8, 4, 3]);
+    assert_eq!(edge_stride.topology_refs, [5, 4, 3]);
+    assert_eq!(edge_stride.surface_support_refs, [7, 8]);
 
     let [pair] = native.zero_entity_oriented_use_pairs.as_slice() else {
         panic!("one zero-entity oriented-use pair")
@@ -6951,6 +8089,18 @@ fn decode_reports_separate_zero_entity_topology_registries() {
             .report
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_ALLOCATION_COUNT),
         5
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_REF_COUNT,),
+        3
+    );
+    assert_eq!(
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_SURFACE_SUPPORT_REF_COUNT,
+        ),
+        2
     );
     assert_eq!(
         decoded
@@ -7486,6 +8636,68 @@ fn native_namespace_retains_resolved_consolidated_edge_supports_and_loci() {
 }
 
 #[test]
+fn native_namespace_retains_resolved_consolidated_plane_supports() {
+    use crate::native::CatiaConsolidatedSupportBinding;
+
+    let plane_stream = b2_plane_carrier_stream();
+    let plane_carriers = crate::families::b2::records::b2_plane_carriers(&plane_stream);
+    let plane_end = plane_carriers[0].end;
+    let mut bytes = plane_stream[..plane_end].to_vec();
+    for point in [[10.0f32, 20.0, 0.0], [11.0, 20.0, 1.0]] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in point {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes.extend_from_slice(&a5_native_edge_run_stream(6, 139, 142));
+    bytes.extend_from_slice(&plane_stream[plane_carriers[2].pos..plane_carriers[2].end]);
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let [run] = native.consolidated_edge_runs.as_slice() else {
+        panic!("one consolidated plane-bound edge run");
+    };
+    assert!(run
+        .support_bindings
+        .iter()
+        .all(|binding| matches!(binding, Some(CatiaConsolidatedSupportBinding::Plane { .. }))));
+    assert_eq!(run.shared_loci.as_ref().map(Vec::len), Some(2));
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store plane-bound CATIA edge run");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load plane-bound CATIA edge run"),
+        native
+    );
+
+    let mut invalid = native.clone();
+    let directionless_offset = invalid
+        .consolidated_plane_carriers
+        .iter()
+        .find(|carrier| carrier.selector == 0xec)
+        .expect("directionless class-27 carrier")
+        .byte_offset;
+    invalid.consolidated_edge_runs[0].support_bindings[0] =
+        Some(CatiaConsolidatedSupportBinding::Plane {
+            byte_offset: directionless_offset,
+        });
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid directionless plane binding");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+
+    namespace
+        .set_arena(
+            "consolidated_plane_carriers",
+            &Vec::<crate::native::CatiaConsolidatedPlaneCarrier>::new(),
+        )
+        .expect("remove retained plane carriers");
+    assert!(crate::native::CatiaNative::load(&namespace).is_err());
+}
+
+#[test]
 fn native_namespace_retains_resolved_consolidated_torus_supports() {
     use crate::native::CatiaConsolidatedSupportBinding;
 
@@ -7629,6 +8841,75 @@ fn native_namespace_binds_edges_to_retained_embedded_cylinders() {
         crate::native::CatiaNative::load(&namespace).expect("load embedded-cylinder edge binding"),
         native
     );
+}
+
+#[test]
+fn native_namespace_binds_embedded_cylinder_by_unique_pcurve_support_identity() {
+    use crate::native::CatiaConsolidatedSupportBinding;
+
+    let mut bytes = b2_embedded_cylinder_stream_with_object_id(0x5678);
+    bytes.extend_from_slice(&b2_embedded_cylinder_stream_with_object_id(0x9abc));
+    for point in [
+        [1.0f32, 4.0, 3.0],
+        [2.0, 2.0 + 2.0 * 0.5f32.cos(), 3.0 + 2.0 * 0.5f32.sin()],
+    ] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in point {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes.extend_from_slice(&a5_native_edge_run_stream_with_support(6, 139, 142, 0x5678));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let [first, second] = native.consolidated_embedded_cylinders.as_slice() else {
+        panic!("two embedded consolidated cylinders");
+    };
+    assert_ne!(first.object_id, second.object_id);
+    let [first_group, _second_group] = native.consolidated_groups.as_slice() else {
+        panic!("two consolidated groups");
+    };
+    let [run] = native.consolidated_edge_runs.as_slice() else {
+        panic!("one consolidated edge run");
+    };
+    let expected = Some(CatiaConsolidatedSupportBinding::EmbeddedCylinder {
+        byte_offset: first.byte_offset,
+        wrapper_byte_offset: first_group.byte_offset,
+    });
+    assert_eq!(run.support_bindings, [expected.clone(), expected]);
+}
+
+#[test]
+fn native_namespace_withholds_duplicate_embedded_pcurve_support_identity() {
+    let mut bytes = b2_embedded_cylinder_stream_with_object_id(0x5678);
+    bytes.extend_from_slice(&b2_embedded_cylinder_stream_with_object_id(0x5678));
+    for point in [
+        [1.0f32, 4.0, 3.0],
+        [2.0, 2.0 + 2.0 * 0.5f32.cos(), 3.0 + 2.0 * 0.5f32.sin()],
+    ] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in point {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes.extend_from_slice(&a5_native_edge_run_stream_with_support(6, 139, 142, 0x5678));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let [run] = native.consolidated_edge_runs.as_slice() else {
+        panic!("one consolidated edge run");
+    };
+    assert_eq!(run.support_bindings, [None, None]);
+}
+
+#[test]
+fn consolidated_support_identity_mismatch_does_not_fall_back_to_geometry() {
+    let mut bytes = a5_cone_bound_edge_stream();
+    bytes.extend_from_slice(&b2_embedded_cylinder_stream_with_object_id(0x1234));
+
+    let resolved = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
+    let [edge] = resolved.as_slice() else {
+        panic!("one consolidated edge block");
+    };
+    assert_eq!(edge.supports, [None, None]);
 }
 
 #[test]
@@ -7855,8 +9136,17 @@ fn decode_standard_transfers_exact_offset_construction() {
         .iter()
         .any(|surface| surface.id == *support));
     assert_eq!(*distance, 2.5);
-    assert_eq!([*u_sense, *v_sense], [Some(1), Some(1)]);
+    assert_eq!([*u_sense, *v_sense], [None, None]);
     assert!(extension_flags.is_empty());
+    let Some(bounds) = procedural.record_bounds else {
+        panic!("offset parameter bounds");
+    };
+    for (actual, expected) in bounds.into_iter().zip(domain) {
+        let Some(actual) = actual else {
+            panic!("offset parameter bound");
+        };
+        assert!((actual - expected).abs() < 1e-12);
+    }
 }
 
 #[test]
@@ -7891,6 +9181,15 @@ fn decode_standard_transfers_construction_use_offset() {
         panic!("offset construction");
     };
     assert_eq!(*distance, -2.0);
+    let Some(bounds) = procedural.record_bounds else {
+        panic!("offset parameter bounds");
+    };
+    for (actual, expected) in bounds.into_iter().zip(domain) {
+        let Some(actual) = actual else {
+            panic!("offset parameter bound");
+        };
+        assert!((actual - expected).abs() < 1e-12);
+    }
 }
 
 #[test]
@@ -9643,10 +10942,9 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
     );
     assert_eq!(
         ir.model.parameters[0].owner,
-        Some(cadmpeg_ir::features::FeatureId(format!(
-            "{}:feature",
-            native.design_objects[0].id
-        )))
+        Some(cadmpeg_ir::features::FeatureId(
+            crate::design_feature::neutral_history_id(&native.design_objects[0].id, "feature"),
+        ))
     );
     assert_eq!(
         transfer.sketch_owner_records,
@@ -9795,9 +11093,9 @@ fn parameter_owner_follows_one_exact_child_design_object() {
     assert_eq!(ir.model.features.len(), 1);
     assert_eq!(
         ir.model.parameters[0].owner,
-        Some(cadmpeg_ir::features::FeatureId(format!(
-            "{feature_id}:feature"
-        )))
+        Some(cadmpeg_ir::features::FeatureId(
+            crate::design_feature::neutral_history_id(&feature_id, "feature"),
+        ))
     );
 }
 
@@ -10882,12 +12180,12 @@ fn object_graph_payload_does_not_consume_terminator_as_paged_atom_data() {
 }
 
 #[test]
-fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
+fn outer_object_graph_vm_reads_lists_paged_atoms_and_null_handles() {
     use crate::object_graph::{HeadToken, ListItem, PayloadField, PayloadSubtype};
 
     let graph = crate::object_graph::parse(&object_graph_vm_stream()).unwrap();
     assert!(graph.records[0].head.contains(&HeadToken::NullHandle));
-    assert_eq!(graph.records[0].subtype, PayloadSubtype::BulkTable);
+    assert_eq!(graph.records[0].subtype, PayloadSubtype::ListAggregator);
     assert!(matches!(
         &graph.records[0].payload.fields[0],
         PayloadField::List { items, .. }
@@ -10906,14 +12204,72 @@ fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
                 },
             ]
     ));
-    assert!(matches!(
-        graph.records[0].payload.fields[1],
-        PayloadField::BulkTable {
-            count: 2,
-            table_count: 1,
-            ..
-        }
-    ));
+}
+
+#[test]
+fn outer_object_graph_rejects_an_ambiguous_3c_bulk_row_id() {
+    assert!(crate::object_graph::parse(&object_graph_ambiguous_3c_stream()).is_none());
+}
+
+#[test]
+fn object_graph_payload_decodes_3c_bulk_table_rows() {
+    use crate::object_graph::{BulkTableRow, PayloadField};
+
+    let graph = crate::object_graph::parse(&object_graph_bulk_table_stream()).expect("bulk table");
+    assert_eq!(
+        graph.records[0].payload.fields,
+        [
+            PayloadField::BulkTable {
+                count: 0,
+                table_count: 3,
+                rows: vec![
+                    BulkTableRow {
+                        row_id: 17,
+                        handle: 0x692f,
+                        offset: 6,
+                    },
+                    BulkTableRow {
+                        row_id: 257,
+                        handle: 0x6931,
+                        offset: 13,
+                    },
+                    BulkTableRow {
+                        row_id: 5121,
+                        handle: 0x6933,
+                        offset: 21,
+                    },
+                ],
+                offset: 0,
+            },
+            PayloadField::Scalar {
+                tag: 0x3a,
+                value: 5,
+                offset: 32,
+            },
+            PayloadField::Terminator,
+        ]
+    );
+}
+
+#[test]
+fn object_graph_payload_keeps_3c_as_literal_when_no_bulk_extent_is_possible() {
+    use crate::object_graph::PayloadField;
+
+    let bytes = object_graph_from_records(&[object_graph_record(
+        &[0x04, 0x01, 0x81, 0x83],
+        &[0x3c, 0xfe],
+    )]);
+    let graph = crate::object_graph::parse(&bytes).expect("literal 3c payload");
+    assert_eq!(
+        graph.records[0].payload.fields,
+        [
+            PayloadField::Atom {
+                value: 0x3c,
+                offset: 0,
+            },
+            PayloadField::Terminator,
+        ]
+    );
 }
 
 #[test]
@@ -11238,8 +12594,9 @@ fn native_load_rejects_dangling_cross_arena_links() {
         object_graph_from_records(&[object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])]);
     let mut linked_alias = surface_alias_stream();
     linked_alias[15] = 1;
-    let mut linked_bytes = graph;
-    linked_bytes.extend(linked_alias);
+    let mut linked_stream = graph;
+    linked_stream.extend(linked_alias);
+    let (linked_bytes, _) = outer_container_catpart(&linked_stream);
     let mut omitted_alias_links = crate::native::CatiaNative::decode(&linked_bytes);
     assert!(omitted_alias_links.alias_rows[0].object_graph.is_some());
     omitted_alias_links.alias_rows[0].object_graph = None;
@@ -12411,6 +13768,7 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
         Some(native.entity_records[0].id.as_str())
     );
     assert_eq!(context.class_name.as_deref(), Some("body"));
+    assert!(instance.output_entity.is_none());
 
     let native = crate::native::CatiaNative::decode(
         &standard_catpart_with_relation_program_instance(2, 1, 3, 2),
@@ -12450,6 +13808,101 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
         .entity_records
         .iter()
         .all(|entity| entity.relation_program_instance.is_none()));
+}
+
+#[test]
+fn relation_program_output_selects_only_the_framing_specific_paramout_slot() {
+    let lead12 = crate::native::CatiaNative::decode(
+        &standard_catpart_with_relation_program_instance_class(1, 1, 1, 2, "paramout"),
+    );
+    let lead12_instance = lead12.entity_records[1]
+        .relation_program_instance
+        .as_ref()
+        .expect("lead-12 relation-program instance");
+    assert_eq!(
+        lead12_instance.output_entity,
+        lead12_instance.lead12_context_entity
+    );
+    assert_eq!(
+        lead12_instance
+            .output_entity
+            .as_ref()
+            .and_then(|output| output.class_name.as_deref()),
+        Some("paramout")
+    );
+    assert!(lead12_instance.lead54_trailing_entity.is_none());
+    let lead12_decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_relation_program_instance_class(
+                1, 1, 1, 2, "paramout",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode lead-12 paramout relation-program instance");
+    assert_eq!(
+        lead12_decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RELATION_PROGRAM_OUTPUT_COUNT),
+        1
+    );
+    assert_eq!(
+        lead12_decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_OUTPUT_COUNT),
+        1
+    );
+    assert_eq!(
+        lead12_decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_NULL_RELATION_PROGRAM_OUTPUT_COUNT),
+        0
+    );
+    assert_eq!(
+        lead12_decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_RELATION_PROGRAM_OUTPUT_COUNT),
+        0
+    );
+
+    let lead12_body = crate::native::CatiaNative::decode(
+        &standard_catpart_with_relation_program_instance_class(1, 1, 1, 2, "body"),
+    );
+    assert!(lead12_body.entity_records[1]
+        .relation_program_instance
+        .as_ref()
+        .expect("lead-12 body relation-program instance")
+        .output_entity
+        .is_none());
+
+    let lead54 = crate::native::CatiaNative::decode(
+        &standard_catpart_with_lead54_relation_program_instance_class(1, 1, 1, 2, "paramout"),
+    );
+    let lead54_instance = lead54.entity_records[1]
+        .relation_program_instance
+        .as_ref()
+        .expect("lead-54 relation-program instance");
+    assert_eq!(
+        lead54_instance.output_entity,
+        lead54_instance.lead54_trailing_entity
+    );
+    assert_eq!(
+        lead54_instance
+            .output_entity
+            .as_ref()
+            .and_then(|output| output.class_name.as_deref()),
+        Some("paramout")
+    );
+    assert!(lead54_instance.lead12_context_entity.is_none());
+
+    let lead54_body = crate::native::CatiaNative::decode(
+        &standard_catpart_with_lead54_relation_program_instance_class(1, 1, 1, 2, "body"),
+    );
+    assert!(lead54_body.entity_records[1]
+        .relation_program_instance
+        .as_ref()
+        .expect("lead-54 body relation-program instance")
+        .output_entity
+        .is_none());
 }
 
 #[test]
@@ -12494,6 +13947,15 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         [("#1_", 10), ("#2_", 11)]
     );
 
+    let compact_ordinal = vec![
+        dependency("#1_", vec![reference(10)]),
+        dependency("#1_/2", vec![reference(10)]),
+        dependency("#2_", vec![reference(11)]),
+    ];
+    assert!(
+        crate::native::resolved_relation_program_inputs(&signature, &compact_ordinal).is_some()
+    );
+
     let zero = crate::native::CatiaRelationTypeSignature {
         inputs: Vec::new(),
         result_type: "Real".to_string(),
@@ -12520,6 +13982,15 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         &[
             dependency("#1_", vec![reference(10)]),
             dependency("#1_ /2", vec![reference(12)]),
+            dependency("#2_", vec![reference(11)])
+        ]
+    )
+    .is_none());
+    assert!(crate::native::resolved_relation_program_inputs(
+        &signature,
+        &[
+            dependency("#1_", vec![reference(10)]),
+            dependency("#1_ /ordinal", vec![reference(10)]),
             dependency("#2_", vec![reference(11)])
         ]
     )
@@ -12569,6 +14040,7 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
                     class_name: Some("param".to_string()),
                 },
             }]),
+            output_entity: None,
             lead12_context_entity: None,
             lead54_trailing_entity: None,
         });
@@ -12587,7 +14059,41 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
         parameter.properties.get("value_type").map(String::as_str),
         Some("LENGTH")
     );
+    assert_eq!(
+        parameter
+            .properties
+            .get("catia_binding")
+            .map(String::as_str),
+        Some("#1_ /2")
+    );
     assert_eq!(parameter.native_ref, Some(parameter_entity.id.clone()));
+
+    let mut empty_binding_native = native.clone();
+    empty_binding_native.entity_records[2]
+        .parameter_value
+        .as_mut()
+        .expect("complete input parameter")
+        .binding
+        .value
+        .clear();
+    let mut empty_binding_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let empty_binding_transfer = crate::formula::transfer_parameters(
+        &mut empty_binding_ir,
+        &empty_binding_native,
+        &mut Annotations::default(),
+        None,
+    );
+    let [empty_binding_parameter] = empty_binding_ir.model.parameters.as_slice() else {
+        panic!("one empty-binding input parameter")
+    };
+    assert_eq!(empty_binding_transfer.relation_program_parameter_count, 1);
+    assert_eq!(
+        empty_binding_parameter
+            .properties
+            .get("catia_binding")
+            .map(String::as_str),
+        Some("")
+    );
 
     let mut conflicting_native = native.clone();
     let mut conflicting_instance = conflicting_native.entity_records[0]
@@ -12609,6 +14115,82 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
     );
     assert_eq!(conflicting_transfer.relation_program_parameter_count, 0);
     assert!(conflicting_ir.model.parameters.is_empty());
+}
+
+#[test]
+fn complete_relation_program_output_transfers_a_typed_result() {
+    use cadmpeg_ir::features::{Length, ParameterValue};
+
+    let mut native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(0x63, false));
+    let expression_entity = native.entity_records[1].clone();
+    let input_entity = native.entity_records[2].clone();
+    let output_entity = native.entity_records[3].clone();
+    native.entity_records[0].formula_relation = None;
+    native.entity_records[0].relation_program_instance =
+        Some(crate::native::CatiaRelationProgramInstance {
+            framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12,
+            program_entity: crate::native::CatiaEntityReference::default(),
+            repeated_entity: crate::native::CatiaEntityReference::default(),
+            reference_incidences: Vec::new(),
+            relation_expression: Some(expression_entity.id.clone()),
+            parameter_dependencies: Vec::new(),
+            inputs: Some(vec![crate::native::CatiaRelationProgramInput {
+                parameter: "#1_".to_string(),
+                value_type: "LENGTH".to_string(),
+                entity: crate::native::CatiaEntityReference {
+                    entity_id: input_entity.entity_id,
+                    is_null: false,
+                    entity: Some(input_entity.id.clone()),
+                    class_name: Some("param".to_string()),
+                },
+            }]),
+            output_entity: Some(crate::native::CatiaEntityReference {
+                entity_id: output_entity.entity_id,
+                is_null: false,
+                entity: Some(output_entity.id.clone()),
+                class_name: Some("paramout".to_string()),
+            }),
+            lead12_context_entity: None,
+            lead54_trailing_entity: None,
+        });
+
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut annotations = Annotations::default();
+    let transfer = crate::formula::transfer_parameters(&mut ir, &native, &mut annotations, None);
+    let [input, output] = ir.model.parameters.as_slice() else {
+        panic!("typed relation-program input and output")
+    };
+    assert_eq!(transfer.relation_program_parameter_count, 1);
+    assert_eq!(input.name, "Thickness");
+    assert_eq!(input.expression, "35 mm");
+    assert_eq!(input.value, Some(ParameterValue::Length(Length(35.0))));
+    assert_eq!(output.name, "Result");
+    assert_eq!(output.expression, "#1_ /2-2mm");
+    assert_eq!(output.value, Some(ParameterValue::Length(Length(33.0))));
+    assert_eq!(output.properties["value_type"], "LENGTH");
+    assert_eq!(output.properties["catia_binding"], "#result_ /1");
+    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(output.native_ref, Some(output_entity.id));
+
+    let mut ambiguous_native = native;
+    let duplicate_program = ambiguous_native.entity_records[0]
+        .relation_program_instance
+        .clone()
+        .expect("compound relation-program instance");
+    ambiguous_native.entity_records[1].relation_program_instance = Some(duplicate_program);
+    let mut ambiguous_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let ambiguous_transfer = crate::formula::transfer_parameters(
+        &mut ambiguous_ir,
+        &ambiguous_native,
+        &mut Annotations::default(),
+        None,
+    );
+    let [ambiguous_input] = ambiguous_ir.model.parameters.as_slice() else {
+        panic!("ambiguous compound output keeps its typed input")
+    };
+    assert_eq!(ambiguous_transfer.relation_program_parameter_count, 1);
+    assert_eq!(ambiguous_input.name, "Thickness");
 }
 
 #[test]
@@ -12634,6 +14216,7 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
         Some(native.entity_records[0].id.as_str())
     );
     assert_eq!(trailing.class_name.as_deref(), Some("body"));
+    assert!(instance.output_entity.is_none());
     assert_eq!(
         instance.program_entity.entity.as_deref(),
         Some(native.entity_records[0].id.as_str())
@@ -13125,6 +14708,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             if remove_framing {
                 stored_instance.remove("framing");
             }
+            stored_instance.remove("output_entity");
             stored_instance.remove("inputs");
             stored_instance.remove("reference_incidences");
             stored_instance.remove("parameter_dependencies");
@@ -13275,6 +14859,48 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             crate::native::CatiaNative::load(&namespace),
             Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
         ));
+    }
+}
+
+#[test]
+fn native_load_rederives_relation_program_paramout_outputs_from_older_namespaces() {
+    for native in [
+        crate::native::CatiaNative::decode(&standard_catpart_with_relation_program_instance_class(
+            1, 1, 1, 2, "paramout",
+        )),
+        crate::native::CatiaNative::decode(
+            &standard_catpart_with_lead54_relation_program_instance_class(1, 1, 1, 2, "paramout"),
+        ),
+    ] {
+        let expected = native.entity_records[1]
+            .relation_program_instance
+            .clone()
+            .expect("decoded paramout relation-program instance");
+        assert!(expected.output_entity.is_some());
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        native
+            .store(&mut namespace)
+            .expect("store paramout relation-program instance");
+        namespace.version = crate::native::CATIA_RELATION_PROGRAM_OUTPUT_VERSION - 1;
+        namespace
+            .arenas
+            .get_mut("entity_records")
+            .expect("stored entity records")[1]
+            .fields_mut()
+            .get_mut("relation_program_instance")
+            .expect("stored relation-program field")
+            .as_object_mut()
+            .expect("stored relation-program instance")
+            .remove("output_entity");
+
+        let migrated = crate::native::CatiaNative::load(&namespace)
+            .expect("migrate paramout relation-program output");
+        assert_eq!(
+            migrated.entity_records[1]
+                .relation_program_instance
+                .as_ref(),
+            Some(&expected)
+        );
     }
 }
 
@@ -16013,6 +17639,154 @@ fn native_namespace_binds_two_definition_value_chains() {
 }
 
 #[test]
+fn typed_definition_chain_values_transfer_as_parameters() {
+    let bits = 12.5_f64.to_bits();
+    let mut suffix = vec![0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0xe6];
+    suffix.extend_from_slice(&bits.to_le_bytes());
+    suffix.extend_from_slice(&[0x81, 0x49]);
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_definition_chain_value(&suffix)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode typed definition-chain parameter");
+
+    let [parameter] = decoded.ir.model.parameters.as_slice() else {
+        panic!("expected one typed definition-chain parameter");
+    };
+    assert_eq!(parameter.name, "FeatureFEDGE");
+    assert_eq!(parameter.expression, "12.5");
+    assert_eq!(
+        parameter.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(12.5))
+    );
+    assert_eq!(parameter.owner, None);
+    assert_eq!(parameter.properties["value_type"], "Real");
+    assert!(!parameter.properties.contains_key("catia_binding"));
+    assert_eq!(
+        parameter.properties["catia_definition_evaluation_opcode_offset"],
+        "8"
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT),
+        1
+    );
+
+    let boolean = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_definition_chain_type(
+                "Boolean",
+                &[0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x81],
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode Boolean definition-chain parameter");
+    let [boolean_parameter] = boolean.ir.model.parameters.as_slice() else {
+        panic!("expected one Boolean definition-chain parameter");
+    };
+    assert_eq!(
+        boolean_parameter.value,
+        Some(cadmpeg_ir::features::ParameterValue::Boolean(true))
+    );
+    assert_eq!(boolean_parameter.expression, "true");
+    assert_eq!(boolean_parameter.properties["value_type"], "Boolean");
+    assert_eq!(
+        boolean_parameter.properties["catia_definition_value_kind"],
+        "atom"
+    );
+    assert_eq!(
+        boolean_parameter.properties["catia_definition_atom_value"],
+        "1"
+    );
+    assert!(!boolean_parameter
+        .properties
+        .contains_key("catia_definition_evaluation_opcode_offset"));
+    assert_eq!(
+        boolean
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT),
+        1
+    );
+
+    let invalid_boolean = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_definition_chain_type(
+                "Boolean",
+                &[0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x82],
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode invalid Boolean definition-chain atom");
+    assert!(invalid_boolean.ir.model.parameters.is_empty());
+    assert_eq!(
+        invalid_boolean
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT),
+        0
+    );
+
+    let unset = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_definition_chain_value(&[
+                0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0xe7,
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode unset definition-chain parameter");
+    let [unset_parameter] = unset.ir.model.parameters.as_slice() else {
+        panic!("expected one unset definition-chain parameter");
+    };
+    assert!(unset_parameter.value.is_none());
+    assert!(unset_parameter.expression.is_empty());
+    assert_eq!(
+        unset
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT),
+        1
+    );
+
+    let mut native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_definition_chain_value(&[
+            0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0xe6, 0, 0, 0, 0, 0, 0, 0, 0,
+        ]));
+    let parameter_entity = native.entity_records[0].clone();
+    native.entity_records[0].relation_program_instance =
+        Some(crate::native::CatiaRelationProgramInstance {
+            framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12,
+            program_entity: crate::native::CatiaEntityReference::default(),
+            repeated_entity: crate::native::CatiaEntityReference::default(),
+            reference_incidences: Vec::new(),
+            relation_expression: None,
+            parameter_dependencies: Vec::new(),
+            inputs: Some(vec![crate::native::CatiaRelationProgramInput {
+                parameter: "#1_".to_string(),
+                value_type: "Real".to_string(),
+                entity: crate::native::CatiaEntityReference {
+                    entity_id: parameter_entity.entity_id,
+                    is_null: false,
+                    entity: Some(parameter_entity.id.clone()),
+                    class_name: Some("param".to_string()),
+                },
+            }]),
+            output_entity: None,
+            lead12_context_entity: None,
+            lead54_trailing_entity: None,
+        });
+    let mut relation_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let relation_transfer = crate::formula::transfer_parameters(
+        &mut relation_ir,
+        &native,
+        &mut Annotations::default(),
+        None,
+    );
+    assert_eq!(relation_transfer.definition_chain_parameter_count, 1);
+    assert_eq!(relation_transfer.relation_program_parameter_count, 1);
+    assert_eq!(relation_ir.model.parameters.len(), 1);
+}
+
+#[test]
 fn design_objects_retain_definition_chain_values_in_field_order() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_two_definition_chain_values());
@@ -17070,12 +18844,14 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     assert_eq!(input.expression, "35 mm");
     assert_eq!(input.value, Some(ParameterValue::Length(Length(35.0))));
     assert_eq!(input.properties["value_type"], "LENGTH");
+    assert_eq!(input.properties["catia_binding"], "#1_ /2");
     assert!(input.dependencies.is_empty());
     assert_eq!(output.name, "Result");
     assert_eq!(output.ordinal, 1);
     assert_eq!(output.expression, "#1_ /2-2mm");
     assert_eq!(output.value, Some(ParameterValue::Length(Length(33.0))));
     assert_eq!(output.properties["value_type"], "LENGTH");
+    assert_eq!(output.properties["catia_binding"], "#result_ /1");
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
     assert_eq!(
         decoded
@@ -18490,10 +20266,12 @@ fn decode_transfers_an_unset_typed_formula_input_as_an_unset_output() {
     assert!(input.expression.is_empty());
     assert!(input.dependencies.is_empty());
     assert_eq!(input.properties["value_type"], "LENGTH");
+    assert_eq!(input.properties["catia_binding"], "#1_ /2");
     assert_eq!(output.value, None);
     assert_eq!(output.expression, "#1_ /2+1mm");
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
     assert_eq!(output.properties["value_type"], "LENGTH");
+    assert_eq!(output.properties["catia_binding"], "#result_ /1");
 }
 
 #[test]
@@ -18524,6 +20302,7 @@ fn decode_transfers_unset_non_numeric_formula_inputs_without_deriving_the_output
         assert!(input.expression.is_empty());
         assert!(input.dependencies.is_empty());
         assert_eq!(input.properties["value_type"], parameter_type);
+        assert_eq!(input.properties["catia_binding"], "#1_ /2");
         assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
     }
 }
@@ -19056,7 +20835,7 @@ fn native_store_paths_write_the_current_schema_version() {
         .iter()
         .map(|row| row.arena)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(crate::native::CATIA_FAMILIES.len(), 41);
+    assert_eq!(crate::native::CATIA_FAMILIES.len(), 42);
     assert_eq!(
         catalogue_names,
         crate::native::CATIA_ARENA_NAMES
@@ -20172,7 +21951,7 @@ fn native_namespace_retains_surface_alias_core() {
 }
 
 #[test]
-fn native_alias_f1_resolves_primary_object_record() {
+fn native_alias_f1_without_part_container_remains_unbound() {
     let graph = object_graph_stream();
     let mut alias = surface_alias_stream();
     alias[13..16].copy_from_slice(&[3, 0, 2]);
@@ -20183,16 +21962,9 @@ fn native_alias_f1_resolves_primary_object_record() {
     let [row] = native.alias_rows.as_slice() else {
         panic!("one alias row")
     };
-    assert_eq!(
-        row.object_graph.as_deref(),
-        Some("catia:outer:object-graph#0000000000")
-    );
-    assert_eq!(
-        row.object_record.as_deref(),
-        Some("catia:outer:object-record#0000000028")
-    );
-    let record = &native.object_graphs[0].records[1];
-    assert_eq!(row.design_object, record.design_object);
+    assert!(row.object_graph.is_none());
+    assert!(row.object_record.is_none());
+    assert!(row.design_object.is_none());
 
     let mut invalid = native;
     invalid.alias_rows[0].design_object = Some("catia:missing-design-object".to_string());
@@ -20204,6 +21976,41 @@ fn native_alias_f1_resolves_primary_object_record() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
+}
+
+#[test]
+fn native_alias_f1_resolves_record_in_declared_part_container() {
+    let mut stream = object_graph_stream();
+    let mut alias = surface_alias_stream();
+    alias[13..16].copy_from_slice(&[3, 0, 2]);
+    stream.extend(alias);
+    let (bytes, _) = outer_container_catpart(&stream);
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let [row] = native.alias_rows.as_slice() else {
+        panic!("one alias row")
+    };
+    let graph = native
+        .object_graphs
+        .iter()
+        .find(|graph| {
+            graph
+                .outer_container
+                .as_ref()
+                .is_some_and(|container| container.class_name == "CATPrtCont")
+        })
+        .expect("declared part-container graph");
+    let record = &graph.records[1];
+    assert_eq!(row.object_graph.as_deref(), Some(graph.id.as_str()));
+    assert_eq!(row.object_record.as_deref(), Some(record.id.as_str()));
+    assert_eq!(row.design_object, record.design_object);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store alias linked to declared part container");
+    crate::native::CatiaNative::load(&namespace)
+        .expect("load alias linked to declared part container");
 }
 
 #[test]
@@ -20466,6 +22273,41 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
+#[test]
+fn decode_float_packed_stream_transfers_a_complete_native_vertex_chain() {
+    let stream = b5_closed_triangle_stream_with_native_vertex_chain();
+    let graph = crate::families::b5::graph::parse(&stream).expect("generated B5 topology");
+    assert!(graph.complete);
+    assert_eq!(graph.vertex_incidence_links.len(), 3);
+    assert_eq!(graph.parameter_incidences.len(), 3);
+    assert_eq!(graph.edges.len(), 3);
+    assert_eq!(graph.edge_parameter_incidences.len(), 3);
+    assert_eq!(graph.logical_vertex_refs, [600, 601, 602]);
+    assert_eq!(
+        graph.logical_vertex_points,
+        vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+    );
+
+    let result = CatiaCodec
+        .decode(
+            &mut Cursor::new(object_main_catpart(&stream)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode complete native vertex chain");
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.vertices.len(), 3);
+    assert_eq!(result.ir.model.edges.len(), 3);
+    assert!(result.report.losses.iter().all(|loss| {
+        !matches!(
+            loss.code.category(),
+            cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
+        ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
+    }));
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
 /// A `b5 03` object id reaches the neutral model as an unpadded decimal key, so
 /// an edge triple such as `9`, `10`, `11` is emitted in ascending native order
 /// and sorts the other way. The route must still transfer the topology: a
@@ -20520,6 +22362,30 @@ fn decode_float_packed_stream_transfers_topology_under_decimal_object_ids() {
 }
 
 #[test]
+fn decode_does_not_transfer_a_loop_with_multiple_face_owners() {
+    let mut stream = b5_closed_triangle_stream();
+    let mut face_payload = vec![0x82];
+    face_payload.extend_from_slice(&b5_object_ref(100));
+    face_payload.extend_from_slice(&b5_object_ref(400));
+    face_payload.push(0x03);
+    append_b5_record(&mut stream, 0x5f, 902, &face_payload);
+
+    let result = CatiaCodec
+        .decode(
+            &mut Cursor::new(object_main_catpart(&stream)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode duplicate loop-owner stream");
+
+    assert!(result.ir.model.bodies.is_empty());
+    assert!(result.ir.model.faces.is_empty());
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::report::LossKind::TopologyNotTransferred
+            && loss.severity == cadmpeg_ir::report::Severity::Blocking
+    }));
+}
+
+#[test]
 fn decode_reports_structurally_typed_unresolved_b5_faces() {
     let mut stream = b5_closed_triangle_stream();
     append_b5_record(
@@ -20561,6 +22427,35 @@ fn decode_reports_structurally_typed_unresolved_b5_faces() {
         result
             .report
             .coverage_count(crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT),
+        1
+    );
+}
+
+#[test]
+fn decode_reports_typed_distinct_surface_b5_faces() {
+    let mut stream = b5_closed_triangle_stream();
+    append_b5_record(&mut stream, 0x27, 101, &b5_plane_payload([0.0, 0.0, 1.0]));
+    let mut face_payload = vec![0x83];
+    face_payload.extend_from_slice(&b5_object_ref(100));
+    face_payload.extend_from_slice(&b5_object_ref(101));
+    face_payload.extend_from_slice(&b5_object_ref(400));
+    face_payload.push(0x05);
+    append_b5_record(&mut stream, 0x5f, 902, &face_payload);
+
+    let graph = crate::families::b5::graph::parse(&stream).expect("typed multi-surface graph");
+    assert_eq!(graph.face_records.len(), 2);
+    assert_eq!(graph.faces.len(), 1);
+
+    let result = CatiaCodec
+        .decode(
+            &mut Cursor::new(object_main_catpart(&stream)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode typed multi-surface face");
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_MULTI_SURFACE_OBJECT_STREAM_FACE_COUNT),
         1
     );
 }

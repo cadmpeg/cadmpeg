@@ -235,11 +235,27 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     }
     match design::census(&objects, &ir.model.features) {
         Ok(expected) if design_census == expected => {}
-        Ok(_) => findings.push(finding(
-            Check::ReferentialIntegrity,
-            "FCStd design census does not match projected feature semantics",
-            None,
-        )),
+        Ok(expected) => {
+            let detail = design_census
+                .iter()
+                .zip(&expected)
+                .find(|(stored, derived)| stored != derived)
+                .map_or_else(
+                    || {
+                        format!(
+                            "stored {} records and derived {} records",
+                            design_census.len(),
+                            expected.len()
+                        )
+                    },
+                    |(stored, derived)| format!("stored {stored:?} but derived {derived:?}"),
+                );
+            findings.push(finding(
+                Check::ReferentialIntegrity,
+                format!("FCStd design census does not match projected feature semantics: {detail}"),
+                None,
+            ));
+        }
         Err(error) => findings.push(finding(
             Check::ReferentialIntegrity,
             error.to_string(),
@@ -278,6 +294,16 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             findings.push(finding(
                 Check::PayloadIntegrity,
                 format!("{} has inconsistent retained object bytes", object.id),
+                Some(object.id.clone()),
+            ));
+        }
+        if object
+            .dependency_allow_partial
+            .is_some_and(|value| value <= 0)
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                format!("{} has invalid partial-load capability", object.id),
                 Some(object.id.clone()),
             ));
         }
@@ -806,13 +832,6 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     ));
                 }
             }
-            if name.topology_ids.is_empty() {
-                findings.push(finding(
-                    Check::NativeLinks,
-                    format!("{} has an unbound persistent element name", map.id),
-                    Some(map.id.clone()),
-                ));
-            }
             if name
                 .topology_ids
                 .iter()
@@ -1138,7 +1157,7 @@ impl Codec for FcstdCodec {
         };
         let scan = container::scan(ctx, root)?;
         if !options.container_only
-            && (scan.document.schema_version != "4" || scan.document.file_version != "1")
+            && !matches!(scan.document.schema_version.as_str(), "2" | "3" | "4")
         {
             return Err(CodecError::NotImplemented(format!(
                 "FCStd SchemaVersion={} FileVersion={} persistence layout",
@@ -1272,7 +1291,12 @@ impl Codec for FcstdCodec {
             drawing::transfer_neutral(&mut ir.model, &drawings, &graph.properties);
             namespace.set_arena("drawings", &drawings)?;
             let annotations = annotation::transfer(&graph.objects, &graph.properties);
-            annotation::transfer_neutral(&mut ir.model, &annotations, &graph.properties, &drawings);
+            annotation::transfer_neutral(
+                &mut ir.model,
+                &annotations,
+                &graph.properties,
+                &drawings,
+            )?;
             namespace.set_arena("annotations", &annotations)?;
             namespace.set_arena(
                 "applications",
@@ -1295,13 +1319,15 @@ impl Codec for FcstdCodec {
                 .extend(surface_transfer.procedural);
             geometry_transferred |=
                 application_geometry::transfer(&mut ir, &graph.properties, &entry_records)?;
-            topology_transfer::transfer(ctx, &mut ir, &shape_payloads, &graph.properties)?;
+            let topology_occurrences =
+                topology_transfer::transfer(ctx, &mut ir, &shape_payloads, &graph.properties)?;
             design::transfer(
                 &mut ir,
                 &graph.objects,
                 &graph.properties,
                 &shape_payloads,
                 &entry_records,
+                scan.document.program_version.as_deref(),
             )?;
             let (product_definitions, occurrences) = product::transfer_neutral(
                 ctx,
@@ -1320,11 +1346,7 @@ impl Codec for FcstdCodec {
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena("design_census", &design_census)?;
-            let payload_ids = shape_payloads
-                .iter()
-                .map(|payload| (payload.property.as_str(), payload.id.as_str()))
-                .collect::<HashMap<_, _>>();
-            element_map::bind_topology(&mut element_maps, &payload_ids, &ir);
+            element_map::bind_topology(&mut element_maps, &topology_occurrences);
             let gui_graph = if let Some(gui_bytes) = scan.data.get("GuiDocument.xml") {
                 gui::transfer(
                     &mut ir,
@@ -1334,6 +1356,7 @@ impl Codec for FcstdCodec {
                     &graph.properties,
                     &shape_payloads,
                     &element_maps,
+                    gui::requires_alpha_conversion(scan.document.program_version.as_deref()),
                 )?
             } else {
                 gui::Graph::default()
@@ -1580,6 +1603,12 @@ fn append_text_curve(
         },
         brep::TextCurve::Circle {
             center,
+            axis: _,
+            ref_direction: _,
+            radius,
+        } if *radius == 0.0 => CurveGeometry::Degenerate { point: *center },
+        brep::TextCurve::Circle {
+            center,
             axis,
             ref_direction,
             radius,
@@ -1633,12 +1662,18 @@ fn append_text_curve(
         } => {
             let basis_id = CurveId(format!("{}:basis", id.0));
             let basis_geometry = append_text_curve(basis, basis_id.clone(), association, transfer);
+            let parameter_range = topology_transfer::normalize_occt_curve_range(
+                &basis_geometry,
+                Some(*parameter_range),
+            )
+            .unwrap_or(*parameter_range);
             transfer.procedural.push(ProceduralCurve {
                 id: ProceduralCurveId(format!("{}:construction", id.0)),
                 curve: id.clone(),
                 definition: ProceduralCurveDefinition::Subset {
                     source: basis_id,
-                    parameter_range: *parameter_range,
+                    parameter_range,
+                    sense: true,
                 },
                 cache_fit_tolerance: None,
             });
@@ -1765,6 +1800,7 @@ fn append_text_surface(
             ref_direction,
             radius,
             half_angle,
+            ..
         } => SurfaceGeometry::Cone {
             origin: *origin,
             axis: *axis,
@@ -1778,6 +1814,7 @@ fn append_text_surface(
             axis,
             ref_direction,
             radius,
+            ..
         } => SurfaceGeometry::Sphere {
             center: *center,
             axis: *axis,
@@ -1790,6 +1827,7 @@ fn append_text_surface(
             ref_direction,
             major_radius,
             minor_radius,
+            ..
         } => SurfaceGeometry::Torus {
             center: *center,
             axis: *axis,
@@ -1835,7 +1873,7 @@ fn append_text_surface(
                     axis_direction: *axis_direction,
                     angular_interval: [0.0, std::f64::consts::TAU],
                     parameter_interval: None,
-                    transposed: false,
+                    transposed: true,
                     revision_form: None,
                 },
                 record_bounds: None,
@@ -1847,6 +1885,15 @@ fn append_text_surface(
             parameter_ranges,
             basis,
         } => {
+            let basis_parameters = brep::surface_parameter_affine(basis);
+            let parameter_ranges = [
+                parameter_ranges[0].map(|value| {
+                    value.mul_add(basis_parameters.u_scale, basis_parameters.u_offset)
+                }),
+                parameter_ranges[1].map(|value| {
+                    value.mul_add(basis_parameters.v_scale, basis_parameters.v_offset)
+                }),
+            ];
             let basis_id = SurfaceId(format!("{}:basis", id.0));
             let basis_geometry = append_text_surface(
                 basis,
@@ -1860,7 +1907,9 @@ fn append_text_surface(
                 surface: id.clone(),
                 definition: ProceduralSurfaceDefinition::Subset {
                     support: basis_id,
-                    parameter_ranges: *parameter_ranges,
+                    parameter_ranges,
+                    u_sense: None,
+                    v_sense: None,
                 },
                 record_bounds: None,
                 cache_fit_tolerance: None,
@@ -1911,32 +1960,29 @@ fn logical_ledger(
 ) -> Result<Vec<native::LogicalSpan>, CodecError> {
     let typed_entries = shape_payloads
         .iter()
-        .map(|payload| (payload.entry.as_str(), payload.id.as_str()))
-        .chain(string_tables.iter().filter_map(|table| {
-            table
-                .source_entry
-                .as_deref()
-                .map(|entry| (entry, table.id.as_str()))
-        }))
-        .chain(element_maps.iter().filter_map(|map| {
-            map.source_entry
-                .as_deref()
-                .map(|entry| (entry, map.id.as_str()))
-        }))
-        .collect::<HashMap<_, _>>();
+        .map(|payload| payload.entry.as_str())
+        .chain(
+            string_tables
+                .iter()
+                .filter_map(|table| table.source_entry.as_deref()),
+        )
+        .chain(
+            element_maps
+                .iter()
+                .filter_map(|map| map.source_entry.as_deref()),
+        )
+        .collect::<HashSet<_>>();
     let mut output = Vec::new();
     for entry in entries {
-        let typed_owner = typed_entries
-            .get(entry.id.as_str())
-            .or_else(|| typed_entries.get(entry.name.as_str()));
-        if let Some(owner) = typed_owner {
+        if typed_entries.contains(entry.id.as_str()) || typed_entries.contains(entry.name.as_str())
+        {
             push_logical_span(
                 &mut output,
                 entry,
                 0,
                 entry.byte_len,
                 "typed",
-                Some((*owner).to_owned()),
+                Some(entry.id.clone()),
             );
         } else if entry.name == "Document.xml" || entry.name == "GuiDocument.xml" {
             let mut ranges = if entry.name == "Document.xml" {
@@ -1995,18 +2041,13 @@ fn logical_ledger(
                 None,
             );
         } else {
-            let owner = entry
-                .referenced_by
-                .first()
-                .cloned()
-                .unwrap_or_else(|| entry.id.clone());
             push_logical_span(
                 &mut output,
                 entry,
                 0,
                 entry.byte_len,
                 "named_opaque",
-                Some(owner),
+                Some(entry.id.clone()),
             );
         }
     }

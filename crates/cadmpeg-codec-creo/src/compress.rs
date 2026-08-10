@@ -32,6 +32,10 @@ pub(crate) fn decode(data: &[u8], expected_length: usize) -> Option<Vec<u8>> {
     output.push(final_byte);
     let mut stack = Vec::new();
 
+    if output.len() == expected_length {
+        return Some(output);
+    }
+
     while let Some(raw_code) = reader.next(free_entry, false) {
         if block_mode && raw_code == CLEAR {
             free_entry = 257;
@@ -47,6 +51,9 @@ pub(crate) fn decode(data: &[u8], expected_length: usize) -> Option<Vec<u8>> {
             output.push(final_byte);
             if output.len() > expected_length {
                 return None;
+            }
+            if output.len() == expected_length {
+                return Some(output);
             }
             continue;
         }
@@ -72,6 +79,9 @@ pub(crate) fn decode(data: &[u8], expected_length: usize) -> Option<Vec<u8>> {
         output.extend(stack.drain(..).rev());
         if output.len() > expected_length {
             return None;
+        }
+        if output.len() == expected_length {
+            return Some(output);
         }
 
         if free_entry < dictionary_limit {
@@ -170,6 +180,53 @@ mod tests {
     #[test]
     fn rejects_truncated_code_block() {
         assert_eq!(decode(&[0x1f, 0x9d, 0x09, 0x00], 1), None);
+    }
+
+    #[test]
+    fn non_block_mode_starts_with_literal_dictionary_slot_256() {
+        fn codes(values: &[u16]) -> Vec<u8> {
+            let mut bytes = vec![0; values.len().saturating_mul(9).div_ceil(8)];
+            for (index, value) in values.iter().copied().enumerate() {
+                for bit in 0..9 {
+                    bytes[(index * 9 + bit) / 8] |= u8::try_from((value >> bit) & 1)
+                        .expect("required invariant")
+                        << ((index * 9 + bit) % 8);
+                }
+            }
+            bytes
+        }
+
+        let mut stream = vec![0x1f, 0x9d, 0x10];
+        stream.extend(codes(&[u16::from(b'A'), u16::from(b'A'), 256]));
+        assert_eq!(decode(&stream, 4), Some(b"AAAA".to_vec()));
+    }
+
+    #[test]
+    fn non_block_mode_grows_width_after_filling_the_nine_bit_dictionary() {
+        let values = std::iter::once(u16::from(b'A'))
+            .chain(std::iter::repeat_n(u16::from(b'A'), 257))
+            .collect::<Vec<_>>();
+        let mut packed = Vec::new();
+        for (width, block) in [(9, &values[..257]), (10, &values[257..])] {
+            for chunk in block.chunks(8) {
+                let block_offset = packed.len();
+                packed.resize(block_offset + width, 0);
+                for (index, value) in chunk.iter().copied().enumerate() {
+                    for bit in 0..width {
+                        let bit_offset = index * width + bit;
+                        packed[block_offset + bit_offset / 8] |= u8::try_from((value >> bit) & 1)
+                            .expect("required invariant")
+                            << (bit_offset % 8);
+                    }
+                }
+            }
+        }
+        let mut stream = vec![0x1f, 0x9d, 0x10];
+        stream.extend(packed);
+        assert_eq!(
+            decode(&stream, values.len()),
+            Some(vec![b'A'; values.len()])
+        );
     }
 
     #[test]

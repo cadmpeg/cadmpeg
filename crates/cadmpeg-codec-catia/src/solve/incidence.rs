@@ -374,11 +374,12 @@ pub(crate) fn incidence_choice_components(
     components
 }
 
-pub(crate) fn join_partial_constraint_components(
+/// Merge components whose assignments participate in one shared partial
+/// constraint. Evaluation-order constraints stay as edges between components
+/// so independent domains do not inherit each other's branch alternatives.
+pub(crate) fn join_incidence_components_by_coupling(
     components: Vec<Vec<usize>>,
     coupled_edges: &[bool],
-    assignment_predecessors: Option<&[Option<usize>]>,
-    assignment_dependencies: Option<&[Vec<usize>]>,
 ) -> Vec<Vec<usize>> {
     let component_by_edge = components
         .iter()
@@ -398,32 +399,6 @@ pub(crate) fn join_partial_constraint_components(
             union.union(owner, component);
         } else {
             coupled_owner = Some(component);
-        }
-    }
-    if let Some(predecessors) = assignment_predecessors {
-        for (edge, predecessor) in predecessors.iter().copied().enumerate() {
-            let Some(predecessor) = predecessor else {
-                continue;
-            };
-            if let (Some(&left), Some(&right)) = (
-                component_by_edge.get(&edge),
-                component_by_edge.get(&predecessor),
-            ) {
-                union.union(left, right);
-            }
-        }
-    }
-    if let Some(dependencies) = assignment_dependencies {
-        for (edge, predecessors) in dependencies.iter().enumerate() {
-            let Some(&right) = component_by_edge.get(&edge) else {
-                continue;
-            };
-            for predecessor in predecessors {
-                let Some(&left) = component_by_edge.get(predecessor) else {
-                    continue;
-                };
-                union.union(left, right);
-            }
         }
     }
     let mut joined = HashMap::<usize, (usize, Vec<usize>)>::new();
@@ -464,6 +439,140 @@ pub(crate) fn order_incidence_components_by_branch_width(
             component.first().copied().unwrap_or_default(),
         )
     });
+    Some(())
+}
+
+/// Order incidence components while preserving prerequisites between their
+/// assignments. A prerequisite is an evaluation order, not an incidence
+/// relation: joining the two components would make an otherwise independent
+/// search share every branch. Components in a prerequisite cycle have no
+/// valid order and are rejected by the caller.
+pub(crate) fn order_incidence_components_by_constraints(
+    components: &mut Vec<Vec<usize>>,
+    choices: &[Vec<[usize; 2]>],
+    assignment_predecessors: Option<&[Option<usize>]>,
+    assignment_dependencies: Option<&[Vec<usize>]>,
+) -> Option<()> {
+    if components
+        .iter()
+        .flatten()
+        .any(|edge| *edge >= choices.len())
+        || assignment_predecessors.is_some_and(|predecessors| {
+            predecessors.len() != choices.len()
+                || predecessors
+                    .iter()
+                    .flatten()
+                    .any(|edge| *edge >= choices.len())
+        })
+        || assignment_dependencies.is_some_and(|dependencies| {
+            dependencies.len() != choices.len()
+                || dependencies
+                    .iter()
+                    .flatten()
+                    .any(|edge| *edge >= choices.len())
+        })
+    {
+        return None;
+    }
+    if assignment_predecessors.is_none() && assignment_dependencies.is_none() {
+        return order_incidence_components_by_branch_width(components, choices);
+    }
+
+    let component_by_edge = components
+        .iter()
+        .enumerate()
+        .flat_map(|(component, edges)| edges.iter().copied().map(move |edge| (edge, component)))
+        .collect::<HashMap<_, _>>();
+    if component_by_edge.len() != components.iter().map(Vec::len).sum::<usize>() {
+        return None;
+    }
+    let mut incoming = vec![0usize; components.len()];
+    let mut outgoing = vec![Vec::<usize>::new(); components.len()];
+    let mut local_incoming = vec![0usize; choices.len()];
+    let mut local_outgoing = vec![Vec::<usize>::new(); choices.len()];
+    let mut add_dependency = |target_edge: usize, prerequisite_edge: usize| {
+        let (Some(&target_component), Some(&prerequisite_component)) = (
+            component_by_edge.get(&target_edge),
+            component_by_edge.get(&prerequisite_edge),
+        ) else {
+            return;
+        };
+        if target_component == prerequisite_component {
+            if !local_outgoing[prerequisite_edge].contains(&target_edge) {
+                local_outgoing[prerequisite_edge].push(target_edge);
+                local_incoming[target_edge] += 1;
+            }
+            return;
+        }
+        if !outgoing[prerequisite_component].contains(&target_component) {
+            outgoing[prerequisite_component].push(target_component);
+            incoming[target_component] += 1;
+        }
+    };
+    if let Some(predecessors) = assignment_predecessors {
+        for (target, prerequisite) in predecessors.iter().enumerate() {
+            if let Some(prerequisite) = prerequisite {
+                add_dependency(target, *prerequisite);
+            }
+        }
+    }
+    if let Some(dependencies) = assignment_dependencies {
+        for (target, prerequisites) in dependencies.iter().enumerate() {
+            for prerequisite in prerequisites {
+                add_dependency(target, *prerequisite);
+            }
+        }
+    }
+    let mut local_ready = component_by_edge
+        .keys()
+        .copied()
+        .filter(|edge| local_incoming[*edge] == 0)
+        .collect::<Vec<_>>();
+    let mut local_ordered = 0usize;
+    while let Some(edge) = local_ready.pop() {
+        local_ordered += 1;
+        for dependent in local_outgoing[edge].iter().copied() {
+            local_incoming[dependent] -= 1;
+            if local_incoming[dependent] == 0 {
+                local_ready.push(dependent);
+            }
+        }
+    }
+    if local_ordered != component_by_edge.len() {
+        return None;
+    }
+
+    let branch_width = |component: &[usize]| {
+        component.iter().fold(1usize, |width, edge| {
+            width.saturating_mul(choices[*edge].len())
+        })
+    };
+    let mut ready = (0..components.len())
+        .filter(|component| incoming[*component] == 0)
+        .collect::<Vec<_>>();
+    let mut ordered = Vec::with_capacity(components.len());
+    while let Some((position, &component)) =
+        ready.iter().enumerate().min_by_key(|(_, component)| {
+            (
+                branch_width(&components[**component]),
+                components[**component].len(),
+                components[**component].first().copied().unwrap_or_default(),
+            )
+        })
+    {
+        ready.swap_remove(position);
+        ordered.push(std::mem::take(&mut components[component]));
+        for dependent in outgoing[component].iter().copied() {
+            incoming[dependent] -= 1;
+            if incoming[dependent] == 0 {
+                ready.push(dependent);
+            }
+        }
+    }
+    if ordered.len() != components.len() {
+        return None;
+    }
+    *components = ordered;
     Some(())
 }
 
@@ -1422,6 +1531,12 @@ pub(crate) fn labeled_assignment_endpoint_cycles_viable(
     })
 }
 
+pub(crate) enum CompactBoundaryAdvanceOutcome {
+    Complete(Vec<MeshQuotientGaugeState>),
+    Rejected,
+    Exhausted,
+}
+
 pub(crate) fn advance_compact_boundary_domains<'a>(
     domains: impl IntoIterator<Item = &'a MeshFaceBoundaryDomain>,
     choices: &[Vec<[usize; 2]>],
@@ -1429,7 +1544,7 @@ pub(crate) fn advance_compact_boundary_domains<'a>(
     selected: Option<(usize, [usize; 2])>,
     mut states: Vec<MeshQuotientGaugeState>,
     budget: &WorkBudget<'_>,
-) -> Option<Vec<MeshQuotientGaugeState>> {
+) -> CompactBoundaryAdvanceOutcome {
     const MAX_QUOTIENT_STATES: usize = 4_096;
 
     let mut ordered = Vec::<Vec<MeshFaceBoundaryAssignment>>::new();
@@ -1472,8 +1587,11 @@ pub(crate) fn advance_compact_boundary_domains<'a>(
         let alternatives = match domain {
             MeshFaceBoundaryDomain::Ordered(assignments) => assignments.clone(),
             MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
-                let [cycle] = incidence_cycles(edges, &points)
-                    .and_then(|cycles| <[Vec<(usize, bool)>; 1]>::try_from(cycles).ok())?;
+                let Some([cycle]) = incidence_cycles(edges, &points)
+                    .and_then(|cycles| <[Vec<(usize, bool)>; 1]>::try_from(cycles).ok())
+                else {
+                    return CompactBoundaryAdvanceOutcome::Rejected;
+                };
                 vec![MeshFaceBoundaryAssignment {
                     boundaries: vec![cycle
                         .into_iter()
@@ -1487,14 +1605,16 @@ pub(crate) fn advance_compact_boundary_domains<'a>(
                 }]
             }
             MeshFaceBoundaryDomain::DeferredValidation(domain) => {
-                let materialized = deferred_boundary_assignment(domain, &points)?;
+                let Some(materialized) = deferred_boundary_assignment(domain, &points) else {
+                    return CompactBoundaryAdvanceOutcome::Rejected;
+                };
                 vec![materialized]
             }
         };
         ordered.push(alternatives);
     }
     if ordered.is_empty() {
-        return Some(states);
+        return CompactBoundaryAdvanceOutcome::Complete(states);
     }
     let candidates = assignment
         .iter()
@@ -1538,12 +1658,15 @@ pub(crate) fn advance_compact_boundary_domains<'a>(
                 break;
             }
         }
-        if next.is_empty() || budget.exhausted() {
-            return None;
+        if next.len() == MAX_QUOTIENT_STATES || budget.exhausted() {
+            return CompactBoundaryAdvanceOutcome::Exhausted;
+        }
+        if next.is_empty() {
+            return CompactBoundaryAdvanceOutcome::Rejected;
         }
         states = next;
     }
-    Some(states)
+    CompactBoundaryAdvanceOutcome::Complete(states)
 }
 
 #[cfg(test)]
@@ -1555,15 +1678,17 @@ pub(crate) fn compact_boundary_domains_jointly_viable<'a>(
     quotient: &MeshQuotient,
     budget: &WorkBudget<'_>,
 ) -> bool {
-    advance_compact_boundary_domains(
-        domains,
-        choices,
-        assignment,
-        selected,
-        vec![(quotient.clone(), HashSet::new())],
-        budget,
+    matches!(
+        advance_compact_boundary_domains(
+            domains,
+            choices,
+            assignment,
+            selected,
+            vec![(quotient.clone(), HashSet::new())],
+            budget,
+        ),
+        CompactBoundaryAdvanceOutcome::Complete(_)
     )
-    .is_some()
 }
 
 impl IncidenceComponentSearch<'_, '_> {
@@ -1638,7 +1763,9 @@ impl IncidenceComponentSearch<'_, '_> {
             .and_then(|constraint| constraint.assignment_predecessors)
             .and_then(|predecessors| predecessors.get(edge).copied().flatten())
             .is_none_or(|predecessor| {
-                !self.active[predecessor] || self.assignment[predecessor].is_some()
+                self.assignment
+                    .get(predecessor)
+                    .is_some_and(Option::is_some)
             });
         let dependencies_ready = self
             .partial_solution_filter
@@ -1646,7 +1773,9 @@ impl IncidenceComponentSearch<'_, '_> {
             .and_then(|dependencies| dependencies.get(edge))
             .is_none_or(|dependencies| {
                 dependencies.iter().all(|&predecessor| {
-                    !self.active[predecessor] || self.assignment[predecessor].is_some()
+                    self.assignment
+                        .get(predecessor)
+                        .is_some_and(Option::is_some)
                 })
             });
         predecessor_ready && dependencies_ready
@@ -2168,7 +2297,7 @@ impl IncidenceComponentSearch<'_, '_> {
     }
 
     fn advance_ordered_faces(
-        &self,
+        &mut self,
         faces: impl IntoIterator<Item = usize>,
         quotient_states: Vec<MeshQuotientGaugeState>,
     ) -> Option<Vec<MeshQuotientGaugeState>> {
@@ -2205,25 +2334,29 @@ impl IncidenceComponentSearch<'_, '_> {
         if quotient_states.is_empty() {
             Some(quotient_states)
         } else {
-            let fallback = quotient_states.clone();
-            let advanced = advance_compact_boundary_domains(
+            match advance_compact_boundary_domains(
                 faces.iter().filter_map(|face| mesh_assignments.get(*face)),
                 self.choices,
                 &self.assignment,
                 None,
                 quotient_states,
                 self.boundary_propagation_budget,
-            );
-            if self.boundary_propagation_budget.exhausted() {
-                Some(fallback)
-            } else {
-                advanced
+            ) {
+                CompactBoundaryAdvanceOutcome::Complete(states) => Some(states),
+                CompactBoundaryAdvanceOutcome::Rejected => None,
+                CompactBoundaryAdvanceOutcome::Exhausted => {
+                    self.exhausted = true;
+                    None
+                }
             }
         }
     }
 
     #[cfg(test)]
-    pub(crate) fn ordered_faces_feasible(&self, faces: impl IntoIterator<Item = usize>) -> bool {
+    pub(crate) fn ordered_faces_feasible(
+        &mut self,
+        faces: impl IntoIterator<Item = usize>,
+    ) -> bool {
         let states = self.mesh_quotient.map_or_else(Vec::new, |quotient| {
             vec![(quotient.clone(), HashSet::new())]
         });
@@ -3767,14 +3900,15 @@ where
         let mut components =
             incidence_choice_components(choices, edge_faces, mesh_assignments, mesh_quotient);
         if let Some(constraint) = partial_solution_valid {
-            components = join_partial_constraint_components(
-                components,
-                constraint.coupled_edges,
-                constraint.assignment_predecessors,
-                constraint.assignment_dependencies,
-            );
+            components =
+                join_incidence_components_by_coupling(components, constraint.coupled_edges);
         }
-        order_incidence_components_by_branch_width(&mut components, choices)?;
+        order_incidence_components_by_constraints(
+            &mut components,
+            choices,
+            partial_solution_valid.and_then(|constraint| constraint.assignment_predecessors),
+            partial_solution_valid.and_then(|constraint| constraint.assignment_dependencies),
+        )?;
         let mut face_edges = vec![Vec::new(); face_count];
         for (edge, faces) in edge_faces.iter().copied().enumerate() {
             for (rank, face) in faces.into_iter().enumerate() {

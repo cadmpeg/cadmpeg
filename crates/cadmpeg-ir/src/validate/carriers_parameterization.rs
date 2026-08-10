@@ -43,7 +43,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             .filter(|curve| curve.source_object.is_some())
             .map(|curve| curve.id.0.as_str()),
     );
-    let pcurves = ir
+    let mut pcurves = ir
         .model
         .coedges
         .iter()
@@ -55,6 +55,14 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 .flat_map(|use_| use_.pcurves.iter().map(|pcurve| pcurve.pcurve.0.as_str()))
         }))
         .collect::<HashSet<_>>();
+    for surface in &ir.model.procedural_surfaces {
+        if let ProceduralSurfaceDefinition::CurveBounded {
+            boundary_pcurves, ..
+        } = &surface.definition
+        {
+            pcurves.extend(boundary_pcurves.iter().map(|pcurve| pcurve.0.as_str()));
+        }
+    }
     let mut points = ir
         .model
         .vertices
@@ -474,7 +482,10 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralSurfaceDefinition::Offset { support, .. } => {
                 surfaces.insert(&support.0);
             }
-            ProceduralSurfaceDefinition::Subset { support, .. }
+            ProceduralSurfaceDefinition::Replica {
+                source: support, ..
+            }
+            | ProceduralSurfaceDefinition::Subset { support, .. }
             | ProceduralSurfaceDefinition::ParallelOffset { support, .. } => {
                 surfaces.insert(&support.0);
             }
@@ -682,7 +693,8 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralCurveDefinition::VectorOffset { source, .. } => {
                 curves.insert(&source.0);
             }
-            ProceduralCurveDefinition::Subset { source, .. } => {
+            ProceduralCurveDefinition::Replica { source, .. }
+            | ProceduralCurveDefinition::Subset { source, .. } => {
                 curves.insert(&source.0);
             }
             ProceduralCurveDefinition::BlendSpine { blend_surface } => {
@@ -807,7 +819,8 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
                                 let tolerance = 1.0e-9_f64.max(period.abs() * 1.0e-9);
                                 end - start <= period + tolerance
                             } else {
-                                start >= lower && end <= upper
+                                parameter_in_domain(start, [lower, upper])
+                                    && parameter_in_domain(end, [lower, upper])
                             }
                         },
                     );
@@ -847,9 +860,9 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
             let mut valid =
                 start.is_finite() && end.is_finite() && start <= end && geometry.is_some();
             if let Some(CurveGeometry::Nurbs(nurbs)) = geometry {
-                if let (Some(first), Some(last)) = (nurbs.knots.first(), nurbs.knots.last()) {
-                    valid &= start >= *first && end <= *last;
-                }
+                valid &= crate::eval::nurbs_curve_parameter_domain(nurbs).is_some_and(|domain| {
+                    parameter_in_domain(start, domain) && parameter_in_domain(end, domain)
+                });
             }
             if !valid {
                 findings.push(Finding {
@@ -867,11 +880,18 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
             let geometry = pcurves.get(use_.pcurve.0.as_str());
             let mut valid =
                 start.is_finite() && end.is_finite() && start != end && geometry.is_some();
-            if let Some(PcurveGeometry::Nurbs { knots, .. }) = geometry {
-                if let (Some(first), Some(last)) = (knots.first(), knots.last()) {
-                    valid &= [start, end]
-                        .into_iter()
-                        .all(|value| value >= *first && value <= *last);
+            if let Some(geometry) = geometry {
+                let domain = pcurve_parameter_domain(geometry);
+                match domain {
+                    Some([lower, upper]) => {
+                        valid &= [start, end]
+                            .into_iter()
+                            .all(|value| parameter_in_domain(value, [lower, upper]));
+                    }
+                    None if pcurve_requires_bounded_domain(geometry) => {
+                        valid = false;
+                    }
+                    None => {}
                 }
             }
             if !valid {
@@ -883,5 +903,70 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
                 });
             }
         }
+    }
+}
+
+fn parameter_in_domain(value: f64, [lower, upper]: [f64; 2]) -> bool {
+    // Independent serialization of a carrier and its use range can round the
+    // same boundary to adjacent floating-point values.
+    let scale = value.abs().max(lower.abs()).max(upper.abs()).max(1.0);
+    let tolerance = scale * 1.0e-12;
+    value >= lower - tolerance && value <= upper + tolerance
+}
+
+fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
+    match geometry {
+        PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            ..
+        } => crate::eval::nurbs_pcurve_parameter_domain(*degree, knots, control_points.len()),
+        PcurveGeometry::PolarNurbs {
+            degree,
+            knots,
+            radial_control_points,
+            ..
+        } => {
+            crate::eval::nurbs_pcurve_parameter_domain(*degree, knots, radial_control_points.len())
+        }
+        PcurveGeometry::Transformed { basis, .. } => pcurve_parameter_domain(basis),
+        _ => None,
+    }
+}
+
+fn pcurve_requires_bounded_domain(geometry: &PcurveGeometry) -> bool {
+    match geometry {
+        PcurveGeometry::Nurbs { .. } | PcurveGeometry::PolarNurbs { .. } => true,
+        PcurveGeometry::Transformed { basis, .. } => pcurve_requires_bounded_domain(basis),
+        PcurveGeometry::Line { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. }
+        | PcurveGeometry::Circle { .. }
+        | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::Harmonic { .. }
+        | PcurveGeometry::Parabola { .. }
+        | PcurveGeometry::Hyperbola { .. }
+        | PcurveGeometry::Hyperbolic { .. }
+        | PcurveGeometry::Trimmed { .. }
+        | PcurveGeometry::Offset { .. }
+        | PcurveGeometry::PolarHarmonic { .. } => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parameter_in_domain;
+
+    #[test]
+    fn parameter_domain_accepts_serialization_rounding_at_a_boundary() {
+        let lower = 0.1_f64;
+        let upper = std::f64::consts::TAU;
+        let one_ulp_below_lower = f64::from_bits(lower.to_bits() - 1);
+        let one_ulp_above_upper = f64::from_bits(upper.to_bits() + 1);
+
+        assert!(parameter_in_domain(one_ulp_below_lower, [lower, upper]));
+        assert!(parameter_in_domain(one_ulp_above_upper, [lower, upper]));
+        assert!(!parameter_in_domain(lower - 1.0e-8, [lower, upper]));
+        assert!(!parameter_in_domain(upper + 1.0e-8, [lower, upper]));
     }
 }

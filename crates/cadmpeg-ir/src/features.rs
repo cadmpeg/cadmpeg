@@ -192,7 +192,7 @@ pub struct DesignParameter {
     /// Parameters referenced by `expression`, in source expression order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<ParameterId>,
-    /// Source dimension properties not represented by another field.
+    /// Source parameter properties not represented by another field.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, String>,
     /// Product-manufacturing dimension semantics, when present.
@@ -3101,8 +3101,9 @@ pub struct HelicalSweepConstruction {
     pub left_handed: bool,
     /// Whether path travel runs opposite the declared axis direction.
     pub reversed: bool,
-    /// Relative tolerance used while joining the generated sweep.
-    pub tolerance: f64,
+    /// Relative tolerance used while joining the generated sweep, when persisted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tolerance: Option<f64>,
     /// Whether a profile containing multiple faces is accepted as one operation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow_multi_profile_faces: Option<bool>,
@@ -3896,6 +3897,11 @@ pub enum PatternKind {
         plane_origin: Point3,
         /// Unit normal of the mirror plane.
         plane_normal: Vector3,
+    },
+    /// Reflects seeds across a source-native plane selection whose frame is not resolved.
+    MirrorReference {
+        /// Plane or planar face that defines the reflection.
+        plane: FaceSelection,
     },
     /// Repeats seeds using progressive uniform scales.
     Scale {

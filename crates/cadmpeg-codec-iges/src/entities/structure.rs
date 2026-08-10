@@ -80,7 +80,7 @@ pub(crate) fn single_target_cycle(
     }
 }
 
-fn array_base_type(entity_type: i64, form: i64) -> bool {
+pub(crate) fn array_base_type(entity_type: i64, form: i64) -> bool {
     matches!(
         entity_type,
         100 | 104
@@ -203,22 +203,6 @@ fn unit_value_valid(unit_type: &[u8], value: &[u8]) -> bool {
         b"PLANE" => matches!(value, b"D" | b"G" | b"M" | b"R" | b"REV" | b"S"),
         b"SOLID" => value == b"C",
         _ => false,
-    }
-}
-
-fn number_or(record: &ParameterRecord, index: usize, default: f64) -> Option<f64> {
-    match record.tokens.get(index).map(|token| &token.value) {
-        None | Some(TokenValue::Omitted) => Some(default),
-        Some(TokenValue::Integer(_) | TokenValue::Real(_)) => record.number(index),
-        Some(TokenValue::String(_)) => None,
-    }
-}
-
-fn integer_or(record: &ParameterRecord, index: usize, default: i64) -> Option<i64> {
-    match record.tokens.get(index).map(|token| &token.value) {
-        None | Some(TokenValue::Omitted) => Some(default),
-        Some(TokenValue::Integer(value)) => Some(*value),
-        Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
     }
 }
 
@@ -496,11 +480,14 @@ fn property_fields_valid(
                 exact(i64::try_from(12 + count * 3).unwrap_or_default())
                     && integer_range(2, 0..=2)
                     && integer_range(3, 0..=4)
-                    && integer_or(record, 4, 1)
+                    && record
+                        .integer_or(4, 1)
                         .is_some_and(|value| matches!(value, 1 | 1001..=1003))
                     && record.string(5).is_some()
                     && integer_range(6, 0..=1)
-                    && number_or(record, 7, std::f64::consts::FRAC_PI_2).is_some_and(f64::is_finite)
+                    && record
+                        .number_or(7, std::f64::consts::FRAC_PI_2)
+                        .is_some_and(f64::is_finite)
                     && integer_range(8, 0..=1)
                     && integer_range(9, 0..=2)
                     && integer_range(10, 0..=2)
@@ -743,7 +730,7 @@ fn predefined_associativity_valid(
                 && geometry_valid
                 && arrow_cardinality_valid
                 && dimension.is_some_and(|dimension| back_pointer_owners == [dimension])
-                && entry.status.subordinate == 1
+                && entry.status.is_physically_dependent()
         }
         _ => false,
     }
@@ -951,7 +938,7 @@ pub(super) fn project(
                             .is_some_and(|owner| matches!(owner.entity_type, 116 | 132))
                     })
             }
-            27 => entry.status.subordinate == 1 && owners.len() == 1,
+            27 => entry.status.is_physically_dependent() && owners.len() == 1,
             28 | 29 => {
                 !owners.is_empty()
                     && owners.iter().all(|owner| {
@@ -1015,7 +1002,7 @@ pub(super) fn project(
                 owners_valid
             }
             31 => {
-                entry.status.subordinate == 1
+                entry.status.is_physically_dependent()
                     && owners.len() == 1
                     && entries
                         .get(&owners[0])
@@ -1150,7 +1137,7 @@ pub(super) fn project(
                     });
                     cursor += 1;
                     if entry.form == 2 {
-                        attributes_valid &= integer_or(record, cursor, 0).is_some_and(|value| {
+                        attributes_valid &= record.integer_or(cursor, 0).is_some_and(|value| {
                             value == 0
                                 || u32::try_from(value).ok().is_some_and(|sequence| {
                                     entries
@@ -1470,19 +1457,19 @@ pub(super) fn project(
                     .is_some_and(|base| array_base_type(base.entity_type, base.form))
         });
         let cyclic = single_target_cycle(entry.sequence, &array_targets, &mut visited_arrays);
-        let transform_valid = global.length_factor_mm().is_some_and(|factor| {
-            resolve_transform(
-                entry.transform,
-                &entries,
-                &records,
-                factor,
-                &mut BTreeSet::new(),
-            )
-            .is_ok()
-        });
+        let transform_valid = resolve_transform(
+            entry.transform,
+            &entries,
+            &records,
+            global.length_factor_mm(),
+            global.real_precision(),
+            &mut BTreeSet::new(),
+        )
+        .is_ok();
         let fields_valid = if entry.entity_type == 412 {
-            let scale_valid =
-                number_or(record, 2, 1.0).is_some_and(|value| value.is_finite() && value > 0.0);
+            let scale_valid = record
+                .number_or(2, 1.0)
+                .is_some_and(|value| value.is_finite() && value > 0.0);
             let coordinates_valid =
                 (3..=5).all(|index| record.number(index).is_some_and(f64::is_finite));
             let columns = record
@@ -1533,7 +1520,7 @@ pub(super) fn project(
         };
         let position_valid = (1..=3).all(|index| record.number(index).is_some_and(f64::is_finite));
         let optional_pointer_valid = |index: usize, entity_type: Option<i64>| {
-            integer_or(record, index, 0).is_some_and(|value| {
+            record.integer_or(index, 0).is_some_and(|value| {
                 value == 0
                     || u32::try_from(value).ok().is_some_and(|sequence| {
                         sequence % 2 == 1
@@ -1543,16 +1530,21 @@ pub(super) fn project(
                     })
             })
         };
-        let type_flag_valid = integer_or(record, 5, 0)
+        let type_flag_valid = record
+            .integer_or(5, 0)
             .is_some_and(|value| matches!(value, 0..=2 | 101..=104 | 201..=203 | 5001..=9999));
-        let function_flag_valid =
-            integer_or(record, 6, 0).is_some_and(|value| matches!(value, 0..=2));
+        let function_flag_valid = record
+            .integer_or(6, 0)
+            .is_some_and(|value| matches!(value, 0..=2));
         let strings_valid = record.string(7).is_some() && record.string(9).is_some();
         let identifier_valid = record.integer(11).is_some();
-        let function_code_valid = integer_or(record, 12, 0)
+        let function_code_valid = record
+            .integer_or(12, 0)
             .is_some_and(|value| matches!(value, 0..=49 | 98..=99 | 5001..=9999));
-        let swap_valid = integer_or(record, 13, 0).is_some_and(|value| matches!(value, 0..=1));
-        let owner_valid = integer_or(record, 14, 0).is_some_and(|value| {
+        let swap_valid = record
+            .integer_or(13, 0)
+            .is_some_and(|value| matches!(value, 0..=1));
+        let owner_valid = record.integer_or(14, 0).is_some_and(|value| {
             value == 0
                 || u32::try_from(value).ok().is_some_and(|sequence| {
                     sequence % 2 == 1
@@ -1561,16 +1553,15 @@ pub(super) fn project(
                             .is_some_and(|target| matches!(target.entity_type, 320 | 420))
                 })
         });
-        let transform_valid = global.length_factor_mm().is_some_and(|factor| {
-            resolve_transform(
-                entry.transform,
-                &entries,
-                &records,
-                factor,
-                &mut BTreeSet::new(),
-            )
-            .is_ok()
-        });
+        let transform_valid = resolve_transform(
+            entry.transform,
+            &entries,
+            &records,
+            global.length_factor_mm(),
+            global.real_precision(),
+            &mut BTreeSet::new(),
+        )
+        .is_ok();
         if position_valid
             && optional_pointer_valid(4, None)
             && type_flag_valid
@@ -1631,16 +1622,15 @@ pub(super) fn project(
                 )
             }
         });
-        let transform_valid = global.length_factor_mm().is_some_and(|factor| {
-            resolve_transform(
-                entry.transform,
-                &entries,
-                &records,
-                factor,
-                &mut BTreeSet::new(),
-            )
-            .is_ok()
-        });
+        let transform_valid = resolve_transform(
+            entry.transform,
+            &entries,
+            &records,
+            global.length_factor_mm(),
+            global.real_precision(),
+            &mut BTreeSet::new(),
+        )
+        .is_ok();
         let cyclic = single_target_cycle(*sequence, &solid_instances, &mut visited_instances);
         if target_valid && transform_valid && !cyclic {
             decoded.insert(*sequence);
@@ -1715,7 +1705,8 @@ pub(super) fn project(
                             *transformation as i64,
                             &entries,
                             &records,
-                            global.length_factor_mm().unwrap_or_default(),
+                            global.length_factor_mm(),
+                            global.real_precision(),
                             &mut BTreeSet::new(),
                         )
                         .is_ok()
@@ -1730,16 +1721,15 @@ pub(super) fn project(
                 .filter(|item| assemblies.contains_key(item))
                 .collect()
         });
-        let own_transform_valid = global.length_factor_mm().is_some_and(|factor| {
-            resolve_transform(
-                entry.transform,
-                &entries,
-                &records,
-                factor,
-                &mut BTreeSet::new(),
-            )
-            .is_ok()
-        });
+        let own_transform_valid = resolve_transform(
+            entry.transform,
+            &entries,
+            &records,
+            global.length_factor_mm(),
+            global.real_precision(),
+            &mut BTreeSet::new(),
+        )
+        .is_ok();
         if entry.status.use_flag != 2
             || (assembly.form == 1) != has_brep
             || !items_valid
@@ -1809,19 +1799,19 @@ pub(super) fn project(
             (sequence % 2 == 1 && definitions.contains_key(&sequence)).then_some(sequence)
         });
         let translation_valid =
-            (2..=4).all(|index| number_or(record, index, 0.0).is_some_and(f64::is_finite));
-        let scale_valid =
-            number_or(record, 5, 1.0).is_some_and(|value| value.is_finite() && value > 0.0);
-        let transform_valid = global.length_factor_mm().is_some_and(|factor| {
-            resolve_transform(
-                entry.transform,
-                &entries,
-                &records,
-                factor,
-                &mut BTreeSet::new(),
-            )
-            .is_ok()
-        });
+            (2..=4).all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite));
+        let scale_valid = record
+            .number_or(5, 1.0)
+            .is_some_and(|value| value.is_finite() && value > 0.0);
+        let transform_valid = resolve_transform(
+            entry.transform,
+            &entries,
+            &records,
+            global.length_factor_mm(),
+            global.real_precision(),
+            &mut BTreeSet::new(),
+        )
+        .is_ok();
         let Some(definition) = definition else {
             losses.push(entity_loss(
                 entry,
@@ -1946,17 +1936,21 @@ pub(super) fn project(
                 .then_some(sequence)
         });
         let translation_valid =
-            (2..=4).all(|index| number_or(record, index, 0.0).is_some_and(f64::is_finite));
-        let x_scale = number_or(record, 5, 1.0);
+            (2..=4).all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite));
+        let x_scale = record.number_or(5, 1.0);
         let scales_valid = x_scale.is_some_and(|x_scale| {
             x_scale.is_finite()
                 && x_scale > 0.0
-                && number_or(record, 6, x_scale)
+                && record
+                    .number_or(6, x_scale)
                     .is_some_and(|value| value.is_finite() && value > 0.0)
-                && number_or(record, 7, x_scale)
+                && record
+                    .number_or(7, x_scale)
                     .is_some_and(|value| value.is_finite() && value > 0.0)
         });
-        let type_flag_valid = record.integer(8).is_none_or(|value| matches!(value, 0..=2));
+        let type_flag_valid = record
+            .integer_or(8, 0)
+            .is_some_and(|value| matches!(value, 0..=2));
         let designator_valid = record.string(9).is_some();
         let display_valid = record.integer(10).is_some_and(|value| {
             value == 0
@@ -1979,16 +1973,15 @@ pub(super) fn project(
                 })
             })
         });
-        let transform_valid = global.length_factor_mm().is_some_and(|factor| {
-            resolve_transform(
-                entry.transform,
-                &entries,
-                &records,
-                factor,
-                &mut BTreeSet::new(),
-            )
-            .is_ok()
-        });
+        let transform_valid = resolve_transform(
+            entry.transform,
+            &entries,
+            &records,
+            global.length_factor_mm(),
+            global.real_precision(),
+            &mut BTreeSet::new(),
+        )
+        .is_ok();
         let (Some(definition), Some(connect_count)) = (definition, connect_count) else {
             losses.push(entity_loss(
                 entry,

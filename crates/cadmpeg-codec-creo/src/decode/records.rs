@@ -20,6 +20,7 @@ pub(super) struct CreoSketchRecord {
     pub(super) section_points: Vec<CreoSketchSectionPoint>,
     pub(super) solved_external_ids: Vec<u32>,
     pub(super) variables: Vec<CreoSketchVariable>,
+    pub(super) equations: Vec<CreoSketchEquation>,
     pub(super) segments: Vec<CreoSketchSegment>,
     pub(super) circle_segments: Vec<CreoSketchCircleSegment>,
     pub(super) point_segments: Vec<CreoSketchPointSegment>,
@@ -1449,11 +1450,29 @@ pub(super) fn surface_prototype_records(
         .collect()
 }
 
+fn curve_occurrence_identity(curve_id: u32, offset: usize, occurrence_count: usize) -> String {
+    if occurrence_count == 1 {
+        curve_id.to_string()
+    } else {
+        // The separator sorts before a decimal digit.  This keeps source-order
+        // emission lexicographically ordered when a repeated id is followed by
+        // an id with the repeated id as a decimal prefix, such as `1` and `10`.
+        format!("{curve_id}-{offset:020}")
+    }
+}
+
 pub(super) fn curve_parameter_records(
     scan: &ContainerScan,
     records: &[crate::curve::CurveParameterRecord],
     id_namespace: &str,
 ) -> Vec<CreoCurveParameterRecord> {
+    let curve_id_counts =
+        records
+            .iter()
+            .fold(BTreeMap::<u32, usize>::new(), |mut counts, record| {
+                *counts.entry(record.curve_id).or_default() += 1;
+                counts
+            });
     records
         .iter()
         .map(|record| {
@@ -1464,7 +1483,14 @@ pub(super) fn curve_parameter_records(
                 }
             };
             CreoCurveParameterRecord {
-                id: format!("creo:{id_namespace}:curve_parameter#{}", record.curve_id),
+                id: format!(
+                    "creo:{id_namespace}:curve_parameter#{}",
+                    curve_occurrence_identity(
+                        record.curve_id,
+                        record.offset,
+                        curve_id_counts[&record.curve_id],
+                    )
+                ),
                 curve_id: record.curve_id,
                 type_byte: record.type_byte,
                 body: record.body.clone(),
@@ -1512,11 +1538,21 @@ pub(super) fn curve_parameter_records(
 pub(super) fn cross_section_curve_row_records(
     scan: &ContainerScan,
 ) -> Vec<CreoCrossSectionCurveRowRecord> {
+    let curve_id_counts = scan.curves.cross_section_rows.iter().fold(
+        BTreeMap::<u32, usize>::new(),
+        |mut counts, row| {
+            *counts.entry(row.id).or_default() += 1;
+            counts
+        },
+    );
     scan.curves
         .cross_section_rows
         .iter()
         .map(|row| CreoCrossSectionCurveRowRecord {
-            id: format!("creo:cross_section_geometry:curve_row#{}", row.id),
+            id: format!(
+                "creo:cross_section_geometry:curve_row#{}",
+                curve_occurrence_identity(row.id, row.offset, curve_id_counts[&row.id])
+            ),
             curve_id: row.id,
             type_byte: row.type_byte,
             feature_id: row.feature_id,
@@ -1563,9 +1599,18 @@ pub(super) fn curve_topology_row_records(
     rows: &[crate::curve::CurveTopologyRow],
     id_namespace: &str,
 ) -> Vec<CreoCurveTopologyRowRecord> {
+    let curve_id_counts = rows
+        .iter()
+        .fold(BTreeMap::<u32, usize>::new(), |mut counts, row| {
+            *counts.entry(row.id).or_default() += 1;
+            counts
+        });
     rows.iter()
         .map(|row| CreoCurveTopologyRowRecord {
-            id: format!("creo:{id_namespace}:curve_topology#{}", row.id),
+            id: format!(
+                "creo:{id_namespace}:curve_topology#{}",
+                curve_occurrence_identity(row.id, row.offset, curve_id_counts[&row.id])
+            ),
             curve_id: row.id,
             type_byte: row.type_byte,
             feature_id: row.feature_id,
@@ -1972,6 +2017,18 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     sketch_plane_entity_id: section.sketch_plane_entity_id,
                     sketch_plane_flip: section.sketch_plane_flip.map(binary_flag_value),
                     reference_plane_entity_ids: section.reference_plane_entity_ids.clone(),
+                    reference_plane_rows: section
+                        .reference_plane_rows
+                        .iter()
+                        .map(|row| CreoSketchReferencePlane {
+                            plane_entity_id: row.plane_entity_id,
+                            reference_type: row.reference_type,
+                            external_reference_id: row.external_reference_id,
+                            segment_id: row.segment_id,
+                            sub_index: row.sub_index,
+                            reference_flip: row.reference_flip.map(binary_flag_value),
+                        })
+                        .collect(),
                     reference_plane_datum_geometry_id: section.reference_plane_datum_geometry_id,
                     orientation: CreoSketchSectionOrientation {
                         section_flip: section.orientation.section_flip.map(binary_flag_value),
@@ -1990,6 +2047,8 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 .map_or_else(Vec::new, |table| table.solved_external_ids.clone()),
             variables: {
                 let resolved_coordinates = resolved_section_coordinates(definition);
+                let resolved_radii = resolved_section_radii(definition);
+                let resolved_scalars = resolved_section_scalar_values(definition);
                 definition
                     .variables
                     .iter()
@@ -2013,12 +2072,27 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                             2 => resolved_coordinates
                                 .get(&row.key)
                                 .and_then(|point| point[1]),
-                            _ => None,
+                            3 => resolved_radii.get(&row.key).copied(),
+                            _ => resolved_scalars.get(&(row.variable_type, row.key)).copied(),
                         },
                         offset: row.offset,
                     })
                     .collect()
             },
+            equations: crate::feature::equation_table(&definition.body, 0, definition.body.len())
+                .into_iter()
+                .flat_map(|table| table.rows)
+                .map(|equation| CreoSketchEquation {
+                    equation_id: equation.equation_id,
+                    function_id: equation.function_id,
+                    explicit_argument_count: equation.explicit_argument_count,
+                    arguments: equation.arguments,
+                    arguments_body: equation.arguments_body,
+                    auxiliary_body: equation.auxiliary_body,
+                    body: equation.body,
+                    offset: equation.offset,
+                })
+                .collect(),
             segments: definition
                 .segments
                 .iter()
@@ -2250,6 +2324,23 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     direction_byte: dimension.direction_byte,
                     auxiliary_value: dimension.auxiliary_value,
                     auxiliary_body: dimension.auxiliary_body.clone(),
+                    references: dimension.references.as_ref().map(|table| {
+                        CreoSketchDimensionReferenceTable {
+                            declared_count: table.declared_count,
+                            entity_ref: table.entity_ref,
+                            rows: table
+                                .rows
+                                .iter()
+                                .map(|reference| CreoSketchDimensionReference {
+                                    item_id: reference.item_id,
+                                    sense: reference.sense,
+                                    point: reference.point,
+                                    offset: reference.offset,
+                                })
+                                .collect(),
+                            offset: table.offset,
+                        }
+                    }),
                     offset: dimension.offset,
                 })
                 .collect(),

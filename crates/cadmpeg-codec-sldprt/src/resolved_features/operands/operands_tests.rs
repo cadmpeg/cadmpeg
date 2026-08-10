@@ -231,6 +231,47 @@ fn object_indexed_bc_operands_precede_local_and_ordinal_fallbacks() {
 }
 
 #[test]
+fn object_indexed_point_operands_precede_local_fallbacks() {
+    let point = |id: &str, object_index, local_id| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset: 0,
+        object_index: Some(object_index),
+        local_id: Some(local_id),
+        kind: SketchInputKind::Point,
+        state_value: None,
+        coordinates_m: Some([1.0, 2.0]),
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let indexed = point("indexed", 7, 100);
+    let local = point("local", 8, 7);
+    let markers = [&indexed, &local];
+
+    assert_eq!(
+        resolve_operand_marker(
+            markers.iter().copied(),
+            FeatureInputOperandKind::Native(0x8152),
+            7,
+        )
+        .map(|marker| marker.id.as_str()),
+        Some("indexed")
+    );
+
+    let duplicate = point("duplicate", 7, 101);
+    assert_eq!(
+        resolve_operand_marker(
+            [&indexed, &duplicate].into_iter(),
+            FeatureInputOperandKind::Native(0x8152),
+            7,
+        ),
+        None
+    );
+}
+
+#[test]
 fn point_operand_follows_relation_handle_graph_and_excludes_its_sibling() {
     let marker = |id: &str, local_id, kind, links: &[&str]| SketchInputEntity {
         id: id.into(),

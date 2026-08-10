@@ -71,7 +71,7 @@ Applies to `DiffuseColor`, `LineColorArray`, and `PointColorArray`. A count of o
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-freecad/src/gui.rs` — The parser reads the leading count and each packed-colour record as little-endian u32.
+- `crates/cadmpeg-codec-freecad/src/gui.rs` — The bounded cursor reads the leading count and each packed-colour record as little-endian u32.
 
 ## `link_array_side_entry_header`
 

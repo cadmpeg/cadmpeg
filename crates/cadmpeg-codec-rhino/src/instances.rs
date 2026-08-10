@@ -7,8 +7,8 @@ use std::ops::Range;
 use cadmpeg_ir::transform::Transform;
 
 use crate::chunks::{
-    checked_count_bytes, chunk_at, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus,
-    FramingError,
+    checked_count_bytes, chunk_at, direct_checksum_ranges, verify_checksum, verify_checksum_ranges,
+    ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
 };
 use crate::container::Record;
 use crate::objects::parse_class_wrapper;
@@ -192,6 +192,26 @@ fn checksum_warning(
     Ok(())
 }
 
+fn checksum_warning_excluding(
+    data: &[u8],
+    chunk: &crate::chunks::Chunk,
+    children: &[Range<usize>],
+    label: &str,
+    warnings: &mut Vec<String>,
+) -> Result<(), FramingError> {
+    let direct = direct_checksum_ranges(&chunk.body, children)?;
+    if matches!(
+        verify_checksum_ranges(data, chunk, &direct)?,
+        ChecksumStatus::Mismatch { .. }
+    ) {
+        warnings.push(format!(
+            "{label} CRC mismatch at offset {}",
+            chunk.header_start
+        ));
+    }
+    Ok(())
+}
+
 fn v5_definition_kind(value: u32) -> DefinitionKind {
     match value {
         0 | 1 => DefinitionKind::Static,
@@ -357,6 +377,7 @@ pub(crate) fn file_reference<'a>(
     let byte_count = hash_payload.u64()?;
     let hash_time = hash_payload.u64()?;
     let content_time = hash_payload.u64()?;
+    let mut digest_ranges = Vec::with_capacity(2);
     let mut read_sha1 = |payload: &mut BoundedReader<'a>| -> Result<[u8; 20], FramingError> {
         let digest = chunk_at(data, payload.position(), payload.end(), archive, false)?;
         if digest.typecode != ANONYMOUS || digest.short {
@@ -368,6 +389,7 @@ pub(crate) fn file_reference<'a>(
             return Err(structural(&bytes, "unsupported SHA-1 version"));
         }
         let value = bytes.array()?;
+        digest_ranges.push(digest.range());
         payload.skip(digest.next_offset - payload.position())?;
         Ok(value)
     };
@@ -379,6 +401,7 @@ pub(crate) fn file_reference<'a>(
         content_sha1: read_sha1(&mut hash_payload)?,
     };
     finish(&hash_payload, "content hash")?;
+    checksum_warning_excluding(data, &hash, &digest_ranges, "content hash", warnings)?;
     payload.skip(hash.next_offset - payload.position())?;
     let path_status = payload.u32()?;
     let embedded_file_id = if version.1 >= 1 {
@@ -387,6 +410,13 @@ pub(crate) fn file_reference<'a>(
         None
     };
     finish(&payload, "file reference")?;
+    checksum_warning_excluding(
+        data,
+        &chunk,
+        std::slice::from_ref(&hash.range()),
+        "file reference",
+        warnings,
+    )?;
     Ok(FileReference {
         source_range: chunk.range(),
         full_path,
@@ -407,20 +437,22 @@ fn skip_object_array(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-) -> Result<(), FramingError> {
+) -> Result<Vec<Range<usize>>, FramingError> {
     let count = reader.i32()?;
     let count = usize::try_from(count).map_err(|_| structural(reader, "negative object count"))?;
     if count > MAX_MEMBERS {
         return Err(structural(reader, "object array exceeds item limit"));
     }
+    let mut ranges = Vec::with_capacity(count);
     for _ in 0..count {
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
         if chunk.short {
             return Err(structural(reader, "object array item is short-framed"));
         }
+        ranges.push(chunk.range());
         reader.skip(chunk.next_offset - reader.position())?;
     }
-    Ok(())
+    Ok(ranges)
 }
 
 fn reference_settings<'a>(
@@ -429,9 +461,16 @@ fn reference_settings<'a>(
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
 ) -> Result<Range<usize>, FramingError> {
-    let (chunk, mut payload) = anonymous(data, reader, archive, "reference settings", warnings)?;
-    skip_object_array(data, &mut payload, archive)?;
-    skip_object_array(data, &mut payload, archive)?;
+    let (chunk, mut payload, version) =
+        anonymous_versioned(data, reader, archive, "reference settings", false, warnings)?;
+    if version != (1, 0) {
+        return Err(structural(
+            &payload,
+            "unsupported reference settings version",
+        ));
+    }
+    let mut children = skip_object_array(data, &mut payload, archive)?;
+    children.extend(skip_object_array(data, &mut payload, archive)?);
     if payload.bool()? {
         let parent = chunk_at(data, payload.position(), payload.end(), archive, false)?;
         if parent.short {
@@ -440,9 +479,11 @@ fn reference_settings<'a>(
                 "reference parent layer is short-framed",
             ));
         }
+        children.push(parent.range());
         payload.skip(parent.next_offset - payload.position())?;
     }
     finish(&payload, "reference settings")?;
+    checksum_warning_excluding(data, &chunk, &children, "reference settings", warnings)?;
     Ok(chunk.range())
 }
 
@@ -486,15 +527,8 @@ fn parse_v5(
         return Err(structural(&reader, "meters-per-unit is not finite"));
     }
     let legacy_relative_path = reader.bool()?;
-    let mut units = unit_detail(data, &mut reader, archive, warnings)?;
-    if units.unit == 11 {
-        units.meters_per_unit = meters_per_unit;
-    } else if units.unit != unit {
-        return Err(structural(
-            &reader,
-            "legacy and detailed unit values disagree",
-        ));
-    }
+    let units = unit_detail(data, &mut reader, archive, warnings)?;
+    let _ = (unit, meters_per_unit);
     let linked_depth = reader.i32()?;
     let mut linked_appearance = reader.u32()?;
     if matches!(kind, DefinitionKind::Linked) && !matches!(linked_appearance, 1 | 2) {
@@ -505,9 +539,9 @@ fn parse_v5(
     } else {
         None
     };
-    // The failed V6-WIP linked-layer flag follows the optional file reference.
-    if version.1 >= 7 && reader.remaining() == 1 {
-        let _ = reader.bool()?;
+    // Version 1.7 has an abandoned V6-WIP tail. Its fields have no stable grammar.
+    if version.1 >= 7 {
+        reader.skip(reader.remaining())?;
     }
     finish(&reader, "V5 instance definition")?;
     Ok(InstanceDefinition {
@@ -542,15 +576,32 @@ fn parse_v6(
     warnings: &mut Vec<String>,
 ) -> Result<InstanceDefinition, FramingError> {
     let mut outer = BoundedReader::new(data, range.start, range.end)?;
-    let (_outer_chunk, mut reader) =
-        anonymous(data, &mut outer, archive, "instance definition", warnings)?;
+    let (outer_chunk, mut reader, outer_version) = anonymous_versioned(
+        data,
+        &mut outer,
+        archive,
+        "instance definition",
+        false,
+        warnings,
+    )?;
+    if outer_version != (1, 0) {
+        return Err(structural(
+            &reader,
+            "unsupported instance definition version",
+        ));
+    }
     finish(&outer, "instance-definition wrapper")?;
+    let component_start = reader.position();
     let (index, id, name) = model_component(data, &mut reader, archive, warnings)?;
+    #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child, not its offsets.
+    let mut outer_children = vec![component_start..reader.position()];
     if id.is_nil() {
         return Err(structural(&reader, "definition UUID is nil"));
     }
     let kind = v6_definition_kind(reader.u32()?);
+    let units_start = reader.position();
     let units = unit_detail(data, &mut reader, archive, warnings)?;
+    outer_children.push(units_start..reader.position());
     let description = utf16(&mut reader)?;
     let url = utf16(&mut reader)?;
     let url_tag = utf16(&mut reader)?;
@@ -565,18 +616,47 @@ fn parse_v6(
     let mut linked_file = None;
     let mut reference_settings_range = None;
     if reader.bool()? {
-        let (_linked_chunk, mut linked) =
-            anonymous(data, &mut reader, archive, "linked type", warnings)?;
+        let (linked_chunk, mut linked, linked_version) =
+            anonymous_versioned(data, &mut reader, archive, "linked type", false, warnings)?;
+        if linked_version != (1, 0) {
+            return Err(structural(&linked, "unsupported linked-type version"));
+        }
         linked_file = Some(file_reference(data, &mut linked, archive, warnings)?);
+        let mut linked_children = vec![linked_file
+            .as_ref()
+            .expect("file reference assigned")
+            .source_range
+            .clone()];
         linked_depth = linked.i32()?;
         linked_appearance = linked.u32()?;
         if linked.bool()? {
             reference_settings_range =
                 Some(reference_settings(data, &mut linked, archive, warnings)?);
+            linked_children.push(
+                reference_settings_range
+                    .as_ref()
+                    .expect("reference settings assigned")
+                    .clone(),
+            );
         }
         finish(&linked, "linked type")?;
+        checksum_warning_excluding(
+            data,
+            &linked_chunk,
+            &linked_children,
+            "linked type",
+            warnings,
+        )?;
+        outer_children.push(linked_chunk.range());
     }
     finish(&reader, "instance definition")?;
+    checksum_warning_excluding(
+        data,
+        &outer_chunk,
+        &outer_children,
+        "instance definition",
+        warnings,
+    )?;
     Ok(InstanceDefinition {
         source_range,
         id,
@@ -614,13 +694,20 @@ fn extract_member_ids(
         let _definition_id = uuid(&mut outer)?;
         return members(&mut outer);
     }
-    let (_chunk, mut reader) = anonymous(
+    let (_chunk, mut reader, version) = anonymous_versioned(
         data,
         &mut outer,
         archive,
         "instance definition",
+        false,
         &mut Vec::new(),
     )?;
+    if version != (1, 0) {
+        return Err(structural(
+            &reader,
+            "unsupported instance definition version",
+        ));
+    }
     finish(&outer, "instance-definition wrapper")?;
     let _component = model_component(data, &mut reader, archive, &mut Vec::new())?;
     let _kind = reader.u32()?;

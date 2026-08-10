@@ -120,6 +120,12 @@ pub struct ZeroEntityEdgeStride {
     pub record_ordinal: u32,
     /// Five allocation values following the fixed tagged-one prefix.
     pub allocations: [u32; 5],
+    /// The three allocations in the `0638`/`2569` topology namespace, in
+    /// source order `[T, T-1, T-2]`.
+    pub topology_refs: [u32; 3],
+    /// The two allocations selecting the adjacent surface-support slots, in
+    /// source order `[X, Y]`.
+    pub surface_support_refs: [u32; 2],
 }
 
 /// One positional `0638` oriented use.
@@ -335,37 +341,68 @@ fn zero_entity_nurbs_logical_end(data: &[u8], record: usize) -> Option<usize> {
 }
 
 fn zero_entity_nurbs_layout(data: &[u8], record: usize) -> Option<ZeroEntityNurbsLayout> {
-    let (u_distinct, after_u) = f64_run_to_one(data, record.checked_add(23)?)?;
-    let (u_mults, after_u_mults) = u32_tokens(data, after_u, u_distinct.len())?;
-    let u_degree = u_mults.first().copied()?.checked_sub(1)?;
-    let u_count = u_mults
-        .iter()
-        .try_fold(0u32, |sum, value| sum.checked_add(*value))?
-        .checked_sub(u_degree + 1)?;
-    let after_u_tokens = skip_u32_token_run(data, after_u_mults)?;
-    let extra_u_bytes = after_u_tokens.checked_sub(after_u_mults)?;
-    if extra_u_bytes != 0 && extra_u_bytes < 10 {
-        return None;
-    }
-    let (v_distinct, after_v) = f64_monotonic_run(data, after_u_tokens.checked_add(1)?)?;
-    let (v_mults, after_v_mults) = u32_tokens(data, after_v, v_distinct.len())?;
-    let v_degree = v_mults.first().copied()?.checked_sub(1)?;
-    let v_count = v_mults
-        .iter()
-        .try_fold(0u32, |sum, value| sum.checked_add(*value))?
-        .checked_sub(v_degree + 1)?;
-    if !(1..=9).contains(&u_degree)
-        || !(1..=9).contains(&v_degree)
-        || !(2..=4096).contains(&u_count)
-        || !(2..=4096).contains(&v_count)
-    {
-        return None;
-    }
-    let pole_count = crate::nurbs_surface_control_count(u_count as usize, v_count as usize)?;
+    let tag = [
+        *data.get(record.checked_add(2)?)?,
+        *data.get(record.checked_add(3)?)?,
+    ];
+    let (grid_offset, expected_u_count, expected_v_count) = zero_entity_nurbs_shape(tag)?;
+    let knot_start = record.checked_add(23)?;
+    let grid = record.checked_add(grid_offset)?;
+    let pole_count = crate::nurbs_surface_control_count(expected_u_count, expected_v_count)?;
     let pole_bytes = pole_count.checked_mul(24)?;
-    let grid = skip_u32_token_run(data, after_v_mults)?.checked_add(3)?;
     let end = grid.checked_add(pole_bytes)?;
     data.get(grid..end)?;
+
+    // The carrier has no count word for either distinct-knot lane. Its fixed
+    // pole boundary makes the two lanes a bounded parse: U knots, two tagged
+    // V-dimension words, one V marker, V knots, V multiplicities, and the
+    // three-byte pole marker. Enumerate the possible U lane widths and retain
+    // exactly one structural interpretation. A value range or a first
+    // terminator would turn ordinary model parameters into framing bytes.
+    let pole_marker_start = grid.checked_sub(3)?;
+    let available = pole_marker_start.checked_sub(knot_start)?;
+    let minimum_after_u = 2usize.checked_mul(5)?.checked_add(1)?.checked_add(2 * 13)?;
+    let max_u_distinct = available.checked_sub(minimum_after_u)?.checked_div(13)?;
+    if max_u_distinct < 2 {
+        return None;
+    }
+    let mut candidate = None;
+    for u_distinct_count in 2..=max_u_distinct {
+        let u_after = knot_start.checked_add(u_distinct_count.checked_mul(13)?)?;
+        let Some((u_distinct, u_mults, u_degree, u_count)) =
+            zero_entity_nurbs_knot_lane(data, knot_start, u_distinct_count, expected_u_count)
+        else {
+            continue;
+        };
+        let Some((_, after_dimensions)) = u32_tokens(data, u_after, 2) else {
+            continue;
+        };
+        let v_start = after_dimensions.checked_add(1)?;
+        if v_start > pole_marker_start {
+            continue;
+        }
+        let v_bytes = pole_marker_start.checked_sub(v_start)?;
+        if v_bytes % 13 != 0 {
+            continue;
+        }
+        let v_distinct_count = v_bytes / 13;
+        if v_distinct_count < 2 {
+            continue;
+        }
+        let Some((v_distinct, v_mults, v_degree, v_count)) =
+            zero_entity_nurbs_knot_lane(data, v_start, v_distinct_count, expected_v_count)
+        else {
+            continue;
+        };
+        if candidate.is_some() {
+            return None;
+        }
+        candidate = Some((
+            u_distinct, u_mults, u_degree, u_count, v_distinct, v_mults, v_degree, v_count,
+        ));
+    }
+    let (u_distinct, u_mults, u_degree, u_count, v_distinct, v_mults, v_degree, v_count) =
+        candidate?;
     Some(ZeroEntityNurbsLayout {
         u_distinct,
         u_mults,
@@ -378,6 +415,36 @@ fn zero_entity_nurbs_layout(data: &[u8], record: usize) -> Option<ZeroEntityNurb
         grid,
         end,
     })
+}
+
+fn zero_entity_nurbs_knot_lane(
+    data: &[u8],
+    start: usize,
+    distinct_count: usize,
+    expected_control_count: usize,
+) -> Option<(Vec<f64>, Vec<u32>, u32, u32)> {
+    let distinct_end = start.checked_add(distinct_count.checked_mul(8)?)?;
+    let mut distinct = Vec::with_capacity(distinct_count);
+    for index in 0..distinct_count {
+        let value = f64_le(data, start.checked_add(index.checked_mul(8)?)?)?;
+        if !value.is_finite() || distinct.last().is_some_and(|last| value <= *last) {
+            return None;
+        }
+        distinct.push(value);
+    }
+    let (mults, end) = u32_tokens(data, distinct_end, distinct_count)?;
+    let degree = mults.first().copied()?.checked_sub(1)?;
+    let control_count = mults
+        .iter()
+        .try_fold(0u32, |sum, value| sum.checked_add(*value))?
+        .checked_sub(degree + 1)?;
+    if !(1..=9).contains(&degree)
+        || usize::try_from(control_count).ok()? != expected_control_count
+        || end != distinct_end.checked_add(distinct_count.checked_mul(5)?)?
+    {
+        return None;
+    }
+    Some((distinct, mults, degree, control_count))
 }
 
 /// Inventory every complete framed record in the one-based global namespace.
@@ -558,7 +625,20 @@ pub fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
             loop_index = loop_end;
         }
     }
-    if faces.len() == runs.len() {
+    let face_population = records
+        .iter()
+        .filter(|record| record.tag[0] == 0x5f)
+        .count();
+    let surface_population = records
+        .iter()
+        .filter(|record| zero_entity_surface_carrier_tag(record.tag))
+        .count();
+    // Equal filtered lengths are not enough: independent drops can shift the
+    // positional rosters. Bind only when every framed candidate survived.
+    let rosters_are_complete = faces.len() == face_population
+        && runs.len() == surface_population
+        && faces.len() == runs.len();
+    if rosters_are_complete {
         for (run, mut face) in runs.iter_mut().zip(faces) {
             bind_face_support_occurrences(&mut face, &run.supports);
             run.face = Some(face);
@@ -1011,6 +1091,54 @@ fn zero_entity_support_pcurve(data: &[u8], record: ZeroEntityRecord) -> Option<P
     })
 }
 
+/// Convert a zero-entity support pcurve from the carrier's native chart into
+/// the neutral IR chart.  The support records store cylindrical and toroidal
+/// coordinates as arc lengths and conical latitude as slant length; IR
+/// analytic surfaces use angles and axial distance respectively.
+pub(crate) fn zero_entity_neutral_pcurve(
+    surface: &SurfaceGeometry,
+    pcurve: &PcurveGeometry,
+) -> Option<PcurveGeometry> {
+    let (u_scale, v_scale) = match surface {
+        SurfaceGeometry::Cylinder { radius, .. } => (radius.recip(), 1.0),
+        SurfaceGeometry::Cone { half_angle, .. } => (1.0, half_angle.cos()),
+        SurfaceGeometry::Torus {
+            major_radius,
+            minor_radius,
+            ..
+        } => (major_radius.recip(), minor_radius.recip()),
+        SurfaceGeometry::Plane { .. } | SurfaceGeometry::Nurbs(_) => (1.0, 1.0),
+        _ => return None,
+    };
+    if !u_scale.is_finite() || !v_scale.is_finite() || u_scale == 0.0 || v_scale == 0.0 {
+        return None;
+    }
+    let PcurveGeometry::Nurbs {
+        degree,
+        knots,
+        control_points,
+        weights,
+        periodic,
+    } = pcurve
+    else {
+        return None;
+    };
+    let control_points = control_points
+        .iter()
+        .map(|point| {
+            let point = Point2::new(point.u * u_scale, point.v * v_scale);
+            ([point.u, point.v].into_iter().all(f64::is_finite)).then_some(point)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(PcurveGeometry::Nurbs {
+        degree: *degree,
+        knots: knots.clone(),
+        control_points,
+        weights: weights.clone(),
+        periodic: *periodic,
+    })
+}
+
 fn zero_entity_model_curve(
     surface: &SurfaceGeometry,
     pcurve: &PcurveGeometry,
@@ -1435,6 +1563,8 @@ pub fn zero_entity_edge_strides(data: &[u8]) -> Vec<ZeroEntityEdgeStride> {
             Some(ZeroEntityEdgeStride {
                 pos: record.pos,
                 record_ordinal: record.ordinal,
+                topology_refs: [allocations[0], allocations[3], allocations[4]],
+                surface_support_refs: [allocations[1], allocations[2]],
                 allocations,
             })
         })
@@ -1562,21 +1692,39 @@ fn tagged_u32(data: &[u8], at: usize) -> Option<u32> {
 }
 
 pub(crate) fn zero_entity_surface_at(data: &[u8], record: usize) -> Option<SurfaceGeometry> {
+    let tag = [*data.get(record + 2)?, *data.get(record + 3)?];
+    if !zero_entity_surface_carrier_tag(tag) {
+        return None;
+    }
     let payload_end = record.checked_add(*data.get(record + 3)? as usize + 12)?;
     let payload = data.get(record + 4..payload_end)?;
-    match (*data.get(record + 2)?, *data.get(record + 3)?) {
-        (0x27, 0x6a) => zero_entity_plane(payload),
-        (0x28, 0x8a) => zero_entity_cylinder(payload),
-        (0x29, 0xb8) => zero_entity_cone(payload),
-        (0x2b, 0xc8) => zero_entity_torus(payload),
-        (0x34, 0xc8 | 0x5e) => zero_entity_nurbs_surface(data, record),
+    match tag {
+        [0x27, 0x6a] => zero_entity_plane(payload),
+        [0x28, 0x8a] => zero_entity_cylinder(payload),
+        [0x29, 0xb8] => zero_entity_cone(payload),
+        [0x2b, 0xc8] => zero_entity_torus(payload),
+        [0x34, 0xc8 | 0x5e] => zero_entity_nurbs_surface(data, record),
         _ => None,
     }
 }
 
-/// Decode the inline zero-entity non-rational NURBS carrier.  Its pole grid
-/// follows the nominal framed record length, so this function receives the full
-/// preamble.
+fn zero_entity_surface_carrier_tag(tag: [u8; 2]) -> bool {
+    matches!(
+        tag,
+        [0x27, 0x6a] | [0x28, 0x8a] | [0x29, 0xb8] | [0x2b | 0x34, 0xc8] | [0x34, 0x5e]
+    )
+}
+
+fn zero_entity_nurbs_shape(tag: [u8; 2]) -> Option<(usize, usize, usize)> {
+    match tag {
+        [0x34, 0xc8] => Some((167, 7, 7)),
+        [0x34, 0x5e] => Some((141, 5, 7)),
+        _ => None,
+    }
+}
+
+/// Decode the inline zero-entity non-rational NURBS carrier. Its pole grid
+/// extends past the nominal framed record at a tag-specific fixed offset.
 fn zero_entity_nurbs_surface(data: &[u8], record: usize) -> Option<SurfaceGeometry> {
     let layout = zero_entity_nurbs_layout(data, record)?;
     let pole_count =
@@ -1600,14 +1748,6 @@ fn zero_entity_nurbs_surface(data: &[u8], record: usize) -> Option<SurfaceGeomet
         u_periodic: false,
         v_periodic: false,
     }))
-}
-
-fn skip_u32_token_run(data: &[u8], mut at: usize) -> Option<usize> {
-    while data.get(at) == Some(&0x10) {
-        u32_le(data, at + 1)?;
-        at = at.checked_add(5)?;
-    }
-    Some(at)
 }
 
 fn zero_entity_plane(payload: &[u8]) -> Option<SurfaceGeometry> {
@@ -1661,39 +1801,6 @@ fn zero_entity_torus(payload: &[u8]) -> Option<SurfaceGeometry> {
     Some(geometry)
 }
 
-fn f64_run_to_one(bytes: &[u8], mut at: usize) -> Option<(Vec<f64>, usize)> {
-    let mut values = Vec::new();
-    loop {
-        let value = f64_le(bytes, at)?;
-        if !(0.0..=1.0).contains(&value) || values.last().is_some_and(|last| value < *last) {
-            return None;
-        }
-        values.push(value);
-        at = at.checked_add(8)?;
-        if value == 1.0 {
-            return (values.len() >= 2).then_some((values, at));
-        }
-        if values.len() > 4096 {
-            return None;
-        }
-    }
-}
-
-fn f64_monotonic_run(bytes: &[u8], mut at: usize) -> Option<(Vec<f64>, usize)> {
-    let mut values = Vec::new();
-    while let Some(value) = f64_le(bytes, at) {
-        if !(0.0..=50.0).contains(&value) || values.last().is_some_and(|last| value < *last) {
-            break;
-        }
-        values.push(value);
-        at = at.checked_add(8)?;
-        if values.len() > 4096 {
-            return None;
-        }
-    }
-    (values.len() >= 2).then_some((values, at))
-}
-
 fn u32_tokens(bytes: &[u8], mut at: usize, count: usize) -> Option<(Vec<u32>, usize)> {
     let mut values = Vec::with_capacity(count);
     for _ in 0..count {
@@ -1722,6 +1829,116 @@ mod tests {
     fn write_tagged_u32(record: &mut [u8], at: usize, value: u32) {
         record[at] = 0x10;
         record[at + 1..at + 5].copy_from_slice(&value.to_le_bytes());
+    }
+
+    fn nurbs_carrier(
+        tag: [u8; 2],
+        u_knots: &[f64],
+        u_mults: &[u32],
+        v_knots: &[f64],
+        v_mults: &[u32],
+    ) -> Vec<u8> {
+        let (grid_offset, u_count, v_count) =
+            zero_entity_nurbs_shape(tag).expect("unsupported test carrier");
+        let pole_count = crate::nurbs_surface_control_count(u_count, v_count)
+            .expect("test NURBS dimensions fit the codec limit");
+        let mut bytes = vec![0u8; grid_offset + pole_count * 24];
+        bytes[..4].copy_from_slice(&[0xa9, 0x03, tag[0], tag[1]]);
+        let mut at = 23;
+        for knot in u_knots {
+            bytes[at..at + 8].copy_from_slice(&knot.to_le_bytes());
+            at += 8;
+        }
+        for multiplicity in u_mults {
+            write_tagged_u32(&mut bytes, at, *multiplicity);
+            at += 5;
+        }
+        write_tagged_u32(&mut bytes, at, 1);
+        at += 5;
+        write_tagged_u32(&mut bytes, at, 1);
+        at += 5;
+        bytes[at] = 0x04;
+        at += 1;
+        for knot in v_knots {
+            bytes[at..at + 8].copy_from_slice(&knot.to_le_bytes());
+            at += 8;
+        }
+        for multiplicity in v_mults {
+            write_tagged_u32(&mut bytes, at, *multiplicity);
+            at += 5;
+        }
+        bytes[at..at + 3].copy_from_slice(&[0x08, 0x00, 0x00]);
+        at += 3;
+        assert_eq!(at, grid_offset);
+        for pole in 0..pole_count {
+            let value = pole as f64;
+            for coordinate in 0..3 {
+                let offset = at + pole * 24 + coordinate * 8;
+                bytes[offset..offset + 8]
+                    .copy_from_slice(&(value + coordinate as f64).to_le_bytes());
+            }
+        }
+        bytes
+    }
+
+    #[test]
+    fn nurbs_layout_uses_fixed_boundaries_without_parameter_windows() {
+        let carriers = [
+            (
+                [0x34, 0xc8],
+                vec![10.0, 20.0, 30.0, 40.0, 50.0],
+                vec![4, 1, 1, 1, 4],
+                vec![-100.0, 0.0, 100.0, 200.0, 300.0],
+                vec![4, 1, 1, 1, 4],
+                167usize + 49 * 24,
+            ),
+            (
+                [0x34, 0x5e],
+                vec![10.0, 20.0, 30.0],
+                vec![4, 1, 4],
+                vec![-100.0, 0.0, 100.0, 200.0, 300.0],
+                vec![4, 1, 1, 1, 4],
+                141usize + 35 * 24,
+            ),
+        ];
+        for (tag, u_knots, u_mults, v_knots, v_mults, expected_end) in carriers {
+            let bytes = nurbs_carrier(tag, &u_knots, &u_mults, &v_knots, &v_mults);
+            let layout = zero_entity_nurbs_layout(&bytes, 0).expect("bounded NURBS layout");
+            assert_eq!(layout.end, expected_end);
+            assert_eq!(layout.u_distinct, u_knots);
+            assert_eq!(layout.v_distinct, v_knots);
+            assert!(matches!(
+                zero_entity_surface_at(&bytes, 0),
+                Some(SurfaceGeometry::Nurbs(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn nurbs_layout_rejects_an_invalid_dimension_token() {
+        let mut bytes = nurbs_carrier(
+            [0x34, 0x5e],
+            &[10.0, 20.0, 30.0],
+            &[4, 1, 4],
+            &[-100.0, 0.0, 100.0, 200.0, 300.0],
+            &[4, 1, 1, 1, 4],
+        );
+        let first_dimension_value = 23 + 3 * 13 + 1;
+        bytes[first_dimension_value..first_dimension_value + 4].fill(0);
+        assert!(zero_entity_nurbs_layout(&bytes, 0).is_none());
+    }
+
+    #[test]
+    fn nurbs_layout_rejects_nonfinite_knots() {
+        let mut bytes = nurbs_carrier(
+            [0x34, 0xc8],
+            &[10.0, f64::NAN, 30.0, 40.0, 50.0],
+            &[4, 1, 1, 1, 4],
+            &[-100.0, 0.0, 100.0, 200.0, 300.0],
+            &[4, 1, 1, 1, 4],
+        );
+        bytes[23..31].copy_from_slice(&10.0f64.to_le_bytes());
+        assert!(zero_entity_nurbs_layout(&bytes, 0).is_none());
     }
 
     #[test]
@@ -2099,6 +2316,65 @@ mod tests {
     }
 
     #[test]
+    fn support_pcurve_conversion_uses_the_neutral_surface_chart() {
+        use cadmpeg_ir::math::Vector3;
+
+        let pcurve = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point2::new(2.0, 3.0), Point2::new(4.0, 5.0)],
+            weights: None,
+            periodic: false,
+        };
+        let cylinder = SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        assert_eq!(
+            zero_entity_neutral_pcurve(&cylinder, &pcurve),
+            Some(PcurveGeometry::Nurbs {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![Point2::new(1.0, 3.0), Point2::new(2.0, 5.0)],
+                weights: None,
+                periodic: false,
+            })
+        );
+
+        let cone = SurfaceGeometry::Cone {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+            ratio: 1.0,
+            half_angle: 0.25,
+        };
+        let Some(PcurveGeometry::Nurbs { control_points, .. }) =
+            zero_entity_neutral_pcurve(&cone, &pcurve)
+        else {
+            panic!("neutral cone pcurve")
+        };
+        assert_eq!(control_points[0].u, 2.0);
+        assert_eq!(control_points[0].v, 3.0 * 0.25_f64.cos());
+
+        let torus = SurfaceGeometry::Torus {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 4.0,
+            minor_radius: 2.0,
+        };
+        let Some(PcurveGeometry::Nurbs { control_points, .. }) =
+            zero_entity_neutral_pcurve(&torus, &pcurve)
+        else {
+            panic!("neutral torus pcurve")
+        };
+        assert_eq!(control_points[1], Point2::new(1.0, 2.5));
+    }
+
+    #[test]
     fn analytic_carriers_have_no_model_size_cutoff() {
         let mut cylinder = vec![0_u8; 89];
         cylinder[33..41].copy_from_slice(&1.0_f64.to_le_bytes());
@@ -2236,6 +2512,8 @@ mod tests {
         };
         assert_eq!(edge_stride.record_ordinal, 1);
         assert_eq!(edge_stride.allocations, [5, 7, 8, 4, 3]);
+        assert_eq!(edge_stride.topology_refs, [5, 4, 3]);
+        assert_eq!(edge_stride.surface_support_refs, [7, 8]);
 
         let pairs = zero_entity_oriented_use_pairs(&stream);
         let [pair] = pairs.as_slice() else {
@@ -2393,6 +2671,28 @@ mod tests {
         let [run] = runs.as_slice() else {
             panic!("one support run")
         };
+        assert!(run.face.is_none());
+    }
+
+    #[test]
+    fn independently_incomplete_rosters_do_not_shift_face_bindings() {
+        let mut stream = zero_entity_support_stream();
+        stream[38..62].fill(0);
+        stream.extend(zero_entity_support_stream());
+
+        let face_stream = zero_entity_face_support_stream();
+        let face_start = zero_entity_support_stream().len();
+        let valid_face = face_stream[face_start..].to_vec();
+        stream.extend_from_slice(&valid_face);
+        let mut invalid_face = valid_face;
+        *invalid_face.last_mut().expect("face terminal") = 0x04;
+        stream.extend(invalid_face);
+
+        let runs = zero_entity_support_runs(&stream);
+        let [run] = runs.as_slice() else {
+            panic!("one complete support run")
+        };
+        assert_eq!(run.carrier_record_ordinal, 3);
         assert!(run.face.is_none());
     }
 

@@ -2,9 +2,9 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 //! Reads and writes Rhino `.3dm` files through [`cadmpeg_ir::document::CadIr`].
 //!
-//! Support level: L8 for archive versions 50, 60, 70, and 80 on the cadmpeg
-//! support ladder. The codec provides bounded 3DM container inspection, typed
-//! decoding, and explicitly versioned semantic native writing.
+//! Support level: L1 for archive versions 50, 60, 70, and 80 on the cadmpeg
+//! support ladder. The codec provides bounded 3DM container inspection, partial
+//! typed decoding, and explicitly versioned semantic native writing.
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
@@ -27,6 +27,7 @@ pub(crate) mod extrusion;
 pub(crate) mod hatch;
 pub(crate) mod history;
 pub(crate) mod instances;
+pub(crate) mod legacy;
 pub mod loss;
 pub(crate) mod mesh;
 pub(crate) mod morph;
@@ -40,6 +41,9 @@ pub(crate) mod surfaces;
 pub(crate) mod views;
 pub(crate) mod wire;
 mod writer;
+
+#[cfg(test)]
+mod external_transfer_tests;
 
 #[cfg(feature = "fuzzing")]
 pub mod fuzzing;

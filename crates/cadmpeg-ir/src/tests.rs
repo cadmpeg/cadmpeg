@@ -3151,6 +3151,19 @@ fn edge_endpoint_mismatch_is_flagged() {
         report.findings
     );
 
+    let mut source_tolerant = unit_cube();
+    source_tolerant.model.points[0].position.z += 0.015;
+    source_tolerant.tolerances.linear = 0.02;
+    let report = validate(&source_tolerant, Vec::new());
+    assert!(
+        !report
+            .findings
+            .iter()
+            .any(|finding| finding.check == Check::GeometricConsistency),
+        "document tolerance must qualify a small endpoint mismatch: {:?}",
+        report.findings
+    );
+
     // Displace one corner: the point no longer lies on its edges' curves at
     // the stored parameter values.
     ir.model.points[0].position.z += 1.0;
@@ -5450,7 +5463,7 @@ fn feature_operation_geometry_is_validated() {
                 cone_angle: crate::features::Angle(0.0),
                 left_handed: false,
                 reversed: false,
-                tolerance: 0.0,
+                tolerance: Some(0.0),
                 allow_multi_profile_faces: None,
             },
             op: crate::features::BooleanOp::Join,

@@ -97,6 +97,21 @@ macro_rules! declare_model {
                 &[$(stringify!($field)),*]
             }
 
+            /// Returns the identity at one canonical arena slot.
+            pub(crate) fn identity_at(
+                &self,
+                kind: crate::schema::EntityKind,
+                index: usize,
+            ) -> Option<&str> {
+                $(if kind == <$ty as crate::schema::EntitySchema>::KIND {
+                    return self
+                        .$field
+                        .get(index)
+                        .map(crate::schema::EntitySchema::identity);
+                })*
+                None
+            }
+
             /// Total number of admitted neutral entities across all arenas.
             pub fn entity_count(&self) -> usize {
                 0 $(+ self.$field.len())*

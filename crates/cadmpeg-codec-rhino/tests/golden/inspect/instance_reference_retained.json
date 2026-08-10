@@ -71,6 +71,8 @@
   "format": "rhino",
   "notes": [
     "archive version 60",
-    "object at 534 has nil object UUID"
+    "CRC mismatch at offset 534 for typecode 0x20008070: expected 0x0, got 0x9d88d481",
+    "object at 534 has nil object UUID",
+    "instance definition CRC mismatch at offset 179"
   ]
 }

@@ -5,7 +5,8 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use crate::chunks::{
-    chunk_at, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
+    chunk_at, direct_checksum_ranges, verify_checksum, verify_checksum_ranges, ArchiveVersion,
+    BoundedReader, ChecksumStatus, FramingError,
 };
 use crate::container::Record;
 use crate::settings::{self, DocumentMetadata, SourceRange, Xform};
@@ -25,7 +26,7 @@ const CLASS_END: u32 = 0x8002_7fff;
 const ANONYMOUS: u32 = 0x4000_8000;
 const HISTORY_HEADER: u32 = 0x0200_8075;
 const HISTORY_DATA: u32 = 0x0200_8076;
-const HIDDEN_OBJECT_MODE: u8 = 2;
+const HIDDEN_OBJECT_MODE: u8 = 1;
 const IDEF_OBJECT_MODE: u8 = 3;
 
 /// A class-userdata descriptor.
@@ -341,6 +342,21 @@ fn checksum_warning(
     }
 }
 
+fn checksum_warning_excluding(
+    bytes: &[u8],
+    chunk: &crate::chunks::Chunk,
+    children: &[Range<usize>],
+) -> Result<Option<String>, FramingError> {
+    let direct = direct_checksum_ranges(&chunk.body, children)?;
+    match verify_checksum_ranges(bytes, chunk, &direct)? {
+        ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
+            "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
+            chunk.header_start, chunk.typecode
+        ))),
+        _ => Ok(None),
+    }
+}
+
 /// Parses a table-record Rhino class wrapper without decoding its payload.
 pub(crate) fn parse_class_wrapper(
     bytes: &[u8],
@@ -385,9 +401,9 @@ pub(crate) fn parse_class_wrapper_with_userdata(
         false,
     )?;
     require_long(&data_chunk, CLASS_DATA)?;
-    if let Some(note) = checksum_warning(bytes, &data_chunk)? {
-        warnings.push(note);
-    }
+    // CLASS_DATA checksum coverage is defined by the concrete class grammar.
+    // The wrapper scanner cannot distinguish direct bytes from embedded chunks,
+    // so it must not report a checksum result for this mixed payload.
     let mut offset = data_chunk.next_offset;
     let mut end_seen = false;
     let mut userdata = Vec::new();
@@ -434,14 +450,14 @@ fn parse_userdata(
         let transform_range = transform_start..reader.position();
         let payload = child(bytes, reader.position(), wrapper.body.end, archive, false)?;
         require_long(&payload, ANONYMOUS)?;
-        if let Some(note) = checksum_warning(bytes, &payload)? {
-            warnings.push(note);
-        }
         if payload.next_offset != wrapper.body.end {
             return Err(malformed_at(
                 wrapper.body.end,
                 "userdata wrapper has trailing bytes",
             ));
+        }
+        if let Some(note) = checksum_warning_excluding(bytes, wrapper, &[payload.range()])? {
+            warnings.push(note);
         }
         return Ok(UserdataDescriptor {
             range: chunk_range(wrapper),
@@ -459,9 +475,6 @@ fn parse_userdata(
         });
     }
     if version.0 != 2 {
-        if let Some(note) = checksum_warning(bytes, wrapper)? {
-            warnings.push(note);
-        }
         return Ok(UserdataDescriptor {
             range: chunk_range(wrapper),
             version,
@@ -514,14 +527,16 @@ fn parse_userdata(
     }
     let payload = child(bytes, header.next_offset, wrapper.body.end, archive, false)?;
     require_long(&payload, ANONYMOUS)?;
-    if let Some(note) = checksum_warning(bytes, &payload)? {
-        warnings.push(note);
-    }
     if payload.next_offset != wrapper.body.end {
         return Err(malformed_at(
             payload.next_offset,
             "userdata wrapper has trailing bytes",
         ));
+    }
+    if let Some(note) =
+        checksum_warning_excluding(bytes, wrapper, &[header.range(), payload.range()])?
+    {
+        warnings.push(note);
     }
     Ok(UserdataDescriptor {
         range: chunk_range(wrapper),
@@ -543,7 +558,7 @@ fn parse_history(
     bytes: &[u8],
     wrapper: &crate::chunks::Chunk,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
+    _warnings: &mut Vec<String>,
 ) -> Result<HistoryDescriptor, FramingError> {
     let mut reader = BoundedReader::new(bytes, wrapper.body.start, wrapper.body.end)?;
     let packed = reader.u8()?;
@@ -555,16 +570,10 @@ fn parse_history(
         match item.typecode {
             HISTORY_HEADER if header_range.is_none() && data_range.is_none() => {
                 require_long(&item, HISTORY_HEADER)?;
-                if let Some(note) = checksum_warning(bytes, &item)? {
-                    warnings.push(note);
-                }
                 header_range = Some(chunk_range(&item));
             }
             HISTORY_DATA if data_range.is_none() => {
                 require_long(&item, HISTORY_DATA)?;
-                if let Some(note) = checksum_warning(bytes, &item)? {
-                    warnings.push(note);
-                }
                 data_range = Some(chunk_range(&item));
             }
             _ => {
@@ -598,20 +607,6 @@ fn finite_attribute(value: f64, offset: usize, label: &str) -> Result<f64, Frami
     } else {
         Err(malformed_at(offset, format!("{label} is not finite")))
     }
-}
-
-fn validate_attribute_selectors(
-    object_mode: u8,
-    selectors: [u8; 5],
-    offset: usize,
-) -> Result<(), FramingError> {
-    if object_mode & 0x0f > 5 {
-        return Err(malformed_at(offset, "unknown object-mode discriminant"));
-    }
-    if selectors.iter().any(|selector| *selector > 3) {
-        return Err(malformed_at(offset, "unknown attribute source selector"));
-    }
-    Ok(())
 }
 
 pub(crate) fn parse_attributes(
@@ -710,17 +705,6 @@ pub(crate) fn parse_attributes(
         } else {
             None
         };
-        validate_attribute_selectors(
-            object_mode,
-            [
-                color_source,
-                linetype_source,
-                material_source,
-                plot_color_source,
-                plot_weight_source,
-            ],
-            body_range.start,
-        )?;
         let obsolete_thickness =
             finite_attribute(obsolete_thickness, body_range.start, "obsolete thickness")?;
         let obsolete_scale = finite_attribute(obsolete_scale, body_range.start, "obsolete scale")?;
@@ -935,14 +919,7 @@ pub(crate) fn parse_attributes(
             27 => attributes.clip_participation_source = reader.u8()?,
             28 => {
                 attributes.clipping_proof = reader.bool()?;
-                let count = reader.i32()?;
-                let bytes = bounded_count(&reader, count, 16)?;
-                attributes.clipping_plane_ids.clear();
-                for _ in 0..bytes / 16 {
-                    attributes
-                        .clipping_plane_ids
-                        .push(uuid_reader(&mut reader)?);
-                }
+                attributes.clipping_plane_ids = read_uuid_list(&mut reader, archive)?;
             }
             29 => attributes.section_attributes_source = reader.u8()?,
             30 => attributes.hatch_pattern_index = reader.i32()?,
@@ -985,22 +962,51 @@ pub(crate) fn parse_attributes(
             41 => attributes.selective_clipping_list = reader.bool()?,
             _ => unreachable!(),
         }
-        validate_attribute_selectors(
-            attributes.object_mode,
-            [
-                attributes.color_source,
-                attributes.linetype_source,
-                attributes.material_source,
-                attributes.plot_color_source,
-                attributes.plot_weight_source,
-            ],
-            reader.position(),
-        )?;
     }
     Err(malformed_at(
         reader.end(),
         "tagged object attributes are missing terminator",
     ))
+}
+
+pub(crate) fn read_uuid_list(
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+) -> Result<Vec<Uuid>, FramingError> {
+    let chunk = chunk_at(
+        reader.backing_bytes(),
+        reader.position(),
+        reader.end(),
+        archive,
+        false,
+    )?;
+    if chunk.typecode != ANONYMOUS || chunk.short {
+        return Err(malformed_at(
+            reader.position(),
+            "UUID list wrapper is invalid",
+        ));
+    }
+    let mut payload = BoundedReader::new(reader.backing_bytes(), chunk.body.start, chunk.body.end)?;
+    if payload.i32()? != 1 || payload.i32()? != 0 {
+        return Err(malformed_at(
+            payload.position(),
+            "UUID list version is unsupported",
+        ));
+    }
+    let count = payload.i32()?;
+    let bytes = bounded_count(&payload, count, 16)?;
+    let mut values = Vec::with_capacity(bytes / 16);
+    for _ in 0..bytes / 16 {
+        values.push(uuid_reader(&mut payload)?);
+    }
+    if payload.remaining() != 0 {
+        return Err(malformed_at(
+            payload.position(),
+            "UUID list has trailing bytes",
+        ));
+    }
+    reader.skip(chunk.next_offset - reader.position())?;
+    Ok(values)
 }
 
 fn uuid_reader(reader: &mut crate::chunks::BoundedReader<'_>) -> Result<Uuid, FramingError> {
@@ -1195,20 +1201,8 @@ pub(crate) fn parse_object_record(
     offset = uuid_chunk.next_offset;
     let data_chunk = child(bytes, offset, class.body.end, archive, false)?;
     require_long(&data_chunk, CLASS_DATA)?;
-    // Container CRCs exclude independently checksummed nested chunks. Family
-    // readers validate those leaf chunks while decoding their payloads.
-    let nests_chunks = crate::brep::supported_class(class_uuid)
-        || crate::mesh::supported_class(class_uuid)
-        || crate::curves::class_data_nests_chunks(class_uuid)
-        || crate::surfaces::is_procedural_class(class_uuid)
-        || class_uuid == crate::surfaces::CLIPPING_PLANE_SURFACE
-        || crate::extrusion::supported_class(class_uuid)
-        || crate::subd::supported_class(class_uuid);
-    if !nests_chunks {
-        if let Some(note) = checksum_warning(bytes, &data_chunk)? {
-            warnings.push(note);
-        }
-    }
+    // CLASS_DATA is mixed by definition. Its concrete family reader owns
+    // checksum validation because only that grammar identifies direct bytes.
     let class_data_range = data_chunk.body.clone();
     offset = data_chunk.next_offset;
     let mut userdata = Vec::new();
@@ -1254,6 +1248,9 @@ pub(crate) fn parse_object_record(
         match item.typecode {
             OBJECT_RECORD_ATTRIBUTES if phase == 0 => {
                 require_long(&item, OBJECT_RECORD_ATTRIBUTES)?;
+                if let Some(note) = checksum_warning(bytes, &item)? {
+                    warnings.push(note);
+                }
                 attributes_range = Some(item.range());
                 attributes_body_range = Some(item.body.clone());
                 phase = 1;
@@ -1266,7 +1263,17 @@ pub(crate) fn parse_object_record(
             }
             OBJECT_RECORD_HISTORY if phase <= 2 => {
                 require_long(&item, OBJECT_RECORD_HISTORY)?;
-                history = Some(parse_history(bytes, &item, archive, &mut warnings)?);
+                let descriptor = parse_history(bytes, &item, archive, &mut warnings)?;
+                let children = descriptor
+                    .header_range
+                    .iter()
+                    .chain(descriptor.data_range.iter())
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if let Some(note) = checksum_warning_excluding(bytes, &item, &children)? {
+                    warnings.push(note);
+                }
+                history = Some(descriptor);
                 phase = 3;
             }
             _ if !item.short => {
@@ -1279,9 +1286,6 @@ pub(crate) fn parse_object_record(
                     "object trailer child is out of order or malformed",
                 ))
             }
-        }
-        if let Some(note) = checksum_warning(bytes, &item)? {
-            warnings.push(note);
         }
         offset = item.next_offset;
     }

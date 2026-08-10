@@ -186,6 +186,16 @@ struct ViewAttributes {
     section_behavior: Option<u8>,
 }
 
+const UNSET_POSITIVE_FLOAT: f64 = 1.234_321e38;
+
+fn legacy_clipping_depth(value: f64) -> (f64, bool) {
+    if value >= 0.0 && value != UNSET_POSITIVE_FLOAT {
+        (value, true)
+    } else {
+        (0.0, false)
+    }
+}
+
 fn structural(offset: usize, message: impl Into<String>) -> FramingError {
     FramingError::Structural {
         offset,
@@ -198,14 +208,8 @@ fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
 }
 
 fn bool_i32(reader: &mut BoundedReader<'_>, label: &str) -> Result<bool, FramingError> {
-    match reader.i32()? {
-        0 => Ok(false),
-        1 => Ok(true),
-        _ => Err(structural(
-            reader.position() - 4,
-            format!("{label} flag is invalid"),
-        )),
-    }
+    let _ = label;
+    Ok(reader.i32()? != 0)
 }
 
 fn scale3(value: &mut [f64; 3], scale: f64, offset: usize) -> Result<(), FramingError> {
@@ -626,18 +630,26 @@ fn parse_attributes(
                 .ok_or_else(|| structural(plane.position() - 8, "clipping equation is invalid"))?;
             let id = uuid(&mut plane)?;
             let enabled = plane.bool()?;
-            let depth =
-                if minor >= 1 {
-                    Some(scaled_coordinate(plane.f64()?, scale).ok_or_else(|| {
-                        structural(plane.position() - 8, "clipping depth is invalid")
-                    })?)
+            let (depth, legacy_depth_enabled) = if minor >= 1 {
+                let raw_depth = plane.f64()?;
+                let (raw_depth, enabled) = if minor <= 2 {
+                    legacy_clipping_depth(raw_depth)
                 } else {
-                    None
+                    (raw_depth, false)
                 };
+                (
+                    Some(scaled_coordinate(raw_depth, scale).ok_or_else(|| {
+                        structural(plane.position() - 8, "clipping depth is invalid")
+                    })?),
+                    enabled,
+                )
+            } else {
+                (None, false)
+            };
             let depth_enabled = if minor >= 3 {
                 plane.bool()?
             } else {
-                depth.is_some_and(|value| value >= 0.0)
+                legacy_depth_enabled
             };
             if plane.remaining() != 0 {
                 return Err(structural(
@@ -980,7 +992,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_viewport, Viewport};
+    use super::{legacy_clipping_depth, parse_viewport, Viewport, UNSET_POSITIVE_FLOAT};
 
     fn point(bytes: &mut Vec<u8>, value: [f64; 3]) {
         for coordinate in value {
@@ -1029,5 +1041,12 @@ mod tests {
         assert_eq!(value.target_millimeters, Some([40.0, 50.0, 60.0]));
         assert_eq!(value.view_scale, Some([1.0, 2.0, 3.0]));
         assert!(value.camera_valid && value.camera_location_locked);
+    }
+
+    #[test]
+    fn legacy_clipping_depth_rejects_negative_and_unset_values() {
+        assert_eq!(legacy_clipping_depth(2.5), (2.5, true));
+        assert_eq!(legacy_clipping_depth(-1.0), (0.0, false));
+        assert_eq!(legacy_clipping_depth(UNSET_POSITIVE_FLOAT), (0.0, false));
     }
 }

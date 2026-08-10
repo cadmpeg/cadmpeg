@@ -3968,13 +3968,11 @@
             ],
             [
               {
-                "entity": "fcstd:design:sketch-entity#DimensionalRelations:6",
-                "reversed": false
-              }
-            ],
-            [
-              {
                 "entity": "fcstd:design:sketch-entity#DimensionalRelations:7",
+                "reversed": true
+              },
+              {
+                "entity": "fcstd:design:sketch-entity#DimensionalRelations:6",
                 "reversed": false
               }
             ],
@@ -4023,42 +4021,6 @@
             ],
             [
               {
-                "entity": "fcstd:design:sketch-entity#GeometricRelations:10",
-                "reversed": false
-              }
-            ],
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#GeometricRelations:11",
-                "reversed": false
-              }
-            ],
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#GeometricRelations:12",
-                "reversed": false
-              }
-            ],
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#GeometricRelations:13",
-                "reversed": false
-              }
-            ],
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#GeometricRelations:14",
-                "reversed": false
-              }
-            ],
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#GeometricRelations:15",
-                "reversed": false
-              }
-            ],
-            [
-              {
                 "entity": "fcstd:design:sketch-entity#GeometricRelations:2",
                 "reversed": false
               }
@@ -4102,6 +4064,38 @@
             [
               {
                 "entity": "fcstd:design:sketch-entity#GeometricRelations:9",
+                "reversed": false
+              },
+              {
+                "entity": "fcstd:design:sketch-entity#GeometricRelations:10",
+                "reversed": false
+              }
+            ],
+            [
+              {
+                "entity": "fcstd:design:sketch-entity#GeometricRelations:12",
+                "reversed": true
+              },
+              {
+                "entity": "fcstd:design:sketch-entity#GeometricRelations:11",
+                "reversed": false
+              }
+            ],
+            [
+              {
+                "entity": "fcstd:design:sketch-entity#GeometricRelations:13",
+                "reversed": false
+              }
+            ],
+            [
+              {
+                "entity": "fcstd:design:sketch-entity#GeometricRelations:14",
+                "reversed": false
+              }
+            ],
+            [
+              {
+                "entity": "fcstd:design:sketch-entity#GeometricRelations:15",
                 "reversed": false
               }
             ]
@@ -4589,8 +4583,8 @@
     },
     "native": {
       "__elided": "native arenas are pinned by digest, not by value",
-      "__serialized_len": 1875599,
-      "__sha256": "8a294f99560347296a848d9c70f0223d0c2b5554a62bae5c5eae45514f62c762"
+      "__serialized_len": 1875605,
+      "__sha256": "65ef60a49f2922c6238bb9307a4e31cb28798e7a34fdd6bfe8018acddee44e4c"
     },
     "source": {
       "attributes": {

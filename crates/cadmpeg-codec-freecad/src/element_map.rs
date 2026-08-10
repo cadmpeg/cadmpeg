@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Persistent string-table and element-map recovery.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use cadmpeg_core::cursor::bounded_len;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::CadIr;
 
 use crate::native::{
     ElementMapGroup, ElementMapNode, ElementMapRecord, ElementMappedName, EntryRecord,
     PropertyRecord, StringTableEntry, StringTableRecord,
 };
+use crate::topology_transfer::TopologyOccurrence;
 
 const MAX_TABLE_ENTRIES: usize = 10_000_000;
 const MAX_MAP_NODES: usize = 1_000_000;
@@ -33,7 +33,6 @@ pub(crate) fn parse(
         .collect::<HashMap<_, _>>();
 
     let mut tables = Vec::new();
-    let mut claimed_new_layout_records = HashSet::new();
     for node in xml
         .descendants()
         .filter(|node| node.has_tag_name("StringHasher"))
@@ -44,30 +43,26 @@ pub(crate) fn parse(
         let owner_property = owning_property(node, properties);
         let new_layout = node.attribute("new").is_some_and(|value| value != "0");
         let data_node = if new_layout {
-            node.parent()
-                .into_iter()
-                .flat_map(|parent| parent.children())
-                .find(|sibling| {
-                    sibling.has_tag_name("StringHasher2")
-                        && sibling.range().start > node.range().end
-                        && !claimed_new_layout_records.contains(&sibling.range().start)
-                })
+            node.next_siblings()
+                .skip(1)
+                .find(roxmltree::Node::is_element)
+                .filter(|sibling| sibling.has_tag_name("StringHasher2"))
                 .ok_or_else(|| {
-                    CodecError::Malformed("StringHasher new=1 has no StringHasher2 record".into())
+                    CodecError::Malformed(
+                        "StringHasher new=1 is not followed by StringHasher2".into(),
+                    )
                 })?
         } else {
             node
         };
-        if new_layout {
-            claimed_new_layout_records.insert(data_node.range().start);
-        }
         let source_entry = data_node.attribute("file").filter(|name| !name.is_empty());
+        let inline_bytes = source_entry.is_none().then(|| node_text_bytes(data_node));
         let bytes = if let Some(name) = source_entry {
             *entry_data.get(name).ok_or_else(|| {
                 CodecError::Malformed(format!("StringHasher references missing entry {name}"))
             })?
         } else {
-            node_text_bytes(text, data_node)
+            inline_bytes.as_deref().unwrap_or_default()
         };
         let declared_count = if source_entry.is_some() {
             let header_count = string_table_header_count(bytes)?;
@@ -129,28 +124,22 @@ pub(crate) fn parse(
             .map(|count| parse_usize(count, "ElementMap count"))
             .transpose()?;
         let source_entry = map_node.attribute("file").filter(|name| !name.is_empty());
+        let inline_bytes = source_entry.is_none().then(|| node_text_bytes(map_node));
         let bytes = if let Some(name) = source_entry {
             *entry_data.get(name).ok_or_else(|| {
                 CodecError::Malformed(format!("ElementMap references missing entry {name}"))
             })?
         } else {
-            node_text_bytes(&property.raw_xml, map_node)
+            inline_bytes.as_deref().unwrap_or_default()
         };
         let parsed = parse_element_map(bytes, source_entry.is_some())?;
-        let actual_count = parsed.maps.last().map_or(0, |node| {
-            node.groups
-                .iter()
-                .flat_map(|group| &group.names)
-                .filter(|chain| !chain.is_empty())
-                .count()
-        });
-        if declared_count.is_some_and(|declared| declared != actual_count) {
-            return Err(CodecError::Malformed(format!(
-                "ElementMap for {} declares {} entries but contains {actual_count}",
-                property.id,
-                declared_count.unwrap_or_default(),
-            )));
-        }
+        let actual_count = parsed
+            .maps
+            .iter()
+            .flat_map(|node| &node.groups)
+            .flat_map(|group| &group.names)
+            .flat_map(|chain| chain.iter())
+            .count();
         let declared_count = declared_count.unwrap_or(actual_count);
         maps.push(ElementMapRecord {
             id: crate::native::native_child_id("element-map", &property.id, "map"),
@@ -188,108 +177,31 @@ fn string_table_header_count(bytes: &[u8]) -> Result<usize, CodecError> {
     Ok(count)
 }
 
-/// Connect transient indexed-name positions to every neutral placed occurrence.
-///
-/// Neutral arenas preserve source traversal order. Repeated outer placements
-/// therefore form consecutive copies of the same indexed-element sequence.
-pub(crate) fn bind_topology(
-    maps: &mut [ElementMapRecord],
-    payload_ids: &HashMap<&str, &str>,
-    ir: &CadIr,
-) {
+/// Connect kernel indexed-map positions to every neutral placed occurrence.
+pub(crate) fn bind_topology(maps: &mut [ElementMapRecord], occurrences: &[TopologyOccurrence]) {
     for map in maps {
-        let Some(payload_id) = payload_ids.get(map.property.as_str()).copied() else {
-            continue;
-        };
         let Some(root) = map.maps.last_mut() else {
             continue;
         };
         for group in &mut root.groups {
-            let ids = topology_ids(ir, payload_id, &group.indexed_name);
-            let populated_positions = group
-                .names
-                .iter()
-                .enumerate()
-                .filter_map(|(position, names)| (!names.is_empty()).then_some(position))
-                .collect::<Vec<_>>();
-            if populated_positions.is_empty()
-                || !ids.len().is_multiple_of(populated_positions.len())
-            {
-                continue;
-            }
-            let name_count = populated_positions.len();
-            for (position, id) in ids.into_iter().enumerate() {
-                let slot = populated_positions[position % name_count];
-                for name in &mut group.names[slot] {
-                    name.topology_ids.push(id.clone());
-                }
+            let indexed_name = group.indexed_name.clone();
+            for occurrence in occurrences.iter().filter(|occurrence| {
+                occurrence.property == map.property && occurrence.indexed_name == indexed_name
+            }) {
+                bind_group_occurrence(group, occurrence.source_index, &occurrence.topology_id);
             }
         }
     }
 }
 
-fn topology_ids(ir: &CadIr, payload: &str, kind: &str) -> Vec<String> {
-    let prefix = format!("{}:", crate::native::id_key(payload));
-    let belongs_to_payload = |id: &str| crate::native::id_key(id).starts_with(&prefix);
-    match kind {
-        "Vertex" => ir
-            .model
-            .vertices
-            .iter()
-            .map(|entity| entity.id.0.as_str())
-            .filter(|id| belongs_to_payload(id))
-            .map(str::to_owned)
-            .collect(),
-        "Edge" => ir
-            .model
-            .edges
-            .iter()
-            .map(|entity| entity.id.0.as_str())
-            .filter(|id| belongs_to_payload(id))
-            .map(str::to_owned)
-            .collect(),
-        "Wire" => ir
-            .model
-            .loops
-            .iter()
-            .map(|entity| entity.id.0.as_str())
-            .filter(|id| belongs_to_payload(id))
-            .map(str::to_owned)
-            .chain(
-                ir.model
-                    .shells
-                    .iter()
-                    .filter(|entity| !entity.wire_edges.is_empty())
-                    .map(|entity| entity.id.0.as_str())
-                    .filter(|id| belongs_to_payload(id))
-                    .map(str::to_owned),
-            )
-            .collect(),
-        "Face" => ir
-            .model
-            .faces
-            .iter()
-            .map(|entity| entity.id.0.as_str())
-            .filter(|id| belongs_to_payload(id))
-            .map(str::to_owned)
-            .collect(),
-        "Shell" => ir
-            .model
-            .shells
-            .iter()
-            .map(|entity| entity.id.0.as_str())
-            .filter(|id| belongs_to_payload(id))
-            .map(str::to_owned)
-            .collect(),
-        "Solid" | "CompSolid" | "Compound" => ir
-            .model
-            .bodies
-            .iter()
-            .map(|entity| entity.id.0.as_str())
-            .filter(|id| belongs_to_payload(id))
-            .map(str::to_owned)
-            .collect(),
-        _ => Vec::new(),
+fn bind_group_occurrence(group: &mut ElementMapGroup, source_index: usize, id: &str) {
+    let Some(names) = group.names.get_mut(source_index) else {
+        return;
+    };
+    for name in names {
+        if !name.topology_ids.iter().any(|existing| existing == id) {
+            name.topology_ids.push(id.to_owned());
+        }
     }
 }
 
@@ -301,10 +213,11 @@ fn owning_property(node: roxmltree::Node<'_, '_>, properties: &[PropertyRecord])
         .map(|property| property.id.clone())
 }
 
-fn node_text_bytes<'a>(text: &'a str, node: roxmltree::Node<'_, '_>) -> &'a [u8] {
+fn node_text_bytes(node: roxmltree::Node<'_, '_>) -> Vec<u8> {
     node.children()
-        .find(roxmltree::Node::is_text)
-        .map_or(&[], |child| text[child.range()].as_bytes())
+        .filter_map(|child| child.is_text().then(|| child.text()).flatten())
+        .flat_map(str::bytes)
+        .collect()
 }
 
 fn parse_count(node: roxmltree::Node<'_, '_>, kind: &str) -> Result<usize, CodecError> {
@@ -781,5 +694,37 @@ mod tests {
         )
         .expect("parse absolute element map");
         assert_eq!(map.map_id, 1);
+    }
+
+    #[test]
+    fn joins_inline_text_and_cdata_sections() {
+        let xml = roxmltree::Document::parse("<Table>\n<![CDATA[1.c value\n]]>\n</Table>")
+            .expect("inline table XML");
+        let bytes = node_text_bytes(xml.root_element());
+        let table = parse_string_table(&bytes, 1, false).expect("inline string table");
+        assert_eq!(table[0].payload, "value");
+    }
+
+    #[test]
+    fn topology_binding_preserves_empty_indexed_name_slots() {
+        let mapped_name = || ElementMappedName {
+            encoded: ";stable.0".into(),
+            resolved: Some("stable".into()),
+            string_ids: Vec::new(),
+            topology_ids: Vec::new(),
+        };
+        let mut group = ElementMapGroup {
+            indexed_name: "Edge".into(),
+            children: Vec::new(),
+            names: vec![Vec::new(), vec![mapped_name()], Vec::new()],
+        };
+        bind_group_occurrence(&mut group, 1, "edge-first-placement");
+        bind_group_occurrence(&mut group, 2, "unmapped-edge");
+        bind_group_occurrence(&mut group, 1, "edge-second-placement");
+
+        assert_eq!(
+            group.names[1][0].topology_ids,
+            ["edge-first-placement", "edge-second-placement"]
+        );
     }
 }

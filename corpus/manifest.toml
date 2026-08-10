@@ -90,6 +90,17 @@ sha256 = "35bbba0d7529415176cfbbbdc1fabc265ac3748f5fc38058887ac254e44d074f"
 notes = "Deterministic independent geometric, dimensional, and symmetry Sketcher constraint families."
 
 [[file]]
+filename = "freecad_fcstd/fixtures/sketch_conics.FCStd"
+format = "fcstd"
+author = "cadmpeg project contributors"
+authoring_app = "FreeCAD"
+authoring_app_version = "1.1.1 revision 20260414"
+generator = "freecad_fcstd/author_fixtures.py"
+license = "CC0-1.0"
+sha256 = "517b5fd0c7ea35aea9d43a22dea1ffd0a50200c54c2c61aea856a0ca5d5b9751"
+notes = "Deterministic rotated circular arc, bounded and full ellipse, hyperbola, parabola, and circular-arc profile chain."
+
+[[file]]
 filename = "freecad_fcstd/fixtures/core_operations.FCStd"
 format = "fcstd"
 author = "cadmpeg project contributors"

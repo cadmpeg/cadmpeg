@@ -190,6 +190,22 @@
       },
       {
         "code": "decode_diagnostic",
+        "message": "container.instance-definition-degraded: retained 1 malformed, ambiguous, or checksum-degraded instance-definition record(s); first: instance definition CRC mismatch at offset 227",
+        "provenance": {
+          "format": "rhino",
+          "offset": 159,
+          "stream": "",
+          "tag": "INSTANCE_DEFINITION_TABLE"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": "integrity_failure",
+        "message": "container.integrity-failure: CRC mismatch at offset 582 for typecode 0x20008070: expected 0x0, got 0x9d88d481",
+        "severity": "error"
+      },
+      {
+        "code": "decode_diagnostic",
         "message": "container.scan-diagnostic: object at 582 has nil object UUID",
         "severity": "warning"
       }

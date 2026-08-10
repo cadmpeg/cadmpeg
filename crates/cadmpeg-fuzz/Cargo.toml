@@ -415,6 +415,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "step_decode"
+path = "fuzz_targets/step_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "ir_diff"
 path = "fuzz_targets/ir_diff.rs"
 test = false
@@ -491,6 +498,13 @@ bench = false
 [[bin]]
 name = "iges_container"
 path = "fuzz_targets/iges_container.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "iges_writer"
+path = "fuzz_targets/iges_writer.rs"
 test = false
 doc = false
 bench = false

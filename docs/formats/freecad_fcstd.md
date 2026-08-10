@@ -4,8 +4,9 @@ Record offsets, field widths, and endianness are also maintained as a machine-ch
 
 ## 1. Support envelope
 
-The primary envelope is a ZIP archive containing `Document.xml` with document `SchemaVersion=4`
-and `FileVersion=1`. The application graph may contain core App, Part, PartDesign, Sketcher,
+The primary write envelope is a ZIP archive containing `Document.xml` with document
+`SchemaVersion=4` and `FileVersion=1`. The decode envelope accepts document schemas 2, 3, and 4.
+The application graph may contain core App, Part, PartDesign, Sketcher,
 Spreadsheet, Assembly, TechDraw, and GUI persistence records. Exact shapes may use text or binary
 B-rep side entries. GUI state, thumbnails, persistent element maps, and string-hasher tables are
 independently optional.
@@ -23,9 +24,9 @@ used by decoded documents before encoding. This permits general extension-object
 parametric core objects without requiring a source archive; unsupported semantics must be supplied
 as named records or rejected, never silently approximated.
 
-Schema versions 2 and 3, pre-schema-4 object layouts, and earlier property encodings are separate
-legacy envelopes. A decoder must identify their governing version before refusing a layout it does
-not support.
+Schema 2 has a `Features` declaration section and a `FeatureData` value section. Schema 3 and
+schema 4 have an `Objects` declaration section and an `ObjectData` value section. The section and
+record names are part of the schema grammar and are not interchangeable.
 
 Recovery directories, unpacked project trees, backups, and unrelated ZIP archives are not FCStd
 documents.
@@ -45,11 +46,57 @@ decompression.
 presentation graph. Other entries acquire meaning only from typed references in either graph;
 unreferenced entries remain named archive records.
 
+In schema 2, `Features.Count` equals the number of `Feature` declarations. Each declaration has a
+unique `name` and a `type`. `FeatureData.Count` equals the number of `Feature` value records. Each
+value record has a unique `name`. Declaration and value-record name sets are equal. Declaration
+order is object order.
+
+In schemas 3 and 4, `Objects.Count` equals the number of `Object` declarations. Each declaration
+has a unique `name` and a `type`. `ObjectData.Count` equals the number of `Object` value records.
+Each value record has a unique `name`. Declaration and value-record name sets are equal.
+Declaration order is object order.
+
+The presence of the `Objects` section's `Dependencies` attribute enables dependency records. An
+enabled section contains exactly `Objects.Count` `ObjectDeps` elements before the object
+declarations, in the same order and with the same names. Each `ObjectDeps.Count` equals its number
+of `Dep` children. `ObjectDeps` names are unique. An optional `AllowPartial` is a positive integer
+and remains attached to its object. A section without `Dependencies` contains no `ObjectDeps`
+elements.
+
 ## 3. Version dispatch
 
-`ProgramVersion` is metadata. Parsing dispatch is selected by container layout, document schema and
-file version, object type, property type, value tag, and side-entry form. Unsupported combinations
-are reported using those structural attributes.
+`SchemaVersion` alone selects the object envelope. `ProgramVersion` is metadata. An absent
+`FileVersion` has value zero. `FileVersion` does not select the object or property-container
+envelope. It selects versioned side-entry details such as string tables and complex geometry.
+Property runtime type and value tag select a property-value grammar.
+
+Document properties and object properties use the same `Properties` container in schemas 2, 3,
+and 4. `Properties.Count` equals the number of `Property` records. An optional
+`TransientCount` equals the number of `_Property` records. Each record has a `name` and `type`.
+A `Property` contains its runtime-type-specific value XML. A `_Property` has no persisted value.
+Status and dynamic-property metadata are optional record attributes. Property container dispatch
+does not depend on `SchemaVersion`, `FileVersion`, or `ProgramVersion`.
+
+Link properties use a closed runtime-type and value-tag grammar. All runtime types in this
+grammar have the `App::` prefix. `PropertyLink` and its
+`Child`, `Global`, and `Hidden` variants contain one `Link` with a `value` object name.
+`PropertyLinkList` and its three variants contain one `LinkList`; `count` equals the number of
+`Link` children, and each child has a `value` object name. `PropertyLinkSub` and its three variants
+contain one `LinkSub` with a `value` object name and a `count` of `Sub` children. Each `Sub` has a
+`value` subelement name. `PropertyLinkSubList` and its three variants contain one `LinkSubList`;
+`count` equals the number of `Link` children, and each child has an `obj` object name and a `sub`
+subelement name.
+
+`PropertyXLink`, `PropertyXLinkSub`, and `PropertyXLinkSubHidden` contain one `XLink`. Its `name`
+is the object name. An optional `file` is the external document path; an absent or empty `file`
+selects the current document. Zero subelements use no `sub` or `count` attribute. One subelement
+uses the `sub` attribute. Multiple subelements use `count` and the same number of `Sub` children,
+each with a `value` attribute. `PropertyXLinkSubList` and `PropertyXLinkList` contain one
+`XLinkSubList`; its `count` equals the number of child `XLink` values. A `shadowed` attribute on a
+subelement carrier supplies the restored subelement value; the primary `sub` or `value` remains
+the compatibility name. Other carrier names and simultaneous `sub` and `count` carriers are
+invalid. A property type outside this registry retains its XML but does not infer link targets from
+nested tag names.
 
 ## 4. Identity and retention
 
@@ -58,8 +105,9 @@ object identity. Every property identity includes its owner and persisted proper
 order is significant for declarations, properties, links, and side-entry requests.
 
 Unknown object and property types retain their type name, owner, persisted name, status and dynamic
-metadata, recoverable links, raw XML span, referenced entry bytes, and source order. Unknown
-application records remain named records rather than being merged into one document-wide payload.
+metadata, links decoded by a registered grammar, raw XML span, referenced entry bytes, and source
+order. Unknown application records remain named records rather than being merged into one
+document-wide payload.
 
 Serialized Python and extension payloads are inert bytes. Reading, inspecting, validating,
 diffing, and exporting never executes or imports them.
@@ -88,6 +136,10 @@ opaque span with its declared length and digest. No byte may be both typed and o
 
 Part shape properties reference text or binary B-rep entries. Shape records retain native table
 indices, locations, geometry carriers, topology, tolerances, flags, parameter ranges, and pcurves.
+An OCCT parabola edge parameter `u` maps to the STEP parabola parameter `t = u / (2f)`, where `f`
+is the focal distance. A two-dimensional parabola pcurve retains the OCCT parameter `u`.
+For a bounded circle or ellipse edge, the neutral start parameter is wrapped into `[0, 2π)` and
+the serialized sweep is preserved. A full-period edge retains its serialized phase.
 Transient table indices do not constitute persistent element identity. Persistent element names
 exist only when an element-map record supplies them.
 
@@ -106,8 +158,9 @@ same transformed vertices and zero-based triangle indices remain available as oc
 tessellation; no analytic carrier is inferred from sampled data.
 
 A shape value optionally carries an element-map version and a zero-based document string-table
-index. A newly encoded string table consists of a legacy marker followed by a second XML element,
-either containing the table stream or naming a side entry. Side-entry streams begin with
+index. A newly encoded string table consists of a legacy marker whose immediately following XML
+element is `StringHasher2`, either containing the table stream or naming a side entry. Side-entry
+streams begin with
 `StringTableStart v1` and a decimal record count. Each record begins with a hexadecimal string id,
 a hexadecimal flag word, and zero or more dotted hexadecimal string-id references. A leading
 minus on an id encodes a positive delta from the preceding id. Dotted references are deltas from
@@ -119,29 +172,81 @@ bits. XML and stream counts must agree.
 A newly encoded element map likewise uses a compatibility marker followed by a second XML element,
 inline or side-entry. A side entry begins with `BeginElementMap v1`. The stream then carries a map
 id, an ordered postfix dictionary, a positive map-node count, and contiguous one-based map nodes.
+The optional XML count is retained as native metadata and does not frame the map stream. The
+stream's map, child, and name counts delimit its records.
 Each node contains ordered indexed-name groups. A group contains child-map descriptors followed by
 one persistent-name chain per transient indexed element. Chains terminate with `0`; each name
 encodes a literal or dictionary-derived base, a postfix-dictionary index, and persistent string-id
 references. The final node owns the shape. Group order and name position establish `Face1`,
-`Edge1`, `Vertex1`, and the corresponding other topology-kind indices. These transient positions
-are connected to persistent names and to every placed neutral occurrence; they are never exposed
-as persistent identity by themselves. Counts, indices, dictionary references, string references,
-property ownership, and neutral topology links are validated without synthesizing missing names.
+`Edge1`, `Vertex1`, and the corresponding other topology-kind indices. Name position zero is
+reserved; the transient element with one-based index N uses name position N. Each placed root
+repeats the same one-based position sequence. For each topology kind, positions follow a
+depth-first traversal of serialized child order. Traversal stops below a child of the requested
+kind, and the indexed map keeps the first occurrence of each shape plus composed location while
+ignoring orientation. The decoder carries that source position with each transferred neutral
+occurrence. It does not derive the position from neutral arena order. Repeated roots at the same
+placement attach their distinct neutral occurrences to the same source position. A source element
+that has no neutral occurrence leaves its position empty and does not shift later bindings. These
+transient positions are connected to persistent names and to every placed neutral occurrence;
+they are never exposed as persistent identity by themselves. Counts, indices, dictionary
+references, string references, property ownership, and neutral topology links are validated
+without synthesizing missing names.
 
 The native location chain is applied exactly once at the owning topology level. Display
-tessellation is presentation data and does not replace an available exact shape.
+tessellation is presentation data and does not replace an available exact shape. Each root shape
+use is a distinct neutral occurrence. Repeated root uses of the same shape at the same placement
+retain their serialized root order as an occurrence discriminator; they do not share body,
+region, shell, face, loop, coedge, edge, vertex, or point identity.
+
+An edge endpoint accessor visits the edge's direct child uses in serialized order. A `Forward`
+vertex replaces the start vertex and a `Reversed` vertex replaces the end vertex. Thus the last
+child of each orientation supplies the endpoint. `Internal` and `External` children do not supply
+endpoints. Closed and degenerate edges still require both oriented uses; the uses can reference the
+same vertex. An edge transferred to neutral topology without both endpoint orientations is invalid.
+
+Edge geometry access follows serialized representation order. The first 3D-curve representation
+supplies the exact neutral carrier and parameter range. Only when no 3D curve exists does the first
+stored polygon representation supply an approximate carrier. For a face use, the first pcurve
+representation whose surface and composed location equal the face surface supplies the pcurve.
+A closed-surface representation supplies its second pcurve when the edge use is reversed. Later
+matching representations remain in the native edge record. The neutral analytic-surface frame uses
+the cross product of its axis and reference direction. If the persisted plane frame has the
+opposite V direction, the pcurve V parameter is negated. If a persisted cylinder, cone, sphere, or
+torus frame has the opposite circumferential direction, the pcurve U parameter is negated. A cone
+pcurve V parameter is also multiplied by the cosine of the cone half-angle to convert persisted
+slant distance to neutral axial distance. A surface of revolution uses U as its rotation angle and
+V as its directrix parameter. A trimmed surface converts its persisted support-coordinate bounds
+and pcurves to zero-based local parameters while preserving each bound's direction.
+
+The B-rep edge record stores incidence but no radial order between three or more face uses. One
+coedge is self-radial. Two coedges reference each other. Three or more coedges remain self-radial;
+their shared edge identity carries unordered non-manifold incidence without asserting a
+serialization-dependent radial cycle.
 
 ## 8. Design-history transfer
 
 Construction objects retain source order and native identity independently of their cached shape.
 Planar sketch geometry is transferred in persisted entity order. Non-construction line segments
-are connected into deterministic oriented profile chains. Points, lines, circles, ellipses,
-hyperbolas, parabolas, their bounded arc forms, and rational or non-rational B-splines retain
+are connected into deterministic oriented profile chains. Each chain starts with the earliest
+unused non-construction entity by numeric persisted position and grows from both endpoints. Points,
+lines, circles, ellipses, hyperbolas, parabolas, their bounded arc forms, and rational or
+non-rational B-splines retain
 canonical millimetre/radian values and parameter bounds. Both start/end-angle and legacy
 first/last-parameter bound names identify the same conic interval. A persisted placement supplies
 the sketch origin, normal, and in-plane axis by applying
 its normalized quaternion to the canonical sketch basis. Attachment support and mapping mode remain
 linked source state when their complete support-frame composition is not resolved.
+An `ExternalGeometry` link creates an ordered construction entity. When `ExternalGeo` supplies its
+cached carrier, that carrier defines the solved sketch geometry. Without a cached carrier, the
+neutral entity retains the target document, object, and subelements as an unresolved external
+reference. Constraints can address its entity, endpoint, and center loci without inventing solved
+coordinates.
+
+Two bounded endpoints connect when an active coincident-loci constraint identifies them or their
+solved coordinates differ by at most 64 binary64 machine epsilons at the coordinate scale. The
+coordinate scale is the maximum absolute endpoint coordinate or one. If one endpoint connects to
+more than one endpoint of other non-construction entities, all incident entities remain separate
+single-entity profiles. The decoder does not select one branch by record order.
 
 Sketch constraints retain their append-only native family code and ordered geometry-position
 operands. Coincident, horizontal, vertical, parallel, tangent, perpendicular, equal, block,
@@ -149,9 +254,16 @@ distance, horizontal/vertical distance, angle, radius, and diameter relations tr
 constraints when every operand resolves. Point-on-object, symmetry, internal alignment, optical
 refraction, B-spline weight, geometry group, and text relations retain their typed operands and
 family-specific data. Dimensional relations create canonical parameters linked to the source
-constraint property and retain whether the value is driving. Negative external indices,
-unresolved operands, and future family codes remain explicit native relations rather than being
-guessed.
+constraint property and retain whether the value is driving. A dimension parameter uses its
+one-based constraint index as its neutral name. Its persisted label remains source metadata and is
+an expression alias only when that label is unique in the sketch. A one-entity angle measures that
+entity from the horizontal sketch axis. In a two-operand angle, negative geometry indices identify
+the horizontal or vertical sketch axis independently of their position field. A one-locus
+horizontal or vertical distance measures the
+locus from the sketch root point. The persisted endpoint-one selector of an isolated point resolves
+to the point entity, not to a nonexistent curve endpoint. Negative indices resolve through the
+ordered external-reference entities. Invalid indices, unresolved operands, and future family codes
+remain explicit native relations rather than being guessed.
 
 An expression binding is retained independently from its target property's cached scalar. The
 neutral parameter carries the exact decoded expression, evaluated canonical value, scalar-property
@@ -165,8 +277,11 @@ content, display unit, alignment, style, colors, and spans are retained independ
 content supplies a dimensionless evaluated value, while formula content remains an expression.
 Same-sheet aliases and qualified `Sheet.alias` references connect spreadsheet and feature
 parameters without evaluating arbitrary formulas in the decoder. Cell counts are bounded and must
-match their declared framing. A neutral sheet record binds those cell identities to the owning
+match their declared framing. Parameter ordinals use stable dependency order and persisted cell
+order as the tie-break rule. A neutral sheet record binds those cell identities to the owning
 feature and retains ordered non-default column widths, row heights, and inclusive merged ranges.
+Only positive row and column spans define a neutral merged range. Nonpositive span attributes remain
+native cell metadata and do not create a neutral range.
 Dimension counts must match their records; names, addresses, ownership, merged anchors, duplicate
 cells, and overlapping merged ranges are validated.
 
@@ -178,8 +293,10 @@ container membership resolves to component or occurrence ids, and each link-arra
 its own occurrence with a stable array index, scale, local transform, and transform resolved through
 its containing components exactly once. Local prototypes resolve to component ids; cross-document
 links keep the document token and target object without attempting to open the document. Missing
-local targets, duplicate occurrence parents, invalid array counts, non-finite transforms, and
-container cycles are validation errors; external targets remain intentionally unresolved.
+local targets, invalid array counts, non-finite transforms, and container cycles are validation
+errors; external targets remain intentionally unresolved. The native graph retains every direct
+container membership. When multiple containers name the same object, the first container in source
+order supplies the single parent required by the neutral occurrence graph.
 
 The exact source attribute distinguishes an external file path from a document identity. Neutral
 references keep that path or identity separately from the target object and mark resolution as
@@ -201,6 +318,9 @@ base and per-element scale, explicit element objects, and per-element visibility
 neutral occurrences. Copy-on-change is typed as disabled, enabled, owned, tracking, or an explicit
 future native policy, with its source, ownership group, and touched state resolved independently.
 All array-valued fields must either be absent or match `ElementCount`.
+A present zero `ElementCount` requires every array-valued field to be empty. The link retains its
+single scalar occurrence. An absent `ElementCount` permits one scalar link occurrence or infers a
+nonzero count from the populated array-valued fields.
 
 Native namespace version 5 extends occurrences with ordered link-array element placements and
 scale vectors. Each side entry begins with a little-endian element count followed by either all
@@ -264,8 +384,12 @@ does not inherit a format-wide placeholder loss.
 
 Format-neutral document and view presentation arenas represent GUI state. A GUI archive produces
 one document presentation record; a headless archive produces none. The neutral document record
-contains the schema version, active view, finite camera position and nonzero orientation quaternion,
-ordered document state, and resolved display-asset references. Each view-provider record contains
+contains the schema version, one camera, ordered document state, and resolved display-asset
+references. GUI schema 1 has exactly one direct `Camera` element. Its `settings` attribute is the
+serialized camera state. GUI schema 1 does not serialize an active view; an `active` root attribute
+or an `ActiveView` element remains source state and does not set the neutral active view. A decoded
+camera position and orientation are optional derived fields and must be finite and nonzero when
+present. Each view-provider record contains
 its resolved application object, source order, tree expansion and visibility state, display and
 selection modes, nonnegative line and point sizes, and exact-name fallback properties. References,
 orders, and numeric invariants are validated independently of the FCStd native namespace.
@@ -279,16 +403,59 @@ property retains its owner, runtime type, status, ordered value elements, refere
 exact XML, and byte range. GUI-only providers remain valid named records rather than being attached
 to an unrelated application object.
 
+Core GUI properties use the application property grammar. `App::PropertyBool` contains `Bool`.
+Enumeration, integer, integer-constraint, and percent properties contain `Integer`. Angle,
+distance, float, float-constraint, and length properties contain `Float`. File, font,
+persistent-object, and string properties contain `String`. Color, color-list, material,
+material-list, vector, bool-list, and Python-object properties contain `PropertyColor`,
+`ColorList`, `PropertyMaterial`, `MaterialList`, `PropertyVector`, `BoolList`, and `Python`,
+respectively. Each registered property contains exactly one value root. Scalar values use the
+`value` attribute. Vectors use `valueX`, `valueY`, and `valueZ`. Color-list and material-list
+values use one `file` attribute. Material values use four packed-color attributes plus finite `shininess` and
+`transparency` scalars. Boolean lists contain only `0` and `1`. Numeric values are finite, and
+registered tags and attributes are mandatory. An unregistered GUI runtime type retains its exact
+ordered XML values without semantic dispatch.
+
+A color-list side entry contains a little-endian `u32` count followed by that many little-endian
+packed `u32` colors. A material-list value has a format version from zero through three. Versions
+zero and one begin with a signed 32-bit count. A negative value is a provisional-version marker
+followed by the unsigned 32-bit count. Version two begins with the unsigned count. Each material
+then contains four packed `u32` colors followed by float32 shininess and transparency. Version
+three uses the version-two header and material records, followed by three length-prefixed byte
+strings for each material in image, image-path, UUID order. Each string has a little-endian `u32`
+byte count and UTF-8 bytes. Counts are bounded by the remaining payload. Truncated records,
+non-finite scalars, invalid UTF-8, and trailing bytes are invalid. Producing versions before 1.1
+store the low color byte with the inverse alpha convention; readers invert that byte before
+presentation transfer.
+
+Neutral presentation dispatch requires both the exact property name and runtime type.
+`Visibility` is `App::PropertyBool`; `DisplayMode` and `SelectionStyle` are
+`App::PropertyEnumeration`; `Transparency` is `App::PropertyPercent`; shape, line, and point colors
+are `App::PropertyColor`; shape material is `App::PropertyMaterial`; face, line, and point color
+arrays are `App::PropertyColorList`; `ShapeAppearance` is `App::PropertyMaterialList`; and line
+width and point size are `App::PropertyFloatConstraint`. A same-named property of another runtime
+type remains native and does not populate the neutral field.
+
 For shape-bearing objects, the view provider's shape color, transparency, visibility, and material
-scalars produce an object appearance and explicit body bindings. Packed colors decode as red,
-green, blue, and reserved low byte; the independent transparency percentage determines opacity.
-The effective body display fields mirror this object-level assignment. Per-face `DiffuseColor`,
-per-edge `LineColorArray`, and per-vertex `PointColorArray` lists are higher-precedence presentation
-layers. They are not inferred from the corresponding object color. Each list contains a
-little-endian count followed by packed-color records. A count of one applies its color to every
+scalars describe the application object's exact-shape property named `Shape`. They produce an
+object appearance and explicit bindings only for bodies transferred from that property. Other
+exact-shape properties on the same object do not inherit this view-provider state. Packed colors
+decode as red, green, blue, and reserved low byte; the independent transparency percentage
+determines opacity. The effective body display fields mirror this object-level assignment.
+`ShapeAppearance` is the current shape material carrier. One material replaces the legacy shape
+color assignment, binds to every body transferred from `Shape`, and supplies diffuse color,
+transparency, four packed material colors, shininess, and UUID. Multiple materials bind in order to
+the persistent Face element-map group only when their count equals the group's indexed face count.
+If persistent face identity is absent or the counts differ, the material list remains native and
+the legacy object color remains the neutral fallback.
+Per-face `DiffuseColor`, per-edge `LineColorArray`, and per-vertex `PointColorArray` lists are
+higher-precedence presentation layers. They are not inferred from the corresponding object color.
+Each list contains a little-endian count followed by packed-color records. A count of one applies
+its color to every
 member of the corresponding Face, Edge, or Vertex element-map group. Otherwise, the count must
-equal the number of names in that ordered group. Each persistent element name supplies the neutral
-topology occurrences that receive the override. The resulting bindings explicitly record
+equal the number of names in that ordered group. The group comes only from the element map owned by
+the `Shape` property. Each persistent element name supplies the neutral topology occurrences that
+receive the override. The resulting bindings explicitly record
 face-over-object, edge-array-over-line, or vertex-array-over-point precedence. Missing identity or
 a count mismatch leaves the side entry retained without guessing transient topology labels.
 
@@ -296,7 +463,19 @@ Application data without a neutral representation retains its owning object and 
 declared application type, links, source order, XML bytes, referenced side-entry bytes, byte spans,
 lengths, and digests.
 
-Mesh-kernel properties reference a binary side entry. The current typed record begins with the
+A side entry has field framing and value semantics only when an exact registered runtime property
+type and value tag select that grammar. A file name, extension, value-tag spelling, byte prefix, or
+payload signature does not select an application grammar. Without the registered property
+discriminator, no application-specific record family exists: the complete side entry is one named
+opaque payload owned by its archive entry and referenced by the declaring property. The decoder
+does not infer fields, record boundaries, or neutral values from those bytes. This rule permits
+third-party properties to remain byte-exact without confusing coincidental payload bytes with a
+core mesh, point, shape, list, or asset grammar.
+
+One mesh-kernel property contains one `Mesh` value. The value has zero or one non-empty `file`
+attribute. A non-empty attribute identifies the property's only binary side entry. A `Mesh` value
+without a side entry contains inline XML mesh data and remains in the native property record. The
+current typed binary record begins with the
 32-bit magic `a0b0c0d0`, the 32-bit version `00010000`, and a 256-byte information field. Both
 integer byte orders are accepted when the magic and version agree. Two 32-bit counts precede
 ordered float32 XYZ points and facets. Each facet contains three zero-based point indices followed
@@ -305,9 +484,10 @@ bounded, point indices must resolve, coordinates and bounds must be finite, and 
 truncated bytes are invalid. Neighbour indices and the complete entry bytes remain native even
 when only the indexed triangle mesh is projected neutrally.
 
-Point-kernel properties reference a side entry containing a little-endian 32-bit point count
-followed by ordered float32 XYZ triples. The property's `Points` element carries the sixteen finite
-row-major transform scalars. Neutral points are transformed once into model space and retain the
+One point-kernel property contains one `Points` value. Its zero or one non-empty `file` attribute
+identifies the property's only side entry. The entry contains a little-endian 32-bit point count
+followed by ordered float32 XYZ triples. The `Points` value carries the sixteen finite row-major
+transform scalars. Neutral points are transformed once into model space and retain the
 owning application object and property identity. Missing transforms mean identity; malformed
 transforms, non-finite coordinates, excessive counts, truncation, and trailing bytes are rejected.
 
@@ -342,13 +522,28 @@ object identities, and external document/object pairs remain explicit without be
 local references. View position, positive scale, nonzero projection direction, rotation, exact
 fallback parameters, and resolved template or image assets are independently validated.
 
-The format-neutral semantic-annotation arena contains dimensions, notes,
-geometric tolerances, datums, balloons, leaders, symbols, and extension annotations retain source
-order, visible text, exact runtime classification, role-grouped model or drawing references,
-subelement selectors, explicit numeric measurements, formatting expressions, positions, fallback
-parameters, and resolved assets. Local drawing targets resolve to neutral drawing identities;
-external document/object pairs remain explicit. Referential and finite-numeric validation is
-independent of drawing presentation and of provenance annotations.
+The format-neutral semantic-annotation arena maps an exact core runtime-type registry. Text records
+are `App::Annotation`, `App::AnnotationLabel`, `TechDraw::DrawViewAnnotation`,
+`TechDraw::DrawViewAnnotationPython`, `TechDraw::DrawRichAnno`, and
+`TechDraw::DrawRichAnnoPython`. Dimension records are `TechDraw::DrawViewDimension`,
+`TechDraw::DrawViewDimExtent`, and `TechDraw::LandmarkDimension`. Balloon records are
+`TechDraw::DrawViewBalloon`. Leader records are `TechDraw::DrawLeaderLine` and
+`TechDraw::DrawLeaderLinePython`. Symbol records are `TechDraw::DrawViewSymbol`,
+`TechDraw::DrawViewSymbolPython`, `TechDraw::DrawWeldSymbol`, and
+`TechDraw::DrawWeldSymbolPython`. Other runtime types remain application objects and do not enter
+the semantic-annotation arena. The core registry has no semantic datum or geometric-tolerance
+runtime type.
+
+`App::Annotation` uses `LabelText` and `Position`. `App::AnnotationLabel` uses `LabelText` and
+`TextPosition`. TechDraw text, dimension, balloon, leader, and symbol records use the inherited `X`
+and `Y` pair as their optional position; one coordinate without the other is invalid. TechDraw
+annotation text uses `Text`, rich annotation text uses `AnnoText`, balloon text uses `Text`, weld
+symbol text uses `TailText`, and dimension display text and format use `FormatSpec`. A persisted
+TechDraw dimension has no scalar measurement property; its measurement is computed from its
+references, so decode does not select `Value`, `Measurement`, `Distance`, or `Angle` by name.
+Records retain source order, exact runtime classification, role-grouped references, subelement
+selectors, fallback parameters, and resolved assets. Local drawing targets resolve to neutral
+drawing identities; external document/object pairs remain explicit.
 
 Persisted empty drawing and annotation links are explicit. A target whose
 native link record is present but names no document object has `is_null: true`; it is distinct
@@ -359,16 +554,18 @@ missing object identity.
 Native namespace version 10 adds a `gui_documents` arena. A GUI archive has exactly one document
 record; a headless archive has none. The record retains the GUI schema and root attributes plus
 every document-level element outside `ViewProviderData` in source order. These named state records
-cover cameras, active views, clipping or section state, and future GUI state without treating it as
-an application-object property. Each retains its exact XML span, ordered descendant values, and
-display-asset references.
+cover the camera, unrecognized active-view data, clipping or section state, and future GUI state
+without treating it as an application-object property. Each retains its exact XML span, ordered
+descendant values, and display-asset references.
 
 Logical byte accounting consumes the records emitted by each bounded parser. Exact-shape,
 side-entry string-table, and side-entry element-map payloads are wholly typed after successful
 framing. `Document.xml` properties and `GuiDocument.xml` state/property spans are typed while the
-intervening XML syntax is structural. Uninterpreted embedded assets remain named opaque and retain
-their owning record. These claims are sorted and rejected on overlap before the ledger is emitted;
-validation then requires every logical entry to close without gaps.
+intervening XML syntax is structural. Each side-entry span is owned by its archive entry record.
+The entry's ordered `referenced_by` relation independently retains every application property, GUI
+property, or GUI state that references the bytes. Uninterpreted embedded assets remain named
+opaque. These claims are sorted and rejected on overlap before the ledger is emitted; validation
+then requires every logical entry to close without gaps.
 
 Native namespace version 19 adds a deterministic `byte_coverage` report. It records physical
 archive length and span count, logical entry length and span count, byte totals by the closed
@@ -385,6 +582,10 @@ a malformed text B-rep. Only side entries classified as B-rep payloads are parse
 element-map, placement-list, scale-list, and other side entries owned by the same property remain
 in their own typed or named-opaque carrier.
 
+Native namespace version 22 separates side-entry byte ownership from semantic references. A
+logical side-entry span has its `EntryRecord` as its single owner. `EntryRecord.referenced_by` is
+the ordered many-reference relation and can contain more than one property or GUI record.
+
 Native namespace version 11 adds attachment records. Support links retain ordered object and
 subelement identity separately from the map mode. The persisted resolved `Placement` and local
 `AttachmentOffset` remain distinct matrices. Neutral geometry uses the resolved placement when it
@@ -398,9 +599,11 @@ counts, all eight topology families, and polygon and triangulation counts.
 Sketch point, line, circle, circular-arc, ellipse, and elliptical-arc carriers transfer only when
 all family-required numeric fields are present and finite. Ellipse orientation may be carried as a
 major-axis angle or a two-component major-axis direction. Bounded ellipses additionally require
-both parameter bounds. Missing radii, coordinates, orientation, or bounds leave the carrier as a
-named native geometry record; the decoder does not synthesize zero coordinates or full-curve
-bounds.
+both parameter bounds. A circular arc's `AngleXU` rotates its reference X axis
+counterclockwise in the sketch plane. Its global start and end angles are `StartAngle + AngleXU`
+and `EndAngle + AngleXU`; an absent `AngleXU` is zero. Missing radii, coordinates, orientation, or
+bounds leave the carrier as a named native geometry record; the decoder does not synthesize zero
+coordinates or full-curve bounds.
 
 Sketch B-splines retain degree, periodic state, ordered poles, rational weights, and distinct knot
 values with their positive multiplicities. The neutral NURBS knot vector expands each value by its
@@ -438,8 +641,16 @@ be ordered. Incomplete or invalid primitive definitions remain attributable nati
 Part cut, fuse, common, multi-fuse, and multi-common objects transfer as neutral Boolean combine
 operations. Two-input forms retain distinct `Base` and `Tool` property identities. Multi-input
 forms define link zero as the target and the remaining ordered `Shapes` links as tools without
-claiming that application-object links are already neutral body ids. Feature dependencies are the
-stable union of declared object dependencies and earlier link-property operands in source order.
+claiming that application-object links are already neutral body ids. For non-container features,
+feature dependencies are the stable union of all declared object dependencies and earlier
+link-property operands in source order. PartDesign body dependency records describe structural
+membership and do not duplicate the body's neutral child relations. Body membership comes from the
+current `Group` link list or the legacy `Model` link list. A declared dependency can
+target a later declaration. Neutral feature ordinals use a stable dependency order and use source
+order as the tie-break rule. Forward profile, base-feature, and pattern-seed links also precede
+their consumers. Body child lists are structural membership, not body inputs. If the native graph
+contains a dependency or parent cycle, the native graph retains it. The neutral graph uses the
+stable maximal subset whose targets precede their consumers.
 
 Part and PartDesign lofts retain ordered section profiles and closed state. Part sweeps and
 PartDesign additive or subtractive pipes retain the profile plus the complete native spine/path
@@ -553,15 +764,16 @@ directions, and non-positive intervals leave the operation attributable and nati
 Part extrusions retain their normalized direction, custom-vector, selected-edge, or profile-normal
 direction source, independent forward and reverse lengths and tapers, symmetric construction, and
 solid-versus-sheet result. Solid construction additionally retains the extensible face-maker class
-and mode and whether inner wires taper with or against outer wires. A zero pair of explicit lengths
-uses the persisted direction-vector magnitude. PartDesign pads and pockets distinguish blind,
+and mode and whether inner wires taper with or against outer wires. An absent or zero pair of
+explicit lengths uses the persisted direction-vector magnitude. PartDesign pads and pockets distinguish blind,
 through-all, first-intersection, last-intersection, face-selected, and shape-selected termination
 independently on both sides. Midplane construction mirrors either a length or a non-length
 termination, while signed blind lengths preserve the persisted side orientation. Features retain
 both taper angles and offsets, whether length follows the profile normal, and whether multiple
 profile faces are allowed. Direction provenance distinguishes the profile normal, an explicit
 custom vector, and a selected reference axis while also retaining the normalized resolved
-direction; reversal inverts that direction. A pad joins and a pocket cuts. Missing required lengths
+direction. A non-sketch planar profile supplies its profile normal from its persisted placement
+frame. Reversal inverts the direction. A pad joins and a pocket cuts. Missing required lengths
 or selections and invalid directions remain attributable native operations instead of being
 rewritten as zero-length or blind features.
 

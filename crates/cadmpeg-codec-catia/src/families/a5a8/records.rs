@@ -5,8 +5,11 @@
 
 use crate::nurbs::{expand_knots, pole_count};
 use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_24};
+#[cfg(any(test, feature = "fuzzing"))]
+use crate::wire::records::consolidated_records;
 use crate::wire::records::{
-    a_family_frames, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
+    a_family_frames_from_records, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
+    ConsolidatedRecord,
 };
 use cadmpeg_core::le::{u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::geometry::{
@@ -33,6 +36,32 @@ pub struct FreeformSurface {
     pub identity: FreeformSurfaceIdentity,
     /// The decoded NURBS carrier.
     pub geometry: SurfaceGeometry,
+}
+
+/// The fixed parameterization program carried by an `a8 <flag> 34` surface.
+///
+/// The two control bytes are retained as encoded because their compact
+/// subprograms are not part of the fixed elided form's scalar map. The eight
+/// f64 lanes have one stable meaning: the active U/V limits followed by the
+/// affine map from the source parameter to each active parameter.
+#[derive(Debug, Clone, PartialEq)]
+pub struct A8SurfaceParameterTail {
+    /// U-side control byte.
+    pub u_control: u8,
+    /// V-side control byte.
+    pub v_control: u8,
+    /// Active U parameter interval.
+    pub u_range: [f64; 2],
+    /// Active V parameter interval.
+    pub v_range: [f64; 2],
+    /// U affine map `(coefficient, shift)`.
+    pub u_affine: [f64; 2],
+    /// V affine map `(coefficient, shift)`.
+    pub v_affine: [f64; 2],
+    /// Extrapolation control flags.
+    pub flags: [u8; 3],
+    /// Eight continuation scalars following the flags.
+    pub continuation: [f64; 8],
 }
 
 impl FreeformSurface {
@@ -112,16 +141,6 @@ fn object_frame_flag(flag: u8) -> bool {
     matches!(flag, 0x03 | 0x13 | 0x83)
 }
 
-fn object_frame_start(data: &[u8], pos: usize) -> bool {
-    let Some(&family) = data.get(pos) else {
-        return false;
-    };
-    matches!(
-        family,
-        0xa5 | 0xa6 | 0xa7 | 0xa8 | 0xa9 | 0xb2 | 0xb3 | 0xb4 | 0xb5 | 0xb6
-    ) && data.get(pos + 1).copied().is_some_and(object_frame_flag)
-}
-
 fn object_stream_frame(data: &[u8], pos: usize) -> Option<ObjectStreamFrame> {
     if !object_frame_flag(*data.get(pos + 1)?) {
         return None;
@@ -150,6 +169,201 @@ fn object_stream_frame(data: &[u8], pos: usize) -> Option<ObjectStreamFrame> {
         class,
         object_id,
     })
+}
+
+fn closed_a8_child_run(data: &[u8], start: usize, end: usize) -> bool {
+    let mut at = start;
+    while at < end {
+        let Some(frame) = object_stream_frame(data, at) else {
+            return false;
+        };
+        if frame.family != 0xb5 || frame.end > end {
+            return false;
+        }
+        at = frame.end;
+    }
+    at == end
+}
+
+/// Return the start of a length-closed B5 child run owned by an A8 frame.
+///
+/// Common-form surface frames may place their child run after the complete
+/// inline pole representation or after the fixed elided-pole tail. A marker
+/// shaped byte sequence elsewhere in a surface payload is payload data and is
+/// not a child run.
+pub(crate) fn a8_nested_b5_run_start(
+    data: &[u8],
+    frame_start: usize,
+    frame_end: usize,
+) -> Option<usize> {
+    let payload_start = frame_start.checked_add(11)?;
+    if frame_end > data.len() || payload_start > frame_end {
+        return None;
+    }
+    if payload_start < frame_end && closed_a8_child_run(data, payload_start, frame_end) {
+        return Some(payload_start);
+    }
+    let frame = object_stream_frame(data, frame_start)?;
+    if frame.family != 0xa8 || frame.class != 0x34 || frame.end != frame_end {
+        return None;
+    }
+    let parsed = parse_a8_surface_header(
+        data,
+        A8Frame {
+            pos: frame_start,
+            payload: payload_start,
+            end: frame_end,
+            object_id: frame.object_id,
+        },
+    )?;
+    let suffix_start = if parsed.header.poles_elided {
+        parsed.pole_start.checked_add(141)?
+    } else {
+        let poles = crate::nurbs_surface_control_count(
+            usize::try_from(parsed.header.u_count).ok()?,
+            usize::try_from(parsed.header.v_count).ok()?,
+        )?;
+        let pole_bytes = poles.checked_mul(24)?;
+        let weight_bytes = if parsed.header.rational {
+            poles.checked_mul(8)?
+        } else {
+            0
+        };
+        parsed
+            .pole_start
+            .checked_add(pole_bytes)?
+            .checked_add(weight_bytes)?
+    };
+    let child_start = a8_surface_suffix_start(
+        data,
+        suffix_start,
+        frame_end,
+        &parsed.header.v_distinct_knots,
+    )?;
+    (child_start < frame_end).then_some(child_start)
+}
+
+fn parse_a8_surface_tail(
+    data: &[u8],
+    at: usize,
+    v_knots: &[f64],
+) -> Option<A8SurfaceParameterTail> {
+    let end = at.checked_add(141)?;
+    let tail = data.get(at..end)?;
+    if tail[0] != 0x05
+        || tail[2] != 0x05
+        || tail[1] % 4 != 1
+        || tail[3] % 4 != 1
+        || tail[68..71] != [0x01, 0x01, 0x01]
+        || !tail[71..135].iter().all(|byte| *byte == 0)
+        || tail[135..141] != [0x01, 0x00, 0x01, 0x00, 0x07, 0x07]
+    {
+        return None;
+    }
+    let read_f64 = |offset: usize| -> Option<f64> {
+        Some(f64::from_le_bytes(
+            tail.get(offset..offset + 8)?.try_into().ok()?,
+        ))
+    };
+    let zero_u = read_f64(4)?;
+    let positive_u = read_f64(12)?;
+    let zero_v = read_f64(20)?;
+    let v_span = read_f64(28)?;
+    let one_u = read_f64(36)?;
+    let zero_w = read_f64(44)?;
+    let one_v = read_f64(52)?;
+    let zero_x = read_f64(60)?;
+    let (&v_last, &v_first) = v_knots.last().zip(v_knots.first())?;
+    let expected_v_span = v_last - v_first;
+    (zero_u == 0.0
+        && positive_u.is_finite()
+        && positive_u > 0.0
+        && zero_v == 0.0
+        && v_span.is_finite()
+        && v_span > 0.0
+        && v_span == expected_v_span
+        && one_u == 1.0
+        && zero_w == 0.0
+        && one_v == 1.0
+        && zero_x == 0.0)
+        .then_some(A8SurfaceParameterTail {
+            u_control: tail[1],
+            v_control: tail[3],
+            u_range: [zero_u, positive_u],
+            v_range: [zero_v, v_span],
+            u_affine: [one_u, zero_w],
+            v_affine: [one_v, zero_x],
+            flags: [tail[68], tail[69], tail[70]],
+            continuation: [0.0; 8],
+        })
+}
+
+fn valid_a5_surface_tail(data: &[u8], at: usize, end: usize) -> bool {
+    let Some(tail_len) = end.checked_sub(at) else {
+        return false;
+    };
+    let continuation_bytes = match tail_len {
+        133 => 56,
+        141 | 142 => 64,
+        _ => return false,
+    };
+    let Some(tail) = data.get(at..end) else {
+        return false;
+    };
+    if tail[0] != 0x05
+        || tail[2] != 0x05
+        || tail[1] % 4 != 1
+        || tail[3] % 4 != 1
+        || !matches!(tail[68..71], [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01])
+    {
+        return false;
+    }
+    let Some(parameters) = read_f64_array::<8>(tail, 4) else {
+        return false;
+    };
+    if parameters.iter().any(|value| !value.is_finite())
+        || parameters[0] >= parameters[1]
+        || parameters[2] >= parameters[3]
+        || parameters[4] == 0.0
+        || parameters[6] == 0.0
+    {
+        return false;
+    }
+    let continuation_start = 71;
+    let continuation_end = continuation_start + continuation_bytes;
+    let continuation = tail[continuation_start..continuation_end]
+        .chunks_exact(8)
+        .map(|bytes| f64::from_le_bytes(bytes.try_into().expect("eight-byte f64")))
+        .collect::<Vec<_>>();
+    if continuation.iter().any(|value| !value.is_finite()) {
+        return false;
+    }
+    let suffix = &tail[continuation_end..];
+    match (tail_len, &tail[68..71]) {
+        (133 | 141, [0x01, 0x01, 0x01]) => {
+            continuation.iter().all(|value| *value == 0.0)
+                && suffix == [0x01, 0x00, 0x01, 0x00, 0x07, 0x07]
+        }
+        (141, [0x05, 0x05, 0x01]) => suffix == [0x09, 0x00, 0x09, 0x00, 0x07, 0x07],
+        (142, [0x05, 0x05, 0x01]) => {
+            suffix.len() == 7
+                && suffix[..4] == [0x09, 0x00, 0x09, 0x01]
+                && suffix[4] % 4 == 1
+                && suffix[5..] == [0x07, 0x07]
+        }
+        _ => false,
+    }
+}
+
+fn a8_surface_suffix_start(data: &[u8], at: usize, end: usize, v_knots: &[f64]) -> Option<usize> {
+    if closed_a8_child_run(data, at, end) {
+        return Some(at);
+    }
+    let tail_end = at.checked_add(141)?;
+    (tail_end <= end
+        && parse_a8_surface_tail(data, at, v_knots).is_some()
+        && closed_a8_child_run(data, tail_end, end))
+    .then_some(tail_end)
 }
 
 fn object_stream_frames(data: &[u8]) -> Vec<ObjectStreamFrame> {
@@ -228,6 +442,8 @@ pub struct A8SurfaceHeader {
     pub v_count: u32,
     /// Whether the record selects rational weights.
     pub rational: bool,
+    /// Decoded range, affine-map, and continuation program, when present.
+    pub parameter_tail: Option<A8SurfaceParameterTail>,
     /// The fixed 141-byte surface tail begins immediately after the mode byte,
     /// so no inline pole or weight grid is present.
     pub poles_elided: bool,
@@ -262,8 +478,17 @@ pub struct A8Pcurve {
 
 /// Decode framed `a5 03 20` consolidated UV jets.
 #[must_use]
+#[cfg(test)]
 pub fn a5_pcurves(data: &[u8]) -> Vec<ConsolidatedPcurve> {
-    a_family_frames(data, 0x20)
+    let records = consolidated_records(data);
+    a5_pcurves_from_records(data, &records)
+}
+
+pub(crate) fn a5_pcurves_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<ConsolidatedPcurve> {
+    a_family_frames_from_records(records, 0x20)
         .into_iter()
         .filter_map(|frame| parse_consolidated_pcurve(data, frame.pos, frame.payload, frame.end))
         .collect()
@@ -386,75 +611,59 @@ pub struct A5NurbsCurve {
 
 /// Decode length-closed `a5/a6/a7 13 16` non-rational NURBS curves.
 #[must_use]
+#[cfg(test)]
 pub fn a5_nurbs_curves(data: &[u8]) -> Vec<A5NurbsCurve> {
-    a5_nurbs_curve_frames(data)
+    let records = consolidated_records(data);
+    a5_nurbs_curves_from_records(data, &records)
+}
+
+pub(crate) fn a5_nurbs_curves_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<A5NurbsCurve> {
+    a_family_frames_from_records(records, 0x16)
         .into_iter()
         .filter_map(|frame| parse_a5_nurbs_curve(data, frame))
         .collect()
-}
-
-fn a5_nurbs_curve_frames(data: &[u8]) -> Vec<ConsolidatedFrame> {
-    let mut frames = Vec::new();
-    for pos in 0..data.len().saturating_sub(8) {
-        let Some(width) = data[pos]
-            .checked_sub(0xa4)
-            .filter(|width| (1..=3).contains(width))
-        else {
-            continue;
-        };
-        if !matches!(data[pos + 1], 0x03 | 0x13 | 0x83) || data[pos + 2] != 0x16 {
-            continue;
-        }
-        let Some(length) = u32_le(data, pos + 3).and_then(|value| usize::try_from(value).ok())
-        else {
-            continue;
-        };
-        let token_start = pos + 7;
-        let payload = token_start + usize::from(width);
-        let Some(end) = payload.checked_add(length).filter(|end| *end <= data.len()) else {
-            continue;
-        };
-        let header_token = data[token_start..payload]
-            .iter()
-            .enumerate()
-            .fold(0u32, |value, (shift, byte)| {
-                value | (u32::from(*byte) << (8 * shift))
-            });
-        frames.push(ConsolidatedFrame {
-            pos,
-            payload,
-            end,
-            header_token,
-        });
-    }
-    frames
 }
 
 fn parse_a5_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5NurbsCurve> {
     let mut at = frame.payload;
     let degree = compact_int(data, &mut at)?;
     let knot_count = usize::try_from(compact_int(data, &mut at)?).ok()?;
-    if degree != 5 || !(2..=8192).contains(&knot_count) || data.get(at) != Some(&0x0c) {
+    if degree != 5 || knot_count < 2 || data.get(at) != Some(&0x0c) {
         return None;
     }
     at += 1;
+    let control_count = 6usize.checked_add(knot_count.checked_sub(2)?.checked_mul(3)?)?;
+    let known_bytes = knot_count
+        .checked_mul(8)?
+        .checked_add(control_count.checked_mul(24)?)?
+        .checked_add(36)?;
+    if at.checked_add(known_bytes)? > frame.end {
+        return None;
+    }
     let mut distinct_knots = Vec::with_capacity(knot_count);
     for _ in 0..knot_count {
         distinct_knots.push(f64_le(data, at)?);
         at += 8;
     }
-    if distinct_knots.windows(2).any(|pair| pair[0] >= pair[1]) || data.get(at) != Some(&0x01) {
+    if distinct_knots.iter().any(|knot| !knot.is_finite())
+        || distinct_knots.windows(2).any(|pair| pair[0] >= pair[1])
+        || data.get(at) != Some(&0x01)
+    {
         return None;
     }
     at += 1;
-    let control_count = 6usize.checked_add(knot_count.checked_sub(2)?.checked_mul(3)?)?;
     let control_points = (0..control_count)
         .map(|_| {
-            let point = Point3::new(
-                f64_le(data, at)?,
-                f64_le(data, at + 8)?,
-                f64_le(data, at + 16)?,
-            );
+            let x = f64_le(data, at)?;
+            let y = f64_le(data, at + 8)?;
+            let z = f64_le(data, at + 16)?;
+            if !x.is_finite() || !y.is_finite() || !z.is_finite() {
+                return None;
+            }
+            let point = Point3::new(x, y, z);
             at += 24;
             Some(point)
         })
@@ -499,8 +708,17 @@ fn parse_a5_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Nurbs
 
 /// Decode `a5/a6/a7 03 39` guide-curve and unit-direction jets.
 #[must_use]
+#[cfg(test)]
 pub fn a5_guide_curves(data: &[u8]) -> Vec<A5GuideCurve> {
-    a_family_frames(data, 0x39)
+    let records = consolidated_records(data);
+    a5_guide_curves_from_records(data, &records)
+}
+
+pub(crate) fn a5_guide_curves_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<A5GuideCurve> {
+    a_family_frames_from_records(records, 0x39)
         .into_iter()
         .filter_map(|frame| parse_a5_guide_curve(data, frame))
         .collect()
@@ -511,23 +729,41 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
     let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
     let degree = compact_int(data, &mut at)?;
     if usize::try_from(compact_int(data, &mut at)?).ok()? != count
-        || !(2..=4096).contains(&count)
+        || count < 2
         || !(1..=9).contains(&degree)
     {
         return None;
     }
     at = consume_array_marker(data, at)?;
-    let knots = f64_values(data, &mut at, count, frame.end)?;
-    if !monotonic(&knots) {
+    let block_bytes = count.checked_mul(48)?;
+    let known_bytes = count
+        .checked_mul(8)?
+        .checked_add(block_bytes.checked_mul(3)?)?
+        .checked_add(48)?;
+    if at.checked_add(known_bytes)? > frame.end {
         return None;
     }
-    let block_bytes = count.checked_mul(48)?;
-    if at.checked_add(3 * block_bytes)?.checked_add(48)? != frame.end {
+    let knots = f64_values(data, &mut at, count, frame.end)?;
+    if knots.iter().any(|knot| !knot.is_finite()) || knots.windows(2).any(|pair| pair[0] >= pair[1])
+    {
+        return None;
+    }
+    if at
+        .checked_add(block_bytes.checked_mul(3)?)?
+        .checked_add(48)?
+        != frame.end
+    {
         return None;
     }
     let block = |start: usize| -> Option<Vec<[f64; 6]>> {
         (0..count)
-            .map(|site| read_f64_array::<6>(data, start + site * 48))
+            .map(|site| {
+                let values = read_f64_array::<6>(data, start + site * 48)?;
+                values
+                    .iter()
+                    .all(|value| value.is_finite())
+                    .then_some(values)
+            })
             .collect()
     };
     let positions = block(at)?;
@@ -642,13 +878,19 @@ fn parse_a8_curve(data: &[u8], frame: A8Frame) -> Option<A8FreeformCurve> {
     let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
     let degree = compact_int(data, &mut at)?;
     at = at.checked_add(2)?;
-    if usize::try_from(compact_int(data, &mut at)?).ok()? != count
-        || !(2..=8192).contains(&count)
-        || degree != 5
-    {
+    if usize::try_from(compact_int(data, &mut at)?).ok()? != count || count < 2 || degree != 5 {
         return None;
     }
     at = at.checked_add(if data.get(at) == Some(&0x08) { 2 } else { 1 })?;
+    let knot_bytes = count.checked_mul(8)?;
+    let block_bytes = count.checked_mul(80)?;
+    let known_bytes = knot_bytes
+        .checked_add(count)?
+        .checked_add(block_bytes.checked_mul(3)?)?
+        .checked_add(59)?;
+    if at.checked_add(known_bytes)? > end {
+        return None;
+    }
     let mut knots = Vec::with_capacity(count);
     for _ in 0..count {
         knots.push(f64_le(data, at)?);
@@ -661,8 +903,7 @@ fn parse_a8_curve(data: &[u8], frame: A8Frame) -> Option<A8FreeformCurve> {
     if knots.iter().any(|v| !v.is_finite()) || knots.windows(2).any(|v| v[0] >= v[1]) {
         return None;
     }
-    let block_bytes = count.checked_mul(80)?;
-    let blocks_end = at.checked_add(3 * block_bytes)?;
+    let blocks_end = at.checked_add(block_bytes.checked_mul(3)?)?;
     if multiplicities.first() != Some(&6)
         || multiplicities.last() != Some(&6)
         || multiplicities[1..multiplicities.len() - 1]
@@ -703,8 +944,17 @@ fn parse_a8_curve(data: &[u8], frame: A8Frame) -> Option<A8FreeformCurve> {
 
 /// Decode framed `a5 03 32` rolling-ball jet records.
 #[must_use]
+#[cfg(test)]
 pub fn a5_freeform_curves(data: &[u8]) -> Vec<A5FreeformCurve> {
-    a_family_frames(data, 0x32)
+    let records = consolidated_records(data);
+    a5_freeform_curves_from_records(data, &records)
+}
+
+pub(crate) fn a5_freeform_curves_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<A5FreeformCurve> {
+    a_family_frames_from_records(records, 0x32)
         .into_iter()
         .filter_map(|frame| parse_a5_curve(data, frame))
         .collect()
@@ -723,10 +973,7 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
     let mut at = payload;
     let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
     let degree = compact_int(data, &mut at)?;
-    if usize::try_from(compact_int(data, &mut at)?).ok()? != count
-        || !(2..=4096).contains(&count)
-        || degree != 5
-    {
+    if usize::try_from(compact_int(data, &mut at)?).ok()? != count || count < 2 || degree != 5 {
         return None;
     }
     match data.get(at..at + 2) {
@@ -734,16 +981,18 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
         Some([0x08, 0x09 | 0x05]) => at += 2,
         _ => return None,
     }
+    let knot_bytes = count.checked_mul(8)?;
+    let block_bytes = count.checked_mul(80)?;
+    let known_bytes = knot_bytes.checked_add(block_bytes.checked_mul(3)?)?;
+    if at.checked_add(known_bytes)? > end {
+        return None;
+    }
     let mut knots = Vec::with_capacity(count);
     for _ in 0..count {
         knots.push(f64_le(data, at)?);
         at += 8;
     }
     if knots.iter().any(|v| !v.is_finite()) || knots.windows(2).any(|v| v[0] >= v[1]) {
-        return None;
-    }
-    let block_bytes = count.checked_mul(80)?;
-    if at.checked_add(3 * block_bytes)? > end || end - (at + 3 * block_bytes) > 4096 {
         return None;
     }
     let block = |start: usize| -> Option<Vec<[f64; 10]>> {
@@ -844,7 +1093,16 @@ fn parse_object_stream_pcurve(
     data.get(..at)?;
     let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
     at += if data.get(at) == Some(&0x08) { 2 } else { 1 };
-    if !(2..=8192).contains(&count) || degree != 5 {
+    if count < 2 || degree != 5 {
+        return None;
+    }
+    let knot_bytes = count.checked_mul(8)?;
+    let array_bytes = count.checked_mul(8)?.checked_mul(6)?;
+    let known_bytes = knot_bytes
+        .checked_add(count)?
+        .checked_add(array_bytes)?
+        .checked_add(20)?;
+    if at.checked_add(known_bytes)? > end {
         return None;
     }
     let read = |at: &mut usize| -> Option<Vec<f64>> {
@@ -865,6 +1123,9 @@ fn parse_object_stream_pcurve(
     }
     let mode = *data.get(at)?;
     at += 1;
+    if at.checked_add(array_bytes.checked_add(18)?)? > end {
+        return None;
+    }
     let u = read(&mut at)?;
     let v = read(&mut at)?;
     let du = read(&mut at)?;
@@ -958,9 +1219,10 @@ pub fn a8_surface_headers(data: &[u8]) -> Vec<A8SurfaceHeader> {
         .collect()
 }
 
-/// Resolve an elided-pole `a8 <flag> 34` carrier from its uniquely sized external
-/// grid allocation. The allocation occupies the complete unframed gap between
-/// a length-closed `b5 <flag> 21` pcurve and the following A/B-family frame.
+/// Resolve an elided-pole `a8 <flag> 34` carrier from its support-referenced
+/// external grid allocation. The allocation occupies the complete unframed gap
+/// between a length-closed `b5 <flag> 21` pcurve and the following A/B-family
+/// frame; its pcurve support reference must equal the surface object id.
 #[must_use]
 pub fn a8_surface_from_external_grid(
     data: &[u8],
@@ -980,17 +1242,19 @@ pub fn a8_surface_from_external_grid(
     };
     let grid_bytes = poles.checked_mul(24)?.checked_add(weight_bytes)?;
     let mut candidates = Vec::new();
-    let mut search = 0usize;
-    while let Some(relative) = data[search..]
-        .windows(3)
-        .position(|bytes| bytes[0] == 0xb5 && object_frame_flag(bytes[1]) && bytes[2] == 0x21)
+    for frame in object_stream_frames(data)
+        .into_iter()
+        .filter(|frame| frame.family == 0xb5 && frame.class == 0x21)
+        .filter(|frame| {
+            let Some(mut at) = frame.payload.checked_add(1) else {
+                return false;
+            };
+            object_stream_reference(data, &mut at) == Some(header.object_id)
+        })
     {
-        let frame = search + relative;
-        search = frame + 3;
-        let payload_len = usize::from(*data.get(frame + 3)?);
-        let start = frame.checked_add(8)?.checked_add(payload_len)?;
+        let start = frame.end;
         let end = start.checked_add(grid_bytes)?;
-        if !object_frame_start(data, end) {
+        if object_stream_frame(data, end).is_none() {
             continue;
         }
         let mut at = start;
@@ -1053,8 +1317,17 @@ pub fn a8_surface_from_external_grid(
 
 /// Decode consolidated `a5 03 34` NURBS surface carriers.  This family uses
 /// implicit clamped multiplicities instead of the explicit `a8` vectors.
+#[cfg(any(test, feature = "fuzzing"))]
 pub fn a5_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
-    a_family_frames(data, 0x34)
+    let records = consolidated_records(data);
+    a5_surfaces_from_records(data, &records)
+}
+
+pub(crate) fn a5_surfaces_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<FreeformSurface> {
+    a_family_frames_from_records(records, 0x34)
         .into_iter()
         .filter_map(|frame| a5_surface(data, frame))
         .collect()
@@ -1077,11 +1350,11 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<FreeformSurface> 
     let v_distinct = f64_values(data, &mut at, v_distinct_count, end)?;
     let mode = *data.get(at)?;
     at += 1;
-    let (u_knots, u_count) = a5_knots(&u_distinct, u_degree)?;
-    let (v_knots, v_count) = a5_knots(&v_distinct, v_degree)?;
-    if !monotonic(&u_distinct) || !monotonic(&v_distinct) {
+    if !strictly_increasing_finite(&u_distinct) || !strictly_increasing_finite(&v_distinct) {
         return None;
     }
+    let (u_knots, u_count) = a5_knots(&u_distinct, u_degree)?;
+    let (v_knots, v_count) = a5_knots(&v_distinct, v_degree)?;
     let poles = crate::nurbs_surface_control_count(u_count as usize, v_count as usize)?;
     if at.checked_add(poles.checked_mul(24)?)? > end {
         return None;
@@ -1105,13 +1378,11 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<FreeformSurface> 
             &mut at,
             u_count as usize,
             v_count as usize,
+            end,
         )?),
         _ => return None,
     };
-    // The structured tail is the false-positive gate for this unlength-framed family.
-    if at + 4 > end
-        || !matches!(data.get(at..at + 4), Some([0x05, a, 0x05, b]) if *a % 4 == 1 && *b % 4 == 1)
-    {
+    if !valid_a5_surface_tail(data, at, end) {
         return None;
     }
     Some(FreeformSurface {
@@ -1165,23 +1436,42 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
     at += 1;
     if !(1..=9).contains(&u_degree)
         || !(1..=9).contains(&v_degree)
-        || !(2..=8192).contains(&u_distinct_count)
-        || !(2..=8192).contains(&v_distinct_count)
+        || u_distinct_count < 2
+        || v_distinct_count < 2
         || !matches!(mode, 0x01 | 0x05)
-        || !monotonic(&u_distinct)
-        || !monotonic(&v_distinct)
+        || !strictly_increasing_finite(&u_distinct)
+        || !strictly_increasing_finite(&v_distinct)
     {
         return None;
     }
     let u_count = pole_count(&u_mults, u_degree)?;
     let v_count = pole_count(&v_mults, v_degree)?;
-    if u_count == 0 || v_count == 0 || u_count > 20_000 || v_count > 20_000 {
+    if u_count == 0 || v_count == 0 {
         return None;
     }
     let tail_end = at.checked_add(141)?;
-    let poles_elided = matches!(data.get(at..at + 4), Some([0x05, a, 0x05, b]) if *a % 4 == 1 && *b % 4 == 1)
-        && tail_end <= end
-        && (tail_end == end || object_frame_start(data, tail_end));
+    let elided_tail = (tail_end <= end && closed_a8_child_run(data, tail_end, end))
+        .then(|| parse_a8_surface_tail(data, at, &v_distinct))
+        .flatten();
+    let poles_elided = elided_tail.is_some();
+    let inline_tail = || {
+        let poles = crate::nurbs_surface_control_count(
+            usize::try_from(u_count).ok()?,
+            usize::try_from(v_count).ok()?,
+        )?;
+        let pole_bytes = poles.checked_mul(24)?;
+        let weight_bytes = if mode == 0x05 {
+            poles.checked_mul(8)?
+        } else {
+            0
+        };
+        let tail_start = at.checked_add(pole_bytes)?.checked_add(weight_bytes)?;
+        let tail_end = tail_start.checked_add(141)?;
+        (tail_end <= end && closed_a8_child_run(data, tail_end, end))
+            .then(|| parse_a8_surface_tail(data, tail_start, &v_distinct))
+            .flatten()
+    };
+    let parameter_tail = elided_tail.or_else(inline_tail);
     Some(ParsedA8SurfaceHeader {
         header: A8SurfaceHeader {
             pos,
@@ -1195,6 +1485,7 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
             u_count,
             v_count,
             rational: mode == 0x05,
+            parameter_tail,
             poles_elided,
         },
         pole_start: at,
@@ -1252,9 +1543,7 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
     } else {
         Vec::new()
     };
-    if pole_start > end {
-        return None;
-    }
+    a8_surface_suffix_start(data, pole_start, end, &v_distinct_knots)?;
     Some(FreeformSurface {
         pos,
         identity: FreeformSurfaceIdentity::Object(object_id),
@@ -1317,8 +1606,8 @@ fn compact_values(bytes: &[u8], at: &mut usize, count: usize) -> Option<Vec<u32>
     (0..count).map(|_| compact_int(bytes, at)).collect()
 }
 
-fn monotonic(values: &[f64]) -> bool {
-    values.windows(2).all(|pair| pair[0] <= pair[1])
+fn strictly_increasing_finite(values: &[f64]) -> bool {
+    values.iter().all(|value| value.is_finite()) && values.windows(2).all(|pair| pair[0] < pair[1])
 }
 
 fn a5_int(byte: u8) -> Option<u32> {
@@ -1353,11 +1642,12 @@ pub(super) fn a5_weights(
     at: &mut usize,
     rows: usize,
     cols: usize,
+    end: usize,
 ) -> Option<Vec<f64>> {
     let count = rows.checked_mul(cols)?;
     if bytes.get(*at) == Some(&0x00) {
         *at += 1;
-        return f64_values(bytes, at, count, bytes.len()).filter(|weights| {
+        return f64_values(bytes, at, count, end).filter(|weights| {
             weights
                 .iter()
                 .all(|weight| weight.is_finite() && *weight != 0.0)
@@ -1379,7 +1669,7 @@ pub(super) fn a5_weights(
                 return None;
             }
             *at += 3;
-            let seed = f64_values(bytes, at, seed_count, bytes.len())?;
+            let seed = f64_values(bytes, at, seed_count, end)?;
             let mut row = seed.clone();
             row.extend(seed[..cols / 2].iter().rev().copied());
             if row.len() != cols {

@@ -53,7 +53,10 @@ fn neutral_parameter_is_count(
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::features::PmiDimensionSubtype;
+    use cadmpeg_ir::features::{
+        DesignParameter, Feature, FeatureDefinition, FeatureId, Length, ParameterId,
+        ParameterValue, PmiDimensionSubtype,
+    };
 
     use super::*;
 
@@ -64,6 +67,7 @@ mod tests {
             offset: 0,
             guid: "guid".into(),
             cad_text: "D1@Pattern1".into(),
+            item_count: 1,
             subtype: subtype.into(),
             value,
             value_offset: 0,
@@ -77,6 +81,24 @@ mod tests {
             inspection_offset: 0,
             reference_only: false,
             reference_only_offset: 0,
+        }
+    }
+
+    fn named_feature(id: &str, name: &str) -> Feature {
+        Feature {
+            id: FeatureId(id.into()),
+            ordinal: 0,
+            name: Some(name.into()),
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::StoredGeometry,
+            native_ref: None,
         }
     }
 
@@ -128,6 +150,117 @@ mod tests {
         assert!(neutral_parameter_is_count(&feature, "D2", None));
         assert!(!neutral_parameter_is_count(&feature, "D3", None));
     }
+
+    #[test]
+    fn explicit_keywords_dimension_precedes_pmi_value() {
+        let owner = FeatureId("feature".into());
+        let feature = named_feature("feature", "Pattern1");
+        let mut parameters = vec![DesignParameter {
+            id: ParameterId("keywords-parameter".into()),
+            owner: Some(owner),
+            ordinal: 0,
+            name: "D1".into(),
+            expression: "12mm".into(),
+            display: None,
+            value: Some(ParameterValue::Length(Length(12.0))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: Some("keywords-dimension".into()),
+        }];
+        let record = dimension("Linear", 0.034);
+
+        apply_to_parameters(&mut parameters, &[feature], &[record]);
+
+        let parameter = &parameters[0];
+        assert_eq!(parameter.expression, "12mm");
+        assert_eq!(parameter.display, None);
+        assert_eq!(parameter.value, Some(ParameterValue::Length(Length(12.0))));
+        assert_eq!(parameter.native_ref.as_deref(), Some("keywords-dimension"));
+        assert_eq!(
+            parameter.pmi.as_ref().map(|pmi| &pmi.subtype),
+            Some(&PmiDimensionSubtype::Linear)
+        );
+        assert_eq!(
+            parameter.pmi.as_ref().map(|pmi| pmi.native_ref.as_str()),
+            Some("dimension")
+        );
+    }
+
+    #[test]
+    fn conflicting_pmi_dimensions_do_not_bind_a_parameter() {
+        let feature = named_feature("feature", "Pattern1");
+        let first = dimension("Linear", 0.034);
+        let mut second = dimension("Linear", 0.035);
+        second.id = "dimension-2".into();
+        second.guid = "guid-2".into();
+        let mut parameters = Vec::new();
+
+        apply_to_parameters(&mut parameters, &[feature], &[first, second]);
+
+        assert!(parameters.is_empty());
+    }
+
+    #[test]
+    fn equivalent_pmi_dimensions_bind_once_to_lowest_record_id() {
+        let feature = named_feature("feature", "Pattern1");
+        let canonical = dimension("Linear", 0.034);
+        let mut alias = canonical.clone();
+        alias.id = "dimension-2".into();
+        alias.guid = "guid-2".into();
+        let mut parameters = Vec::new();
+
+        apply_to_parameters(&mut parameters, &[feature], &[canonical, alias]);
+
+        let [parameter] = parameters.as_slice() else {
+            panic!("one PMI-backed parameter");
+        };
+        assert_eq!(parameter.expression, "34mm");
+        assert_eq!(
+            parameter.pmi.as_ref().map(|pmi| pmi.native_ref.as_str()),
+            Some("dimension")
+        );
+    }
+
+    #[test]
+    fn conflicting_pmi_metadata_do_not_enrich_history() {
+        use crate::records::FeatureHistory;
+
+        let mut history = vec![FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![crate::records::Feature {
+                id: "feature".into(),
+                parent: "history".into(),
+                xml_tag: "Feature".into(),
+                tree_parent: None,
+                source_id: None,
+                parent_source_id: None,
+                ordinal: 0,
+                name: "Pattern1".into(),
+                kind: "StoredGeometry".into(),
+                input_class: None,
+                suppressed: false,
+                parameters: BTreeMap::new(),
+                dimension_properties: BTreeMap::new(),
+                properties: BTreeMap::new(),
+                text: None,
+                content: Vec::new(),
+            }],
+        }];
+        let first = dimension("Linear", 0.034);
+        let mut second = first.clone();
+        second.id = "dimension-2".into();
+        second.guid = "guid-2".into();
+        second.basic = true;
+
+        enrich_history_parameters(&mut history, &[first, second]);
+
+        assert!(history[0].features[0].parameters.is_empty());
+    }
 }
 
 /// Return whether two retained records encode the same semantic dimension.
@@ -137,6 +270,7 @@ mod tests {
 /// editable semantic field must agree before those records are aliases.
 pub(crate) fn equivalent_dimensions(left: &PmiDimension, right: &PmiDimension) -> bool {
     left.cad_text == right.cad_text
+        && left.item_count == right.item_count
         && left.subtype == right.subtype
         && left.value.to_bits() == right.value.to_bits()
         && left.precision == right.precision
@@ -144,6 +278,33 @@ pub(crate) fn equivalent_dimensions(left: &PmiDimension, right: &PmiDimension) -
         && left.basic == right.basic
         && left.inspection == right.inspection
         && left.reference_only == right.reference_only
+}
+
+/// Return one deterministic representative for each owner-qualified dimension
+/// whose retained records all agree semantically.
+pub(crate) fn agreed_dimension_records(records: &[PmiDimension]) -> Vec<&PmiDimension> {
+    let mut groups = BTreeMap::<&str, Vec<&PmiDimension>>::new();
+    for record in records {
+        groups
+            .entry(record.cad_text.as_str())
+            .or_default()
+            .push(record);
+    }
+
+    let mut representatives = groups
+        .into_values()
+        .filter_map(|mut group| {
+            group.sort_unstable_by(|left, right| left.id.cmp(&right.id));
+            let canonical = *group.first()?;
+            (canonical.item_count == 1
+                && group.iter().all(|record| {
+                    record.item_count == 1 && equivalent_dimensions(canonical, record)
+                }))
+            .then_some(canonical)
+        })
+        .collect::<Vec<_>>();
+    representatives.sort_unstable_by(|left, right| left.id.cmp(&right.id));
+    representatives
 }
 
 /// Count native semantic dimensions not represented by a bound record or one
@@ -181,17 +342,16 @@ pub(crate) fn enrich_history_parameters_with_features(
     records: &[PmiDimension],
     neutral_features: &[cadmpeg_ir::features::Feature],
 ) {
-    let mut owners = BTreeMap::<&str, Vec<(usize, usize)>>::new();
+    let mut owners = BTreeMap::<String, Vec<(usize, usize)>>::new();
     for (history_index, history) in histories.iter().enumerate() {
         for (feature_index, feature) in history.features.iter().enumerate() {
             owners
-                .entry(feature.name.as_str())
+                .entry(feature.name.clone())
                 .or_default()
                 .push((history_index, feature_index));
         }
     }
-    let mut candidates = BTreeMap::<(usize, usize, String), Vec<String>>::new();
-    for record in records {
+    for record in agreed_dimension_records(records) {
         let Some((name, owner_name)) = record.cad_text.split_once('@') else {
             continue;
         };
@@ -228,21 +388,10 @@ pub(crate) fn enrich_history_parameters_with_features(
             },
             cadmpeg_ir::features::PmiDimensionSubtype::Native(_) => continue,
         };
-        candidates
-            .entry((*history_index, *feature_index, name.to_string()))
-            .or_default()
-            .push(expression);
-    }
-    for ((history_index, feature_index, name), mut expressions) in candidates {
-        expressions.sort();
-        expressions.dedup();
-        let [expression] = expressions.as_slice() else {
-            continue;
-        };
-        histories[history_index].features[feature_index]
+        histories[*history_index].features[*feature_index]
             .parameters
-            .entry(name)
-            .or_insert_with(|| expression.clone());
+            .entry(name.to_string())
+            .or_insert(expression);
     }
 }
 
@@ -269,6 +418,9 @@ pub(crate) fn patch_payload(
         .iter()
         .filter(|record| record.parent == block_id)
     {
+        if record.item_count != 1 {
+            continue;
+        }
         let mut parameters = ir.model.parameters.iter().filter(|parameter| {
             parameter.pmi.as_ref().is_some_and(|pmi| {
                 pmi.native_ref == record.id
@@ -404,7 +556,7 @@ pub(crate) fn apply_to_parameters(
             feature_names.entry(name).or_default().push(feature);
         }
     }
-    for record in records {
+    for record in agreed_dimension_records(records) {
         let Some((name, owner_name)) = record.cad_text.split_once('@') else {
             continue;
         };
@@ -471,9 +623,9 @@ pub(crate) fn apply_to_parameters(
             native_ref: record.id.clone(),
         };
         if let Some(parameter) = existing_parameter.map(|index| &mut parameters[index]) {
-            parameter.expression = expression;
-            parameter.display = display;
-            parameter.value = value;
+            // Keywords is the authoritative design value when it already
+            // supplied this parameter. PMI still contributes its semantic
+            // annotation and source identity.
             parameter.pmi = Some(semantic);
             continue;
         }
@@ -532,6 +684,9 @@ pub(crate) fn dimensions(scan: &ContainerScan, annotations: &mut Annotations) ->
             let Some(Value::Array(items)) = outer.get("dimItems") else {
                 continue;
             };
+            let Ok(item_count) = u32::try_from(items.len()) else {
+                continue;
+            };
             let Some(Value::Map(item)) = items.first() else {
                 continue;
             };
@@ -586,6 +741,7 @@ pub(crate) fn dimensions(scan: &ContainerScan, annotations: &mut Annotations) ->
                 offset: offset as u64,
                 guid,
                 cad_text: cad_text.to_string(),
+                item_count,
                 subtype: string_field(item, "dimSubType")
                     .unwrap_or_default()
                     .to_string(),

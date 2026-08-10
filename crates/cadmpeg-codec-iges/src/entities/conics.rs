@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Conic-arc classification and bounded neutral projection.
 
+use super::curve_conversion::angularly_equal;
 use super::geometry::{entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
@@ -52,6 +53,7 @@ fn add_bounded_curve(
     start: Point3,
     end: Point3,
     parameter_range: [f64; 2],
+    tolerance: Option<f64>,
 ) -> EdgeId {
     let stem = format!("D{}", entry.sequence);
     let start_point = PointId(format!("iges:model:point#{stem}-start"));
@@ -76,12 +78,12 @@ fn add_bounded_curve(
         Vertex {
             id: start_vertex.clone(),
             point: start_point,
-            tolerance: None,
+            tolerance,
         },
         Vertex {
             id: end_vertex.clone(),
             point: end_point,
-            tolerance: None,
+            tolerance,
         },
     ]);
     ir.model.curves.push(Curve {
@@ -95,7 +97,7 @@ fn add_bounded_curve(
         start: start_vertex,
         end: end_vertex,
         param_range: Some(parameter_range),
-        tolerance: None,
+        tolerance,
     });
     edge
 }
@@ -124,10 +126,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 104 && (0..=3).contains(&entry.form))
     {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -157,10 +156,10 @@ pub(super) fn project(
             .max(coeff_f.abs())
             .max(1.0);
         let zero = |value: f64| value.abs() <= coefficient_scale * 1.0e-12;
-        if !zero(*coeff_b) || !zero(*coeff_d) {
+        if !zero(*coeff_b) || (!zero(*coeff_d) && !zero(*coeff_e)) {
             losses.push(entity_loss(
                 entry,
-                "conic is not in the required axis-aligned standard position",
+                "conic axes or center are not in the required standard position",
             ));
             continue;
         }
@@ -169,6 +168,7 @@ pub(super) fn project(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         ) {
             Ok(transform) => transform,
@@ -230,8 +230,19 @@ pub(super) fn project(
                         .atan2(dot(delta, major_direction) / major_radius)
                         .rem_euclid(std::f64::consts::TAU)
                 };
-                let start_parameter = parameter(start);
-                let sweep = (parameter(end) - start_parameter).rem_euclid(std::f64::consts::TAU);
+                let raw_start_parameter = parameter(start);
+                let raw_end_parameter = parameter(end);
+                let mut sweep =
+                    (raw_end_parameter - raw_start_parameter).rem_euclid(std::f64::consts::TAU);
+                if angularly_equal(sweep, 0.0) {
+                    sweep = std::f64::consts::TAU;
+                }
+                let start_parameter = if angularly_equal(raw_start_parameter, std::f64::consts::TAU)
+                {
+                    0.0
+                } else {
+                    raw_start_parameter
+                };
                 (sweep > 0.0).then_some((
                     CurveGeometry::Ellipse {
                         center: plane_origin,
@@ -370,7 +381,36 @@ pub(super) fn project(
             ));
             continue;
         };
-        let edge = add_bounded_curve(ir, entry, geometry, start, end, parameter_range);
+        let Some(evaluated_start) = cadmpeg_ir::eval::curve_point(&geometry, parameter_range[0])
+        else {
+            losses.push(entity_loss(entry, "conic start point cannot be evaluated"));
+            continue;
+        };
+        let Some(evaluated_end) = cadmpeg_ir::eval::curve_point(&geometry, parameter_range[1])
+        else {
+            losses.push(entity_loss(
+                entry,
+                "conic terminate point cannot be evaluated",
+            ));
+            continue;
+        };
+        let resolution = global.minimum_resolution_mm();
+        if difference(start, evaluated_start).norm() > resolution {
+            losses.push(entity_loss(
+                entry,
+                "conic start point disagrees with the evaluated carrier beyond the minimum resolution",
+            ));
+            continue;
+        }
+        if difference(end, evaluated_end).norm() > resolution {
+            losses.push(entity_loss(
+                entry,
+                "conic terminate point disagrees with the evaluated carrier beyond the minimum resolution",
+            ));
+            continue;
+        }
+        let tolerance = (resolution > 0.0).then_some(resolution);
+        let edge = add_bounded_curve(ir, entry, geometry, start, end, parameter_range, tolerance);
         wire_edges.push(edge);
         decoded.insert(entry.sequence);
     }

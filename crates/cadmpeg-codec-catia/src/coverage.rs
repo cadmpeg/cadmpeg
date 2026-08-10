@@ -61,6 +61,8 @@ pub(crate) const DECODED_CONSOLIDATED_EDGE_RUN_SUPPORT_BINDING_COUNT: CoverageKe
     CoverageKey("decoded_consolidated_edge_run_support_binding_count");
 pub(crate) const DECODED_CONSOLIDATED_LINE_PROFILE_COUNT: CoverageKey =
     CoverageKey("decoded_consolidated_line_profile_count");
+pub(crate) const DECODED_CONSOLIDATED_PLANE_CARRIER_COUNT: CoverageKey =
+    CoverageKey("decoded_consolidated_plane_carrier_count");
 pub(crate) const DECODED_CONSTRAINT_RANGE_COUNT: CoverageKey =
     CoverageKey("decoded_constraint_range_count");
 pub(crate) const DECODED_CONSTRAINT_RANGE_INCOMING_PAYLOAD_REFERENCE_COUNT: CoverageKey =
@@ -181,6 +183,8 @@ pub(crate) const DECODED_NULL_REFERENCE_SIGNATURE_ENTITY_COUNT: CoverageKey =
     CoverageKey("decoded_null_reference_signature_entity_count");
 pub(crate) const DECODED_NULL_RELATION_PROGRAM_INSTANCE_COUNT: CoverageKey =
     CoverageKey("decoded_null_relation_program_instance_count");
+pub(crate) const DECODED_NULL_RELATION_PROGRAM_OUTPUT_COUNT: CoverageKey =
+    CoverageKey("decoded_null_relation_program_output_count");
 pub(crate) const DECODED_NULL_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT: CoverageKey =
     CoverageKey("decoded_null_relation_program_reference_incidence_count");
 pub(crate) const DECODED_NULL_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT: CoverageKey =
@@ -229,6 +233,8 @@ pub(crate) const DECODED_RELATION_EXPRESSION_PROGRAM_INSTANCE_COUNT: CoverageKey
     CoverageKey("decoded_relation_expression_program_instance_count");
 pub(crate) const DECODED_RELATION_PROGRAM_INSTANCE_COUNT: CoverageKey =
     CoverageKey("decoded_relation_program_instance_count");
+pub(crate) const DECODED_RELATION_PROGRAM_OUTPUT_COUNT: CoverageKey =
+    CoverageKey("decoded_relation_program_output_count");
 pub(crate) const DECODED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT: CoverageKey =
     CoverageKey("decoded_relation_program_parameter_dependency_count");
 pub(crate) const DECODED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT: CoverageKey =
@@ -257,6 +263,8 @@ pub(crate) const DECODED_RESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT: Coverag
     CoverageKey("decoded_resolved_relation_program_input_instance_count");
 pub(crate) const DECODED_RESOLVED_RELATION_PROGRAM_INSTANCE_COUNT: CoverageKey =
     CoverageKey("decoded_resolved_relation_program_instance_count");
+pub(crate) const DECODED_RESOLVED_RELATION_PROGRAM_OUTPUT_COUNT: CoverageKey =
+    CoverageKey("decoded_resolved_relation_program_output_count");
 pub(crate) const DECODED_RESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT: CoverageKey =
     CoverageKey("decoded_resolved_relation_program_reference_incidence_count");
 pub(crate) const DECODED_RESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT: CoverageKey =
@@ -307,6 +315,10 @@ pub(crate) const DECODED_ZERO_ENTITY_EDGE_STRIDE_ALLOCATION_COUNT: CoverageKey =
     CoverageKey("decoded_zero_entity_edge_stride_allocation_count");
 pub(crate) const DECODED_ZERO_ENTITY_EDGE_STRIDE_COUNT: CoverageKey =
     CoverageKey("decoded_zero_entity_edge_stride_count");
+pub(crate) const DECODED_ZERO_ENTITY_EDGE_STRIDE_SURFACE_SUPPORT_REF_COUNT: CoverageKey =
+    CoverageKey("decoded_zero_entity_edge_stride_surface_support_ref_count");
+pub(crate) const DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_REF_COUNT: CoverageKey =
+    CoverageKey("decoded_zero_entity_edge_stride_topology_ref_count");
 pub(crate) const DECODED_ZERO_ENTITY_FACE_BOUND_SUPPORT_RUN_COUNT: CoverageKey =
     CoverageKey("decoded_zero_entity_face_bound_support_run_count");
 pub(crate) const DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_03_COUNT: CoverageKey =
@@ -420,7 +432,11 @@ pub(crate) const TRANSFERRED_CONSOLIDATED_LINE_PROFILE_COUNT: CoverageKey =
     CoverageKey("transferred_consolidated_line_profile_count");
 pub(crate) const TRANSFERRED_CONSOLIDATED_REVOLUTION_COUNT: CoverageKey =
     CoverageKey("transferred_consolidated_revolution_count");
+pub(crate) const TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT: CoverageKey =
+    CoverageKey("transferred_definition_chain_parameter_count");
 pub(crate) const TRANSFERRED_FEATURE_COUNT: CoverageKey = CoverageKey("transferred_feature_count");
+pub(crate) const TRANSFERRED_FEATURE_PARENT_COUNT: CoverageKey =
+    CoverageKey("transferred_feature_parent_count");
 pub(crate) const TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT: CoverageKey =
     CoverageKey("transferred_formula_design_record_count");
 pub(crate) const TRANSFERRED_LEGACY_FORMULA_COUNT: CoverageKey =
@@ -429,6 +445,14 @@ pub(crate) const TRANSFERRED_LEGACY_PARAMETER_COUNT: CoverageKey =
     CoverageKey("transferred_legacy_parameter_count");
 pub(crate) const TRANSFERRED_LEGACY_SELECTOR_PARAMETER_COUNT: CoverageKey =
     CoverageKey("transferred_legacy_selector_parameter_count");
+pub(crate) const TRANSFERRED_NATIVE_OPERATION_COUNT: CoverageKey =
+    CoverageKey("transferred_native_operation_count");
+pub(crate) const TRANSFERRED_NATIVE_OPERATION_DEFINITION_CHAIN_VALUE_COUNT: CoverageKey =
+    CoverageKey("transferred_native_operation_definition_chain_value_count");
+pub(crate) const TRANSFERRED_NATIVE_OPERATION_DEFINITION_VALUE_COUNT: CoverageKey =
+    CoverageKey("transferred_native_operation_definition_value_count");
+pub(crate) const TRANSFERRED_NATIVE_OPERATION_PARAMETER_COUNT: CoverageKey =
+    CoverageKey("transferred_native_operation_parameter_count");
 pub(crate) const TRANSFERRED_OBJECT_STREAM_FACE_COUNT: CoverageKey =
     CoverageKey("transferred_object_stream_face_count");
 pub(crate) const TRANSFERRED_OBJECT_STREAM_LOOP_COUNT: CoverageKey =
@@ -456,6 +480,22 @@ pub(crate) const TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT: CoverageKey =
     CoverageKey("transferred_zero_entity_support_curve_count");
 pub(crate) const TRANSFERRED_ZERO_ENTITY_WIRE_VERTEX_COUNT: CoverageKey =
     CoverageKey("transferred_zero_entity_wire_vertex_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_TOPOLOGY_BODY_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_topology_body_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_TOPOLOGY_COEDGE_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_topology_coedge_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_TOPOLOGY_EDGE_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_topology_edge_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_TOPOLOGY_FACE_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_topology_face_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_TOPOLOGY_LOOP_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_topology_loop_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_TOPOLOGY_POINT_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_topology_point_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_TOPOLOGY_PCURVE_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_topology_pcurve_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_TOPOLOGY_VERTEX_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_topology_vertex_count");
 pub(crate) const TYPED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT: CoverageKey =
     CoverageKey("typed_object_stream_class_21_pcurve_suffix_scalar_count");
 pub(crate) const TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_21_COUNT: CoverageKey =
@@ -466,6 +506,8 @@ pub(crate) const TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT: CoverageKey
     CoverageKey("typed_object_stream_face_terminal_control_03_count");
 pub(crate) const TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT: CoverageKey =
     CoverageKey("typed_object_stream_face_terminal_control_05_count");
+pub(crate) const TYPED_MULTI_SURFACE_OBJECT_STREAM_FACE_COUNT: CoverageKey =
+    CoverageKey("typed_multi_surface_object_stream_face_count");
 pub(crate) const TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT: CoverageKey =
     CoverageKey("typed_object_stream_loop_framing_controls_05_05_count");
 pub(crate) const TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_COUNT: CoverageKey =
@@ -538,6 +580,8 @@ pub(crate) const UNRESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT: CoverageKey =
     CoverageKey("unresolved_relation_program_input_instance_count");
 pub(crate) const UNRESOLVED_RELATION_PROGRAM_INSTANCE_COUNT: CoverageKey =
     CoverageKey("unresolved_relation_program_instance_count");
+pub(crate) const UNRESOLVED_RELATION_PROGRAM_OUTPUT_COUNT: CoverageKey =
+    CoverageKey("unresolved_relation_program_output_count");
 pub(crate) const UNRESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT: CoverageKey =
     CoverageKey("unresolved_relation_program_parameter_dependency_count");
 pub(crate) const UNRESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT: CoverageKey =
@@ -578,6 +622,7 @@ pub(crate) const ALL: &[CoverageKey] = &[
     DECODED_CONSOLIDATED_EDGE_RUN_SHARED_LOCUS_COUNT,
     DECODED_CONSOLIDATED_EDGE_RUN_SUPPORT_BINDING_COUNT,
     DECODED_CONSOLIDATED_LINE_PROFILE_COUNT,
+    DECODED_CONSOLIDATED_PLANE_CARRIER_COUNT,
     DECODED_CONSTRAINT_RANGE_COUNT,
     DECODED_CONSTRAINT_RANGE_INCOMING_PAYLOAD_REFERENCE_COUNT,
     DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT,
@@ -638,6 +683,7 @@ pub(crate) const ALL: &[CoverageKey] = &[
     DECODED_NULL_OBJECT_RECORD_REFERENCE_COUNT,
     DECODED_NULL_REFERENCE_SIGNATURE_ENTITY_COUNT,
     DECODED_NULL_RELATION_PROGRAM_INSTANCE_COUNT,
+    DECODED_NULL_RELATION_PROGRAM_OUTPUT_COUNT,
     DECODED_NULL_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT,
     DECODED_NULL_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT,
     DECODED_NUMERIC_ENTITY_VALUE_PACKET_COUNT,
@@ -662,6 +708,7 @@ pub(crate) const ALL: &[CoverageKey] = &[
     DECODED_RELATION_EXPRESSION_COUNT,
     DECODED_RELATION_EXPRESSION_PROGRAM_INSTANCE_COUNT,
     DECODED_RELATION_PROGRAM_INSTANCE_COUNT,
+    DECODED_RELATION_PROGRAM_OUTPUT_COUNT,
     DECODED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT,
     DECODED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT,
     DECODED_RESOLVED_CONFIGURATION_ENTITY_REFERENCE_COUNT,
@@ -676,6 +723,7 @@ pub(crate) const ALL: &[CoverageKey] = &[
     DECODED_RESOLVED_RELATION_PROGRAM_INPUT_COUNT,
     DECODED_RESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT,
     DECODED_RESOLVED_RELATION_PROGRAM_INSTANCE_COUNT,
+    DECODED_RESOLVED_RELATION_PROGRAM_OUTPUT_COUNT,
     DECODED_RESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT,
     DECODED_RESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT,
     DECODED_SCALAR_ENTITY_SUFFIX_VALUE_COUNT,
@@ -757,11 +805,17 @@ pub(crate) const ALL: &[CoverageKey] = &[
     TRANSFERRED_CONFIGURATION_COUNT,
     TRANSFERRED_CONSOLIDATED_LINE_PROFILE_COUNT,
     TRANSFERRED_CONSOLIDATED_REVOLUTION_COUNT,
+    TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT,
     TRANSFERRED_FEATURE_COUNT,
+    TRANSFERRED_FEATURE_PARENT_COUNT,
     TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT,
     TRANSFERRED_LEGACY_FORMULA_COUNT,
     TRANSFERRED_LEGACY_PARAMETER_COUNT,
     TRANSFERRED_LEGACY_SELECTOR_PARAMETER_COUNT,
+    TRANSFERRED_NATIVE_OPERATION_COUNT,
+    TRANSFERRED_NATIVE_OPERATION_DEFINITION_CHAIN_VALUE_COUNT,
+    TRANSFERRED_NATIVE_OPERATION_DEFINITION_VALUE_COUNT,
+    TRANSFERRED_NATIVE_OPERATION_PARAMETER_COUNT,
     TRANSFERRED_OBJECT_STREAM_FACE_COUNT,
     TRANSFERRED_OBJECT_STREAM_LOOP_COUNT,
     TRANSFERRED_PARAMETER_COUNT,
@@ -776,6 +830,14 @@ pub(crate) const ALL: &[CoverageKey] = &[
     TRANSFERRED_ZERO_ENTITY_WIRE_POINT_COUNT,
     TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT,
     TRANSFERRED_ZERO_ENTITY_WIRE_VERTEX_COUNT,
+    TRANSFERRED_ZERO_ENTITY_TOPOLOGY_BODY_COUNT,
+    TRANSFERRED_ZERO_ENTITY_TOPOLOGY_COEDGE_COUNT,
+    TRANSFERRED_ZERO_ENTITY_TOPOLOGY_EDGE_COUNT,
+    TRANSFERRED_ZERO_ENTITY_TOPOLOGY_FACE_COUNT,
+    TRANSFERRED_ZERO_ENTITY_TOPOLOGY_LOOP_COUNT,
+    TRANSFERRED_ZERO_ENTITY_TOPOLOGY_POINT_COUNT,
+    TRANSFERRED_ZERO_ENTITY_TOPOLOGY_PCURVE_COUNT,
+    TRANSFERRED_ZERO_ENTITY_TOPOLOGY_VERTEX_COUNT,
     TYPED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT,
     TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_21_COUNT,
     TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_2A_COUNT,
@@ -817,6 +879,7 @@ pub(crate) const ALL: &[CoverageKey] = &[
     UNRESOLVED_OBJECT_RECORD_REFERENCE_COUNT,
     UNRESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT,
     UNRESOLVED_RELATION_PROGRAM_INSTANCE_COUNT,
+    UNRESOLVED_RELATION_PROGRAM_OUTPUT_COUNT,
     UNRESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT,
     UNRESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT,
     UNRESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT,

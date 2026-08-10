@@ -5,15 +5,15 @@
 //! curve defined by the intersection of two support surfaces. Its payload
 //! references a `00 28` chart record (the solved point cache), two `00 29`
 //! terminator records (the exact curve endpoints), and a `00 cc` support-UV
-//! record. A carrier whose referenced chart, terminators, and UV values are
-//! mutually consistent yields a derived degree-one NURBS curve through the
-//! chart points with the terminators as endpoints.
+//! record. Referenced terminators select the chart entry width and replace its
+//! approximate endpoints. A complete width-4 UV record additionally yields
+//! co-parameterized support pcurve caches.
 
 use std::collections::HashMap;
 
 use cadmpeg_core::be::{f64_at, u16_at, u32_at};
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::{Point2, Point3};
 
 use super::{Carrier, CarrierGeometry, LEN_TO_MM};
 
@@ -30,6 +30,33 @@ struct Chart {
     base_parameter: f64,
     base_scale: f64,
     chordal_error: f64,
+}
+
+/// One validated intersection curve and its solved chart.
+pub(super) struct IntersectionCarrier {
+    pub carrier: Carrier,
+    pub support_data: IntersectionSupportData,
+}
+
+/// Ordered supports and optional UV lanes for the model-space chart curve.
+#[derive(Clone)]
+pub(super) struct IntersectionSupportData {
+    pub supports: [u16; 2],
+    pub fit_tolerance_mm: f64,
+    pub support_uv: Option<[Vec<Point2>; 2]>,
+}
+
+struct UvRecord {
+    width: usize,
+    values: Vec<f64>,
+}
+
+struct SolvedChart {
+    geometry: CurveGeometry,
+    parameters: Vec<f64>,
+    fit_tolerance_mm: f64,
+    reversed: bool,
+    endpoint_displacement: f64,
 }
 
 /// Offsets of every `00 tt` tag, with the optional `0xff` escape skipped.
@@ -84,7 +111,7 @@ fn finite_point(bytes: &[u8], at: usize) -> Option<[f64; 3]> {
         .then_some(point)
 }
 
-fn unit_tangent(bytes: &[u8], at: usize) -> bool {
+fn finite_tangent(bytes: &[u8], at: usize) -> bool {
     let Some(tangent) = (|| {
         Some([
             f64_at(bytes, at)?,
@@ -97,26 +124,25 @@ fn unit_tangent(bytes: &[u8], at: usize) -> bool {
     if tangent.iter().any(|value| !value.is_finite()) {
         return false;
     }
-    let norm = tangent.iter().map(|value| value * value).sum::<f64>();
-    (norm - 1.0).abs() < 1e-9
+    tangent.iter().any(|value| *value != 0.0)
 }
 
 /// Parse every `00 28` chart record: `count:u32 attr:u16 base_parameter:f64
 /// base_scale:f64 chart_count:u32 chordal_error:f64`, two [`MISSING_PARAMETER`]
 /// sentinels at +36/+44, then `count` point entries at +52 (88-byte entries
-/// carrying a unit tangent at +56, or bare 24-byte points).
+/// carrying a finite nonzero tangent at +56, or bare 24-byte points).
 fn chart_records(bytes: &[u8]) -> HashMap<u16, Vec<Chart>> {
     let mut out: HashMap<u16, Vec<Chart>> = HashMap::new();
     for body in record_bodies(bytes, 0x28) {
-        let Some(chart) = chart_at(bytes, body) else {
+        let Some((attr, candidates)) = chart_candidates(bytes, body) else {
             continue;
         };
-        out.entry(chart.0).or_default().push(chart.1);
+        out.entry(attr).or_default().extend(candidates);
     }
     out
 }
 
-fn chart_at(bytes: &[u8], body: usize) -> Option<(u16, Chart)> {
+fn chart_candidates(bytes: &[u8], body: usize) -> Option<(u16, Vec<Chart>)> {
     let count = u32_at(bytes, body)? as usize;
     let attr = u16_at(bytes, body + 4)?;
     let preamble = body + 6;
@@ -137,27 +163,37 @@ fn chart_at(bytes: &[u8], body: usize) -> Option<(u16, Chart)> {
         return None;
     }
     let block = preamble + 52;
-    let extended = block + 88 * count <= bytes.len()
-        && (0..count).all(|index| unit_tangent(bytes, block + index * 88 + 56));
-    let stride = if extended { 88 } else { 24 };
-    if block + stride * count > bytes.len() {
-        return None;
-    }
-    let points = (0..count)
-        .map(|index| finite_point(bytes, block + index * stride))
-        .collect::<Option<Vec<_>>>()?;
-    if !extended && points.windows(2).all(|pair| pair[0] == pair[1]) {
-        return None;
-    }
-    Some((
-        attr,
-        Chart {
+    let mut candidates = Vec::new();
+    for (stride, extended) in [(88usize, true), (24usize, false)] {
+        let Some(end) = stride
+            .checked_mul(count)
+            .and_then(|size| block.checked_add(size))
+        else {
+            continue;
+        };
+        if end > bytes.len() {
+            continue;
+        }
+        if extended && !(0..count).all(|index| finite_tangent(bytes, block + index * stride + 56)) {
+            continue;
+        }
+        let Some(points) = (0..count)
+            .map(|index| finite_point(bytes, block + index * stride))
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        if !extended && points.windows(2).all(|pair| pair[0] == pair[1]) {
+            continue;
+        }
+        candidates.push(Chart {
             points,
             base_parameter,
             base_scale,
             chordal_error,
-        },
-    ))
+        });
+    }
+    (!candidates.is_empty()).then_some((attr, candidates))
 }
 
 /// Parse a terminator body: `count:u32 attr:u16`, a kind label, then the
@@ -202,9 +238,8 @@ fn term_records(bytes: &[u8]) -> HashMap<u16, Vec<[f64; 3]>> {
 }
 
 /// Parse a support-UV body: `count:u32 attr:u16 width_marker:u8(2|3|4)` then
-/// `count` finite f64 values. Only the value count participates in composite
-/// validation.
-fn uv_at(bytes: &[u8], body: usize) -> Option<(u16, (usize, usize))> {
+/// `count` finite f64 values.
+fn uv_at(bytes: &[u8], body: usize) -> Option<(u16, UvRecord)> {
     let count = u32_at(bytes, body)? as usize;
     let attr = u16_at(bytes, body + 4)?;
     let marker = *bytes.get(body + 6)?;
@@ -215,18 +250,18 @@ fn uv_at(bytes: &[u8], body: usize) -> Option<(u16, (usize, usize))> {
     if count < width * 2 || !count.is_multiple_of(width) {
         return None;
     }
-    for index in 0..count {
-        if !f64_at(bytes, body + 7 + index * 8)?.is_finite() {
-            return None;
-        }
-    }
-    Some((attr, (width, count)))
+    let values = (0..count)
+        .map(|index| f64_at(bytes, body + 7 + index * 8))
+        .collect::<Option<Vec<_>>>()?;
+    values
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some((attr, UvRecord { width, values }))
 }
 
-/// Every `00 cc` or inline `values` support-UV record, keyed by attribute,
-/// as `(width, value_count)`.
-fn uv_records(bytes: &[u8]) -> HashMap<u16, Vec<(usize, usize)>> {
-    let mut out: HashMap<u16, Vec<(usize, usize)>> = HashMap::new();
+/// Every `00 cc` or inline `values` support-UV record, keyed by attribute.
+fn uv_records(bytes: &[u8]) -> HashMap<u16, Vec<UvRecord>> {
+    let mut out: HashMap<u16, Vec<UvRecord>> = HashMap::new();
     for body in record_bodies(bytes, 0xcc) {
         if let Some((attr, shape)) = uv_at(bytes, body) {
             out.entry(attr).or_default().push(shape);
@@ -251,43 +286,118 @@ fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
         .sqrt()
 }
 
-/// Build the derived polyline curve for one validated composite.
-fn solved_curve(chart: &Chart, start: [f64; 3], end: [f64; 3]) -> CurveGeometry {
-    let mut points = chart.points.clone();
-    *points.first_mut().expect("chart has at least two points") = start;
-    *points.last_mut().expect("chart has at least two points") = end;
+fn chart_parameters(chart: &Chart, points: &[[f64; 3]]) -> Vec<f64> {
     let mut parameters = Vec::with_capacity(points.len());
     parameters.push(chart.base_parameter);
     for pair in points.windows(2) {
         let previous = *parameters.last().expect("base parameter inserted");
         parameters.push(previous + distance(pair[0], pair[1]) * chart.base_scale);
     }
-    let mut knots = Vec::with_capacity(parameters.len() + 2);
-    knots.push(parameters[0]);
-    knots.extend_from_slice(&parameters);
-    knots.push(*parameters.last().expect("non-empty parameters"));
-    CurveGeometry::Nurbs(NurbsCurve {
-        degree: 1,
-        knots,
-        control_points: points
-            .iter()
-            .map(|p| Point3::new(p[0] * LEN_TO_MM, p[1] * LEN_TO_MM, p[2] * LEN_TO_MM))
-            .collect(),
-        weights: None,
-        periodic: false,
-    })
+    parameters
 }
 
-/// Scan intersection carriers whose chart, terminator, and UV witnesses are
-/// mutually consistent, keyed by carrier attribute.
+fn degree_one_knots(parameters: &[f64]) -> Vec<f64> {
+    let mut knots = Vec::with_capacity(parameters.len() + 2);
+    knots.push(parameters[0]);
+    knots.extend_from_slice(parameters);
+    knots.push(*parameters.last().expect("non-empty parameters"));
+    knots
+}
+
+/// Build the derived polyline curve for one validated composite.
+fn solved_curve(
+    chart: &Chart,
+    start: [f64; 3],
+    end: [f64; 3],
+) -> Option<(CurveGeometry, Vec<f64>, bool)> {
+    let mut parameters = chart_parameters(chart, &chart.points);
+    let mut points = chart.points.clone();
+    *points.first_mut().expect("chart has at least two points") = start;
+    *points.last_mut().expect("chart has at least two points") = end;
+    let reversed = if parameters.windows(2).all(|pair| pair[0] < pair[1]) {
+        false
+    } else if parameters.windows(2).all(|pair| pair[0] > pair[1]) {
+        parameters.reverse();
+        points.reverse();
+        true
+    } else {
+        return None;
+    };
+    let knots = degree_one_knots(&parameters);
+    Some((
+        CurveGeometry::Nurbs(NurbsCurve {
+            degree: 1,
+            knots,
+            control_points: points
+                .iter()
+                .map(|p| Point3::new(p[0] * LEN_TO_MM, p[1] * LEN_TO_MM, p[2] * LEN_TO_MM))
+                .collect(),
+            weights: None,
+            periodic: false,
+        }),
+        parameters,
+        reversed,
+    ))
+}
+
+fn solved_support_uv(
+    parameters: &[f64],
+    reversed: bool,
+    records: Option<&[UvRecord]>,
+) -> Option<[Vec<Point2>; 2]> {
+    let expected_values = parameters.len().checked_mul(4)?;
+    let mut candidates = records?
+        .iter()
+        .filter(|record| record.width == 4 && record.values.len() == expected_values)
+        .map(|record| {
+            let controls = [0usize, 1].map(|support| {
+                let mut control_points = record
+                    .values
+                    .chunks_exact(4)
+                    .map(|row| Point2::new(row[support * 2], row[support * 2 + 1]))
+                    .collect::<Vec<_>>();
+                if reversed {
+                    control_points.reverse();
+                }
+                control_points
+            });
+            controls
+        });
+    let candidate = candidates.next()?;
+    candidates
+        .all(|other| other == candidate)
+        .then_some(candidate)
+}
+
+fn nearest_term(
+    records: &HashMap<u16, Vec<[f64; 3]>>,
+    attr: u16,
+    endpoint: [f64; 3],
+) -> Option<([f64; 3], f64)> {
+    records
+        .get(&attr)?
+        .iter()
+        .copied()
+        .fold(None, |best, point| {
+            let candidate = (point, distance(point, endpoint));
+            match best {
+                Some(best) if best.1 <= candidate.1 => Some(best),
+                _ => Some(candidate),
+            }
+        })
+}
+
+/// Scan intersection carriers whose referenced chart and terminators resolve,
+/// keyed by carrier attribute.
 ///
 /// The composite body is `attr:u16 ordinal:u32 refs:u16[5] marker:u8(0x2b|0x2d)`
 /// then six payload references `[support0, support1, chart, term_start,
-/// term_end, uv]`. Both terminators must sit within the chart chordal error of
-/// the corresponding chart endpoint (a ring names one terminator twice), and a
-/// resolvable UV record must cover the chart points (with an optional extra
-/// row at a periodic seam).
-pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
+/// term_end, uv]`. Terminators replace the approximate chart endpoints. When
+/// both 24-byte and 88-byte chart strides frame, the referenced terminators
+/// select the unique candidate with the least endpoint displacement. An absent
+/// or inconsistent optional UV record does not invalidate the model-space
+/// curve; only a unique complete width-4 record supplies solved pcurves.
+pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, IntersectionCarrier> {
     let charts = chart_records(bytes);
     let terms = term_records(bytes);
     let uvs = uv_records(bytes);
@@ -310,36 +420,64 @@ pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> 
         let Some(candidates) = charts.get(&chart_ref) else {
             continue;
         };
-        let geometry = candidates.iter().find_map(|chart| {
+        let mut matches = candidates.iter().filter_map(|chart| {
             let first = *chart.points.first()?;
             let last = *chart.points.last()?;
-            let start = terms
-                .get(&start_ref)?
-                .iter()
-                .find(|point| distance(**point, first) <= chart.chordal_error)?;
-            let end = terms
-                .get(&end_ref)?
-                .iter()
-                .find(|point| distance(**point, last) <= chart.chordal_error)?;
-            let n = chart.points.len();
-            uvs.get(&uv_ref)
-                .is_none_or(|shapes| {
-                    shapes
-                        .iter()
-                        .any(|(width, count)| *count == width * n || *count == width * (n + 1))
-                })
-                .then(|| solved_curve(chart, *start, *end))
+            let (start, start_distance) = nearest_term(&terms, start_ref, first)?;
+            let (end, end_distance) = nearest_term(&terms, end_ref, last)?;
+            let endpoint_displacement = start_distance + end_distance;
+            let (geometry, parameters, reversed) = solved_curve(chart, start, end)?;
+            let fit_tolerance_mm = chart.chordal_error * LEN_TO_MM;
+            fit_tolerance_mm.is_finite().then_some(SolvedChart {
+                geometry,
+                parameters,
+                fit_tolerance_mm,
+                reversed,
+                endpoint_displacement,
+            })
         });
-        if let Some(geometry) = geometry {
-            out.entry(attr).or_insert(Carrier {
+        let Some(mut selected) = matches.next() else {
+            continue;
+        };
+        let mut ambiguous = false;
+        for candidate in matches {
+            match candidate
+                .endpoint_displacement
+                .total_cmp(&selected.endpoint_displacement)
+            {
+                std::cmp::Ordering::Less => {
+                    selected = candidate;
+                    ambiguous = false;
+                }
+                std::cmp::Ordering::Equal => ambiguous = true,
+                std::cmp::Ordering::Greater => {}
+            }
+        }
+        if ambiguous {
+            continue;
+        }
+        let supports = [refs[0], refs[1]];
+        let support_uv = solved_support_uv(
+            &selected.parameters,
+            selected.reversed,
+            uvs.get(&uv_ref).map(Vec::as_slice),
+        );
+        out.entry(attr).or_insert(IntersectionCarrier {
+            carrier: Carrier {
                 attr,
                 offset,
                 end: payload + 12,
-                geometry: CarrierGeometry::Curve(geometry),
+                geometry: CarrierGeometry::Curve(selected.geometry),
                 frame: None,
+                parameter_range: None,
                 orientation_reversed: false,
-            });
-        }
+            },
+            support_data: IntersectionSupportData {
+                supports,
+                fit_tolerance_mm: selected.fit_tolerance_mm,
+                support_uv,
+            },
+        });
     }
     out
 }
@@ -375,6 +513,30 @@ mod tests {
             for value in point {
                 bytes.extend_from_slice(&value.to_be_bytes());
             }
+        }
+        bytes
+    }
+
+    fn extended_chart(attr: u16, points: &[[f64; 3]], tangent: [f64; 3]) -> Vec<u8> {
+        let mut bytes = vec![0, 0x28];
+        bytes.extend_from_slice(&(points.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(&attr.to_be_bytes());
+        bytes.extend_from_slice(&0.0f64.to_be_bytes());
+        bytes.extend_from_slice(&1.0f64.to_be_bytes());
+        bytes.extend_from_slice(&(points.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(&1e-5f64.to_be_bytes());
+        bytes.extend_from_slice(&[0u8; 8]);
+        bytes.extend_from_slice(&MISSING_PARAMETER.to_be_bytes());
+        bytes.extend_from_slice(&MISSING_PARAMETER.to_be_bytes());
+        for point in points {
+            for value in point {
+                bytes.extend_from_slice(&value.to_be_bytes());
+            }
+            bytes.extend_from_slice(&[0u8; 32]);
+            for value in tangent {
+                bytes.extend_from_slice(&value.to_be_bytes());
+            }
+            bytes.extend_from_slice(&[0u8; 8]);
         }
         bytes
     }
@@ -438,7 +600,7 @@ mod tests {
     fn consistent_composite_yields_polyline() {
         let carriers = scan_intersection_carriers(&stream());
         let carrier = carriers.get(&9).expect("composite decoded");
-        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) = &carrier.geometry else {
+        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) = &carrier.carrier.geometry else {
             panic!("expected a NURBS polyline");
         };
         assert_eq!(curve.degree, 1);
@@ -447,6 +609,21 @@ mod tests {
         assert_eq!(curve.knots.len(), 5);
         assert!((curve.knots[2] - 0.01).abs() < 1e-12);
         assert!((curve.knots[3] - 0.02).abs() < 1e-12);
+        let support_data = &carrier.support_data;
+        assert_eq!(support_data.supports, [2, 3]);
+        let support_uv = support_data
+            .support_uv
+            .as_ref()
+            .expect("width-four UV cache");
+        assert_eq!(
+            support_uv[0],
+            &[
+                Point2::new(0.0, 1.0),
+                Point2::new(4.0, 5.0),
+                Point2::new(8.0, 9.0)
+            ]
+        );
+        assert_eq!(support_data.fit_tolerance_mm, 0.01);
     }
 
     #[test]
@@ -460,11 +637,42 @@ mod tests {
         let carrier = scan_intersection_carriers(&bytes)
             .remove(&9)
             .expect("intersection-data entity decoded");
-        assert_eq!(carrier.offset, 0);
-        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) = carrier.geometry else {
+        assert_eq!(carrier.carrier.offset, 0);
+        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) = carrier.carrier.geometry else {
             panic!("expected a NURBS polyline");
         };
         assert_eq!(curve.control_points.len(), POINTS.len());
+    }
+
+    #[test]
+    fn negative_chart_scale_reverses_curve_and_uv_caches_atomically() {
+        let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
+        let mut chart = chart(4, &POINTS);
+        chart[16..24].copy_from_slice(&(-1.0f64).to_be_bytes());
+        bytes.extend(chart);
+        bytes.extend(term(5, POINTS[0]));
+        bytes.extend(term(6, POINTS[2]));
+        bytes.extend(uv(7, POINTS.len()));
+
+        let carriers = scan_intersection_carriers(&bytes);
+        let carrier = carriers.get(&9).expect("decreasing chart decoded");
+        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) = &carrier.carrier.geometry else {
+            panic!("expected a NURBS polyline");
+        };
+        assert_eq!(curve.knots, [-0.02, -0.02, -0.01, 0.0, 0.0]);
+        assert_eq!(
+            curve.control_points,
+            [
+                Point3::new(10.0, 10.0, 0.0),
+                Point3::new(10.0, 0.0, 0.0),
+                Point3::new(0.0, 0.0, 0.0),
+            ]
+        );
+        let support_data = &carrier.support_data;
+        let control_points = &support_data.support_uv.as_ref().expect("UV cache")[0];
+        assert_eq!(control_points[0], Point2::new(8.0, 9.0));
+        assert_eq!(control_points[2], Point2::new(0.0, 1.0));
+        assert_eq!(curve.knots, [-0.02, -0.02, -0.01, 0.0, 0.0]);
     }
 
     #[test]
@@ -474,30 +682,25 @@ mod tests {
         bytes.extend(term(5, POINTS[0]));
         bytes.extend(term(6, POINTS[2]));
         bytes.extend(uv(7, POINTS.len() + 1));
-        assert!(scan_intersection_carriers(&bytes).contains_key(&9));
+        let carriers = scan_intersection_carriers(&bytes);
+        let carrier = carriers.get(&9).expect("seam-row carrier decoded");
+        assert!(carrier.support_data.support_uv.is_none());
     }
 
     #[test]
-    fn terminator_outside_chordal_error_is_rejected() {
-        let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
-        bytes.extend(chart(4, &POINTS));
-        bytes.extend(term(5, POINTS[0]));
-        bytes.extend(term(6, [0.011, 0.01, 0.0]));
-        bytes.extend(uv(7, POINTS.len()));
-        assert!(scan_intersection_carriers(&bytes).is_empty());
-    }
-
-    #[test]
-    fn terminator_within_chordal_error_replaces_endpoint() {
-        let end = [0.010_000_002, 0.01, 0.0];
+    fn exact_terminator_replaces_an_approximate_chart_endpoint() {
+        let end = [0.011, 0.01, 0.0];
         let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
         bytes.extend(chart(4, &POINTS));
         bytes.extend(term(5, POINTS[0]));
         bytes.extend(term(6, end));
         bytes.extend(uv(7, POINTS.len()));
         let carriers = scan_intersection_carriers(&bytes);
-        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) =
-            &carriers.get(&9).expect("composite decoded").geometry
+        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) = &carriers
+            .get(&9)
+            .expect("composite decoded")
+            .carrier
+            .geometry
         else {
             panic!("expected a NURBS polyline");
         };
@@ -539,8 +742,11 @@ mod tests {
         }
         bytes.extend(term);
         let carriers = scan_intersection_carriers(&bytes);
-        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) =
-            &carriers.get(&9).expect("ring composite decoded").geometry
+        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) = &carriers
+            .get(&9)
+            .expect("ring composite decoded")
+            .carrier
+            .geometry
         else {
             panic!("expected a NURBS polyline");
         };
@@ -549,12 +755,66 @@ mod tests {
     }
 
     #[test]
-    fn mismatched_uv_count_is_rejected() {
+    fn mismatched_optional_uv_count_does_not_reject_the_curve() {
         let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
         bytes.extend(chart(4, &POINTS));
         bytes.extend(term(5, POINTS[0]));
         bytes.extend(term(6, POINTS[2]));
         bytes.extend(uv(7, POINTS.len() + 2));
+        let carriers = scan_intersection_carriers(&bytes);
+        assert!(carriers.contains_key(&9));
+        assert!(carriers[&9].support_data.support_uv.is_none());
+    }
+
+    #[test]
+    fn extended_chart_stride_is_selected_by_witnesses() {
+        let chart_bytes = extended_chart(4, &POINTS, [0.5, 0.0, 0.0]);
+        let (_, candidates) = chart_candidates(&chart_bytes, 2).expect("chart candidates");
+        assert_eq!(candidates.len(), 2);
+
+        let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
+        bytes.extend(chart_bytes);
+        bytes.extend(term(5, POINTS[0]));
+        bytes.extend(term(6, POINTS[2]));
+        bytes.extend(uv(7, POINTS.len()));
+
+        let carriers = scan_intersection_carriers(&bytes);
+        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) = &carriers
+            .get(&9)
+            .expect("extended chart decoded")
+            .carrier
+            .geometry
+        else {
+            panic!("expected a NURBS polyline");
+        };
+        assert_eq!(curve.control_points.len(), POINTS.len());
+        assert_eq!(
+            *curve.control_points.last().expect("points"),
+            Point3::new(
+                POINTS[2][0] * LEN_TO_MM,
+                POINTS[2][1] * LEN_TO_MM,
+                POINTS[2][2] * LEN_TO_MM,
+            ),
+        );
+    }
+
+    #[test]
+    fn ambiguous_chart_stride_does_not_select_first_candidate() {
+        let end = POINTS[2];
+        let mut chart_bytes = extended_chart(4, &[POINTS[0], end], [0.5, 0.0, 0.0]);
+        let bare_endpoint = 2 + 6 + 52 + 24;
+        for (index, value) in end.into_iter().enumerate() {
+            chart_bytes[bare_endpoint + index * 8..bare_endpoint + (index + 1) * 8]
+                .copy_from_slice(&value.to_be_bytes());
+        }
+        let (_, candidates) = chart_candidates(&chart_bytes, 2).expect("chart candidates");
+        assert_eq!(candidates.len(), 2);
+
+        let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
+        bytes.extend(chart_bytes);
+        bytes.extend(term(5, POINTS[0]));
+        bytes.extend(term(6, end));
+        bytes.extend(uv(7, 2));
         assert!(scan_intersection_carriers(&bytes).is_empty());
     }
 }

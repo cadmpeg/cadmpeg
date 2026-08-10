@@ -3,6 +3,11 @@
 use super::sketch_edges::{cross, dot};
 use cadmpeg_ir::math::{Point3, Vector3};
 
+// Mesh coordinates are an approximation of the analytic helix. This fixed
+// relative bound is the decoder's promotion policy, not a value inferred from
+// the mesh spacing.
+const HELIX_MAX_RELATIVE_RESIDUAL: f64 = 5.0e-4;
+
 pub(crate) fn fit_helix_polyline(
     points: &[Point3],
     revolutions: f64,
@@ -81,21 +86,9 @@ pub(crate) fn fit_helix_polyline(
             max_error = max_error.max((fitted - actual).abs());
         }
     }
-    if max_error > radius_estimate * 5.0e-4 {
+    if max_error > radius_estimate * HELIX_MAX_RELATIVE_RESIDUAL {
         return None;
     }
-    let snap = (max_error / radius_estimate * 20.0).max(1.0e-10);
-    for component in [&mut axis.x, &mut axis.y, &mut axis.z] {
-        if component.abs() < snap {
-            *component = 0.0;
-        }
-    }
-    let normalized = dot(axis, axis).sqrt();
-    axis = Vector3::new(
-        axis.x / normalized,
-        axis.y / normalized,
-        axis.z / normalized,
-    );
     let (origin, radius) = fit_circle_on_axis(points, axis)?;
     let displacement = Vector3::new(
         points.last()?.x - points[0].x,

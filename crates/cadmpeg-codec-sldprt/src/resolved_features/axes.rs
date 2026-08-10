@@ -415,8 +415,19 @@ pub(super) fn compact_line_reference_directions(
         }
         if record.get(16..24) == Some(&[0; 8]) {
             if record.get(80..88) == Some(&[0; 8]) {
-                directions.extend(direction_at(64));
-                directions.extend(direction_at(72));
+                let candidates = [direction_at(64), direction_at(72)]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>();
+                let mut distinct = Vec::new();
+                for candidate in candidates {
+                    if !distinct.contains(&candidate) {
+                        distinct.push(candidate);
+                    }
+                }
+                if let [direction] = distinct.as_slice() {
+                    directions.push(*direction);
+                }
             } else {
                 directions.extend(direction_at(56));
             }

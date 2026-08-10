@@ -76,10 +76,12 @@ pub struct FeatureEntityReference {
     pub offset: usize,
 }
 
-pub(crate) fn generated_source_entity_ids(table: &FeatureEntityTable) -> BTreeSet<u32> {
+/// Source section identifiers carried by class-200 generated entries.
+pub(crate) fn generated_class_200_source_entity_ids(table: &FeatureEntityTable) -> BTreeSet<u32> {
     table
         .entries
         .iter()
+        .filter(|entry| entry.class_id == 200)
         .filter_map(|entry| entry.source_entity_id)
         .collect()
 }

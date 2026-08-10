@@ -139,6 +139,11 @@ pub(crate) fn project_relation_point_geometry(
             .map_or(lane.id.as_str(), |(_, key)| key);
         for marker in &lane.sketch_entities {
             let qualified_point = point_operands.contains(marker.id.as_str());
+            let has_existing_point = entities.iter().any(|entity| {
+                (entity.native_ref.as_deref() == Some(marker.id.as_str())
+                    || entity.geometry_ref.as_deref() == Some(marker.id.as_str()))
+                    && matches!(entity.geometry, SketchGeometry::Point { .. })
+            });
             if !referenced.contains(marker.id.as_str())
                 || !(qualified_point
                     && matches!(
@@ -152,12 +157,12 @@ pub(crate) fn project_relation_point_geometry(
                         marker.kind,
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                     ))
+                || has_existing_point
                 || entities.iter().any(|entity| {
-                    entity.native_ref.as_deref() == Some(marker.id.as_str())
-                        || entity
-                            .endpoint_refs
-                            .iter()
-                            .any(|reference| reference == &marker.id)
+                    entity
+                        .endpoint_refs
+                        .iter()
+                        .any(|reference| reference == &marker.id)
                 })
             {
                 continue;
@@ -702,7 +707,9 @@ pub(super) fn implicit_circle_marker<'a>(
     index: u16,
     expected_radius: f64,
 ) -> Option<(&'a SketchInputEntity, f64)> {
-    if operand_kind != FeatureInputOperandKind::Native(0x83fe)
+    // CircleDiameter selects the semantic family; native operand tags are only
+    // carrier kinds and must not narrow the geometric witness search.
+    if !matches!(operand_kind, FeatureInputOperandKind::Native(_))
         || !expected_radius.is_finite()
         || expected_radius <= 0.0
     {
@@ -787,6 +794,13 @@ pub(super) fn implicit_circle_marker<'a>(
         return Some(*candidate);
     }
 
+    // Only 83fe defines an ordered center/radial point roster. Other native
+    // carriers may use the relation-qualified witness tiers above, but their
+    // point-marker order does not identify a circular-dimension pair.
+    if operand_kind != FeatureInputOperandKind::Native(0x83fe) {
+        return None;
+    }
+
     let mut markers = lanes
         .iter()
         .flat_map(|lane| &lane.sketch_entities)
@@ -846,13 +860,23 @@ pub(crate) fn project_relation_bindings(
         .iter()
         .map(|parameter| (&parameter.id, parameter))
         .collect::<HashMap<_, _>>();
-
     for lane in lanes {
         let lane_key = lane
             .id
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
         for relation in &lane.relation_instances {
+            let existing = constraints
+                .iter()
+                .position(|constraint| constraint.native_ref.as_deref() == Some(&relation.id));
+            if existing.is_some_and(|index| {
+                !matches!(
+                    &constraints[index].definition,
+                    SketchConstraintDefinition::Native { .. }
+                )
+            }) {
+                continue;
+            }
             let Some(parameter_id) = relation_parameters.get(&relation.id) else {
                 continue;
             };
@@ -912,7 +936,7 @@ pub(crate) fn project_relation_bindings(
             });
             let active = relation_constraint_is_inactive(parameter, &definition, sketch_entities)
                 .then_some(false);
-            constraints.push(SketchConstraint {
+            let projected = SketchConstraint {
                 id: SketchConstraintId(format!(
                     "sldprt:model:sketch-constraint#relation:{lane_key}:{}",
                     relation.offset
@@ -929,9 +953,30 @@ pub(crate) fn project_relation_bindings(
                 label_position: None,
                 metadata: None,
                 native_ref: Some(relation.id.clone()),
-            });
+            };
+            if let Some(index) = existing {
+                if !matches!(
+                    &projected.definition,
+                    SketchConstraintDefinition::Native { .. }
+                ) {
+                    constraints[index] = projected;
+                }
+            } else {
+                constraints.push(projected);
+            }
         }
         for marker in &lane.sketch_entities {
+            let existing = constraints
+                .iter()
+                .position(|constraint| constraint.native_ref.as_deref() == Some(&marker.id));
+            if existing.is_some_and(|index| {
+                !matches!(
+                    &constraints[index].definition,
+                    SketchConstraintDefinition::Native { .. }
+                )
+            }) {
+                continue;
+            }
             let Some(sketch) = marker
                 .feature_ref
                 .as_deref()
@@ -950,7 +995,7 @@ pub(crate) fn project_relation_bindings(
             };
             let active =
                 marker_relation_is_inactive(marker, &definition, sketch_entities).then_some(false);
-            constraints.push(SketchConstraint {
+            let projected = SketchConstraint {
                 id: SketchConstraintId(format!(
                     "sldprt:model:sketch-constraint#marker:{lane_key}:{}",
                     marker.offset
@@ -967,7 +1012,17 @@ pub(crate) fn project_relation_bindings(
                 label_position: None,
                 metadata: None,
                 native_ref: Some(marker.id.clone()),
-            });
+            };
+            if let Some(index) = existing {
+                if !matches!(
+                    &projected.definition,
+                    SketchConstraintDefinition::Native { .. }
+                ) {
+                    constraints[index] = projected;
+                }
+            } else {
+                constraints.push(projected);
+            }
         }
     }
 }
@@ -983,17 +1038,23 @@ pub(crate) fn owned_relation_parameters(
         .collect::<HashMap<_, _>>();
     let mut claimed = HashSet::new();
     let mut owned = HashMap::new();
-    for relation in lanes.iter().flat_map(|lane| &lane.relation_instances) {
-        let Some(scalar) = relation.parameter_scalar_ref.as_deref() else {
-            continue;
-        };
-        let parameter = parameters_by_scalar
-            .get(scalar)
-            .map(|parameter| parameter.id.clone());
-        if let Some(parameter) = &parameter {
-            claimed.insert(parameter.clone());
+    for lane in lanes {
+        for relation in &lane.relation_instances {
+            let Some(scalar) = relation.parameter_scalar_ref.as_deref() else {
+                continue;
+            };
+            let parameter = parameters_by_scalar
+                .get(scalar)
+                .map(|parameter| parameter.id.clone())
+                .or_else(|| {
+                    relation_parameter_by_driving_name(relation, lane, features, parameters)
+                        .map(|parameter| parameter.id.clone())
+                });
+            if let Some(parameter) = &parameter {
+                claimed.insert(parameter.clone());
+            }
+            owned.insert(relation.id.clone(), parameter);
         }
-        owned.insert(relation.id.clone(), parameter);
     }
     for lane in lanes {
         for relation in &lane.relation_instances {
@@ -1011,9 +1072,11 @@ pub(crate) fn owned_relation_parameters(
                 }
                 continue;
             }
-            let Some(parameter) =
-                relation_parameter_by_display_name(relation, lane, features, parameters)
-            else {
+            let parameter = relation_parameter_by_driving_name(
+                relation, lane, features, parameters,
+            )
+            .or_else(|| relation_parameter_by_display_name(relation, lane, features, parameters));
+            let Some(parameter) = parameter else {
                 continue;
             };
             if claimed.insert(parameter.id.clone()) {
@@ -1022,6 +1085,48 @@ pub(crate) fn owned_relation_parameters(
         }
     }
     owned
+}
+
+fn relation_parameter_by_driving_name<'a>(
+    relation: &FeatureInputRelationInstance,
+    lane: &FeatureInputLane,
+    features: &[cadmpeg_ir::features::Feature],
+    parameters: &'a [cadmpeg_ir::features::DesignParameter],
+) -> Option<&'a cadmpeg_ir::features::DesignParameter> {
+    let owner = features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(relation.feature_ref.as_str()))?
+        .id
+        .clone();
+    let scalars = lane
+        .scalars
+        .iter()
+        .map(|scalar| (scalar.id.as_str(), scalar))
+        .collect::<HashMap<_, _>>();
+    let names = lane
+        .names
+        .iter()
+        .map(|name| (name.id.as_str(), name.value.as_str()))
+        .collect::<HashMap<_, _>>();
+    let mut driving_names = relation
+        .parameter_scalar_ref
+        .as_deref()
+        .into_iter()
+        .chain(relation.scalar_refs.iter().map(String::as_str))
+        .filter_map(|scalar| scalars.get(scalar))
+        .filter(|scalar| scalar.role == FeatureInputScalarRole::Driving)
+        .filter_map(|scalar| names.get(scalar.name.as_str()).copied())
+        .collect::<Vec<_>>();
+    driving_names.sort_unstable();
+    driving_names.dedup();
+    let [name] = driving_names.as_slice() else {
+        return None;
+    };
+    let mut matches = parameters.iter().filter(|parameter| {
+        parameter.owner.as_ref() == Some(&owner) && parameter.name.as_str() == *name
+    });
+    let parameter = matches.next()?;
+    matches.next().is_none().then_some(parameter)
 }
 
 pub(super) fn relation_parameter_by_display_name<'a>(

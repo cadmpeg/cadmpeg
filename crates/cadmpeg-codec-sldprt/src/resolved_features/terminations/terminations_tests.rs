@@ -9,9 +9,11 @@ use super::{
     compact_extrusion_through_all_at, compact_extrusion_through_all_both_at,
     compact_extrusion_through_next_at, compact_extrusion_to_face_at,
     compact_extrusion_to_vertex_at, compact_single_face_reference_path_at,
-    compact_single_face_reference_record_at, legacy_single_face_reference_path_at,
-    CompactPointReferenceKind,
+    compact_single_face_reference_record_at, enrich_history_combine_selections,
+    legacy_single_face_reference_path_at, CompactPointReferenceKind,
 };
+use crate::records::{Feature, FeatureHistory, FeatureInputLane, FeatureInputName};
+use std::collections::BTreeMap;
 
 #[test]
 fn compact_extrusion_through_all_requires_the_complete_end_spec() {
@@ -62,7 +64,10 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
     payload[118..122].copy_from_slice(&[0x32, 0x80, 0, 0]);
     payload[122..134].fill(1);
     payload[134..138].copy_from_slice(&7u32.to_le_bytes());
-    assert_eq!(compact_extrusion_to_face_at(&payload, 0), Some(100));
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        Some(100)
+    );
     let path = compact_single_face_reference_path_at(&payload, 100).expect("required invariant");
     assert_eq!(path.len(), 1);
     assert_eq!(path[0].instance, Some(0x8032));
@@ -70,9 +75,15 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
     assert_eq!(path[0].local_id, Some(7));
 
     payload[35..39].copy_from_slice(&[0xe4, 0x82, 0x07, 0x81]);
-    assert_eq!(compact_extrusion_to_face_at(&payload, 0), Some(100));
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        Some(100)
+    );
     payload[37..39].copy_from_slice(&[0xff, 0xff]);
-    assert_eq!(compact_extrusion_to_face_at(&payload, 0), None);
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        None
+    );
     payload[37..39].copy_from_slice(&[0x07, 0x81]);
 
     payload[88..92].copy_from_slice(&2u32.to_le_bytes());
@@ -100,10 +111,16 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
 
     payload[12] = 1;
     payload[22] = 1;
-    assert_eq!(compact_extrusion_to_face_at(&payload, 0), Some(100));
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        Some(100)
+    );
 
     payload[88..92].fill(0);
-    assert_eq!(compact_extrusion_to_face_at(&payload, 0), None);
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        None
+    );
 }
 
 #[test]
@@ -136,7 +153,10 @@ fn compact_extrusion_to_face_accepts_root_adjusted_component_paths() {
     let path = compact_single_face_reference_path_at(&slotted, 100).expect("required invariant");
     assert_eq!(path.len(), 2);
     assert_eq!(path[1].instance, Some(0x8034));
-    assert_eq!(compact_extrusion_to_face_at(&slotted, 0), Some(100));
+    assert_eq!(
+        compact_extrusion_to_face_at(&slotted, 0, slotted.len()),
+        Some(100)
+    );
 
     let mut aligned = payload(2, 5);
     entry(&mut aligned, 118, 0x8633, 1, 1);
@@ -147,7 +167,10 @@ fn compact_extrusion_to_face_accepts_root_adjusted_component_paths() {
     let path = compact_single_face_reference_path_at(&aligned, 100).expect("required invariant");
     assert_eq!(path.len(), 3);
     assert_eq!(path[2].type_signature, [3; 12]);
-    assert_eq!(compact_extrusion_to_face_at(&aligned, 0), Some(100));
+    assert_eq!(
+        compact_extrusion_to_face_at(&aligned, 0, aligned.len()),
+        Some(100)
+    );
 }
 
 #[test]
@@ -166,9 +189,15 @@ fn compact_extrusion_to_face_accepts_the_legacy_end_spec_token() {
     payload[122..134].fill(1);
     payload[134..138].copy_from_slice(&7u32.to_le_bytes());
 
-    assert_eq!(compact_extrusion_to_face_at(&payload, 0), Some(100));
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        Some(100)
+    );
     payload[0] = 2;
-    assert_eq!(compact_extrusion_to_face_at(&payload, 0), None);
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        None
+    );
 }
 
 #[test]
@@ -191,9 +220,15 @@ fn compact_extrusion_to_face_accepts_a_declared_width_two_child() {
     payload[marker + 22..marker + 34].fill(1);
     payload[marker + 34..marker + 38].copy_from_slice(&7u32.to_le_bytes());
 
-    assert_eq!(compact_extrusion_to_face_at(&payload, 0), Some(marker));
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        Some(marker)
+    );
     payload[33] = 0;
-    assert_eq!(compact_extrusion_to_face_at(&payload, 0), None);
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        None
+    );
 }
 
 #[test]
@@ -213,12 +248,15 @@ fn compact_extrusion_to_face_preserves_an_unparsed_declared_face_child() {
         0x18, 0x81, 0xca, 0x80, 2, 0, 0xcc, 0x80, 0, 0, 0xce, 0x80, 1, 0, 0, 0, 0xd0, 0x80,
     ]);
 
-    assert_eq!(compact_extrusion_to_face_at(&payload, anchor), Some(body));
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, anchor, payload.len()),
+        Some(body)
+    );
 
     let mut lane_token = payload[anchor..].to_vec();
     lane_token[..2].copy_from_slice(&[0x0c, 0x8e]);
     assert_eq!(
-        compact_extrusion_to_face_at(&lane_token, 0),
+        compact_extrusion_to_face_at(&lane_token, 0, lane_token.len()),
         Some(body - anchor)
     );
 
@@ -228,14 +266,23 @@ fn compact_extrusion_to_face_preserves_an_unparsed_declared_face_child() {
     payload[nested..nested + 16].copy_from_slice(&[
         0x86, 0x81, 2, 0, 0x88, 0x81, 0, 0, 0x8a, 0x81, 1, 0, 0, 0, 0x8c, 0x81,
     ]);
-    assert_eq!(compact_extrusion_to_face_at(&payload, anchor), Some(body));
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, anchor, payload.len()),
+        Some(body)
+    );
 
     payload[nested + 2] = 3;
-    assert_eq!(compact_extrusion_to_face_at(&payload, anchor), None);
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, anchor, payload.len()),
+        None
+    );
     payload[nested + 2] = 2;
 
     payload[body + 4] = 3;
-    assert_eq!(compact_extrusion_to_face_at(&payload, anchor), None);
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, anchor, payload.len()),
+        None
+    );
 }
 
 #[test]
@@ -251,9 +298,15 @@ fn compact_extrusion_to_face_preserves_an_unparsed_framed_face_path() {
     payload[marker - 8..marker - 4].copy_from_slice(&[0, 2, 0, 0]);
     payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
 
-    assert_eq!(compact_extrusion_to_face_at(&payload, 0), Some(marker));
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        Some(marker)
+    );
     payload[marker - 12..marker - 8].fill(0);
-    assert_eq!(compact_extrusion_to_face_at(&payload, 0), None);
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        None
+    );
 }
 
 #[test]
@@ -300,14 +353,33 @@ fn compact_extrusion_to_face_accepts_the_long_declared_face_path() {
     let child = anchor + 33;
     payload[child..child + face_ref.len()].copy_from_slice(face_ref);
     let body = child + face_ref.len();
-    let marker = body + 209;
+    let marker = body + 260;
     payload.truncate(marker - 12);
     assert_eq!(selection_vector_tail(&mut payload, &[8, 5, 4]), marker);
 
-    assert_eq!(compact_extrusion_to_face_at(&payload, anchor), Some(marker));
+    let boundary = payload.len();
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, anchor, boundary),
+        Some(marker)
+    );
+
+    let second = selection_vector_tail(&mut payload, &[3]);
+    assert!(second > marker);
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, anchor, boundary),
+        Some(marker)
+    );
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, anchor, payload.len()),
+        None
+    );
 
     payload[marker - 8] = 1;
-    assert_eq!(compact_extrusion_to_face_at(&payload, anchor), None);
+    payload[second - 8] = 1;
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, anchor, payload.len()),
+        None
+    );
 }
 
 #[test]
@@ -342,14 +414,20 @@ fn compact_extrusion_to_face_accepts_extended_legacy_face_path_padding() {
     payload[terminal..terminal + 24].fill(0);
     payload[terminal + 24..terminal + 28].copy_from_slice(&101u32.to_le_bytes());
 
-    assert_eq!(compact_extrusion_to_face_at(&payload, 0), Some(body));
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        Some(body)
+    );
     let path = legacy_single_face_reference_path_at(&payload, body).expect("required invariant");
     assert_eq!(
         path.iter().map(|entry| entry.local_id).collect::<Vec<_>>(),
         [Some(3), Some(2), Some(4)]
     );
     payload[body + 47] = 0xfe;
-    assert_eq!(compact_extrusion_to_face_at(&payload, 0), None);
+    assert_eq!(
+        compact_extrusion_to_face_at(&payload, 0, payload.len()),
+        None
+    );
 }
 
 #[test]
@@ -632,7 +710,8 @@ fn compact_extrusion_to_vertex_accepts_both_point_reference_forms() {
     payload.extend_from_slice(&[0x82, 0x92, 0x2b, 0x80, 2, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0; 12]);
     let marker = selection_vector_tail(&mut payload, &[4, 7]);
-    let (found, kind) = compact_extrusion_to_vertex_at(&payload, 0).expect("required invariant");
+    let (found, kind) =
+        compact_extrusion_to_vertex_at(&payload, 0, payload.len()).expect("required invariant");
     assert_eq!(found, marker);
     assert_eq!(kind, CompactPointReferenceKind::Point);
     let path = compact_single_face_reference_path_at(&payload, marker).expect("required invariant");
@@ -640,10 +719,16 @@ fn compact_extrusion_to_vertex_accepts_both_point_reference_forms() {
 
     // A to-face selector byte is not a point reference.
     payload[38] = 0x40;
-    assert_eq!(compact_extrusion_to_vertex_at(&payload, 0), None);
+    assert_eq!(
+        compact_extrusion_to_vertex_at(&payload, 0, payload.len()),
+        None
+    );
     payload[38] = 0;
     payload[18] = 4;
-    assert_eq!(compact_extrusion_to_vertex_at(&payload, 0), None);
+    assert_eq!(
+        compact_extrusion_to_vertex_at(&payload, 0, payload.len()),
+        None
+    );
     payload[18] = 3;
 
     // Variant B, edge endpoint reference.
@@ -656,9 +741,39 @@ fn compact_extrusion_to_vertex_accepts_both_point_reference_forms() {
     payload.extend_from_slice(&[0xcb, 0x80, 2, 0, 0, 0, 0x40, 0, 0]);
     payload.extend_from_slice(&[0; 12]);
     let marker = selection_vector_tail(&mut payload, &[2]);
-    let (found, kind) = compact_extrusion_to_vertex_at(&payload, 0).expect("required invariant");
+    let (found, kind) =
+        compact_extrusion_to_vertex_at(&payload, 0, payload.len()).expect("required invariant");
     assert_eq!(found, marker);
     assert_eq!(kind, CompactPointReferenceKind::EdgeEndpoint);
+}
+
+#[test]
+fn compact_extrusion_to_vertex_requires_one_reference_in_the_feature_interval() {
+    let mut payload = vec![0; 30];
+    payload[..2].copy_from_slice(&[0x0c, 0x8e]);
+    payload[4] = 1;
+    payload[18] = 3;
+    payload.extend_from_slice(&[0x82, 0x92, 0x2b, 0x80, 2, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0; 12]);
+    payload.resize(280, 0);
+    let marker = selection_vector_tail(&mut payload, &[4, 7]);
+    assert!(marker > 270);
+    assert_eq!(
+        compact_extrusion_to_vertex_at(&payload, 0, payload.len()).map(|(found, _)| found),
+        Some(marker)
+    );
+
+    let boundary = payload.len();
+    let second = selection_vector_tail(&mut payload, &[5, 8]);
+    assert!(second > marker);
+    assert_eq!(
+        compact_extrusion_to_vertex_at(&payload, 0, boundary).map(|(found, _)| found),
+        Some(marker)
+    );
+    assert_eq!(
+        compact_extrusion_to_vertex_at(&payload, 0, payload.len()),
+        None
+    );
 }
 
 #[test]
@@ -684,6 +799,22 @@ fn compact_extrusion_offset_from_face_requires_the_late_face_reference() {
     assert_eq!(
         compact_extrusion_offset_from_face_at(&payload, 0, end),
         Some(marker)
+    );
+
+    payload.extend_from_slice(&[1, 1, 0]);
+    payload.extend_from_slice(&[0xf2, 0x82, 0xe6, 0x80, 2, 0, 0, 0, 0x40, 0, 0]);
+    payload.extend_from_slice(&[0; 8]);
+    payload.resize(payload.len() + 240, 0);
+    let second = selection_vector_tail(&mut payload, &[10]);
+    assert!(second > marker);
+    assert!(second > marker + 200);
+    assert_eq!(
+        compact_extrusion_offset_from_face_at(&payload, 0, end),
+        Some(marker)
+    );
+    assert_eq!(
+        compact_extrusion_offset_from_face_at(&payload, 0, payload.len()),
+        None
     );
 
     // Wrong code or a missing face-reference anchor yields no detection.
@@ -729,8 +860,122 @@ fn compact_body_path_requires_type_three_vector() {
     payload[second + 20..second + 28].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
     assert_eq!(compact_body_path_at(&payload, marker), Some(vec![6, 7]));
 
+    payload[second + 20..second + 30].copy_from_slice(&[0; 10]);
+    assert_eq!(compact_body_path_at(&payload, marker), Some(vec![6, 7]));
+    assert_eq!(
+        compact_body_component_path_at(&payload, marker).map(|components| components.len()),
+        Some(2)
+    );
+    payload[second + 24] = 1;
+    assert_eq!(compact_body_path_at(&payload, marker), None);
+
     payload[4] = 2;
     assert_eq!(compact_body_path_at(&payload, marker), None);
+}
+
+#[test]
+fn compact_body_path_accepts_anonymous_mixed_entries() {
+    let marker = 12;
+    let mut payload = vec![0; marker + 18];
+    payload[..4].copy_from_slice(&3u32.to_le_bytes());
+    payload[4..8].copy_from_slice(&[0, 3, 0, 0]);
+    payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+
+    payload.extend_from_slice(&0x803eu16.to_le_bytes());
+    payload.extend_from_slice(&[0, 0]);
+    payload.extend_from_slice(&[0x34, 0x80, 0x37, 0, 37, 0, 0, 0, 0x7a, 0x83, 0xd9, 0x4a]);
+    payload.extend_from_slice(&2u32.to_le_bytes());
+    payload.extend_from_slice(&[5, 0, 0, 0]);
+    payload.extend_from_slice(&[0x34, 0x80, 0x37, 0, 50, 0, 0, 0, 0xf9, 0x83, 0xd9, 0x4a]);
+    payload.extend_from_slice(&1u32.to_le_bytes());
+    payload.extend_from_slice(&[0, 0, 0, 0]);
+    payload.extend_from_slice(&0x8263u16.to_le_bytes());
+    payload.extend_from_slice(&[0, 0]);
+    payload.extend_from_slice(&[0x34, 0x80, 0x37, 0, 37, 0, 0, 0, 0x7a, 0x83, 0xd9, 0x4a]);
+    payload.extend_from_slice(&3u32.to_le_bytes());
+
+    assert_eq!(compact_body_path_at(&payload, marker), Some(vec![2, 1, 3]));
+
+    payload[..4].copy_from_slice(&4u32.to_le_bytes());
+    payload.extend_from_slice(&[0; 10]);
+    assert_eq!(compact_body_path_at(&payload, marker), Some(vec![2, 1, 3]));
+    let last = payload.len() - 1;
+    payload[last] = 1;
+    assert_eq!(compact_body_path_at(&payload, marker), None);
+}
+
+#[test]
+fn enrich_combine_uses_outermost_body_paths() {
+    let mut payload = vec![0; 420];
+    for (marker, local_id) in [(100usize, 1u32), (200, 2), (300, 3)] {
+        payload[marker - 12..marker - 8].copy_from_slice(&1u32.to_le_bytes());
+        payload[marker - 8..marker - 4].copy_from_slice(&[0, 3, 0, 0]);
+        payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        payload[marker + 16..marker + 18].copy_from_slice(&[0, 0]);
+        payload[marker + 18..marker + 20].copy_from_slice(&0x8032u16.to_le_bytes());
+        payload[marker + 22..marker + 34].copy_from_slice(&[1; 12]);
+        payload[marker + 34..marker + 38].copy_from_slice(&local_id.to_le_bytes());
+    }
+    let mut histories = vec![FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![Feature {
+            id: "combine".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: Some("119".into()),
+            parent_source_id: None,
+            ordinal: 0,
+            name: "Combine".into(),
+            kind: "Combine".into(),
+            input_class: Some("moCombineBodies_c".into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }],
+    }];
+    let lanes = [FeatureInputLane {
+        id: "lane#35".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: Vec::new(),
+        names: vec![FeatureInputName {
+            id: "combine-name".into(),
+            parent: "lane#35".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: Some(119),
+            value: "Combine".into(),
+        }],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    }];
+
+    enrich_history_combine_selections(&mut histories, &lanes);
+
+    let properties = &histories[0].features[0].properties;
+    assert_eq!(
+        properties.get("Target"),
+        Some(&"sldprt:feature-input:body-path:35:100".to_string())
+    );
+    assert_eq!(
+        properties.get("Tools"),
+        Some(&"sldprt:feature-input:body-path:35:300".to_string())
+    );
 }
 
 #[test]
@@ -748,4 +993,17 @@ fn compact_combine_operation_is_name_length_relative() {
     );
     payload[operation - 1] = 1;
     assert_eq!(compact_combine_operation_at(&payload, offset), None);
+
+    let offset = 11;
+    let mut tokenized = vec![0; 180];
+    tokenized[offset..offset + 5].copy_from_slice(&[0xe3, 0x85, 0xff, 0xfe, 0xff]);
+    tokenized[offset + 5] = 8;
+    let operation = offset + 117 + 16;
+    tokenized[operation + 4..operation + 10].copy_from_slice(&[0, 0, 0xff, 0xff, 0xff, 0xff]);
+    assert_eq!(
+        compact_combine_operation_at(&tokenized, offset),
+        Some("Join")
+    );
+    tokenized[operation + 9] = 0;
+    assert_eq!(compact_combine_operation_at(&tokenized, offset), None);
 }

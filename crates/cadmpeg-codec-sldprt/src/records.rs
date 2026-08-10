@@ -21,6 +21,9 @@ pub struct PmiDimension {
     pub guid: String,
     /// CAD dimension reference, such as `D1@Sketch4`.
     pub cad_text: String,
+    /// Number of elements in the source `dimItems` array.
+    #[serde(default = "default_pmi_item_count", skip_serializing_if = "is_one")]
+    pub item_count: u32,
     /// Native PMI dimension subtype.
     pub subtype: String,
     /// Stored dimension value.
@@ -49,6 +52,16 @@ pub struct PmiDimension {
     pub reference_only: bool,
     /// Byte offset of the reference-only flag.
     pub reference_only_offset: u64,
+}
+
+fn default_pmi_item_count() -> u32 {
+    1
+}
+
+// Serde's `skip_serializing_if` contract passes the field by reference.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_one(value: &u32) -> bool {
+    *value == 1
 }
 
 /// A named parametric-model variant (e.g. CAD "configuration") with its own

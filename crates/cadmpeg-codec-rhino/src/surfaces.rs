@@ -10,7 +10,6 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::{
     decode_embedded_curve, error, exact_nurbs, unsupported, DecodedCurve, GeometryError,
-    MAX_CURVE_ITEMS,
 };
 use crate::settings::{
     bbox, interval, plane, point, vector as native_vector, Plane, Point3 as NativePoint3,
@@ -441,8 +440,7 @@ fn revolution_nurbs(
     let profile_count = profile.control_points.len();
     angular_count
         .checked_mul(profile_count)
-        .filter(|count| *count <= MAX_CURVE_ITEMS)
-        .ok_or_else(|| error(offset, "revolution surface is too large"))?;
+        .ok_or_else(|| error(offset, "revolution control count overflow"))?;
     let angle_step = (angle[1] - angle[0]) / span_count as f64;
     let parameter_step = (parameter[1] - parameter[0]) / span_count as f64;
     let mut angular = Vec::with_capacity(angular_count);
@@ -492,9 +490,13 @@ fn revolution_nurbs(
             let axial_length = dot(relative, axis);
             let axial = scale_vector(axis, axial_length);
             let radial = subtract(relative, axial);
-            let rotated = rodrigues(radial, axis, theta);
-            let point =
-                add_point_vector(axis_origin, add(axial, scale_vector(rotated, radial_scale)));
+            let point = if dot(radial, radial) <= 1.0e-24 {
+                // A pole row is one exact axis point for every angular control point.
+                add_point_vector(axis_origin, axial)
+            } else {
+                let rotated = rodrigues(radial, axis, theta);
+                add_point_vector(axis_origin, add(axial, scale_vector(rotated, radial_scale)))
+            };
             control_points.push(point);
             weights.push(profile_weight * angular_weight);
         }
@@ -531,8 +533,7 @@ fn sum_nurbs(
     let v_count = second.control_points.len();
     u_count
         .checked_mul(v_count)
-        .filter(|count| *count <= MAX_CURVE_ITEMS)
-        .ok_or_else(|| error(offset, "sum surface is too large"))?;
+        .ok_or_else(|| error(offset, "sum surface control count overflow"))?;
     let first_weights = first.weights.clone().unwrap_or_else(|| vec![1.0; u_count]);
     let second_weights = second.weights.clone().unwrap_or_else(|| vec![1.0; v_count]);
     let rational = first.weights.is_some() || second.weights.is_some();
@@ -599,8 +600,7 @@ pub(crate) fn extrusion_nurbs(
     let profile_count = start.control_points.len();
     profile_count
         .checked_mul(2)
-        .filter(|count| *count <= MAX_CURVE_ITEMS)
-        .ok_or_else(|| error(offset, "extrusion surface is too large"))?;
+        .ok_or_else(|| error(offset, "extrusion surface control count overflow"))?;
     let mut control_points = Vec::with_capacity(profile_count * 2);
     let mut weights = start
         .weights
@@ -1064,7 +1064,7 @@ fn checked_count(reader: &mut BoundedReader<'_>, width: usize) -> Result<usize, 
         raw,
         width,
         reader.remaining(),
-        MAX_CURVE_ITEMS,
+        reader.remaining() / width,
         reader.position() - 4,
     )?;
     Ok(bytes / width)
@@ -1716,6 +1716,31 @@ pub(crate) mod tests {
         assert_eq!(surface.control_points[0], profile.control_points[0]);
         assert!((surface.control_points[4].x - 1.0).abs() < 1.0e-12);
         assert!((surface.control_points[4].y - 2.0).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn revolution_moves_singular_control_rows_exactly_onto_axis() {
+        let profile = test_curve(
+            vec![
+                Point3::new(1.0 + 1.0e-13, 0.0, 2.0),
+                Point3::new(2.0, 0.0, 3.0),
+            ],
+            None,
+            [0.0, 1.0],
+        );
+        let surface = revolution_nurbs(
+            &profile,
+            Point3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            [0.0, std::f64::consts::FRAC_PI_2],
+            [0.0, 1.0],
+            false,
+            0,
+        )
+        .expect("required invariant");
+        for point in surface.control_points.iter().step_by(2) {
+            assert_eq!(*point, Point3::new(1.0, 0.0, 2.0));
+        }
     }
 
     #[test]

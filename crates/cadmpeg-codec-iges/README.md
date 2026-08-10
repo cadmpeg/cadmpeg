@@ -1,10 +1,11 @@
 # cadmpeg-codec-iges
 
-`cadmpeg-codec-iges` inspects and decodes IGES 5.3 Fixed ASCII files into
-`CadIr`.
+`cadmpeg-codec-iges` inspects, decodes, and writes IGES 5.1, 5.2, and 5.3
+Fixed ASCII files through `CadIr`.
 
 Support level: [L8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)
-for the Fixed ASCII mechanical/document envelope.
+for the Fixed ASCII mechanical/document envelope. Bounded semantic writing
+is an extra; the L9 gate remains open.
 
 ## Install
 
@@ -38,6 +39,23 @@ decode. `IgesCodec::inspect` returns section structure, Directory census, and
 reference findings. Compressed ASCII and Binary representations are detected
 and inspected by name and refused for semantic decode.
 
+## Write
+
+`IgesCodec` replays an unchanged decoded source image byte for byte when its
+retained source record and document baseline are intact. `IgesEncoder` accepts
+an explicit target version. The bounded semantic writer supports standalone points,
+finite lines, analytic conic arcs, NURBS curves, planar and NURBS support
+surfaces, one-face trimmed sheet bodies with NURBS parameter curves, and
+bounded Type 186/502/504/508/510/514 manifold B-rep solids and multi-face
+sheet bodies. Exact solved carriers for procedural surfaces and curves are
+regenerated as neutral geometry and reported as `procedural_reduced`. It
+validates topology ownership, edge spans, radial incidence, and supported
+surface and pcurve geometry before output. Unsupported neutral or native
+content is explicitly refused. Edited source documents may report
+`passthrough_record_omitted` losses for native direction, display, or
+occurrence-expansion records that are not regenerated. The independent
+FreeCAD gate is [`scripts/verify-iges-freecad.py`](../../scripts/verify-iges-freecad.py).
+
 ## Data model
 
 A Fixed ASCII IGES file is an 80-column card stream with Start, Global,
@@ -50,8 +68,8 @@ parameters keep their native scale.
 
 Records that block faithful transfer land in `DecodeReport::losses`.
 `native.iges` retains physical cards and typed or generic entity data.
-`SourceFidelity` retained opaque byte records and `transfer_ledger` are not
-populated. Coverage for each envelope lives in the
+`SourceFidelity` retains the complete source image and its SHA-256 digest;
+`transfer_ledger` is not populated. Coverage for each envelope lives in the
 [format-support profile][support].
 
 ## Documentation
