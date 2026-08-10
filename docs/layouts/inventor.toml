@@ -279,6 +279,41 @@ source = "spec"
 anchor = "value:u16"
 
 [[record]]
+name = "pm_dc_chamfer_enumeration"
+kind = "byte"
+section = "13"
+anchor = "stores the chamfer form"
+size = 30
+
+[[record.field]]
+name = "content_header"
+offset = 0
+type = "bytes[22]"
+source = "spec"
+anchor = "It adds the same `type_value:i16`"
+
+[[record.field]]
+name = "type_value"
+offset = 22
+type = "i16"
+source = "spec"
+anchor = "type_value:i16"
+
+[[record.field]]
+name = "value"
+offset = 24
+type = "u16"
+source = "spec"
+anchor = "value:u16"
+
+[[record.field]]
+name = "terminal_value"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "followed by a zero u32 terminal value"
+
+[[record]]
 name = "pm_dc_linked_element_header"
 kind = "byte"
 section = "13"

@@ -108,6 +108,17 @@ Spec §13 · layout: byte offsets · size: 26 B
 | 22 | 2 | `type_value` | `i16` | little | spec | type_value:i16 |
 | 24 | 2 | `value` | `u16` | little | spec | value:u16 |
 
+## `pm_dc_chamfer_enumeration`
+
+Spec §13 · layout: byte offsets · size: 30 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 22 | `content_header` | `bytes[22]` | little | spec | It adds the same `type_value:i16` |
+| 22 | 2 | `type_value` | `i16` | little | spec | type_value:i16 |
+| 24 | 2 | `value` | `u16` | little | spec | value:u16 |
+| 26 | 4 | `terminal_value` | `u32` | little | spec | followed by a zero u32 terminal value |
+
 ## `pm_dc_linked_element_header`
 
 Spec §13 · layout: byte offsets · size: 26 B

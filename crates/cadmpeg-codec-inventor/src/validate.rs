@@ -11,7 +11,7 @@ use crate::design::{
 };
 use crate::feature::{
     FeatureRecordIssue, PmDcEntityStyleLink, PmDcFeature, PmDcFeatureLabel, PmDcFeatureProperty,
-    PmDcFeaturePropertyKind, PmDcFeatureTerminator,
+    PmDcFeaturePropertyKind, PmDcFeatureTerminator, PmDcPatternFeature,
 };
 use crate::sketch::{
     PmDcDirection, PmDcSketch, PmDcSketchConstraint, PmDcSketchConstraintKind, PmDcSketchEntity,
@@ -61,6 +61,7 @@ const ARENAS: &[&str] = &[
     "pm_dc_feature_properties",
     "pm_dc_feature_terminators",
     "pm_dc_features",
+    "pm_dc_pattern_features",
     "pm_dc_entity_style_links",
     "pm_dc_parameters",
     "pm_dc_directions",
@@ -694,6 +695,13 @@ fn validate_features(data: &NativeData, findings: &mut Vec<Finding>) {
     );
     unique(
         findings,
+        data.pm_dc_pattern_features
+            .iter()
+            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        "Inventor PmDc pattern feature",
+    );
+    unique(
+        findings,
         data.pm_dc_feature_properties
             .iter()
             .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
@@ -725,6 +733,42 @@ fn validate_features(data: &NativeData, findings: &mut Vec<Finding>) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc feature record or reference does not resolve".into(),
+                Some(feature.id.clone()),
+            ));
+        }
+    }
+    for feature in &data.pm_dc_pattern_features {
+        let references = [feature.header.next.index, feature.header.context.index]
+            .into_iter()
+            .chain(
+                feature
+                    .properties
+                    .references
+                    .iter()
+                    .map(|reference| reference.index),
+            )
+            .chain(
+                feature
+                    .participants
+                    .references
+                    .iter()
+                    .map(|reference| reference.index),
+            )
+            .chain(
+                feature
+                    .property_slots
+                    .iter()
+                    .map(|reference| reference.index),
+            );
+        if raw.get(&(feature.segment_token.as_str(), feature.record_ordinal))
+            != Some(&feature.type_id.as_str())
+            || references
+                .into_iter()
+                .any(|reference| !resolves(&feature.segment_token, reference))
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc pattern-feature record or reference does not resolve".into(),
                 Some(feature.id.clone()),
             ));
         }
@@ -1210,6 +1254,7 @@ struct NativeData {
     pm_dc_directions: Vec<PmDcDirection>,
     sketch_record_issues: Vec<SketchRecordIssue>,
     pm_dc_features: Vec<PmDcFeature>,
+    pm_dc_pattern_features: Vec<PmDcPatternFeature>,
     pm_dc_feature_terminators: Vec<PmDcFeatureTerminator>,
     pm_dc_feature_properties: Vec<PmDcFeatureProperty>,
     pm_dc_feature_labels: Vec<PmDcFeatureLabel>,
@@ -1274,6 +1319,7 @@ impl NativeData {
             pm_dc_directions: namespace.arena_as("pm_dc_directions")?,
             sketch_record_issues: namespace.arena_as("sketch_record_issues")?,
             pm_dc_features: namespace.arena_as("pm_dc_features")?,
+            pm_dc_pattern_features: namespace.arena_as("pm_dc_pattern_features")?,
             pm_dc_feature_terminators: namespace.arena_as("pm_dc_feature_terminators")?,
             pm_dc_feature_properties: namespace.arena_as("pm_dc_feature_properties")?,
             pm_dc_feature_labels: namespace.arena_as("pm_dc_feature_labels")?,

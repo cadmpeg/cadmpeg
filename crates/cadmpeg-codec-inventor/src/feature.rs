@@ -60,6 +60,15 @@ const EDGE_ITEM_TYPE: [u8; 16] = [
 const FILLET_TYPE: [u8; 16] = [
     0x27, 0x88, 0xf2, 0x78, 0xc5, 0x4d, 0xd7, 0xbe, 0x43, 0x13, 0xb3, 0x98, 0x60, 0x39, 0xb5, 0x2e,
 ];
+const CHAMFER_TYPE: [u8; 16] = [
+    0x32, 0x00, 0xaa, 0x7d, 0xd2, 0x11, 0x2b, 0x83, 0x60, 0x00, 0xf3, 0xa8, 0x9d, 0xcc, 0xef, 0xb0,
+];
+const RECTANGULAR_PATTERN_FEATURE_TYPE: [u8; 16] = [
+    0x44, 0x32, 0x67, 0x20, 0xd2, 0x11, 0xc5, 0x1d, 0x60, 0x00, 0x2a, 0xab, 0x01, 0xf3, 0x1b, 0xb0,
+];
+const MIRROR_FEATURE_TYPE: [u8; 16] = [
+    0xb5, 0xa9, 0xd9, 0xfa, 0xd2, 0x11, 0x05, 0x33, 0x60, 0x00, 0x2c, 0xab, 0x01, 0xf3, 0x1b, 0xb0,
+];
 const PROFILE_SELECTION_TYPE: [u8; 16] = [
     0x3b, 0x24, 0x77, 0xa4, 0xd1, 0x11, 0x8f, 0x96, 0x00, 0x08, 0x26, 0xbd, 0x06, 0x63, 0xdc, 0x09,
 ];
@@ -78,6 +87,7 @@ const fn inventor_id(time_low: u32) -> [u8; 16] {
 #[derive(Debug)]
 pub(crate) struct FeatureInventory {
     pub(crate) features: Vec<PmDcFeature>,
+    pub(crate) pattern_features: Vec<PmDcPatternFeature>,
     pub(crate) terminators: Vec<PmDcFeatureTerminator>,
     pub(crate) properties: Vec<PmDcFeatureProperty>,
     pub(crate) labels: Vec<PmDcFeatureLabel>,
@@ -151,7 +161,34 @@ pub(crate) enum PmDcFeatureEnumFamily {
     Extent,
     Hole,
     Fillet,
+    Chamfer,
     Auxiliary,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum PmDcPatternFamily {
+    Rectangular,
+    Mirror,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct PmDcPatternFeature {
+    pub(crate) id: String,
+    pub(crate) type_id: String,
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
+    pub(crate) save_version_major: u8,
+    pub(crate) header: PmDcContentHeader,
+    pub(crate) state: i32,
+    pub(crate) outline_value: u32,
+    pub(crate) properties: PmDcReferenceList,
+    pub(crate) value: u32,
+    pub(crate) participants: PmDcReferenceList,
+    pub(crate) family: PmDcPatternFamily,
+    pub(crate) property_slots: Vec<crate::pmdc::PmDcReference>,
+    pub(crate) control: u8,
+    pub(crate) extension_values: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -241,6 +278,7 @@ pub(crate) fn inventory(
 ) -> Result<FeatureInventory, CodecError> {
     let mut inventory = FeatureInventory {
         features: Vec::new(),
+        pattern_features: Vec::new(),
         terminators: Vec::new(),
         properties: Vec::new(),
         labels: Vec::new(),
@@ -276,6 +314,26 @@ pub(crate) fn inventory(
                     feature.record_ordinal = record.ordinal;
                     inventory.features.push(feature);
                 }),
+                RECTANGULAR_PATTERN_FEATURE_TYPE | MIRROR_FEATURE_TYPE => {
+                    let family = if record.type_id == RECTANGULAR_PATTERN_FEATURE_TYPE {
+                        PmDcPatternFamily::Rectangular
+                    } else {
+                        PmDcPatternFamily::Mirror
+                    };
+                    parse_pattern_feature(ctx, record.payload, version, family).map(
+                        |mut feature| {
+                            feature.id = format!(
+                                "inventor:pmdc:pattern-feature#{}-{}",
+                                segment.pair.token.as_str(),
+                                record.ordinal
+                            );
+                            feature.type_id = type_id_string(record.type_id);
+                            feature.segment_token = segment.pair.token.as_str().into();
+                            feature.record_ordinal = record.ordinal;
+                            inventory.pattern_features.push(feature);
+                        },
+                    )
+                }
                 END_OF_FEATURES_TYPE => {
                     parse_terminator(record.payload, version).map(|mut terminator| {
                         terminator.id = format!(
@@ -361,6 +419,7 @@ pub(crate) fn inventory(
         inventory
             .features
             .len()
+            .saturating_add(inventory.pattern_features.len())
             .saturating_add(inventory.terminators.len())
             .saturating_add(inventory.properties.len())
             .saturating_add(inventory.labels.len())
@@ -369,6 +428,72 @@ pub(crate) fn inventory(
         "admit Inventor feature records",
     )?;
     Ok(inventory)
+}
+
+fn parse_pattern_feature(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    version: u8,
+    family: PmDcPatternFamily,
+) -> Result<PmDcPatternFeature, CodecError> {
+    let mut cursor = Cursor::new(source);
+    let header = content_header(&mut cursor)?;
+    let state = cursor.u32("pattern-feature state")? as i32;
+    let outline_value = cursor.u32("pattern-feature outline value")?;
+    let properties = reference_list(ctx, &mut cursor, 2, "pattern-feature properties")?;
+    let value = cursor.u32("pattern-feature value")?;
+    let participants = reference_list(ctx, &mut cursor, 2, "pattern-feature participants")?;
+    let mut property_slots = Vec::new();
+    for index in 0..6 {
+        property_slots.push(cursor.reference(&format!("pattern-feature property {index}"))?);
+    }
+    let control = cursor.u8("pattern-feature control")?;
+    let mut extension_values = Vec::new();
+    match family {
+        PmDcPatternFamily::Rectangular => {
+            let remaining = if version > 20 { 26 } else { 20 };
+            for index in 0..remaining {
+                property_slots.push(
+                    cursor.reference(&format!("rectangular-pattern property {}", index + 6))?,
+                );
+            }
+        }
+        PmDcPatternFamily::Mirror => {
+            for index in 0..5 {
+                property_slots
+                    .push(cursor.reference(&format!("mirror-feature property {}", index + 6))?);
+            }
+            if version > 20 {
+                extension_values.reserve(6);
+                for index in 0..6 {
+                    extension_values
+                        .push(cursor.u32(&format!("mirror-feature extension {index}"))?);
+                }
+            }
+            for index in 0..2 {
+                property_slots
+                    .push(cursor.reference(&format!("mirror-feature property {}", index + 11))?);
+            }
+        }
+    }
+    cursor.finish("pattern feature")?;
+    Ok(PmDcPatternFeature {
+        id: String::new(),
+        type_id: String::new(),
+        segment_token: String::new(),
+        record_ordinal: 0,
+        save_version_major: version,
+        header,
+        state,
+        outline_value,
+        properties,
+        value,
+        participants,
+        family,
+        property_slots,
+        control,
+        extension_values,
+    })
 }
 
 fn parse_feature(
@@ -422,6 +547,7 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         EXTENT_TYPE => Some(parse_extent),
         HOLE_TYPE => Some(parse_hole),
         FILLET_TYPE => Some(parse_fillet),
+        CHAMFER_TYPE => Some(parse_chamfer),
         AUXILIARY_ENUM_TYPE => Some(parse_auxiliary_enum),
         BOOLEAN_TYPE => Some(parse_boolean),
         BOUNDARY_PATCH_TYPE => Some(parse_boundary_patch),
@@ -507,6 +633,33 @@ enum_parser!(parse_extent, Extent);
 enum_parser!(parse_hole, Hole);
 enum_parser!(parse_fillet, Fillet);
 enum_parser!(parse_auxiliary_enum, Auxiliary);
+
+fn parse_chamfer(
+    _: &DecodeContext<'_>,
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcFeatureProperty, CodecError> {
+    let mut cursor = Cursor::new(source);
+    let header = content_header(&mut cursor)?;
+    let type_value = cursor.i16("chamfer enumeration type")?;
+    let value = cursor.u16("chamfer enumeration value")?;
+    let terminal = cursor.u32("chamfer enumeration terminal value")?;
+    if terminal != 0 {
+        return Err(CodecError::Malformed(format!(
+            "Inventor PmDc chamfer enumeration terminal value is {terminal}"
+        )));
+    }
+    cursor.finish("chamfer enumeration")?;
+    Ok(property(
+        version,
+        header,
+        PmDcFeaturePropertyKind::Enumeration {
+            family: PmDcFeatureEnumFamily::Chamfer,
+            type_value,
+            value,
+        },
+    ))
+}
 
 fn parse_boolean(
     ctx: &DecodeContext<'_>,
@@ -844,6 +997,60 @@ mod tests {
     }
 
     #[test]
+    fn parses_generated_pattern_feature_branches() {
+        let build = |version: u8, family: PmDcPatternFamily| {
+            let mut bytes = content(21);
+            bytes.extend_from_slice(&69u32.to_le_bytes());
+            bytes.extend_from_slice(&3u32.to_le_bytes());
+            bytes.extend_from_slice(&references(&[]));
+            bytes.extend_from_slice(&7u32.to_le_bytes());
+            bytes.extend_from_slice(&references(&[0x8000_0010, 0x8000_0011]));
+            for index in 0..6 {
+                bytes.extend_from_slice(&(0x8000_0020u32 + index).to_le_bytes());
+            }
+            bytes.push(1);
+            match family {
+                PmDcPatternFamily::Rectangular => {
+                    let remaining = if version > 20 { 26 } else { 20 };
+                    for index in 0..remaining {
+                        bytes.extend_from_slice(&(0x8000_0040u32 + index).to_le_bytes());
+                    }
+                }
+                PmDcPatternFamily::Mirror => {
+                    for index in 0..5 {
+                        bytes.extend_from_slice(&(0x8000_0040u32 + index).to_le_bytes());
+                    }
+                    if version > 20 {
+                        for index in 0..6 {
+                            bytes.extend_from_slice(&(0x100u32 + index).to_le_bytes());
+                        }
+                    }
+                    for index in 0..2 {
+                        bytes.extend_from_slice(&(0x8000_0050u32 + index).to_le_bytes());
+                    }
+                }
+            }
+            bytes
+        };
+
+        for (version, family, slots, extensions) in [
+            (16, PmDcPatternFamily::Rectangular, 26, 0),
+            (21, PmDcPatternFamily::Rectangular, 32, 0),
+            (16, PmDcPatternFamily::Mirror, 13, 0),
+            (21, PmDcPatternFamily::Mirror, 13, 6),
+        ] {
+            let bytes = build(version, family);
+            let parsed = parse(&bytes, |ctx, source| {
+                parse_pattern_feature(ctx, source, version, family).expect("pattern feature")
+            });
+            assert_eq!(parsed.family, family);
+            assert_eq!(parsed.participants.references.len(), 2);
+            assert_eq!(parsed.property_slots.len(), slots);
+            assert_eq!(parsed.extension_values.len(), extensions);
+        }
+    }
+
+    #[test]
     fn parses_generated_feature_properties_and_label() {
         let mut enumeration = content(10);
         enumeration.extend_from_slice(&5i16.to_le_bytes());
@@ -857,6 +1064,22 @@ mod tests {
                 family: PmDcFeatureEnumFamily::PartOperation,
                 type_value: 5,
                 value: 3
+            }
+        ));
+
+        let mut chamfer = content(10);
+        chamfer.extend_from_slice(&2i16.to_le_bytes());
+        chamfer.extend_from_slice(&0u16.to_le_bytes());
+        chamfer.extend_from_slice(&0u32.to_le_bytes());
+        let parsed = parse(&chamfer, |ctx, source| {
+            parse_chamfer(ctx, source, 16).expect("chamfer enumeration")
+        });
+        assert!(matches!(
+            parsed.kind,
+            PmDcFeaturePropertyKind::Enumeration {
+                family: PmDcFeatureEnumFamily::Chamfer,
+                type_value: 2,
+                value: 0
             }
         ));
 

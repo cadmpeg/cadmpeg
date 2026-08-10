@@ -1208,6 +1208,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .saturating_add(sketch_inventory.constraints.len())
             .saturating_add(sketch_inventory.issues.len())
             .saturating_add(feature_inventory.features.len())
+            .saturating_add(feature_inventory.pattern_features.len())
             .saturating_add(feature_inventory.terminators.len())
             .saturating_add(feature_inventory.issues.len())
             .saturating_add(unpaired_segments.len())
@@ -1261,6 +1262,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     namespace.set_arena("pm_dc_sketch_constraints", &sketch_inventory.constraints)?;
     namespace.set_arena("sketch_record_issues", &sketch_inventory.issues)?;
     namespace.set_arena("pm_dc_features", &feature_inventory.features)?;
+    namespace.set_arena(
+        "pm_dc_pattern_features",
+        &feature_inventory.pattern_features,
+    )?;
     namespace.set_arena("pm_dc_feature_terminators", &feature_inventory.terminators)?;
     namespace.set_arena("pm_dc_feature_properties", &feature_inventory.properties)?;
     namespace.set_arena("pm_dc_feature_labels", &feature_inventory.labels)?;
@@ -1761,6 +1766,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 ),
                 ("sketch_record_issues".into(), sketch_inventory.issues.len()),
                 ("pm_dc_features".into(), feature_inventory.features.len()),
+                (
+                    "pm_dc_pattern_features".into(),
+                    feature_inventory.pattern_features.len(),
+                ),
                 (
                     "pm_dc_feature_terminators".into(),
                     feature_inventory.terminators.len(),

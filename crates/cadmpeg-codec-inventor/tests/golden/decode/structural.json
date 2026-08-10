@@ -92,6 +92,7 @@
           "pm_dc_feature_terminators": [],
           "pm_dc_features": [],
           "pm_dc_parameters": [],
+          "pm_dc_pattern_features": [],
           "pm_dc_sketch_constraints": [],
           "pm_dc_sketch_entities": [],
           "pm_dc_sketches": [],
@@ -165,7 +166,7 @@
           "vertex_ownerships": [],
           "wire_topologies": []
         },
-        "version": 23
+        "version": 24
       }
     },
     "source": {
@@ -212,6 +213,7 @@
       "pm_dc_feature_terminators": 0,
       "pm_dc_features": 0,
       "pm_dc_parameters": 0,
+      "pm_dc_pattern_features": 0,
       "pm_dc_sketch_constraints": 0,
       "pm_dc_sketch_entities": 0,
       "pm_dc_sketches": 0,
