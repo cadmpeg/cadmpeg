@@ -14,7 +14,9 @@ use cadmpeg_ir::sketches::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::design::{Cursor, PmDcReference};
+use crate::pmdc::{
+    content_header, reference_list, Cursor, PmDcContentHeader, PmDcReference, PmDcReferenceList,
+};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const SKETCH_TYPE: [u8; 16] = inventor_id(0x9087_4d11);
@@ -179,30 +181,6 @@ pub(crate) struct SketchProjection {
     pub(crate) unresolved_sketches: usize,
     pub(crate) unresolved_entities: usize,
     pub(crate) unresolved_constraints: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct PmDcContentHeader {
-    pub(crate) header_value: u32,
-    pub(crate) header_id: u16,
-    pub(crate) next: PmDcReference,
-    pub(crate) flags: u32,
-    pub(crate) context: PmDcReference,
-    pub(crate) source_index: u32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct PmDcReferenceList {
-    pub(crate) marker: u16,
-    pub(crate) metadata: Option<PmDcListMetadata>,
-    pub(crate) references: Vec<PmDcReference>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "width", content = "values", rename_all = "snake_case")]
-pub(crate) enum PmDcListMetadata {
-    U16([u16; 2]),
-    U32([u32; 2]),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -460,65 +438,13 @@ fn type_id_string(value: [u8; 16]) -> String {
     result
 }
 
-fn parse_content_header(cursor: &mut Cursor<'_>) -> Result<PmDcContentHeader, CodecError> {
-    Ok(PmDcContentHeader {
-        header_value: cursor.u32("content header value")?,
-        header_id: cursor.u16("content header id")?,
-        next: cursor.reference("content next reference")?,
-        flags: cursor.u32("content flags")?,
-        context: cursor.reference("content context reference")?,
-        source_index: cursor.u32("content source index")?,
-    })
-}
-
-fn reference_list(
-    ctx: &DecodeContext<'_>,
-    cursor: &mut Cursor<'_>,
-    marker: u16,
-    field: &str,
-) -> Result<PmDcReferenceList, CodecError> {
-    let actual = [
-        cursor.u16(&format!("{field} marker kind"))?,
-        cursor.u16(&format!("{field} marker form"))?,
-    ];
-    if actual != [marker, 0x3000] {
-        return Err(CodecError::Malformed(format!(
-            "Inventor PmDc {field} marker is {actual:?}"
-        )));
-    }
-    let count = cursor.u32(&format!("{field} count"))? as usize;
-    ctx.charge_collection_items(count as u64, "admit Inventor sketch references")?;
-    let metadata = if count == 0 {
-        None
-    } else if marker == 8 {
-        Some(PmDcListMetadata::U16([
-            cursor.u16(&format!("{field} metadata 0"))?,
-            cursor.u16(&format!("{field} metadata 1"))?,
-        ]))
-    } else {
-        Some(PmDcListMetadata::U32([
-            cursor.u32(&format!("{field} metadata 0"))?,
-            cursor.u32(&format!("{field} metadata 1"))?,
-        ]))
-    };
-    let mut references = Vec::with_capacity(count);
-    for index in 0..count {
-        references.push(cursor.reference(&format!("{field} reference {index}"))?);
-    }
-    Ok(PmDcReferenceList {
-        marker,
-        metadata,
-        references,
-    })
-}
-
 fn parse_sketch(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
     version: u8,
 ) -> Result<PmDcSketch, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = parse_content_header(&mut cursor)?;
+    let header = content_header(&mut cursor)?;
     let state = cursor.u32("sketch state")? as i32;
     let count_value = cursor.u32("sketch count value")?;
     let entities = reference_list(ctx, &mut cursor, 8, "sketch entity array")?;
@@ -553,7 +479,7 @@ fn parse_entity(
     version: u8,
 ) -> Result<PmDcSketchEntity, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = parse_content_header(&mut cursor)?;
+    let header = content_header(&mut cursor)?;
     let entity_flags = cursor.u32("sketch-entity flags")?;
     let sketch = cursor.reference("sketch-entity owner")?;
     let kind = match type_id {
@@ -734,7 +660,7 @@ fn parse_ellipse(
 
 fn parse_transform(source: View<'_>, version: u8) -> Result<PmDcTransform, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = parse_content_header(&mut cursor)?;
+    let header = content_header(&mut cursor)?;
     let prefix = if cursor.peek_u32("transform prefix")? == 0x203 {
         Some(cursor.u32("transform prefix")?)
     } else {
@@ -776,7 +702,7 @@ fn parse_transform(source: View<'_>, version: u8) -> Result<PmDcTransform, Codec
 
 fn parse_direction(source: View<'_>, version: u8) -> Result<PmDcDirection, CodecError> {
     let mut cursor = Cursor::new(source);
-    let header = parse_content_header(&mut cursor)?;
+    let header = content_header(&mut cursor)?;
     let entity_flags = cursor.u32("direction flags")?;
     let parameter = cursor.f64("direction parameter")?;
     let extension = match cursor.remaining() {
@@ -866,7 +792,7 @@ fn parse_constraint_header(
     cursor: &mut Cursor<'_>,
     version: u8,
 ) -> Result<PmDcConstraintHeader, CodecError> {
-    let content = parse_content_header(cursor)?;
+    let content = content_header(cursor)?;
     let state = cursor.u32("constraint state")? as i32;
     let group = cursor.reference("constraint group")?;
     let (scalar_map, reference_map) = if version <= 16 {

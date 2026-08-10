@@ -8,6 +8,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId, ParameterValue};
 use serde::{Deserialize, Serialize};
 
+use crate::pmdc::{Cursor, PmDcReference};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const EXPRESSION_VALUE_TYPE: [u8; 16] = id(0xf8a7_7a04);
@@ -184,12 +185,6 @@ pub(crate) enum PmDcUnitDimension {
     Length,
     Angle,
     Dimensionless,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct PmDcReference {
-    pub(crate) index: u32,
-    pub(crate) qualified: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -859,82 +854,12 @@ fn unique_by_ordinal<'a, T>(
         .collect()
 }
 
-pub(crate) struct Cursor<'a> {
-    source: View<'a>,
-    position: usize,
-}
-
 struct ReferenceArray {
     references: Vec<PmDcReference>,
     metadata: Option<[u16; 2]>,
 }
 
-impl<'a> Cursor<'a> {
-    pub(crate) const fn new(source: View<'a>) -> Self {
-        Self {
-            source,
-            position: 0,
-        }
-    }
-    pub(crate) fn remaining(&self) -> usize {
-        self.source.window().len().saturating_sub(self.position)
-    }
-    pub(crate) fn peek_u32(&self, field: &str) -> Result<u32, CodecError> {
-        Ok(u32::from_le_bytes(
-            self.source
-                .window()
-                .get(self.position..self.position.saturating_add(4))
-                .ok_or_else(|| CodecError::Malformed(format!("truncated Inventor PmDc {field}")))?
-                .try_into()
-                .expect("four-byte field"),
-        ))
-    }
-    pub(crate) fn take(&mut self, len: usize, field: &str) -> Result<&'a [u8], CodecError> {
-        let end = self.position.checked_add(len).ok_or_else(|| {
-            CodecError::Malformed(format!("Inventor PmDc {field} range overflows"))
-        })?;
-        let value = self
-            .source
-            .window()
-            .get(self.position..end)
-            .ok_or_else(|| CodecError::Malformed(format!("truncated Inventor PmDc {field}")))?;
-        self.position = end;
-        Ok(value)
-    }
-    pub(crate) fn u8(&mut self, field: &str) -> Result<u8, CodecError> {
-        Ok(self.take(1, field)?[0])
-    }
-    pub(crate) fn u16(&mut self, field: &str) -> Result<u16, CodecError> {
-        Ok(u16::from_le_bytes(
-            self.take(2, field)?.try_into().expect("two-byte field"),
-        ))
-    }
-    pub(crate) fn i16(&mut self, field: &str) -> Result<i16, CodecError> {
-        Ok(i16::from_le_bytes(
-            self.take(2, field)?.try_into().expect("two-byte field"),
-        ))
-    }
-    pub(crate) fn u32(&mut self, field: &str) -> Result<u32, CodecError> {
-        Ok(u32::from_le_bytes(
-            self.take(4, field)?.try_into().expect("four-byte field"),
-        ))
-    }
-    pub(crate) fn f64(&mut self, field: &str) -> Result<f64, CodecError> {
-        let value = f64::from_le_bytes(self.take(8, field)?.try_into().expect("eight-byte field"));
-        if !value.is_finite() {
-            return Err(CodecError::Malformed(format!(
-                "Inventor PmDc {field} is not finite"
-            )));
-        }
-        Ok(value)
-    }
-    pub(crate) fn reference(&mut self, field: &str) -> Result<PmDcReference, CodecError> {
-        let value = self.u32(field)?;
-        Ok(PmDcReference {
-            index: value & 0x7fff_ffff,
-            qualified: value & 0x8000_0000 != 0,
-        })
-    }
+impl Cursor<'_> {
     fn utf16(&mut self, ctx: &DecodeContext<'_>, field: &str) -> Result<String, CodecError> {
         let units = self.u32(&format!("{field} length"))? as usize;
         if units > 1_048_576 {
@@ -986,16 +911,6 @@ impl<'a> Cursor<'a> {
             references,
             metadata,
         })
-    }
-    pub(crate) fn finish(&self, record: &str) -> Result<(), CodecError> {
-        if self.remaining() == 0 {
-            Ok(())
-        } else {
-            Err(CodecError::Malformed(format!(
-                "Inventor PmDc {record} has {} trailing bytes",
-                self.remaining()
-            )))
-        }
     }
 }
 

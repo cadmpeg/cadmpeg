@@ -28,6 +28,7 @@ use crate::native::{
     UfrxOccurrenceRecord, UfrxRecord, UfrxRecordState, UnpairedSegmentRecord,
     INVENTOR_NATIVE_VERSION,
 };
+use crate::pmdc::PmDcReferenceList;
 
 const ARENAS: &[&str] = &[
     "active_carrier",
@@ -433,7 +434,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             entity.header.context.index,
             entity.sketch.index,
         ];
-        let mut add_list = |list: &crate::sketch::PmDcReferenceList| {
+        let mut add_list = |list: &PmDcReferenceList| {
             references.extend(list.references.iter().map(|reference| reference.index));
         };
         match &entity.kind {
