@@ -3070,8 +3070,10 @@ fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link() {
                 Point3::new(0.0, 1.0, 0.0),
             ],
             triangles: vec![[0, 1, 2], [2, 1, 0]],
+            feature_edges: Vec::new(),
             strip_lengths: Vec::new(),
             normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
+            corner_normals: Vec::new(),
             channels: Vec::new(),
         });
     let options = StepWriteOptions {
@@ -5655,8 +5657,10 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
             source_object: Some(source_object),
             vertices: Vec::new(),
             triangles: Vec::new(),
+            feature_edges: Vec::new(),
             strip_lengths: Vec::new(),
             normals: Vec::new(),
+            corner_normals: Vec::new(),
             channels: Vec::new(),
         });
 

@@ -202,6 +202,15 @@ Native records retain typed references into the neutral model. Format-neutral co
 
 Tessellations are display meshes independent of exact B-rep geometry. Appearances describe visual or physical assets. Appearance bindings assign appearances to bodies or faces. Attributes attach source-native values to supported targets.
 
+`Tessellation.triangles` preserves source winding. `feature_edges` is the
+source-classified undirected feature-edge set. The list is lexicographically
+sorted. Each pair is strictly ascending, unique, and indexes `vertices`; an
+ordinary triangulation edge is absent unless the source classifies it as a
+feature. `normals` is empty or parallel to `vertices`. `corner_normals` is empty
+or parallel to the flattened triangle corner sequence. Corner normals preserve
+normal seams without duplicating vertices and take precedence when an exporter
+supports only one normal domain.
+
 A tessellation channel stores `count` fixed-width values in `data`. A vertex
 channel uses implicit vertex-order addressing and has no `indices`. A corner
 channel has one selector for each triangle corner, and a triangle channel has
@@ -226,7 +235,8 @@ Validation uses reference lookup and in-IR arithmetic. It checks:
 - annotation entity, stream, and field-path integrity;
 - canonical periodic parameter domains;
 - finite coordinates, unit directions, positive radii, and NURBS shape invariants;
-- tessellation channel and index bounds;
+- tessellation channel and index bounds, canonical feature-edge pairs, and
+  vertex- and corner-normal cardinalities;
 - native record counts, IDs, links, and payload spans;
 - opaque payload length and SHA-256;
 - retained-record byte length and SHA-256 digest.

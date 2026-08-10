@@ -73,6 +73,7 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
         if mesh
             .normals
             .iter()
+            .chain(&mesh.corner_normals)
             .any(|normal| !normal.x.is_finite() || !normal.y.is_finite() || !normal.z.is_finite())
         {
             findings.push(Finding {
@@ -87,6 +88,31 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                 check: Check::Tessellation,
                 severity: Severity::Error,
                 message: "tessellation normals do not match vertex count".into(),
+                entity: Some(mesh.id.clone()),
+            });
+        }
+        if !mesh.corner_normals.is_empty()
+            && mesh.triangles.len().checked_mul(3) != Some(mesh.corner_normals.len())
+        {
+            findings.push(Finding {
+                check: Check::Tessellation,
+                severity: Severity::Error,
+                message: "tessellation corner normals do not match triangle corners".into(),
+                entity: Some(mesh.id.clone()),
+            });
+        }
+        if mesh.feature_edges.iter().any(|edge| {
+            edge[0] >= edge[1]
+                || usize::try_from(edge[1]).map_or(true, |index| index >= mesh.vertices.len())
+        }) || mesh
+            .feature_edges
+            .windows(2)
+            .any(|edges| edges[0] >= edges[1])
+        {
+            findings.push(Finding {
+                check: Check::Tessellation,
+                severity: Severity::Error,
+                message: "contains an invalid tessellation feature edge".into(),
                 entity: Some(mesh.id.clone()),
             });
         }

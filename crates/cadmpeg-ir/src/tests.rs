@@ -1399,8 +1399,10 @@ fn tessellation_counts_must_be_consistent() {
             Point3::new(0.0, 1.0, 0.0),
         ],
         triangles: vec![[0, 1, 2]],
+        feature_edges: Vec::new(),
         strip_lengths: vec![4],
         normals: vec![Vector3::new(0.0, 0.0, 1.0); 2],
+        corner_normals: Vec::new(),
         channels: vec![TessellationChannel {
             domain: TessellationChannelDomain::Corner,
             item_size: 1,
@@ -1423,8 +1425,10 @@ fn tessellation_counts_must_be_consistent() {
             Point3::new(0.0, 1.0, 0.0),
         ],
         triangles: vec![[0, 2, 1]],
+        feature_edges: Vec::new(),
         strip_lengths: vec![3],
         normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
+        corner_normals: Vec::new(),
         channels: Vec::new(),
     });
     ir.finalize();
@@ -1452,6 +1456,64 @@ fn tessellation_counts_must_be_consistent() {
     assert!(report.findings.iter().any(|finding| finding
         .message
         .contains("invalid tessellation channel indices")));
+}
+
+#[test]
+fn corner_normals_and_feature_edges_have_explicit_domains() {
+    use crate::math::{Point3, Vector3};
+    use crate::report::{Check, Severity};
+    use crate::tessellation::Tessellation;
+
+    let mesh = |id: &str| Tessellation {
+        id: id.into(),
+        body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
+        source_object: None,
+        vertices: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ],
+        triangles: vec![[0, 1, 2]],
+        feature_edges: vec![[0, 1]],
+        strip_lengths: Vec::new(),
+        normals: Vec::new(),
+        corner_normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
+        channels: Vec::new(),
+    };
+    let mut invalid_normals = mesh("synthetic:test:tessellation#invalid-corner-normals");
+    invalid_normals.corner_normals.pop();
+    let mut invalid_edge = mesh("synthetic:test:tessellation#invalid-feature-edge");
+    invalid_edge.feature_edges = vec![[1, 2], [0, 1]];
+    let valid = mesh("synthetic:test:tessellation#valid-domains");
+
+    let mut ir = unit_cube();
+    ir.model
+        .tessellations
+        .extend([invalid_normals, invalid_edge, valid]);
+    ir.finalize();
+    let report = validate(&ir, Vec::new());
+    let errors_for = |entity: &str| {
+        report
+            .findings
+            .iter()
+            .filter(|finding| {
+                finding.check == Check::Tessellation
+                    && finding.severity == Severity::Error
+                    && finding.entity.as_deref() == Some(entity)
+            })
+            .count()
+    };
+    assert_eq!(
+        errors_for("synthetic:test:tessellation#invalid-corner-normals"),
+        1
+    );
+    assert_eq!(
+        errors_for("synthetic:test:tessellation#invalid-feature-edge"),
+        1
+    );
+    assert_eq!(errors_for("synthetic:test:tessellation#valid-domains"), 0);
 }
 
 #[test]

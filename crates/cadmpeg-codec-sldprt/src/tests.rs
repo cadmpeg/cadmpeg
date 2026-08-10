@@ -5052,8 +5052,10 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
                 Point3::new(0.0, 1.0, 0.0),
             ],
             triangles: vec![[0, 1, 2]],
+            feature_edges: Vec::new(),
             strip_lengths: vec![3],
             normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
+            corner_normals: Vec::new(),
             channels: Vec::new(),
         })
         .collect();
@@ -21773,6 +21775,14 @@ fn semantic_writer_expands_indexed_tessellation() {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 
+    let corner_normals = vec![
+        Vector3::new(1.0, 0.0, 0.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(-1.0, 0.0, 0.0),
+        Vector3::new(0.0, -1.0, 0.0),
+        Vector3::new(0.0, 0.0, -1.0),
+    ];
     let mesh = Tessellation {
         id: "synthetic:test:indexed-tessellation".into(),
         body: None,
@@ -21786,8 +21796,10 @@ fn semantic_writer_expands_indexed_tessellation() {
             Point3::new(0.0, 1.0, 0.0),
         ],
         triangles: vec![[0, 1, 2], [0, 2, 3]],
+        feature_edges: Vec::new(),
         strip_lengths: Vec::new(),
         normals: vec![Vector3::new(0.0, 0.0, 1.0); 4],
+        corner_normals: corner_normals.clone(),
         channels: vec![TessellationChannel {
             domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
             item_size: 1,
@@ -21802,9 +21814,17 @@ fn semantic_writer_expands_indexed_tessellation() {
     assert_eq!(expanded.strip_lengths, vec![3, 3]);
     assert_eq!(expanded.triangles, vec![[0, 1, 2], [3, 4, 5]]);
     assert_eq!(expanded.vertices.len(), 6);
-    assert_eq!(expanded.normals.len(), 6);
+    assert_eq!(expanded.normals, corner_normals);
+    assert!(expanded.corner_normals.is_empty());
     assert_eq!(expanded.channels[0].count, 6);
     assert_eq!(expanded.channels[0].data, vec![10, 11, 12, 10, 12, 13]);
+
+    let mut edged = mesh;
+    edged.feature_edges.push([0, 1]);
+    assert!(matches!(
+        crate::writer::sequential_tessellation(&edged),
+        Err(cadmpeg_core::CodecError::NotImplemented(_))
+    ));
 }
 
 #[test]
@@ -21820,8 +21840,10 @@ fn semantic_writer_rejects_out_of_range_tessellation_indices() {
         source_object: None,
         vertices: vec![Point3::new(0.0, 0.0, 0.0); 3],
         triangles: vec![[0, 1, 3]],
+        feature_edges: Vec::new(),
         strip_lengths: Vec::new(),
         normals: Vec::new(),
+        corner_normals: Vec::new(),
         channels: Vec::new(),
     };
     let error = crate::writer::sequential_tessellation(&mesh).unwrap_err();

@@ -272,8 +272,10 @@ impl<'a> Builder<'a> {
                     .iter()
                     .map(|triangle| [triangle[0] - 1, triangle[1] - 1, triangle[2] - 1])
                     .collect(),
+                feature_edges: Vec::new(),
                 strip_lengths: Vec::new(),
                 normals: triangulation.normals.clone().unwrap_or_default(),
+                corner_normals: Vec::new(),
                 channels: Vec::new(),
             });
         }
@@ -632,8 +634,10 @@ impl<'a> Builder<'a> {
                 source_object: Some(self.source_association()),
                 vertices,
                 triangles,
+                feature_edges: Vec::new(),
                 strip_lengths: Vec::new(),
                 normals,
+                corner_normals: Vec::new(),
                 channels: Vec::new(),
             });
         }

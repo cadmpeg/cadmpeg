@@ -154,6 +154,9 @@ pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
             mesh.normals
                 .iter_mut()
                 .for_each(|normal| *normal = transform.apply_vector(*normal));
+            mesh.corner_normals
+                .iter_mut()
+                .for_each(|normal| *normal = transform.apply_vector(*normal));
         }
     }
     ir.model

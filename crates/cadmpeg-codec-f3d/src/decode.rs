@@ -2588,8 +2588,10 @@ fn project_mesh_bodies(
                 source_object: None,
                 vertices: body.vertices,
                 triangles: body.triangles,
+                feature_edges: Vec::new(),
                 strip_lengths: Vec::new(),
                 normals: Vec::new(),
+                corner_normals: Vec::new(),
                 channels,
             });
     }

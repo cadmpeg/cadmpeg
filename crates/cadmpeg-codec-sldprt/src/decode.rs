@@ -2483,8 +2483,10 @@ fn build_geometry_ir(
                     source_object: None,
                     vertices: mesh.vertices,
                     triangles: mesh.triangles,
+                    feature_edges: Vec::new(),
                     strip_lengths: mesh.strip_lengths,
                     normals: mesh.normals,
+                    corner_normals: Vec::new(),
                     channels: mesh.channels,
                 });
         }

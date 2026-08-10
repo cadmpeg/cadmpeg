@@ -2999,8 +2999,10 @@ impl<'a> DecodeContext<'a> {
             source_object: Some(self.source_association(identity)),
             vertices: mesh.tessellation.vertices,
             triangles: mesh.tessellation.triangles,
+            feature_edges: mesh.tessellation.feature_edges,
             strip_lengths: mesh.tessellation.strip_lengths,
             normals: mesh.tessellation.normals,
+            corner_normals: mesh.tessellation.corner_normals,
             channels: mesh.tessellation.channels,
         });
         self.annotations.exactness.insert(

@@ -31,6 +31,12 @@ pub struct Tessellation {
     pub vertices: Vec<Point3>,
     /// Zero-based vertex indices, with source winding preserved.
     pub triangles: Vec<[u32; 3]>,
+    /// Undirected geometric feature edges, as a lexicographically sorted list
+    /// of unique ascending pairs of zero-based vertex indices. The list
+    /// excludes ordinary triangulation edges unless the source classifies them
+    /// as features.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub feature_edges: Vec<[u32; 2]>,
     /// Triangle-strip run lengths, when the source stored strips instead of an
     /// independent triangle list; empty when the mesh is a flat triangle list.
     #[serde(default)]
@@ -38,6 +44,11 @@ pub struct Tessellation {
     /// Per-vertex normals, parallel to `vertices`; empty when the source carried none.
     #[serde(default)]
     pub normals: Vec<Vector3>,
+    /// Per-triangle-corner normals in flattened `triangles` order. These values
+    /// preserve normal seams that cannot be represented by `normals` without
+    /// duplicating vertices.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub corner_normals: Vec<Vector3>,
     /// Additional per-vertex or per-facet data channels from the source tessellation
     /// table (e.g. UVs, colors); empty when the source carried none.
     #[serde(default)]

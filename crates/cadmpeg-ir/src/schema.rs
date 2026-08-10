@@ -560,7 +560,7 @@ impl_entity_schema!(
     id, object, order, expanded, visible, display_mode, selection_style, line_width,
     point_size, properties, native_ref
 );
-impl_entity_schema!(crate::tessellation::Tessellation, Tessellation, id; id, body, faces, chordal_deflection, source_object, vertices, triangles, strip_lengths, normals, channels);
+impl_entity_schema!(crate::tessellation::Tessellation, Tessellation, id; id, body, faces, chordal_deflection, source_object, vertices, triangles, feature_edges, strip_lengths, normals, corner_normals, channels);
 impl_entity_schema!(crate::appearance::Appearance, Appearance, id.0; id, name, asset_guid, library_id, visual_guid, physical_token, schema, category, base_color, properties, textures);
 impl_entity_schema!(crate::appearance::AppearanceBinding, AppearanceBinding, id; id, target, appearance, source_entity_id, object_type, channels);
 impl_entity_schema!(crate::attributes::SourceAttribute, SourceAttribute, id.0; id, target, name, values);
