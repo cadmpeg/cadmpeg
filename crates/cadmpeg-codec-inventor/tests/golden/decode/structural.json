@@ -65,6 +65,9 @@
               "state": "not_applicable"
             }
           ],
+          "assembly_occurrences": [],
+          "assembly_placements": [],
+          "assembly_record_issues": [],
           "body_native_keys": [],
           "database_issues": [],
           "databases": [],
@@ -135,7 +138,7 @@
           "vertex_ownerships": [],
           "wire_topologies": []
         },
-        "version": 12
+        "version": 13
       }
     },
     "source": {
@@ -161,6 +164,9 @@
       "active_kernel_carriers": 0,
       "asm_unknown_records": 0,
       "asm_unknown_surface_faces": 0,
+      "assembly_occurrences": 0,
+      "assembly_placements": 0,
+      "assembly_record_issues": 0,
       "external_references": 0,
       "preview_assets": 0,
       "properties": 0,

@@ -4,6 +4,7 @@
 //! [`InventorCodec`] detects Inventor documents from the compound-file
 //! directory structure. It does not classify unrelated CFB files as Inventor.
 
+mod assembly;
 mod container;
 mod database;
 mod decode;

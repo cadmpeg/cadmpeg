@@ -212,3 +212,94 @@ offset = 2
 type = "u16"
 source = "spec"
 anchor = "a u16 section-version count"
+
+[[record]]
+name = "assembly_occurrence_prefix"
+kind = "byte"
+section = "9"
+anchor = "Its payload contains"
+size = 50
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id u16"
+
+[[record.field]]
+name = "next_reference"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "next_reference u32"
+
+[[record.field]]
+name = "flags"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "flags u32"
+
+[[record.field]]
+name = "owner_reference"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "owner_reference u32"
+
+[[record.field]]
+name = "node_index"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "node_index u32"
+
+[[record.field]]
+name = "state"
+offset = 22
+type = "i32[2]"
+source = "spec"
+anchor = "state i32[2]"
+
+[[record.field]]
+name = "relation_marker"
+offset = 30
+type = "u32"
+source = "spec"
+anchor = "relation_marker u32"
+
+[[record.field]]
+name = "relation_count"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "relation_count u32"
+
+[[record.field]]
+name = "ordinal_key"
+offset = 38
+type = "u32"
+source = "spec"
+anchor = "ordinal_key u32"
+
+[[record.field]]
+name = "related_marker"
+offset = 42
+type = "u32"
+source = "spec"
+anchor = "related_marker u32"
+
+[[record.field]]
+name = "related_count"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "related_count u32"

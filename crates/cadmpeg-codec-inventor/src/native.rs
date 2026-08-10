@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Current Inventor native namespace version.
-pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 12;
+pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 13;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct VersionTupleRecord {
@@ -230,6 +230,53 @@ pub(crate) struct ExternalReferenceRecord {
     pub(crate) occurrence_count: u32,
     pub(crate) version: u32,
     pub(crate) flags: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct AssemblyOccurrenceRecord {
+    pub(crate) id: String,
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
+    pub(crate) header_value: u32,
+    pub(crate) header_id: u16,
+    pub(crate) next_reference: u32,
+    pub(crate) flags: u32,
+    pub(crate) owner_reference: u32,
+    pub(crate) node_index: u32,
+    pub(crate) state: [i32; 2],
+    pub(crate) ordinal_key: u32,
+    pub(crate) related_references: Vec<u32>,
+    pub(crate) child_reference: u32,
+    pub(crate) occurrence_id: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct AssemblyPlacementRecord {
+    pub(crate) id: String,
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
+    pub(crate) header_id: u16,
+    pub(crate) owner_reference: u32,
+    pub(crate) attribute_reference: u32,
+    pub(crate) state: u8,
+    pub(crate) transform_prefix: bool,
+    pub(crate) transform_encoding: [u16; 2],
+    pub(crate) transform: [[f64; 4]; 4],
+    pub(crate) branch: u8,
+    pub(crate) graphics_state: u8,
+    pub(crate) occurrence_id: u32,
+    pub(crate) graphics_index: u32,
+    pub(crate) object_reference: u32,
+    pub(crate) suffix_len: u64,
+    pub(crate) suffix_sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct AssemblyRecordIssueRecord {
+    pub(crate) id: String,
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
+    pub(crate) detail: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

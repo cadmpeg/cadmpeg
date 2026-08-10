@@ -48,23 +48,23 @@ This document lists unknown Inventor byte semantics. [inventor.md](inventor.md) 
 
 ## 3. Product structure
 
-### AS-01. Occurrence record identity
+### AS-01. Prototype and hierarchy joins
 
-**Question.** Which `Am*` record type owns occurrence identity, parent identity, prototype reference, visibility, and suppression?
+**Question.** Which typed fields join an occurrence to its external document reference and parent occurrence, and which flags define visibility and suppression?
 
-**Known.** `UFRxDoc` stores external document references and an occurrence count. That count does not define occurrence identity or hierarchy.
+**Known.** The typed `AmDc` occurrence record owns a document-local occurrence identifier. The typed `AmGraphics` placement record repeats that identifier and supplies its compact affine transform. `UFRxDoc` stores external document references and an occurrence count. The count does not define prototype or hierarchy joins.
 
 The schema-15 two-representation-string header branch and its model-state parameter table are framed exactly. Other schema-15 header branches place part configuration data before the common document fields and remain retained as unsupported branches.
 
-**Need.** We must construct ordered occurrences without multiplying a reference count into invented entities.
+**Need.** We must construct ordered occurrences with exact external prototypes, parents, visibility, and suppression without multiplying a reference count into invented entities.
 
-### AS-02. Occurrence transforms
+### AS-02. Transform units and exceptional branches
 
-**Question.** Which typed fields store each occurrence transform, scale, and mirrored state?
+**Question.** Which length unit applies to transform translations, and what semantics apply to non-active placement branches, scale, mirrored state, and singular matrices?
 
-**Known.** No field in the external-reference prefix supplies an occurrence placement.
+**Known.** The active `AmGraphics` placement branch stores a compact finite 4-by-4 transform and joins it to an `AmDc` occurrence by exact identifier. No field in the external-reference prefix supplies a placement.
 
-**Need.** We must map finite affine transforms and report singular semantics exactly.
+**Need.** We must transfer transforms to neutral occurrences without assuming a unit conversion or exceptional-branch meaning.
 
 ## 4. Materials and design intent
 

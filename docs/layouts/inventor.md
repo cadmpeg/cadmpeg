@@ -83,3 +83,22 @@ Spec §8 · layout: byte offsets · size: 4 B
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 2 | `schema` | `u16` | little | spec | a u16 schema |
 | 2 | 2 | `section_version_count` | `u16` | little | spec | a u16 section-version count |
+
+## `assembly_occurrence_prefix`
+
+Spec §9 · layout: byte offsets · size: 50 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | header_value u32 |
+| 4 | 2 | `header_id` | `u16` | little | spec | header_id u16 |
+| 6 | 4 | `next_reference` | `u32` | little | spec | next_reference u32 |
+| 10 | 4 | `flags` | `u32` | little | spec | flags u32 |
+| 14 | 4 | `owner_reference` | `u32` | little | spec | owner_reference u32 |
+| 18 | 4 | `node_index` | `u32` | little | spec | node_index u32 |
+| 22 | 8 | `state` | `i32[2]` | little | spec | state i32[2] |
+| 30 | 4 | `relation_marker` | `u32` | little | spec | relation_marker u32 |
+| 34 | 4 | `relation_count` | `u32` | little | spec | relation_count u32 |
+| 38 | 4 | `ordinal_key` | `u32` | little | spec | ordinal_key u32 |
+| 42 | 4 | `related_marker` | `u32` | little | spec | related_marker u32 |
+| 46 | 4 | `related_count` | `u32` | little | spec | related_count u32 |

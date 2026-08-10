@@ -69,6 +69,38 @@ The root `Protein` stream starts with a u32 payload length. Zero length is the c
 
 `UFRxDoc` schemas 11 through 15 start with a u16 schema and a u16 section-version count. The section-version table governs optional header fields. The schema-15 representation/model-state branch adds a u16 representation prefix, two counted UTF-16LE representation strings, and a counted UTF-16LE active model-state name with a two-u16 state pair; it omits the older header-version-flags field. Its model-state table precedes the external-reference table. Each model-state record contains a u8 prefix, counted UTF-16LE name, two-u16 state pair, u32 prefix count, u32 parameter count, the counted parameter records, and a 77-byte suffix. Each parameter record contains a counted UTF-16LE name, u8 tag, u16 kind, u16 state, counted UTF-16LE value, and u16 trailer. The external-reference table contains counted UTF-16LE paths and names, state groups, 16-byte document and database identifiers, a u32 reference identifier, u32 occurrence count, u32 version, and u32 flags. Persisted paths remain unresolved. The codec does not open them.
 
-## 9. Document kind
+## 9. Assembly records
+
+An `AmDc` record with type identifier `604d8790d011f8d10008cabc0663dc09` stores one assembly occurrence identity. Its payload contains:
+
+```text
+header_value u32
+header_id u16
+next_reference u32
+flags u32
+owner_reference u32
+node_index u32
+state i32[2]
+relation_marker u32 = 0x30000002
+relation_count u32 = 0
+ordinal_key u32
+related_marker u32 = 0x30000002
+related_count u32
+related_header u32[2] when related_count is nonzero
+related_references u32[related_count]
+child_reference u32
+identity_mode u16 = 0x0200
+occurrence_id u32
+label counted UTF-16LE = "DCx"
+trailer u16 = 1
+```
+
+The record ends after the trailer. Occurrence identifiers are document-local values and are not required to be dense.
+
+An `AmGraphics` record with type identifier `a26371cad011b2d30008bfbb21eddc09` or `07d0d0b9d4112d5f6000f8830e73fcb0` stores an assembly placement. Its common payload prefix contains u32 zero, u16 header identifier, u32 owner reference, u32 attribute reference, u8 state, and a compact 4-by-4 transform. The transform can start with optional u32 `0x00000203`, followed by a u16 set mask and a u16 zero mask. The 16 matrix elements use row-major bit positions. A clear zero-mask bit stores an f64 when the set-mask bit is clear and represents `1` when the set-mask bit is set. A set zero-mask bit represents `0` when the set-mask bit is clear and `-1` when the set-mask bit is set. Stored f64 values are finite.
+
+The active placement branch continues with u8 branch, u8 graphics state, u32 occurrence identifier, counted UTF-16LE label `"GRx"`, u16 invariant 1, u32 graphics index, u32 object reference, and the occurrence identifier again. Both occurrence-identifier fields are equal. The remaining branch-specific suffix is retained. A placement joins an occurrence through the exact occurrence identifier.
+
+## 10. Document kind
 
 `Pm*` segment families identify a part document. `Am*` segment families identify an assembly document. A document that contains both families has the distinct `mixed_part_assembly` kind. Property metadata can identify a part, assembly, drawing, or presentation only when segment-family evidence does not already identify the kind.

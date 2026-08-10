@@ -22,7 +22,8 @@ use crate::database::{RevisionPayload, VersionTuple};
 use crate::external_reference::UfrxState;
 use crate::kernel::ActiveCarrierState;
 use crate::native::{
-    ActiveCarrierRecord, ActiveCarrierRecordState, DatabaseIssueRecord, DatabaseRecord,
+    ActiveCarrierRecord, ActiveCarrierRecordState, AssemblyOccurrenceRecord,
+    AssemblyPlacementRecord, AssemblyRecordIssueRecord, DatabaseIssueRecord, DatabaseRecord,
     ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord, PropertyRecord,
     PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, ProteinAssetRecord,
     ProteinEntryRecord, ProteinRecord, ProteinRecordState, ProteinRejectionRecord, RevisionRecord,
@@ -43,6 +44,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         ContainerPurpose::Decode
     };
     let container = InventorContainer::open(ctx, root, purpose)?;
+    let assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
     let mut ir = CadIr::empty(Units::default());
     let mut attributes = BTreeMap::new();
     attributes.insert(
@@ -873,6 +875,68 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             detail: None,
         },
     };
+    let assembly_occurrences = assembly_inventory
+        .occurrences
+        .iter()
+        .map(|occurrence| AssemblyOccurrenceRecord {
+            id: format!(
+                "inventor:assembly:occurrence#{}-{}",
+                occurrence.segment_token, occurrence.record_ordinal
+            ),
+            segment_token: occurrence.segment_token.clone(),
+            record_ordinal: occurrence.record_ordinal,
+            header_value: occurrence.header_value,
+            header_id: occurrence.header_id,
+            next_reference: occurrence.next_reference,
+            flags: occurrence.flags,
+            owner_reference: occurrence.owner_reference,
+            node_index: occurrence.node_index,
+            state: occurrence.state,
+            ordinal_key: occurrence.ordinal_key,
+            related_references: occurrence.related_references.clone(),
+            child_reference: occurrence.child_reference,
+            occurrence_id: occurrence.occurrence_id,
+        })
+        .collect::<Vec<_>>();
+    let assembly_placements = assembly_inventory
+        .placements
+        .iter()
+        .map(|placement| AssemblyPlacementRecord {
+            id: format!(
+                "inventor:assembly:placement#{}-{}",
+                placement.segment_token, placement.record_ordinal
+            ),
+            segment_token: placement.segment_token.clone(),
+            record_ordinal: placement.record_ordinal,
+            header_id: placement.header_id,
+            owner_reference: placement.owner_reference,
+            attribute_reference: placement.attribute_reference,
+            state: placement.state,
+            transform_prefix: placement.transform_prefix,
+            transform_encoding: placement.transform_encoding,
+            transform: placement.transform,
+            branch: placement.branch,
+            graphics_state: placement.graphics_state,
+            occurrence_id: placement.occurrence_id,
+            graphics_index: placement.graphics_index,
+            object_reference: placement.object_reference,
+            suffix_len: placement.suffix.window().len() as u64,
+            suffix_sha256: sha256_hex(placement.suffix.window()),
+        })
+        .collect::<Vec<_>>();
+    let assembly_record_issues = assembly_inventory
+        .issues
+        .iter()
+        .map(|issue| AssemblyRecordIssueRecord {
+            id: format!(
+                "inventor:assembly:record-issue#{}-{}",
+                issue.segment_token, issue.record_ordinal
+            ),
+            segment_token: issue.segment_token.clone(),
+            record_ordinal: issue.record_ordinal,
+            detail: issue.detail.clone(),
+        })
+        .collect::<Vec<_>>();
     ctx.charge_collection_items(
         storage_bands
             .len()
@@ -900,6 +964,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .saturating_add(1)
             .saturating_add(ufrx_model_states.len())
             .saturating_add(external_references.len())
+            .saturating_add(assembly_occurrences.len())
+            .saturating_add(assembly_placements.len())
+            .saturating_add(assembly_record_issues.len())
             .saturating_add(unpaired_segments.len())
             .saturating_add(1) as u64,
         "retain Inventor native structural records",
@@ -923,6 +990,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     namespace.set_arena("ufrx", std::slice::from_ref(&ufrx))?;
     namespace.set_arena("ufrx_model_states", &ufrx_model_states)?;
     namespace.set_arena("external_references", &external_references)?;
+    namespace.set_arena("assembly_occurrences", &assembly_occurrences)?;
+    namespace.set_arena("assembly_placements", &assembly_placements)?;
+    namespace.set_arena("assembly_record_issues", &assembly_record_issues)?;
     namespace.set_arena("segment_pairs", &segment_pairs)?;
     namespace.set_arena("segment_meta", &segment_meta)?;
     namespace.set_arena("meta_sections", &meta_sections)?;
@@ -1056,6 +1126,15 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 ),
             ));
         }
+        if !assembly_record_issues.is_empty() {
+            losses.push(LossNote::new(
+                LossKind::DecodeDiagnostic,
+                format!(
+                    "{} typed Inventor assembly record(s) are malformed or outside the implemented branch.",
+                    assembly_record_issues.len()
+                ),
+            ));
+        }
         if !container.rse.unpaired_metadata.is_empty() || !container.rse.unpaired_bulk.is_empty() {
             losses.push(LossNote::new(
                 LossKind::DecodeDiagnostic,
@@ -1157,15 +1236,17 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                         ),
                     ));
                 }
-                let unplaced_occurrences = external_references
+                let declared_occurrences = external_references
                     .iter()
                     .map(|reference| u64::from(reference.occurrence_count))
                     .sum::<u64>();
-                if unplaced_occurrences != 0 {
+                if declared_occurrences != 0 {
                     losses.push(LossNote::new(
                         LossKind::AssemblyPlacementsNotTransferred,
                         format!(
-                            "The external-reference table declares {unplaced_occurrences} occurrence placement(s), but it does not contain occurrence identities or transforms."
+                            "Retained {} typed assembly occurrence(s) and {} placement transform(s), but prototype and hierarchy joins are unresolved.",
+                            assembly_occurrences.len(),
+                            assembly_placements.len()
                         ),
                     ));
                 }
@@ -1246,6 +1327,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 ("protein_appearances".into(), protein_appearance_count),
                 ("external_references".into(), external_references.len()),
                 ("ufrx_model_states".into(), ufrx_model_states.len()),
+                ("assembly_occurrences".into(), assembly_occurrences.len()),
+                ("assembly_placements".into(), assembly_placements.len()),
+                (
+                    "assembly_record_issues".into(),
+                    assembly_record_issues.len(),
+                ),
                 (
                     "active_kernel_carriers".into(),
                     usize::from(matches!(

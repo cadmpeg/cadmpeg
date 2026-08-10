@@ -6,7 +6,8 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_ir::{CadIr, Check, Finding, NativeUnknownRecord, Severity};
 
 use crate::native::{
-    ActiveCarrierRecord, ActiveCarrierRecordState, DatabaseIssueRecord, DatabaseRecord,
+    ActiveCarrierRecord, ActiveCarrierRecordState, AssemblyOccurrenceRecord,
+    AssemblyPlacementRecord, AssemblyRecordIssueRecord, DatabaseIssueRecord, DatabaseRecord,
     ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord, PropertyRecord,
     PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, ProteinAssetRecord,
     ProteinEntryRecord, ProteinRecord, ProteinRecordState, ProteinRejectionRecord, RevisionRecord,
@@ -18,6 +19,9 @@ use crate::native::{
 
 const ARENAS: &[&str] = &[
     "active_carrier",
+    "assembly_occurrences",
+    "assembly_placements",
+    "assembly_record_issues",
     "body_native_keys",
     "database_issues",
     "databases",
@@ -130,6 +134,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_protein_rejections(&data, &mut findings);
     validate_protein_record_coverage(&data, &mut findings);
     validate_ufrx(&data, &mut findings);
+    validate_assembly(&data, &mut findings);
     for issue in &data.structural_issues {
         findings.push(finding(
             Check::NativeLinks,
@@ -247,6 +252,9 @@ struct NativeData {
     ufrx: Vec<UfrxRecord>,
     ufrx_model_states: Vec<UfrxModelStateRecord>,
     external_references: Vec<ExternalReferenceRecord>,
+    assembly_occurrences: Vec<AssemblyOccurrenceRecord>,
+    assembly_placements: Vec<AssemblyPlacementRecord>,
+    assembly_record_issues: Vec<AssemblyRecordIssueRecord>,
     active_carrier: Vec<ActiveCarrierRecord>,
     unknowns: Vec<NativeUnknownRecord>,
 }
@@ -282,6 +290,9 @@ impl NativeData {
             ufrx: namespace.arena_as("ufrx")?,
             ufrx_model_states: namespace.arena_as("ufrx_model_states")?,
             external_references: namespace.arena_as("external_references")?,
+            assembly_occurrences: namespace.arena_as("assembly_occurrences")?,
+            assembly_placements: namespace.arena_as("assembly_placements")?,
+            assembly_record_issues: namespace.arena_as("assembly_record_issues")?,
             active_carrier: namespace.arena_as("active_carrier")?,
             unknowns: namespace.arena_as("unknowns")?,
         })
@@ -954,6 +965,71 @@ fn validate_ufrx(data: &NativeData, findings: &mut Vec<Finding>) {
                 Some(reference.id.clone()),
             ));
         }
+    }
+}
+
+fn validate_assembly(data: &NativeData, findings: &mut Vec<Finding>) {
+    unique(
+        findings,
+        data.assembly_occurrences
+            .iter()
+            .map(|record| record.occurrence_id),
+        "assembly occurrence id",
+    );
+    unique(
+        findings,
+        data.assembly_placements
+            .iter()
+            .map(|record| record.occurrence_id),
+        "assembly placement occurrence id",
+    );
+    let occurrence_ids = data
+        .assembly_occurrences
+        .iter()
+        .map(|record| record.occurrence_id)
+        .collect::<HashSet<_>>();
+    for placement in &data.assembly_placements {
+        if !occurrence_ids.contains(&placement.occurrence_id)
+            || placement.suffix_sha256.len() != 64
+            || placement
+                .transform
+                .iter()
+                .flatten()
+                .any(|value| !value.is_finite())
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor assembly placement does not resolve to a finite occurrence".into(),
+                Some(placement.id.clone()),
+            ));
+        }
+    }
+    if !data.external_references.is_empty() {
+        let declared = data
+            .external_references
+            .iter()
+            .map(|reference| u64::from(reference.occurrence_count))
+            .sum::<u64>();
+        if declared != data.assembly_occurrences.len() as u64 {
+            findings.push(finding(
+                Check::NativeLinks,
+                format!(
+                    "Inventor external references declare {declared} occurrences, but the typed assembly table contains {}",
+                    data.assembly_occurrences.len()
+                ),
+                None,
+            ));
+        }
+    }
+    for issue in &data.assembly_record_issues {
+        findings.push(finding(
+            Check::NativeLinks,
+            format!(
+                "Inventor assembly record {}:{} is unavailable: {}",
+                issue.segment_token, issue.record_ordinal, issue.detail
+            ),
+            Some(issue.id.clone()),
+        ));
     }
 }
 
