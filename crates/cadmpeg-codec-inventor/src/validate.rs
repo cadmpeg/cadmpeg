@@ -6,18 +6,22 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_ir::{CadIr, Check, Finding, Severity};
 
 use crate::native::{
-    DatabaseIssueRecord, DatabaseRecord, ExternalReferenceRecord, PropertyRecord,
+    ActiveCarrierRecord, ActiveCarrierRecordState, DatabaseIssueRecord, DatabaseRecord,
+    ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord, PropertyRecord,
     PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, ProteinEntryRecord,
-    ProteinRecord, ProteinRecordState, RevisionRecord, SegmentBulkIssueRecord, SegmentBulkRecord,
-    SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord,
-    StorageBandRecord, StructuralIssueRecord, UfrxRecord, UfrxRecordState, UnpairedSegmentRecord,
-    INVENTOR_NATIVE_VERSION,
+    ProteinRecord, ProteinRecordState, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
+    SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
+    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UfrxRecord, UfrxRecordState,
+    UnpairedSegmentRecord, INVENTOR_NATIVE_VERSION,
 };
 
 const ARENAS: &[&str] = &[
+    "active_carrier",
     "database_issues",
     "databases",
     "external_references",
+    "meta_sections",
+    "meta_types",
     "properties",
     "property_sections",
     "property_set_issues",
@@ -25,6 +29,7 @@ const ARENAS: &[&str] = &[
     "protein",
     "protein_entries",
     "revisions",
+    "rse_records",
     "segment_bulk",
     "segment_bulk_issues",
     "segment_meta",
@@ -92,6 +97,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let mut findings = Vec::new();
     validate_databases(&data, &mut findings);
     validate_segments(&data, &mut findings);
+    validate_active_carrier(&data, &mut findings);
     validate_properties(&data, &mut findings);
     validate_protein(&data, &mut findings);
     validate_ufrx(&data, &mut findings);
@@ -112,6 +118,79 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     findings
 }
 
+fn validate_active_carrier(data: &NativeData, findings: &mut Vec<Finding>) {
+    if data.active_carrier.len() != 1 {
+        findings.push(finding(
+            Check::NativeLinks,
+            format!(
+                "Inventor native data has {} active-carrier state records",
+                data.active_carrier.len()
+            ),
+            None,
+        ));
+        return;
+    }
+    let carrier = &data.active_carrier[0];
+    let selected_fields = carrier.segment_token.is_some()
+        && carrier.record_ordinal.is_some()
+        && carrier.segment_version_major.is_some()
+        && matches!(carrier.family.as_deref(), Some("asm" | "acis"))
+        && carrier.header_state.is_some()
+        && carrier.header_kind.is_some()
+        && carrier.header_value.is_some()
+        && carrier.schema.is_some()
+        && carrier.carrier_len.is_some_and(|length| length != 0)
+        && carrier.carrier_offset.is_some()
+        && carrier.carrier_sha256.is_some()
+        && carrier.selected_key.is_some()
+        && carrier.enabled.is_some()
+        && carrier.delta_state.is_some()
+        && carrier.history_reference.is_some()
+        && carrier.detail.is_none();
+    let empty_fields = carrier.segment_token.is_none()
+        && carrier.record_ordinal.is_none()
+        && carrier.segment_version_major.is_none()
+        && carrier.family.is_none()
+        && carrier.header_state.is_none()
+        && carrier.header_kind.is_none()
+        && carrier.header_value.is_none()
+        && carrier.schema.is_none()
+        && carrier.carrier_len.is_none()
+        && carrier.carrier_offset.is_none()
+        && carrier.carrier_sha256.is_none()
+        && carrier.selected_key.is_none()
+        && carrier.enabled.is_none()
+        && carrier.delta_state.is_none()
+        && carrier.history_reference.is_none();
+    let valid = match carrier.state {
+        ActiveCarrierRecordState::Selected => selected_fields,
+        ActiveCarrierRecordState::NotApplicable => empty_fields && carrier.detail.is_none(),
+        ActiveCarrierRecordState::NotExpanded => empty_fields && carrier.detail.is_none(),
+        ActiveCarrierRecordState::Unavailable => empty_fields && carrier.detail.is_some(),
+    };
+    if !valid {
+        findings.push(finding(
+            Check::NativeLinks,
+            "Inventor active-carrier state fields are inconsistent".into(),
+            Some(carrier.id.clone()),
+        ));
+    }
+    if carrier.state == ActiveCarrierRecordState::Selected {
+        let resolves = data.records.iter().any(|record| {
+            Some(record.token.as_str()) == carrier.segment_token.as_deref()
+                && Some(record.ordinal) == carrier.record_ordinal
+                && record.type_id == "5c5945f6d5113313100060a6bba647b5"
+        });
+        if !resolves {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor active carrier does not resolve to its typed RSe record".into(),
+                Some(carrier.id.clone()),
+            ));
+        }
+    }
+}
+
 struct NativeData {
     storage_bands: Vec<StorageBandRecord>,
     databases: Vec<DatabaseRecord>,
@@ -120,8 +199,11 @@ struct NativeData {
     revisions: Vec<RevisionRecord>,
     pairs: Vec<SegmentPairRecord>,
     metadata: Vec<SegmentMetaRecord>,
+    meta_sections: Vec<MetaSectionRecord>,
+    meta_types: Vec<MetaTypeRecord>,
     metadata_issues: Vec<SegmentMetaIssueRecord>,
     bulk: Vec<SegmentBulkRecord>,
+    records: Vec<RseRecordRecord>,
     bulk_issues: Vec<SegmentBulkIssueRecord>,
     unpaired: Vec<UnpairedSegmentRecord>,
     structural_issues: Vec<StructuralIssueRecord>,
@@ -133,6 +215,7 @@ struct NativeData {
     protein_entries: Vec<ProteinEntryRecord>,
     ufrx: Vec<UfrxRecord>,
     external_references: Vec<ExternalReferenceRecord>,
+    active_carrier: Vec<ActiveCarrierRecord>,
 }
 
 impl NativeData {
@@ -147,8 +230,11 @@ impl NativeData {
             revisions: namespace.arena_as("revisions")?,
             pairs: namespace.arena_as("segment_pairs")?,
             metadata: namespace.arena_as("segment_meta")?,
+            meta_sections: namespace.arena_as("meta_sections")?,
+            meta_types: namespace.arena_as("meta_types")?,
             metadata_issues: namespace.arena_as("segment_meta_issues")?,
             bulk: namespace.arena_as("segment_bulk")?,
+            records: namespace.arena_as("rse_records")?,
             bulk_issues: namespace.arena_as("segment_bulk_issues")?,
             unpaired: namespace.arena_as("unpaired_segments")?,
             structural_issues: namespace.arena_as("structural_issues")?,
@@ -160,6 +246,7 @@ impl NativeData {
             protein_entries: namespace.arena_as("protein_entries")?,
             ufrx: namespace.arena_as("ufrx")?,
             external_references: namespace.arena_as("external_references")?,
+            active_carrier: namespace.arena_as("active_carrier")?,
         })
     }
 }
@@ -291,6 +378,156 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
         data.bulk_issues.iter().map(|record| record.token.as_str()),
         "bulk",
     );
+    let metadata_by_token = data
+        .metadata
+        .iter()
+        .map(|record| (record.token.as_str(), record))
+        .collect::<HashMap<_, _>>();
+    unique(
+        findings,
+        data.meta_sections
+            .iter()
+            .map(|record| (record.token.as_str(), record.number)),
+        "metadata section number",
+    );
+    unique(
+        findings,
+        data.meta_types
+            .iter()
+            .map(|record| (record.token.as_str(), record.index)),
+        "metadata type index",
+    );
+    let sections_by_token = data.meta_sections.iter().fold(
+        HashMap::<&str, HashSet<u8>>::new(),
+        |mut sections, record| {
+            sections
+                .entry(record.token.as_str())
+                .or_default()
+                .insert(record.number);
+            sections
+        },
+    );
+    let types_by_token =
+        data.meta_types
+            .iter()
+            .fold(HashMap::<&str, HashSet<u8>>::new(), |mut types, record| {
+                types
+                    .entry(record.token.as_str())
+                    .or_default()
+                    .insert(record.index);
+                types
+            });
+    for (token, meta) in metadata_by_token {
+        let expected_sections = (1_u8..=11).collect::<HashSet<_>>();
+        if sections_by_token.get(token) != Some(&expected_sections)
+            || types_by_token.get(token).map_or(0, HashSet::len) as u64 != meta.type_count
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor metadata tables do not match their segment summary".into(),
+                Some(meta.id.clone()),
+            ));
+        }
+    }
+    let type_keys = data
+        .meta_types
+        .iter()
+        .map(|record| (record.token.as_str(), record.index, record.type_id.as_str()))
+        .collect::<HashSet<_>>();
+    let record_counts =
+        data.records
+            .iter()
+            .fold(HashMap::<&str, u64>::new(), |mut counts, record| {
+                *counts.entry(record.token.as_str()).or_default() += 1;
+                if !type_keys.contains(&(
+                    record.token.as_str(),
+                    record.type_index,
+                    record.type_id.as_str(),
+                )) {
+                    findings.push(finding(
+                        Check::NativeLinks,
+                        "Inventor RSe record type does not resolve in its metadata table".into(),
+                        Some(record.id.clone()),
+                    ));
+                }
+                counts
+            });
+    unique(
+        findings,
+        data.records
+            .iter()
+            .map(|record| (record.token.as_str(), record.ordinal)),
+        "segment record ordinal",
+    );
+    for bulk in &data.bulk {
+        if bulk.record_state == "framed" {
+            if bulk.record_count != record_counts.get(bulk.token.as_str()).copied().unwrap_or(0)
+                || bulk.stream_trailer_len.is_none()
+                || bulk.stream_trailer_sha256.is_none()
+                || bulk.record_detail.is_some()
+                || bulk.expanded_len.is_none()
+                || bulk.expanded_sha256.is_none()
+            {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor bulk record summary does not match its record arena".into(),
+                    Some(bulk.id.clone()),
+                ));
+            }
+        } else if bulk.record_state == "unavailable" {
+            findings.push(finding(
+                Check::NativeLinks,
+                format!(
+                    "Inventor bulk records are unavailable: {}",
+                    bulk.record_detail.as_deref().unwrap_or("no detail")
+                ),
+                Some(bulk.id.clone()),
+            ));
+        } else if bulk.record_state == "not_expanded" {
+            if bulk.expanded_len.is_some()
+                || bulk.expanded_sha256.is_some()
+                || bulk.record_count != 0
+                || bulk.stream_trailer_len.is_some()
+                || bulk.stream_trailer_sha256.is_some()
+                || bulk.record_detail.is_some()
+            {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor unexpanded bulk state fields are inconsistent".into(),
+                    Some(bulk.id.clone()),
+                ));
+            }
+        } else {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor bulk record state is invalid".into(),
+                Some(bulk.id.clone()),
+            ));
+        }
+    }
+    let expanded_lengths = data
+        .bulk
+        .iter()
+        .filter_map(|bulk| {
+            bulk.expanded_len
+                .map(|length| (bulk.token.as_str(), length))
+        })
+        .collect::<HashMap<_, _>>();
+    for record in &data.records {
+        let end = record.payload_offset.checked_add(record.payload_len);
+        if end.is_none_or(|end| {
+            end > expanded_lengths
+                .get(record.token.as_str())
+                .copied()
+                .unwrap_or(0)
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor RSe record payload range exceeds its bulk stream".into(),
+                Some(record.id.clone()),
+            ));
+        }
+    }
     for record in &data.unpaired {
         if pair_tokens.contains(record.token.as_str()) {
             findings.push(finding(

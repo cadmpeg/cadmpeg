@@ -9,29 +9,36 @@ use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, Severity, TransferLedger};
 use cadmpeg_ir::units::Units;
-use cadmpeg_ir::SourceFidelity;
+use cadmpeg_ir::{SourceFidelity, UnknownRecord};
 
 use crate::container::{ContainerPurpose, InventorContainer};
 use crate::database::{RevisionPayload, VersionTuple};
 use crate::external_reference::UfrxState;
+use crate::kernel::ActiveCarrierState;
 use crate::native::{
-    DatabaseIssueRecord, DatabaseRecord, ExternalReferenceRecord, PropertyRecord,
+    ActiveCarrierRecord, ActiveCarrierRecordState, DatabaseIssueRecord, DatabaseRecord,
+    ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord, PropertyRecord,
     PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, ProteinEntryRecord,
-    ProteinRecord, ProteinRecordState, RevisionRecord, SegmentBulkIssueRecord, SegmentBulkRecord,
-    SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord,
-    StorageBandRecord, StructuralIssueRecord, UfrxRecord, UfrxRecordState, UnpairedSegmentRecord,
-    VersionTupleRecord, INVENTOR_NATIVE_VERSION,
+    ProteinRecord, ProteinRecordState, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
+    SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
+    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UfrxRecord, UfrxRecordState,
+    UnpairedSegmentRecord, VersionTupleRecord, INVENTOR_NATIVE_VERSION,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
-use crate::rse::{DocumentKind, ParsedState, SegmentBulkState, SegmentMetaState};
+use crate::rse::{DocumentKind, ParsedState, RecordFrameState, SegmentBulkState, SegmentMetaState};
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
-    let container = InventorContainer::open(ctx, root, ContainerPurpose::Decode)?;
+    let purpose = if ctx.container_only() {
+        ContainerPurpose::Inspect
+    } else {
+        ContainerPurpose::Decode
+    };
+    let container = InventorContainer::open(ctx, root, purpose)?;
     let mut ir = CadIr::empty(Units::default());
     let mut attributes = BTreeMap::new();
     attributes.insert(
@@ -455,14 +462,69 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 kind: segment.kind.label().into(),
                 display_name: meta.display_name.clone(),
                 segment_id: hex(&meta.segment_id),
-                header_words: meta.header_words,
+                header_values: meta.header_values,
                 state_words: meta.state_words,
                 created: meta.created.clone(),
                 modified: meta.modified.clone(),
                 body_form: meta.body_form,
                 expanded_body_len: meta.body.window().len() as u64,
                 expanded_body_sha256: sha256_hex(meta.body.window()),
+                table_prefix: meta.tables.prefix,
+                block_count: meta.tables.blocks.len() as u64,
+                type_count: meta.tables.types.len() as u64,
+                terminal_id: hex(&meta.tables.terminal_id),
             })
+        })
+        .collect::<Vec<_>>();
+    let meta_sections = container
+        .rse
+        .segments
+        .iter()
+        .flat_map(|segment| {
+            let SegmentMetaState::Parsed(meta) = &segment.meta else {
+                return Vec::new();
+            };
+            meta.tables
+                .sections
+                .iter()
+                .map(|section| MetaSectionRecord {
+                    id: format!(
+                        "inventor:rse:meta-section#{}-{}",
+                        segment.pair.token.as_str(),
+                        section.number
+                    ),
+                    token: segment.pair.token.as_str().into(),
+                    number: section.number,
+                    discriminator: section.discriminator,
+                    payload_len: section.payload.window().len() as u64,
+                    payload_sha256: sha256_hex(section.payload.window()),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let meta_types = container
+        .rse
+        .segments
+        .iter()
+        .flat_map(|segment| {
+            let SegmentMetaState::Parsed(meta) = &segment.meta else {
+                return Vec::new();
+            };
+            meta.tables
+                .types
+                .iter()
+                .map(|descriptor| MetaTypeRecord {
+                    id: format!(
+                        "inventor:rse:meta-type#{}-{}",
+                        segment.pair.token.as_str(),
+                        descriptor.index
+                    ),
+                    token: segment.pair.token.as_str().into(),
+                    index: descriptor.index,
+                    type_id: hex(&descriptor.id),
+                    fields: descriptor.fields,
+                })
+                .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
     let segment_meta_issues = container
@@ -489,6 +551,41 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             })
         })
         .collect::<Vec<_>>();
+    let rse_records = container
+        .rse
+        .segments
+        .iter()
+        .flat_map(|segment| {
+            let SegmentBulkState::Framed(bulk) = &segment.bulk else {
+                return Vec::new();
+            };
+            let RecordFrameState::Framed(table) = &bulk.records else {
+                return Vec::new();
+            };
+            table
+                .records
+                .iter()
+                .map(|record| RseRecordRecord {
+                    id: format!(
+                        "inventor:rse:record#{}-{}",
+                        segment.pair.token.as_str(),
+                        record.ordinal
+                    ),
+                    token: segment.pair.token.as_str().into(),
+                    ordinal: record.ordinal,
+                    selector: record.selector,
+                    type_index: record.type_index,
+                    type_id: hex(&record.type_id),
+                    payload_offset: record.payload_offset,
+                    payload_len: record.declared_payload_len as u64,
+                    payload_sha256: sha256_hex(record.payload.window()),
+                    trailing_payload_len: record.trailing_payload_len,
+                    trailer_len: record.trailer.window().len() as u64,
+                    trailer_sha256: sha256_hex(record.trailer.window()),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
     let segment_bulk = container
         .rse
         .segments
@@ -497,9 +594,25 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             let SegmentBulkState::Framed(bulk) = &segment.bulk else {
                 return None;
             };
-            let expanded = bulk
-                .expanded
-                .expect("decode-purpose container expands every framed bulk stream");
+            let (
+                record_state,
+                record_count,
+                stream_trailer_len,
+                stream_trailer_sha256,
+                record_detail,
+            ) = match &bulk.records {
+                RecordFrameState::NotExpanded => ("not_expanded", 0, None, None, None),
+                RecordFrameState::Framed(table) => (
+                    "framed",
+                    table.records.len() as u64,
+                    Some(table.stream_trailer.window().len() as u64),
+                    Some(sha256_hex(table.stream_trailer.window())),
+                    None,
+                ),
+                RecordFrameState::Unavailable(detail) => {
+                    ("unavailable", 0, None, None, Some(detail.clone()))
+                }
+            };
             Some(SegmentBulkRecord {
                 id: format!("inventor:rse:segment-bulk#{}", segment.pair.token.as_str()),
                 token: segment.pair.token.as_str().into(),
@@ -507,8 +620,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 form: bulk.form.value(),
                 compressed_len: bulk.compressed.window().len() as u64,
                 compressed_sha256: sha256_hex(bulk.compressed.window()),
-                expanded_len: expanded.window().len() as u64,
-                expanded_sha256: sha256_hex(expanded.window()),
+                expanded_len: bulk.expanded.map(|view| view.window().len() as u64),
+                expanded_sha256: bulk.expanded.map(|view| sha256_hex(view.window())),
+                record_state: record_state.into(),
+                record_count,
+                stream_trailer_len,
+                stream_trailer_sha256,
+                record_detail,
             })
         })
         .collect::<Vec<_>>();
@@ -551,6 +669,88 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 }),
         )
         .collect::<Vec<_>>();
+    let active_carrier = match &container.rse.active_carrier {
+        ActiveCarrierState::NotApplicable => ActiveCarrierRecord {
+            id: "inventor:kernel:active-carrier#root".into(),
+            state: ActiveCarrierRecordState::NotApplicable,
+            segment_token: None,
+            record_ordinal: None,
+            segment_version_major: None,
+            family: None,
+            header_state: None,
+            header_kind: None,
+            header_value: None,
+            schema: None,
+            carrier_len: None,
+            carrier_offset: None,
+            carrier_sha256: None,
+            selected_key: None,
+            enabled: None,
+            delta_state: None,
+            history_reference: None,
+            detail: None,
+        },
+        ActiveCarrierState::NotExpanded => ActiveCarrierRecord {
+            id: "inventor:kernel:active-carrier#root".into(),
+            state: ActiveCarrierRecordState::NotExpanded,
+            segment_token: None,
+            record_ordinal: None,
+            segment_version_major: None,
+            family: None,
+            header_state: None,
+            header_kind: None,
+            header_value: None,
+            schema: None,
+            carrier_len: None,
+            carrier_offset: None,
+            carrier_sha256: None,
+            selected_key: None,
+            enabled: None,
+            delta_state: None,
+            history_reference: None,
+            detail: None,
+        },
+        ActiveCarrierState::Unavailable(detail) => ActiveCarrierRecord {
+            id: "inventor:kernel:active-carrier#root".into(),
+            state: ActiveCarrierRecordState::Unavailable,
+            segment_token: None,
+            record_ordinal: None,
+            segment_version_major: None,
+            family: None,
+            header_state: None,
+            header_kind: None,
+            header_value: None,
+            schema: None,
+            carrier_len: None,
+            carrier_offset: None,
+            carrier_sha256: None,
+            selected_key: None,
+            enabled: None,
+            delta_state: None,
+            history_reference: None,
+            detail: Some(detail.clone()),
+        },
+        ActiveCarrierState::Selected(carrier) => ActiveCarrierRecord {
+            id: "inventor:kernel:active-carrier#root".into(),
+            state: ActiveCarrierRecordState::Selected,
+            segment_token: Some(carrier.segment_token.clone()),
+            record_ordinal: Some(carrier.record_ordinal),
+            segment_version_major: Some(carrier.segment_version_major),
+            family: Some(carrier.family.label().into()),
+            header_state: Some(carrier.header_state),
+            header_kind: Some(carrier.header_kind),
+            header_value: Some(carrier.header_value),
+            schema: Some(carrier.schema),
+            carrier_len: Some(carrier.bytes.window().len() as u64),
+            carrier_offset: Some(carrier.carrier_offset),
+            carrier_sha256: Some(sha256_hex(carrier.bytes.window())),
+            selected_key: Some(carrier.selected_key),
+            enabled: Some(carrier.enabled),
+            delta_state: Some(carrier.delta_state),
+            history_reference: Some(carrier.history_reference),
+            detail: None,
+        },
+    };
     ctx.charge_collection_items(
         storage_bands
             .len()
@@ -561,8 +761,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .saturating_add(revisions.len())
             .saturating_add(structural_issues.len())
             .saturating_add(segment_meta.len())
+            .saturating_add(meta_sections.len())
+            .saturating_add(meta_types.len())
             .saturating_add(segment_meta_issues.len())
             .saturating_add(segment_bulk.len())
+            .saturating_add(rse_records.len())
             .saturating_add(segment_bulk_issues.len())
             .saturating_add(property_sets.len())
             .saturating_add(property_sections.len())
@@ -572,7 +775,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .saturating_add(protein_entries.len())
             .saturating_add(1)
             .saturating_add(external_references.len())
-            .saturating_add(unpaired_segments.len()) as u64,
+            .saturating_add(unpaired_segments.len())
+            .saturating_add(1) as u64,
         "retain Inventor native structural records",
     )?;
     let namespace = ir.native.namespace_mut("inventor");
@@ -593,24 +797,47 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     namespace.set_arena("external_references", &external_references)?;
     namespace.set_arena("segment_pairs", &segment_pairs)?;
     namespace.set_arena("segment_meta", &segment_meta)?;
+    namespace.set_arena("meta_sections", &meta_sections)?;
+    namespace.set_arena("meta_types", &meta_types)?;
     namespace.set_arena("segment_meta_issues", &segment_meta_issues)?;
     namespace.set_arena("segment_bulk", &segment_bulk)?;
+    namespace.set_arena("rse_records", &rse_records)?;
     namespace.set_arena("segment_bulk_issues", &segment_bulk_issues)?;
     namespace.set_arena("unpaired_segments", &unpaired_segments)?;
+    namespace.set_arena("active_carrier", std::slice::from_ref(&active_carrier))?;
     let mut losses = Vec::new();
     if ctx.container_only() {
         losses.push(LossNote::new(
             LossKind::ContainerOnly,
             "Container-only decode was requested.",
         ));
-    } else {
+    } else if !matches!(document_kind, DocumentKind::Assembly) {
+        let detail = match &container.rse.active_carrier {
+            ActiveCarrierState::Selected(carrier)
+                if carrier.family == crate::kernel::KernelFamily::Acis =>
+            {
+                "The typed active ACIS carrier is retained, but binary ACIS transfer is not implemented."
+                    .into()
+            }
+            ActiveCarrierState::Selected(_) => {
+                "The typed active ASM carrier has not been transferred.".into()
+            }
+            ActiveCarrierState::Unavailable(detail) => {
+                format!("The active Inventor kernel carrier is unavailable: {detail}")
+            }
+            ActiveCarrierState::NotApplicable => {
+                "Inventor geometry is not available for this document kind.".into()
+            }
+            ActiveCarrierState::NotExpanded => {
+                unreachable!("non-container decode expands RSe bulk streams")
+            }
+        };
         losses.push(
-            LossNote::new(
-                LossKind::GeometryNotTransferred,
-                "Inventor RSe geometry records have not been transferred.",
-            )
-            .with_severity(Severity::Blocking),
+            LossNote::new(LossKind::GeometryNotTransferred, detail)
+                .with_severity(Severity::Blocking),
         );
+    }
+    if !ctx.container_only() {
         if !segment_pairs.is_empty() {
             losses.push(LossNote::new(
                 LossKind::RecordNotTyped,
@@ -620,65 +847,64 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 ),
             ));
         }
-    }
-    if !segment_meta_issues.is_empty() {
-        losses.push(LossNote::new(
-            LossKind::DecodeDiagnostic,
-            format!(
-                "{} RSe metadata stream(s) are malformed or outside the implemented envelope.",
-                segment_meta_issues.len()
-            ),
-        ));
-    }
-    if !segment_bulk_issues.is_empty() {
-        losses.push(LossNote::new(
-            LossKind::DecodeDiagnostic,
-            format!(
-                "{} RSe bulk stream(s) have invalid envelope or zlib framing.",
-                segment_bulk_issues.len()
-            ),
-        ));
-    }
-    if !container.rse.unpaired_metadata.is_empty() || !container.rse.unpaired_bulk.is_empty() {
-        losses.push(LossNote::new(
-            LossKind::DecodeDiagnostic,
-            format!(
-                "RSe contains {} unpaired metadata stream(s) and {} unpaired bulk stream(s).",
-                container.rse.unpaired_metadata.len(),
-                container.rse.unpaired_bulk.len()
-            ),
-        ));
-    }
-    if !property_set_issues.is_empty() {
-        losses.push(LossNote::new(
-            LossKind::DecodeDiagnostic,
-            format!(
-                "{} OLE property-set stream(s) are malformed.",
-                property_set_issues.len()
-            ),
-        ));
-    }
-    if metadata.unmapped != 0 {
-        losses.push(LossNote::new(
-            LossKind::MetadataNotTransferred,
-            format!(
-                "Retained {} property value(s) without neutral metadata mapping.",
-                metadata.unmapped
-            ),
-        ));
-    }
-    match &container.protein {
-        ProteinState::Package(_) => losses.push(LossNote::new(
-            LossKind::MaterialNotTransferred,
-            "The Protein package inventory is retained without material or appearance binding.",
-        )),
-        ProteinState::Malformed { .. } => losses.push(LossNote::new(
-            LossKind::DecodeDiagnostic,
-            "The Inventor Protein stream is malformed.",
-        )),
-        ProteinState::Absent | ProteinState::Empty { .. } => {}
-    }
-    match &container.ufrx {
+        if !segment_meta_issues.is_empty() {
+            losses.push(LossNote::new(
+                LossKind::DecodeDiagnostic,
+                format!(
+                    "{} RSe metadata stream(s) are malformed or outside the implemented envelope.",
+                    segment_meta_issues.len()
+                ),
+            ));
+        }
+        if !segment_bulk_issues.is_empty() {
+            losses.push(LossNote::new(
+                LossKind::DecodeDiagnostic,
+                format!(
+                    "{} RSe bulk stream(s) have invalid envelope or zlib framing.",
+                    segment_bulk_issues.len()
+                ),
+            ));
+        }
+        if !container.rse.unpaired_metadata.is_empty() || !container.rse.unpaired_bulk.is_empty() {
+            losses.push(LossNote::new(
+                LossKind::DecodeDiagnostic,
+                format!(
+                    "RSe contains {} unpaired metadata stream(s) and {} unpaired bulk stream(s).",
+                    container.rse.unpaired_metadata.len(),
+                    container.rse.unpaired_bulk.len()
+                ),
+            ));
+        }
+        if !property_set_issues.is_empty() {
+            losses.push(LossNote::new(
+                LossKind::DecodeDiagnostic,
+                format!(
+                    "{} OLE property-set stream(s) are malformed.",
+                    property_set_issues.len()
+                ),
+            ));
+        }
+        if metadata.unmapped != 0 {
+            losses.push(LossNote::new(
+                LossKind::MetadataNotTransferred,
+                format!(
+                    "Retained {} property value(s) without neutral metadata mapping.",
+                    metadata.unmapped
+                ),
+            ));
+        }
+        match &container.protein {
+            ProteinState::Package(_) => losses.push(LossNote::new(
+                LossKind::MaterialNotTransferred,
+                "The Protein package inventory is retained without material or appearance binding.",
+            )),
+            ProteinState::Malformed { .. } => losses.push(LossNote::new(
+                LossKind::DecodeDiagnostic,
+                "The Inventor Protein stream is malformed.",
+            )),
+            ProteinState::Absent | ProteinState::Empty { .. } => {}
+        }
+        match &container.ufrx {
         UfrxState::Malformed { .. } => losses.push(LossNote::new(
             LossKind::DecodeDiagnostic,
             "The UFRxDoc external-reference table is malformed or outside the implemented schema.",
@@ -695,9 +921,35 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             }
         }
         UfrxState::Absent | UfrxState::Parsed(_) => {}
+        }
     }
     ctx.charge_entities(ir.model.entity_count() as u64, "admit Inventor entities")?;
     let preview_asset_count = ir.model.assets.len();
+    let mut source_fidelity = SourceFidelity::default();
+    if let ActiveCarrierState::Selected(carrier) = &container.rse.active_carrier {
+        if carrier.family == crate::kernel::KernelFamily::Acis {
+            let data = ctx.copy_retained(
+                carrier.bytes.window(),
+                "retain unsupported Inventor ACIS carrier",
+                Some(carrier.bytes.location()),
+            )?;
+            source_fidelity.retain_unknown_records(
+                &format!("RSeStorage/B{}:expanded", carrier.segment_token),
+                [UnknownRecord {
+                    id: UnknownId(format!(
+                        "inventor:kernel:carrier#{}-{}",
+                        carrier.segment_token, carrier.record_ordinal
+                    )),
+                    offset: carrier.carrier_offset,
+                    byte_len: carrier.bytes.window().len() as u64,
+                    sha256: sha256_hex(carrier.bytes.window()),
+                    data: Some(data),
+                    links: vec![active_carrier.id.clone()],
+                }],
+            );
+        }
+    }
+    source_fidelity.finalize();
     Ok(DecodeResult::new(
         ir,
         DecodeReport {
@@ -711,20 +963,29 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 ("rse_revisions".into(), revisions.len()),
                 ("rse_segment_pairs".into(), segment_pairs.len()),
                 ("rse_segment_meta".into(), segment_meta.len()),
+                ("rse_meta_types".into(), meta_types.len()),
                 ("rse_segment_meta_issues".into(), segment_meta_issues.len()),
                 ("rse_segment_bulk".into(), segment_bulk.len()),
+                ("rse_records".into(), rse_records.len()),
                 ("rse_segment_bulk_issues".into(), segment_bulk_issues.len()),
                 ("property_sets".into(), property_sets.len()),
                 ("properties".into(), properties.len()),
                 ("preview_assets".into(), preview_asset_count),
                 ("protein_entries".into(), protein_entries.len()),
                 ("external_references".into(), external_references.len()),
+                (
+                    "active_kernel_carriers".into(),
+                    usize::from(matches!(
+                        &container.rse.active_carrier,
+                        ActiveCarrierState::Selected(_)
+                    )),
+                ),
             ]),
             losses,
             notes: Vec::new(),
             transfer_ledger: TransferLedger::default(),
         },
-        SourceFidelity::default(),
+        source_fidelity,
     ))
 }
 

@@ -8,9 +8,11 @@ mod container;
 mod database;
 mod decode;
 mod external_reference;
+mod kernel;
 mod native;
 mod property_set;
 mod protein;
+mod records;
 mod rse;
 mod validate;
 

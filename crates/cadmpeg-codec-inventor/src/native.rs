@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Current Inventor native namespace version.
-pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 5;
+pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 7;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct VersionTupleRecord {
@@ -210,13 +210,36 @@ pub(crate) struct SegmentMetaRecord {
     pub(crate) kind: String,
     pub(crate) display_name: String,
     pub(crate) segment_id: String,
-    pub(crate) header_words: [u32; 4],
+    pub(crate) header_values: [u16; 8],
     pub(crate) state_words: [u32; 3],
     pub(crate) created: String,
     pub(crate) modified: String,
     pub(crate) body_form: u8,
     pub(crate) expanded_body_len: u64,
     pub(crate) expanded_body_sha256: String,
+    pub(crate) table_prefix: [u16; 7],
+    pub(crate) block_count: u64,
+    pub(crate) type_count: u64,
+    pub(crate) terminal_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct MetaSectionRecord {
+    pub(crate) id: String,
+    pub(crate) token: String,
+    pub(crate) number: u8,
+    pub(crate) discriminator: u32,
+    pub(crate) payload_len: u64,
+    pub(crate) payload_sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct MetaTypeRecord {
+    pub(crate) id: String,
+    pub(crate) token: String,
+    pub(crate) index: u8,
+    pub(crate) type_id: String,
+    pub(crate) fields: [(u16, u32); 2],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -235,8 +258,60 @@ pub(crate) struct SegmentBulkRecord {
     pub(crate) form: u16,
     pub(crate) compressed_len: u64,
     pub(crate) compressed_sha256: String,
-    pub(crate) expanded_len: u64,
-    pub(crate) expanded_sha256: String,
+    pub(crate) expanded_len: Option<u64>,
+    pub(crate) expanded_sha256: Option<String>,
+    pub(crate) record_state: String,
+    pub(crate) record_count: u64,
+    pub(crate) stream_trailer_len: Option<u64>,
+    pub(crate) stream_trailer_sha256: Option<String>,
+    pub(crate) record_detail: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct RseRecordRecord {
+    pub(crate) id: String,
+    pub(crate) token: String,
+    pub(crate) ordinal: u32,
+    pub(crate) selector: u32,
+    pub(crate) type_index: u8,
+    pub(crate) type_id: String,
+    pub(crate) payload_offset: u64,
+    pub(crate) payload_len: u64,
+    pub(crate) payload_sha256: String,
+    pub(crate) trailing_payload_len: u32,
+    pub(crate) trailer_len: u64,
+    pub(crate) trailer_sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct ActiveCarrierRecord {
+    pub(crate) id: String,
+    pub(crate) state: ActiveCarrierRecordState,
+    pub(crate) segment_token: Option<String>,
+    pub(crate) record_ordinal: Option<u32>,
+    pub(crate) segment_version_major: Option<u8>,
+    pub(crate) family: Option<String>,
+    pub(crate) header_state: Option<u32>,
+    pub(crate) header_kind: Option<u16>,
+    pub(crate) header_value: Option<u32>,
+    pub(crate) schema: Option<u32>,
+    pub(crate) carrier_len: Option<u64>,
+    pub(crate) carrier_offset: Option<u64>,
+    pub(crate) carrier_sha256: Option<String>,
+    pub(crate) selected_key: Option<u32>,
+    pub(crate) enabled: Option<bool>,
+    pub(crate) delta_state: Option<i32>,
+    pub(crate) history_reference: Option<u32>,
+    pub(crate) detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ActiveCarrierRecordState {
+    NotApplicable,
+    NotExpanded,
+    Selected,
+    Unavailable,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

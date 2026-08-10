@@ -63,7 +63,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
             .namespace("inventor")
             .expect("Inventor native namespace exists")
             .version,
-        5
+        7
     );
 
     let options = DecodeOptions {
@@ -82,6 +82,20 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
             .collect::<Vec<_>>(),
         [LossKind::ContainerOnly]
     );
+    let namespace = container_only
+        .ir
+        .native
+        .namespace("inventor")
+        .expect("Inventor native namespace exists");
+    let bulk = namespace
+        .arena_as::<crate::native::SegmentBulkRecord>("segment_bulk")
+        .expect("container-only bulk records retain their outer envelopes");
+    assert!(bulk.iter().all(|record| {
+        record.record_state == "not_expanded"
+            && record.expanded_len.is_none()
+            && record.expanded_sha256.is_none()
+    }));
+    assert!(container_only.source_fidelity.retained_records.is_empty());
 }
 
 fn fixture(inventor: bool) -> Vec<u8> {

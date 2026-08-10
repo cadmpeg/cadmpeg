@@ -12,6 +12,8 @@ use crate::database::{
     parse_database, parse_registry, parse_revisions, RevisionTable, RseDatabase, RseSchema,
     SegmentRegistry,
 };
+use crate::kernel::{select_active_carrier, ActiveCarrierState};
+use crate::records::{frame_bulk_records, parse_meta_tables, MetaTables, RseRecordTable};
 
 /// A validated `V<n>` storage-band number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -173,7 +175,7 @@ impl SegmentKind {
 #[derive(Debug)]
 pub(crate) struct SegmentMeta<'a> {
     pub(crate) version: MetaStreamVersion,
-    pub(crate) header_words: [u32; 4],
+    pub(crate) header_values: [u16; 8],
     pub(crate) display_name: String,
     pub(crate) segment_id: [u8; 16],
     pub(crate) state_words: [u32; 3],
@@ -181,11 +183,12 @@ pub(crate) struct SegmentMeta<'a> {
     pub(crate) modified: String,
     pub(crate) body_form: u8,
     pub(crate) body: View<'a>,
+    pub(crate) tables: MetaTables<'a>,
 }
 
 #[derive(Debug)]
 pub(crate) enum SegmentMetaState<'a> {
-    Parsed(SegmentMeta<'a>),
+    Parsed(Box<SegmentMeta<'a>>),
     Unsupported { marker: String, version: u16 },
     Malformed(String),
 }
@@ -194,6 +197,7 @@ pub(crate) enum SegmentMetaState<'a> {
 pub(crate) struct SegmentDescriptor<'a> {
     pub(crate) pair: SegmentPair,
     pub(crate) registry_index: Option<usize>,
+    pub(crate) registry_version_major: Option<u8>,
     pub(crate) kind: SegmentKind,
     pub(crate) identity_issues: Vec<String>,
     pub(crate) meta: SegmentMetaState<'a>,
@@ -221,6 +225,14 @@ pub(crate) struct SegmentBulk<'a> {
     pub(crate) form: BulkForm,
     pub(crate) compressed: View<'a>,
     pub(crate) expanded: Option<View<'a>>,
+    pub(crate) records: RecordFrameState<'a>,
+}
+
+#[derive(Debug)]
+pub(crate) enum RecordFrameState<'a> {
+    NotExpanded,
+    Framed(RseRecordTable<'a>),
+    Unavailable(String),
 }
 
 #[derive(Debug)]
@@ -252,6 +264,7 @@ pub(crate) struct RseInventory<'a> {
     pub(crate) segments: Vec<SegmentDescriptor<'a>>,
     pub(crate) unpaired_metadata: Vec<SegmentToken>,
     pub(crate) unpaired_bulk: Vec<SegmentToken>,
+    pub(crate) active_carrier: ActiveCarrierState<'a>,
 }
 
 impl<'a> RseInventory<'a> {
@@ -366,6 +379,7 @@ impl<'a> RseInventory<'a> {
                 SegmentDescriptor {
                     pair,
                     registry_index: None,
+                    registry_version_major: None,
                     kind: SegmentKind::Unknown("unresolved".into()),
                     identity_issues: Vec::new(),
                     meta,
@@ -385,6 +399,7 @@ impl<'a> RseInventory<'a> {
                     .push("segment registry is unavailable".into());
             }
         }
+        frame_segment_records(ctx, &mut segments);
         let unpaired_metadata = metadata
             .keys()
             .filter(|token| !bulk.contains_key(*token))
@@ -395,6 +410,8 @@ impl<'a> RseInventory<'a> {
             .filter(|token| !metadata.contains_key(*token))
             .cloned()
             .collect();
+        let document_kind = document_kind_for_segments(&segments);
+        let active_carrier = select_active_carrier(&segments, &document_kind);
         Self {
             databases: database_descriptors,
             registry,
@@ -402,38 +419,43 @@ impl<'a> RseInventory<'a> {
             segments,
             unpaired_metadata,
             unpaired_bulk,
+            active_carrier,
         }
     }
 
     pub(crate) fn document_kind(&self) -> DocumentKind {
-        let has_part = self.segments.iter().any(|segment| {
-            matches!(
-                segment.kind,
-                SegmentKind::PmBRep
-                    | SegmentKind::PmDc
-                    | SegmentKind::PmGraphics
-                    | SegmentKind::PmApp
-                    | SegmentKind::PmBrowser
-                    | SegmentKind::PmResult
-            )
-        });
-        let has_assembly = self.segments.iter().any(|segment| {
-            matches!(
-                segment.kind,
-                SegmentKind::AmDc
-                    | SegmentKind::AmBRep
-                    | SegmentKind::AmGraphics
-                    | SegmentKind::AmApp
-                    | SegmentKind::AmBrowser
-                    | SegmentKind::AmRx
-            )
-        });
-        match (has_part, has_assembly) {
-            (true, false) => DocumentKind::Part,
-            (false, true) => DocumentKind::Assembly,
-            (true, true) => DocumentKind::Unknown("mixed_part_assembly".into()),
-            (false, false) => DocumentKind::Unknown("unknown".into()),
-        }
+        document_kind_for_segments(&self.segments)
+    }
+}
+
+fn document_kind_for_segments(segments: &[SegmentDescriptor<'_>]) -> DocumentKind {
+    let has_part = segments.iter().any(|segment| {
+        matches!(
+            segment.kind,
+            SegmentKind::PmBRep
+                | SegmentKind::PmDc
+                | SegmentKind::PmGraphics
+                | SegmentKind::PmApp
+                | SegmentKind::PmBrowser
+                | SegmentKind::PmResult
+        )
+    });
+    let has_assembly = segments.iter().any(|segment| {
+        matches!(
+            segment.kind,
+            SegmentKind::AmDc
+                | SegmentKind::AmBRep
+                | SegmentKind::AmGraphics
+                | SegmentKind::AmApp
+                | SegmentKind::AmBrowser
+                | SegmentKind::AmRx
+        )
+    });
+    match (has_part, has_assembly) {
+        (true, false) => DocumentKind::Part,
+        (false, true) => DocumentKind::Assembly,
+        (true, true) => DocumentKind::Unknown("mixed_part_assembly".into()),
+        (false, false) => DocumentKind::Unknown("unknown".into()),
     }
 }
 
@@ -472,6 +494,7 @@ fn join_registry(segments: &mut [SegmentDescriptor<'_>], registry: &SegmentRegis
             continue;
         };
         segment.registry_index = Some(*index);
+        segment.registry_version_major = Some(entry.version.major);
         segment.kind = SegmentKind::classify(&entry.display_name, Some(&entry.type_name));
         if entry.display_name != meta.display_name {
             segment.identity_issues.push(format!(
@@ -511,7 +534,34 @@ fn parse_bulk_stream<'a>(
         form,
         compressed,
         expanded,
+        records: RecordFrameState::NotExpanded,
     })
+}
+
+fn frame_segment_records<'a>(ctx: &DecodeContext<'a>, segments: &mut [SegmentDescriptor<'a>]) {
+    for segment in segments {
+        let SegmentBulkState::Framed(bulk) = &mut segment.bulk else {
+            continue;
+        };
+        let Some(expanded) = bulk.expanded else {
+            continue;
+        };
+        let result = match (&segment.meta, segment.registry_version_major) {
+            (SegmentMetaState::Parsed(meta), Some(version)) => {
+                frame_bulk_records(ctx, expanded, &meta.tables, version)
+            }
+            (SegmentMetaState::Parsed(_), None) => Err(CodecError::Malformed(
+                "RSe record framing requires the segment registry version".into(),
+            )),
+            _ => Err(CodecError::Malformed(
+                "RSe record framing requires parsed segment metadata".into(),
+            )),
+        };
+        bulk.records = match result {
+            Ok(records) => RecordFrameState::Framed(records),
+            Err(error) => RecordFrameState::Unavailable(error.to_string()),
+        };
+    }
 }
 
 fn parse_meta_stream_v8<'a>(
@@ -524,7 +574,7 @@ fn parse_meta_stream_v8<'a>(
     if marker != "RSe Meta Stream Version 8" || version != 8 {
         return Ok(SegmentMetaState::Unsupported { marker, version });
     }
-    let header_words = cursor.u32_array("header words")?;
+    let header_values = cursor.u16_array("header values")?;
     let display_name = cursor.length_prefixed_utf16("display name")?;
     let mut segment_id = [0; 16];
     segment_id.copy_from_slice(cursor.take(16, "segment id")?);
@@ -541,9 +591,10 @@ fn parse_meta_stream_v8<'a>(
         .child(source.start() + cursor.position, source.end())
         .ok_or_else(|| CodecError::Malformed("RSe metadata body range is invalid".into()))?;
     let body = inflate_zlib_exact(ctx, compressed)?;
-    Ok(SegmentMetaState::Parsed(SegmentMeta {
+    let tables = parse_meta_tables(ctx, body)?;
+    Ok(SegmentMetaState::Parsed(Box::new(SegmentMeta {
         version: MetaStreamVersion(version),
-        header_words,
+        header_values,
         display_name,
         segment_id,
         state_words,
@@ -551,7 +602,8 @@ fn parse_meta_stream_v8<'a>(
         modified,
         body_form,
         body,
-    }))
+        tables,
+    })))
 }
 
 struct MetaCursor<'a> {
@@ -604,6 +656,14 @@ impl<'a> MetaCursor<'a> {
         let mut values = [0; N];
         for value in &mut values {
             *value = self.u32(what)?;
+        }
+        Ok(values)
+    }
+
+    fn u16_array<const N: usize>(&mut self, what: &str) -> Result<[u16; N], CodecError> {
+        let mut values = [0; N];
+        for value in &mut values {
+            *value = self.u16(what)?;
         }
         Ok(values)
     }
@@ -687,11 +747,12 @@ mod tests {
             panic!("version-eight metadata state")
         };
         assert_eq!(meta.version.value(), 8);
-        assert_eq!(meta.header_words, [1, 2, 3, 4]);
+        assert_eq!(meta.header_values, [1, 0, 2, 0, 3, 0, 4, 0]);
         assert_eq!(meta.display_name, "PmBRepSegment");
         assert_eq!(meta.segment_id, [0x5a; 16]);
         assert_eq!(meta.state_words, [5, 6, 7]);
-        assert_eq!(meta.body.window(), b"typed metadata body");
+        assert_eq!(meta.tables.blocks.len(), 2);
+        assert_eq!(meta.tables.types.len(), 1);
     }
 
     #[test]
@@ -748,7 +809,7 @@ mod tests {
         bytes.push(1);
         let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
         encoder
-            .write_all(b"typed metadata body")
+            .write_all(&crate::records::synthetic_meta_table_body())
             .expect("write synthetic zlib body");
         bytes.extend_from_slice(&encoder.finish().expect("finish synthetic zlib body"));
         if suffix {
