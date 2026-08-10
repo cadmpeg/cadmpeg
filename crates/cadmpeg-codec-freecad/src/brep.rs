@@ -1673,7 +1673,7 @@ fn parse_binary_surface(
                     weights.push(cursor.f64("binary B-spline surface weight")?);
                 }
             }
-            TextSurface::Nurbs(NurbsSurface {
+            TextSurface::Nurbs(normalize_periodic_surface(NurbsSurface {
                 u_degree,
                 v_degree,
                 u_knots: cursor.expanded_knots(u_knot_count, "binary B-spline u knots")?,
@@ -1688,7 +1688,7 @@ fn parse_binary_surface(
                 weights,
                 u_periodic,
                 v_periodic,
-            })
+            })?)
         }
         10 => TextSurface::Trimmed {
             parameter_ranges: [
@@ -1829,6 +1829,8 @@ fn parse_binary_curve(
                 }
             }
             let knots = cursor.expanded_knots(knot_count, "binary B-spline")?;
+            let (knots, padding) = normalize_periodic_knots(knots, degree, periodic)?;
+            append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
             TextCurve::Nurbs(NurbsCurve {
                 degree,
                 knots,
@@ -3274,7 +3276,7 @@ fn parse_nurbs_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, Cod
     }
     let u_knots = parse_knots(cursor, u_knot_count, u_degree, "B-spline u")?;
     let v_knots = parse_knots(cursor, v_knot_count, v_degree, "B-spline v")?;
-    Ok(NurbsSurface {
+    normalize_periodic_surface(NurbsSurface {
         u_degree: u_degree as u32,
         v_degree: v_degree as u32,
         u_knots,
@@ -3341,6 +3343,154 @@ fn parse_knots(
         knots.resize(expanded, knot);
     }
     Ok(knots)
+}
+
+fn normalize_periodic_knots(
+    knots: Vec<f64>,
+    degree: u32,
+    periodic: bool,
+) -> Result<(Vec<f64>, usize), CodecError> {
+    if !periodic {
+        return Ok((knots, 0));
+    }
+    let degree = usize::try_from(degree)
+        .map_err(|_| CodecError::Malformed("periodic B-spline degree exceeds usize".into()))?;
+    let Some(&first) = knots.first() else {
+        return Err(CodecError::Malformed(
+            "periodic B-spline has no knots".into(),
+        ));
+    };
+    let last = *knots.last().expect("nonempty periodic knot vector");
+    let first_multiplicity = knots.iter().take_while(|knot| **knot == first).count();
+    let last_multiplicity = knots.iter().rev().take_while(|knot| **knot == last).count();
+    if first_multiplicity == 0
+        || first_multiplicity > degree
+        || last_multiplicity != first_multiplicity
+        || !first.is_finite()
+        || !last.is_finite()
+        || first >= last
+    {
+        return Err(CodecError::Malformed(
+            "periodic B-spline endpoint knots are invalid".into(),
+        ));
+    }
+    let padding = degree + 1 - first_multiplicity;
+    let before_last = knots.len().checked_sub(last_multiplicity).ok_or_else(|| {
+        CodecError::Malformed("periodic B-spline knot cardinality underflow".into())
+    })?;
+    if before_last < padding || knots.len() - first_multiplicity < padding {
+        return Err(CodecError::Malformed(
+            "periodic B-spline has insufficient interior knots".into(),
+        ));
+    }
+    let period = last - first;
+    let mut normalized =
+        Vec::with_capacity(knots.len().checked_add(2 * padding).ok_or_else(|| {
+            CodecError::Malformed("periodic B-spline knot limit exceeded".into())
+        })?);
+    normalized.extend(
+        knots[before_last - padding..before_last]
+            .iter()
+            .map(|knot| knot - period),
+    );
+    normalized.extend_from_slice(&knots);
+    normalized.extend(
+        knots[first_multiplicity..first_multiplicity + padding]
+            .iter()
+            .map(|knot| knot + period),
+    );
+    Ok((normalized, padding))
+}
+
+fn append_periodic_curve_poles(
+    control_points: &mut Vec<Point3>,
+    weights: Option<&mut Vec<f64>>,
+    padding: usize,
+) -> Result<(), CodecError> {
+    if padding == 0 {
+        return Ok(());
+    }
+    if control_points.len() < padding {
+        return Err(CodecError::Malformed(
+            "periodic B-spline has insufficient poles".into(),
+        ));
+    }
+    control_points.extend_from_within(..padding);
+    if let Some(weights) = weights {
+        if weights.len() < padding {
+            return Err(CodecError::Malformed(
+                "periodic B-spline has insufficient weights".into(),
+            ));
+        }
+        weights.extend_from_within(..padding);
+    }
+    Ok(())
+}
+
+fn normalize_periodic_surface(mut surface: NurbsSurface) -> Result<NurbsSurface, CodecError> {
+    let (u_knots, u_padding) = normalize_periodic_knots(
+        std::mem::take(&mut surface.u_knots),
+        surface.u_degree,
+        surface.u_periodic,
+    )?;
+    let (v_knots, v_padding) = normalize_periodic_knots(
+        std::mem::take(&mut surface.v_knots),
+        surface.v_degree,
+        surface.v_periodic,
+    )?;
+    let old_u = usize::try_from(surface.u_count)
+        .map_err(|_| CodecError::Malformed("B-spline u pole count exceeds usize".into()))?;
+    let old_v = usize::try_from(surface.v_count)
+        .map_err(|_| CodecError::Malformed("B-spline v pole count exceeds usize".into()))?;
+    if old_u == 0 || old_v == 0 {
+        return Err(CodecError::Malformed(
+            "periodic B-spline pole grid is empty".into(),
+        ));
+    }
+    let new_u = old_u
+        .checked_add(u_padding)
+        .ok_or_else(|| CodecError::Malformed("periodic B-spline u pole limit exceeded".into()))?;
+    let new_v = old_v
+        .checked_add(v_padding)
+        .ok_or_else(|| CodecError::Malformed("periodic B-spline v pole limit exceeded".into()))?;
+    let new_count = new_u
+        .checked_mul(new_v)
+        .filter(|count| *count <= 2_000_000)
+        .ok_or_else(|| CodecError::Malformed("periodic B-spline pole limit exceeded".into()))?;
+    if surface.control_points.len() != old_u.saturating_mul(old_v)
+        || surface
+            .weights
+            .as_ref()
+            .is_some_and(|weights| weights.len() != surface.control_points.len())
+    {
+        return Err(CodecError::Malformed(
+            "periodic B-spline pole grid is invalid".into(),
+        ));
+    }
+    if u_padding != 0 || v_padding != 0 {
+        let old_points = std::mem::take(&mut surface.control_points);
+        let old_weights = surface.weights.take();
+        let mut points = Vec::with_capacity(new_count);
+        let mut weights = old_weights.as_ref().map(|_| Vec::with_capacity(new_count));
+        for u in 0..new_u {
+            for v in 0..new_v {
+                let source = (u % old_u) * old_v + v % old_v;
+                points.push(old_points[source]);
+                if let (Some(source_weights), Some(target_weights)) = (&old_weights, &mut weights) {
+                    target_weights.push(source_weights[source]);
+                }
+            }
+        }
+        surface.control_points = points;
+        surface.weights = weights;
+    }
+    surface.u_knots = u_knots;
+    surface.v_knots = v_knots;
+    surface.u_count = u32::try_from(new_u)
+        .map_err(|_| CodecError::Malformed("periodic B-spline u pole count exceeds u32".into()))?;
+    surface.v_count = u32::try_from(new_v)
+        .map_err(|_| CodecError::Malformed("periodic B-spline v pole count exceeds u32".into()))?;
+    Ok(surface)
 }
 
 fn parse_curves(
@@ -3491,6 +3641,8 @@ fn parse_nurbs_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecEr
         }
     }
     let knots = parse_knots(cursor, knot_count, degree, "B-spline")?;
+    let (knots, padding) = normalize_periodic_knots(knots, degree as u32, periodic)?;
+    append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
     Ok(NurbsCurve {
         degree: degree as u32,
         knots,
@@ -3626,6 +3778,46 @@ impl<'a> TokenCursor<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expands_occt_periodic_knots_and_cyclic_surface_poles() {
+        let surface = NurbsSurface {
+            u_degree: 3,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 6,
+            v_count: 2,
+            control_points: (0..6)
+                .flat_map(|u| {
+                    [
+                        Point3::new(f64::from(u), 0.0, 0.0),
+                        Point3::new(f64::from(u), 1.0, 0.0),
+                    ]
+                })
+                .collect(),
+            weights: None,
+            u_periodic: true,
+            v_periodic: false,
+        };
+
+        let normalized = normalize_periodic_surface(surface).expect("periodic surface");
+        assert_eq!(normalized.u_count, 7);
+        assert_eq!(
+            normalized.u_knots,
+            [-0.5, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.5]
+        );
+        assert_eq!(normalized.control_points.len(), 14);
+        assert_eq!(normalized.control_points[12], normalized.control_points[0]);
+        assert_eq!(normalized.control_points[13], normalized.control_points[1]);
+        let start = cadmpeg_ir::eval::nurbs_surface_point(&normalized, 0.0, 0.5)
+            .expect("periodic start point");
+        let end = cadmpeg_ir::eval::nurbs_surface_point(&normalized, 1.0, 0.5)
+            .expect("periodic end point");
+        assert!((start.x - end.x).abs() <= 1.0e-12);
+        assert!((start.y - end.y).abs() <= 1.0e-12);
+        assert!((start.z - end.z).abs() <= 1.0e-12);
+    }
 
     fn text_brep(curves: &str, curve_count: usize, surfaces: &str, surface_count: usize) -> String {
         format!(
