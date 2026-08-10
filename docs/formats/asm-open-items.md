@@ -142,6 +142,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** The decoder currently attaches the construction-chart pcurve directly to the solved NURBS support. This relation is invalid when the charts differ. We must retain or derive the exact chart map before the neutral support relation can be complete. A fitted map is not sufficient because it does not preserve the stored construction semantics.
 
+### GC-29. Ownership of multiple 3D curve cache blocks
+
+**Question.** Which 3D curve block is the writable cache when a carrier record contains multiple decodable blocks or supports more than one integer width?
+
+**Known.** `first_curve_patch_layout` scans the admitted integer widths and marker positions and accepts the first block that decodes. `final_curve_patch_layout` uses the final decodable block for a different caller. Neither function verifies a record-specific owner, cache role, or relationship between the selected block and the carrier subtype.
+
+**Need.** A record with more than one decodable 3D curve can make the writer patch a support or pcurve instead of the writable cache. We need an owner reference, subtype rule, or full-consumption invariant before the first-block selection can be used for writing.
+
 ## 2. Text encoding
 
 ### TE-01. Migration-flag words of a `gen-attrib` record in the text encoding

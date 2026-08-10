@@ -12,6 +12,8 @@ This document lists unknown Inventor byte semantics. [inventor.md](inventor.md) 
 
 **Need.** We must select one database without using path order or a save-version string.
 
+**Note.** `coherent_schema` ignores unavailable database candidates and takes the first parsed schema before checking the remaining parsed schemas. A malformed candidate can therefore be absent from the grammar decision; database identity and save state remain unselected.
+
 ### RS-02. Metadata sections 5 and 6
 
 **Question.** What item grammar and discriminator semantics apply to metadata sections 5 and 6?
@@ -36,6 +38,8 @@ This document lists unknown Inventor byte semantics. [inventor.md](inventor.md) 
 
 **Need.** Each revision and trailer variant requires an exact field grammar, range rule, and native retention policy before semantic decode.
 
+**Note.** `parse_revisions` treats every nonzero `kind == u16::MAX` payload selector as the short form and zero as the long form. It does not establish whether other selector values are valid or whether the selector has this polarity.
+
 ## 2. Kernel ownership
 
 ### KE-01. Multiple part carriers
@@ -53,6 +57,8 @@ This document lists unknown Inventor byte semantics. [inventor.md](inventor.md) 
 **Known.** ACIS 217 and 218 use the supported 32-bit header and SAB decoder. Other ACIS save-format bands are retained carriers with blocking geometry loss. The current carrier footer branch supports segment major versions 15 through 22 and 23 and later; earlier or otherwise incompatible variants are refused.
 
 **Need.** Each additional ACIS or footer band requires direct-carrier framing, geometry, validation, and wrapper-parity evidence before activation.
+
+**Note.** The original `KE-02` was removed by commit `87e40474c` after the 217/218 branch was added. That commit contains a shared implementation and synthetic 217/218 fixtures, but it does not establish the grammar for other ACIS bands or the remaining carrier-footer variants. The item is reopened here with the narrower scope above.
 
 ## 3. Product structure
 
@@ -74,6 +80,8 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 
 **Need.** Each additional schema or tag requires exact field widths, repeated-tag rules, identity joins, and loss behavior before semantic transfer.
 
+**Note.** `parse_occurrence_export` chooses export branches from the first two u32 values and numeric thresholds (`count`, `next`, and `0xffff`) rather than a typed discriminator. A valid single-entry or future export form in the same numeric range can be consumed as the empty or alternate form.
+
 ### AS-02. Transform units and exceptional branches
 
 **Question.** What semantics apply to non-active placement branches, scale, mirrored state, and singular matrices?
@@ -92,6 +100,14 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 
 **Need.** Additional code pages, typed variants, and preview encodings require exact decoding, range validation, and neutral/native mapping rules before transfer.
 
+### PR-02. Metadata property identity and conflict precedence
+
+**Question.** Which OLE property-set identity and precedence rule select title, author, description, part number, and document kind when multiple sections expose matching names or built-in IDs?
+
+**Known.** `MetadataProjection` accepts normalized names across property sets. It keeps the first nonempty title, author, description, or part number, but replaces the document kind whenever another parseable value is encountered. The traversal order is the only selection rule.
+
+**Need.** A canonical FMTID/property identity and conflict rule are required before metadata can select document semantics or overwrite a neutral value.
+
 ### MA-01. Additional face appearance styles
 
 **Question.** Which `PmGraphics` or `FBAttribute` style families bind a Protein appearance asset, texture, or non-diffuse presentation channel to a face?
@@ -99,6 +115,16 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 **Known.** The `PmApp` document-default record selects one rendering-style record by a carrier-local one-based record reference. The rendering style stores the Protein asset GUID and asset-library identifier. Their unique catalog join supplies the default appearance for every part body. A PmGraphics face joins a transferred ASM face through the shared nonnegative Design key. Its object-style collection can select one primary-color style whose second RGBA vector is a direct diffuse face override. The face override has precedence over the body default.
 
 **Need.** Each additional style family requires an exact owner path, channel semantics, and precedence before transfer.
+
+**Note.** The implementation selects `PmGraphicsPrimaryColorStyle.colors[1]` as the diffuse face color without a record discriminator for the four color slots. The slot role remains part of the open channel-semantics question.
+
+### MA-02. Protein material-property identity and precedence
+
+**Question.** Which schema-qualified Protein property owns each material scalar, bitmap URI, bitmap URN, and base-color channel when more than one property matches a suffix or fallback name?
+
+**Known.** Material projection scans matching property IDs and accepts the first match for texture mapping values, bitmap paths, bitmap URNs, and normalized color candidates. It also maps `generic_refraction_index` and `transparent_refraction_index` to one neutral key, so a later map insertion replaces the earlier value.
+
+**Need.** Schema declarations or a controlled multi-match record must establish property ownership, channel precedence, and ambiguity behavior before material values can be transferred.
 
 ### DE-01. Feature and history record graph
 
