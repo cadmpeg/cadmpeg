@@ -36,6 +36,7 @@ const ALLOWED_NATIVE_ARENAS: &[&str] = &[
     "product_occurrence_expansion",
     "transformations",
 ];
+const FRAME_REPAIR_DOT_LIMIT: f64 = 1.0e-6;
 
 /// Plan an IGES export, selecting replay only after checking the document
 /// baseline and retained source-image integrity.
@@ -3617,13 +3618,11 @@ fn pointer_surface_support(
     reference: Vector3,
 ) -> Result<(Vec<Entity>, usize, usize, usize), CodecError> {
     ensure_finite_point(location, "analytic surface location")?;
-    let axis = unit(axis, "analytic surface axis")?;
-    let reference = unit(reference, "analytic surface reference direction")?;
-    if axis.dot(reference).abs() > 1.0e-10 {
-        return Err(CodecError::Malformed(
-            "analytic surface axis and reference direction are not orthogonal".into(),
-        ));
-    }
+    let (axis, reference) = orthonormal_pair(
+        axis,
+        reference,
+        "analytic surface axis and reference direction",
+    )?;
     let location_index = base_index;
     let axis_index = base_index
         .checked_add(1)
@@ -4166,11 +4165,10 @@ fn curve_entity(geometry: &CurveGeometry, span: Option<&CurveSpan>) -> Result<En
             ref_direction,
             radius,
         } => {
-            let axis = unit(*axis, "circle axis")?;
-            let reference = unit(*ref_direction, "circle reference direction")?;
-            if axis.dot(reference).abs() > 1.0e-10 || !radius.is_finite() || *radius <= 0.0 {
+            let (axis, reference) = orthonormal_pair(*axis, *ref_direction, "circle basis")?;
+            if !radius.is_finite() || *radius <= 0.0 {
                 return Err(CodecError::Malformed(
-                    "IGES circle basis is not an orthonormal positive-radius frame".into(),
+                    "IGES circle radius must be positive and finite".into(),
                 ));
             }
             let y_axis = axis.cross(reference);
@@ -4200,10 +4198,8 @@ fn curve_entity(geometry: &CurveGeometry, span: Option<&CurveSpan>) -> Result<En
             major_radius,
             minor_radius,
         } => {
-            let axis = unit(*axis, "ellipse axis")?;
-            let major = unit(*major_direction, "ellipse major direction")?;
-            if axis.dot(major).abs() > 1.0e-10
-                || !major_radius.is_finite()
+            let (axis, major) = orthonormal_pair(*axis, *major_direction, "ellipse basis")?;
+            if !major_radius.is_finite()
                 || !minor_radius.is_finite()
                 || *major_radius <= 0.0
                 || *minor_radius <= 0.0
@@ -4245,13 +4241,7 @@ fn curve_entity(geometry: &CurveGeometry, span: Option<&CurveSpan>) -> Result<En
                     "IGES parabola requires a finite non-zero parameter span".into(),
                 ));
             }
-            let axis = unit(*axis, "parabola axis")?;
-            let major = unit(*major_direction, "parabola major direction")?;
-            if axis.dot(major).abs() > 1.0e-10 {
-                return Err(CodecError::Malformed(
-                    "IGES parabola basis is not orthogonal".into(),
-                ));
-            }
+            let (axis, major) = orthonormal_pair(*axis, *major_direction, "parabola basis")?;
             let x_axis = major.cross(axis);
             let start_xy = parabola_point(*focal_distance, range[0])?;
             let end_xy = parabola_point(*focal_distance, range[1])?;
@@ -4289,13 +4279,7 @@ fn curve_entity(geometry: &CurveGeometry, span: Option<&CurveSpan>) -> Result<En
                     "IGES hyperbola requires positive radii and a finite span".into(),
                 ));
             }
-            let axis = unit(*axis, "hyperbola axis")?;
-            let major = unit(*major_direction, "hyperbola major direction")?;
-            if axis.dot(major).abs() > 1.0e-10 {
-                return Err(CodecError::Malformed(
-                    "IGES hyperbola basis is not orthogonal".into(),
-                ));
-            }
+            let (axis, major) = orthonormal_pair(*axis, *major_direction, "hyperbola basis")?;
             let y_axis = axis.cross(major);
             let start_xy = hyperbola_point(*major_radius, *minor_radius, range[0])?;
             let end_xy = hyperbola_point(*major_radius, *minor_radius, range[1])?;
@@ -4654,6 +4638,23 @@ fn unit(vector: Vector3, label: &str) -> Result<Vector3, CodecError> {
     Ok(vector.scale(1.0 / norm))
 }
 
+fn orthonormal_pair(
+    primary: Vector3,
+    reference: Vector3,
+    label: &str,
+) -> Result<(Vector3, Vector3), CodecError> {
+    let primary = unit(primary, label)?;
+    let reference = unit(reference, label)?;
+    let residual = primary.dot(reference);
+    if residual.abs() > FRAME_REPAIR_DOT_LIMIT {
+        return Err(CodecError::Malformed(format!(
+            "IGES {label} exceeds the frame repair bound"
+        )));
+    }
+    let reference = unit(reference - primary.scale(residual), label)?;
+    Ok((primary, reference))
+}
+
 fn placement(
     origin: Point3,
     x_axis: Vector3,
@@ -4661,16 +4662,12 @@ fn placement(
     z_axis: Vector3,
 ) -> Result<Placement, CodecError> {
     ensure_finite_point(origin, "placement origin")?;
-    let x_axis = unit(x_axis, "placement x axis")?;
-    let y_axis = unit(y_axis, "placement y axis")?;
-    let z_axis = unit(z_axis, "placement z axis")?;
-    if x_axis.dot(y_axis).abs() > 1.0e-10
-        || x_axis.dot(z_axis).abs() > 1.0e-10
-        || y_axis.dot(z_axis).abs() > 1.0e-10
-        || x_axis.cross(y_axis).dot(z_axis) < 1.0 - 1.0e-10
-    {
+    let (x_axis, y_axis) = orthonormal_pair(x_axis, y_axis, "placement x/y axes")?;
+    let supplied_z = unit(z_axis, "placement z axis")?;
+    let z_axis = unit(x_axis.cross(y_axis), "placement derived z axis")?;
+    if z_axis.dot(supplied_z) <= 0.0 || z_axis.cross(supplied_z).norm() > FRAME_REPAIR_DOT_LIMIT {
         return Err(CodecError::Malformed(
-            "IGES placement axes are not a right-handed orthonormal frame".into(),
+            "IGES placement z axis exceeds the frame repair bound".into(),
         ));
     }
     Ok(Placement {
@@ -5123,6 +5120,29 @@ mod tests {
                 number(end[1])
             )
         );
+    }
+
+    #[test]
+    fn orthonormal_pair_repairs_float32_scale_frame_noise() {
+        let (axis, reference) = orthonormal_pair(
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 3.0e-8),
+            "test frame",
+        )
+        .expect("float32-scale skew is representation noise");
+        assert_eq!(axis, Vector3::new(0.0, 0.0, 1.0));
+        assert_eq!(reference, Vector3::new(1.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn orthonormal_pair_refuses_skew_beyond_the_repair_bound() {
+        let error = orthonormal_pair(
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 1.1e-6),
+            "test frame",
+        )
+        .expect_err("material skew must not be silently changed");
+        assert!(error.to_string().contains("exceeds the frame repair bound"));
     }
 
     #[test]

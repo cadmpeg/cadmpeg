@@ -124,16 +124,6 @@ from a conformant file.
 
 ## 7. Write path
 
-### WR-07. Orthonormality gates refuse foreign frames instead of repairing them
-
-**Question.** What frame perturbation must the writer accept?
-
-**Known.** `writer.rs:4593-4601` refuses a placement whose axis dot products pass 1e-10, and the same threshold appears at `writer.rs:3548`, `:4097`, `:4131`, `:4176`, `:4220`. A failure gives `CodecError::Malformed` from `plan()`, so the complete export fails rather than one entity.
-
-**Note.** A float32-backed source gives dot products near 3e-8. The writer computes `y_axis = axis.cross(reference)` one line later, so an orthonormal frame is available at no cost through one Gram-Schmidt step.
-
-**Need.** Representation noise is not an unrepresentable value. We need the acceptance bound, and a decision between repair and refusal.
-
 ### WR-08. Real numbers are written in fixed notation
 
 **Question.** What number format must a generated file use?
