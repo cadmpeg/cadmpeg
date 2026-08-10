@@ -122,14 +122,6 @@ from a conformant file.
 
 ## 6. Product structure, annotation, and presentation
 
-### PS-08. Type 406 Form 6 requires an ordered layer pair
-
-**Question.** Must the drilled-hole layer numbers be in ascending order?
-
-**Known.** `structure.rs:320-324` requires `upper >= lower`. `iges.md` "Product structure" records for this form only that the plating and hierarchy fields are Boolean integers. A hole written top-first is a loss whose message does not name the field.
-
-**Need.** We need the field definitions for the Form 6 layer pair.
-
 ## 7. Write path
 
 ### WR-01. An unclassified loop is written as an inner loop

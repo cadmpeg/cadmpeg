@@ -7901,6 +7901,8 @@ fn decode_types_scalar_and_string_property_forms() {
     assert_eq!(property(2).fields()["property_kind"], "region_restriction");
     assert_eq!(property(2).fields()["electrical_circuitry"], 2);
     assert_eq!(property(5).fields()["extension_flag"], 2);
+    assert_eq!(property(6).fields()["lower_layer"], 2);
+    assert_eq!(property(6).fields()["upper_layer"], 8);
     assert_eq!(property(12).fields()["names"].as_array().unwrap().len(), 2);
     assert_eq!(property(13).fields()["standard"][0], 65);
     assert_eq!(property(18).fields()["percent"], 12.5);
