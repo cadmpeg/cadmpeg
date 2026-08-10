@@ -26,6 +26,7 @@ struct BoundarySegment {
     model_curve: u32,
     pcurves: Vec<u32>,
     sense: Sense,
+    use_parameter_curves: bool,
     require_carrier_agreement: bool,
 }
 
@@ -229,6 +230,7 @@ pub(super) fn project(
             ));
             continue;
         }
+        let preference = record.integer(5).expect("validated preference flag");
         let Some(surface) = pointer(record, 2) else {
             losses.push(entity_loss(
                 entry,
@@ -279,7 +281,8 @@ pub(super) fn project(
                     pcurves: pcurve.into_iter().collect(),
                     model_curve,
                     sense: Sense::Forward,
-                    require_carrier_agreement: pcurve.is_some(),
+                    use_parameter_curves: pcurve.is_some() && preference != 2,
+                    require_carrier_agreement: pcurve.is_some() && preference != 2,
                 }],
             },
         );
@@ -305,6 +308,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "boundary preference flag is invalid"));
             continue;
         }
+        let preference = record.integer(2).expect("validated preference flag");
         let Some(surface) = pointer(record, 3) else {
             losses.push(entity_loss(entry, "boundary support pointer is invalid"));
             continue;
@@ -373,12 +377,13 @@ pub(super) fn project(
                 valid = false;
                 break;
             }
-            let require_carrier_agreement = !pcurves.is_empty();
+            let use_parameter_curves = !pcurves.is_empty() && preference != 1;
             segments.push(BoundarySegment {
                 model_curve,
                 pcurves,
                 sense,
-                require_carrier_agreement,
+                use_parameter_curves,
+                require_carrier_agreement: use_parameter_curves,
             });
             index += 3 + pcurve_count;
         }
@@ -589,6 +594,7 @@ pub(super) fn project(
                 let pcurves = segment
                     .pcurves
                     .iter()
+                    .filter(|_| segment.use_parameter_curves)
                     .map(|sequence| {
                         pcurve_geometry(
                             ir,

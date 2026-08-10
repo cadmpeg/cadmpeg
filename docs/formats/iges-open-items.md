@@ -120,16 +120,6 @@ from a conformant file.
 
 ## 5. Surfaces and topology
 
-### TP-02. Type 141 and Type 142 `PREF` is validated and discarded
-
-**Question.** What does the preferred-representation flag change?
-
-**Known.** `trimming.rs:208-214` range-checks `CRTN` and `PREF` and stores neither. `trimming.rs:257-268` sets `require_carrier_agreement: pcurve.is_some()`, so the only input is whether a pcurve pointer exists. `PREF = 1` and `PREF = 2` behave identically. Type 141's `PREF` is likewise validated and dropped (`:287-290`).
-
-**Note.** `PREF` exists because the two representations are not expected to be interchangeable. A file exported with `PREF = 2` and a coarse parameter-space approximation is a normal export choice; the codec refuses every boundary segment and drops the trimmed surface instead of using the representation the sender declared authoritative.
-
-**Need.** We need the agreement rule as a function of `PREF`, or evidence that IGES requires agreement independent of it.
-
 ### TP-03. Declared surface parameter subranges are discarded with no loss
 
 **Question.** What does a declared parameter subrange on a surface entity mean?

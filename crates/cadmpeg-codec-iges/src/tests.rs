@@ -5977,6 +5977,50 @@ fn decode_rejects_disagreeing_curve_on_surface_carriers() {
 }
 
 #[test]
+fn decode_uses_model_curve_when_type_142_prefers_it() {
+    let shifted_outer = "106,1,5,0,0.1,0,1.1,0,1.1,1,0.1,1,0.1,0;";
+    let mut bytes = trimmed_plane_with_inner_loop_and_outer_pcurve(shifted_outer);
+    let original = b"142,0,1,5,3,3;";
+    let start = bytes
+        .windows(original.len())
+        .position(|window| window == original)
+        .expect("outer Type 142 record");
+    bytes[start + original.len() - 2] = b'2';
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    let face = result
+        .ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.0 == "iges:model:face#D15")
+        .expect("model-preferred trimmed face");
+    let outer_loop = result
+        .ir
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id == face.loops[0])
+        .expect("outer loop");
+    assert!(outer_loop.coedges.iter().all(|id| result
+        .ir
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id == *id)
+        .is_some_and(|coedge| coedge.pcurves.is_empty())));
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn decode_preserves_ordered_type_141_pcurve_collections() {
     let result = IgesCodec
         .decode(
@@ -5994,6 +6038,36 @@ fn decode_preserves_ordered_type_141_pcurve_collections() {
     assert_eq!(coedge.pcurves.len(), 2);
     assert!(coedge.pcurves[0].pcurve.0.ends_with(":0:0:0"));
     assert!(coedge.pcurves[1].pcurve.0.ends_with(":0:0:1"));
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_uses_model_curves_when_type_141_prefers_them() {
+    let mut bytes = multi_pcurve_boundary_file();
+    let original = b"141,1,3,";
+    let start = bytes
+        .windows(original.len())
+        .position(|window| window == original)
+        .expect("Type 141 record");
+    bytes[start + 6] = b'1';
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    let coedge = result
+        .ir
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id.0 == "iges:model:coedge#D11:0:0")
+        .expect("model-preferred boundary coedge");
+    assert!(coedge.pcurves.is_empty());
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
