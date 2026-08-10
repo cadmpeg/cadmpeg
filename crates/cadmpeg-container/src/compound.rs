@@ -215,37 +215,37 @@ impl<'a> CompoundSnapshot<'a> {
         let mut by_path = BTreeMap::new();
         let mut streams_by_id = BTreeMap::new();
         for (index, entry) in entries.iter().enumerate() {
+            let component_count = entry.path().split('/').count();
+            let unit_count = entry.path().encode_utf16().count();
+            let key_bytes = component_count
+                .checked_mul(std::mem::size_of::<Vec<u16>>())
+                .and_then(|bytes| {
+                    unit_count
+                        .checked_mul(std::mem::size_of::<u16>())
+                        .and_then(|units| bytes.checked_add(units))
+                })
+                .and_then(|bytes| bytes.checked_add(std::mem::size_of::<(Vec<Vec<u16>>, usize)>()))
+                .ok_or_else(|| CodecError::Malformed("CFB path index size overflow".into()))?;
+            ctx.charge_retained(
+                key_bytes as u64,
+                "retain CFB path index",
+                Some(root.location()),
+            )?;
+            ctx.charge_collection_items(1, "index CFB path")?;
             let key = path_key(entry.path());
             if by_path.insert(key, index).is_some() {
                 return malformed(format!("duplicate CFB path {}", entry.path()));
             }
             if let CompoundEntry::Stream(stream) = entry {
+                ctx.charge_retained(
+                    std::mem::size_of::<(CompoundStreamId, usize)>() as u64,
+                    "retain CFB stream index",
+                    Some(root.location()),
+                )?;
+                ctx.charge_collection_items(1, "index CFB stream")?;
                 streams_by_id.insert(stream.id(), index);
             }
         }
-        let retained_bytes = parsed
-            .fat
-            .len()
-            .saturating_add(parsed.mini_fat.len())
-            .saturating_add(parsed.directory_chain.len())
-            .saturating_add(parsed.mini_fat_chain.len())
-            .saturating_add(parsed.root_mini_chain.len())
-            .saturating_mul(std::mem::size_of::<u32>())
-            .saturating_add(
-                entries
-                    .iter()
-                    .map(|entry| entry.path().len())
-                    .sum::<usize>(),
-            );
-        ctx.charge_retained(
-            retained_bytes as u64,
-            "retain CFB snapshot indexes",
-            Some(root.location()),
-        )?;
-        ctx.charge_collection_items(
-            parsed.directory.len().saturating_add(entries.len()) as u64,
-            "index CFB directory entries",
-        )?;
         Ok(Self {
             root,
             parsed,
@@ -634,6 +634,20 @@ impl CompoundState {
             (fat_count + difat_count) as u64,
             "parse CFB allocation tables",
         )?;
+        let allocation_id_bytes = fat_count
+            .checked_add(difat_count)
+            .and_then(|count| count.checked_mul(std::mem::size_of::<u32>()))
+            .ok_or_else(|| CodecError::Malformed("CFB allocation id size overflow".into()))?;
+        let allocation_id_scratch = ctx.reserve_scoped(
+            allocation_id_bytes as u64,
+            "collect CFB allocation sector ids",
+            None,
+        )?;
+        ctx.charge_retained(
+            allocation_id_bytes as u64,
+            "retain CFB allocation sector ids",
+            None,
+        )?;
         let sector = |id| sector_slice(bytes, sector_size, sector_count, id);
         let mut fat_sectors = Vec::with_capacity(fat_count);
         let mut header_free_seen = false;
@@ -687,7 +701,20 @@ impl CompoundState {
         if !fat_sector_set.is_disjoint(&seen_difat) {
             return malformed("CFB sector has both FAT and DIFAT roles");
         }
-        let mut fat = Vec::with_capacity(fat_count.saturating_mul(sector_size / 4));
+        drop(allocation_id_scratch);
+        let fat_word_count = fat_count
+            .checked_mul(sector_size / 4)
+            .ok_or_else(|| CodecError::Malformed("CFB FAT word count overflow".into()))?;
+        ctx.charge_collection_items(fat_word_count as u64, "parse CFB FAT words")?;
+        ctx.charge_retained(
+            fat_word_count
+                .checked_mul(std::mem::size_of::<u32>())
+                .ok_or_else(|| CodecError::Malformed("CFB FAT byte size overflow".into()))?
+                as u64,
+            "retain CFB FAT",
+            None,
+        )?;
+        let mut fat = Vec::with_capacity(fat_word_count);
         for &id in &fat_sectors {
             let data = sector(id)
                 .ok_or_else(|| CodecError::Malformed("CFB FAT sector is absent".into()))?;
@@ -721,14 +748,25 @@ impl CompoundState {
         }
         let directory_expected = (major_version == 4).then_some(directory_sector_count);
         let directory_chain = chain(
+            Some(ctx),
             &fat,
             sector_count,
             directory_start,
             directory_expected,
             "directory",
         )?;
+        let directory_byte_count = directory_chain
+            .len()
+            .checked_mul(sector_size)
+            .ok_or_else(|| CodecError::Malformed("CFB directory byte size overflow".into()))?;
+        let directory_scratch = ctx.reserve_scoped(
+            directory_byte_count as u64,
+            "assemble CFB directory sectors",
+            None,
+        )?;
         let directory_bytes = join_sectors(bytes, sector_size, sector_count, &directory_chain)?;
-        let directory = parse_directory(&directory_bytes, major_version)?;
+        let directory = parse_directory(Some(ctx), &directory_bytes, major_version)?;
+        drop(directory_scratch);
         validate_root(&directory)?;
         let mini_fat_chain = if mini_fat_count == 0 {
             if mini_fat_start != END_OF_CHAIN {
@@ -737,6 +775,7 @@ impl CompoundState {
             Vec::new()
         } else {
             chain(
+                Some(ctx),
                 &fat,
                 sector_count,
                 mini_fat_start,
@@ -744,10 +783,23 @@ impl CompoundState {
                 "mini FAT",
             )?
         };
+        let mini_fat_byte_count = mini_fat_chain
+            .len()
+            .checked_mul(sector_size)
+            .ok_or_else(|| CodecError::Malformed("CFB mini FAT byte size overflow".into()))?;
+        let mini_fat_scratch = ctx.reserve_scoped(
+            mini_fat_byte_count as u64,
+            "assemble CFB mini FAT sectors",
+            None,
+        )?;
+        let mini_fat_word_count = mini_fat_byte_count / 4;
+        ctx.charge_collection_items(mini_fat_word_count as u64, "parse CFB mini FAT words")?;
+        ctx.charge_retained(mini_fat_byte_count as u64, "retain CFB mini FAT", None)?;
         let mini_fat = join_sectors(bytes, sector_size, sector_count, &mini_fat_chain)?
             .chunks_exact(4)
             .map(|word| u32::from_le_bytes(word.try_into().expect("four-byte chunk")))
             .collect::<Vec<_>>();
+        drop(mini_fat_scratch);
         let root = &directory[0];
         let root_sectors = usize::try_from(root.size)
             .map_err(|_| {
@@ -761,6 +813,7 @@ impl CompoundState {
             Vec::new()
         } else {
             chain(
+                Some(ctx),
                 &fat,
                 sector_count,
                 root.start_sector,
@@ -787,6 +840,14 @@ impl CompoundState {
     }
 
     fn build_entries(&self, ctx: &DecodeContext<'_>) -> Result<Vec<CompoundEntry>, CodecError> {
+        let scratch_bytes = self
+            .directory
+            .len()
+            .checked_mul(
+                std::mem::size_of::<u32>().saturating_add(std::mem::size_of::<(u32, String)>()),
+            )
+            .ok_or_else(|| CodecError::Malformed("CFB traversal scratch size overflow".into()))?;
+        let _scratch = ctx.reserve_scoped(scratch_bytes as u64, "traverse CFB directory", None)?;
         let mut output = Vec::new();
         let mut reached = BTreeSet::new();
         self.walk_tree(ctx, self.directory[0].child, "", &mut reached, &mut output)?;
@@ -827,8 +888,31 @@ impl CompoundState {
                 pending.push(entry.right);
             }
             let path = if parent.is_empty() {
+                ctx.charge_retained(
+                    entry
+                        .name
+                        .len()
+                        .saturating_add(std::mem::size_of::<CompoundEntry>())
+                        as u64,
+                    "retain CFB entry",
+                    None,
+                )?;
                 entry.name.clone()
             } else {
+                let path_len = parent
+                    .len()
+                    .checked_add(1)
+                    .and_then(|length| length.checked_add(entry.name.len()))
+                    .ok_or_else(|| CodecError::Malformed("CFB path length overflow".into()))?;
+                ctx.charge_retained(
+                    path_len
+                        .checked_add(std::mem::size_of::<CompoundEntry>())
+                        .ok_or_else(|| {
+                            CodecError::Malformed("CFB entry storage size overflow".into())
+                        })? as u64,
+                    "retain CFB entry",
+                    None,
+                )?;
                 format!("{parent}/{}", entry.name)
             };
             match entry.object_type {
@@ -864,6 +948,7 @@ impl CompoundState {
                     } else {
                         match allocation {
                             CompoundAllocation::Regular => chain(
+                                Some(ctx),
                                 &self.fat,
                                 self.sector_count,
                                 entry.start_sector,
@@ -871,6 +956,7 @@ impl CompoundState {
                                 "stream",
                             )?,
                             CompoundAllocation::Mini => chain(
+                                Some(ctx),
                                 &self.mini_fat,
                                 self.mini_fat.len(),
                                 entry.start_sector,
@@ -1153,7 +1239,7 @@ impl CompoundPrefixProbe {
         else {
             return Self::Incomplete;
         };
-        let directory = match parse_directory(&directory_bytes, major) {
+        let directory = match parse_directory(None, &directory_bytes, major) {
             Ok(value) => value,
             Err(error) => return Self::Malformed(error.to_string()),
         };
@@ -1211,11 +1297,24 @@ impl CompoundPrefixProbe {
     }
 }
 
-fn parse_directory(bytes: &[u8], major_version: u16) -> Result<Vec<DirectoryEntry>, CodecError> {
+fn parse_directory(
+    ctx: Option<&DecodeContext<'_>>,
+    bytes: &[u8],
+    major_version: u16,
+) -> Result<Vec<DirectoryEntry>, CodecError> {
     if !bytes.len().is_multiple_of(128) {
         return malformed("CFB directory stream has a partial entry");
     }
-    let mut entries = Vec::with_capacity(bytes.len() / 128);
+    let entry_count = bytes.len() / 128;
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(entry_count as u64, "parse CFB directory entries")?;
+        let retained = entry_count
+            .checked_mul(std::mem::size_of::<DirectoryEntry>())
+            .and_then(|size| size.checked_add(bytes.len()))
+            .ok_or_else(|| CodecError::Malformed("CFB directory storage size overflow".into()))?;
+        ctx.charge_retained(retained as u64, "retain CFB directory", None)?;
+    }
+    let mut entries = Vec::with_capacity(entry_count);
     for raw in bytes.chunks_exact(128) {
         let object_type = raw[66];
         if !matches!(object_type, 0 | 1 | 2 | 5) {
@@ -1385,6 +1484,7 @@ fn range_lock_sector(
 }
 
 fn chain(
+    ctx: Option<&DecodeContext<'_>>,
     fat: &[u32],
     sector_count: usize,
     start: u32,
@@ -1399,6 +1499,20 @@ fn chain(
         };
     }
     let limit = expected.unwrap_or(sector_count);
+    if let (Some(ctx), Some(count)) = (ctx, expected) {
+        ctx.charge_collection_items(count as u64, "retain CFB sector chain")?;
+        ctx.charge_retained(
+            count
+                .checked_mul(std::mem::size_of::<u32>())
+                .ok_or_else(|| CodecError::Malformed("CFB sector chain size overflow".into()))?
+                as u64,
+            "retain CFB sector chain",
+            None,
+        )?;
+    }
+    let mut traversal_scratch = ctx
+        .map(|ctx| ctx.reserve_scoped(0, "walk CFB sector chain", None))
+        .transpose()?;
     let mut output = Vec::with_capacity(expected.unwrap_or(0));
     let mut seen = BTreeSet::new();
     let mut current = start;
@@ -1407,6 +1521,19 @@ fn chain(
             return malformed(format!(
                 "CFB {role} chain is cyclic, overlong, or out of range"
             ));
+        }
+        if expected.is_none() {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "retain CFB sector chain")?;
+                ctx.charge_retained(
+                    std::mem::size_of::<u32>() as u64,
+                    "retain CFB sector chain",
+                    None,
+                )?;
+            }
+        }
+        if let Some(scratch) = &mut traversal_scratch {
+            scratch.grow(std::mem::size_of::<u32>() as u64)?;
         }
         output.push(current);
         current = *fat
@@ -1659,11 +1786,11 @@ mod tests {
             0x1_0000_0001,
         );
         assert_eq!(
-            parse_directory(&directory, 4).expect("v4 directory parses")[0].size,
+            parse_directory(None, &directory, 4).expect("v4 directory parses")[0].size,
             0x1_0000_0001
         );
         assert_eq!(
-            parse_directory(&directory, 3).expect("v3 directory parses")[0].size,
+            parse_directory(None, &directory, 3).expect("v3 directory parses")[0].size,
             1
         );
     }
@@ -1735,7 +1862,7 @@ mod tests {
         let mut directory = vec![0_u8; 128];
         directory[68..80].fill(0xff);
         directory[8] = 1;
-        assert!(parse_directory(&directory, 3).is_err());
+        assert!(parse_directory(None, &directory, 3).is_err());
     }
 
     #[test]
@@ -1810,6 +1937,40 @@ mod tests {
                 .expect("stream exists")
                 .logical_size(),
             5
+        );
+    }
+
+    #[test]
+    fn snapshot_metadata_is_admitted_through_decode_budgets() {
+        let file = fixture();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 1;
+        let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy)
+            .expect("root input fits its independent budget");
+        let CodecError::ResourceLimit(limit) =
+            CompoundSnapshot::new(&ctx, root).expect_err("retained metadata exceeds one byte")
+        else {
+            panic!("retained budget refusal is typed")
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes
+        );
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 1;
+        let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy)
+            .expect("root input fits its independent budget");
+        let CodecError::ResourceLimit(limit) = CompoundSnapshot::new(&ctx, root)
+            .expect_err("allocation tables exceed one collection item")
+        else {
+            panic!("collection budget refusal is typed")
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::CollectionItems
         );
     }
 
