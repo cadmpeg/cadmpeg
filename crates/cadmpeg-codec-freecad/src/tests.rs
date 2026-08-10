@@ -675,13 +675,13 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="1" EndX="1" EndY="1"/></Geometry>
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0.5" StartY="-1" EndX="0.5" EndY="2"/></Geometry>
 </GeometryList></Property>
-<Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Source" sub="Edge1"/></LinkSubList></Property>
+<Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="Source" sub="Edge1"/><Link obj="Source" sub="Edge2"/></LinkSubList></Property>
 <Property name="ExternalGeo" type="Part::PropertyGeometryList"><GeometryList count="3">
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>
  <Geometry type="Part::GeomCircle"><Circle CenterX="4" CenterY="5" Radius="2"/></Geometry>
 </GeometryList></Property>
-<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="12">
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="13">
  <Constrain Type="14" First="0" FirstPos="1" Second="1" SecondPos="1" Third="2" ThirdPos="0"/>
  <Constrain Type="6" First="0" FirstPos="1" Second="1" SecondPos="2" Value="4" IsDriving="1"/>
  <Constrain Name="OnAxis" MetaData="reviewed" Type="13" Orientation="4" Value="0" LabelDistance="2.5" LabelPosition="0.25" IsDriving="0" IsInVirtualSpace="1" IsVisible="0" IsActive="1" First="0" FirstPos="1" Second="2" SecondPos="0"/>
@@ -694,6 +694,7 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
  <Constrain Type="13" First="0" FirstPos="1" Second="-1" SecondPos="0"/>
  <Constrain Type="6" First="-1" FirstPos="1" Second="0" SecondPos="1" Value="2" IsDriving="1"/>
  <Constrain Type="13" First="0" FirstPos="2" Second="-3" SecondPos="0"/>
+ <Constrain Type="7" First="-4" FirstPos="1" Second="0" SecondPos="1" Value="3" IsDriving="1"/>
 </ConstraintList></Property>
 </Properties></Object><Object name="Source"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let result = FcstdCodec
@@ -793,6 +794,10 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
         constraint(12).definition,
         cadmpeg_ir::sketches::SketchConstraintDefinition::PointOnObject { .. }
     ));
+    assert!(matches!(
+        constraint(13).definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::HorizontalDistance { .. }
+    ));
     assert!(result.ir.model.sketch_entities.iter().any(|entity| {
         entity.id.0.ends_with(":reference-horizontal-axis")
             && matches!(
@@ -822,6 +827,21 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
         .as_deref()
         .is_some_and(|reference| reference.ends_with(":ExternalGeometry")));
     assert_eq!(external.endpoint_refs, ["Edge1"]);
+    let unresolved_external = result
+        .ir
+        .model
+        .sketch_entities
+        .iter()
+        .find(|entity| entity.id.0.ends_with(":external:1"))
+        .expect("link-only external geometry");
+    assert!(matches!(
+        &unresolved_external.geometry,
+        cadmpeg_ir::sketches::SketchGeometry::ExternalReference {
+            document: None,
+            object,
+            subelements,
+        } if object.ends_with("Source") && subelements == &["Edge2"]
+    ));
     assert!(matches!(
         constraint(2).definition,
         cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLoci { .. }

@@ -138,6 +138,8 @@ Part shape properties reference text or binary B-rep entries. Shape records reta
 indices, locations, geometry carriers, topology, tolerances, flags, parameter ranges, and pcurves.
 An OCCT parabola edge parameter `u` maps to the STEP parabola parameter `t = u / (2f)`, where `f`
 is the focal distance. A two-dimensional parabola pcurve retains the OCCT parameter `u`.
+For a bounded circle or ellipse edge, the neutral start parameter is wrapped into `[0, 2π)` and
+the serialized sweep is preserved. A full-period edge retains its serialized phase.
 Transient table indices do not constitute persistent element identity. Persistent element names
 exist only when an element-map record supplies them.
 
@@ -227,6 +229,11 @@ first/last-parameter bound names identify the same conic interval. A persisted p
 the sketch origin, normal, and in-plane axis by applying
 its normalized quaternion to the canonical sketch basis. Attachment support and mapping mode remain
 linked source state when their complete support-frame composition is not resolved.
+An `ExternalGeometry` link creates an ordered construction entity. When `ExternalGeo` supplies its
+cached carrier, that carrier defines the solved sketch geometry. Without a cached carrier, the
+neutral entity retains the target document, object, and subelements as an unresolved external
+reference. Constraints can address its entity, endpoint, and center loci without inventing solved
+coordinates.
 
 Two bounded endpoints connect when an active coincident-loci constraint identifies them or their
 solved coordinates differ by at most 64 binary64 machine epsilons at the coordinate scale. The
@@ -240,9 +247,9 @@ distance, horizontal/vertical distance, angle, radius, and diameter relations tr
 constraints when every operand resolves. Point-on-object, symmetry, internal alignment, optical
 refraction, B-spline weight, geometry group, and text relations retain their typed operands and
 family-specific data. Dimensional relations create canonical parameters linked to the source
-constraint property and retain whether the value is driving. Negative external indices,
-unresolved operands, and future family codes remain explicit native relations rather than being
-guessed.
+constraint property and retain whether the value is driving. Negative indices resolve through the
+ordered external-reference entities. Invalid indices, unresolved operands, and future family codes
+remain explicit native relations rather than being guessed.
 
 An expression binding is retained independently from its target property's cached scalar. The
 neutral parameter carries the exact decoded expression, evaluated canonical value, scalar-property

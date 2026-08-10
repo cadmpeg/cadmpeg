@@ -1666,20 +1666,29 @@ pub(crate) fn normalize_occt_curve_range(
     geometry: &CurveGeometry,
     range: Option<[f64; 2]>,
 ) -> Option<[f64; 2]> {
-    let focal_distance = match geometry {
-        CurveGeometry::Parabola { focal_distance, .. } => *focal_distance,
-        CurveGeometry::Transformed { basis, .. } => {
-            return normalize_occt_curve_range(basis, range);
+    match geometry {
+        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
+            let [start, end] = range?;
+            let sweep = end - start;
+            let tau = std::f64::consts::TAU;
+            if !start.is_finite() || !end.is_finite() || (sweep - tau).abs() <= 1.0e-9 {
+                return Some([start, end]);
+            }
+            let canonical_start = start.rem_euclid(tau);
+            Some([canonical_start, canonical_start + sweep])
         }
-        _ => return range,
-    };
-    if !focal_distance.is_finite() || focal_distance <= 0.0 {
-        return range;
+        CurveGeometry::Parabola { focal_distance, .. } => {
+            if !focal_distance.is_finite() || *focal_distance <= 0.0 {
+                return range;
+            }
+            range.map(|[start, end]| {
+                let scale = 2.0 * focal_distance;
+                [start / scale, end / scale]
+            })
+        }
+        CurveGeometry::Transformed { basis, .. } => normalize_occt_curve_range(basis, range),
+        _ => range,
     }
-    range.map(|[start, end]| {
-        let scale = 2.0 * focal_distance;
-        [start / scale, end / scale]
-    })
 }
 
 fn dot(left: Vector3, right: Vector3) -> f64 {
@@ -1782,5 +1791,20 @@ mod tests {
             Some([-0.25, 0.5])
         );
         assert_eq!(normalize_occt_curve_range(&geometry, None), None);
+    }
+
+    #[test]
+    fn periodic_ranges_wrap_the_start_and_preserve_the_sweep() {
+        let geometry = CurveGeometry::Circle {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 1.0,
+        };
+        let [start, end] =
+            normalize_occt_curve_range(&geometry, Some([-1.0e-15, std::f64::consts::FRAC_PI_2]))
+                .expect("periodic range");
+        assert!((0.0..std::f64::consts::TAU).contains(&start));
+        assert!((end - start - (std::f64::consts::FRAC_PI_2 + 1.0e-15)).abs() < 1.0e-15);
     }
 }

@@ -3474,6 +3474,7 @@ pub(crate) fn exact_coincident_loci(
             | Geometry::Parabola { .. }
             | Geometry::Nurbs { .. }
             | Geometry::Text { .. }
+            | Geometry::ExternalReference { .. }
             | Geometry::Native { .. } => {}
         }
         loci
@@ -4353,6 +4354,7 @@ pub(crate) fn point_lies_on_sketch_geometry(
         }
         SketchGeometry::Nurbs { periodic: true, .. }
         | SketchGeometry::Text { .. }
+        | SketchGeometry::ExternalReference { .. }
         | SketchGeometry::Native { .. } => false,
     }
 }

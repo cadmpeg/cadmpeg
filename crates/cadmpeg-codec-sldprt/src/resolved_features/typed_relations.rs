@@ -765,6 +765,7 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
         SketchGeometry::Point { .. }
         | SketchGeometry::Text { .. }
         | SketchGeometry::Nurbs { .. }
+        | SketchGeometry::ExternalReference { .. }
         | SketchGeometry::Native { .. } => false,
     }
 }

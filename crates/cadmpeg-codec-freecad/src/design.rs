@@ -963,6 +963,33 @@ fn parse_sketch(
             });
         }
     }
+    if let Some(references) = property(properties, "ExternalGeometry") {
+        for (external_index, reference) in references.links.iter().enumerate() {
+            let suffix = format!(":external:{external_index}");
+            if entities.iter().any(|entity| entity.id.0.ends_with(&suffix)) {
+                continue;
+            }
+            let Some(target_object) = reference.object.clone() else {
+                continue;
+            };
+            entities.push(SketchEntity {
+                id: SketchEntityId(format!(
+                    "fcstd:design:sketch-entity#{}:external:{external_index}",
+                    object.name
+                )),
+                sketch: id.clone(),
+                construction: true,
+                native_ref: Some(references.id.clone()),
+                geometry_ref: Some(references.id.clone()),
+                endpoint_refs: reference.subelements.clone(),
+                geometry: SketchGeometry::ExternalReference {
+                    document: reference.document.clone(),
+                    object: target_object,
+                    subelements: reference.subelements.clone(),
+                },
+            });
+        }
+    }
     let (horizontal_axis, vertical_axis, root_point) = builtin_reference_usage(properties);
     if horizontal_axis {
         entities.push(SketchEntity {
@@ -4471,7 +4498,7 @@ pub(crate) fn census(
                 .map(|native_ref| (native_ref, feature))
         })
         .collect::<HashMap<_, _>>();
-    objects
+    let mut census = objects
         .iter()
         .filter(|object| is_design_object(&object.type_name))
         .map(|object| {
@@ -4511,7 +4538,9 @@ pub(crate) fn census(
                 post_processed,
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>, CodecError>>()?;
+    census.sort_by(|left, right| left.id.cmp(&right.id));
+    Ok(census)
 }
 
 #[cfg(test)]

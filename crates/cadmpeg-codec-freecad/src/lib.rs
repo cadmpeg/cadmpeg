@@ -235,11 +235,27 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     }
     match design::census(&objects, &ir.model.features) {
         Ok(expected) if design_census == expected => {}
-        Ok(_) => findings.push(finding(
-            Check::ReferentialIntegrity,
-            "FCStd design census does not match projected feature semantics",
-            None,
-        )),
+        Ok(expected) => {
+            let detail = design_census
+                .iter()
+                .zip(&expected)
+                .find(|(stored, derived)| stored != derived)
+                .map_or_else(
+                    || {
+                        format!(
+                            "stored {} records and derived {} records",
+                            design_census.len(),
+                            expected.len()
+                        )
+                    },
+                    |(stored, derived)| format!("stored {stored:?} but derived {derived:?}"),
+                );
+            findings.push(finding(
+                Check::ReferentialIntegrity,
+                format!("FCStd design census does not match projected feature semantics: {detail}"),
+                None,
+            ));
+        }
         Err(error) => findings.push(finding(
             Check::ReferentialIntegrity,
             error.to_string(),
