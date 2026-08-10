@@ -317,11 +317,10 @@ fn concatenate_nurbs(
     for (child_index, (curve, interval)) in children.into_iter().enumerate() {
         let child_start = interval[0];
         let child_end = interval[1];
-        let shift = cursor - child_start;
         let shifted_knots = curve
             .knots
             .iter()
-            .map(|knot| knot + shift)
+            .map(|knot| (knot - child_start) + cursor)
             .collect::<Vec<_>>();
         let mut child_weights = curve
             .weights
@@ -1014,6 +1013,32 @@ mod tests {
         assert_eq!(
             concatenated.boundaries,
             vec![0.0, 1.0, 3.0, 4.0, 5.0, 7.0, 8.0]
+        );
+    }
+
+    #[test]
+    fn concatenated_range_is_exactly_the_canonical_knot_domain() {
+        let line = |start: f64, end: f64, x: f64| {
+            (
+                NurbsCurve {
+                    degree: 1,
+                    knots: vec![start, start, end, end],
+                    control_points: vec![Point3::new(x, 0.0, 0.0), Point3::new(x + 1.0, 0.0, 0.0)],
+                    weights: None,
+                    periodic: false,
+                },
+                [start, end],
+            )
+        };
+        let first = line(0.0, 0.3, 0.0);
+        let second = line(1.0e9, 1.0e9 + 0.1, 1.0);
+
+        let concatenated =
+            concatenate_nurbs(vec![first, second], None).expect("joined lines should concatenate");
+
+        assert_eq!(
+            concatenated.boundaries.last(),
+            concatenated.nurbs.knots.last()
         );
     }
 
