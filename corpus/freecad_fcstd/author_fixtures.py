@@ -6,6 +6,7 @@ domain under CC0-1.0. They use no external model, template, or library content.
 """
 
 from pathlib import Path
+import math
 import os
 import re
 import struct
@@ -505,6 +506,83 @@ def design_history_document():
     App.closeDocument(document.Name)
 
 
+def sketch_conics_document():
+    document = App.newDocument("SketchConics")
+    metadata(document, "Rotated and bounded sketch conic parameterization")
+    sketch = document.addObject("Sketcher::SketchObject", "ConicWitness")
+
+    circle_center = App.Vector(0, 0, 0)
+    circle_radius = 8
+    circle_rotation = 0.37
+    circle_start = 0.28
+    circle_end = 1.46
+    circle = Part.Circle(circle_center, App.Vector(0, 0, 1), circle_radius)
+    circle.AngleXU = circle_rotation
+    sketch.addGeometry(
+        Part.ArcOfCircle(circle, circle_start, circle_end), False
+    )
+
+    def circle_point(parameter):
+        angle = circle_rotation + parameter
+        return App.Vector(
+            circle_radius * math.cos(angle),
+            circle_radius * math.sin(angle),
+            0,
+        )
+
+    chain_vertex = App.Vector(12, 10, 0)
+    sketch.addGeometry(
+        Part.LineSegment(circle_point(circle_start), chain_vertex), False
+    )
+    sketch.addGeometry(
+        Part.LineSegment(chain_vertex, circle_point(circle_end)), False
+    )
+
+    def conic_points(center, major_radius, minor_radius, angle):
+        major = App.Vector(math.cos(angle), math.sin(angle), 0)
+        minor = App.Vector(-math.sin(angle), math.cos(angle), 0)
+        return (
+            center + major * major_radius,
+            center + minor * minor_radius,
+        )
+
+    ellipse_center = App.Vector(30, 0, 0)
+    ellipse_major, ellipse_minor = conic_points(
+        ellipse_center, 11, 4, 0.53
+    )
+    ellipse = Part.Ellipse(ellipse_major, ellipse_minor, ellipse_center)
+    sketch.addGeometry(Part.ArcOfEllipse(ellipse, -0.42, 1.37), False)
+
+    full_center = App.Vector(0, 30, 0)
+    full_major, full_minor = conic_points(full_center, 9, 3, 0.71)
+    sketch.addGeometry(Part.Ellipse(full_major, full_minor, full_center), False)
+
+    hyperbola_center = App.Vector(30, 30, 0)
+    hyperbola_major, hyperbola_minor = conic_points(
+        hyperbola_center, 7, 3, 0.47
+    )
+    hyperbola = Part.Hyperbola(
+        hyperbola_major, hyperbola_minor, hyperbola_center
+    )
+    sketch.addGeometry(
+        Part.ArcOfHyperbola(hyperbola, -0.63, 0.88), False
+    )
+
+    parabola_vertex = App.Vector(60, 20, 0)
+    parabola_angle = 0.67
+    parabola_focus = parabola_vertex + App.Vector(
+        4 * math.cos(parabola_angle), 4 * math.sin(parabola_angle), 0
+    )
+    parabola = Part.Parabola(
+        parabola_focus, parabola_vertex, App.Vector(0, 0, 1)
+    )
+    sketch.addGeometry(Part.ArcOfParabola(parabola, -2.1, 2.4), False)
+
+    document.recompute()
+    save(document, "sketch_conics.FCStd")
+    App.closeDocument(document.Name)
+
+
 def techdraw_document():
     document = App.newDocument("DrawingAnnotations")
     metadata(document, "TechDraw page, view, dimension, note, symbol, and template")
@@ -554,6 +632,7 @@ if __name__ == "__main__":
     geometry_topology_document()
     binary_shape_document()
     design_history_document()
+    sketch_conics_document()
     techdraw_document()
     for temporary_asset in OUTPUT.glob("cc0_*"):
         temporary_asset.unlink()

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! B-spline/list carrier tables.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
@@ -12,6 +12,19 @@ use super::{f64_be, u16_be, u32_be, Carrier, CarrierGeometry, LEN_TO_MM};
 struct Arrays {
     f64s: HashMap<u16, Vec<f64>>,
     u16s: HashMap<u16, Vec<u16>>,
+    compact: HashMap<u16, Vec<CompactArray>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CompactArray {
+    offset: usize,
+    count: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ArraySpan {
+    start: usize,
+    count: usize,
 }
 
 #[derive(Debug)]
@@ -22,6 +35,108 @@ struct CurveDescriptor {
     control_attr: u16,
     multiplicity_attr: u16,
     knot_attr: u16,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SurfaceDescriptor {
+    attr: u16,
+    u_periodic: bool,
+    v_periodic: bool,
+    u_degree: u32,
+    v_degree: u32,
+    u_count: usize,
+    v_count: usize,
+    u_knot_count: usize,
+    v_knot_count: usize,
+    rational: bool,
+    dimension: usize,
+    refs: [u16; 5],
+}
+
+// The body after the tag and optional envelope marker is fixed-width. It
+// contains the attribute plus the complete NURBS_SURF definition and the
+// five terminal array references.
+const SURFACE_DESCRIPTOR_BODY_LEN: usize = 42;
+const SURFACE_DESCRIPTOR_REFS_OFFSET: usize = 32;
+const MAX_ARRAY_VALUES: usize = 1_000_000;
+
+fn logical_byte(bytes: &[u8], at: usize) -> Option<bool> {
+    match bytes.get(at) {
+        Some(0) => Some(false),
+        Some(1) => Some(true),
+        _ => None,
+    }
+}
+
+fn parse_surface_descriptor(bytes: &[u8], off: usize) -> Option<SurfaceDescriptor> {
+    if bytes.get(off..off + 2) != Some(&[0x00, 0x7e]) {
+        return None;
+    }
+    let mut p = off + 2;
+    if bytes.get(p) == Some(&0xff) {
+        p += 1;
+    }
+    let end = p.checked_add(SURFACE_DESCRIPTOR_BODY_LEN)?;
+    if end > bytes.len() {
+        return None;
+    }
+    let attr = u16_be(bytes, p)?;
+    let u_periodic = logical_byte(bytes, p + 2)?;
+    let v_periodic = logical_byte(bytes, p + 3)?;
+    let u_degree = u16_be(bytes, p + 4).map(u32::from)?;
+    let v_degree = u16_be(bytes, p + 6).map(u32::from)?;
+    let u_degree_usize = usize::try_from(u_degree).ok()?;
+    let v_degree_usize = usize::try_from(v_degree).ok()?;
+    let u_count = usize::try_from(u32_be(bytes, p + 8)?).ok()?;
+    let v_count = usize::try_from(u32_be(bytes, p + 12)?).ok()?;
+    // Knot-type bytes, closure flags, and surface form have no IR fields, but
+    // their positions are part of the fixed descriptor and are consumed here
+    // so the following count and reference fields cannot slide into them.
+    let _u_knot_type = *bytes.get(p + 16)?;
+    let _v_knot_type = *bytes.get(p + 17)?;
+    let u_knot_count = usize::try_from(u32_be(bytes, p + 18)?).ok()?;
+    let v_knot_count = usize::try_from(u32_be(bytes, p + 22)?).ok()?;
+    let rational = logical_byte(bytes, p + 26)?;
+    let _u_closed = logical_byte(bytes, p + 27)?;
+    let _v_closed = logical_byte(bytes, p + 28)?;
+    let _surface_form = *bytes.get(p + 29)?;
+    let dimension = u16_be(bytes, p + 30).map(usize::from)?;
+    let refs = [
+        u16_be(bytes, p + SURFACE_DESCRIPTOR_REFS_OFFSET)?,
+        u16_be(bytes, p + SURFACE_DESCRIPTOR_REFS_OFFSET + 2)?,
+        u16_be(bytes, p + SURFACE_DESCRIPTOR_REFS_OFFSET + 4)?,
+        u16_be(bytes, p + SURFACE_DESCRIPTOR_REFS_OFFSET + 6)?,
+        u16_be(bytes, p + SURFACE_DESCRIPTOR_REFS_OFFSET + 8)?,
+    ];
+
+    if attr <= 1
+        || u_degree == 0
+        || v_degree == 0
+        || u_count <= u_degree_usize
+        || v_count <= v_degree_usize
+        || u_knot_count == 0
+        || v_knot_count == 0
+        || !matches!(dimension, 3 | 4)
+        || rational != (dimension == 4)
+        || refs.iter().any(|&reference| reference <= 1)
+    {
+        return None;
+    }
+
+    Some(SurfaceDescriptor {
+        attr,
+        u_periodic,
+        v_periodic,
+        u_degree,
+        v_degree,
+        u_count,
+        v_count,
+        u_knot_count,
+        v_knot_count,
+        rational,
+        dimension,
+        refs,
+    })
 }
 
 fn array_body(bytes: &[u8], off: usize, tag: u8) -> Option<usize> {
@@ -38,9 +153,23 @@ fn array_body(bytes: &[u8], off: usize, tag: u8) -> Option<usize> {
     Some(p)
 }
 
-fn scan_arrays(bytes: &[u8]) -> Arrays {
+fn scan_arrays(bytes: &[u8], compact_attrs: Option<&HashSet<u16>>) -> Arrays {
     let mut arrays = Arrays::default();
     for off in 0..bytes.len().saturating_sub(9) {
+        if bytes.get(off) == Some(&0) {
+            let count = usize::from(bytes[off + 1]);
+            if count > 0 {
+                if let Some(attr) = u16_be(bytes, off + 2)
+                    .filter(|attr| compact_attrs.is_some_and(|attrs| attrs.contains(attr)))
+                {
+                    arrays
+                        .compact
+                        .entry(attr)
+                        .or_default()
+                        .push(CompactArray { offset: off, count });
+                }
+            }
+        }
         let tag = match bytes.get(off..off + 2) {
             Some([0x00, tag @ (0x2d | 0x7f | 0x80)]) => *tag,
             _ => continue,
@@ -54,7 +183,7 @@ fn scan_arrays(bytes: &[u8]) -> Arrays {
         let Some(attr) = u16_be(bytes, p + 4) else {
             continue;
         };
-        if attr <= 1 || count > 1_000_000 {
+        if attr <= 1 || count > MAX_ARRAY_VALUES {
             continue;
         }
         let values_at = p + 6;
@@ -73,12 +202,66 @@ fn scan_arrays(bytes: &[u8]) -> Arrays {
             else {
                 continue;
             };
-            if values.iter().all(|v| v.is_finite()) {
-                arrays.f64s.entry(attr).or_insert(values);
-            }
+            // The native surface format can reserve physical knot slots beyond
+            // the descriptor's distinct-knot count. Their bits are not
+            // semantic data when the matching multiplicities are zero, so
+            // defer finite-value checks until descriptor binding.
+            arrays.f64s.entry(attr).or_insert(values);
         }
     }
     arrays
+}
+
+fn compact_f64_arrays(bytes: &[u8], arrays: &Arrays, attr: u16) -> Vec<Vec<f64>> {
+    let mut candidates = arrays
+        .f64s
+        .get(&attr)
+        .cloned()
+        .into_iter()
+        .collect::<Vec<_>>();
+    for compact in arrays.compact.get(&attr).into_iter().flatten() {
+        let Some(values) = (0..compact.count)
+            .map(|index| f64_be(bytes, compact.offset + 4 + index * 8))
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        if !candidates.contains(&values) {
+            candidates.push(values);
+        }
+    }
+    candidates
+}
+
+fn compact_u16_arrays(bytes: &[u8], arrays: &Arrays, attr: u16) -> Vec<Vec<u16>> {
+    let mut candidates = arrays
+        .u16s
+        .get(&attr)
+        .cloned()
+        .into_iter()
+        .collect::<Vec<_>>();
+    for compact in arrays.compact.get(&attr).into_iter().flatten() {
+        let Some(values) = (0..compact.count)
+            .map(|index| u16_be(bytes, compact.offset + 4 + index * 2))
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        if !candidates.contains(&values) {
+            candidates.push(values);
+        }
+    }
+    candidates
+}
+
+fn exact_f64_array(bytes: &[u8], arrays: &Arrays, attr: u16, count: usize) -> Option<Vec<f64>> {
+    let mut candidates = compact_f64_arrays(bytes, arrays, attr)
+        .into_iter()
+        .filter(|values| values.len() == count);
+    let selected = candidates.next()?;
+    candidates
+        .all(|candidate| candidate == selected)
+        .then_some(selected)
 }
 
 fn scan_curve_descriptors(bytes: &[u8]) -> HashMap<u16, CurveDescriptor> {
@@ -152,7 +335,8 @@ fn expanded_knots(values: &[f64], multiplicities: &[u16], expected: usize) -> Op
         if multiplicity == 0 {
             continue;
         }
-        if out.len() + multiplicity as usize > expected {
+        let next_len = out.len().checked_add(multiplicity as usize)?;
+        if next_len > expected {
             return None;
         }
         out.extend(std::iter::repeat_n(*value, multiplicity as usize));
@@ -174,6 +358,12 @@ fn unique_knots(knots: &[f64]) -> (Vec<f64>, Vec<u16>) {
     (unique, multiplicities)
 }
 
+fn multiplicity_sum(values: &[u16]) -> Option<usize> {
+    values
+        .iter()
+        .try_fold(0usize, |sum, &value| sum.checked_add(usize::from(value)))
+}
+
 fn array_span(bytes: &[u8], tag: u8, attr: u16) -> Option<(usize, usize)> {
     for off in 0..bytes.len().saturating_sub(9) {
         let Some(p) = array_body(bytes, off, tag) else {
@@ -187,6 +377,129 @@ fn array_span(bytes: &[u8], tag: u8, attr: u16) -> Option<(usize, usize)> {
         }
     }
     None
+}
+
+fn array_spans(bytes: &[u8], arrays: &Arrays, tag: u8, attr: u16) -> Vec<ArraySpan> {
+    let mut spans = Vec::new();
+    for off in 0..bytes.len().saturating_sub(9) {
+        let Some(p) = array_body(bytes, off, tag) else {
+            continue;
+        };
+        let Some(count) = u32_be(bytes, p).and_then(|value| usize::try_from(value).ok()) else {
+            continue;
+        };
+        if count <= MAX_ARRAY_VALUES && u16_be(bytes, p + 4) == Some(attr) {
+            spans.push(ArraySpan {
+                start: p + 6,
+                count,
+            });
+        }
+    }
+    spans.extend(
+        arrays
+            .compact
+            .get(&attr)
+            .into_iter()
+            .flatten()
+            .map(|array| ArraySpan {
+                start: array.offset + 4,
+                count: array.count,
+            }),
+    );
+    spans.sort_by_key(|span| (span.start, span.count));
+    spans.dedup();
+    spans
+}
+
+fn f64_values(bytes: &[u8], span: ArraySpan) -> Option<Vec<f64>> {
+    (0..span.count)
+        .map(|index| f64_be(bytes, span.start + index * 8))
+        .collect()
+}
+
+fn u16_values(bytes: &[u8], span: ArraySpan) -> Option<Vec<u16>> {
+    (0..span.count)
+        .map(|index| u16_be(bytes, span.start + index * 2))
+        .collect()
+}
+
+fn unique_control_span(
+    bytes: &[u8],
+    arrays: &Arrays,
+    attr: u16,
+    old_values: &[f64],
+) -> Option<ArraySpan> {
+    let spans = array_spans(bytes, arrays, 0x2d, attr)
+        .into_iter()
+        .filter(|span| span.count == old_values.len())
+        .collect::<Vec<_>>();
+    if spans.len() == 1 {
+        return Some(spans[0]);
+    }
+    let mut matching = spans.into_iter().filter(|&span| {
+        f64_values(bytes, span).is_some_and(|values| {
+            values.iter().zip(old_values).all(|(native, expected)| {
+                let scale = native.abs().max(expected.abs()).max(1.0);
+                (native - expected).abs() <= 16.0 * f64::EPSILON * scale
+            })
+        })
+    });
+    let selected = matching.next()?;
+    matching.next().is_none().then_some(selected)
+}
+
+fn unique_surface_knot_span(
+    bytes: &[u8],
+    arrays: &Arrays,
+    knot_attr: u16,
+    multiplicity_attr: u16,
+    declared_count: usize,
+    old_values: &[f64],
+    old_multiplicities: &[u16],
+) -> Option<ArraySpan> {
+    if old_values.len() != declared_count || old_multiplicities.len() != declared_count {
+        return None;
+    }
+    let knot_spans = array_spans(bytes, arrays, 0x80, knot_attr);
+    let multiplicity_spans = array_spans(bytes, arrays, 0x7f, multiplicity_attr);
+    let mut pairs = Vec::new();
+    for knot_span in knot_spans {
+        let Some(knots) = f64_values(bytes, knot_span) else {
+            continue;
+        };
+        for multiplicity_span in multiplicity_spans
+            .iter()
+            .copied()
+            .filter(|span| span.count == knot_span.count)
+        {
+            let Some(multiplicities) = u16_values(bytes, multiplicity_span) else {
+                continue;
+            };
+            let Some((knots, multiplicities)) =
+                surface_knot_arrays(&knots, &multiplicities, declared_count)
+            else {
+                continue;
+            };
+            if knots == old_values && multiplicities == old_multiplicities {
+                pairs.push((knot_span, multiplicity_span));
+            }
+        }
+    }
+    pairs.sort_by_key(|(knots, multiplicities)| (knots.start, knots.count, multiplicities.start));
+    pairs.dedup();
+    (pairs.len() == 1).then_some(pairs[0].0)
+}
+
+fn patch_f64_span(bytes: &mut [u8], span: ArraySpan, values: &[f64]) -> Option<()> {
+    if values.len() > span.count {
+        return None;
+    }
+    for (index, value) in values.iter().enumerate() {
+        bytes
+            .get_mut(span.start + index * 8..span.start + (index + 1) * 8)?
+            .copy_from_slice(&value.to_be_bytes());
+    }
+    Some(())
 }
 
 fn patch_f64_array(bytes: &mut [u8], tag: u8, attr: u16, values: &[f64]) -> Option<()> {
@@ -291,22 +604,58 @@ pub(crate) fn patch_nurbs_surface(
     {
         return None;
     }
-    let arrays = scan_arrays(bytes);
-    let descriptors = surface_refs(bytes, &arrays);
+    let descriptors = scan_surface_descriptors(bytes);
+    let compact_attrs = descriptors
+        .values()
+        .flat_map(|descriptor| descriptor.refs)
+        .collect();
+    let arrays = scan_arrays(bytes, Some(&compact_attrs));
     let mut p = wrapper_offset + 2;
     if bytes.get(p) == Some(&0xff) {
         p += 1;
     }
     let descriptor_attr = u16_be(bytes, p + 17)?;
-    let refs = descriptors.get(&descriptor_attr)?;
+    let descriptor = descriptors.get(&descriptor_attr)?;
+    let [control_attr, _, _, u_knot_attr, v_knot_attr] = descriptor.refs;
+    let dimension = if old.weights.is_some() { 4 } else { 3 };
+    if descriptor.u_degree != old.u_degree
+        || descriptor.v_degree != old.v_degree
+        || descriptor.u_count != old.u_count as usize
+        || descriptor.v_count != old.v_count as usize
+        || descriptor.dimension != dimension
+        || descriptor.u_periodic != old.u_periodic
+        || descriptor.v_periodic != old.v_periodic
+    {
+        return None;
+    }
+    let old_poles = homogeneous_poles(&old.control_points, old.weights.as_deref(), scale)?;
     let poles = homogeneous_poles(&new.control_points, new.weights.as_deref(), scale)?;
-    patch_f64_array(bytes, 0x2d, refs[0], &poles)?;
-    patch_f64_array(bytes, 0x80, refs[3], &new_u)?;
-    patch_f64_array(bytes, 0x80, refs[4], &new_v)
+    let control_span = unique_control_span(bytes, &arrays, control_attr, &old_poles)?;
+    let u_knot_span = unique_surface_knot_span(
+        bytes,
+        &arrays,
+        u_knot_attr,
+        descriptor.refs[1],
+        descriptor.u_knot_count,
+        &old_u,
+        &old_u_mult,
+    )?;
+    let v_knot_span = unique_surface_knot_span(
+        bytes,
+        &arrays,
+        v_knot_attr,
+        descriptor.refs[2],
+        descriptor.v_knot_count,
+        &old_v,
+        &old_v_mult,
+    )?;
+    patch_f64_span(bytes, control_span, &poles)?;
+    patch_f64_span(bytes, u_knot_span, &new_u)?;
+    patch_f64_span(bytes, v_knot_span, &new_v)
 }
 
 pub fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
-    let arrays = scan_arrays(bytes);
+    let arrays = scan_arrays(bytes, None);
     let descriptors = scan_curve_descriptors(bytes);
     let mut out = HashMap::new();
     for off in 0..bytes.len().saturating_sub(6) {
@@ -332,12 +681,26 @@ pub fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
         let Some(unique_knots) = arrays.f64s.get(&descriptor.knot_attr) else {
             continue;
         };
-        if control.len() != descriptor.control_count * descriptor.dimension {
+        let Some(expected_control_values) =
+            descriptor.control_count.checked_mul(descriptor.dimension)
+        else {
+            continue;
+        };
+        if control.len() != expected_control_values {
+            continue;
+        }
+        if !unique_knots.iter().all(|value| value.is_finite())
+            || !unique_knots.windows(2).all(|window| window[0] <= window[1])
+        {
             continue;
         }
         let mut points = Vec::with_capacity(descriptor.control_count);
         let mut weights = (descriptor.dimension == 4).then(Vec::new);
         for pole in control.chunks_exact(descriptor.dimension) {
+            if pole.iter().any(|value| !value.is_finite()) {
+                points.clear();
+                break;
+            }
             let weight = if descriptor.dimension == 4 {
                 pole[3]
             } else {
@@ -378,90 +741,85 @@ pub fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
                 periodic: false,
             })),
             frame: None,
+            parameter_range: None,
             orientation_reversed: false,
         });
     }
     out
 }
 
-fn surface_refs(bytes: &[u8], arrays: &Arrays) -> HashMap<u16, [u16; 5]> {
+fn scan_surface_descriptors(bytes: &[u8]) -> HashMap<u16, SurfaceDescriptor> {
     let mut out = HashMap::new();
-    for off in 0..bytes.len().saturating_sub(16) {
-        if bytes.get(off..off + 2) != Some(&[0x00, 0x7e]) {
-            continue;
-        }
-        let mut p = off + 2;
-        if bytes.get(p) == Some(&0xff) {
-            p += 1;
-        }
-        let Some(attr) = u16_be(bytes, p) else {
+    for off in 0..bytes.len().saturating_sub(1) {
+        let Some(descriptor) = parse_surface_descriptor(bytes, off) else {
             continue;
         };
-        for at in (p + 2..(p + 96).min(bytes.len().saturating_sub(9))).step_by(2) {
-            let Some(refs) = (0..5)
-                .map(|i| u16_be(bytes, at + i * 2))
-                .collect::<Option<Vec<_>>>()
-            else {
-                continue;
-            };
-            if arrays.f64s.contains_key(&refs[0])
-                && arrays.u16s.contains_key(&refs[1])
-                && arrays.u16s.contains_key(&refs[2])
-                && arrays.f64s.contains_key(&refs[3])
-                && arrays.f64s.contains_key(&refs[4])
-            {
-                out.insert(attr, [refs[0], refs[1], refs[2], refs[3], refs[4]]);
-                break;
-            }
-        }
+        out.entry(descriptor.attr).or_insert(descriptor);
     }
     out
 }
 
-#[allow(clippy::manual_is_multiple_of)] // `is_multiple_of` exceeds the workspace MSRV.
-pub(crate) fn infer_surface_shape(
-    control_len: usize,
-    u_mult: &[u16],
-    v_mult: &[u16],
-) -> Option<(usize, usize, u32, u32, usize)> {
-    let u_sum: usize = u_mult.iter().map(|v| *v as usize).sum();
-    let v_sum: usize = v_mult.iter().map(|v| *v as usize).sum();
-    for dimension in [4usize, 3] {
-        if !control_len.is_multiple_of(dimension) {
+fn surface_knot_arrays<'a>(
+    unique: &'a [f64],
+    multiplicities: &'a [u16],
+    declared_count: usize,
+) -> Option<(&'a [f64], &'a [u16])> {
+    if declared_count == 0 || unique.len() != multiplicities.len() || unique.len() < declared_count
+    {
+        return None;
+    }
+    (multiplicities[..declared_count]
+        .iter()
+        .all(|&value| value != 0)
+        && multiplicities[declared_count..]
+            .iter()
+            .all(|&value| value == 0))
+    .then_some((&unique[..declared_count], &multiplicities[..declared_count]))
+}
+
+fn surface_knot_values(
+    bytes: &[u8],
+    arrays: &Arrays,
+    knot_attr: u16,
+    multiplicity_attr: u16,
+    declared_count: usize,
+) -> Option<(Vec<f64>, Vec<u16>)> {
+    let mut resolved = Vec::<(Vec<f64>, Vec<u16>)>::new();
+    let mut multiplicities_by_count = HashMap::<usize, Vec<Vec<u16>>>::new();
+    for multiplicities in compact_u16_arrays(bytes, arrays, multiplicity_attr) {
+        multiplicities_by_count
+            .entry(multiplicities.len())
+            .or_default()
+            .push(multiplicities);
+    }
+    for unique in compact_f64_arrays(bytes, arrays, knot_attr) {
+        let Some(multiplicity_candidates) = multiplicities_by_count.get(&unique.len()) else {
             continue;
-        }
-        let poles = control_len / dimension;
-        for u_degree in 1..=8usize {
-            let Some(u_count) = u_sum.checked_sub(u_degree + 1) else {
+        };
+        for multiplicities in multiplicity_candidates {
+            let Some((unique, multiplicities)) =
+                surface_knot_arrays(&unique, multiplicities, declared_count)
+            else {
                 continue;
             };
-            for v_degree in 1..=8usize {
-                let Some(v_count) = v_sum.checked_sub(v_degree + 1) else {
-                    continue;
-                };
-                // `checked_mul` bounds the pole count: `u_count`/`v_count` derive from
-                // multiplicity sums and their product can exceed `usize`, so an overflowing
-                // shape never matches `poles` (and never reaches the `with_capacity` below).
-                if u_count > 0 && v_count > 0 && u_count.checked_mul(v_count) == Some(poles) {
-                    return Some((
-                        u_count,
-                        v_count,
-                        u_degree as u32,
-                        v_degree as u32,
-                        dimension,
-                    ));
-                }
+            let candidate = (unique.to_vec(), multiplicities.to_vec());
+            if !resolved.contains(&candidate) {
+                resolved.push(candidate);
             }
         }
     }
-    None
+    (resolved.len() == 1).then(|| resolved.pop()).flatten()
 }
 
 pub fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
-    let arrays = scan_arrays(bytes);
-    let descriptors = surface_refs(bytes, &arrays);
+    let descriptors = scan_surface_descriptors(bytes);
+    let compact_attrs = descriptors
+        .values()
+        .flat_map(|descriptor| descriptor.refs)
+        .collect();
+    let arrays = scan_arrays(bytes, Some(&compact_attrs));
     let mut out = HashMap::new();
-    for off in 0..bytes.len().saturating_sub(23) {
+    for off in 0..bytes.len().saturating_sub(1) {
         if bytes.get(off..off + 2) != Some(&[0x00, 0x7c]) {
             continue;
         }
@@ -475,33 +833,84 @@ pub fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
         let Some(descriptor_attr) = u16_be(bytes, p + 17) else {
             continue;
         };
-        let Some(refs) = descriptors.get(&descriptor_attr) else {
+        let Some(descriptor) = descriptors.get(&descriptor_attr) else {
             continue;
         };
-        let Some(control) = arrays.f64s.get(&refs[0]) else {
+        let Some(expected_poles) = descriptor.u_count.checked_mul(descriptor.v_count) else {
             continue;
         };
-        let Some(u_mult) = arrays.u16s.get(&refs[1]) else {
+        let Some(expected_control_values) = expected_poles.checked_mul(descriptor.dimension) else {
             continue;
         };
-        let Some(v_mult) = arrays.u16s.get(&refs[2]) else {
-            continue;
-        };
-        let Some(u_unique) = arrays.f64s.get(&refs[3]) else {
-            continue;
-        };
-        let Some(v_unique) = arrays.f64s.get(&refs[4]) else {
-            continue;
-        };
-        let Some((u_count, v_count, u_degree, v_degree, dimension)) =
-            infer_surface_shape(control.len(), u_mult, v_mult)
+        let Some(control) =
+            exact_f64_array(bytes, &arrays, descriptor.refs[0], expected_control_values)
         else {
             continue;
         };
-        let mut points = Vec::with_capacity(u_count * v_count);
-        let mut weights = (dimension == 4).then(Vec::new);
+        let Some((u_unique, u_mult)) = surface_knot_values(
+            bytes,
+            &arrays,
+            descriptor.refs[3],
+            descriptor.refs[1],
+            descriptor.u_knot_count,
+        ) else {
+            continue;
+        };
+        let Some((v_unique, v_mult)) = surface_knot_values(
+            bytes,
+            &arrays,
+            descriptor.refs[4],
+            descriptor.refs[2],
+            descriptor.v_knot_count,
+        ) else {
+            continue;
+        };
+        if control.len() != expected_control_values {
+            continue;
+        }
+        let Some(u_expected) = descriptor
+            .u_count
+            .checked_add(descriptor.u_degree as usize)
+            .and_then(|value| value.checked_add(1))
+        else {
+            continue;
+        };
+        let Some(v_expected) = descriptor
+            .v_count
+            .checked_add(descriptor.v_degree as usize)
+            .and_then(|value| value.checked_add(1))
+        else {
+            continue;
+        };
+        let Some(u_multiplicity_sum) = multiplicity_sum(&u_mult) else {
+            continue;
+        };
+        let Some(v_multiplicity_sum) = multiplicity_sum(&v_mult) else {
+            continue;
+        };
+        if u_multiplicity_sum != u_expected || v_multiplicity_sum != v_expected {
+            continue;
+        }
+        if !u_unique.iter().all(|value| value.is_finite())
+            || !v_unique.iter().all(|value| value.is_finite())
+            || !u_unique.windows(2).all(|window| window[0] <= window[1])
+            || !v_unique.windows(2).all(|window| window[0] <= window[1])
+        {
+            continue;
+        }
+        let mut points = Vec::with_capacity(expected_poles);
+        let dimension = if descriptor.rational {
+            descriptor.dimension
+        } else {
+            3
+        };
+        let mut weights = (descriptor.rational).then(Vec::new);
         for pole in control.chunks_exact(dimension) {
-            let weight = if dimension == 4 { pole[3] } else { 1.0 };
+            if pole.iter().any(|value| !value.is_finite()) {
+                points.clear();
+                break;
+            }
+            let weight = if descriptor.rational { pole[3] } else { 1.0 };
             if !weight.is_finite() || weight.abs() <= f64::EPSILON {
                 points.clear();
                 break;
@@ -515,14 +924,12 @@ pub fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
                 values.push(weight);
             }
         }
-        if points.len() != u_count * v_count {
+        if points.len() != expected_poles {
             continue;
         }
-        let u_expected = u_count + u_degree as usize + 1;
-        let v_expected = v_count + v_degree as usize + 1;
         let (Some(u_knots), Some(v_knots)) = (
-            expanded_knots(u_unique, u_mult, u_expected),
-            expanded_knots(v_unique, v_mult, v_expected),
+            expanded_knots(&u_unique, &u_mult, u_expected),
+            expanded_knots(&v_unique, &v_mult, v_expected),
         ) else {
             continue;
         };
@@ -534,18 +941,19 @@ pub fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
             offset: off,
             end: off + 2,
             geometry: CarrierGeometry::Surface(SurfaceGeometry::Nurbs(NurbsSurface {
-                u_degree,
-                v_degree,
+                u_degree: descriptor.u_degree,
+                v_degree: descriptor.v_degree,
                 u_knots,
                 v_knots,
-                u_count: u_count as u32,
-                v_count: v_count as u32,
+                u_count: descriptor.u_count as u32,
+                v_count: descriptor.v_count as u32,
                 control_points: points,
                 weights,
-                u_periodic: false,
-                v_periodic: false,
+                u_periodic: descriptor.u_periodic,
+                v_periodic: descriptor.v_periodic,
             })),
             frame: None,
+            parameter_range: None,
             orientation_reversed: false,
         });
     }

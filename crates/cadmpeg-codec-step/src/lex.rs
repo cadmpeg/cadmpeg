@@ -14,6 +14,7 @@ pub struct Token {
 
 /// Part 21 token categories.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum TokenKind {
     /// Standard keyword or entity name.
     Name(String),
@@ -21,6 +22,12 @@ pub enum TokenKind {
     UserName(String),
     /// Numeric `#`-prefixed entity-instance name.
     Instance(u64),
+    /// Numeric `@`-prefixed value-instance name.
+    ValueInstance(u64),
+    /// `#`-prefixed EXPRESS entity constant name.
+    ConstantEntity(String),
+    /// `@`-prefixed EXPRESS value constant name.
+    ConstantValue(String),
     /// Signed decimal integer.
     Integer(i64),
     /// Decimal real, including an optional exponent.
@@ -47,6 +54,14 @@ pub enum TokenKind {
     Omitted,
     /// Derived-value marker `*`.
     Derived,
+    /// Anchor-tag name, preserving source case.
+    TagName(String),
+    /// Opening anchor-tag delimiter.
+    LBrace,
+    /// Closing anchor-tag delimiter.
+    RBrace,
+    /// Anchor-tag name/value separator.
+    Colon,
 }
 
 /// Binary literal payload packed most-significant nibble first.
@@ -81,7 +96,16 @@ pub fn lex(input: &[u8]) -> Result<Vec<Token>, LexError> {
 pub(crate) struct Lexer<'a> {
     input: &'a [u8],
     at: usize,
+    allow_print_controls: bool,
     previous_was_signature: bool,
+    tag_name_expected: bool,
+}
+
+const MAX_STORED_STRING_OCTETS: usize = 32_769;
+
+pub(crate) fn print_control_end(input: &[u8], at: usize) -> Option<usize> {
+    match_exact_ignoring_controls(input, at, b"\\N\\")
+        .or_else(|| match_exact_ignoring_controls(input, at, b"\\F\\"))
 }
 
 impl<'a> Lexer<'a> {
@@ -89,8 +113,18 @@ impl<'a> Lexer<'a> {
         Self {
             input,
             at: 0,
+            allow_print_controls: true,
             previous_was_signature: false,
+            tag_name_expected: false,
         }
+    }
+
+    pub(crate) fn set_allow_print_controls(&mut self, allow: bool) {
+        self.allow_print_controls = allow;
+    }
+
+    pub(crate) fn input(&self) -> &[u8] {
+        self.input
     }
 
     pub(crate) fn next_token(&mut self) -> Result<Option<Token>, LexError> {
@@ -110,23 +144,118 @@ impl<'a> Lexer<'a> {
 
     fn skip_signature_payload(&mut self) -> Result<(), LexError> {
         let start = self.at;
-        let tail = &self.input[start..];
-        let exchange_end = tail
-            .windows(b"END-ISO-10303-21".len())
-            .position(|window| window == b"END-ISO-10303-21")
-            .ok_or_else(|| Self::error(start, "unterminated signature section"))?;
-        let section_end = tail[..exchange_end]
-            .windows(b"ENDSEC".len())
-            .rposition(|window| window == b"ENDSEC")
-            .ok_or_else(|| Self::error(start, "unterminated signature section"))?;
-        self.at = start + section_end;
+        let name_len = b"ENDSEC".len();
+        let mut at = start;
+        while at + name_len <= self.input.len() {
+            if self.input.get(at..at + 2) == Some(b"/*") {
+                let comment_start = at;
+                at += 2;
+                let Some(end) = self.input[at..].windows(2).position(|w| w == b"*/") else {
+                    return Err(Self::error(comment_start, "unterminated comment"));
+                };
+                at += end + 2;
+                continue;
+            }
+            let candidate = at;
+            let Some(mut after_name) = self.match_ignoring_controls(candidate, b"ENDSEC") else {
+                at += 1;
+                continue;
+            };
+            let preceded_by_separator = candidate == start
+                || self.input[..candidate]
+                    .last()
+                    .is_some_and(|byte| byte.is_ascii_control() || *byte == b' ')
+                || self.input[..candidate].ends_with(b"*/");
+            while self
+                .input
+                .get(after_name)
+                .is_some_and(|byte| byte.is_ascii_control() || *byte == b' ')
+            {
+                after_name += 1;
+            }
+            if preceded_by_separator && self.input.get(after_name) == Some(&b';') {
+                self.validate_signature_payload(start, candidate)?;
+                self.at = candidate;
+                return Ok(());
+            }
+            at += 1;
+        }
+        Err(Self::error(start, "unterminated signature section"))
+    }
+
+    fn validate_signature_payload(&self, start: usize, end: usize) -> Result<(), LexError> {
+        let mut quantum_len = 0;
+        let mut padding = 0;
+        let mut finished = false;
+        let mut saw_content = false;
+        for (relative, &byte) in self.input[start..end].iter().enumerate() {
+            if byte.is_ascii_control() || byte == b' ' {
+                continue;
+            }
+            saw_content = true;
+            let is_alphabet = byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/');
+            if finished || (padding != 0 && is_alphabet) {
+                return Err(Self::error(
+                    start + relative,
+                    "invalid SIGNATURE base64 padding",
+                ));
+            }
+            if is_alphabet {
+                quantum_len += 1;
+            } else if byte == b'=' {
+                if quantum_len < 2 || padding == 2 {
+                    return Err(Self::error(
+                        start + relative,
+                        "invalid SIGNATURE base64 padding",
+                    ));
+                }
+                padding += 1;
+                quantum_len += 1;
+            } else {
+                return Err(Self::error(
+                    start + relative,
+                    "invalid SIGNATURE base64 character",
+                ));
+            }
+            if quantum_len == 4 {
+                finished = padding != 0;
+                quantum_len = 0;
+                padding = 0;
+            }
+        }
+        if !saw_content {
+            return Err(Self::error(
+                start,
+                "SIGNATURE section has empty base64 content",
+            ));
+        }
+        if quantum_len != 0 {
+            return Err(Self::error(
+                end,
+                "SIGNATURE base64 content has incomplete quantum",
+            ));
+        }
         Ok(())
     }
 
     fn skip_trivia(&mut self) -> Result<bool, LexError> {
         loop {
-            while self.input.get(self.at).is_some_and(u8::is_ascii_whitespace) {
+            while self.input.get(self.at).is_some_and(u8::is_ascii_control) {
                 self.at += 1;
+            }
+            if let Some(end) = self.print_control_end(self.at) {
+                if !self.allow_print_controls {
+                    return Err(Self::error(
+                        self.at,
+                        "print control directive is not allowed in this section",
+                    ));
+                }
+                self.at = end;
+                continue;
+            }
+            if self.input.get(self.at) == Some(&b' ') {
+                self.at += 1;
+                continue;
             }
             if self.input.get(self.at..self.at + 2) != Some(b"/*") {
                 return Ok(self.at < self.input.len());
@@ -142,6 +271,14 @@ impl<'a> Lexer<'a> {
 
     fn token(&mut self) -> Result<Token, LexError> {
         let start = self.at;
+        if self.tag_name_expected {
+            self.tag_name_expected = false;
+            let kind = self.tag_name()?;
+            return Ok(Token {
+                kind,
+                span: start..self.at,
+            });
+        }
         let byte = self.input[self.at];
         let kind = match byte {
             b'(' => self.one(TokenKind::LParen),
@@ -149,22 +286,25 @@ impl<'a> Lexer<'a> {
             b',' => self.one(TokenKind::Comma),
             b';' => self.one(TokenKind::Semicolon),
             b'=' => self.one(TokenKind::Equals),
+            b'{' => self.one(TokenKind::LBrace),
+            b'}' => self.one(TokenKind::RBrace),
+            b':' => self.one(TokenKind::Colon),
             b'$' => self.one(TokenKind::Omitted),
             b'*' => self.one(TokenKind::Derived),
-            b'#' => self.instance()?,
+            b'#' => self.occurrence(b'#')?,
+            b'@' => self.occurrence(b'@')?,
             b'\'' => self.string()?,
             b'"' => self.binary()?,
             b'<' => self.resource()?,
             b'.' if self
-                .input
-                .get(self.at + 1)
-                .is_some_and(u8::is_ascii_alphabetic) =>
+                .next_non_ignored(self.at + 1)
+                .is_some_and(|byte| byte.is_ascii_alphabetic()) =>
             {
                 self.enumeration()?
             }
             b'!' => self.user_name()?,
             b'+' | b'-' | b'0'..=b'9' | b'.' => self.number()?,
-            b if b.is_ascii_alphabetic() => self.name(),
+            b if b.is_ascii_alphabetic() || b == b'_' => self.name(),
             _ => return Err(Self::error(start, "unexpected byte")),
         };
         Ok(Token {
@@ -175,26 +315,50 @@ impl<'a> Lexer<'a> {
 
     fn one(&mut self, kind: TokenKind) -> TokenKind {
         self.at += 1;
+        if matches!(kind, TokenKind::LBrace) {
+            self.tag_name_expected = true;
+        }
         kind
     }
 
     fn name(&mut self) -> TokenKind {
         let start = self.at;
         self.at += 1;
-        while self
-            .input
-            .get(self.at)
-            .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_' || *b == b'-')
-        {
+        while self.input.get(self.at).is_some_and(|b| {
+            b.is_ascii_alphanumeric() || *b == b'_' || *b == b'-' || b.is_ascii_control()
+        }) {
             self.at += 1;
         }
-        TokenKind::Name(String::from_utf8_lossy(&self.input[start..self.at]).to_ascii_uppercase())
+        TokenKind::Name(self.normalized(start, self.at).to_ascii_uppercase())
+    }
+
+    fn tag_name(&mut self) -> Result<TokenKind, LexError> {
+        let start = self.at;
+        if !self
+            .input
+            .get(self.at)
+            .is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_')
+        {
+            return Err(Self::error(start, "tag name has no identifier"));
+        }
+        self.at += 1;
+        while self.input.get(self.at).is_some_and(|byte| {
+            byte.is_ascii_alphanumeric() || *byte == b'_' || byte.is_ascii_control()
+        }) {
+            self.at += 1;
+        }
+        Ok(TokenKind::TagName(self.normalized(start, self.at)))
     }
 
     fn user_name(&mut self) -> Result<TokenKind, LexError> {
         let start = self.at;
         self.at += 1;
-        if !self.input.get(self.at).is_some_and(u8::is_ascii_alphabetic) {
+        self.skip_ignored();
+        if !self
+            .input
+            .get(self.at)
+            .is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_')
+        {
             return Err(Self::error(start, "user-defined name has no identifier"));
         }
         let TokenKind::Name(name) = self.name() else {
@@ -203,52 +367,91 @@ impl<'a> Lexer<'a> {
         Ok(TokenKind::UserName(name))
     }
 
-    fn instance(&mut self) -> Result<TokenKind, LexError> {
+    fn occurrence(&mut self, prefix: u8) -> Result<TokenKind, LexError> {
         let start = self.at;
         self.at += 1;
-        let digits = self.at;
-        while self.input.get(self.at).is_some_and(u8::is_ascii_digit) {
-            self.at += 1;
+        self.skip_ignored();
+        match self.input.get(self.at).copied() {
+            Some(byte) if byte.is_ascii_digit() => {
+                let digits = self.at;
+                while let Some(byte) = self.input.get(self.at).copied() {
+                    if byte.is_ascii_digit() || byte.is_ascii_control() {
+                        self.at += 1;
+                    } else {
+                        break;
+                    }
+                }
+                let value = self
+                    .normalized(digits, self.at)
+                    .parse::<u64>()
+                    .ok()
+                    .ok_or_else(|| Self::error(start, "instance name is out of range"))?;
+                if value == 0 {
+                    return Err(Self::error(start, "instance name must not be zero"));
+                }
+                match prefix {
+                    b'#' => Ok(TokenKind::Instance(value)),
+                    b'@' => Ok(TokenKind::ValueInstance(value)),
+                    _ => unreachable!("occurrence prefixes are fixed by the lexer"),
+                }
+            }
+            Some(byte) if byte.is_ascii_alphabetic() || byte == b'_' => {
+                let name_start = self.at;
+                self.at += 1;
+                while let Some(byte) = self.input.get(self.at).copied() {
+                    if byte.is_ascii_alphanumeric() || byte == b'_' || byte.is_ascii_control() {
+                        self.at += 1;
+                    } else {
+                        break;
+                    }
+                }
+                let name = self.normalized(name_start, self.at).to_ascii_uppercase();
+                match prefix {
+                    b'#' => Ok(TokenKind::ConstantEntity(name)),
+                    b'@' => Ok(TokenKind::ConstantValue(name)),
+                    _ => unreachable!("occurrence prefixes are fixed by the lexer"),
+                }
+            }
+            _ => Err(Self::error(start, "occurrence name has no identifier")),
         }
-        if digits == self.at {
-            return Err(Self::error(start, "instance name has no digits"));
-        }
-        let value = std::str::from_utf8(&self.input[digits..self.at])
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .ok_or_else(|| Self::error(start, "instance name is out of range"))?;
-        Ok(TokenKind::Instance(value))
     }
 
     fn number(&mut self) -> Result<TokenKind, LexError> {
         let start = self.at;
         if matches!(self.input[self.at], b'+' | b'-') {
             self.at += 1;
+            self.skip_ignored();
         }
         let mut dot = false;
         let mut exponent = false;
         while let Some(&b) = self.input.get(self.at) {
             match b {
+                byte if byte.is_ascii_control() => self.at += 1,
                 b'0'..=b'9' => self.at += 1,
-                b'.' if !dot && !exponent => {
+                b'.' if !dot => {
                     dot = true;
                     self.at += 1;
                 }
                 b'E' | b'e' | b'D' | b'd' if !exponent => {
                     exponent = true;
                     self.at += 1;
+                    self.skip_ignored();
                     if self
                         .input
                         .get(self.at)
                         .is_some_and(|b| matches!(b, b'+' | b'-'))
                     {
                         self.at += 1;
+                        self.skip_ignored();
                     }
                 }
                 _ => break,
             }
         }
-        let raw = std::str::from_utf8(&self.input[start..self.at]).unwrap_or_default();
+        let mut raw = self.normalized(start, self.at);
+        if exponent && raw.ends_with('.') {
+            raw.pop();
+        }
         if dot || exponent {
             let parsed = if raw
                 .as_bytes()
@@ -272,18 +475,18 @@ impl<'a> Lexer<'a> {
     fn enumeration(&mut self) -> Result<TokenKind, LexError> {
         let start = self.at;
         self.at += 1;
+        self.skip_ignored();
         let name_start = self.at;
-        while self
-            .input
-            .get(self.at)
-            .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_')
-        {
+        while self.input.get(self.at).is_some_and(|b| {
+            b.is_ascii_alphanumeric() || matches!(*b, b'_' | b'-') || b.is_ascii_control()
+        }) {
             self.at += 1;
         }
+        self.skip_ignored();
         if self.input.get(self.at) != Some(&b'.') {
             return Err(Self::error(start, "unterminated enumeration"));
         }
-        let name = String::from_utf8_lossy(&self.input[name_start..self.at]).to_ascii_uppercase();
+        let name = self.normalized(name_start, self.at).to_ascii_uppercase();
         self.at += 1;
         Ok(TokenKind::Enumeration(name))
     }
@@ -293,14 +496,43 @@ impl<'a> Lexer<'a> {
         self.at += 1;
         let mut bytes = Vec::new();
         loop {
+            if self.at - start + 1 > MAX_STORED_STRING_OCTETS {
+                return Err(Self::error(start, "string exceeds maximum stored length"));
+            }
             match self.input.get(self.at).copied() {
-                Some(b'\'') if self.input.get(self.at + 1) == Some(&b'\'') => {
+                Some(b'\'') if self.match_exact_ignoring_controls(self.at, b"''").is_some() => {
                     bytes.extend_from_slice(b"''");
-                    self.at += 2;
+                    self.at = self
+                        .match_exact_ignoring_controls(self.at, b"''")
+                        .expect("doubled apostrophe matched above");
                 }
                 Some(b'\'') => {
                     self.at += 1;
                     return Ok(TokenKind::String(bytes));
+                }
+                Some(byte) if byte.is_ascii_control() => {
+                    self.at += 1;
+                }
+                Some(b'\\') if self.print_control_end(self.at).is_some() => {
+                    if !self.allow_print_controls {
+                        return Err(Self::error(
+                            self.at,
+                            "print control directive is not allowed in this section",
+                        ));
+                    }
+                    let end = self
+                        .print_control_end(self.at)
+                        .expect("print control matched above");
+                    let directive = if self
+                        .match_exact_ignoring_controls(self.at, b"\\N\\")
+                        .is_some()
+                    {
+                        b"\\N\\"
+                    } else {
+                        b"\\F\\"
+                    };
+                    bytes.extend_from_slice(directive);
+                    self.at = end;
                 }
                 Some(byte) => {
                     bytes.push(byte);
@@ -314,14 +546,31 @@ impl<'a> Lexer<'a> {
     fn binary(&mut self) -> Result<TokenKind, LexError> {
         let start = self.at;
         self.at += 1;
-        let content = self.at;
-        while self.input.get(self.at).is_some_and(u8::is_ascii_hexdigit) {
-            self.at += 1;
+        let mut raw = Vec::new();
+        loop {
+            match self.input.get(self.at).copied() {
+                Some(byte) if byte.is_ascii_hexdigit() => {
+                    raw.push(byte);
+                    self.at += 1;
+                }
+                Some(byte) if byte.is_ascii_control() => self.at += 1,
+                Some(b'\\') if self.print_control_end(self.at).is_some() => {
+                    if !self.allow_print_controls {
+                        return Err(Self::error(
+                            self.at,
+                            "print control directive is not allowed in this section",
+                        ));
+                    }
+                    self.at = self
+                        .print_control_end(self.at)
+                        .expect("print control matched above");
+                }
+                _ => break,
+            }
         }
         if self.input.get(self.at) != Some(&b'"') {
             return Err(Self::error(start, "invalid binary literal"));
         }
-        let raw = &self.input[content..self.at];
         let Some((&indicator, digits)) = raw.split_first() else {
             return Err(Self::error(
                 start,
@@ -369,16 +618,75 @@ impl<'a> Lexer<'a> {
         let start = self.at;
         self.at += 1;
         let content = self.at;
-        while self.input.get(self.at).is_some_and(|byte| *byte != b'>') {
+        let mut value = Vec::new();
+        while let Some(byte) = self.input.get(self.at).copied() {
+            if byte == b'>' {
+                break;
+            }
+            if self.print_control_end(self.at).is_some() {
+                return Err(Self::error(
+                    self.at,
+                    "print control directive is not allowed in a resource",
+                ));
+            }
+            if !byte.is_ascii_control() {
+                value.push(byte);
+            }
             self.at += 1;
         }
         if self.input.get(self.at) != Some(&b'>') {
             return Err(Self::error(start, "unterminated resource token"));
         }
-        let value = String::from_utf8(self.input[content..self.at].to_vec())
-            .map_err(|_| Self::error(start, "resource token is not UTF-8"))?;
+        let value = String::from_utf8(value)
+            .map_err(|_| Self::error(content, "resource token is not UTF-8"))?;
         self.at += 1;
         Ok(TokenKind::Resource(value))
+    }
+
+    fn skip_ignored(&mut self) {
+        while self.input.get(self.at).is_some_and(u8::is_ascii_control) {
+            self.at += 1;
+        }
+    }
+
+    fn next_non_ignored(&self, mut at: usize) -> Option<u8> {
+        while self.input.get(at).is_some_and(u8::is_ascii_control) {
+            at += 1;
+        }
+        self.input.get(at).copied()
+    }
+
+    fn normalized(&self, start: usize, end: usize) -> String {
+        self.input[start..end]
+            .iter()
+            .filter(|byte| !byte.is_ascii_control())
+            .map(|byte| char::from(*byte))
+            .collect()
+    }
+
+    fn print_control_end(&self, at: usize) -> Option<usize> {
+        print_control_end(self.input, at)
+    }
+
+    fn match_exact_ignoring_controls(&self, at: usize, expected: &[u8]) -> Option<usize> {
+        match_exact_ignoring_controls(self.input, at, expected)
+    }
+
+    fn match_ignoring_controls(&self, mut at: usize, expected: &[u8]) -> Option<usize> {
+        for &byte in expected {
+            while self.input.get(at).is_some_and(u8::is_ascii_control) {
+                at += 1;
+            }
+            if !self
+                .input
+                .get(at)
+                .is_some_and(|value| value.eq_ignore_ascii_case(&byte))
+            {
+                return None;
+            }
+            at += 1;
+        }
+        Some(at)
     }
 
     fn error(offset: usize, message: &str) -> LexError {
@@ -387,4 +695,17 @@ impl<'a> Lexer<'a> {
             message: message.into(),
         }
     }
+}
+
+fn match_exact_ignoring_controls(input: &[u8], mut at: usize, expected: &[u8]) -> Option<usize> {
+    for &byte in expected {
+        while input.get(at).is_some_and(u8::is_ascii_control) {
+            at += 1;
+        }
+        if input.get(at) != Some(&byte) {
+            return None;
+        }
+        at += 1;
+    }
+    Some(at)
 }

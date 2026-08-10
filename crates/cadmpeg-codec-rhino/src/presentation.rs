@@ -5,10 +5,12 @@ use std::collections::BTreeMap;
 use std::ops::Range;
 
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::report::LossNote;
 use serde::Serialize;
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::{Record, Scan};
+use crate::loss::RhinoLossCode;
 use crate::objects::parse_class_wrapper;
 use crate::settings::utf16;
 use crate::wire::{scaled_coordinate, Uuid};
@@ -86,7 +88,8 @@ struct GroupRecord {
 struct MaterialRecord {
     id: String,
     source_offset: u64,
-    archive_index: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    archive_index: Option<i32>,
     source_uuid: Option<String>,
     name: String,
     plugin_uuid: String,
@@ -186,7 +189,8 @@ struct LinetypeSegment {
 struct LinetypeRecord {
     id: String,
     source_offset: u64,
-    archive_index: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    archive_index: Option<i32>,
     source_uuid: Option<String>,
     name: String,
     segments: Vec<LinetypeSegment>,
@@ -210,7 +214,8 @@ struct HatchLineRecord {
 struct HatchPatternRecord {
     id: String,
     source_offset: u64,
-    archive_index: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    archive_index: Option<i32>,
     source_uuid: Option<String>,
     name: String,
     fill_type: i32,
@@ -222,7 +227,8 @@ struct HatchPatternRecord {
 struct DimensionStyleRecord {
     id: String,
     source_offset: u64,
-    archive_index: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    archive_index: Option<i32>,
     source_uuid: Option<String>,
     name: String,
     extension_line_extension_mm: f64,
@@ -257,6 +263,8 @@ struct DimensionStyleRecord {
 #[derive(Debug, Default, Serialize)]
 struct FontRecord {
     characteristics: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    legacy_italic: Option<bool>,
     windows_logfont_name: String,
     postscript_name: String,
     obsolete_description: String,
@@ -281,7 +289,8 @@ struct FontRecord {
 struct TextStyleRecord {
     id: String,
     source_offset: u64,
-    archive_index: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    archive_index: Option<i32>,
     source_uuid: Option<String>,
     name: String,
     font_description: String,
@@ -738,6 +747,7 @@ fn parse_material(
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
+    writer_version: Option<i64>,
     source_offset: usize,
 ) -> Result<MaterialRecord, FramingError> {
     let framed = data.get(range.start).copied() == Some(0);
@@ -789,7 +799,13 @@ fn parse_material(
     let emission = reader.array()?;
     let specular = reader.array()?;
     let reflection = reader.array()?;
-    let transparent = reader.array()?;
+    let mut transparent = reader.array()?;
+    if !modern
+        && writer_version.is_some_and(|version| version < 200_912_010)
+        && transparent[..3] == [128, 128, 128]
+    {
+        transparent = diffuse;
+    }
     let index_of_refraction = read_finite(&mut reader, "index of refraction")?;
     let reflectivity = read_finite(&mut reader, "reflectivity")?;
     let shine = read_finite(&mut reader, "shine")?;
@@ -861,7 +877,7 @@ fn parse_material(
     Ok(MaterialRecord {
         id: format!("rhino:presentation:material#{key}"),
         source_offset: source_offset as u64,
-        archive_index: component.index.unwrap_or(-1),
+        archive_index: component.index,
         source_uuid: (!component.id.is_nil()).then(|| component.id.to_string()),
         name: component.name,
         plugin_uuid: plugin.to_string(),
@@ -1008,13 +1024,11 @@ fn push_light(
     mut light: LightRecord,
 ) {
     if light.source_uuid != Uuid::nil().to_string() {
-        if let Some(index) = indexes.get(&light.source_uuid).copied() {
-            lights[index].links.append(&mut light.links);
-            lights[index].links.sort();
-            lights[index].links.dedup();
-            return;
+        if indexes.contains_key(&light.source_uuid) {
+            light.id = format!("{}-offset-{}", light.id, light.source_offset);
+        } else {
+            indexes.insert(light.source_uuid.clone(), lights.len());
         }
-        indexes.insert(light.source_uuid.clone(), lights.len());
     }
     lights.push(light);
 }
@@ -1190,7 +1204,7 @@ fn linetype_record(
     LinetypeRecord {
         id: format!("rhino:presentation:linetype#{key}"),
         source_offset: source_offset as u64,
-        archive_index: component.index.unwrap_or(-1),
+        archive_index: component.index,
         source_uuid: (!id.is_nil()).then(|| id.to_string()),
         name: component.name,
         segments,
@@ -1377,7 +1391,7 @@ fn parse_hatch_pattern(
     Ok(HatchPatternRecord {
         id: format!("rhino:presentation:hatch_pattern#{key}"),
         source_offset: source_offset as u64,
-        archive_index: component.index.unwrap_or(-1),
+        archive_index: component.index,
         source_uuid: (!component.id.is_nil()).then(|| component.id.to_string()),
         name: component.name,
         fill_type,
@@ -1664,7 +1678,7 @@ fn parse_dimension_style(
     Ok(DimensionStyleRecord {
         id: format!("rhino:presentation:dimension_style#{key}"),
         source_offset: source_offset as u64,
-        archive_index: component.index.unwrap_or(-1),
+        archive_index: component.index,
         source_uuid: (!component.id.is_nil()).then(|| component.id.to_string()),
         name: component.name,
         extension_line_extension_mm,
@@ -1903,9 +1917,9 @@ fn rendering_materials(
     data: &[u8],
     range: Option<Range<usize>>,
     archive: ArchiveVersion,
-) -> Vec<RenderingMaterialReference> {
+) -> Result<Vec<RenderingMaterialReference>, FramingError> {
     let Some(range) = range else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     (|| {
         let (mut reader, version) = anonymous(data, range, archive)?;
@@ -1966,9 +1980,7 @@ fn rendering_materials(
                     material_source,
                 })
             })();
-            if let Ok(value) = parsed {
-                values.push(value);
-            }
+            values.push(parsed?);
             reader.skip(chunk.next_offset - reader.position())?;
         }
         if reader.remaining() != 0 {
@@ -1979,7 +1991,6 @@ fn rendering_materials(
         }
         Ok(values)
     })()
-    .unwrap_or_default()
 }
 
 fn parse_font(
@@ -2059,6 +2070,8 @@ fn parse_text_style(
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
+    writer_version: Option<i64>,
+    apple_runtime: bool,
     source_offset: usize,
 ) -> Result<TextStyleRecord, FramingError> {
     if data.get(range.start).copied() != Some(0) {
@@ -2078,9 +2091,17 @@ fn parse_text_style(
         }
         let face_end = face_units.iter().position(|unit| *unit == 0).unwrap_or(64);
         let windows_logfont_name = String::from_utf16_lossy(&face_units[..face_end]);
+        let postscript_name = if !description.is_empty()
+            && !description.eq_ignore_ascii_case("Default")
+            && (apple_runtime || writer_version.is_some_and(|version| version > 201_802_230))
+        {
+            description.clone()
+        } else {
+            String::new()
+        };
         let mut font = FontRecord {
             windows_logfont_name,
-            postscript_name: description.clone(),
+            postscript_name,
             obsolete_description: description.clone(),
             ..FontRecord::default()
         };
@@ -2094,7 +2115,7 @@ fn parse_text_style(
                 ));
             }
             let _linefeed_ratio = read_finite(&mut reader, "legacy font linefeed ratio")?;
-            font.characteristics = u32::from(italic != 0);
+            font.legacy_italic = Some(italic != 0);
         }
         let id = if packed & 0x0f >= 2 {
             uuid(&mut reader)?
@@ -2110,7 +2131,7 @@ fn parse_text_style(
         return Ok(TextStyleRecord {
             id: format!("rhino:presentation:text_style#index-{index}-offset-{source_offset}"),
             source_offset: source_offset as u64,
-            archive_index: index,
+            archive_index: Some(index),
             source_uuid: (!id.is_nil()).then(|| id.to_string()),
             name: description.clone(),
             font_description: description,
@@ -2147,10 +2168,15 @@ fn parse_text_style(
             "text style has trailing bytes",
         ));
     }
-    let index = component.index.unwrap_or(-1);
+    let index = component.index;
     Ok(TextStyleRecord {
         id: if id.is_nil() {
-            format!("rhino:presentation:text_style#index-{index}-offset-{source_offset}")
+            index.map_or_else(
+                || format!("rhino:presentation:text_style#offset-{source_offset}"),
+                |index| {
+                    format!("rhino:presentation:text_style#index-{index}-offset-{source_offset}")
+                },
+            )
         } else {
             format!("rhino:presentation:text_style#{id}")
         },
@@ -2163,7 +2189,7 @@ fn parse_text_style(
     })
 }
 
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
     let scale = scan
         .metadata
         .settings
@@ -2185,6 +2211,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     let mut layers = Vec::new();
     let mut object_presentation = Vec::new();
     let mut object_id_counts = BTreeMap::<Uuid, usize>::new();
+    let mut losses = Vec::new();
     for object in &scan.objects {
         if let Some(identity) = &object.identity {
             *object_id_counts.entry(identity.object_id).or_default() += 1;
@@ -2193,18 +2220,37 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     for table in &scan.tables {
         let table_type = table.typecode & !0x0000_8000;
         for record in &table.records {
+            let recognized = matches!(
+                table_type,
+                GROUP_TABLE
+                    | MATERIAL_TABLE
+                    | LIGHT_TABLE
+                    | LINETYPE_TABLE
+                    | HATCH_PATTERN_TABLE
+                    | DIMSTYLE_TABLE
+                    | BITMAP_TABLE
+                    | TEXTURE_MAPPING_TABLE
+                    | FONT_TABLE
+            );
+            let mut parsed = false;
             if table_type == GROUP_TABLE {
                 if let Ok(range) = class_data(scan.data, record, scan.archive, GROUP) {
                     if let Ok(group) = parse_group(scan.data, range, record.range.start) {
                         groups.push(group);
+                        parsed = true;
                     }
                 }
             } else if table_type == MATERIAL_TABLE {
                 if let Ok(range) = class_data(scan.data, record, scan.archive, MATERIAL) {
-                    if let Ok(material) =
-                        parse_material(scan.data, range, scan.archive, record.range.start)
-                    {
+                    if let Ok(material) = parse_material(
+                        scan.data,
+                        range,
+                        scan.archive,
+                        scan.metadata.properties.writer_version,
+                        record.range.start,
+                    ) {
                         materials.push(material);
+                        parsed = true;
                     }
                 }
             } else if table_type == LIGHT_TABLE {
@@ -2213,6 +2259,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
                         parse_light(scan.data, range, scale, record.range.start, None)
                     {
                         push_light(&mut lights, &mut light_indexes, light);
+                        parsed = true;
                     }
                 }
             } else if table_type == LINETYPE_TABLE {
@@ -2221,6 +2268,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
                         parse_linetype(scan.data, range, scan.archive, scale, record.range.start)
                     {
                         linetypes.push(value);
+                        parsed = true;
                     }
                 }
             } else if table_type == HATCH_PATTERN_TABLE {
@@ -2233,6 +2281,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
                         record.range.start,
                     ) {
                         hatch_patterns.push(value);
+                        parsed = true;
                     }
                 }
             } else if table_type == DIMSTYLE_TABLE {
@@ -2245,6 +2294,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
                         record.range.start,
                     ) {
                         dimension_styles.push(value);
+                        parsed = true;
                     }
                 }
             } else if table_type == BITMAP_TABLE {
@@ -2253,6 +2303,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
                         parse_embedded_image(scan.data, range, scan.archive, record.range.start)
                     {
                         images.push(value);
+                        parsed = true;
                     }
                 } else if let Ok(class) = parse_class_wrapper(
                     scan.data,
@@ -2268,6 +2319,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
                             record.range.start,
                         ) {
                             windows_bitmaps.push(value);
+                            parsed = true;
                         }
                     }
                 }
@@ -2277,16 +2329,33 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
                         parse_texture_mapping(scan.data, range, scan.archive, record.range.start)
                     {
                         texture_mappings.push(value);
+                        parsed = true;
                     }
                 }
             } else if table_type == FONT_TABLE {
                 if let Ok(range) = class_data(scan.data, record, scan.archive, TEXT_STYLE) {
                     if let Ok(value) =
-                        parse_text_style(scan.data, range, scan.archive, record.range.start)
+                        parse_text_style(
+                            scan.data,
+                            range,
+                            scan.archive,
+                            scan.metadata.properties.writer_version,
+                            scan.metadata.properties.application.as_ref().is_some_and(
+                                |application| application.name.to_ascii_lowercase().contains("mac"),
+                            ),
+                            record.range.start,
+                        )
                     {
                         text_styles.push(value);
+                        parsed = true;
                     }
                 }
+            }
+            if recognized && !parsed {
+                losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
+                    "record at offset {} in table {table_type:#x} could not be transferred",
+                    record.range.start
+                )));
             }
         }
     }
@@ -2302,14 +2371,18 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
         }
         if object.class_uuid == LIGHT {
             let link = format!("rhino:object:record#{source_order:06}");
-            if let Ok(light) = parse_light(
+            match parse_light(
                 scan.data,
                 object.class_data_range.clone(),
                 scale,
                 object.range.start,
                 Some(link),
             ) {
-                push_light(&mut lights, &mut light_indexes, light);
+                Ok(light) => push_light(&mut lights, &mut light_indexes, light),
+                Err(error) => losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
+                    "light object at offset {} could not be transferred: {error}",
+                    object.range.start
+                ))),
             }
         }
         if let (Some(identity), Some(attributes)) = (&object.identity, &object.attributes) {
@@ -2320,6 +2393,15 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
             } else {
                 identity.object_id.to_string()
             };
+            let rendering_materials =
+                rendering_materials(scan.data, attributes.rendering_range.clone(), scan.archive)
+                    .unwrap_or_else(|error| {
+                        losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
+                    "object rendering materials at offset {} could not be transferred: {error}",
+                    object.range.start
+                )));
+                        Vec::new()
+                    });
             object_presentation.push(ObjectPresentationRecord {
                 id: format!("rhino:presentation:object#{key}"),
                 source_offset: object.range.start as u64,
@@ -2365,11 +2447,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
                 hatch_boundary_visible: attributes.hatch_boundary_visible,
                 section_fill_rule: attributes.section_fill_rule,
                 clipping_plane_label_style: attributes.clipping_plane_label_style,
-                rendering_materials: rendering_materials(
-                    scan.data,
-                    attributes.rendering_range.clone(),
-                    scan.archive,
-                ),
+                rendering_materials,
                 links: vec![format!("rhino:object:record#{source_order:06}")],
             });
         }
@@ -2388,6 +2466,15 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
                 || format!("index-{}-offset-{}", layer.index, layer.source.range.start),
                 |id| id.to_string(),
             );
+        let rendering_materials =
+            rendering_materials(scan.data, layer.rendering_range.clone(), scan.archive)
+                .unwrap_or_else(|error| {
+                    losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
+                        "layer rendering materials at offset {} could not be transferred: {error}",
+                        layer.source.range.start
+                    )));
+                    Vec::new()
+                });
         layers.push(LayerPresentationRecord {
             id: format!("rhino:presentation:layer#{key}"),
             source_offset: layer.source.range.start as u64,
@@ -2411,17 +2498,28 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
                 .filter(|id| !id.is_nil())
                 .map(|id| id.to_string()),
             clipping_planes_enabled: layer.no_clipping_planes.map(|value| !value),
-            rendering_materials: rendering_materials(
-                scan.data,
-                layer.rendering_range.clone(),
-                scan.archive,
-            ),
+            rendering_materials,
         });
     }
+    let mut group_index_counts = BTreeMap::<i32, usize>::new();
+    for group in &groups {
+        *group_index_counts.entry(group.archive_index).or_default() += 1;
+    }
+    for (index, count) in &group_index_counts {
+        if *count > 1 {
+            losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
+                "group index {index} occurs {count} times; ambiguous member links were dropped"
+            )));
+        }
+    }
     for group in &mut groups {
-        group.links = group_members
-            .remove(&group.archive_index)
-            .unwrap_or_default();
+        group.links = if group_index_counts.get(&group.archive_index) == Some(&1) {
+            group_members
+                .remove(&group.archive_index)
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         group.links.sort();
     }
     let namespace = ir.native.namespace_mut("rhino");
@@ -2462,13 +2560,14 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     namespace
         .set_arena("object_presentation", &object_presentation)
         .expect("Rhino object presentation serializes");
+    losses
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_group, parse_hatch_pattern, parse_light, parse_linetype, parse_material,
-        parse_text_style,
+        linetype_record, parse_group, parse_hatch_pattern, parse_light, parse_linetype,
+        parse_material, parse_text_style, Component, Uuid,
     };
     use crate::chunks::ArchiveVersion;
 
@@ -2509,13 +2608,44 @@ mod tests {
         bytes.extend(1_i32.to_le_bytes());
         bytes.extend(1.6_f64.to_le_bytes());
         bytes.extend([0x11; 16]);
-        let value = parse_text_style(&bytes, 0..bytes.len(), ArchiveVersion::V8, 42)
-            .expect("valid legacy text style");
-        assert_eq!(value.archive_index, 7);
+        let value = parse_text_style(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V8,
+            Some(201_802_231),
+            false,
+            42,
+        )
+        .expect("valid legacy text style");
+        assert_eq!(value.archive_index, Some(7));
         assert_eq!(value.font.windows_logfont_name, "Helvetica Neue");
         assert_eq!(value.font.windows_logfont_weight, Some(700));
-        assert_eq!(value.font.characteristics, 1);
+        assert_eq!(value.font.characteristics, 0);
+        assert_eq!(value.font.legacy_italic, Some(true));
         assert_eq!(value.source_offset, 42);
+    }
+
+    #[test]
+    fn absent_component_index_does_not_alias_system_index_minus_one() {
+        let record = linetype_record(
+            Component {
+                index: None,
+                id: Uuid::nil(),
+                name: String::new(),
+            },
+            Uuid::nil(),
+            Vec::new(),
+            7,
+            0,
+            0,
+            0.0,
+            0,
+            Vec::new(),
+            false,
+        );
+        assert_eq!(record.archive_index, None);
+        let json = serde_json::to_value(record).expect("linetype record JSON");
+        assert!(json.get("archive_index").is_none());
     }
 
     #[test]
@@ -2574,7 +2704,7 @@ mod tests {
             [9, 10, 11, 12],
             [13, 14, 15, 16],
             [17, 18, 19, 20],
-            [21, 22, 23, 24],
+            [128, 128, 128, 24],
         ] {
             body.extend(color);
         }
@@ -2588,10 +2718,17 @@ mod tests {
         let inner = anonymous(3, &body);
         let mut bytes = vec![0x20];
         bytes.extend(inner);
-        let material = parse_material(&bytes, 0..bytes.len(), ArchiveVersion::V5, 0)
-            .expect("required invariant");
+        let material = parse_material(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V5,
+            Some(200_912_009),
+            0,
+        )
+        .expect("required invariant");
         assert_eq!(material.name, "steel");
         assert_eq!(material.diffuse, [5, 6, 7, 8]);
+        assert_eq!(material.transparent, material.diffuse);
         assert_eq!(material.index_of_refraction, 1.5);
         assert!(material.shareable);
         assert!(!material.disable_lighting);

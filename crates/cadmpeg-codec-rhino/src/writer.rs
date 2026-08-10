@@ -7,6 +7,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::topology::LoopBoundaryRole;
 use sha2::{Digest, Sha256};
 
 use crate::chunks::{MAGIC, TCODE_ENDOFFILE, TCODE_SHORT};
@@ -31,6 +32,7 @@ const TCODE_OBJECT_TABLE: u32 = 0x1000_0013;
 const TCODE_HISTORY_RECORD_TABLE: u32 = 0x1000_0026;
 const TCODE_ENDOFTABLE: u32 = 0xffff_ffff;
 const TCODE_PROPERTIES_OPENNURBS_VERSION: u32 = 0xa000_0026;
+const OPENNURBS_WRITER_VERSION: i64 = 0xa000_0026;
 const TCODE_UNITS_AND_TOLERANCES: u32 = 0x2000_8031;
 const TCODE_LAYER_RECORD: u32 = 0x2000_8050;
 const TCODE_OBJECT_RECORD: u32 = 0x2000_8070;
@@ -91,7 +93,7 @@ pub(crate) fn write_seekable(
     version: u64,
     output: &mut dyn WriteSeek,
 ) -> Result<(), CodecError> {
-    let mut plan = prepare_write(ir)?;
+    let mut plan = prepare_write(ir, version)?;
     write_archive_prefix(ir, version, output)?;
     let table_start = output.stream_position()?;
     output.write_all(&TCODE_OBJECT_TABLE.to_le_bytes())?;
@@ -232,7 +234,10 @@ fn write_archive_prefix(
     output.write_all(&long_chunk(1, b"cadmpeg"))?;
     output.write_all(&table(
         TCODE_PROPERTIES_TABLE,
-        &[short_chunk(TCODE_PROPERTIES_OPENNURBS_VERSION, 200_712_190)],
+        &[short_chunk(
+            TCODE_PROPERTIES_OPENNURBS_VERSION,
+            OPENNURBS_WRITER_VERSION,
+        )],
     ))?;
     output.write_all(&table(
         TCODE_SETTINGS_TABLE,
@@ -548,7 +553,7 @@ fn general_topology_ir(ir: &CadIr) -> CadIr {
     scoped
 }
 
-fn prepare_write(ir: &CadIr) -> Result<WritePlan, CodecError> {
+fn prepare_write(ir: &CadIr, archive_version: u64) -> Result<WritePlan, CodecError> {
     if !ir.tolerances.linear.is_finite() || ir.tolerances.linear <= 0.0 {
         return Err(CodecError::Malformed(
             "Rhino absolute tolerance must be positive and finite".into(),
@@ -729,7 +734,7 @@ fn prepare_write(ir: &CadIr) -> Result<WritePlan, CodecError> {
     let mut brep_records = tempfile::tempfile()?;
     for scope in &breps {
         let body = &scope.ir.model.bodies[0];
-        let payload = planar_sheet_brep_payload(&scope.ir)?.ok_or_else(|| {
+        let payload = planar_sheet_brep_payload(&scope.ir, archive_version)?.ok_or_else(|| {
             CodecError::NotImplemented(format!(
                 "body {} topology is not a writable Brep",
                 body.id.0
@@ -888,7 +893,10 @@ fn json_array_empty(fields: &NativeFields, name: &str) -> bool {
         .is_some_and(Vec::is_empty)
 }
 
-fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<BrepPayload>, CodecError> {
+fn planar_sheet_brep_payload(
+    ir: &CadIr,
+    archive_version: u64,
+) -> Result<Option<BrepPayload>, CodecError> {
     use cadmpeg_ir::topology::{BodyKind, Sense};
 
     let model = &ir.model;
@@ -900,7 +908,7 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<BrepPayload>, CodecErr
         return Ok(None);
     };
     if model.faces.len() > 1 || body.kind == BodyKind::Solid {
-        return multi_face_brep_payload(ir, body).map(Some);
+        return multi_face_brep_payload(ir, body, archive_version).map(Some);
     }
     let edge_count = model.coedges.len();
     if model.bodies.len() != 1
@@ -1143,8 +1151,9 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<BrepPayload>, CodecErr
         )?;
     }
 
-    let mut payload = vec![0x32];
-    let mut direct = vec![0x32];
+    let brep_version = if archive_version <= 50 { 0x32 } else { 0x33 };
+    let mut payload = vec![brep_version];
+    let mut direct = vec![brep_version];
     let c2 = (0..edge_count)
         .map(|index| {
             if let Some((origin, _, u_axis, v_axis)) = plane_frame {
@@ -1296,7 +1305,8 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<BrepPayload>, CodecErr
             record.extend(indexes(
                 &range.clone().map(|trim| trim as i32).collect::<Vec<_>>(),
             ));
-            record.extend(if index == 0 { 1_i32 } else { 2_i32 }.to_le_bytes());
+            record
+                .extend(brep_loop_type(model.loops[index].boundary_role, index == 0).to_le_bytes());
             record.extend(0_i32.to_le_bytes());
             record
         })
@@ -1307,7 +1317,7 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<BrepPayload>, CodecErr
     face_record.extend(0_i32.to_le_bytes());
     face_record.extend(i32::from(face.sense == Sense::Reversed).to_le_bytes());
     face_record.extend(0_i32.to_le_bytes());
-    payload.extend(raw_array(&[face_record]));
+    payload.extend(face_array(&[face_record], &model.faces, archive_version));
     let min = ordered_points.iter().fold([f64::INFINITY; 3], |a, p| {
         [a[0].min(p.x), a[1].min(p.y), a[2].min(p.z)]
     });
@@ -1319,12 +1329,15 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<BrepPayload>, CodecErr
         payload.extend(bytes);
         direct.extend(bytes);
     }
-    let mesh_presence = vec![0; model.faces.len() + 1];
+    let mesh_presence = vec![0; model.faces.len()];
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     let solid = 0_i32.to_le_bytes();
     payload.extend(solid);
     direct.extend(solid);
+    if archive_version > 50 {
+        payload.extend(empty_region_wrapper());
+    }
     Ok(Some(BrepPayload {
         body: payload,
         direct,
@@ -1345,6 +1358,7 @@ enum WritableFaceSurface<'a> {
 fn multi_face_brep_payload(
     ir: &CadIr,
     body: &cadmpeg_ir::topology::Body,
+    archive_version: u64,
 ) -> Result<BrepPayload, CodecError> {
     use cadmpeg_ir::topology::{BodyKind, Sense};
     use std::collections::{BTreeMap, BTreeSet};
@@ -1801,8 +1815,9 @@ fn multi_face_brep_payload(
         }
     }
 
-    let mut payload = vec![0x32];
-    let mut direct = vec![0x32];
+    let brep_version = if archive_version <= 50 { 0x32 } else { 0x33 };
+    let mut payload = vec![brep_version];
+    let mut direct = vec![brep_version];
     let c2 = model
         .coedges
         .iter()
@@ -1917,14 +1932,10 @@ fn multi_face_brep_payload(
             record.extend(vertex_index[&from.0].to_le_bytes());
             record.extend(vertex_index[&to.0].to_le_bytes());
             record.extend(i32::from(coedge.sense == Sense::Reversed).to_le_bytes());
-            record.extend(
-                (if edge_uses[edge_position].len() == 1 {
-                    1_i32
-                } else {
-                    2_i32
-                })
-                .to_le_bytes(),
-            );
+            let uses = &edge_uses[edge_position];
+            let same_loop = uses.len() == 2
+                && model.coedges[uses[0]].owner_loop == model.coedges[uses[1]].owner_loop;
+            record.extend(brep_trim_type(uses.len(), same_loop).to_le_bytes());
             record.extend(0_i32.to_le_bytes());
             record.extend(loop_index[&coedge.owner_loop.0].to_le_bytes());
             record.extend(
@@ -1955,12 +1966,8 @@ fn multi_face_brep_payload(
                     .collect::<Vec<_>>(),
             ));
             record.extend(
-                (if face.loops.first() == Some(&loop_.id) {
-                    1_i32
-                } else {
-                    2_i32
-                })
-                .to_le_bytes(),
+                brep_loop_type(loop_.boundary_role, face.loops.first() == Some(&loop_.id))
+                    .to_le_bytes(),
             );
             record.extend(face_index[&loop_.face.0].to_le_bytes());
             record
@@ -1986,7 +1993,7 @@ fn multi_face_brep_payload(
             record
         })
         .collect::<Vec<_>>();
-    payload.extend(raw_array(&face_records));
+    payload.extend(face_array(&face_records, &model.faces, archive_version));
     let min = points.iter().fold([f64::INFINITY; 3], |a, point| {
         [a[0].min(point.x), a[1].min(point.y), a[2].min(point.z)]
     });
@@ -1998,16 +2005,89 @@ fn multi_face_brep_payload(
         payload.extend(bytes);
         direct.extend(bytes);
     }
-    let mesh_presence = vec![0; model.faces.len() + 1];
+    let mesh_presence = vec![0; model.faces.len()];
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
-    let solid = i32::from(body.kind == BodyKind::Solid).to_le_bytes();
+    let solid = if body.kind == BodyKind::Solid {
+        planar_solid_orientation(model)
+    } else {
+        0
+    }
+    .to_le_bytes();
     payload.extend(solid);
     direct.extend(solid);
+    if archive_version > 50 {
+        payload.extend(empty_region_wrapper());
+    }
     Ok(BrepPayload {
         body: payload,
         direct,
     })
+}
+
+fn brep_trim_type(edge_use_count: usize, two_uses_in_one_loop: bool) -> i32 {
+    if edge_use_count == 1 {
+        1
+    } else if two_uses_in_one_loop {
+        3
+    } else {
+        2
+    }
+}
+
+fn brep_loop_type(role: LoopBoundaryRole, first_on_face: bool) -> i32 {
+    match role {
+        LoopBoundaryRole::Outer => 1,
+        LoopBoundaryRole::Inner => 2,
+        LoopBoundaryRole::Unspecified if first_on_face => 1,
+        LoopBoundaryRole::Unspecified => 2,
+    }
+}
+
+fn planar_solid_orientation(model: &cadmpeg_ir::document::Model) -> i32 {
+    use cadmpeg_ir::topology::Sense;
+
+    let mut volume6 = 0.0;
+    for loop_ in &model.loops {
+        let mut ring = Vec::with_capacity(loop_.coedges.len());
+        for coedge_id in &loop_.coedges {
+            let Some(coedge) = model.coedges.iter().find(|coedge| coedge.id == *coedge_id) else {
+                return 0;
+            };
+            let Some(edge) = model.edges.iter().find(|edge| edge.id == coedge.edge) else {
+                return 0;
+            };
+            let vertex_id = if coedge.sense == Sense::Forward {
+                &edge.start
+            } else {
+                &edge.end
+            };
+            let Some(vertex) = model.vertices.iter().find(|vertex| vertex.id == *vertex_id) else {
+                return 0;
+            };
+            let Some(point) = model.points.iter().find(|point| point.id == vertex.point) else {
+                return 0;
+            };
+            ring.push(point.position);
+        }
+        let Some(origin) = ring.first() else {
+            return 0;
+        };
+        for triangle in ring[1..].windows(2) {
+            let a = triangle[0];
+            let b = triangle[1];
+            volume6 += origin.x * (a.y * b.z - a.z * b.y)
+                + origin.y * (a.z * b.x - a.x * b.z)
+                + origin.z * (a.x * b.y - a.y * b.x);
+        }
+    }
+    if volume6 > 0.0 {
+        1
+    } else if volume6 < 0.0 {
+        2
+    } else {
+        0
+    }
 }
 
 fn validate_planar_edge(
@@ -2593,6 +2673,31 @@ fn raw_array(records: &[Vec<u8>]) -> Vec<u8> {
     let mut body = vec![0x10];
     body.extend((records.len() as i32).to_le_bytes());
     body.extend(records.concat());
+    crc_chunk(0x4000_8000, &body)
+}
+
+fn face_array(
+    records: &[Vec<u8>],
+    faces: &[cadmpeg_ir::topology::Face],
+    archive_version: u64,
+) -> Vec<u8> {
+    let minor = if archive_version >= 70 { 2 } else { 1 };
+    let mut body = vec![0x10 | minor];
+    body.extend((records.len() as i32).to_le_bytes());
+    body.extend(records.concat());
+    for face in faces {
+        body.extend(&Sha256::digest(face.id.0.as_bytes())[..16]);
+    }
+    if minor >= 2 {
+        body.push(0);
+    }
+    crc_chunk(0x4000_8000, &body)
+}
+
+fn empty_region_wrapper() -> Vec<u8> {
+    let mut body = 1_i32.to_le_bytes().to_vec();
+    body.extend(1_i32.to_le_bytes());
+    body.push(0);
     crc_chunk(0x4000_8000, &body)
 }
 
@@ -3473,10 +3578,12 @@ fn object_attributes_payload(
             unit_color_channel(color.b),
             unit_color_channel(1.0 - color.a),
         ]);
-        payload.extend([13, 1]);
     }
     if let Some(visible) = visible {
         payload.extend([11, u8::from(visible)]);
+    }
+    if color.is_some() {
+        payload.extend([13, 1]);
     }
     payload.push(0);
     payload
@@ -3510,7 +3617,9 @@ fn unit_color_channel(value: f32) -> u8 {
 
 fn utf16(value: &str) -> Vec<u8> {
     let mut units = value.encode_utf16().collect::<Vec<_>>();
-    units.push(0);
+    if !units.is_empty() {
+        units.push(0);
+    }
     let mut bytes = (units.len() as u32).to_le_bytes().to_vec();
     for unit in units {
         bytes.extend(unit.to_le_bytes());
@@ -3527,14 +3636,53 @@ mod tests {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::ids::PointId;
     use cadmpeg_ir::math::Point3;
-    use cadmpeg_ir::topology::Point;
+    use cadmpeg_ir::topology::{Color, Point};
     use cadmpeg_ir::units::Units;
     use sha2::{Digest, Sha256};
 
     use super::{
-        vertex_point, CHANNEL_COLOR, CHANNEL_CURVATURE, CHANNEL_SURFACE_PARAMETERS, CHANNEL_UV,
+        brep_loop_type, brep_trim_type, object_attributes_payload, utf16, vertex_point,
+        CHANNEL_COLOR, CHANNEL_CURVATURE, CHANNEL_SURFACE_PARAMETERS, CHANNEL_UV,
     };
     use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};
+
+    #[test]
+    fn empty_utf16_string_has_zero_count_and_no_terminator() {
+        assert_eq!(utf16(""), 0_u32.to_le_bytes());
+        assert_eq!(utf16("A"), [2, 0, 0, 0, b'A', 0, 0, 0]);
+    }
+
+    #[test]
+    fn brep_trim_type_distinguishes_boundary_mated_and_seam_uses() {
+        assert_eq!(brep_trim_type(1, false), 1);
+        assert_eq!(brep_trim_type(2, false), 2);
+        assert_eq!(brep_trim_type(2, true), 3);
+    }
+
+    #[test]
+    fn explicit_loop_role_overrides_face_list_order() {
+        use cadmpeg_ir::topology::LoopBoundaryRole;
+
+        assert_eq!(brep_loop_type(LoopBoundaryRole::Inner, true), 2);
+        assert_eq!(brep_loop_type(LoopBoundaryRole::Outer, false), 1);
+        assert_eq!(brep_loop_type(LoopBoundaryRole::Unspecified, true), 1);
+    }
+
+    #[test]
+    fn object_attribute_items_are_written_in_ascending_order() {
+        let payload = object_attributes_payload(
+            "body",
+            None,
+            Some(Color {
+                r: 1.0,
+                g: 0.5,
+                b: 0.0,
+                a: 1.0,
+            }),
+            Some(false),
+        );
+        assert_eq!(&payload[21..], &[6, 255, 128, 0, 0, 11, 0, 13, 1, 0]);
+    }
 
     #[test]
     fn source_less_points_round_trip_across_target_versions() {

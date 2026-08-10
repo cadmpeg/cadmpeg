@@ -32545,6 +32545,7 @@ fn pattern_kind_has_unresolved_operands(pattern: &PatternKind) -> bool {
         PatternKind::Circular { .. }
         | PatternKind::CircularAngles { .. }
         | PatternKind::Mirror { .. } => false,
+        PatternKind::MirrorReference { .. } => true,
     }
 }
 

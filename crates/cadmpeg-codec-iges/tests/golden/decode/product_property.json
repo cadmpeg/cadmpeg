@@ -1394,7 +1394,10 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#3",
+                "iges:entity:directory#5"
+              ],
               "parameter_bytes": [
                 49,
                 49,
@@ -1543,7 +1546,24 @@
                 "iges:entity:directory#3",
                 "iges:entity:directory#5"
               ],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-316-or-type-322-or-type-406-or-type-422",
+                  "kind": "parameter",
+                  "parameter_index": 7,
+                  "raw_pointer": 3,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#3"
+                },
+                {
+                  "expected": "type-316-or-type-322-or-type-406-or-type-422",
+                  "kind": "parameter",
+                  "parameter_index": 8,
+                  "raw_pointer": 5,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#5"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -2001,9 +2021,11 @@
           "procedural_solids": [],
           "product_occurrence_expansion": [
             {
+              "depth_limit": 64,
               "emitted": 0,
               "id": "iges:product:occurrence-expansion#state",
-              "limit": 100,
+              "issues": [],
+              "output_limit": 100000,
               "truncated": false
             }
           ],
@@ -2095,6 +2117,7 @@
     },
     "source": {
       "attributes": {
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",
@@ -2126,11 +2149,44 @@
       "entity.406.form.15=1",
       "parameter_records=3",
       "parameter_tokens=15",
-      "external_references=0"
-    ]
+      "external_references=0",
+      "references.resolved=2"
+    ],
+    "transfer_ledger": {
+      "entries": [
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D1",
+          "target": "iges:entity:directory#1"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D3",
+          "target": "iges:entity:directory#3"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D5",
+          "target": "iges:entity:directory#5"
+        }
+      ]
+    }
   },
   "source_fidelity": {
     "annotations": {},
+    "retained_records": [
+      {
+        "byte_len": 1053,
+        "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAxMTYgICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgIDEKICAgICAxMTYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICAgQ09NUCAgICAgICAwRCAgICAgIDIKICAgICA0MDYgICAgICAgMiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDMKICAgICA0MDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgNyAgICAgICAgICAgICAgICAgIFJFRkRFUyAgICAgICAwRCAgICAgIDQKICAgICA0MDYgICAgICAgMyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDUKICAgICA0MDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAxNSAgICAgICAgICAgICAgICAgICAgTkFNRSAgICAgICAwRCAgICAgIDYKMTE2LDAsMCwwLDAsMCwyLDMsNTsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKNDA2LDEsMkhSMTsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAzUCAgICAgIDIKNDA2LDEsN0hCUkFDS0VUOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA1UCAgICAgIDMKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDA2UDAwMDAwMDMgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
+        "id": "iges:file:source-image#0",
+        "offset": 0,
+        "sha256": "c423f28e6f8035adebcc8c771715ea9aa1f1e6a9e5f37143677801820a391b13",
+        "stream": "iges"
+      }
+    ],
     "version": "3"
   }
 }

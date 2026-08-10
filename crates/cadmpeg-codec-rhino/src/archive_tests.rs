@@ -458,7 +458,7 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
         .report
         .losses
         .iter()
-        .any(|loss| loss.severity == Severity::Warning && loss.message.contains("normals")));
+        .any(|loss| loss.severity == Severity::Error && loss.message.contains("normals")));
 }
 
 #[test]
@@ -755,7 +755,7 @@ fn nested_brep_crc_warns_without_blocking_object_or_later_point() {
     assert_eq!(result.ir.model.faces.len(), 1);
     assert_eq!(result.ir.model.points.len(), 4);
     assert!(result.report.losses.iter().any(|loss| {
-        loss.severity == Severity::Warning
+        loss.severity == Severity::Error
             && loss.message.contains("Brep anonymous CRC mismatch")
             && loss.provenance.is_none()
     }));

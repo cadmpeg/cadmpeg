@@ -40,9 +40,7 @@ pub(crate) fn has_document_markers(prefix: &[u8]) -> bool {
         },
         _ => return false,
     };
-    contains(&document, b"<Document")
-        && contains(&document, b"SchemaVersion")
-        && contains(&document, b"FileVersion")
+    contains(&document, b"<Document") && contains(&document, b"SchemaVersion")
 }
 
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
@@ -175,16 +173,31 @@ fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
     }
     let schema_version = attr(root, &["SchemaVersion", "schemaVersion"])
         .ok_or_else(|| CodecError::WrongFormat("Document.xml has no SchemaVersion".into()))?;
-    let file_version = attr(root, &["FileVersion", "fileVersion"])
-        .ok_or_else(|| CodecError::WrongFormat("Document.xml has no FileVersion".into()))?;
+    let file_version = attr(root, &["FileVersion", "fileVersion"]).unwrap_or_else(|| "0".into());
+    schema_version
+        .parse::<u32>()
+        .map_err(|_| CodecError::Malformed("Document.xml SchemaVersion is invalid".into()))?;
+    file_version
+        .parse::<u32>()
+        .map_err(|_| CodecError::Malformed("Document.xml FileVersion is invalid".into()))?;
+    let declaration_tag = if schema_version == "2" {
+        "Features"
+    } else {
+        "Objects"
+    };
+    let record_tag = if schema_version == "2" {
+        "Feature"
+    } else {
+        "Object"
+    };
     let declarations = root
         .children()
-        .find(|node| node.has_tag_name("Objects"))
+        .find(|node| node.has_tag_name(declaration_tag))
         .into_iter()
-        .flat_map(|objects| {
-            objects
+        .flat_map(|declarations| {
+            declarations
                 .children()
-                .filter(|node| node.has_tag_name("Object"))
+                .filter(|node| node.has_tag_name(record_tag))
         })
         .collect::<Vec<_>>();
     let object_count = declarations.len();

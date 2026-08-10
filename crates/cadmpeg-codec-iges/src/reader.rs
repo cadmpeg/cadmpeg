@@ -2,12 +2,24 @@
 //! Physical graph to CADIR native preservation and loss reporting.
 
 use crate::{card, directory, entities, global, graph, native, parameter};
+use cadmpeg_core::decode::{DecodeContext, DecodeMode};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
-use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
+use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
+use cadmpeg_ir::report::{DecodeReport, LossNote, Severity, TransferDisposition, TransferLedger};
 use cadmpeg_ir::units::Units;
-use cadmpeg_ir::{CadIr, SourceFidelity, SourceMeta};
+use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
+
+fn bytes_hex(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len().saturating_mul(2));
+    for byte in bytes {
+        encoded.push(char::from(DIGITS[usize::from(byte >> 4)]));
+        encoded.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
+    }
+    encoded
+}
 
 fn source_meta(global: &global::Global) -> SourceMeta {
     let mut attributes = BTreeMap::new();
@@ -20,20 +32,23 @@ fn source_meta(global: &global::Global) -> SourceMeta {
         "record_delimiter".into(),
         char::from(global.record_delimiter).to_string(),
     );
-    if let Some(value) = global.version() {
-        attributes.insert("iges_version".into(), value.into());
-    }
-    if let Some(value) = global.version_flag() {
-        attributes.insert("iges_version_flag".into(), value.to_string());
-    }
+    attributes.insert("iges_version".into(), global.version().into());
+    attributes.insert(
+        "iges_version_flag".into(),
+        global.version_flag().to_string(),
+    );
     if let Some(value) = global.units_name() {
         attributes.insert("native_units".into(), value);
     }
     if let Some(value) = global.sender_product() {
         attributes.insert("sender_product".into(), value);
+    } else if let Some(value) = global.sender_product_bytes() {
+        attributes.insert("sender_product_bytes_hex".into(), bytes_hex(value));
     }
     if let Some(value) = global.native_file_name() {
         attributes.insert("native_file_name".into(), value);
+    } else if let Some(value) = global.native_file_name_bytes() {
+        attributes.insert("native_file_name_bytes_hex".into(), bytes_hex(value));
     }
     SourceMeta {
         format: "iges".into(),
@@ -41,19 +56,60 @@ fn source_meta(global: &global::Global) -> SourceMeta {
     }
 }
 
-pub(crate) fn decode(bytes: &[u8], options: DecodeOptions) -> Result<DecodeResult, CodecError> {
-    let scan = card::scan(bytes)?;
+pub(crate) fn decode(
+    bytes: &[u8],
+    options: DecodeOptions,
+    ctx: &DecodeContext<'_>,
+) -> Result<DecodeResult, CodecError> {
+    decode_with_occurrence_limits(
+        bytes,
+        options,
+        native::MAX_PRODUCT_OCCURRENCES,
+        native::MAX_PRODUCT_OCCURRENCE_DEPTH,
+        Some(ctx),
+    )
+}
+
+fn decode_with_occurrence_limits(
+    bytes: &[u8],
+    options: DecodeOptions,
+    product_occurrence_output_limit: usize,
+    product_occurrence_depth_limit: usize,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<DecodeResult, CodecError> {
+    charge_work(ctx, bytes.len() as u64, "iges_card_scan")?;
+    let _scan_storage = ctx
+        .map(|ctx| ctx.reserve_scoped(bytes.len() as u64, "iges_card_storage", None))
+        .transpose()?;
+    let scan = card::scan_with_context(bytes, ctx)?;
     let global = global::parse(&scan)?;
-    if global.version() != Some("5.3") {
+    if !matches!(global.version(), "5.1" | "5.2" | "5.3") {
         return Err(CodecError::NotImplemented(format!(
-            "IGES Fixed ASCII version {} decode; target envelope is 5.3",
-            global.version().unwrap_or("unrecognized")
+            "IGES Fixed ASCII version {} decode; target envelope is 5.1, 5.2, or 5.3",
+            global.version()
         )));
     }
     let directory = directory::parse(&scan)?;
-    let parameters = parameter::assemble(&scan, &directory, &global)?;
-    let references = graph::build(&directory);
+    charge_entities(ctx, directory.len() as u64, "iges_directory_entries")?;
+    let parameters = parameter::assemble_with_context(&scan, &directory, &global, ctx)?;
+    let parameter_tokens = parameters
+        .iter()
+        .map(|record| record.tokens.len() as u64)
+        .sum();
+    charge_work(ctx, parameter_tokens, "iges_parameter_parse")?;
+    let mut references = graph::build(&directory);
     let mut source_fidelity = SourceFidelity::default();
+    source_fidelity.retained_records.push(RetainedSourceRecord {
+        id: crate::SOURCE_IMAGE_ID.into(),
+        stream: "iges".into(),
+        offset: 0,
+        byte_len: bytes.len() as u64,
+        sha256: sha256_hex(bytes),
+        data: Some(match ctx {
+            Some(ctx) => ctx.copy_retained(bytes, "iges_source_image", None)?,
+            None => bytes.to_vec(),
+        }),
+    });
 
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(source_meta(&global));
@@ -64,25 +120,65 @@ pub(crate) fn decode(bytes: &[u8], options: DecodeOptions) -> Result<DecodeResul
             losses: Vec::new(),
         }
     } else {
+        charge_work(ctx, parameter_tokens, "iges_geometry_projection")?;
         entities::geometry::project_geometry(&mut ir, &directory, &parameters, &global)
     };
-    let product_occurrences_truncated = native::store(
+    let projected_entities = ir.model.entity_count() as u64;
+    charge_entities(ctx, projected_entities, "iges_projected_entities")?;
+    charge_work(ctx, parameter_tokens, "iges_native_projection")?;
+    let product_occurrence_expansion = native::store(
         &mut ir,
         &scan,
         &directory,
         &parameters,
-        &references,
+        &mut references,
         &global,
+        native::ProductOccurrenceLimits::new(
+            product_occurrence_output_limit,
+            product_occurrence_depth_limit,
+        ),
+        ctx,
     )?;
+    charge_entities(
+        ctx,
+        (ir.model.entity_count() as u64).saturating_sub(projected_entities),
+        "iges_native_entities",
+    )?;
+    ir.finalize();
+    let document_digest = crate::document_digest(&ir);
+    if let Some(source) = &mut ir.source {
+        source
+            .attributes
+            .insert(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(), document_digest);
+    }
     source_fidelity.finalize();
 
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = projection.losses;
-    if product_occurrences_truncated {
+    losses.extend(graph::losses(&references, &scan, &parameters));
+    if product_occurrence_expansion.output_truncated {
         losses.push(LossNote {
             code: cadmpeg_ir::LossKind::DecodeDiagnostic,
             severity: Severity::Warning,
             message: "IGES product occurrence expansion reached its configured output limit".into(),
+            provenance: None,
+        });
+    }
+    if product_occurrence_expansion.depth_truncated {
+        losses.push(LossNote {
+            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
+            severity: Severity::Warning,
+            message: "IGES product occurrence expansion reached its configured nesting-depth limit"
+                .into(),
+            provenance: None,
+        });
+    }
+    if product_occurrence_expansion.root_inference_blocked {
+        losses.push(LossNote {
+            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
+            severity: Severity::Warning,
+            message: "IGES product occurrence root inference was suppressed because a definition member list is malformed"
+                .into(),
             provenance: None,
         });
     }
@@ -109,10 +205,50 @@ pub(crate) fn decode(bytes: &[u8], options: DecodeOptions) -> Result<DecodeResul
                             entry.entity_type, entry.form
                         )
                     },
-                    provenance: None,
+                    provenance: Some(entry.loss_provenance()),
                 }),
         );
+        charge_work(
+            ctx,
+            ir.model.entity_count() as u64,
+            "iges_semantic_validation",
+        )?;
+        reject_invalid_semantic_ir(&ir, &losses)?;
+        if options.policy.mode == DecodeMode::Strict {
+            if let Some(loss) = losses
+                .iter()
+                .find(|loss| loss.severity >= Severity::Warning)
+            {
+                return Err(CodecError::Malformed(format!(
+                    "strict mode rejects {}: {}",
+                    loss.code, loss.message
+                )));
+            }
+        }
     }
+    let mut transfer_ledger = TransferLedger::default();
+    for entry in directory.iter().filter(|entry| entry.entity_type != 0) {
+        let note = if options.container_only {
+            "native record retained; semantic projection was not requested"
+        } else if projection.decoded.contains(&entry.sequence) {
+            "native record retained; semantic projection emitted"
+        } else if crate::profile::envelope_a_admits(entry.entity_type, entry.form) {
+            "native record retained; semantic projection omitted with an attributed loss"
+        } else {
+            "native record retained; entity is outside the declared read envelope"
+        };
+        transfer_ledger.record(
+            format!("D{}", entry.sequence),
+            Some(format!("iges:entity:directory#{}", entry.sequence)),
+            TransferDisposition::Retained,
+            Some(note.into()),
+        );
+    }
+    transfer_ledger
+        .verify(&cadmpeg_ir::index::ModelIndex::new(&ir))
+        .map_err(|message| {
+            CodecError::Malformed(format!("IGES transfer ledger is inconsistent: {message}"))
+        })?;
     let mut notes = directory::summary_notes(&directory);
     notes.extend(parameter::summary_notes(&parameters));
     notes.extend(graph::summary_notes(&references));
@@ -123,10 +259,58 @@ pub(crate) fn decode(bytes: &[u8], options: DecodeOptions) -> Result<DecodeResul
             container_only: options.container_only,
             geometry_transferred,
             coverage: std::collections::BTreeMap::new(),
-            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            transfer_ledger,
             losses,
             notes,
         },
         source_fidelity,
     ))
+}
+
+pub(crate) fn reject_invalid_semantic_ir(
+    ir: &CadIr,
+    losses: &[LossNote],
+) -> Result<(), CodecError> {
+    let validation = cadmpeg_ir::validate(ir, losses.to_vec());
+    let Some(finding) = validation
+        .findings
+        .iter()
+        .find(|finding| finding.severity >= Severity::Error)
+    else {
+        return Ok(());
+    };
+    let entity = finding
+        .entity
+        .as_deref()
+        .map_or(String::new(), |entity| format!(" for {entity}"));
+    Err(CodecError::Malformed(format!(
+        "IGES semantic projection produced invalid CADIR: {}{entity}: {}",
+        finding.check, finding.message
+    )))
+}
+
+#[cfg(test)]
+pub(crate) fn decode_with_test_occurrence_limits(
+    bytes: &[u8],
+    options: DecodeOptions,
+    output_limit: usize,
+    depth_limit: usize,
+) -> Result<DecodeResult, CodecError> {
+    decode_with_occurrence_limits(bytes, options, output_limit, depth_limit, None)
+}
+
+fn charge_entities(
+    ctx: Option<&DecodeContext<'_>>,
+    count: u64,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.map_or(Ok(()), |ctx| ctx.charge_entities(count, operation))
+}
+
+fn charge_work(
+    ctx: Option<&DecodeContext<'_>>,
+    units: u64,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.map_or(Ok(()), |ctx| ctx.charge_work(units, operation))
 }

@@ -131,8 +131,18 @@
         "severity": "warning"
       },
       {
+        "code": "integrity_failure",
+        "message": "container.integrity-failure: CRC mismatch at offset 87 for typecode 0x20008070: expected 0x0, got 0x75b2f733",
+        "severity": "error"
+      },
+      {
         "code": "decode_diagnostic",
         "message": "container.scan-diagnostic: object at 87 has nil object UUID",
+        "severity": "warning"
+      },
+      {
+        "code": "decode_diagnostic",
+        "message": "object.decode-diagnostic: c3101a1d-f157-11d3-bfe7-0010830122f0: simple geometry retained because document units are unavailable",
         "severity": "warning"
       }
     ],

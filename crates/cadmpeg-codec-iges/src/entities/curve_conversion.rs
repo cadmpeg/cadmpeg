@@ -23,6 +23,10 @@ fn cross(left: Vector3, right: Vector3) -> Vector3 {
 /// Angular slack this module allows when bounding or dividing a sweep.
 pub(super) const ANGULAR_TOLERANCE: f64 = std::f64::consts::TAU * 1.0e-12;
 
+pub(super) fn angularly_equal(left: f64, right: f64) -> bool {
+    (left - right).abs() <= ANGULAR_TOLERANCE
+}
+
 /// Number of quarter-turn rational spans a positive `sweep` divides into.
 ///
 /// `ceil` is discontinuous exactly at a whole number of quarter turns, which is
@@ -37,19 +41,37 @@ pub(super) fn quarter_turn_spans(sweep: f64) -> usize {
     quarters.ceil().max(1.0) as usize
 }
 
-pub(super) fn circular_arc_nurbs(
+pub(crate) fn circular_arc_nurbs(
     center: Point3,
     axis: Vector3,
     reference: Vector3,
     radius: f64,
     interval: [f64; 2],
 ) -> Option<NurbsCurve> {
+    elliptical_arc_nurbs(center, axis, reference, radius, radius, interval)
+}
+
+pub(crate) fn elliptical_arc_nurbs(
+    center: Point3,
+    axis: Vector3,
+    major_direction: Vector3,
+    major_radius: f64,
+    minor_radius: f64,
+    interval: [f64; 2],
+) -> Option<NurbsCurve> {
     let delta = interval[1] - interval[0];
-    if !delta.is_finite() || delta <= 0.0 || delta > std::f64::consts::TAU + ANGULAR_TOLERANCE {
+    if !delta.is_finite()
+        || delta <= 0.0
+        || delta > std::f64::consts::TAU + ANGULAR_TOLERANCE
+        || !major_radius.is_finite()
+        || !minor_radius.is_finite()
+        || major_radius <= 0.0
+        || minor_radius <= 0.0
+    {
         return None;
     }
     let delta = delta.min(std::f64::consts::TAU);
-    let transverse = cross(axis, reference);
+    let transverse = cross(axis, major_direction);
     let spans = quarter_turn_spans(delta);
     let step = delta / spans as f64;
     let mut knots = Vec::with_capacity(spans * 2 + 4);
@@ -66,10 +88,10 @@ pub(super) fn circular_arc_nurbs(
         if span == 0 {
             control_points.push(add_scaled(
                 center,
-                reference,
-                radius * start.cos(),
+                major_direction,
+                major_radius * start.cos(),
                 transverse,
-                radius * start.sin(),
+                minor_radius * start.sin(),
             ));
             weights.push(1.0);
             knots.extend([start, start, start]);
@@ -78,18 +100,18 @@ pub(super) fn circular_arc_nurbs(
         }
         control_points.push(add_scaled(
             center,
-            reference,
-            radius * middle.cos() / middle_weight,
+            major_direction,
+            major_radius * middle.cos() / middle_weight,
             transverse,
-            radius * middle.sin() / middle_weight,
+            minor_radius * middle.sin() / middle_weight,
         ));
         weights.push(middle_weight);
         control_points.push(add_scaled(
             center,
-            reference,
-            radius * end.cos(),
+            major_direction,
+            major_radius * end.cos(),
             transverse,
-            radius * end.sin(),
+            minor_radius * end.sin(),
         ));
         weights.push(1.0);
         if span + 1 == spans {
@@ -105,9 +127,64 @@ pub(super) fn circular_arc_nurbs(
     })
 }
 
+pub(crate) fn parabolic_arc_nurbs(
+    vertex: Point3,
+    axis: Vector3,
+    major_direction: Vector3,
+    focal_distance: f64,
+    interval: [f64; 2],
+) -> Option<NurbsCurve> {
+    let [start, end] = interval;
+    let delta = end - start;
+    if !delta.is_finite() || delta <= 0.0 || !focal_distance.is_finite() || focal_distance <= 0.0 {
+        return None;
+    }
+    let transverse = cross(axis, major_direction);
+    let start_point = add_scaled(
+        vertex,
+        major_direction,
+        focal_distance * start * start,
+        transverse,
+        2.0 * focal_distance * start,
+    );
+    let middle_point = add_scaled(
+        start_point,
+        major_direction,
+        focal_distance * start * delta,
+        transverse,
+        focal_distance * delta,
+    );
+    let end_point = add_scaled(
+        vertex,
+        major_direction,
+        focal_distance * end * end,
+        transverse,
+        2.0 * focal_distance * end,
+    );
+    [start_point, middle_point, end_point]
+        .iter()
+        .all(|point| {
+            [point.x, point.y, point.z]
+                .iter()
+                .all(|value| value.is_finite())
+        })
+        .then_some(NurbsCurve {
+            degree: 2,
+            knots: vec![start, start, start, end, end, end],
+            control_points: vec![start_point, middle_point, end_point],
+            weights: None,
+            periodic: false,
+        })
+}
+
 #[cfg(test)]
 mod span_tests {
-    use super::quarter_turn_spans;
+    use super::{
+        angularly_equal, elliptical_arc_nurbs, parabolic_arc_nurbs, quarter_turn_spans,
+        ANGULAR_TOLERANCE,
+    };
+    use cadmpeg_ir::eval::nurbs_curve_point;
+    use cadmpeg_ir::math::{Point3, Vector3};
 
     /// A sweep that is a whole number of quarter turns must not gain a span from
     /// last-place noise. Expectations come from the geometry: a quarter turn is
@@ -145,5 +222,81 @@ mod span_tests {
     #[test]
     fn a_vanishing_sweep_still_yields_one_span() {
         assert_eq!(quarter_turn_spans(f64::MIN_POSITIVE), 1);
+    }
+
+    #[test]
+    fn angular_equality_has_one_inclusive_absolute_boundary() {
+        assert!(angularly_equal(0.0, ANGULAR_TOLERANCE));
+        assert!(angularly_equal(
+            std::f64::consts::TAU,
+            std::f64::consts::TAU - ANGULAR_TOLERANCE
+        ));
+        assert!(!angularly_equal(0.0, ANGULAR_TOLERANCE * 1.01));
+    }
+
+    #[test]
+    fn an_ellipse_arc_has_exact_rational_quadratic_points() {
+        let curve = elliptical_arc_nurbs(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            4.0,
+            2.0,
+            [0.0, std::f64::consts::FRAC_PI_2],
+        )
+        .expect("valid ellipse arc");
+        assert_eq!(curve.degree, 2);
+        assert_eq!(curve.control_points.len(), 3);
+        for (parameter, expected) in [
+            (0.0, Point3::new(5.0, 2.0, 3.0)),
+            (
+                std::f64::consts::FRAC_PI_4,
+                Point3::new(1.0 + 2.0 * 2.0_f64.sqrt(), 2.0 + 2.0_f64.sqrt(), 3.0),
+            ),
+            (std::f64::consts::FRAC_PI_2, Point3::new(1.0, 4.0, 3.0)),
+        ] {
+            let actual = nurbs_curve_point(
+                curve.degree,
+                &curve.knots,
+                &curve.control_points,
+                curve.weights.as_deref(),
+                parameter,
+            )
+            .expect("ellipse NURBS evaluates");
+            assert!(
+                actual.distance(expected) <= 1.0e-12,
+                "{actual:?} != {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_parabola_arc_has_exact_quadratic_points() {
+        let curve = parabolic_arc_nurbs(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            [-1.0, 3.0],
+        )
+        .expect("valid parabola arc");
+        for (parameter, expected) in [
+            (-1.0, Point3::new(3.0, -2.0, 3.0)),
+            (1.0, Point3::new(3.0, 6.0, 3.0)),
+            (3.0, Point3::new(19.0, 14.0, 3.0)),
+        ] {
+            let actual = nurbs_curve_point(
+                curve.degree,
+                &curve.knots,
+                &curve.control_points,
+                None,
+                parameter,
+            )
+            .expect("parabola NURBS evaluates");
+            assert!(
+                actual.distance(expected) <= 1.0e-12,
+                "{actual:?} != {expected:?}"
+            );
+        }
     }
 }

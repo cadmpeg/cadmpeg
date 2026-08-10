@@ -1,6 +1,6 @@
 //! Tests for the `curves` module.
 
-use super::super::endpoints::compact_legacy_code_one_line_endpoint_indices;
+use super::super::endpoints::{compact_legacy_code_one_line_endpoint_indices, minor_arc_geometry};
 use super::super::markers::sketch_input_entities;
 use super::super::typed_relations::compact_legacy_object_line_endpoints;
 use super::super::{
@@ -968,37 +968,28 @@ fn compact_curve_detail_tangent_distinguishes_lines_and_arcs() {
 }
 
 #[test]
-fn tangent_bridge_arc_requires_one_equidistant_radial_intersection() {
-    let geometry = super::tangent_bridge_arc_geometry(
-        Point2::new(1.0, 0.0),
-        Point2::new(0.0, 1.0),
-        Point2::new(2.0, 0.0),
-        Point2::new(0.0, 2.0),
-        1.0e-9,
-    );
-    assert_eq!(
-        geometry,
-        Some(SketchGeometry::Arc {
-            center: Point2::new(0.0, 0.0),
-            radius: Length(1.0),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::FRAC_PI_2),
-        })
-    );
-    assert_eq!(
-        super::tangent_bridge_arc_geometry(
-            Point2::new(1.0, 0.0),
-            Point2::new(0.0, 1.0),
-            Point2::new(2.0, 0.0),
-            Point2::new(1.0, 2.0),
-            1.0e-9,
-        ),
-        None
-    );
+fn bounded_arc_normalization_uses_angular_tolerance() {
+    let Some(SketchGeometry::Arc {
+        start_angle,
+        end_angle,
+        ..
+    }) = minor_arc_geometry(
+        Point2::new(10.0, 0.0),
+        Point2::new(0.0, -10.0),
+        Point2::new(0.0, 0.0),
+        4.0,
+    )
+    else {
+        panic!("valid bounded arc should resolve");
+    };
+    let sweep = (end_angle.0 - start_angle.0).rem_euclid(std::f64::consts::TAU);
+    assert!(sweep <= std::f64::consts::PI + 1.0e-9);
+    assert!((start_angle.0 + std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+    assert!(end_angle.0.abs() < 1.0e-12);
 }
 
 #[test]
-fn unresolved_fillet_requires_matching_endpoint_tangent_circles() {
+fn unresolved_fillet_without_tangent_record_remains_native() {
     let sketch = SketchId("sketch".into());
     let entity = |id: &str, geometry, endpoint_refs: &[&str]| cadmpeg_ir::sketches::SketchEntity {
         id: SketchEntityId(id.into()),
@@ -1049,15 +1040,176 @@ fn unresolved_fillet_requires_matching_endpoint_tangent_circles() {
         ),
     ];
 
-    super::resolve_tangent_bridge_marker_arcs(&mut entities, 1.0e-9);
+    super::resolve_connected_marker_arcs(&mut entities, 1.0e-9);
 
     assert!(matches!(
         entities[4].geometry,
+        SketchGeometry::Native { .. }
+    ));
+}
+
+#[test]
+fn unresolved_fillet_between_arcs_remains_native_without_tangent_relation() {
+    let sketch = SketchId("sketch".into());
+    let entity = |id: &str, geometry, endpoint_refs: &[&str]| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some(id.into()),
+        geometry_ref: None,
+        endpoint_refs: endpoint_refs.iter().map(|id| (*id).into()).collect(),
+        geometry,
+    };
+    let mut entities = vec![
+        entity(
+            "start",
+            SketchGeometry::Point {
+                position: Point2::new(1.0, 0.0),
+            },
+            &[],
+        ),
+        entity(
+            "end",
+            SketchGeometry::Point {
+                position: Point2::new(0.0, 1.0),
+            },
+            &[],
+        ),
+        entity(
+            "start-arc",
+            SketchGeometry::Arc {
+                center: Point2::new(2.0, 0.0),
+                radius: Length(1.0),
+                start_angle: Angle(0.0),
+                end_angle: Angle(std::f64::consts::PI),
+            },
+            &["start", "start-other"],
+        ),
+        entity(
+            "end-arc",
+            SketchGeometry::Arc {
+                center: Point2::new(0.0, 2.0),
+                radius: Length(1.0),
+                start_angle: Angle(0.0),
+                end_angle: Angle(std::f64::consts::PI),
+            },
+            &["end", "end-other"],
+        ),
+        entity(
+            "fillet",
+            SketchGeometry::Native {
+                native_kind: "sldprt:marker-geometry:2".into(),
+            },
+            &["start", "end"],
+        ),
+    ];
+
+    super::resolve_connected_marker_arcs(&mut entities, 1.0e-9);
+
+    assert!(matches!(
+        entities[4].geometry,
+        SketchGeometry::Native { .. }
+    ));
+}
+
+#[test]
+fn connected_marker_arc_uses_unique_equidistant_point_witness() {
+    let sketch = SketchId("sketch".into());
+    let entity = |id: &str, geometry, native_ref: &str, endpoint_refs: &[&str]| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some(native_ref.into()),
+        geometry_ref: None,
+        endpoint_refs: endpoint_refs
+            .iter()
+            .map(|reference| (*reference).into())
+            .collect(),
+        geometry,
+    };
+    let mut entities = vec![
+        entity(
+            "center",
+            SketchGeometry::Point {
+                position: Point2::new(0.0, 0.0),
+            },
+            "point:10",
+            &[],
+        ),
+        entity(
+            "start",
+            SketchGeometry::Point {
+                position: Point2::new(1.0, 0.0),
+            },
+            "point:100",
+            &[],
+        ),
+        entity(
+            "end",
+            SketchGeometry::Point {
+                position: Point2::new(0.0, 1.0),
+            },
+            "point:200",
+            &[],
+        ),
+        entity(
+            "arc",
+            SketchGeometry::Native {
+                native_kind: "sldprt:marker-geometry:2".into(),
+            },
+            "curve:300",
+            &["point:100", "point:200"],
+        ),
+    ];
+
+    super::resolve_connected_marker_arcs(&mut entities, 1.0e-9);
+
+    assert!(matches!(
+        entities[3].geometry,
         SketchGeometry::Arc {
             center,
             radius: Length(radius),
             ..
         } if center == Point2::new(0.0, 0.0) && radius == 1.0
+    ));
+}
+
+#[test]
+fn connected_marker_arc_with_mirror_centers_remains_native() {
+    let sketch = SketchId("sketch".into());
+    let point = |id: &str, native_ref: &str, position| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some(native_ref.into()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point { position },
+    };
+    let mut entities = vec![
+        point("start", "point:100", Point2::new(1.0, 0.0)),
+        point("between-center", "point:200", Point2::new(0.0, 0.0)),
+        point("end", "point:300", Point2::new(0.0, 1.0)),
+        point("outside-center", "point:400", Point2::new(1.0, 1.0)),
+        SketchEntity {
+            id: SketchEntityId("arc".into()),
+            sketch,
+            construction: false,
+            native_ref: Some("curve:500".into()),
+            geometry_ref: None,
+            endpoint_refs: vec!["point:100".into(), "point:300".into()],
+            geometry: SketchGeometry::Native {
+                native_kind: "sldprt:marker-geometry:2".into(),
+            },
+        },
+    ];
+
+    super::resolve_connected_marker_arcs(&mut entities, 1.0e-9);
+
+    assert!(matches!(
+        entities[4].geometry,
+        SketchGeometry::Native { ref native_kind }
+            if native_kind == "sldprt:marker-geometry:2"
     ));
 }
 

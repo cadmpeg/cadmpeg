@@ -377,38 +377,28 @@ fn patch_points(
         if new.position == old.position {
             continue;
         }
-        let old_bytes = point_bytes(old.position, 0.001);
-        let new_bytes = point_bytes(new.position, scale);
-        let start = body_start.checked_add(raw_annotation_offset(annotations, &old.id).ok()?)?;
-        if payload.get(start..start + 2) != Some(&[0, 0x1d]) {
+        let offset = raw_annotation_offset(annotations, &old.id).ok()?;
+        let tables = crate::brep::topology::scan(payload.get(body_start..)?);
+        let point = tables
+            .points
+            .values()
+            .find(|point| point.offset == offset)?;
+        let values = body_start.checked_add(point.xyz_offset?)?;
+        let old_xyz_m = [
+            old.position.x * 0.001,
+            old.position.y * 0.001,
+            old.position.z * 0.001,
+        ];
+        let new_xyz_m = [
+            new.position.x * scale,
+            new.position.y * scale,
+            new.position.z * scale,
+        ];
+        if !crate::brep::topology::patch_point_values(payload, values, old_xyz_m, new_xyz_m) {
             return None;
         }
-        let record = start + 2 + usize::from(payload.get(start + 2) == Some(&0xff));
-        let mut values = record + 14;
-        let mut cursor = record + 6;
-        let mut tripled = false;
-        while payload.get(cursor + 2) == Some(&1) && cursor < record + 54 {
-            tripled = true;
-            cursor += 3;
-        }
-        if tripled {
-            values = cursor;
-        }
-        if payload.get(values..values + 24) != Some(old_bytes.as_slice()) {
-            return None;
-        }
-        payload
-            .get_mut(values..values + 24)?
-            .copy_from_slice(&new_bytes);
     }
     Some(())
-}
-
-fn point_bytes(point: cadmpeg_ir::math::Point3, scale: f64) -> Vec<u8> {
-    [point.x, point.y, point.z]
-        .into_iter()
-        .flat_map(|value| (value * scale).to_be_bytes())
-        .collect()
 }
 
 fn patch_surfaces(

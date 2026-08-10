@@ -57,7 +57,7 @@ pub fn chunks(data: &[u8]) {
     let Ok(header) = chunks::parse_header(data) else {
         return;
     };
-    let mut offset = 32;
+    let mut offset = header.start_offset + 32;
     for _ in 0..1024 {
         let Ok(chunk) = chunks::chunk_at(data, offset, data.len(), header.archive_version, false)
         else {

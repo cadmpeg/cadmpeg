@@ -1654,7 +1654,9 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#1"
+              ],
               "parameter_bytes": [
                 51,
                 49,
@@ -1859,7 +1861,16 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-310-form-0",
+                  "kind": "parameter",
+                  "parameter_index": 3,
+                  "raw_pointer": -1,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#1"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -1936,7 +1947,9 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#3"
+              ],
               "parameter_bytes": [
                 51,
                 49,
@@ -2098,7 +2111,16 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-310-form-0",
+                  "kind": "parameter",
+                  "parameter_index": 3,
+                  "raw_pointer": -3,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#3"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -2138,9 +2160,11 @@
           "procedural_solids": [],
           "product_occurrence_expansion": [
             {
+              "depth_limit": 64,
               "emitted": 0,
               "id": "iges:product:occurrence-expansion#state",
-              "limit": 100,
+              "issues": [],
+              "output_limit": 100000,
               "truncated": false
             }
           ],
@@ -2285,6 +2309,7 @@
     },
     "source": {
       "attributes": {
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",
@@ -2315,11 +2340,44 @@
       "entity.312.form.0=1",
       "parameter_records=3",
       "parameter_tokens=50",
-      "external_references=0"
-    ]
+      "external_references=0",
+      "references.resolved=2"
+    ],
+    "transfer_ledger": {
+      "entries": [
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D1",
+          "target": "iges:entity:directory#1"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D3",
+          "target": "iges:entity:directory#3"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D5",
+          "target": "iges:entity:directory#5"
+        }
+      ]
+    }
   },
   "source_fidelity": {
     "annotations": {},
+    "retained_records": [
+      {
+        "byte_len": 1053,
+        "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAzMTAgICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMjAwRCAgICAgIDEKICAgICAzMTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICBCQVNFRk9OVCAgICAgICAwRCAgICAgIDIKICAgICAzMTAgICAgICAgMiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMjAwRCAgICAgIDMKICAgICAzMTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgTU9ERk9OVCAgICAgICAwRCAgICAgIDQKICAgICAzMTIgICAgICAgMyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMjAwRCAgICAgIDUKICAgICAzMTIgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgRk9OVFVTRSAgICAgICAwRCAgICAgIDYKMzEwLDEwMSw0SEJBU0UsLDEwLDIsNjUsOCwwLDMsLDAsMCwwLDQsMTAsMCw4LDAsNjYsOCwwLDA7ICAgICAgICAgICAgICAxUCAgICAgIDEKMzEwLDEwMiwzSE1PRCwtMSwxMCwxLDY3LDgsMCwyLDEsMCwwLCw4LDEwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAzUCAgICAgIDIKMzEyLDQsMiwtMywxLjU3MDc5NjMyNjc5NDg5NjYsMCwwLDAsMCwwLDA7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICA1UCAgICAgIDMKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDA2UDAwMDAwMDMgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
+        "id": "iges:file:source-image#0",
+        "offset": 0,
+        "sha256": "0d06766f4317457f9bb575280644ea911ec616d0a0a4c6de6a335403c44e3913",
+        "stream": "iges"
+      }
+    ],
     "version": "3"
   }
 }

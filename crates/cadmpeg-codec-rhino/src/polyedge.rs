@@ -141,7 +141,7 @@ fn segment(
     let mut body = root
         .child(chunk.body.start, chunk.body.end)
         .ok_or_else(|| malformed(chunk.body.start, "polyedge segment body out of range"))?;
-    if req_i32(&mut body)? != 1 || req_i32(&mut body)? != 0 {
+    if req_i32(&mut body)? != 1 || req_i32(&mut body)? < 0 {
         return Err(malformed(
             chunk.body.start,
             "unsupported polyedge-segment version",
@@ -154,12 +154,6 @@ fn segment(
     let reversed = req_bool(&mut body)?;
     let domain = interval(&mut body)?;
     let proxy_domain = interval(&mut body)?;
-    if body.remaining() != 0 {
-        return Err(malformed(
-            body.position(),
-            "polyedge segment has trailing bytes",
-        ));
-    }
     Ok(Segment {
         object_id,
         component,
@@ -187,20 +181,11 @@ pub(crate) fn decode(
         return Err(malformed(range.start, "unsupported polyedge-curve version"));
     }
     let (segment_count, segment_bound) = counted(&mut body, MIN_SEGMENT_BYTES)?;
-    if segment_count == 0 {
-        return Err(malformed(body.position(), "polyedge curve has no segments"));
-    }
     req_i32(&mut body)?;
     req_i32(&mut body)?;
     body.skip(48)
         .ok_or_else(|| malformed(body.position(), "polyedge record truncated"))?;
     let (parameter_count, parameter_bound) = counted(&mut body, 8)?;
-    if parameter_count != segment_count + 1 {
-        return Err(malformed(
-            body.position(),
-            "polyedge parameter count mismatch",
-        ));
-    }
 
     let mut reserved =
         ExactVec::<f64>::new(parameter_bound).map_err(|error| refused(body.position(), &error))?;

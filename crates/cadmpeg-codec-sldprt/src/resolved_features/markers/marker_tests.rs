@@ -9,15 +9,16 @@ use super::{
     compact_legacy_code_two_profile_point_coordinates,
     compact_legacy_embedded_geometry_coordinates, compact_legacy_linked_profile_point_coordinates,
     compact_legacy_profile_vertex, current_geometry_locus_profile_vertex,
-    current_reverse_incidence_endpoint_offsets, extended_geometry_locus_single_link_point,
-    extended_profile_point_coordinates, geometry_locus_profile_vertex, indexed_profile_vertex,
-    inline_arc_coordinates, legacy_declared_handle_coordinates,
+    current_reverse_incidence_endpoint_offsets, extended_four_link_profile_point_coordinates,
+    extended_geometry_locus_single_link_point, extended_profile_point_coordinates,
+    geometry_locus_profile_vertex, indexed_profile_vertex, inline_arc_coordinates,
+    legacy_140_profile_point_variant_coordinates, legacy_declared_handle_coordinates,
     legacy_extended_linked_profile_point_coordinates, legacy_extended_profile_curve_kind,
     legacy_linked_coordinates, legacy_single_incidence_profile_point_coordinates,
     linked_profile_point, marker_coordinates, marker_is_geometry_locus, marker_local_id,
     marker_object_index, marker_spatial_coordinates,
-    packed_legacy_linked_profile_point_coordinates, relation_bindings, sketch_input_entities,
-    terminal_extended_profile_point_coordinates,
+    packed_legacy_linked_profile_point_coordinates, relation_bindings, relation_bindings_scoped,
+    sketch_input_entities, terminal_extended_profile_point_coordinates,
 };
 use crate::records::{
     FeatureInputClass, FeatureInputClassRole, FeatureInputOperand, FeatureInputOperandKind,
@@ -296,6 +297,85 @@ fn relation_binding_requires_family_operand_signature() {
         "lane",
         &[class],
         &[scalar(FeatureInputOperandKind::Native(0x8dda))],
+    )
+    .is_empty());
+}
+
+#[test]
+fn relation_binding_with_ambiguous_declarations_is_withheld() {
+    let class = |offset: u64, name: &str| FeatureInputClass {
+        id: format!("class-{offset}"),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset,
+        name: name.into(),
+        role: FeatureInputClassRole::SketchConstraint,
+    };
+    let operand = |entity_index| FeatureInputOperand {
+        offset: 0,
+        reference_ref: String::new(),
+        kind: FeatureInputOperandKind::Native(0x8152),
+        entity_index,
+        entity_ref: None,
+    };
+    let scalar = FeatureInputScalar {
+        id: "scalar".into(),
+        parent: "lane".into(),
+        feature_ref: Some("sketch".into()),
+        ordinal: 0,
+        offset: 30,
+        object_id: 1,
+        name: "name".into(),
+        value: 1.0,
+        role: FeatureInputScalarRole::Driving,
+        entity_indices: vec![0, 1],
+        operands: vec![operand(0), operand(1)],
+    };
+
+    assert!(relation_bindings(
+        "lane",
+        &[class(10, "sgPntPntDist"), class(20, "sgPntPntVertDist")],
+        &[scalar],
+    )
+    .is_empty());
+}
+
+#[test]
+fn scoped_relation_binding_does_not_cross_feature_interval() {
+    let class = FeatureInputClass {
+        id: "class".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 10,
+        name: "sgPntPntDist".into(),
+        role: FeatureInputClassRole::SketchConstraint,
+    };
+    let operand = |entity_index| FeatureInputOperand {
+        offset: 0,
+        reference_ref: String::new(),
+        kind: FeatureInputOperandKind::Native(0x8152),
+        entity_index,
+        entity_ref: None,
+    };
+    let scalar = FeatureInputScalar {
+        id: "scalar".into(),
+        parent: "lane".into(),
+        feature_ref: Some("second".into()),
+        ordinal: 0,
+        offset: 120,
+        object_id: 1,
+        name: "name".into(),
+        value: 1.0,
+        role: FeatureInputScalarRole::Driving,
+        entity_indices: vec![0, 1],
+        operands: vec![operand(0), operand(1)],
+    };
+
+    assert!(relation_bindings_scoped(
+        "lane",
+        &[class],
+        &[scalar],
+        &[(0, 100, "first".into()), (100, u64::MAX, "second".into())],
     )
     .is_empty());
 }
@@ -1734,6 +1814,66 @@ fn linked_profile_point_146_decodes_prefix_specific_coordinate_tags() {
 }
 
 #[test]
+fn extended_four_link_profile_point_decodes_coordinates() {
+    let make_payload = |trailer_offset: usize| {
+        let mut payload = vec![0; trailer_offset + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+        payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&0u32.to_le_bytes());
+        payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..58].copy_from_slice(&[0x1e, 0x00]);
+        payload[58..66].copy_from_slice(&0.125f64.to_le_bytes());
+        payload[66..74].copy_from_slice(&(-0.25f64).to_le_bytes());
+        payload[74..78].copy_from_slice(&[0x00, 0x00, 0x04, 0x00]);
+        payload[78..80].copy_from_slice(&0x8116u16.to_le_bytes());
+        payload[80..82].copy_from_slice(&3u16.to_le_bytes());
+        payload[82..86].fill(0xff);
+        payload[86..88].copy_from_slice(&0x8116u16.to_le_bytes());
+        payload[88..90].copy_from_slice(&1u16.to_le_bytes());
+        payload[90..94].fill(0xff);
+        payload[94..100].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
+        payload[134..136].copy_from_slice(&2u16.to_le_bytes());
+        payload[trailer_offset..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload
+    };
+
+    for trailer_offset in [146, 150, 162, 174] {
+        let payload = make_payload(trailer_offset);
+        assert_eq!(
+            extended_four_link_profile_point_coordinates(&payload, 0),
+            Some([0.125, -0.25])
+        );
+    }
+
+    let mut payload = make_payload(150);
+
+    assert_eq!(
+        extended_four_link_profile_point_coordinates(&payload, 0),
+        Some([0.125, -0.25])
+    );
+    assert_eq!(marker_coordinates(&payload, 0), Some([0.125, -0.25]));
+    let entity = &sketch_input_entities(&payload, "lane")[0];
+    assert_eq!(entity.kind, SketchInputKind::Point);
+    assert_eq!(entity.coordinates_m, Some([0.125, -0.25]));
+
+    payload[76..78].copy_from_slice(&3u16.to_le_bytes());
+    assert_eq!(
+        extended_four_link_profile_point_coordinates(&payload, 0),
+        None
+    );
+    payload[76..78].copy_from_slice(&4u16.to_le_bytes());
+    payload[134..136].copy_from_slice(&1u16.to_le_bytes());
+    assert_eq!(
+        extended_four_link_profile_point_coordinates(&payload, 0),
+        None
+    );
+}
+
+#[test]
 fn compact_legacy_linked_profile_point_decodes_inline_coordinates() {
     let mut payload = vec![0; 132 + LEGACY_SKETCH_MARKER.len()];
     payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
@@ -1873,9 +2013,109 @@ fn legacy_single_incidence_profile_point_decodes_both_identity_trailers() {
         legacy_single_incidence_profile_point_coordinates(&payload, 0),
         Some([0.052, -0.01])
     );
+    payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+    assert_eq!(
+        legacy_single_incidence_profile_point_coordinates(&payload, 0),
+        Some([0.052, -0.01])
+    );
+    assert_eq!(
+        sketch_input_entities(&payload, "lane")[0].kind,
+        SketchInputKind::Point
+    );
     payload[136..140].copy_from_slice(&1u32.to_le_bytes());
     assert_eq!(
         legacy_single_incidence_profile_point_coordinates(&payload, 0),
+        None
+    );
+}
+
+#[test]
+fn legacy_140_profile_point_variant_decodes_link_state_and_shifted_trailers() {
+    let mut payload = vec![0; 140 + LEGACY_SKETCH_MARKER.len()];
+    payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+    payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..58].copy_from_slice(&[0x1e, 0x00]);
+    payload[58..66].copy_from_slice(&0.125f64.to_le_bytes());
+    payload[66..74].copy_from_slice(&(-0.25f64).to_le_bytes());
+    payload[78..80].copy_from_slice(&0x829eu16.to_le_bytes());
+    payload[82..86].fill(0xff);
+    payload[90..96].copy_from_slice(&[0xfe, 0xff, 0xff, 0xff, 0x00, 0x00]);
+    payload[136..140].copy_from_slice(&3u32.to_le_bytes());
+    payload[140..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+    payload[76..78].copy_from_slice(&1u16.to_le_bytes());
+    assert_eq!(
+        legacy_140_profile_point_variant_coordinates(&payload, 0),
+        Some([0.125, -0.25])
+    );
+    assert_eq!(
+        sketch_input_entities(&payload, "lane")[0].kind,
+        SketchInputKind::Point
+    );
+
+    payload[76..78].copy_from_slice(&3u16.to_le_bytes());
+    payload[80..82].copy_from_slice(&2u16.to_le_bytes());
+    payload[96..140].fill(0);
+    payload[132..136].copy_from_slice(&25u32.to_le_bytes());
+    payload[136..140].copy_from_slice(&28u32.to_le_bytes());
+    payload[140..].copy_from_slice(LEGACY_SKETCH_MARKER);
+    assert_eq!(
+        legacy_140_profile_point_variant_coordinates(&payload, 0),
+        Some([0.125, -0.25])
+    );
+
+    payload[136..140].copy_from_slice(&25u32.to_le_bytes());
+    assert_eq!(
+        legacy_140_profile_point_variant_coordinates(&payload, 0),
+        None
+    );
+}
+
+#[test]
+fn extended_scaled_incidence_profile_point_decodes_coordinates() {
+    let mut payload = vec![0; 146 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+    payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..58].copy_from_slice(&[0x1e, 0x00]);
+    payload[58..66].copy_from_slice(&0.052f64.to_le_bytes());
+    payload[66..74].copy_from_slice(&(-0.01f64).to_le_bytes());
+    payload[76..78].copy_from_slice(&4u16.to_le_bytes());
+    payload[78..82].copy_from_slice(&[0x16, 0x87, 0x03, 0x00]);
+    payload[82..86].fill(0xff);
+    payload[86..90].copy_from_slice(&[0x10, 0x87, 0x02, 0x00]);
+    payload[90..94].fill(0xff);
+    payload[94..100].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
+    payload[134..136].copy_from_slice(&2u16.to_le_bytes());
+    payload[142..146].copy_from_slice(&24u32.to_le_bytes());
+    payload[146..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+
+    assert_eq!(
+        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        Some([0.052, -0.01])
+    );
+    let entity = &sketch_input_entities(&payload, "lane")[0];
+    assert_eq!(entity.kind, SketchInputKind::Point);
+    assert_eq!(entity.coordinates_m, Some([0.052, -0.01]));
+
+    payload[76..78].copy_from_slice(&8u16.to_le_bytes());
+    payload[134..136].copy_from_slice(&4u16.to_le_bytes());
+    assert_eq!(
+        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        Some([0.052, -0.01])
+    );
+
+    payload[134..136].copy_from_slice(&3u16.to_le_bytes());
+    assert_eq!(
+        legacy_extended_linked_profile_point_coordinates(&payload, 0),
         None
     );
 }
@@ -2437,6 +2677,33 @@ fn indexed_profile_framing_distinguishes_vertices_lines_and_arcs() {
         legacy_extended_profile_curve_kind(&curve, 0),
         Some(SketchInputKind::Arc)
     );
+}
+
+#[test]
+fn selector44_terminal_indexed_curve_is_a_line() {
+    let mut curve = vec![0; 170];
+    curve[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+    curve[5..13].fill(0xff);
+    curve[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    curve[23..31].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00]);
+    curve[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x44, 0x00]);
+    curve[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    curve[56..58].copy_from_slice(&0u16.to_le_bytes());
+    curve[58..60].copy_from_slice(&1u16.to_le_bytes());
+    curve[60..64].copy_from_slice(&1u32.to_le_bytes());
+    curve[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+    curve[142..144].copy_from_slice(&[0x08, 0x80]);
+    curve[154..170].copy_from_slice(&[
+        0x01, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00,
+        0x00,
+    ]);
+
+    assert_eq!(
+        legacy_extended_profile_curve_kind(&curve, 0),
+        Some(SketchInputKind::LineOrCircle)
+    );
+    curve[37] = 0x04;
+    assert_eq!(legacy_extended_profile_curve_kind(&curve, 0), None);
 }
 
 #[test]

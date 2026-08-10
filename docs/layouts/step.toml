@@ -6,8 +6,8 @@ spec = "docs/formats/step.md"
 note = """
 STEP has no fixed-width record layout to tabulate. It is an ISO 10303-21
 clear-text grammar with keyword-delimited sections and EBNF productions.
-Line breaks have the same separator role as other whitespace. The format fixes
-field position and width only inside the binary literal's quoted nibble
+ASCII control octets are ignored anywhere in the clear-text grammar. The format
+fixes field position and width only inside the binary literal's quoted nibble
 sequence.
 
 The one bit-level rule in the format is the binary literal's nibble packing,
@@ -44,13 +44,13 @@ note = "Hexadecimal digits, most-significant nibble first. An empty payload uses
 area = "Exchange structure"
 reason = "N/A, text grammar. The exchange structure is an EBNF production over keyword-delimited sections. Nothing in it has a fixed byte position or width."
 section = "2"
-anchor = "exchange = \"ISO-10303-21;\" header anchor? reference? data+ signature?"
+anchor = "exchange = \"ISO-10303-21;\" header anchor? reference? data*"
 
 [[not_applicable]]
 area = "Tokens and values"
-reason = "N/A, text grammar. Tokens are whitespace- and comment-separated, case-insensitive, and line-oriented layout has no semantic role."
+reason = "N/A, text grammar. Tokens use spaces, print-control directives, and comments; ASCII control octets have no semantic role."
 section = "3"
-anchor = "Line breaks have the same separator role as other whitespace."
+anchor = "A binary literal starts with one indicator nibble and continues with hexadecimal payload digits."
 
 [[not_applicable]]
 area = "Entity parameter slot order"
