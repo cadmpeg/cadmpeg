@@ -25,13 +25,13 @@ use super::transforms::{locus_entity, locus_key, marker_entities, sketch_entity_
 use super::{
     LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER, SKETCH_POINT_TOLERANCE,
 };
-use crate::records::{SketchInputEntity, SketchInputKind};
+use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
     SketchLocus, SketchNativeOperand,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[cfg(test)]
 pub(super) fn typed_marker_relation_definition(
@@ -46,6 +46,37 @@ pub(super) fn typed_marker_relation_definition(
         markers_by_id,
         loci_by_marker,
     )
+}
+
+fn unique_entity_from_link_intersection(
+    marker: &SketchInputEntity,
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Option<SketchEntityId> {
+    let links = marker
+        .links
+        .iter()
+        .filter(|link| !relation_link_identifies_owner(marker, link))
+        .collect::<Vec<_>>();
+    let first = links.first()?;
+    let mut candidates = marker_entities(&first.entity_ref, markers_by_id, loci_by_marker);
+    candidates.retain(|entity| {
+        !entity.0.contains("sketch-entity#relation-point:")
+            && sketch_entities
+                .iter()
+                .any(|candidate| candidate.id == *entity && candidate.sketch == *sketch)
+            && links.iter().skip(1).all(|link| {
+                marker_entities(&link.entity_ref, markers_by_id, loci_by_marker).contains(entity)
+            })
+    });
+    candidates.sort();
+    candidates.dedup();
+    match candidates.as_slice() {
+        [entity] => Some(entity.clone()),
+        _ => None,
+    }
 }
 
 pub(super) fn typed_marker_relation_definition_in_sketch(
@@ -123,8 +154,88 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
     let Some(kind) = kind else {
         return Some(native());
     };
+    if kind == Fixed {
+        if let Some(entity) = unique_entity_from_link_intersection(
+            marker,
+            sketch,
+            sketch_entities,
+            markers_by_id,
+            loci_by_marker,
+        ) {
+            return Some(SketchConstraintDefinition::Fixed { entity });
+        }
+    }
+    if matches!(kind, Horizontal | Vertical)
+        && relation_owner_markers(marker, markers_by_id).is_empty()
+    {
+        // Point targets disambiguate these operands when a local/object index
+        // happens to collide with the relation handle's index.
+        let point_links = marker
+            .links
+            .iter()
+            .filter(|link| {
+                link.entity_ref != marker.id
+                    && !matches!(
+                        markers_by_id
+                            .get(link.entity_ref.as_str())
+                            .map(|linked| linked.kind),
+                        Some(SketchInputKind::Relation(_))
+                    )
+            })
+            .collect::<Vec<_>>();
+        if let [first_link, second_link] = point_links.as_slice() {
+            let point_entity = |link: &SketchInputLink| {
+                let linked = markers_by_id.get(link.entity_ref.as_str())?;
+                if !matches!(
+                    linked.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                ) {
+                    return None;
+                }
+                let mut candidates = sketch_entities.iter().filter(|entity| {
+                    entity.sketch == *sketch
+                        && entity.native_ref.as_deref() == Some(link.entity_ref.as_str())
+                        && matches!(entity.geometry, SketchGeometry::Point { .. })
+                });
+                let entity = candidates.next()?;
+                candidates.next().is_none().then(|| entity.id.clone())
+            };
+            if let (Some(first), Some(second)) =
+                (point_entity(first_link), point_entity(second_link))
+            {
+                if first != second {
+                    return Some(if kind == Horizontal {
+                        SketchConstraintDefinition::HorizontalPoints {
+                            first: SketchLocus::Entity(first),
+                            second: SketchLocus::Entity(second),
+                        }
+                    } else {
+                        SketchConstraintDefinition::VerticalPoints {
+                            first: SketchLocus::Entity(first),
+                            second: SketchLocus::Entity(second),
+                        }
+                    });
+                }
+            }
+        }
+    }
     Some(match kind {
         Horizontal | Vertical | Fixed => {
+            if matches!(kind, Horizontal | Vertical) {
+                if let Some([first, second]) = axis_relation_point_loci(
+                    marker,
+                    sketch,
+                    sketch_entities,
+                    markers_by_id,
+                    loci_by_marker,
+                ) {
+                    return Some(if kind == Horizontal {
+                        SketchConstraintDefinition::HorizontalPoints { first, second }
+                    } else {
+                        SketchConstraintDefinition::VerticalPoints { first, second }
+                    });
+                }
+            }
             if matches!(kind, Horizontal | Vertical) {
                 let point_links = marker
                     .links
@@ -166,6 +277,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             let mut exact_entities = marker
                 .links
                 .iter()
+                .filter(|link| !relation_link_identifies_owner(marker, link))
                 .flat_map(|link| {
                     let Some(linked) = markers_by_id.get(link.entity_ref.as_str()) else {
                         return Vec::new();
@@ -366,15 +478,73 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             let forward_entities = marker
                 .links
                 .iter()
+                .filter(|link| !relation_link_identifies_owner(marker, link))
                 .flat_map(|link| marker_entities(&link.entity_ref, markers_by_id, loci_by_marker))
                 .filter(|entity| !entity.0.contains("sketch-entity#relation-point:"))
                 .collect::<Vec<_>>();
+            let geometry_pair = if owner_entities.is_empty() && !sketch_entities.is_empty() {
+                let links = marker
+                    .links
+                    .iter()
+                    .filter(|link| !relation_link_identifies_owner(marker, link))
+                    .collect::<Vec<_>>();
+                if let [first_link, second_link] = links.as_slice() {
+                    let candidates = [first_link, second_link].map(|link| {
+                        marker_entities(&link.entity_ref, markers_by_id, loci_by_marker)
+                            .into_iter()
+                            .filter(|entity| {
+                                sketch_entities.iter().any(|candidate| {
+                                    candidate.id == *entity && candidate.sketch == *sketch
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    });
+                    let mut matches = candidates[0]
+                        .iter()
+                        .flat_map(|first| {
+                            candidates[1].iter().filter_map(move |second| {
+                                (first != second).then_some((first, second))
+                            })
+                        })
+                        .filter(|(first, second)| {
+                            let Some(first_entity) =
+                                sketch_entities.iter().find(|entity| entity.id == **first)
+                            else {
+                                return false;
+                            };
+                            let Some(second_entity) =
+                                sketch_entities.iter().find(|entity| entity.id == **second)
+                            else {
+                                return false;
+                            };
+                            binary_relation_matches_evaluated_geometry(
+                                kind,
+                                first_entity,
+                                second_entity,
+                            )
+                        })
+                        .map(|(first, second)| (first.clone(), second.clone()))
+                        .collect::<Vec<_>>();
+                    matches.sort();
+                    matches.dedup();
+                    match matches.as_slice() {
+                        [pair] => Some(pair.clone()),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
             let entities = if owner_entities.len() == 2
                 && forward_entities
                     .iter()
                     .all(|entity| owner_entities.contains(entity))
             {
                 owner_entities
+            } else if let Some((first, second)) = geometry_pair {
+                vec![first, second]
             } else {
                 let Some(entities) = linked_single_entities(marker, markers_by_id, loci_by_marker)
                 else {
@@ -991,7 +1161,12 @@ pub(super) fn unique_axis_aligned_linked_loci(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
     horizontal: bool,
 ) -> Option<Vec<SketchLocus>> {
-    let [first_link, second_link] = marker.links.as_slice() else {
+    let links = marker
+        .links
+        .iter()
+        .filter(|link| relation_link_is_geometric_operand(marker, link, markers_by_id))
+        .collect::<Vec<_>>();
+    let [first_link, second_link] = links.as_slice() else {
         return None;
     };
     let first = marker_point_locus(&first_link.entity_ref, markers_by_id, loci_by_marker);
@@ -1031,6 +1206,127 @@ pub(super) fn unique_axis_aligned_linked_loci(
     } else {
         vec![candidate.clone(), known]
     })
+}
+
+fn axis_relation_point_loci(
+    relation: &SketchInputEntity,
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Option<[SketchLocus; 2]> {
+    if !relation.links.iter().any(|link| {
+        !relation_link_identifies_owner(relation, link)
+            && matches!(
+                markers_by_id
+                    .get(link.entity_ref.as_str())
+                    .map(|marker| marker.kind),
+                Some(SketchInputKind::Relation(_))
+            )
+    }) {
+        return None;
+    }
+    let mut loci = Vec::new();
+    collect_axis_relation_point_loci(
+        relation,
+        sketch,
+        sketch_entities,
+        markers_by_id,
+        loci_by_marker,
+        &mut HashSet::new(),
+        &mut loci,
+    );
+    loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+    loci.dedup();
+    loci.try_into().ok()
+}
+
+fn collect_axis_relation_point_loci(
+    relation: &SketchInputEntity,
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    visited: &mut HashSet<String>,
+    loci: &mut Vec<SketchLocus>,
+) {
+    if !visited.insert(relation.id.clone()) {
+        return;
+    }
+    for link in relation
+        .links
+        .iter()
+        .filter(|link| !relation_link_identifies_owner(relation, link))
+    {
+        let Some(linked) = markers_by_id.get(link.entity_ref.as_str()) else {
+            continue;
+        };
+        match linked.kind {
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
+                append_axis_relation_point_locus(
+                    &linked.id,
+                    sketch,
+                    sketch_entities,
+                    markers_by_id,
+                    loci_by_marker,
+                    loci,
+                );
+            }
+            SketchInputKind::Relation(_) => collect_axis_relation_point_loci(
+                linked,
+                sketch,
+                sketch_entities,
+                markers_by_id,
+                loci_by_marker,
+                visited,
+                loci,
+            ),
+            _ => {}
+        }
+    }
+    for owner in relation_owner_markers(relation, markers_by_id) {
+        if matches!(
+            owner.kind,
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+        ) {
+            append_axis_relation_point_locus(
+                &owner.id,
+                sketch,
+                sketch_entities,
+                markers_by_id,
+                loci_by_marker,
+                loci,
+            );
+        }
+    }
+}
+
+fn append_axis_relation_point_locus(
+    marker_id: &str,
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    loci: &mut Vec<SketchLocus>,
+) {
+    if let Some(locus) = marker_point_locus(marker_id, markers_by_id, loci_by_marker) {
+        if !loci.contains(&locus) {
+            loci.push(locus);
+        }
+        return;
+    }
+    let candidates = sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch)
+        .filter(|entity| entity.native_ref.as_deref() == Some(marker_id))
+        .filter(|entity| matches!(entity.geometry, SketchGeometry::Point { .. }))
+        .map(|entity| SketchLocus::Entity(entity.id.clone()))
+        .collect::<Vec<_>>();
+    if let [locus] = candidates.as_slice() {
+        if !loci.contains(locus) {
+            loci.push(locus.clone());
+        }
+    }
 }
 
 pub(super) fn relation_owner_markers<'a>(
@@ -1080,6 +1376,22 @@ pub(super) fn relation_link_identifies_owner(
     link.entity_ref == relation.id
         || relation.local_id == Some(u32::from(link.local_id))
         || relation.object_index == Some(u32::from(link.local_id))
+}
+
+pub(super) fn relation_link_is_geometric_operand(
+    relation: &SketchInputEntity,
+    link: &crate::records::SketchInputLink,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+) -> bool {
+    // Relation markers are solver handles; geometric operands come from direct
+    // links or reverse incidence, never from a relation-to-relation chain.
+    !relation_link_identifies_owner(relation, link)
+        && !matches!(
+            markers_by_id
+                .get(link.entity_ref.as_str())
+                .map(|marker| marker.kind),
+            Some(SketchInputKind::Relation(_))
+        )
 }
 
 fn typed_axis_relation_is_inactive(

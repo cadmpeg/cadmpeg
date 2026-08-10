@@ -8,7 +8,7 @@ use crate::records::{
     Feature, FeatureHistory, FeatureInputComponentPathEntry, FeatureInputLane,
     FeatureInputSurfaceSelection,
 };
-use cadmpeg_ir::features::{FeatureId, Length};
+use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureId, Length};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -301,6 +301,67 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
 }
 
 #[test]
+fn compact_surface_selection_binds_surface_operation_face_slot() {
+    let mut signature = [0; 12];
+    signature[4..8].copy_from_slice(&10_u32.to_le_bytes());
+    let mut features = vec![cadmpeg_ir::features::Feature {
+        id: FeatureId("operation".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::OffsetSurface {
+            faces: FaceSelection::Unresolved,
+            distance: None,
+        },
+        native_ref: Some("operation-native".into()),
+    }];
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: vec![FeatureInputSurfaceSelection {
+            id: "selection".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 12,
+            object_name_ref: "name".into(),
+            feature_ref: "operation-native".into(),
+            producer_feature_refs: Vec::new(),
+            terminal_feature_ref: None,
+            components: vec![FeatureInputComponentPathEntry {
+                instance: Some(1),
+                type_signature: signature,
+                local_id: Some(7),
+            }],
+        }],
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    project_compact_surface_selections(&mut features, &[], &[lane]);
+
+    let FeatureDefinition::OffsetSurface { faces, .. } = &features[0].definition else {
+        panic!("expected offset surface");
+    };
+    assert!(matches!(faces, FaceSelection::Native(value) if value.contains(":7")));
+}
+
+#[test]
 fn compact_surface_selection_accepts_semantic_lane_consensus() {
     let native_feature = |id: &str, source_id: &str| Feature {
         id: id.into(),
@@ -448,4 +509,153 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
             ..
         }
     ));
+}
+
+#[test]
+fn split_face_collects_distinct_generated_target_faces() {
+    let native_feature = |id: &str, source_id: &str| Feature {
+        id: id.into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: Some(source_id.into()),
+        parent_source_id: None,
+        ordinal: 0,
+        name: id.into(),
+        kind: "Feature".into(),
+        input_class: None,
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![
+            native_feature("producer-a-native", "10"),
+            native_feature("producer-b-native", "20"),
+            native_feature("split-native", "30"),
+        ],
+    };
+    let neutral_feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
+        id: FeatureId(id.into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition,
+        native_ref: Some(native_ref.into()),
+    };
+    let mut features = vec![
+        neutral_feature(
+            "producer-a",
+            "producer-a-native",
+            FeatureDefinition::BaseFeature {
+                bodies: cadmpeg_ir::features::BodySelection::Unresolved,
+            },
+        ),
+        neutral_feature(
+            "producer-b",
+            "producer-b-native",
+            FeatureDefinition::BaseFeature {
+                bodies: cadmpeg_ir::features::BodySelection::Unresolved,
+            },
+        ),
+        neutral_feature(
+            "split",
+            "split-native",
+            FeatureDefinition::SplitFace {
+                targets: FaceSelection::Unresolved,
+                tool: cadmpeg_ir::features::SplitFaceTool::Path(
+                    cadmpeg_ir::features::PathRef::Native("tool".into()),
+                ),
+            },
+        ),
+    ];
+    let selection = |ordinal: u32, producer: &str, source: u32, local_id: u32| {
+        let mut first_signature = [0; 12];
+        first_signature[4..8].copy_from_slice(&30_u32.to_le_bytes());
+        let mut last_signature = [0; 12];
+        last_signature[4..8].copy_from_slice(&source.to_le_bytes());
+        FeatureInputSurfaceSelection {
+            id: format!("selection-{ordinal}"),
+            parent: "lane".into(),
+            ordinal,
+            offset: u64::from(ordinal),
+            object_name_ref: "split-name".into(),
+            feature_ref: "split-native".into(),
+            producer_feature_refs: vec![producer.into()],
+            terminal_feature_ref: Some(producer.into()),
+            components: vec![
+                FeatureInputComponentPathEntry {
+                    instance: None,
+                    type_signature: first_signature,
+                    local_id: None,
+                },
+                FeatureInputComponentPathEntry {
+                    instance: Some(0x8020 + ordinal as u16),
+                    type_signature: last_signature,
+                    local_id: Some(local_id),
+                },
+            ],
+        }
+    };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: vec![
+            selection(0, "producer-a-native", 10, 7),
+            selection(1, "producer-b-native", 20, 9),
+        ],
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    project_compact_surface_selections(&mut features, &[history], &[lane]);
+
+    let FeatureDefinition::SplitFace { targets, .. } = &features[2].definition else {
+        panic!("expected split face");
+    };
+    assert!(matches!(
+        targets,
+        FaceSelection::Generated { faces, native }
+            if faces == &vec![
+                cadmpeg_ir::features::GeneratedFaceRef {
+                    feature: FeatureId("producer-a".into()),
+                    local_id: "7".into(),
+                },
+                cadmpeg_ir::features::GeneratedFaceRef {
+                    feature: FeatureId("producer-b".into()),
+                    local_id: "9".into(),
+                },
+            ] && native == "sldprt:feature-input:surface-selection-vectors:sldprt:feature-input:surface-component-ids:_,7;sldprt:feature-input:surface-component-ids:_,9"
+    ));
+    assert_eq!(
+        features[2].dependencies,
+        vec![
+            FeatureId("producer-a".into()),
+            FeatureId("producer-b".into())
+        ]
+    );
 }

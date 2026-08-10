@@ -3,10 +3,7 @@
 use super::assembly::is_supplemental_config_lane;
 #[cfg(test)]
 use super::bindings::bind_detached_legacy_sketch_objects;
-use super::compact_reference_planes::{
-    compact_profile_component_plane_frame, compact_profile_reference_plane_source,
-    CompactReferencePlaneIndex,
-};
+use super::compact_reference_planes::CompactReferencePlaneIndex;
 use super::curves::{
     closed_marker_profiles, closed_marker_profiles_allowing_shared_endpoints,
     compact_bounded_curve_tangent, compact_legacy_rectangle_line_endpoints,
@@ -37,7 +34,9 @@ use super::endpoints::{
     unique_arc_center_marker, wide_coordinate_roster_full_circle,
 };
 use super::holes::{feature_input_sketch_frame, sketch_feature_frames};
-use super::markers::{inline_arc_coordinates, marker_is_geometry_locus};
+use super::markers::{
+    inline_arc_coordinates, legacy_140_profile_point_variant_coordinates, marker_is_geometry_locus,
+};
 use super::projections::bind_circular_profile_by_dimension;
 use super::reference_geometry::reference_plane_frame_key;
 use super::relation_loci::same_dimension_length;
@@ -285,17 +284,14 @@ pub(crate) fn project_compact_sketch_profiles(
                 .and_then(|index| objects.get(index))
                 .and_then(|(offset, _)| usize::try_from(*offset).ok())
                 .unwrap_or(0);
-            let source_frame =
-                compact_profile_reference_plane_source(&plane_index, context_start, start, end)
-                    .and_then(|source| plane_frames.get(&source).copied());
-            let Some((origin, normal, u_axis)) = source_frame.or_else(|| {
-                compact_profile_component_plane_frame(
-                    &lane.native_payload,
-                    context_start,
-                    start,
-                    end,
-                )
-            }) else {
+            let Some((origin, normal, u_axis)) = feature_input_sketch_frame(
+                &lane.native_payload,
+                &plane_frames,
+                &plane_index,
+                context_start,
+                start,
+                end,
+            ) else {
                 continue;
             };
             let lane_key = lane
@@ -760,6 +756,15 @@ pub(crate) fn project_marker_backed_sketches(
                             point.1 as f64 * QUANTUM,
                         ))
                     };
+                    let is_recovered_legacy_profile_point = |endpoint: &SketchInputEntity| {
+                        usize::try_from(endpoint.offset).ok().is_some_and(|offset| {
+                            legacy_140_profile_point_variant_coordinates(
+                                &lane.native_payload,
+                                offset,
+                            )
+                            .is_some()
+                        })
+                    };
                     let geometry = match marker.kind {
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
                             let point = project(marker)?;
@@ -824,15 +829,31 @@ pub(crate) fn project_marker_backed_sketches(
                                     &markers_by_id,
                                     &object_markers,
                                 );
-                                if let [start, end] = endpoints.as_slice() {
-                                    let (Some(start), Some(end)) = (project(start), project(end))
+                                if let [start_marker, end_marker] = endpoints.as_slice() {
+                                    let (Some(start), Some(end)) =
+                                        (project(start_marker), project(end_marker))
                                     else {
                                         return None;
                                     };
                                     if start == end {
-                                        return None;
+                                        if is_recovered_legacy_profile_point(start_marker)
+                                            || is_recovered_legacy_profile_point(end_marker)
+                                        {
+                                            // A zero-length line is not valid IR geometry. Preserve
+                                            // the marker whose endpoint collapsed because a newly
+                                            // recognized profile point supplied its coordinates.
+                                            SketchGeometry::Native {
+                                                native_kind: format!(
+                                                    "sldprt:marker-geometry:{}",
+                                                    marker.kind.native_code()
+                                                ),
+                                            }
+                                        } else {
+                                            return None;
+                                        }
+                                    } else {
+                                        SketchGeometry::Line { start, end }
                                     }
-                                    SketchGeometry::Line { start, end }
                                 } else if let Some([start, end]) =
                                     extended_declared_inline_line_endpoints(
                                         &lane.native_payload,
@@ -999,31 +1020,14 @@ pub(crate) fn project_marker_backed_sketches(
                                 else {
                                     return None;
                                 };
-                                let start_radius = (start.u - point.u).hypot(start.v - point.v);
-                                let end_radius = (end.u - point.u).hypot(end.v - point.v);
-                                let start_angle = (start.v - point.v).atan2(start.u - point.u);
-                                let end_angle = (end.v - point.v).atan2(end.u - point.u);
-                                let sweep =
-                                    (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
-                                if start_radius > QUANTUM
-                                    && same_dimension_length(start_radius, end_radius)
-                                    && sweep > QUANTUM
-                                    && sweep <= std::f64::consts::PI + QUANTUM
-                                {
-                                    SketchGeometry::Arc {
-                                        center: point,
-                                        radius: Length(start_radius),
-                                        start_angle: Angle(start_angle),
-                                        end_angle: Angle(end_angle),
-                                    }
-                                } else {
-                                    SketchGeometry::Native {
+                                minor_arc_geometry(start, end, point, QUANTUM).unwrap_or_else(
+                                    || SketchGeometry::Native {
                                         native_kind: format!(
                                             "sldprt:marker-geometry:{}",
                                             marker.kind.native_code()
                                         ),
-                                    }
-                                }
+                                    },
+                                )
                             } else {
                                 (|| {
                                     let [start, end] = endpoints.as_slice() else {
@@ -1095,6 +1099,7 @@ pub(crate) fn project_marker_backed_sketches(
                                         .map(|[u, v]| {
                                             Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR)
                                         });
+                                        let roster_center_witness = roster_center.is_some();
                                         let candidates = object_markers
                                             .iter()
                                             .copied()
@@ -1151,8 +1156,47 @@ pub(crate) fn project_marker_backed_sketches(
                                                 center.0 as f64 * QUANTUM,
                                                 center.1 as f64 * QUANTUM,
                                             );
-                                            return minor_arc_geometry(start, end, center, QUANTUM);
+                                            // The three transformed points are quantized independently.
+                                            // Allow two quanta when the record supplies the center directly.
+                                            let tolerance = if roster_center_witness {
+                                                QUANTUM * 2.0
+                                            } else {
+                                                QUANTUM
+                                            };
+                                            let geometry =
+                                                minor_arc_geometry(start, end, center, tolerance);
+                                            return geometry;
                                         }
+                                    }
+                                    let [start_marker, end_marker] = endpoints.as_slice() else {
+                                        return None;
+                                    };
+                                    let [start_u, start_v] = start_marker.coordinates_m?;
+                                    let [end_u, end_v] = end_marker.coordinates_m?;
+                                    let candidates = object_markers
+                                        .iter()
+                                        .copied()
+                                        .filter(|candidate| {
+                                            candidate.id != start_marker.id
+                                                && candidate.id != end_marker.id
+                                        })
+                                        .filter_map(|candidate| {
+                                            let [u, v] = candidate.coordinates_m?;
+                                            Some(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR))
+                                        })
+                                        .collect::<Vec<_>>();
+                                    if let Some(center) = unique_arc_center_marker(
+                                        Point2::new(start_u * NATIVE_TO_IR, start_v * NATIVE_TO_IR),
+                                        Point2::new(end_u * NATIVE_TO_IR, end_v * NATIVE_TO_IR),
+                                        &candidates,
+                                        QUANTUM,
+                                    ) {
+                                        let center = transform.apply(quantize(center, QUANTUM))?;
+                                        let center = Point2::new(
+                                            center.0 as f64 * QUANTUM,
+                                            center.1 as f64 * QUANTUM,
+                                        );
+                                        return minor_arc_geometry(start, end, center, QUANTUM);
                                     }
                                     if let Some([tu, tv]) =
                                         compact_bounded_curve_tangent(&lane.native_payload, offset)

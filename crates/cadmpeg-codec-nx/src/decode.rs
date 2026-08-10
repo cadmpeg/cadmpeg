@@ -10,7 +10,7 @@
 //!
 //! [`DecodeReport`]: cadmpeg_ir::report::DecodeReport
 
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -19,8 +19,9 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, curve_point, curve_second_derivative, curve_tangent,
     model_surface_partials_by_id, model_surface_point_by_id, nurbs_curve_speed_bound,
-    nurbs_surface_isocurve, nurbs_surface_partials, pcurve_tangent, pcurve_uv, surface_partials,
-    surface_second_partials,
+    nurbs_surface_closest_parameter, nurbs_surface_isocurve,
+    nurbs_surface_parameter_within_tolerance, nurbs_surface_partials, pcurve_tangent, pcurve_uv,
+    surface_partials, surface_second_partials,
 };
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
@@ -2658,11 +2659,11 @@ fn complete_support_uv_wave(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
                     pcurve_control_point_seed(context.sides[side].pcurve.as_ref(), point_index)
                         .or_else(|| uv.last().copied());
                 let parameters = match &surface.geometry {
-                    SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters_with_tolerance(
+                    SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_parameter_within_tolerance(
                         nurbs,
                         *point,
                         seed,
-                        Some(effective_fit_tolerance),
+                        effective_fit_tolerance,
                     ),
                     SurfaceGeometry::Procedural { .. } => {
                         let other_side = &context.sides[1 - side];
@@ -4957,7 +4958,7 @@ fn surface_contact_direction_with_index(
         // closest-point proof is neither required nor sufficient for this
         // incidence question.
         SurfaceGeometry::Nurbs(nurbs) => {
-            nurbs_parameters_with_tolerance(nurbs, center, None, Some(radius + tolerance))
+            nurbs_surface_parameter_within_tolerance(nurbs, center, None, radius + tolerance)
         }
         SurfaceGeometry::Procedural { .. } => offset_surface_parameters_with_tolerance_with_index(
             index,
@@ -5533,9 +5534,10 @@ fn initial_surface_parameters(
         .iter()
         .find(|candidate| &candidate.id == surface)?;
     match &carrier.geometry {
-        SurfaceGeometry::Nurbs(nurbs) => {
-            nurbs_parameters_with_tolerance(nurbs, point, seed, fit_tolerance)
-        }
+        SurfaceGeometry::Nurbs(nurbs) => fit_tolerance.map_or_else(
+            || nurbs_surface_closest_parameter(nurbs, point, seed),
+            |tolerance| nurbs_surface_parameter_within_tolerance(nurbs, point, seed, tolerance),
+        ),
         SurfaceGeometry::Procedural { construction } => {
             let procedural =
                 ir.model.procedural_surfaces.iter().find(|candidate| {
@@ -5684,7 +5686,7 @@ fn continue_surface_intersection_parameters_with_seeds(
             .geometry;
         match geometry {
             SurfaceGeometry::Nurbs(nurbs) => {
-                nurbs_parameters_with_tolerance(nurbs, point, seed, Some(fit_tolerance))
+                nurbs_surface_parameter_within_tolerance(nurbs, point, seed, fit_tolerance)
             }
             SurfaceGeometry::Procedural { .. } => {
                 offset_surface_parameters_with_tolerance_with_index(
@@ -6195,662 +6197,6 @@ fn least_squares_step(du: Vector3, dv: Vector3, residual: Vector3) -> Option<(f6
         (dv_squared * du_residual - mixed * dv_residual) / determinant,
         (du_squared * dv_residual - mixed * du_residual) / determinant,
     ))
-}
-
-#[derive(Clone)]
-struct RationalBezierSurfacePatch {
-    u_domain: [f64; 2],
-    v_domain: [f64; 2],
-    u_degree: usize,
-    v_degree: usize,
-    controls: Vec<[f64; 4]>,
-}
-
-struct SurfacePatchQueueEntry {
-    lower_bound: f64,
-    diameter: f64,
-    sequence: usize,
-    patch: RationalBezierSurfacePatch,
-}
-
-impl PartialEq for SurfacePatchQueueEntry {
-    fn eq(&self, other: &Self) -> bool {
-        self.sequence == other.sequence
-    }
-}
-
-impl Eq for SurfacePatchQueueEntry {}
-
-impl PartialOrd for SurfacePatchQueueEntry {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for SurfacePatchQueueEntry {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // BinaryHeap is a max-heap; reverse the distance order so the patch
-        // with the strongest minimum-distance promise is examined first.
-        other
-            .lower_bound
-            .total_cmp(&self.lower_bound)
-            .then_with(|| other.sequence.cmp(&self.sequence))
-    }
-}
-
-fn rational_surface_residual_patches(
-    surface: &NurbsSurface,
-    point: Point3,
-) -> Option<Vec<RationalBezierSurfacePatch>> {
-    let u_degree = usize::try_from(surface.u_degree).ok()?;
-    let v_degree = usize::try_from(surface.v_degree).ok()?;
-    let u_count = usize::try_from(surface.u_count).ok()?;
-    let v_count = usize::try_from(surface.v_count).ok()?;
-    let control_count = u_count.checked_mul(v_count)?;
-    if u_degree == 0
-        || v_degree == 0
-        || u_degree >= u_count
-        || v_degree >= v_count
-        || surface.control_points.len() != control_count
-        || surface.u_knots.len() != u_count.checked_add(u_degree)?.checked_add(1)?
-        || surface.v_knots.len() != v_count.checked_add(v_degree)?.checked_add(1)?
-        || surface
-            .u_knots
-            .iter()
-            .chain(&surface.v_knots)
-            .any(|knot| !knot.is_finite())
-        || surface.u_knots.windows(2).any(|pair| pair[0] > pair[1])
-        || surface.v_knots.windows(2).any(|pair| pair[0] > pair[1])
-        || surface.control_points.iter().any(|control| {
-            !control.x.is_finite() || !control.y.is_finite() || !control.z.is_finite()
-        })
-        || !point.x.is_finite()
-        || !point.y.is_finite()
-        || !point.z.is_finite()
-    {
-        return None;
-    }
-    let weights = match &surface.weights {
-        Some(weights)
-            if weights.len() == control_count
-                && weights
-                    .iter()
-                    .all(|weight| weight.is_finite() && *weight > 0.0) =>
-        {
-            weights.clone()
-        }
-        Some(_) => return None,
-        None => vec![1.0; control_count],
-    };
-    let residual_controls = surface
-        .control_points
-        .iter()
-        .zip(weights)
-        .map(|(control, weight)| {
-            [
-                weight * (control.x - point.x),
-                weight * (control.y - point.y),
-                weight * (control.z - point.z),
-                weight,
-            ]
-        })
-        .collect::<Vec<_>>();
-    if residual_controls
-        .iter()
-        .flatten()
-        .any(|value| !value.is_finite())
-    {
-        return None;
-    }
-    let u_spans_by_v = (0..v_count)
-        .map(|v| {
-            bezier_spans(
-                u_degree,
-                &surface.u_knots,
-                (0..u_count)
-                    .map(|u| residual_controls[u * v_count + v])
-                    .collect(),
-            )
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let u_span_count = u_spans_by_v.first()?.len();
-    if u_span_count == 0 || u_spans_by_v.iter().any(|spans| spans.len() != u_span_count) {
-        return None;
-    }
-    let mut patches = Vec::new();
-    for u_span in 0..u_span_count {
-        let u_domain = u_spans_by_v[0][u_span].domain;
-        if u_spans_by_v
-            .iter()
-            .any(|spans| spans[u_span].domain != u_domain)
-        {
-            return None;
-        }
-        let v_spans_by_u = (0..=u_degree)
-            .map(|u_control| {
-                bezier_spans(
-                    v_degree,
-                    &surface.v_knots,
-                    (0..v_count)
-                        .map(|v| u_spans_by_v[v][u_span].controls[u_control])
-                        .collect(),
-                )
-            })
-            .collect::<Option<Vec<_>>>()?;
-        let v_span_count = v_spans_by_u.first()?.len();
-        if v_span_count == 0 || v_spans_by_u.iter().any(|spans| spans.len() != v_span_count) {
-            return None;
-        }
-        for v_span in 0..v_span_count {
-            let v_domain = v_spans_by_u[0][v_span].domain;
-            if v_spans_by_u
-                .iter()
-                .any(|spans| spans[v_span].domain != v_domain)
-            {
-                return None;
-            }
-            patches.push(RationalBezierSurfacePatch {
-                u_domain,
-                v_domain,
-                u_degree,
-                v_degree,
-                controls: (0..=u_degree)
-                    .flat_map(|u| v_spans_by_u[u][v_span].controls.iter().copied())
-                    .collect(),
-            });
-        }
-    }
-    (!patches.is_empty()).then_some(patches)
-}
-
-fn rational_patch_distance_bounds(patch: &RationalBezierSurfacePatch) -> Option<(f64, f64)> {
-    let mut minimum = [f64::INFINITY; 3];
-    let mut maximum = [f64::NEG_INFINITY; 3];
-    for control in &patch.controls {
-        if !control[3].is_finite() || control[3] <= 0.0 {
-            return None;
-        }
-        for axis in 0..3 {
-            let coordinate = control[axis] / control[3];
-            if !coordinate.is_finite() {
-                return None;
-            }
-            minimum[axis] = minimum[axis].min(coordinate);
-            maximum[axis] = maximum[axis].max(coordinate);
-        }
-    }
-    let lower = (0..3)
-        .map(|axis| {
-            if minimum[axis] > 0.0 {
-                minimum[axis] * minimum[axis]
-            } else if maximum[axis] < 0.0 {
-                maximum[axis] * maximum[axis]
-            } else {
-                0.0
-            }
-        })
-        .sum::<f64>();
-    let diameter = (0..3)
-        .map(|axis| (maximum[axis] - minimum[axis]).powi(2))
-        .sum::<f64>();
-    (lower.is_finite() && diameter.is_finite()).then_some((lower, diameter))
-}
-
-fn split_rational_surface_patch(
-    patch: &RationalBezierSurfacePatch,
-    split_u: bool,
-) -> Option<[RationalBezierSurfacePatch; 2]> {
-    let (degree, line_count) = if split_u {
-        (patch.u_degree, patch.v_degree + 1)
-    } else {
-        (patch.v_degree, patch.u_degree + 1)
-    };
-    let mut first_lines = Vec::with_capacity(line_count);
-    let mut second_lines = Vec::with_capacity(line_count);
-    for line in 0..line_count {
-        let controls = if split_u {
-            (0..=degree)
-                .map(|index| patch.controls[index * (patch.v_degree + 1) + line])
-                .collect::<Vec<_>>()
-        } else {
-            patch.controls[line * (patch.v_degree + 1)..(line + 1) * (patch.v_degree + 1)].to_vec()
-        };
-        let mut levels = vec![controls];
-        while levels.last()?.len() > 1 {
-            levels.push(
-                levels
-                    .last()?
-                    .windows(2)
-                    .map(|pair| std::array::from_fn(|axis| 0.5 * (pair[0][axis] + pair[1][axis])))
-                    .collect(),
-            );
-        }
-        first_lines.push(levels.iter().map(|level| level[0]).collect::<Vec<_>>());
-        second_lines.push(
-            levels
-                .iter()
-                .rev()
-                .map(|level| *level.last().expect("nonempty de Casteljau level"))
-                .collect::<Vec<_>>(),
-        );
-    }
-    let assemble = |lines: Vec<Vec<[f64; 4]>>| {
-        if split_u {
-            (0..=patch.u_degree)
-                .flat_map(|u| {
-                    (0..=patch.v_degree).map({
-                        let lines = &lines;
-                        move |v| lines[v][u]
-                    })
-                })
-                .collect()
-        } else {
-            lines.into_iter().flatten().collect()
-        }
-    };
-    let u_middle = patch.u_domain[0] + (patch.u_domain[1] - patch.u_domain[0]) * 0.5;
-    let v_middle = patch.v_domain[0] + (patch.v_domain[1] - patch.v_domain[0]) * 0.5;
-    let (first_u, second_u, first_v, second_v) = if split_u {
-        (
-            [patch.u_domain[0], u_middle],
-            [u_middle, patch.u_domain[1]],
-            patch.v_domain,
-            patch.v_domain,
-        )
-    } else {
-        (
-            patch.u_domain,
-            patch.u_domain,
-            [patch.v_domain[0], v_middle],
-            [v_middle, patch.v_domain[1]],
-        )
-    };
-    if split_u && (u_middle == patch.u_domain[0] || u_middle == patch.u_domain[1])
-        || !split_u && (v_middle == patch.v_domain[0] || v_middle == patch.v_domain[1])
-    {
-        return None;
-    }
-    Some([
-        RationalBezierSurfacePatch {
-            u_domain: first_u,
-            v_domain: first_v,
-            u_degree: patch.u_degree,
-            v_degree: patch.v_degree,
-            controls: assemble(first_lines),
-        },
-        RationalBezierSurfacePatch {
-            u_domain: second_u,
-            v_domain: second_v,
-            u_degree: patch.u_degree,
-            v_degree: patch.v_degree,
-            controls: assemble(second_lines),
-        },
-    ])
-}
-
-fn complete_nurbs_surface_starts(
-    surface: &NurbsSurface,
-    point: Point3,
-    seed: Option<Point2>,
-    fit_tolerance: Option<f64>,
-) -> Option<Vec<Point2>> {
-    const MAX_PATCHES: usize = 1_000_000;
-
-    let patches = rational_surface_residual_patches(surface, point)?;
-    let coordinate_scale =
-        patches
-            .iter()
-            .flat_map(|patch| &patch.controls)
-            .try_fold(1.0_f64, |scale, control| {
-                let weight = control[3];
-                if !weight.is_finite() || weight <= 0.0 {
-                    return None;
-                }
-                control[..3].iter().try_fold(scale, |scale, coordinate| {
-                    let coordinate = (coordinate / weight).abs();
-                    coordinate.is_finite().then(|| scale.max(coordinate))
-                })
-            })?;
-    let requested_tolerance = match fit_tolerance {
-        Some(tolerance) if tolerance.is_finite() && tolerance >= 0.0 => tolerance,
-        Some(_) => return None,
-        None => 0.0,
-    };
-    let distance_tolerance = requested_tolerance.max(256.0 * f64::EPSILON * coordinate_scale);
-    let squared_tolerance = distance_tolerance * distance_tolerance;
-    let squared_distance = |parameters: Point2| {
-        let position = cadmpeg_ir::eval::nurbs_surface_point(surface, parameters.u, parameters.v)?;
-        let distance = point_distance(position, point);
-        distance.is_finite().then_some(distance * distance)
-    };
-    let position_squared_distance = |position: Point3| point_distance(position, point).powi(2);
-    let center = |patch: &RationalBezierSurfacePatch| {
-        Point2::new(
-            patch.u_domain[0] + (patch.u_domain[1] - patch.u_domain[0]) * 0.5,
-            patch.v_domain[0] + (patch.v_domain[1] - patch.v_domain[0]) * 0.5,
-        )
-    };
-    let surface_u_domain = [
-        *surface
-            .u_knots
-            .get(usize::try_from(surface.u_degree).ok()?)?,
-        *surface
-            .u_knots
-            .get(usize::try_from(surface.u_count).ok()?)?,
-    ];
-    let surface_v_domain = [
-        *surface
-            .v_knots
-            .get(usize::try_from(surface.v_degree).ok()?)?,
-        *surface
-            .v_knots
-            .get(usize::try_from(surface.v_count).ok()?)?,
-    ];
-    let refined_upper = |start, u_domain, v_domain| {
-        let parameters = refine_nurbs_surface_parameters(
-            surface,
-            point,
-            start,
-            u_domain,
-            v_domain,
-            &position_squared_distance,
-        )
-        .unwrap_or(start);
-        Some((parameters, squared_distance(parameters)?))
-    };
-    let mut best_distance = f64::INFINITY;
-    let mut best_upper_parameters = Vec::new();
-    {
-        let mut consider_upper = |(parameters, distance): (Point2, f64)| {
-            if !best_distance.is_finite() {
-                best_distance = distance;
-                best_upper_parameters.push(parameters);
-                return;
-            }
-            let tolerance = 128.0
-                * f64::EPSILON
-                * distance
-                    .abs()
-                    .max(best_distance.abs())
-                    .max(squared_tolerance);
-            if distance < best_distance && best_distance - distance > tolerance {
-                best_distance = distance;
-                best_upper_parameters.clear();
-            }
-            if (distance - best_distance).abs() <= tolerance {
-                best_upper_parameters.push(parameters);
-            }
-        };
-        if let Some(candidate) =
-            seed.and_then(|seed| refined_upper(seed, surface_u_domain, surface_v_domain))
-        {
-            consider_upper(candidate);
-        }
-        for patch in &patches {
-            consider_upper(refined_upper(
-                center(patch),
-                patch.u_domain,
-                patch.v_domain,
-            )?);
-        }
-    }
-    best_distance.is_finite().then_some(())?;
-    // A tolerance-bounded inverse asks for a parameter whose evaluated point
-    // reproduces the target within that tolerance, not a proof of the global
-    // minimum. The refined span seeds above are evaluated on the surface, so a
-    // fitting candidate is already a constructive certificate. Preserve the
-    // exhaustive branch-and-bound search for exact closest-point inversion.
-    if fit_tolerance.is_some() && best_distance <= squared_tolerance {
-        return (!best_upper_parameters.is_empty()).then_some(best_upper_parameters);
-    }
-    let mut queue = BinaryHeap::new();
-    let mut sequence = 0usize;
-    for patch in patches {
-        let (lower_bound, diameter) = rational_patch_distance_bounds(&patch)?;
-        queue.push(SurfacePatchQueueEntry {
-            lower_bound,
-            diameter,
-            sequence,
-            patch,
-        });
-        sequence += 1;
-    }
-    let mut terminal = Vec::<(Point2, f64)>::new();
-    let mut examined = 0usize;
-    while let Some(entry) = queue.pop() {
-        examined += 1;
-        if examined > MAX_PATCHES {
-            return None;
-        }
-        let SurfacePatchQueueEntry {
-            lower_bound,
-            diameter,
-            patch,
-            ..
-        } = entry;
-        let comparison_tolerance = 128.0
-            * f64::EPSILON
-            * lower_bound
-                .abs()
-                .max(best_distance.abs())
-                .max(squared_tolerance);
-        if lower_bound > best_distance + comparison_tolerance {
-            break;
-        }
-        let parameters = center(&patch);
-        let (upper_parameters, center_distance) =
-            refined_upper(parameters, patch.u_domain, patch.v_domain)?;
-        if fit_tolerance.is_some() && center_distance <= squared_tolerance {
-            return Some(vec![upper_parameters]);
-        }
-        let upper_tolerance = 128.0
-            * f64::EPSILON
-            * center_distance
-                .abs()
-                .max(best_distance.abs())
-                .max(squared_tolerance);
-        if center_distance < best_distance && best_distance - center_distance > upper_tolerance {
-            best_distance = center_distance;
-            best_upper_parameters.clear();
-        }
-        if (center_distance - best_distance).abs() <= upper_tolerance {
-            best_upper_parameters.push(upper_parameters);
-        }
-        let indivisible = parameters.u == patch.u_domain[0]
-            || parameters.u == patch.u_domain[1]
-            || parameters.v == patch.v_domain[0]
-            || parameters.v == patch.v_domain[1];
-        if diameter <= squared_tolerance
-            || center_distance - lower_bound <= squared_tolerance
-            || indivisible
-        {
-            terminal.push((upper_parameters, lower_bound));
-            continue;
-        }
-        let control = |u: usize, v: usize| {
-            let homogeneous = patch.controls[u * (patch.v_degree + 1) + v];
-            [
-                homogeneous[0] / homogeneous[3],
-                homogeneous[1] / homogeneous[3],
-                homogeneous[2] / homogeneous[3],
-            ]
-        };
-        let u_variation = (0..patch.u_degree)
-            .flat_map(|u| (0..=patch.v_degree).map(move |v| (u, v)))
-            .map(|(u, v)| {
-                let first = control(u, v);
-                let second = control(u + 1, v);
-                (0..3)
-                    .map(|axis| (second[axis] - first[axis]).powi(2))
-                    .sum::<f64>()
-            })
-            .fold(0.0_f64, f64::max);
-        let v_variation = (0..=patch.u_degree)
-            .flat_map(|u| (0..patch.v_degree).map(move |v| (u, v)))
-            .map(|(u, v)| {
-                let first = control(u, v);
-                let second = control(u, v + 1);
-                (0..3)
-                    .map(|axis| (second[axis] - first[axis]).powi(2))
-                    .sum::<f64>()
-            })
-            .fold(0.0_f64, f64::max);
-        let split_u = u_variation >= v_variation;
-        let children = split_rational_surface_patch(&patch, split_u)?;
-        for patch in children {
-            let (lower_bound, diameter) = rational_patch_distance_bounds(&patch)?;
-            queue.push(SurfacePatchQueueEntry {
-                lower_bound,
-                diameter,
-                sequence,
-                patch,
-            });
-            sequence += 1;
-        }
-    }
-    let final_tolerance = 128.0 * f64::EPSILON * best_distance.abs().max(squared_tolerance);
-    let mut starts = terminal
-        .into_iter()
-        .filter_map(|(parameters, lower)| {
-            (lower <= best_distance + final_tolerance).then_some(parameters)
-        })
-        .collect::<Vec<_>>();
-    starts.extend(best_upper_parameters);
-    (!starts.is_empty()).then_some(starts)
-}
-
-#[cfg(test)]
-pub(crate) fn nurbs_parameters(
-    surface: &NurbsSurface,
-    point: Point3,
-    seed: Option<Point2>,
-) -> Option<Point2> {
-    nurbs_parameters_with_tolerance(surface, point, seed, None)
-}
-
-fn nurbs_parameters_with_tolerance(
-    surface: &NurbsSurface,
-    point: Point3,
-    seed: Option<Point2>,
-    fit_tolerance: Option<f64>,
-) -> Option<Point2> {
-    let seed = seed.filter(|seed| seed.u.is_finite() && seed.v.is_finite());
-    let u_degree = usize::try_from(surface.u_degree).ok()?;
-    let v_degree = usize::try_from(surface.v_degree).ok()?;
-    let u_count = usize::try_from(surface.u_count).ok()?;
-    let v_count = usize::try_from(surface.v_count).ok()?;
-    let u_domain = [
-        *surface.u_knots.get(u_degree)?,
-        *surface.u_knots.get(u_count)?,
-    ];
-    let v_domain = [
-        *surface.v_knots.get(v_degree)?,
-        *surface.v_knots.get(v_count)?,
-    ];
-    if u_domain[0] >= u_domain[1] || v_domain[0] >= v_domain[1] {
-        return None;
-    }
-    let squared_distance = |candidate: Point3| point_distance(candidate, point).powi(2);
-    let starts = complete_nurbs_surface_starts(surface, point, seed, fit_tolerance)?;
-    let mut best = None;
-    let mut best_distance = f64::INFINITY;
-    let mut best_seed_distance = f64::INFINITY;
-    for start in starts {
-        let Some(parameters) = refine_nurbs_surface_parameters(
-            surface,
-            point,
-            start,
-            u_domain,
-            v_domain,
-            &squared_distance,
-        ) else {
-            continue;
-        };
-        let Some(position) =
-            cadmpeg_ir::eval::nurbs_surface_point(surface, parameters.u, parameters.v)
-        else {
-            continue;
-        };
-        let distance = squared_distance(position);
-        let seed_distance = seed.map_or(parameters.u.abs() + parameters.v.abs(), |seed| {
-            (parameters.u - seed.u).hypot(parameters.v - seed.v)
-        });
-        let same_point = (distance - best_distance).abs()
-            <= f64::EPSILON * 64.0 * distance.abs().max(best_distance.abs()).max(1.0);
-        if distance < best_distance && !same_point
-            || same_point && seed_distance < best_seed_distance
-        {
-            best = Some(parameters);
-            best_distance = distance;
-            best_seed_distance = seed_distance;
-        }
-    }
-    best
-}
-
-fn refine_nurbs_surface_parameters(
-    surface: &NurbsSurface,
-    point: Point3,
-    mut parameters: Point2,
-    u_domain: [f64; 2],
-    v_domain: [f64; 2],
-    squared_distance: &impl Fn(Point3) -> f64,
-) -> Option<Point2> {
-    parameters.u = parameters.u.clamp(u_domain[0], u_domain[1]);
-    parameters.v = parameters.v.clamp(v_domain[0], v_domain[1]);
-    for _ in 0..32 {
-        let position = cadmpeg_ir::eval::nurbs_surface_point(surface, parameters.u, parameters.v)?;
-        let residual = Vector3::new(
-            position.x - point.x,
-            position.y - point.y,
-            position.z - point.z,
-        );
-        let partials = nurbs_surface_partials(surface, parameters.u, parameters.v)?;
-        let (du, dv) = (partials.du, partials.dv);
-        let dot =
-            |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
-        let du_squared = dot(du, du);
-        let mixed = dot(du, dv);
-        let dv_squared = dot(dv, dv);
-        let determinant = du_squared * dv_squared - mixed * mixed;
-        if !determinant.is_finite()
-            || determinant.abs() <= f64::EPSILON * du_squared.max(dv_squared).powi(2)
-        {
-            break;
-        }
-        let du_residual = dot(du, residual);
-        let dv_residual = dot(dv, residual);
-        let step = Point2::new(
-            (dv_squared * du_residual - mixed * dv_residual) / determinant,
-            (du_squared * dv_residual - mixed * du_residual) / determinant,
-        );
-        let current_distance = squared_distance(position);
-        let mut scale = 1.0;
-        let mut accepted = None;
-        for _ in 0..16 {
-            let candidate = Point2::new(
-                (parameters.u - scale * step.u).clamp(u_domain[0], u_domain[1]),
-                (parameters.v - scale * step.v).clamp(v_domain[0], v_domain[1]),
-            );
-            let candidate_position =
-                cadmpeg_ir::eval::nurbs_surface_point(surface, candidate.u, candidate.v)?;
-            if squared_distance(candidate_position) <= current_distance {
-                accepted = Some(candidate);
-                break;
-            }
-            scale *= 0.5;
-        }
-        let Some(candidate) = accepted else {
-            break;
-        };
-        parameters = candidate;
-        if scale * step.u.abs() <= 1.0e-12 * (1.0 + parameters.u.abs())
-            && scale * step.v.abs() <= 1.0e-12 * (1.0 + parameters.v.abs())
-        {
-            break;
-        }
-    }
-    Some(parameters)
 }
 
 fn point_distance(first: Point3, second: Point3) -> f64 {
@@ -8742,8 +8088,8 @@ fn exact_boundary_pcurve(
     };
     let domain = surface_parameter_domain(ir, surface)?;
     let parameters = [
-        nurbs_parameters_with_tolerance(nurbs, endpoints[0], None, Some(tolerance))?,
-        nurbs_parameters_with_tolerance(nurbs, endpoints[1], None, Some(tolerance))?,
+        nurbs_surface_parameter_within_tolerance(nurbs, endpoints[0], None, tolerance)?,
+        nurbs_surface_parameter_within_tolerance(nurbs, endpoints[1], None, tolerance)?,
     ];
     for index in 0..2 {
         if !parameters[index].u.is_finite() || !parameters[index].v.is_finite() {
@@ -9452,7 +8798,7 @@ fn surface_parameters_for_fit_with_index(
         .find(|candidate| &candidate.id == surface)?;
     match &carrier.geometry {
         SurfaceGeometry::Nurbs(nurbs) => {
-            nurbs_parameters_with_tolerance(nurbs, point, seed, Some(tolerance))
+            nurbs_surface_parameter_within_tolerance(nurbs, point, seed, tolerance)
         }
         SurfaceGeometry::Procedural { .. } => offset_surface_parameters_with_tolerance_with_index(
             index,
@@ -12899,7 +12245,8 @@ mod tests {
         point.z += 0.001;
 
         let parameters =
-            super::nurbs_parameters_with_tolerance(&surface, point, None, Some(0.01)).unwrap();
+            cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance(&surface, point, None, 0.01)
+                .unwrap();
         let mapped =
             cadmpeg_ir::eval::nurbs_surface_point(&surface, parameters.u, parameters.v).unwrap();
 

@@ -5520,13 +5520,17 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
     let expected = Point2::new(0.37, 0.61);
     let point = cadmpeg_ir::eval::nurbs_surface_point(&surface, expected.u, expected.v).unwrap();
 
-    let actual = crate::decode::nurbs_parameters(&surface, point, None).unwrap();
+    let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter(&surface, point, None).unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-10);
     assert!((actual.v - expected.v).abs() < 1.0e-10);
 
-    let after_invalid_seed =
-        crate::decode::nurbs_parameters(&surface, point, Some(Point2::new(f64::NAN, 0.5))).unwrap();
+    let after_invalid_seed = cadmpeg_ir::eval::nurbs_surface_closest_parameter(
+        &surface,
+        point,
+        Some(Point2::new(f64::NAN, 0.5)),
+    )
+    .unwrap();
     assert!((after_invalid_seed.u - expected.u).abs() < 1.0e-10);
     assert!((after_invalid_seed.v - expected.v).abs() < 1.0e-10);
 }
@@ -5899,8 +5903,12 @@ fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
     let expected = Point2::new(0.125, 0.3);
     let point = cadmpeg_ir::eval::nurbs_surface_point(&surface, expected.u, expected.v).unwrap();
 
-    let actual =
-        crate::decode::nurbs_parameters(&surface, point, Some(Point2::new(0.875, 0.3))).unwrap();
+    let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter(
+        &surface,
+        point,
+        Some(Point2::new(0.875, 0.3)),
+    )
+    .unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-10);
     assert!((actual.v - expected.v).abs() < 1.0e-10);
@@ -5930,8 +5938,12 @@ fn nurbs_parameter_solver_preserves_close_equal_branches() {
     let expected = Point2::new(0.5001, 0.3);
     let point = cadmpeg_ir::eval::nurbs_surface_point(&surface, expected.u, expected.v).unwrap();
 
-    let actual =
-        crate::decode::nurbs_parameters(&surface, point, Some(Point2::new(0.50011, 0.3))).unwrap();
+    let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter(
+        &surface,
+        point,
+        Some(Point2::new(0.50011, 0.3)),
+    )
+    .unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-10);
     assert!((actual.v - expected.v).abs() < 1.0e-10);
