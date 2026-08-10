@@ -155,8 +155,9 @@ impl StandardSurfaceRecord {
 }
 
 /// Walk the complete face-local surface roster. Records are accepted only as a
-/// unique contiguous chain of `face_count` entries terminated by the first
-/// curve-support row.
+/// unique contiguous chain of `face_count` non-overlapping entries terminated
+/// by the first curve-support row. A byte pattern inside an analytic payload
+/// cannot create a competing freeform record.
 #[must_use]
 pub fn standard_surface_records(
     brep: &[u8],
@@ -171,8 +172,21 @@ pub fn standard_surface_records(
             records.insert(prefix.pos - 5, StandardSurfaceRecord::Analytic(prefix));
         }
     }
+    let analytic_ranges = records
+        .values()
+        .filter_map(|record| match record {
+            StandardSurfaceRecord::Analytic(prefix) => Some((prefix.pos - 5, record.end())),
+            StandardSurfaceRecord::Freeform { .. } => None,
+        })
+        .collect::<Vec<_>>();
     for pos in 0..brep.len().saturating_sub(46) {
         if brep.get(pos + 3..pos + 6) != Some(&[0, 0, 0]) {
+            continue;
+        }
+        if analytic_ranges
+            .iter()
+            .any(|&(start, end)| pos < end && pos + 47 > start)
+        {
             continue;
         }
         let tag = u24_le(brep, pos);

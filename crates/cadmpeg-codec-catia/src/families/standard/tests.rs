@@ -7371,6 +7371,39 @@ mod record_decoders {
     }
 
     #[test]
+    fn standard_surface_roster_rejects_payload_freeform_collisions() {
+        let analytic_record = |tag: [u8; 3]| {
+            let mut record = vec![tag[0], tag[1], tag[2], 0, 0x1a, 0, 0x33, 0x33];
+            record.resize(73, 0);
+            record[72] = 0xff;
+            record
+        };
+        let mut bytes = analytic_record([0x78, 0x56, 0]);
+        bytes.extend(analytic_record([0x79, 0x56, 0]));
+
+        let mut colliding_freeform = vec![0x9a, 0x78, 0x56, 0, 0, 0];
+        for value in [0.0f32, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 2.0] {
+            colliding_freeform.extend_from_slice(&le_f32(value));
+        }
+        colliding_freeform.push(0x01);
+        assert_eq!(colliding_freeform.len(), 47);
+        bytes[26..73].copy_from_slice(&colliding_freeform);
+        bytes.push(0x60);
+
+        let records = crate::families::standard::records::standard_surface_records(&bytes, 2)
+            .expect("surface roster");
+        assert_eq!(records.len(), 2);
+        assert!(matches!(
+            &records[0],
+            StandardSurfaceRecord::Analytic(prefix) if prefix.target == 0x5678
+        ));
+        assert!(matches!(
+            &records[1],
+            StandardSurfaceRecord::Analytic(prefix) if prefix.target == 0x5679
+        ));
+    }
+
+    #[test]
     fn plane_bounds_bind_normals_by_persistent_carrier_tag() {
         let mut bytes =
             plane_bounds_record(0x0001_0203, [1.0, 2.0, 3.0], [1.0; 3], [1.0, 2.0, 3.0], 4.0);
