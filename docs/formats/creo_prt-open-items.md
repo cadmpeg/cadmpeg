@@ -312,31 +312,42 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How must a nonlinear curve-equation `SOLVE` block be solved?
 
-**Known.** `creo_prt.md` §8.3 "`SOLVE` opens a simultaneous-equation block and `FOR` followed by one or more" defines the block framing. The decoder solves complete, dimensionally valid affine systems over numeric unknowns and retains other blocks.
+**Known.** `creo_prt.md` §8.3 "`SOLVE` opens a simultaneous-equation block and `FOR` followed by one or more" defines the block framing. The decoder solves complete, dimensionally valid affine systems and smooth numeric nonlinear systems when one finite full-rank root is established, and retains other blocks.
 
-**Need.** We must know the nonlinear solve rules to evaluate all derived curve parameters.
-
-### SP-02. Other simultaneous-solve states
-
-**Question.** How must a simultaneous-solve block evaluate when an unknown does not have a previous numeric value?
-
-**Known.** The defined affine solver uses the ordered equations, declared unknowns, dimensions, and previous numeric values.
-
-**Need.** We must know the initialization rule to evaluate the block deterministically.
+**Need.** The neutral format model does not yet define a transfer for non-smooth, piecewise, or discrete function forms whose affine reduction does not resolve them.
 
 ### SP-03. Section-to-datum joins
 
-**Question.** Which fields join a section definition to its sketch datum when the defined owner and generated-datum joins do not select one datum?
+**Question.** Which additional fields join a section definition to its sketch datum when no unique bounded-source owner chain or generated-datum parent remains?
 
-**Known.** `creo_prt.md` §6 "`dtm_id_tab [f1|f2] f8 <count> f7 <class> fb e2` is followed by exactly" through `creo_prt.md` §6 "n      = sketch_plane.normal" define the unique generated-datum parent-table join and the `ActDatums` geometric identifiers.
+**Known.** `creo_prt.md` §6 "`DEPDB_DATA` and each complete bounded `AllFeatur` feature row store an" defines the recipe, consecutive datum, and `gsec3d_ptr.sketch_plane` join. The definition is eligible only inside its complete source range. The same section-plane entity used by multiple definitions remains ambiguous. `creo_prt.md` §6 "`dtm_id_tab [f1|f2] f8 <count> f7 <class> fb e2` is followed by exactly" through `creo_prt.md` §6 "n      = sketch_plane.normal" define the unique generated-datum parent-table join and the `ActDatums` geometric identifiers.
 
-**Need.** We must know the join to place the sketch in model space.
+**Need.** We must define a transfer for definitions that have no unique bounded-source chain and no unique generated-datum parent without inferring a feature owner or model-space frame.
 
 ### SP-04. Other relation equations
 
 **Question.** What equation does each relation type outside signed type 0, type 5, and type 14 encode?
 
-**Known.** `creo_prt.md` §5 "Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer" through `creo_prt.md` §5 "A positive-ratio elliptical cone uses local frame coordinates" define the recognized linear, radius, incidence, and entity-geometry relations.
+**Known.** `creo_prt.md` §5 "Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer" through `creo_prt.md` §5 "A positive-ratio elliptical cone uses local frame coordinates" define the recognized linear, radius, incidence, and entity-geometry relations. Complete `eqtn_arr` function-0, function-2, function-3, and function-35 rows define radial endpoint, scalar equality, unsigned coordinate distance, radius binding, and point-on-line equations when their positional row grammars are complete.
+Function-13 rows with two type-2 point ordinates and a zero type-7 auxiliary
+row define a same-coordinate equation.
+Function-33 rows with four type-1/type-2 coordinate pairs identifying two
+endpoint pairs and a zero type-7 auxiliary row define equality of the two
+squared endpoint-pair lengths.
+Function-6 rows with two complete type-1/type-2 point pairs and a type-3
+scalar define their positive Euclidean distance.
+Function-42 rows define the arithmetic-mean relation between two same-axis
+point coordinates and a type-6 scalar. Function-31 rows bind one type-1/type-2
+point pair to two type-6 coordinate scalars. Function-43 rows define the
+eight-slot axis-distance form with two point pairs, two type-4-or-type-5
+auxiliary rows, a type-0 distance row, and a type-5 auxiliary row. The
+non-negative type-0 value transfers when it agrees with exactly one absolute
+coordinate difference; a missing value transfers only when exactly one
+coordinate difference is non-zero. Function-16 direct rows with two type-4
+angle rows, a type-0 result row, and a zero type-5 selector transfer the
+non-negative first-minus-second angle difference when it is at most π; a
+missing result transfers from the two finite angles. Other function-16 forms
+and other function-43 forms remain native.
 
 **Need.** We must know each equation to solve the section geometry.
 
@@ -401,8 +412,23 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Question.** Which fields join a dimension-driven `var_arr` value to the relation dimension that drives it?
 
 **Known.** `creo_prt.md` §5 "A `segtab` line whose two endpoint identifiers each have complete type-1 and" identifies the dimension-driven `var_arr` state. `uvar_id`, point key, relation identifier, relation dimension selector, and external dimension identifier are distinct identities.
+The named `dimtab_ptr` prototype may also carry `dim_ref` rows with nullable
+`item_id`, `sense`, and two nullable point slots. Those rows are distinct from
+the `var_arr` solver-variable identity. A complete `eqtn_arr` uses zero-based
+`var_arr` row ordinals for its argument slots. Function `2` transfers scalar
+equality between two referenced rows; for two type-1 rows or two type-2 rows,
+this transfers equality between the corresponding point coordinates. Function
+`3` transfers a complete non-negative linear dimension into an unsigned
+coordinate-difference constraint when its inline type-0 scalar agrees with the
+selected dimension row or its type-0 value is the dimension-driven sentinel.
+The selected complete dimension supplies that sentinel's resolved scalar. A
+function-2 type-3/type-0 pair binds a positive type-3 radius row to a type-3
+dimension row when the inline scalar agrees or the type-0 row is
+dimension-driven; the selected dimension supplies the resolved scalar and
+radius value.
 
-**Need.** We must know the join to assign the dimension value to the solver variable.
+**Need.** We must know the remaining non-equality equation and relation joins
+that assign a dimension value to a dimension-driven solver variable.
 
 ### SP-13. `relat_ptr.used` states
 
@@ -419,14 +445,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `creo_prt.md` §5 "Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer" through `creo_prt.md` §5 "A positive-ratio elliptical cone uses local frame coordinates" define the incidence forms that have a proven point, line, or axis structure.
 
 **Need.** We must know the constraint to transfer it without inventing an axis.
-
-### SP-15. Unary type-33 incidence
-
-**Question.** What neutral constraint does a unary type-33 `skamp_ptr` incidence with flags 34 and a sense-10 bounded-curve operand represent?
-
-**Known.** The decoder retains the type, flags, sense, and bounded-curve identity.
-
-**Need.** We must know the constraint to transfer its design intent.
 
 ### SP-16. Other `skamp_ptr` geometry families
 
@@ -472,7 +490,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which field selects the current regeneration snapshot when several section definitions select the same internal sketch-plane entity?
 
-**Known.** `creo_prt.md` §6 "DEPDB also stores an internal sketch-datum chain." states that the immediate feature-state chain does not select a snapshot when more than one definition uses that entity.
+**Known.** `creo_prt.md` §6 "`DEPDB_DATA` and each complete bounded `AllFeatur` feature row store an" states that the immediate feature-state chain does not select a snapshot when more than one definition uses that entity.
 
 **Need.** We must know the selector to bind the feature to one section definition.
 
@@ -491,14 +509,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `creo_prt.md` §8.1 "`ref_planes`" states that the nested datum orients an in-plane axis only when it is perpendicular to the sketch-plane normal.
 
 **Need.** We must know the alternate datum to complete the sketch frame.
-
-### SP-24. Named `ActDatums` outline tokens
-
-**Question.** What scalar value does each `a5`, `9f`, `5c`, and `45` token encode in a named `ActDatums` outline?
-
-**Known.** `creo_prt.md` §6 "`ActDatums` stores datum-plane geometry as `act_datum_geoms → srf_array` records. Each section" defines the two-corner outline and its held-coordinate plane rule.
-
-**Need.** We must know the values to construct nonzero datum offsets and extents.
 
 ### SP-25. Other revolution termination selectors
 
@@ -525,14 +535,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** Sparse DEPDB curve rows are one-sided topology views and retain their identifiers and suffix fields.
 
 **Need.** We must know the binding to reconstruct the final B-rep.
-
-### TP-03. Multi-loop classification
-
-**Question.** Which byte-backed field identifies an outer loop or an inner loop on a multi-loop face?
-
-**Known.** Parameter-space containment can classify loops only when complete pcurves and a surface chart are available.
-
-**Need.** We must know the field to classify loops when containment is unavailable.
 
 ### TP-04. Vertex-coordinate binding
 
@@ -646,14 +648,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the values to construct the complete material.
 
-### TP-18. `MdlStatus` prefix meanings
-
-**Question.** What stored-name state does each `MdlStatus` prefix `o`, `x`, `y`, and `z` represent?
-
-**Known.** `creo_prt.md` §6 "Operation names end in" states that the prefix is not part of the operation-family name and does not select the current same-ID state. Byte order selects the current state.
-
-**Need.** We must know the prefix meanings to preserve the native state semantics.
-
 ## 5. Packed persistence data
 
 ### PP-01. Packed `VisibGeom` records
@@ -695,14 +689,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `creo_prt.md` §7 "DEPDB `crv_array` rows are sparse topology views with one-sided `[0, X1, F1, 0]` suffixes. They" defines fixed-prefix surface rows in `DEPDB_DATA`. `creo_prt.md` §6 "Within one current-state record, `protextrude` identifies an additive linear" through `creo_prt.md` §6 "Classes 913" define section and feature-definition boundaries.
 
 **Need.** We must know the other grammars to transfer their design data.
-
-### PP-06. Compressed `DispDataTable` dictionary
-
-**Question.** What initial dictionary and code-width state does the compressed `DispDataTable` variant use?
-
-**Known.** `creo_prt.md` §7 "DEPDB `crv_array` rows are sparse topology views with one-sided `[0, X1, F1, 0]` suffixes. They" defines `1f 9d 10` Unix-compress streams. `creo_prt.md` §8.3 "Unix-compress streams with header `1f 9d 10` grow code width" states that code 256 is a literal dictionary entry and not a clear code.
-
-**Need.** We must know the initial state to decompress the table deterministically.
 
 ### PP-07. Compressed `DispDataTable` geometry binding
 

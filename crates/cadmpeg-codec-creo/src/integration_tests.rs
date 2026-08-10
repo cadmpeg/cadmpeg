@@ -110,7 +110,8 @@ fn topology_pipeline_reconstructs_a_closed_plane_intersection_solid() {
 
 #[test]
 fn datum_pipeline_merges_placed_geometry_with_ordered_feature_history() {
-    let mut datum = vec![4, 0x22, 4, 1, 0, 0];
+    let mut datum = b"srf_array\0\xf8\x01".to_vec();
+    datum.extend([4, 0x22, 4, 1, 1, 0]);
     datum.extend([0x0f; 4]);
     for value in [2.0_f64, 0.0, 3.0, -2.0, 0.0, -3.0] {
         if value == 0.0 {

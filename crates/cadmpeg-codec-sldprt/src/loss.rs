@@ -70,12 +70,24 @@ pub enum SldprtLossCode {
     FeatureTypedOperandIncomplete,
     /// Body delete/keep feature retains native selection without a decoded mode.
     FeatureBodyRetentionUnresolved,
-    /// Face rests on a support surface this codec does not type; shape is opaque.
+    /// Face or procedural construction references an untyped support surface.
     GeometryFaceSupportSurfaceUntyped,
     /// Edge references an untyped support curve carried opaque.
     GeometryEdgeSupportCurveUntyped,
+    /// A derived pcurve parameter has multiple geometric candidates.
+    GeometryPcurveAmbiguous,
+    /// Current face records carry conflicting or incoherent color bindings.
+    AppearanceFaceColorUnresolved,
+    /// `DisplayLists` tessellation does not resolve to its B-rep face owners.
+    TessellationFaceOwnershipUnresolved,
     /// No body record was available; a body hierarchy was derived.
     TopologyBodyHierarchyDerived,
+    /// Body-component overlap tied and no body assignment was selected.
+    TopologyBodyAssignmentAmbiguous,
+    /// One face owner has multiple non-equivalent face-use bridges.
+    TopologyFaceOwnerAmbiguous,
+    /// A canonical face has no explicit body relation.
+    TopologyFaceUnclaimed,
     /// Parasolid B-rep geometry was not transferred (no resolved stream).
     GeometryParasolidNotTransferred,
     /// B-rep topology graph was not built for this file.
@@ -115,7 +127,13 @@ impl SldprtLossCode {
         Self::FeatureBodyRetentionUnresolved,
         Self::GeometryFaceSupportSurfaceUntyped,
         Self::GeometryEdgeSupportCurveUntyped,
+        Self::GeometryPcurveAmbiguous,
+        Self::AppearanceFaceColorUnresolved,
+        Self::TessellationFaceOwnershipUnresolved,
         Self::TopologyBodyHierarchyDerived,
+        Self::TopologyBodyAssignmentAmbiguous,
+        Self::TopologyFaceOwnerAmbiguous,
+        Self::TopologyFaceUnclaimed,
         Self::GeometryParasolidNotTransferred,
         Self::TopologyGraphNotTransferred,
         Self::MaterialMetadataNotTransferred,
@@ -152,7 +170,13 @@ impl SldprtLossCode {
             Self::FeatureBodyRetentionUnresolved => "feature.body-retention-unresolved",
             Self::GeometryFaceSupportSurfaceUntyped => "geometry.face-support-surface-untyped",
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
+            Self::GeometryPcurveAmbiguous => "geometry.pcurve-ambiguous",
+            Self::AppearanceFaceColorUnresolved => "appearance.face-color-unresolved",
+            Self::TessellationFaceOwnershipUnresolved => "tessellation.face-ownership-unresolved",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
+            Self::TopologyBodyAssignmentAmbiguous => "topology.body-assignment-ambiguous",
+            Self::TopologyFaceOwnerAmbiguous => "topology.face-owner-ambiguous",
+            Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
             Self::GeometryParasolidNotTransferred => "geometry.parasolid-not-transferred",
             Self::TopologyGraphNotTransferred => "topology.graph-not-transferred",
             Self::MaterialMetadataNotTransferred => "material.metadata-not-transferred",
@@ -175,11 +199,17 @@ impl SldprtLossCode {
     const fn shared_code(self) -> LossKind {
         match self {
             Self::ContainerNoParasolidStream => LossKind::MissingGeometryStream,
-            Self::TopologyBodyHierarchyDerived => LossKind::TopologyGaugeSubstituted,
+            Self::TopologyBodyHierarchyDerived
+            | Self::TopologyBodyAssignmentAmbiguous
+            | Self::TopologyFaceOwnerAmbiguous => LossKind::TopologyGaugeSubstituted,
+            Self::TopologyFaceUnclaimed => LossKind::TopologyNotTransferred,
             Self::TopologyGraphNotTransferred => LossKind::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryParasolidNotTransferred => LossKind::GeometryNotTransferred,
+            Self::GeometryPcurveAmbiguous => LossKind::PcurveOmitted,
+            Self::AppearanceFaceColorUnresolved => LossKind::MaterialNotTransferred,
+            Self::TessellationFaceOwnershipUnresolved => LossKind::ReferenceGraphNotClosed,
             Self::MaterialMetadataNotTransferred => LossKind::MaterialNotTransferred,
             _ => LossKind::FeatureHistoryRetained,
         }
@@ -198,6 +228,8 @@ impl SldprtLossCode {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_ir::report::{LossKind, StrictConsequence};
+
     use super::SldprtLossCode;
     use std::collections::BTreeSet;
 
@@ -235,7 +267,13 @@ mod tests {
                 "feature.body-retention-unresolved",
                 "geometry.face-support-surface-untyped",
                 "geometry.edge-support-curve-untyped",
+                "geometry.pcurve-ambiguous",
+                "appearance.face-color-unresolved",
+                "tessellation.face-ownership-unresolved",
                 "topology.body-hierarchy-derived",
+                "topology.body-assignment-ambiguous",
+                "topology.face-owner-ambiguous",
+                "topology.face-unclaimed",
                 "geometry.parasolid-not-transferred",
                 "topology.graph-not-transferred",
                 "material.metadata-not-transferred",
@@ -270,5 +308,12 @@ mod tests {
             assert_eq!(note.message, "x");
             assert!(note.provenance.is_none());
         }
+    }
+
+    #[test]
+    fn ambiguous_pcurve_is_a_tolerable_pcurve_omission() {
+        let note = SldprtLossCode::GeometryPcurveAmbiguous.note("ambiguous");
+        assert_eq!(note.code, LossKind::PcurveOmitted);
+        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
     }
 }

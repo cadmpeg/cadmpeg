@@ -4,7 +4,7 @@ use super::compact_reference_planes::{
     compact_profile_component_plane_frame, compact_profile_reference_plane_source,
     CompactReferencePlaneIndex,
 };
-use super::curves::lane_sketch_plane_frames;
+use super::curves::{lane_sketch_plane_frames, SketchPlaneFrame, SketchPlaneUAxisSource};
 use super::helix::fit_helix_polyline;
 use super::reference_geometry::{explicit_reference_plane_frame, reference_plane_frame_key};
 use super::relation_loci::same_dimension_length;
@@ -624,6 +624,14 @@ fn profiled_hole_construction(
             _ => None,
         })
         .collect::<Vec<_>>();
+    let points = entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch && !entity.construction)
+        .filter_map(|entity| match entity.geometry {
+            SketchGeometry::Point { position } => Some(position),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
     let same_point = |left: Point2, right: Point2| {
         (left.u - right.u).abs() <= DISPLAY_DIMENSION_TOLERANCE_MM
             && (left.v - right.v).abs() <= DISPLAY_DIMENSION_TOLERANCE_MM
@@ -633,6 +641,10 @@ fn profiled_hole_construction(
             (same_point(*start, first) && same_point(*end, second))
                 || (same_point(*start, second) && same_point(*end, first))
         })
+    };
+    let has_point_pair = |first: Point2, second: Point2| {
+        points.iter().any(|point| same_point(*point, first))
+            && points.iter().any(|point| same_point(*point, second))
     };
     let bore_radius = diameter / 2.0;
     let entry_radius = entry_diameter / 2.0;
@@ -656,10 +668,20 @@ fn profiled_hole_construction(
                         let wall_entry = point(0.0, entry_radius);
                         let wall_end = point(-depth, terminal_radius);
                         let axis_end = point(-depth, 0.0);
-                        if !has_line(axis_entry, wall_entry)
-                            || !has_line(wall_entry, wall_end)
-                            || !has_line(wall_end, axis_end)
-                            || !has_line(axis_end, axis_entry)
+                        let edges = [
+                            (axis_entry, wall_entry),
+                            (wall_entry, wall_end),
+                            (wall_end, axis_end),
+                            (axis_end, axis_entry),
+                        ];
+                        let materialized_edges = edges
+                            .iter()
+                            .filter(|(first, second)| has_line(*first, *second))
+                            .count();
+                        if materialized_edges < 2
+                            || edges.iter().any(|(first, second)| {
+                                !has_line(*first, *second) && !has_point_pair(*first, *second)
+                            })
                         {
                             continue;
                         }
@@ -1408,16 +1430,6 @@ pub(crate) fn project_hole_axes(
     lanes: &[FeatureInputLane],
 ) {
     let surfaces = topology.surfaces;
-    let native_sources = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter_map(|feature| {
-            Some((
-                feature.id.as_str(),
-                feature.source_id.as_deref()?.parse::<u32>().ok()?,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
     let native_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -1489,19 +1501,6 @@ pub(crate) fn project_hole_axes(
             feature_frames.insert((lane.id.as_str(), feature.id.as_str()), frame);
         }
     }
-    let mut counts_by_source = HashMap::<u32, HashSet<usize>>::new();
-    for lane in lanes {
-        let counts = lane.generated_surface_identities.iter().fold(
-            HashMap::<u32, usize>::new(),
-            |mut counts, identity| {
-                *counts.entry(identity.feature_source_id).or_default() += 1;
-                counts
-            },
-        );
-        for (source, count) in counts {
-            counts_by_source.entry(source).or_default().insert(count);
-        }
-    }
     let hole_diameter_counts = model_features
         .iter()
         .filter(|feature| feature.suppressed != Some(true))
@@ -1524,7 +1523,6 @@ pub(crate) fn project_hole_axes(
         let FeatureDefinition::Hole {
             placements,
             diameter: Some(Length(diameter)),
-            extent,
             ..
         } = &mut feature.definition
         else {
@@ -1533,37 +1531,7 @@ pub(crate) fn project_hole_axes(
         if !placements.is_empty() || !diameter.is_finite() || *diameter <= 0.0 {
             continue;
         }
-        let expected = feature
-            .native_ref
-            .as_deref()
-            .and_then(|native| native_sources.get(native))
-            .and_then(|source| counts_by_source.get(source))
-            .and_then(|counts| {
-                (counts.len() == 1)
-                    .then(|| counts.iter().next().copied())
-                    .flatten()
-            });
         let radius = *diameter / 2.0;
-        let tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
-        let candidates = surfaces
-            .iter()
-            .filter_map(|surface| match &surface.geometry {
-                SurfaceGeometry::Cylinder {
-                    origin,
-                    axis,
-                    radius: candidate,
-                    ..
-                } if (*candidate - radius).abs() <= tolerance => Some((*origin, *axis)),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        if expected == Some(candidates.len()) && !candidates.is_empty() {
-            *placements = candidates
-                .into_iter()
-                .map(|(origin, axis)| HolePlacement::Axis { origin, axis })
-                .collect();
-            continue;
-        }
         let Some(native_feature) = feature
             .native_ref
             .as_deref()
@@ -1605,21 +1573,6 @@ pub(crate) fn project_hole_axes(
             }
             if let Some(bore_placements) = bore_carrier_placements(radius, topology) {
                 *placements = bore_placements;
-                continue;
-            }
-        }
-        if let Some(depth) = match extent {
-            Some(Termination::Blind {
-                length: Length(depth),
-            }) => Some(*depth),
-            _ => None,
-        } {
-            let bore_axes = cylindrical_face_axes_at_depth(radius, depth, topology);
-            if !bore_axes.is_empty() {
-                *placements = bore_axes
-                    .into_iter()
-                    .map(|(origin, axis)| HolePlacement::Axis { origin, axis })
-                    .collect();
                 continue;
             }
         }
@@ -1807,38 +1760,6 @@ fn bore_carrier_placements(radius: f64, topology: &HoleTopology<'_>) -> Option<V
         .map(|(_, placement)| placement)
         .collect::<Vec<_>>();
     (!placements.is_empty()).then_some(placements)
-}
-
-fn cylindrical_face_axes_at_depth(
-    radius: f64,
-    depth: f64,
-    topology: &HoleTopology<'_>,
-) -> Vec<(Point3, Vector3)> {
-    if !radius.is_finite() || radius <= 0.0 || !depth.is_finite() || depth <= 0.0 {
-        return Vec::new();
-    }
-    let radius_tolerance = (radius * 1.0e-9).max(1.0e-9);
-    let depth_tolerance = (depth * 1.0e-9).max(1.0e-9);
-    let mut axes = cylindrical_bore_face_spans(topology)
-        .into_iter()
-        .filter_map(|(origin, axis, candidate_radius, span, _)| {
-            ((candidate_radius - radius).abs() <= radius_tolerance
-                && (span - depth).abs() <= depth_tolerance)
-                .then_some((origin, axis))
-        })
-        .collect::<Vec<_>>();
-    axes.sort_by_key(|(origin, axis)| {
-        [
-            origin.x.to_bits(),
-            origin.y.to_bits(),
-            origin.z.to_bits(),
-            axis.x.to_bits(),
-            axis.y.to_bits(),
-            axis.z.to_bits(),
-        ]
-    });
-    axes.dedup();
-    axes
 }
 
 fn cylindrical_bore_face_spans(
@@ -2527,44 +2448,102 @@ fn hole_temporary_axis(payload: &[u8], start: usize, end: usize) -> Option<(Poin
 
 pub(super) fn feature_input_sketch_frame(
     payload: &[u8],
-    plane_frames: &HashMap<u32, (Point3, Vector3, Vector3)>,
+    plane_frames: &HashMap<u32, SketchPlaneFrame>,
     plane_index: &CompactReferencePlaneIndex,
     context_start: usize,
     start: usize,
     end: usize,
 ) -> Option<(Point3, Vector3, Vector3)> {
-    compact_profile_reference_plane_source(plane_index, context_start, start, end)
-        .and_then(|source| plane_frames.get(&source).copied())
-        .or_else(|| compact_profile_component_plane_frame(payload, context_start, start, end))
-        .or_else(|| {
-            let (origin, normal, u_axis) = payload
-                .get(start..end)
-                .and_then(|object| explicit_reference_plane_frame(object).ok().flatten())?;
-            let finite_zero = |value: f64| {
-                if value.abs() <= 1.0e-12 {
-                    0.0
-                } else {
-                    value
-                }
-            };
-            Some((
-                Point3::new(
-                    finite_zero(origin.x),
-                    finite_zero(origin.y),
-                    finite_zero(origin.z),
-                ),
-                Vector3::new(
-                    finite_zero(normal.x),
-                    finite_zero(normal.y),
-                    finite_zero(normal.z),
-                ),
-                Vector3::new(
-                    finite_zero(u_axis.x),
-                    finite_zero(u_axis.y),
-                    finite_zero(u_axis.z),
-                ),
-            ))
-        })
+    let reference = compact_profile_reference_plane_source(plane_index, context_start, start, end)
+        .and_then(|source| plane_frames.get(&source).copied());
+    let component = compact_profile_component_plane_frame(payload, context_start, start, end);
+    let explicit = || {
+        let (origin, normal, u_axis) = payload
+            .get(start..end)
+            .and_then(|object| explicit_reference_plane_frame(object).ok().flatten())?;
+        let finite_zero = |value: f64| {
+            if value.abs() <= 1.0e-12 {
+                0.0
+            } else {
+                value
+            }
+        };
+        Some((
+            Point3::new(
+                finite_zero(origin.x),
+                finite_zero(origin.y),
+                finite_zero(origin.z),
+            ),
+            Vector3::new(
+                finite_zero(normal.x),
+                finite_zero(normal.y),
+                finite_zero(normal.z),
+            ),
+            Vector3::new(
+                finite_zero(u_axis.x),
+                finite_zero(u_axis.y),
+                finite_zero(u_axis.z),
+            ),
+        ))
+    };
+    match reference {
+        Some(reference) => {
+            let component = component
+                .filter(|component| coplanar_plane_frames(reference.as_tuple(), *component));
+            if reference.u_axis_source == SketchPlaneUAxisSource::ConstructedMidPlane {
+                component.or_else(|| {
+                    explicit().filter(|frame| coplanar_plane_frames(reference.as_tuple(), *frame))
+                })
+            } else {
+                component
+                    .or_else(|| Some(reference.as_tuple()))
+                    .or_else(explicit)
+            }
+        }
+        None => component.or_else(explicit),
+    }
+}
+
+fn coplanar_plane_frames(
+    reference: (Point3, Vector3, Vector3),
+    candidate: (Point3, Vector3, Vector3),
+) -> bool {
+    let reference_normal_length = reference.1.norm();
+    let candidate_normal_length = candidate.1.norm();
+    if !reference_normal_length.is_finite()
+        || !candidate_normal_length.is_finite()
+        || reference_normal_length <= f64::EPSILON
+        || candidate_normal_length <= f64::EPSILON
+    {
+        return false;
+    }
+    let normal_alignment = (reference.1.x * candidate.1.x
+        + reference.1.y * candidate.1.y
+        + reference.1.z * candidate.1.z)
+        / (reference_normal_length * candidate_normal_length);
+    if (normal_alignment.abs() - 1.0).abs() > 1.0e-8 {
+        return false;
+    }
+    let displacement = Vector3::new(
+        candidate.0.x - reference.0.x,
+        candidate.0.y - reference.0.y,
+        candidate.0.z - reference.0.z,
+    );
+    let normal_distance = (displacement.x * reference.1.x
+        + displacement.y * reference.1.y
+        + displacement.z * reference.1.z)
+        / reference_normal_length;
+    let scale = reference
+        .0
+        .x
+        .abs()
+        .max(reference.0.y.abs())
+        .max(reference.0.z.abs())
+        .max(candidate.0.x.abs())
+        .max(candidate.0.y.abs())
+        .max(candidate.0.z.abs())
+        .max(1.0);
+    normal_distance.abs() <= 1.0e-8 * scale
 }
 
 pub(super) fn sketch_feature_frames(

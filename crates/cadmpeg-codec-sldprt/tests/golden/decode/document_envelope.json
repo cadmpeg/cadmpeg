@@ -117,7 +117,7 @@
           ]
         },
         {
-          "id": "sldprt:metadata:transformed_reference_plane#247:176",
+          "id": "sldprt:metadata:transformed_reference_plane#247:147",
           "name": "transformed_reference_plane",
           "target": {
             "kind": "document"
@@ -404,7 +404,10 @@
         "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
+        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_swobjects_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_swobjects_material_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_swobjects_metadata_identity_local_sha256": "<elided: digest over tolerantly compared geometry>"
       },
       "format": "sldprt"
     },
@@ -598,8 +601,8 @@
           "stream": 1,
           "tag": "moLengthUserUnits_c"
         },
-        "sldprt:metadata:transformed_reference_plane#247:176": {
-          "offset": 176,
+        "sldprt:metadata:transformed_reference_plane#247:147": {
+          "offset": 147,
           "stream": 1,
           "tag": "moTransRefPlaneData_c"
         }

@@ -4,6 +4,7 @@
 use super::curve_conversion::{circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs};
 use super::geometry::{entity_loss, source_object};
 use crate::directory::DirectoryEntry;
+use crate::global::Global;
 use crate::parameter::ParameterRecord;
 use cadmpeg_ir::geometry::{
     CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, NurbsCurve,
@@ -25,6 +26,17 @@ pub(super) struct CompositeProjection {
     pub(super) decoded: BTreeSet<u32>,
     pub(super) losses: Vec<LossNote>,
     pub(super) wire_edges: Vec<EdgeId>,
+}
+
+fn degraded_carrier_loss(entry: &DirectoryEntry, reason: &str) -> LossNote {
+    LossNote::new(
+        cadmpeg_ir::LossKind::GeometryNotTransferred,
+        format!(
+            "IGES Type 102 entity D{} has no exact concatenated carrier because {reason}; the ordered native composite carrier was retained",
+            entry.sequence
+        ),
+    )
+    .with_provenance(entry.loss_provenance())
 }
 
 fn point_for_vertex(ir: &CadIr, id: &VertexId) -> Option<Point3> {
@@ -306,11 +318,10 @@ fn concatenate_nurbs(
     for (child_index, (curve, interval)) in children.into_iter().enumerate() {
         let child_start = interval[0];
         let child_end = interval[1];
-        let shift = cursor - child_start;
         let shifted_knots = curve
             .knots
             .iter()
-            .map(|knot| knot + shift)
+            .map(|knot| (knot - child_start) + cursor)
             .collect::<Vec<_>>();
         let mut child_weights = curve
             .weights
@@ -472,9 +483,9 @@ fn bounded_nurbs_for_id(
     }
 }
 
-fn bounded_nurbs(ir: &CadIr, sequence: u32) -> Option<(NurbsCurve, [f64; 2])> {
+fn bounded_nurbs(ir: &CadIr, sequence: u32, join_tolerance: f64) -> Option<(NurbsCurve, [f64; 2])> {
     let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
-    bounded_nurbs_for_id(ir, &curve_id, 0, None)
+    bounded_nurbs_for_id(ir, &curve_id, 0, Some(join_tolerance))
 }
 
 pub(super) fn bounded_nurbs_for_curve(
@@ -493,7 +504,7 @@ pub(super) fn bounded_nurbs_for_curve_with_tolerance(
         ir,
         curve_id,
         0,
-        tolerance.filter(|tolerance| tolerance.is_finite() && *tolerance > 0.0),
+        tolerance.filter(|tolerance| tolerance.is_finite() && *tolerance >= 0.0),
     )
 }
 
@@ -537,6 +548,7 @@ fn project_native_composite(
     ir: &mut CadIr,
     entry: &DirectoryEntry,
     child_sequences: &[u32],
+    join_tolerance: f64,
 ) -> Option<EdgeId> {
     let child_curves = child_sequences
         .iter()
@@ -560,7 +572,12 @@ fn project_native_composite(
         .map(|(index, curve)| CompositeCurveSegment {
             curve: curve.clone(),
             same_sense: true,
-            transition: if index > 0 && close(endpoints[index - 1].1, endpoints[index].0) {
+            transition: if index > 0
+                && close_with_tolerance(
+                    endpoints[index - 1].1,
+                    endpoints[index].0,
+                    Some(join_tolerance),
+                ) {
                 CompositeCurveTransition::Continuous
             } else {
                 CompositeCurveTransition::Discontinuous
@@ -617,10 +634,31 @@ fn project_native_composite(
     Some(edge_id)
 }
 
+fn project_degraded_composite(
+    ir: &mut CadIr,
+    entry: &DirectoryEntry,
+    child_sequences: &[u32],
+    join_tolerance: f64,
+    reason: &str,
+    losses: &mut Vec<LossNote>,
+) -> Option<EdgeId> {
+    let edge = project_native_composite(ir, entry, child_sequences, join_tolerance);
+    if edge.is_some() {
+        losses.push(degraded_carrier_loss(entry, reason));
+    } else {
+        losses.push(entity_loss(
+            entry,
+            format!("{reason}, and no ordered native composite carrier can be constructed"),
+        ));
+    }
+    edge
+}
+
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
+    global: &Global,
 ) -> CompositeProjection {
     let records = parameters
         .iter()
@@ -634,6 +672,7 @@ pub(super) fn project(
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
+    let join_tolerance = global.minimum_resolution_mm();
 
     for entry in directory
         .iter()
@@ -676,7 +715,7 @@ pub(super) fn project(
         if child_sequences.iter().any(|sequence| {
             entries
                 .get(sequence)
-                .is_none_or(|child| child.status.subordinate != 1)
+                .is_none_or(|child| !child.status.is_physically_dependent())
         }) {
             losses.push(entity_loss(
                 entry,
@@ -686,45 +725,57 @@ pub(super) fn project(
         }
         let Some(children) = child_sequences
             .iter()
-            .map(|sequence| bounded_nurbs(ir, *sequence))
+            .map(|sequence| bounded_nurbs(ir, *sequence, join_tolerance))
             .collect::<Option<Vec<_>>>()
         else {
-            if let Some(edge) = project_native_composite(ir, entry, &child_sequences) {
+            if let Some(edge) = project_degraded_composite(
+                ir,
+                entry,
+                &child_sequences,
+                join_tolerance,
+                "a child has no bounded line or NURBS carrier",
+                &mut losses,
+            ) {
                 wire_edges.push(edge);
                 decoded.insert(entry.sequence);
                 continue;
             }
-            losses.push(entity_loss(
-                entry,
-                "composite child has no exact bounded line or NURBS carrier",
-            ));
             continue;
         };
         let Some(ConcatenatedNurbs {
             nurbs,
             boundaries,
             child_starts,
-        }) = concatenate_nurbs(children, None)
+        }) = concatenate_nurbs(children, Some(join_tolerance))
         else {
-            if let Some(edge) = project_native_composite(ir, entry, &child_sequences) {
+            if let Some(edge) = project_degraded_composite(
+                ir,
+                entry,
+                &child_sequences,
+                join_tolerance,
+                "child endpoints do not join within the Global minimum resolution",
+                &mut losses,
+            ) {
                 wire_edges.push(edge);
                 decoded.insert(entry.sequence);
                 continue;
             }
-            losses.push(entity_loss(
-                entry,
-                "composite children are not exactly concatenable",
-            ));
             continue;
         };
         let degree = nurbs.degree;
         let Some(cursor) = boundaries.last().copied() else {
-            if let Some(edge) = project_native_composite(ir, entry, &child_sequences) {
+            if let Some(edge) = project_degraded_composite(
+                ir,
+                entry,
+                &child_sequences,
+                join_tolerance,
+                "its parameter range is empty",
+                &mut losses,
+            ) {
                 wire_edges.push(edge);
                 decoded.insert(entry.sequence);
                 continue;
             }
-            losses.push(entity_loss(entry, "composite parameter range is empty"));
             continue;
         };
         let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
@@ -734,12 +785,18 @@ pub(super) fn project(
             nurbs.weights.as_deref(),
             0.0,
         ) else {
-            if let Some(edge) = project_native_composite(ir, entry, &child_sequences) {
+            if let Some(edge) = project_degraded_composite(
+                ir,
+                entry,
+                &child_sequences,
+                join_tolerance,
+                "its start cannot be evaluated",
+                &mut losses,
+            ) {
                 wire_edges.push(edge);
                 decoded.insert(entry.sequence);
                 continue;
             }
-            losses.push(entity_loss(entry, "composite start cannot be evaluated"));
             continue;
         };
         let Some(end) = cadmpeg_ir::eval::nurbs_curve_point(
@@ -749,12 +806,18 @@ pub(super) fn project(
             nurbs.weights.as_deref(),
             cursor,
         ) else {
-            if let Some(edge) = project_native_composite(ir, entry, &child_sequences) {
+            if let Some(edge) = project_degraded_composite(
+                ir,
+                entry,
+                &child_sequences,
+                join_tolerance,
+                "its end cannot be evaluated",
+                &mut losses,
+            ) {
                 wire_edges.push(edge);
                 decoded.insert(entry.sequence);
                 continue;
             }
-            losses.push(entity_loss(entry, "composite end cannot be evaluated"));
             continue;
         };
         let stem = format!("D{}", entry.sequence);
@@ -951,6 +1014,32 @@ mod tests {
         assert_eq!(
             concatenated.boundaries,
             vec![0.0, 1.0, 3.0, 4.0, 5.0, 7.0, 8.0]
+        );
+    }
+
+    #[test]
+    fn concatenated_range_is_exactly_the_canonical_knot_domain() {
+        let line = |start: f64, end: f64, x: f64| {
+            (
+                NurbsCurve {
+                    degree: 1,
+                    knots: vec![start, start, end, end],
+                    control_points: vec![Point3::new(x, 0.0, 0.0), Point3::new(x + 1.0, 0.0, 0.0)],
+                    weights: None,
+                    periodic: false,
+                },
+                [start, end],
+            )
+        };
+        let first = line(0.0, 0.3, 0.0);
+        let second = line(1.0e9, 1.0e9 + 0.1, 1.0);
+
+        let concatenated =
+            concatenate_nurbs(vec![first, second], None).expect("joined lines should concatenate");
+
+        assert_eq!(
+            concatenated.boundaries.last(),
+            concatenated.nurbs.knots.last()
         );
     }
 

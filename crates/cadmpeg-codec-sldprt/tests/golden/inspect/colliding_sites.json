@@ -35,7 +35,7 @@
   "format": "sldprt",
   "notes": [
     "outer version word: 0x00000004; 2 CRC-validated block(s), 0 tail-directory entry/entries, 0 cache-cell(s), 0 compound stream(s)",
-    "active Parasolid B-rep candidate: Contents/Config-0-Partition (544 bytes, schema SCH_SW_33103_11000)",
+    "no unique active Parasolid partition located; available B-rep sites remain decodable",
     "Parasolid body streams supply the typed topology and analytic carriers used by decode"
   ]
 }

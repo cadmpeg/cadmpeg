@@ -35,10 +35,13 @@ fn general_note_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &Directo
     let Some(count) = record.count(1).filter(|count| *count > 0) else {
         return false;
     };
-    exact_parameter_count(record, 2 + count * 12, entries)
+    let parameter_end = trailing_pointer_groups(record, entries)
+        .map_or(record.tokens.len(), |groups| groups.token_start);
+    let last_string_start = 2 + (count - 1) * 12;
+    (last_string_start < parameter_end && parameter_end <= 2 + count * 12)
         && (0..count).all(|index| {
             let start = 2 + index * 12;
-            let text = record.string(start + 11);
+            let text = record.string_or_empty(start + 11);
             record
                 .integer(start)
                 .and_then(|value| usize::try_from(value).ok())
@@ -46,20 +49,24 @@ fn general_note_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &Directo
                 .is_some_and(|(declared, text)| declared == text.len())
                 && (start + 1..=start + 2).all(|field| {
                     record
-                        .number(field)
+                        .number_or(field, 0.0)
                         .is_some_and(|value| value.is_finite() && value >= 0.0)
                 })
                 && record
-                    .integer(start + 3)
+                    .integer_or(start + 3, 1)
                     .is_some_and(|value| font_valid(value, entries))
-                && (start + 4..=start + 5).all(|field| finite(record, field))
                 && record
-                    .integer(start + 6)
+                    .number_or(start + 4, std::f64::consts::FRAC_PI_2)
+                    .is_some_and(f64::is_finite)
+                && record.number_or(start + 5, 0.0).is_some_and(f64::is_finite)
+                && record
+                    .integer_or(start + 6, 0)
                     .is_some_and(|value| matches!(value, 0..=2))
                 && record
-                    .integer(start + 7)
+                    .integer_or(start + 7, 0)
                     .is_some_and(|value| matches!(value, 0..=1))
-                && (start + 8..=start + 10).all(|field| finite(record, field))
+                && (start + 8..=start + 10)
+                    .all(|field| record.number_or(field, 0.0).is_some_and(f64::is_finite))
         })
 }
 
@@ -181,7 +188,7 @@ fn child_valid(
     entries.get(&sequence).is_some_and(|entry| {
         entry.entity_type == entity_type
             && forms(entry.form)
-            && entry.status.subordinate == 1
+            && entry.status.is_physically_dependent()
             && entry.status.use_flag == 1
             && records
                 .get(&sequence)
@@ -226,7 +233,7 @@ fn witness_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &DirectoryEnt
         && (3..4 + count * 2).all(|index| finite(record, index))
 }
 
-fn parameterized_curve_type(entry: &DirectoryEntry) -> bool {
+pub(crate) fn parameterized_curve_type(entry: &DirectoryEntry) -> bool {
     matches!(
         entry.entity_type,
         100 | 102 | 104 | 106 | 110 | 112 | 126 | 130 | 142
@@ -281,13 +288,13 @@ fn dimension_valid(
                 curves.map(|curve| curve.and_then(|sequence| entries.get(&sequence).copied()));
             let curves_valid = curve_entries[0].is_some_and(|curve| {
                 parameterized_curve_type(curve)
-                    && curve.status.subordinate == 1
+                    && curve.status.is_physically_dependent()
                     && curve.status.use_flag == 1
             }) && match record.integer(3) {
                 Some(0) => true,
                 Some(_) => curve_entries[1].is_some_and(|curve| {
                     parameterized_curve_type(curve)
-                        && curve.status.subordinate == 1
+                        && curve.status.is_physically_dependent()
                         && curve.status.use_flag == 1
                         && !(curve.entity_type == 110
                             && curve_entries[0].is_some_and(|first| first.entity_type == 110))
@@ -425,7 +432,7 @@ fn dimension_valid(
                 Some(_) => enclosure.is_some_and(|sequence| {
                     entries.get(&sequence).is_some_and(|entry| {
                         matches!((entry.entity_type, entry.form), (100 | 102, 0) | (106, 63))
-                            && entry.status.subordinate == 1
+                            && entry.status.is_physically_dependent()
                             && entry.status.use_flag == 1
                     })
                 }),
@@ -537,9 +544,9 @@ fn general_symbol_valid(
     };
     let geometry_valid = (0..geometry_count).all(|offset| {
         pointer(record, 3 + offset, entries).is_some_and(|sequence| {
-            entries
-                .get(&sequence)
-                .is_some_and(|target| target.status.subordinate == 1 && target.status.use_flag == 1)
+            entries.get(&sequence).is_some_and(|target| {
+                target.status.is_physically_dependent() && target.status.use_flag == 1
+            })
         })
     });
     let leader_count_index = 3 + geometry_count;
@@ -563,7 +570,7 @@ fn general_symbol_valid(
         && exact_parameter_count(record, leader_count_index + 1 + leader_count, entries)
 }
 
-fn section_boundary_type(entry: &DirectoryEntry) -> bool {
+pub(crate) fn section_boundary_type(entry: &DirectoryEntry) -> bool {
     matches!(
         (entry.entity_type, entry.form),
         (100 | 102 | 112 | 126, 0) | (104, 1) | (106, 63)
@@ -659,16 +666,15 @@ pub(super) fn project(
     }) {
         handled.insert(entry.sequence);
         let valid = records.get(&entry.sequence).is_some_and(|record| {
-            let transform_valid = global.length_factor_mm().is_some_and(|factor| {
-                resolve_transform(
-                    entry.transform,
-                    &entries,
-                    &records,
-                    factor,
-                    &mut BTreeSet::new(),
-                )
-                .is_ok()
-            });
+            let transform_valid = resolve_transform(
+                entry.transform,
+                &entries,
+                &records,
+                global.length_factor_mm(),
+                global.real_precision(),
+                &mut BTreeSet::new(),
+            )
+            .is_ok();
             entry.status.use_flag == 1
                 && transform_valid
                 && match entry.entity_type {

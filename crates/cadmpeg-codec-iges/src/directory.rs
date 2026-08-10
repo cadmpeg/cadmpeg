@@ -14,9 +14,20 @@ pub(crate) struct Status {
     pub(crate) hierarchy: u8,
 }
 
+impl Status {
+    pub(crate) fn is_physically_dependent(self) -> bool {
+        matches!(self.subordinate, 1 | 3)
+    }
+
+    pub(crate) fn is_logically_dependent(self) -> bool {
+        matches!(self.subordinate, 2 | 3)
+    }
+}
+
 /// Lossless typed Directory Entry fields.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DirectoryEntry {
+    pub(crate) source_offset: u64,
     pub(crate) sequence: u32,
     pub(crate) entity_type: i64,
     pub(crate) parameter_start: i64,
@@ -34,6 +45,17 @@ pub(crate) struct DirectoryEntry {
     pub(crate) reserved: [[u8; 8]; 2],
     pub(crate) label: [u8; 8],
     pub(crate) subscript: i64,
+}
+
+impl DirectoryEntry {
+    pub(crate) fn loss_provenance(&self) -> cadmpeg_ir::LossProvenance {
+        cadmpeg_ir::LossProvenance {
+            format: "iges".into(),
+            stream: "iges".into(),
+            offset: self.source_offset,
+            tag: Some(format!("directory_entry:D{}", self.sequence)),
+        }
+    }
 }
 
 fn malformed(sequence: u32, message: impl Into<String>) -> CodecError {
@@ -76,13 +98,30 @@ fn status(field: [u8; 8], sequence: u32) -> Result<Status, CodecError> {
             hierarchy: 0,
         });
     }
-    if field.iter().any(|byte| !byte.is_ascii_digit()) {
+    let first_digit = field.iter().position(u8::is_ascii_digit).ok_or_else(|| {
+        malformed(
+            sequence,
+            "status number is neither blank nor a right-justified decimal integer",
+        )
+    })?;
+    if field[..first_digit].iter().any(|byte| *byte != b' ')
+        || field[first_digit..]
+            .iter()
+            .any(|byte| !byte.is_ascii_digit())
+    {
         return Err(malformed(
             sequence,
-            "status number is neither blank nor eight decimal digits",
+            "status number is neither blank nor a right-justified decimal integer",
         ));
     }
-    let pair = |at: usize| (field[at] - b'0') * 10 + field[at + 1] - b'0';
+    let digit = |at: usize| {
+        field
+            .get(at)
+            .copied()
+            .filter(u8::is_ascii_digit)
+            .map_or(0, |value| value - b'0')
+    };
+    let pair = |at: usize| digit(at) * 10 + digit(at + 1);
     Ok(Status {
         blank: pair(0),
         subordinate: pair(2),
@@ -107,6 +146,7 @@ fn parse_pair(first: &PhysicalLine, second: &PhysicalLine) -> Result<DirectoryEn
         ));
     }
     Ok(DirectoryEntry {
+        source_offset: first.offset,
         sequence,
         entity_type,
         parameter_start: integer(first_fields[1], sequence, "Parameter Data start")?,
@@ -154,4 +194,28 @@ pub(crate) fn summary_notes(entries: &[DirectoryEntry]) -> Vec<String> {
             format!("entity.{entity_type}.form.{form}={count}")
         }))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Status;
+
+    #[test]
+    fn subordinate_switch_dependency_bits_follow_the_four_defined_values() {
+        for (subordinate, physical, logical) in [
+            (0, false, false),
+            (1, true, false),
+            (2, false, true),
+            (3, true, true),
+        ] {
+            let status = Status {
+                blank: 0,
+                subordinate,
+                use_flag: 0,
+                hierarchy: 0,
+            };
+            assert_eq!(status.is_physically_dependent(), physical);
+            assert_eq!(status.is_logically_dependent(), logical);
+        }
+    }
 }

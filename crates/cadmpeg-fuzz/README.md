@@ -19,6 +19,7 @@ cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz f3d_container -- -runs=10
 cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz f3d_container -- -max_total_time=60
 cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz f3d_writer -- -runs=1000
 cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz f3d_roundtrip -- -runs=1000
+cargo +nightly fuzz run --fuzz-dir crates/cadmpeg-fuzz iges_writer -- -runs=1000
 ```
 
 Pass one or more corpus directories between the target and `--`. The checked-in
@@ -56,12 +57,15 @@ decoding:
 - `rhino_container`
 - `iges_container`
 
-F3D native writing and replay:
+Native writing and replay:
 
 - `f3d_writer` parses IR, generates a source-less archive, inspects it, and
   decodes it.
 - `f3d_roundtrip` decodes an archive, replays it through the native writer, and
   decodes the result.
+- `iges_writer` selects IGES 5.1, 5.2, or 5.3 from its control byte; exercises
+  source-less planning, topology synthesis, unsupported-native rejection,
+  inspection, semantic re-decode, validation, and byte-exact replay.
 
 Focused parser coverage:
 
@@ -136,7 +140,8 @@ cargo +nightly run --bin generate_iges_seeds
 `generate_all_seeds` writes container and IR seeds, then derives deterministic
 truncation, byte-flip, and oversized-length mutants. `generate_submodule_seeds`
 writes focused parser inputs. `generate_iges_seeds` writes valid IGES 5.3 point
-and trimmed-sheet seeds for `iges_container`.
+and trimmed-sheet seeds for `iges_container`. `generate_all_seeds` writes
+version-selecting IR seeds for `iges_writer`.
 
 Narrower maintenance generators:
 

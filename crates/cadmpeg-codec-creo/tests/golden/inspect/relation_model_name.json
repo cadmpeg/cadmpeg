@@ -5,11 +5,11 @@
       "attributes": {
         "offset": "99"
       },
-      "compressed_size": 77,
+      "compressed_size": 89,
       "compression": "none",
       "name": "DEPDB_DATA",
       "role": "metadata",
-      "uncompressed_size": 77
+      "uncompressed_size": 89
     }
   ],
   "format": "creo",

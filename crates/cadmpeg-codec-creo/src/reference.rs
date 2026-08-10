@@ -258,6 +258,9 @@ fn coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(f64, u
 }
 
 fn arc_z_coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(f64, usize)> {
+    // Arc rows use the first-coordinate lane for every stored coordinate.
+    // Its overlapping prefixes have different mappings in the model-reference
+    // lane, so that lane is only a fallback for tokens with no arc form.
     if data.get(offset) == Some(&0x18)
         && (scalar::decode_tabulated_cylinder_first_coordinate(data, offset + 1, cache).is_some()
             || scalar::decode_model_reference_coordinate(data, offset + 1, cache).is_some())
@@ -269,18 +272,25 @@ fn arc_z_coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(
 }
 
 fn scalar_suffix(row: &[u8], count: usize, cache: &ScalarCache) -> Option<Vec<f64>> {
-    (0..row.len())
-        .filter_map(|start| {
+    let mut candidate = None;
+    for start in 0..row.len() {
+        let Some(values) = (|| {
             let mut cursor = crate::psb::Cursor::at(row, start);
             let mut values = Vec::with_capacity(count);
             while values.len() < count {
                 values.push(cursor.take_with(|data, pos| coordinate(data, pos, cache))?);
             }
             (cursor.pos() == row.len() && values.iter().all(|value| value.is_finite()))
-                .then_some((start, values))
-        })
-        .min_by_key(|(start, _)| *start)
-        .map(|(_, values)| values)
+                .then_some(values)
+        })() else {
+            continue;
+        };
+        if candidate.is_some() {
+            return None;
+        }
+        candidate = Some(values);
+    }
+    candidate
 }
 
 fn find_in(data: &[u8], needle: &[u8], start: usize, end: usize) -> Option<usize> {
@@ -633,6 +643,27 @@ fn conic_parameter(
     coordinate(body, offset, cache).map(|(value, next)| (Some(value), next))
 }
 
+fn positional_conic_local_system(
+    body: &[u8],
+    local_start: usize,
+    cache: &ScalarCache,
+) -> Option<(usize, [f64; 12])> {
+    const MAX_FRAME_BYTES: usize = 12 * 9;
+    let first_end = local_start.checked_add(1)?;
+    let last_end = local_start.saturating_add(MAX_FRAME_BYTES).min(body.len());
+    let candidates = (first_end..=last_end)
+        .filter_map(|end| {
+            let tail = body.get(end..)?;
+            (tail.is_empty() || tail.first() == Some(&0xe2)).then_some(())?;
+            conic_local_system(&body[local_start..end], cache).map(|frame| (end, frame))
+        })
+        .collect::<Vec<_>>();
+    let [(local_end, local_system)] = candidates.as_slice() else {
+        return None;
+    };
+    Some((*local_end, *local_system))
+}
+
 fn positional_conic_body(
     body: &[u8],
     entity_id: u32,
@@ -659,11 +690,7 @@ fn positional_conic_body(
     let (coefficient_1, next) = coordinate(body, cursor, cache)?;
     cursor = next;
     let (coefficient_2, local_start) = coordinate(body, cursor, cache)?;
-    let (local_end, local_system) = (local_start + 1..=body.len()).find_map(|end| {
-        conic_local_system(&body[local_start..end], cache).map(|frame| (end, frame))
-    })?;
-    let tail = body.get(local_end..)?;
-    (tail.is_empty() || tail.first() == Some(&0xe2)).then_some(())?;
+    let (local_end, local_system) = positional_conic_local_system(body, local_start, cache)?;
     endpoints
         .iter()
         .flatten()
@@ -893,8 +920,7 @@ pub fn line3d_lines(payload: &[u8]) -> Vec<ReferenceLine> {
         for (index, (close, body_start, entity_id)) in headers.iter().copied().enumerate() {
             let body_end = headers
                 .get(index + 1)
-                .map_or(block_end, |(next_close, _, _)| *next_close)
-                .min(body_start.saturating_add(384));
+                .map_or(block_end, |(next_close, _, _)| *next_close);
             let Some((start, end, original_length)) =
                 line3d_fields(&payload[body_start..body_end], &cache)
             else {
@@ -1049,8 +1075,7 @@ pub fn arc_z_circles(payload: &[u8]) -> Vec<ReferenceCircle> {
         for (index, (close, body_start, entity_id)) in headers.iter().copied().enumerate() {
             let body_end = headers
                 .get(index + 1)
-                .map_or(block_end, |(next_close, _, _)| *next_close)
-                .min(body_start.saturating_add(256));
+                .map_or(block_end, |(next_close, _, _)| *next_close);
             let Some(mut circle) = arc_z_fields(&payload[body_start..body_end], &cache, entity_id)
             else {
                 continue;
@@ -1225,6 +1250,22 @@ mod tests {
     }
 
     #[test]
+    fn positional_conic_local_system_requires_its_compound_boundary() {
+        let frame = [0x0f; 12];
+        let mut body = frame.to_vec();
+        body.push(0xe2);
+        body.extend([0x2c, 0xf7, 0x10, 0xe3]);
+
+        assert_eq!(
+            positional_conic_local_system(&body, 0, &ScalarCache::default()),
+            Some((12, [0.0; 12]))
+        );
+
+        body[12] = 0xff;
+        assert!(positional_conic_local_system(&body, 0, &ScalarCache::default()).is_none());
+    }
+
+    #[test]
     fn positional_conic_withholds_non_finite_parameters() {
         let payload = b"ent_list(conic)\0\xf2\xf7\x0e\xe2\x2b\xe3\
             \x2b\x1e\xe2\x02\x48\x10\x00\xeb\x10\x00\x00\x00\x00\x01\
@@ -1313,6 +1354,16 @@ mod tests {
     }
 
     #[test]
+    fn scalar_suffix_withholds_competing_start_offsets() {
+        let first_only = [0x46, 0, 0, 0, 0, 0, 0, 0, 0xe4, 0xe4, 0xe4, 0xe4, 0xe4];
+        assert!(scalar_suffix(&first_only, 6, &ScalarCache::from_section(&first_only)).is_some());
+        let second_only = [0, 0x2c, 0, 0, 0, 0, 0, 0, 0xe4, 0xe4, 0xe4, 0xe4, 0xe4];
+        assert!(scalar_suffix(&second_only, 6, &ScalarCache::from_section(&second_only)).is_some());
+        let body = [0x46, 0x2c, 0, 0, 0, 0, 0, 0, 0xe4, 0xe4, 0xe4, 0xe4, 0xe4];
+        assert!(scalar_suffix(&body, 6, &ScalarCache::from_section(&body)).is_none());
+    }
+
+    #[test]
     fn decodes_line3d_with_matching_original_length() {
         let payload = b"ent_list(line3d)\0\x23\xe3\x23\x0d\xe2\x02\x48\x10\x00\
             \x0f\x0f\x0f\xe4\x0f\x0f\xe4";
@@ -1329,6 +1380,15 @@ mod tests {
         );
         assert_eq!(line.start, [0.0; 3]);
         assert_eq!(line.end, [1.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn line3d_row_uses_its_complete_block_bound() {
+        let mut payload = b"ent_list(line3d)\0\x23\xe3\x23\x0d\xe2\x02\x48\x10\0\0".to_vec();
+        payload.extend(std::iter::repeat_n(0, 385));
+        payload.extend_from_slice(b"\x0f\x0f\x0f\xe4\x0f\x0f\xe4");
+
+        assert_eq!(line3d_lines(&payload).len(), 1);
     }
 
     #[test]
@@ -1404,6 +1464,38 @@ mod tests {
         assert_eq!(circle.start[0], -30.0);
         assert_eq!(circle.end[0], -30.0);
         assert!((circle.axis[0].abs() - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn arc_z_rows_prefer_the_tabulated_first_coordinate_lane() {
+        let center_x = [0x46, 0, 0, 0, 0, 0, 0, 0];
+        let endpoint_x = [0xed, 0xc0, 0x08, 0, 0, 0, 0, 0, 0];
+        let zero = [0x0f];
+        let one = [0xe4];
+        let mut body = Vec::new();
+        body.extend_from_slice(&center_x);
+        body.extend_from_slice(&zero);
+        body.extend_from_slice(&zero);
+        body.extend_from_slice(&one);
+        body.extend_from_slice(&endpoint_x);
+        body.extend_from_slice(&zero);
+        body.extend_from_slice(&zero);
+        body.extend_from_slice(&center_x);
+        body.extend_from_slice(&one);
+        body.extend_from_slice(&zero);
+
+        let circle = arc_z_fields(&body, &ScalarCache::from_section(&body), 10)
+            .expect("tabulated-cylinder first-coordinate lane circle");
+        assert_eq!(circle.center, [-2.0, 0.0, 0.0]);
+        assert_eq!(circle.start, [-3.0, 0.0, 0.0]);
+        assert_eq!(circle.end, [-2.0, 1.0, 0.0]);
+        assert_eq!(circle.axis, [0.0, 0.0, -1.0]);
+
+        let negative_collision = [0x2d, 0, 0, 0, 0, 0, 0, 0];
+        assert_eq!(
+            arc_z_coordinate(&negative_collision, 0, &ScalarCache::default()),
+            Some((2.0, 8))
+        );
     }
 
     #[test]

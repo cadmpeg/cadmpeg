@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact physical-line and fixed-card framing.
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::codec::Confidence;
 use std::collections::BTreeMap;
@@ -114,12 +115,10 @@ fn sequence(card: &[u8]) -> Option<u32> {
 }
 
 fn header(line: &[u8]) -> Option<(u8, u32)> {
-    if line.len() != CARD_WIDTH {
-        return None;
-    }
-    let marker = *line.get(72)?;
+    let card = line.get(..CARD_WIDTH)?;
+    let marker = *card.get(72)?;
     Section::parse(marker)?;
-    Some((marker, sequence(line)?))
+    Some((marker, sequence(card)?))
 }
 
 pub(crate) fn detect_fixed_ascii(prefix: &[u8]) -> Confidence {
@@ -138,7 +137,10 @@ pub(crate) fn detect_fixed_ascii(prefix: &[u8]) -> Confidence {
     }
 }
 
-fn physical_lines(source: &[u8]) -> Result<Vec<PhysicalLine>, CodecError> {
+fn physical_lines(
+    source: &[u8],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<PhysicalLine>, CodecError> {
     let mut lines = Vec::new();
     let mut start = 0_usize;
     let mut terminated = false;
@@ -161,22 +163,40 @@ fn physical_lines(source: &[u8]) -> Result<Vec<PhysicalLine>, CodecError> {
             }
             None => (source.len(), LineEnding::None, source.len()),
         };
-        let payload = source[start..payload_end].to_vec();
+        let card_end = start.saturating_add(CARD_WIDTH).min(payload_end);
+        let payload = source[start..card_end].to_vec();
         let section = (!terminated && payload.len() == CARD_WIDTH)
             .then(|| payload.get(72).copied().and_then(Section::parse))
             .flatten();
         let sequence = (!terminated && payload.len() == CARD_WIDTH)
             .then(|| sequence(&payload))
             .flatten();
+        let card_ending = if card_end == payload_end {
+            ending
+        } else {
+            LineEnding::None
+        };
+        charge_line(ctx)?;
         lines.push(PhysicalLine {
             offset: u64::try_from(start)
                 .map_err(|_| CodecError::Malformed("IGES source offset exceeds u64".into()))?,
             payload,
-            ending,
+            ending: card_ending,
             section,
             sequence,
         });
         terminated = terminated || section == Some(Section::Terminate);
+        if card_end != payload_end {
+            charge_line(ctx)?;
+            lines.push(PhysicalLine {
+                offset: u64::try_from(card_end)
+                    .map_err(|_| CodecError::Malformed("IGES source offset exceeds u64".into()))?,
+                payload: source[card_end..payload_end].to_vec(),
+                ending,
+                section: None,
+                sequence: None,
+            });
+        }
         start = next;
     }
     Ok(lines)
@@ -281,14 +301,26 @@ fn validate_terminate_counts(lines: &[PhysicalLine]) -> Result<(), CodecError> {
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) fn scan(source: &[u8]) -> Result<CardScan<'_>, CodecError> {
+    scan_with_context(source, None)
+}
+
+pub(crate) fn scan_with_context<'a>(
+    source: &'a [u8],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<CardScan<'a>, CodecError> {
     if source.is_empty() {
         return Err(CodecError::WrongFormat("empty IGES source".into()));
     }
-    let lines = physical_lines(source)?;
+    let lines = physical_lines(source, ctx)?;
     validate_card_order(&lines)?;
     validate_terminate_counts(&lines)?;
     Ok(CardScan { source, lines })
+}
+
+fn charge_line(ctx: Option<&DecodeContext<'_>>) -> Result<(), CodecError> {
+    ctx.map_or(Ok(()), |ctx| ctx.charge_collection_items(1, "iges_cards"))
 }
 
 pub(crate) fn summarize(scan: &CardScan<'_>) -> ContainerSummary {

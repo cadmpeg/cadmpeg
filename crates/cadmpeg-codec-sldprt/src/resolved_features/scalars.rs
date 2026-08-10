@@ -1,10 +1,7 @@
 //! Named scalar records, operands and feature object names.
 
 use super::relation_records::{compact_scalar_layout, legacy_scalar_layout, scalar_role};
-use super::{
-    COMPACT_SCALAR_HEADER, NAME_MARKER, PADDED_COMPACT_SCALAR_HEADER, SCALAR_HEADER,
-    VALUE_ONLY_SCALAR_HEADER,
-};
+use super::{COMPACT_SCALAR_HEADER, NAME_MARKER, SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER};
 use crate::records::{
     FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputScalar,
@@ -76,17 +73,19 @@ fn scalar_value_offset(payload: &[u8], name_offset: usize, name: &str) -> Option
     let header_offset = name_offset
         .checked_add(NAME_MARKER.len() + 1)?
         .checked_add(name.encode_utf16().count().checked_mul(2)?)?;
-    [
-        SCALAR_HEADER,
-        PADDED_COMPACT_SCALAR_HEADER,
-        COMPACT_SCALAR_HEADER,
-        VALUE_ONLY_SCALAR_HEADER,
-    ]
-    .into_iter()
-    .find_map(|header| {
-        let value_offset = header_offset.checked_add(header.len())?;
-        (payload.get(header_offset..value_offset) == Some(header)).then_some(value_offset)
-    })
+    let value_offset = header_offset.checked_add(SCALAR_HEADER.len())?;
+    if payload.get(header_offset..value_offset) == Some(SCALAR_HEADER) {
+        return Some(value_offset);
+    }
+    let compact_value_offset = header_offset.checked_add(COMPACT_SCALAR_HEADER.len())?;
+    if payload.get(header_offset..compact_value_offset) == Some(COMPACT_SCALAR_HEADER)
+        && compact_scalar_layout(payload, compact_value_offset.checked_add(8)?)
+    {
+        return Some(compact_value_offset);
+    }
+    let value_only_offset = header_offset.checked_add(VALUE_ONLY_SCALAR_HEADER.len())?;
+    (payload.get(header_offset..value_only_offset) == Some(VALUE_ONLY_SCALAR_HEADER))
+        .then_some(value_only_offset)
 }
 
 pub(crate) fn scalar_indices_match(

@@ -15,7 +15,7 @@ use super::helpers::decode_exact_scalars;
 pub struct FeatureRow {
     /// Feature identifier decoded from the row prefix.
     pub feature_id: u32,
-    /// Two-byte row-header family discriminator.
+    /// Two-byte row header retained for downstream row-family dispatch.
     pub header: [u8; 2],
     /// Root `FeatDefs` schema class from the fixed row prefix.
     pub root_schema_class: Option<u32>,
@@ -283,8 +283,6 @@ pub struct FeatureRevolutionExtent {
     pub offset: usize,
 }
 
-const ROW_HEADERS: &[&[u8]] = &[&[0xeb, 0x04], &[0x90, 0x01], &[0xc8, 0x10]];
-
 const CHOICE_LABELS: &[&[u8]] = &[
     b"blend_choice",
     b"depth_choice",
@@ -299,32 +297,80 @@ const CHOICE_LABELS: &[&[u8]] = &[
 ];
 
 pub(super) fn row_spans(payload: &[u8], feature_ids: &BTreeSet<u32>) -> Vec<(usize, usize, u32)> {
+    // The raw section header is present when the caller passes the complete
+    // section extent instead of the payload after `#<name>\n`.
+    let section_header_end = if payload.first() == Some(&b'#') {
+        payload
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map(|newline| newline + 1)
+    } else {
+        None
+    };
     let mut starts = Vec::new();
     for offset in 0..payload.len() {
         let Ok((id, after)) = psb::reference_id(payload, offset) else {
             continue;
         };
-        if feature_ids.contains(&id)
-            && ROW_HEADERS
-                .iter()
-                .any(|header| payload.get(after..after + header.len()) == Some(*header))
+        let prefix_end = after.saturating_add(16).min(payload.len());
+        // Row-like identifiers inside a body are not boundaries. A compound
+        // close is the only in-body boundary; the section header is the
+        // corresponding boundary before the first row.
+        let starts_at_row_boundary = offset == 0
+            || section_header_end == Some(offset)
+            || (offset > 0 && payload[offset - 1] == psb::token::COMPOUND_CLOSE);
+        if starts_at_row_boundary
+            && feature_ids.contains(&id)
+            && payload.get(after..after + 2).is_some()
+            && row_root_schema_class(payload, offset, prefix_end).is_some()
         {
             starts.push((offset, id));
         }
     }
     starts.sort_unstable();
-    let mut seen = BTreeSet::new();
-    starts.retain(|(_, id)| seen.insert(*id));
-    starts
+    // One stream can expose the same feature identifier under conflicting
+    // schema classes, but one identifier/class pair is one row.
+    let mut seen_ids = BTreeSet::new();
+    let mut seen_schema_classes = BTreeSet::new();
+    let retained_starts: Vec<(usize, u32)> = starts
+        .iter()
+        .enumerate()
+        .filter_map(|(index, &(start, id))| {
+            let candidate_end = starts
+                .get(index + 1)
+                .map_or(payload.len(), |&(next, _)| next);
+            let first_for_id = seen_ids.insert(id);
+            let has_new_schema_class = row_root_schema_class(payload, start, candidate_end)
+                .is_some_and(|schema_class| seen_schema_classes.insert((id, schema_class)));
+            (first_for_id || has_new_schema_class).then_some((start, id))
+        })
+        .collect();
+    retained_starts
         .iter()
         .enumerate()
         .map(|(index, &(start, id))| {
-            let end = starts
+            let end = retained_starts
                 .get(index + 1)
                 .map_or(payload.len(), |&(next, _)| next);
             (start, end, id)
         })
         .collect()
+}
+
+/// Read the fixed-prefix root schema class from one candidate row span.
+fn row_root_schema_class(payload: &[u8], start: usize, end: usize) -> Option<u32> {
+    let (_, body_start) = psb::reference_id(payload, start).ok()?;
+    let body = payload.get(body_start..end)?;
+    body[..body.len().min(16)]
+        .windows(2)
+        .enumerate()
+        .filter(|(relative, window)| *relative >= 2 && *window == [0xe3, 0xf6])
+        .find_map(|(relative, _)| {
+            let value_offset = body_start + relative + 2;
+            let (value, after) = psb::compact_int(payload, value_offset);
+            (after > value_offset && after < end && payload.get(after) == Some(&0xe1))
+                .then_some(value)
+        })
 }
 
 /// Decode positional `AllFeatur` rows whose identifiers exist in a decoded
@@ -336,14 +382,7 @@ pub fn rows(payload: &[u8], feature_ids: &BTreeSet<u32>) -> Vec<FeatureRow> {
             let (_, body_start) = psb::reference_id(payload, start).ok()?;
             let body = payload.get(body_start..end)?;
             let header = payload.get(body_start..body_start + 2)?.try_into().ok()?;
-            let root_schema_class = body[..body.len().min(16)]
-                .windows(2)
-                .position(|window| window == [0xe3, 0xf6])
-                .and_then(|relative| {
-                    let value_offset = body_start + relative + 2;
-                    let (value, after) = psb::compact_int(payload, value_offset);
-                    (after > value_offset && payload.get(after) == Some(&0xe1)).then_some(value)
-                });
+            let root_schema_class = row_root_schema_class(payload, start, end);
             Some(FeatureRow {
                 feature_id,
                 header,
@@ -894,6 +933,14 @@ fn explicit_replay_pair_before_suffix(
     let [.., geometry, edges] = arrays.as_slice() else {
         return None;
     };
+    let pair_prefix = match arrays.len() {
+        2 => geometry.0 > 0 && row.body[geometry.0 - 1] == psb::token::COMPOUND_CLOSE,
+        _ => {
+            let preceding = &arrays[arrays.len() - 3];
+            replay_array_separator(&row.body[preceding.2..geometry.0])
+        }
+    };
+    pair_prefix.then_some(())?;
     replay_array_separator(&row.body[geometry.2..edges.0]).then_some(())?;
     replay_array_trailer(&row.body[edges.2..suffix]).then_some(())?;
     Some((
@@ -902,7 +949,7 @@ fn explicit_replay_pair_before_suffix(
             edge_ids: edges.1.clone(),
             geometry_extent: ReplayExtentSource::Explicit,
             edge_extent: ReplayExtentSource::Explicit,
-            consumed: edges.2 - geometry.0,
+            consumed: suffix - geometry.0,
         },
         geometry.0,
     ))

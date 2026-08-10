@@ -23,6 +23,10 @@ fn cross(left: Vector3, right: Vector3) -> Vector3 {
 /// Angular slack this module allows when bounding or dividing a sweep.
 pub(super) const ANGULAR_TOLERANCE: f64 = std::f64::consts::TAU * 1.0e-12;
 
+pub(super) fn angularly_equal(left: f64, right: f64) -> bool {
+    (left - right).abs() <= ANGULAR_TOLERANCE
+}
+
 /// Number of quarter-turn rational spans a positive `sweep` divides into.
 ///
 /// `ceil` is discontinuous exactly at a whole number of quarter turns, which is
@@ -175,7 +179,10 @@ pub(crate) fn parabolic_arc_nurbs(
 
 #[cfg(test)]
 mod span_tests {
-    use super::{elliptical_arc_nurbs, parabolic_arc_nurbs, quarter_turn_spans};
+    use super::{
+        angularly_equal, elliptical_arc_nurbs, parabolic_arc_nurbs, quarter_turn_spans,
+        ANGULAR_TOLERANCE,
+    };
     use cadmpeg_ir::eval::nurbs_curve_point;
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -215,6 +222,16 @@ mod span_tests {
     #[test]
     fn a_vanishing_sweep_still_yields_one_span() {
         assert_eq!(quarter_turn_spans(f64::MIN_POSITIVE), 1);
+    }
+
+    #[test]
+    fn angular_equality_has_one_inclusive_absolute_boundary() {
+        assert!(angularly_equal(0.0, ANGULAR_TOLERANCE));
+        assert!(angularly_equal(
+            std::f64::consts::TAU,
+            std::f64::consts::TAU - ANGULAR_TOLERANCE
+        ));
+        assert!(!angularly_equal(0.0, ANGULAR_TOLERANCE * 1.01));
     }
 
     #[test]
