@@ -122,16 +122,6 @@ from a conformant file.
 
 ## 6. Product structure, annotation, and presentation
 
-### PS-06. Type 402 Form 5 requires a non-null leader pointer
-
-**Question.** May a label placement have no leader?
-
-**Known.** `structure.rs:573-594` requires `existing_pointer` for the leader field, which refuses `0`. Every other nullable pointer in the file admits `Some(0)` explicitly (`structure.rs:667-675`, `annotation.rs:250-256`, `:309-315`, `:423-433`). `iges.md` "Views and drawings" records the tuple roles and no nullability policy.
-
-**Note.** One leaderless placement refuses the complete associativity, so every label placement in the sheet is lost.
-
-**Need.** We need the nullability of the Form 5 leader field.
-
 ### PS-07. Type 406 Form 33 requires a file-global unique identity
 
 **Question.** Must a sheet identifier be unique across the file?

@@ -8430,6 +8430,10 @@ fn decode_types_bounded_predefined_associativity_roles() {
         "iges:entity:directory#1"
     );
     assert_eq!(labels.fields()["placements"][0]["text_location"][2], 3.0);
+    assert_eq!(
+        labels.fields()["placements"][0]["leader"],
+        "iges:entity:directory#3"
+    );
     let dimension = associativities
         .iter()
         .find(|value| value.fields()["kind"] == "dimensioned_geometry")
