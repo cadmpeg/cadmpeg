@@ -432,6 +432,29 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
     malformed_path[record.origin + path_end] = 1;
     assert_eq!(resolved_coordinate_system(&malformed_path), None);
 
+    let mut ordinal_frame = record.lane.native_payload.clone();
+    ordinal_frame.truncate(record.origin + 151);
+    ordinal_frame.extend_from_slice(&2u16.to_le_bytes());
+    ordinal_frame.extend_from_slice(&1u16.to_le_bytes());
+    ordinal_frame.extend_from_slice(&[0; 23]);
+    ordinal_frame.extend_from_slice(&0.5f64.to_le_bytes());
+    ordinal_frame.extend_from_slice(&0x8090u16.to_le_bytes());
+    assert_eq!(
+        resolved_coordinate_system(&ordinal_frame),
+        Some((
+            Point3::new(125.0, -250.0, 500.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, -1.0),
+        ))
+    );
+    let selector = ordinal_frame.len() - 37;
+    ordinal_frame[selector + 2..selector + 4].copy_from_slice(&2u16.to_le_bytes());
+    assert_eq!(resolved_coordinate_system(&ordinal_frame), None);
+    ordinal_frame[selector + 2..selector + 4].copy_from_slice(&1u16.to_le_bytes());
+    ordinal_frame[selector + 27..selector + 35].copy_from_slice(&0.25f64.to_le_bytes());
+    assert_eq!(resolved_coordinate_system(&ordinal_frame), None);
+
     let mut malformed = record.lane.native_payload.clone();
     malformed[record.origin + 115..record.origin + 119].copy_from_slice(&9000u32.to_le_bytes());
     assert_eq!(resolved_coordinate_system(&malformed), None);

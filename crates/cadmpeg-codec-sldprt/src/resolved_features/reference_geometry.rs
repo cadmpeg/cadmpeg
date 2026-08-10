@@ -686,6 +686,10 @@ fn resolved_coordinate_system(record: &[u8]) -> Option<(Point3, Vector3, Vector3
 
     let (origin, generation, origin_end) = coordinate_system_origin(record)?;
     let axes = coordinate_system_line_axes(record, generation, origin_end);
+    if axes.is_empty() {
+        let (x_axis, y_axis) = coordinate_system_ordinal_axes(record, origin_end, origin)?;
+        return Some((origin, x_axis, y_axis, x_axis.cross(y_axis).unit()?));
+    }
     let (mut x_axis, mut y_axis, tail_offsets) = match axes.as_slice() {
         [(offset, point, direction)] => (
             *direction,
@@ -724,6 +728,37 @@ fn resolved_coordinate_system(record: &[u8]) -> Option<(Point3, Vector3, Vector3
     .unit()?;
     let z_axis = x_axis.cross(y_axis).unit()?;
     Some((origin, x_axis, y_axis, z_axis))
+}
+
+fn coordinate_system_ordinal_axes(
+    record: &[u8],
+    origin_end: usize,
+    origin: Point3,
+) -> Option<(Vector3, Vector3)> {
+    let tail = record.get(origin_end..)?;
+    if !matches!(tail.len(), 37 | 39)
+        || tail.get(4..27)? != [0; 23]
+        || tail.get(35..)?.chunks_exact(2).any(|token| token == [0, 0])
+    {
+        return None;
+    }
+    let ordinals = [
+        usize::from(u16::from_le_bytes(tail.get(0..2)?.try_into().ok()?)),
+        usize::from(u16::from_le_bytes(tail.get(2..4)?.try_into().ok()?)),
+    ];
+    if ordinals[0] == ordinals[1] || ordinals.iter().any(|ordinal| !(1..=3).contains(ordinal)) {
+        return None;
+    }
+    let repeated_z = finite_f64(tail, 27)? * 1000.0;
+    if (repeated_z + 0.0).to_bits() != (origin.z + 0.0).to_bits() {
+        return None;
+    }
+    let basis = [
+        Vector3::new(1.0, 0.0, 0.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+    ];
+    Some((basis[ordinals[0] - 1], basis[ordinals[1] - 1]))
 }
 
 fn coordinate_system_tail(

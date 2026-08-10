@@ -4440,6 +4440,48 @@ contains = "fn coordinate_system_component_path_origin"
 note = "The parser validates the path-relative trailer and returns the exact solved-suffix end."
 
 [[record]]
+name = "coordinate_system_ordinal_axis_tail"
+kind = "byte"
+section = "2"
+anchor = "A component-point origin without line-axis references uses an ordinal-axis tail"
+size = 35
+endianness = "little"
+note = "Origin-end-relative. One or two nonzero u16 tokens follow this fixed core and terminate the feature object."
+
+[[record.field]]
+name = "x_axis_ordinal"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "Two distinct u16 LE values at tail +0 and +2 are in the range `1..3`"
+
+[[record.field]]
+name = "y_axis_ordinal"
+offset = 2
+type = "u16"
+source = "spec"
+anchor = "Two distinct u16 LE values at tail +0 and +2 are in the range `1..3`"
+
+[[record.field]]
+name = "zero_before_origin_z"
+offset = 4
+type = "bytes[23]"
+source = "spec"
+anchor = "Tail +4 stores 23 zero bytes"
+
+[[record.field]]
+name = "origin_z"
+offset = 27
+type = "f64"
+source = "spec"
+anchor = "The f64 LE value at tail +27 repeats the component-point origin Z coordinate in metres"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
+contains = "fn coordinate_system_ordinal_axes("
+note = "The parser validates the exact tail, maps distinct one-based ordinals to the global basis, and constructs the cross-product Z axis."
+
+[[record]]
 name = "coordinate_system_line_axis"
 kind = "byte"
 section = "2"

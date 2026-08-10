@@ -1168,6 +1168,23 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser validates the path-relative trailer and returns the exact solved-suffix end.
 
+## `coordinate_system_ordinal_axis_tail`
+
+Spec §2 · layout: byte offsets · size: 35 B
+
+Origin-end-relative. One or two nonzero u16 tokens follow this fixed core and terminate the feature object.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `x_axis_ordinal` | `u16` | little | spec | Two distinct u16 LE values at tail +0 and +2 are in the range `1..3` |
+| 2 | 2 | `y_axis_ordinal` | `u16` | little | spec | Two distinct u16 LE values at tail +0 and +2 are in the range `1..3` |
+| 4 | 23 | `zero_before_origin_z` | `bytes[23]` | little | spec | Tail +4 stores 23 zero bytes |
+| 27 | 8 | `origin_z` | `f64` | little | spec | The f64 LE value at tail +27 repeats the component-point origin Z coordinate in metres |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser validates the exact tail, maps distinct one-based ordinals to the global basis, and constructs the cross-product Z axis.
+
 ## `coordinate_system_line_axis`
 
 Spec §2 · layout: byte offsets · size: 113 B
