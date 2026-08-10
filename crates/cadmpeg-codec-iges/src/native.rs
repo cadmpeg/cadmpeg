@@ -11,6 +11,7 @@ use crate::graph::{ParameterResolver, ReferenceEdge};
 use crate::parameter::{
     trailing_pointer_group_candidates, trailing_pointer_groups, ParameterRecord, Token, TokenValue,
 };
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::CadIr;
 use serde::Serialize;
@@ -1170,7 +1171,7 @@ fn placement_affine(
     Some((definition, directory.compose(translation.compose(scale))))
 }
 
-struct OccurrenceExpansion<'a> {
+struct OccurrenceExpansion<'a, 'ctx> {
     entries: &'a BTreeMap<u32, &'a DirectoryEntry>,
     records: &'a BTreeMap<u32, &'a ParameterRecord>,
     definitions: &'a BTreeMap<u32, OccurrenceDefinition>,
@@ -1179,9 +1180,10 @@ struct OccurrenceExpansion<'a> {
     precision: RealPrecision,
     output_limit: usize,
     depth_limit: usize,
+    ctx: Option<&'a DecodeContext<'ctx>>,
 }
 
-impl OccurrenceExpansion<'_> {
+impl OccurrenceExpansion<'_, '_> {
     fn expand(
         &self,
         instance_sequence: u32,
@@ -1189,22 +1191,26 @@ impl OccurrenceExpansion<'_> {
         path: &mut Vec<u32>,
         occurrences: &mut Vec<NativeProductOccurrence>,
         depth_truncated: &mut bool,
-    ) -> bool {
+    ) -> Result<bool, CodecError> {
+        let _depth = self
+            .ctx
+            .map(|ctx| ctx.enter_nested("iges_product_occurrence", None))
+            .transpose()?;
         if occurrences.len() >= self.output_limit {
-            return true;
+            return Ok(true);
         }
         if path.len() >= self.depth_limit {
             *depth_truncated = true;
-            return false;
+            return Ok(false);
         }
         if path.contains(&instance_sequence) {
-            return false;
+            return Ok(false);
         }
         let (Some(instance), Some(record)) = (
             self.entries.get(&instance_sequence).copied(),
             self.records.get(&instance_sequence).copied(),
         ) else {
-            return false;
+            return Ok(false);
         };
         let Some((definition_sequence, local)) = placement_affine(
             instance,
@@ -1214,10 +1220,10 @@ impl OccurrenceExpansion<'_> {
             self.length_factor,
             self.precision,
         ) else {
-            return false;
+            return Ok(false);
         };
         let Some(definition) = self.definitions.get(&definition_sequence) else {
-            return false;
+            return Ok(false);
         };
         let world = parent.compose(local);
         path.push(instance_sequence);
@@ -1230,6 +1236,9 @@ impl OccurrenceExpansion<'_> {
             .map(u32::to_string)
             .collect::<Vec<_>>()
             .join("/");
+        if let Some(ctx) = self.ctx {
+            ctx.charge_collection_items(1, "iges_product_occurrences")?;
+        }
         occurrences.push(NativeProductOccurrence {
             id: format!("iges:product:occurrence#{path_key}"),
             source_instance: format!("iges:entity:directory#{instance_sequence}"),
@@ -1243,16 +1252,16 @@ impl OccurrenceExpansion<'_> {
         for member in &definition.members {
             if occurrences.len() >= self.output_limit {
                 path.pop();
-                return true;
+                return Ok(true);
             }
             if self
                 .entries
                 .get(member)
                 .is_some_and(|entry| matches!(entry.entity_type, 408 | 420))
             {
-                if self.expand(*member, world, path, occurrences, depth_truncated) {
+                if self.expand(*member, world, path, occurrences, depth_truncated)? {
                     path.pop();
-                    return true;
+                    return Ok(true);
                 }
                 continue;
             }
@@ -1271,6 +1280,9 @@ impl OccurrenceExpansion<'_> {
                     .ok()
                 })
                 .unwrap_or(Affine::IDENTITY);
+            if let Some(ctx) = self.ctx {
+                ctx.charge_collection_items(1, "iges_product_occurrences")?;
+            }
             occurrences.push(NativeProductOccurrence {
                 id: format!("iges:product:occurrence#{path_key}/D{member}"),
                 source_instance: format!("iges:entity:directory#{instance_sequence}"),
@@ -1283,10 +1295,13 @@ impl OccurrenceExpansion<'_> {
             });
         }
         path.pop();
-        false
+        Ok(false)
     }
 }
 
+// Each argument is an independently owned decode table or session invariant;
+// grouping them would hide this stage's data dependencies without validating them.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn store(
     ir: &mut CadIr,
     scan: &CardScan,
@@ -1295,6 +1310,7 @@ pub(crate) fn store(
     references: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
     global: &Global,
     limits: ProductOccurrenceLimits,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Result<ProductOccurrenceExpansion, CodecError> {
     let cards = scan
         .lines
@@ -4355,6 +4371,7 @@ pub(crate) fn store(
         precision: global.real_precision(),
         output_limit: limits.output,
         depth_limit: limits.depth,
+        ctx,
     };
     if !root_inference_blocked {
         for root in directory.iter().filter(|entry| {
@@ -4368,7 +4385,7 @@ pub(crate) fn store(
                 &mut Vec::new(),
                 &mut product_occurrences,
                 &mut depth_truncated,
-            ) {
+            )? {
                 output_truncated = true;
                 break;
             }

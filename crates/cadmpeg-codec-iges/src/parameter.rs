@@ -4,6 +4,7 @@
 use crate::card::{CardScan, PhysicalLine, Section};
 use crate::directory::DirectoryEntry;
 use crate::global::{Global, RealPrecision};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 use std::ops::Range;
@@ -333,6 +334,7 @@ fn tokenize(
     parameter_delimiter: u8,
     record_delimiter: u8,
     sequence: u32,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(Vec<Token>, usize), CodecError> {
     let mut tokens = Vec::new();
     let mut cursor = 0_usize;
@@ -341,6 +343,7 @@ fn tokenize(
             return Ok((tokens, cursor + 1));
         }
         if bytes.get(cursor) == Some(&parameter_delimiter) {
+            charge_token(ctx)?;
             tokens.push(Token {
                 value: TokenValue::Omitted,
                 span: cursor..cursor,
@@ -363,6 +366,7 @@ fn tokenize(
             }
             (numeric(bytes, cursor..end, sequence)?, end)
         };
+        charge_token(ctx)?;
         tokens.push(token);
         match bytes.get(end).copied() {
             Some(value) if value == parameter_delimiter => cursor = end + 1,
@@ -372,10 +376,11 @@ fn tokenize(
     }
 }
 
-pub(crate) fn assemble(
+pub(crate) fn assemble_with_context(
     scan: &CardScan,
     directory: &[DirectoryEntry],
     global: &Global,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Vec<ParameterRecord>, CodecError> {
     let lines = scan
         .lines
@@ -465,6 +470,7 @@ pub(crate) fn assemble(
             global.parameter_delimiter,
             global.record_delimiter,
             entry.sequence,
+            ctx,
         )?;
         if !matches!(tokens.first().map(|token| &token.value), Some(TokenValue::Integer(value)) if *value == entry.entity_type)
         {
@@ -482,6 +488,12 @@ pub(crate) fn assemble(
         });
     }
     Ok(records)
+}
+
+fn charge_token(ctx: Option<&DecodeContext<'_>>) -> Result<(), CodecError> {
+    ctx.map_or(Ok(()), |ctx| {
+        ctx.charge_collection_items(1, "iges_parameter_tokens")
+    })
 }
 
 pub(crate) fn summary_notes(records: &[ParameterRecord]) -> Vec<String> {
