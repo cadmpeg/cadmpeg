@@ -14937,7 +14937,7 @@ fn semantic_writer_round_trips_principal_reference_planes() {
     }
     assert!(matches!(
         &decoded.ir.model.features[3].definition,
-        FeatureDefinition::Native { kind, .. } if kind == "Plane"
+        FeatureDefinition::DatumPlaneUnresolved
     ));
     assert!(matches!(
         &decoded.ir.model.features[4].definition,
@@ -15250,7 +15250,7 @@ fn decode_rejects_nonorthogonal_fixed_reference_plane_frame() {
         .unwrap();
     assert!(matches!(
         decoded.ir.model.features[0].definition,
-        FeatureDefinition::Native { .. }
+        FeatureDefinition::DatumPlaneUnresolved
     ));
 }
 

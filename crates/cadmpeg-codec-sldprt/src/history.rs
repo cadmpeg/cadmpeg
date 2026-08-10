@@ -4085,6 +4085,23 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn frameless_reference_plane_remains_typed_unresolved() {
+        let mut plane = feature("plane", Some("90"), 0);
+        plane.input_class = Some("moRefPlane_c".into());
+
+        assert_eq!(
+            project_definition(
+                &plane,
+                &HashMap::new(),
+                &HashMap::new(),
+                &HashMap::new(),
+                std::slice::from_ref(&plane),
+            ),
+            FeatureDefinition::DatumPlaneUnresolved
+        );
+    }
+
+    #[test]
     fn legacy_principal_plane_requires_a_complete_matching_triplet() {
         let front = feature("front", Some("2"), 0);
         let top = feature("top", Some("3"), 1);
@@ -7248,7 +7265,13 @@ fn project_definition(
         return FeatureDefinition::DatumPrincipalPlane { plane };
     }
     if class == Some(FeatureClass::ReferencePlane) {
-        return project_datum_plane(feature).unwrap_or_else(|| native_definition(feature));
+        return project_datum_plane(feature).unwrap_or_else(|| {
+            if feature.properties.contains_key("NativeRole") {
+                native_definition(feature)
+            } else {
+                FeatureDefinition::DatumPlaneUnresolved
+            }
+        });
     }
     if class == Some(FeatureClass::ReferenceAxis) {
         return project_datum_axis(feature).unwrap_or_else(|| native_definition(feature));
