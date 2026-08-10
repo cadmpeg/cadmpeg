@@ -510,12 +510,13 @@ fn transfers_point_and_elliptical_sketch_geometry_without_fabricated_defaults() 
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Sketch"><Properties Count="1">
-<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="5">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="6">
  <Geometry type="Part::GeomPoint"><Point X="1" Y="2"/></Geometry>
  <Geometry type="Part::GeomEllipse"><Ellipse CenterX="3" CenterY="4" MajorRadius="6" MinorRadius="2" MajorAxisX="0" MajorAxisY="1"/></Geometry>
  <Geometry type="Part::GeomArcOfEllipse"><ArcOfEllipse CenterX="0" CenterY="0" MajorRadius="5" MinorRadius="3" MajorAngle="0.25" FirstParameter="0.5" LastParameter="1.5"/></Geometry>
  <Geometry type="Part::GeomCircle"><Circle CenterX="9" CenterY="9"/></Geometry>
- <Geometry type="Part::GeomCircle"><Circle CenterX="7" CenterY="8" Radius="0"/></Geometry>
+ <Geometry type="Part::GeomCircle"><UID value="41"/><Circle CenterX="7" CenterY="8" Radius="0"/></Geometry>
+ <Geometry type="Part::GeomLineSegment"><UID value="42"/><LineSegment StartX="1" StartY="3" EndX="2" EndY="4"/></Geometry>
 </GeometryList></Property>
 </Properties></Object></ObjectData></Document>"#;
     let result = FcstdCodec
@@ -555,6 +556,12 @@ fn transfers_point_and_elliptical_sketch_geometry_without_fabricated_defaults() 
         entities[4].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Point { position }
             if position == cadmpeg_ir::math::Point2::new(7.0, 8.0)
+    ));
+    assert!(matches!(
+        entities[5].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Line { start, end }
+            if start == cadmpeg_ir::math::Point2::new(1.0, 3.0)
+                && end == cadmpeg_ir::math::Point2::new(2.0, 4.0)
     ));
 }
 

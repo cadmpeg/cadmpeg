@@ -981,7 +981,10 @@ fn parse_sketch(
         {
             let carrier = node.children().find(|child| {
                 child.is_element()
-                    && !matches!(child.tag_name().name(), "Construction" | "GeoExtensions")
+                    && !matches!(
+                        child.tag_name().name(),
+                        "Construction" | "GeoExtensions" | "UID"
+                    )
             });
             let native_kind = node
                 .attribute("type")
@@ -1032,7 +1035,10 @@ fn parse_sketch(
         {
             let carrier = node.children().find(|child| {
                 child.is_element()
-                    && !matches!(child.tag_name().name(), "Construction" | "GeoExtensions")
+                    && !matches!(
+                        child.tag_name().name(),
+                        "Construction" | "GeoExtensions" | "UID"
+                    )
             });
             let native_kind = node
                 .attribute("type")
