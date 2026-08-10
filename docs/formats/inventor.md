@@ -287,6 +287,8 @@ Feature property records use the same 22-byte content header. The following enum
 
 Type `3200aa7dd2112b836000f3a89dccefb0` stores the chamfer form. It adds the same `type_value:i16` and `value:u16` fields, followed by a zero u32 terminal value.
 
+The part-operation, extent, hole-form, fillet-form, and chamfer-form records use type values 5, 11, 3, 2, and 2 respectively.
+
 Type `284d8790d011f8d10008cabc0663dc09` adds a counted UTF-16LE name, `name_value:u32`, and a Boolean byte. The Boolean byte is 0 or 1. Types `91739422d11107cf000835bd0663dc09`, `71f23ed8d2115094a00049803603c8c9`, `ae70680ed14a1e86d76248b03c2a96e1`, and `dae9481bd211dc2c00083eab1b14dc09` add one type-2 reference list. They identify a boundary patch, feature dimensions, an object collection, and constant-radius fillet edge sets respectively.
 
 Type `dfd51dbbd1116e72000817bd0663dc09` adds a counted UTF-16LE name and three u32 values: the name value, nominal value, and model value. Type `474d8790d011f8d10008cabc0663dc09` adds one body reference. Type `3b2477a4d1118f96000826bd0663dc09` adds an entity-link reference and one u8 value. Type `2c9256724d4d6d709427fd964d84df16` adds transform, point, and value references.
@@ -307,6 +309,20 @@ The header is followed by `index:u32`, a type-2 participant-reference list, a co
 Type `154d8790d011f8d10008cabc0663dc09` is an entity-style link and also starts with the linked-element header. It then stores `value:u32`, `associative_id:u32`, and `entity_type:u32`. A profile-selection record selects an entity-style link through its entity-link reference.
 
 Type `1641d6aad211db2c00083eab1b14dc09` stores one constant-radius fillet edge set. The content header is followed by edge-collection, radius, selection-mode, and continuity references. Type `514d8790d011f8d10008cabc0663dc09` stores an edge collection as a type-2 reference list after the content header. The members identify type `82695c37d111516b0008a1ba32a3dc09` edge-item records. An edge item stores a type-2 `u32` index-reference list after the content header, an `i32` when the list is not empty, and a final `u32`.
+
+Type `4a374949d211001d00083bab1b14dc09` stores a fillet edge-selection enumeration. It adds `type_value:u32` and `value:u32` after the content header. Type value 4 and value 0 select explicitly listed edges.
+
+Feature-label class identifiers `3111a90cd0118b83000819b00524dc09`, `dc15f7f1d1114205000830b00524dc09`, `3f7100f9d2118b6f6000f0a89dccefb0`, and `1a7d751fd2119c54a00020803603c8c9` identify extrusion, fillet, chamfer, and hole records respectively.
+
+An extrusion uses property slots 0 through 7 for part operation, boundary patch, direction, reverse direction, forward length, taper angle, extent, and symmetric extent. Slot 23 repeats the boundary-patch reference. Slot 26 identifies the result object collection. Part-operation enumeration values 1, 2, 3, and 4 mean new body, cut, join, and intersection. Extent values 1, 4, and 5 mean fixed dimension, through next, and through all. A fixed dimension uses the slot-4 length. A boundary patch contains profile-selection references. The feature label's sole participant identifies the owning planar sketch.
+
+A constant-radius edge fillet uses slot 0 for the fillet edge-set collection, slot 11 for the fillet form, and slot 15 for the result object collection. Fillet form value 0 is an edge fillet. Each edge set identifies its edge collection and length parameter. Selection type 4 with value 0 lists the exact edge items. The edge set also carries its continuity Boolean.
+
+An equal-distance edge chamfer uses slot 0 for its edge collection, slot 2 for its length, slot 4 for the chamfer form, slot 5 for direction reversal, and slot 11 for the result object collection. Chamfer values 0, 1, and 2 mean equal distance, distance and angle, and two distances. The equal-distance branch does not consume an oriented support face.
+
+A hole uses slots 0 through 6 for hole form, diameter, depth, entry diameter, entry depth, entry angle, and drill-point angle. Slots 8, 9, 16, 17, 21, and 24 identify its transform, extent, a direction, a Boolean, a placement, and the result object collection. Hole-form values 0, 1, 2, and 3 mean drilled, countersink, counterbore, and spotface. The placement transform translation uses internal centimetres. The direction record supplies the drilling direction. The placement record repeats the transform reference and retains its point and value references.
+
+A result object collection contains one or more surface-body references. This ordered surface-body list is the feature's native result-body identity.
 
 Types `44326720d211c51d60002aab01f31bb0` and `b5a9d9fad211053360002cab01f31bb0` store rectangular-pattern and mirror feature records. Both start with the generic 30-byte feature prefix through `outline_value`, followed by a type-2 property-reference list, `value:u32`, a type-2 participant-reference list, six property references, and `control:u8`.
 

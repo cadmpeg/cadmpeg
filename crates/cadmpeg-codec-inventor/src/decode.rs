@@ -62,6 +62,17 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     ir.model.sketches = sketch_projection.sketches;
     ir.model.sketch_entities = sketch_projection.entities;
     ir.model.sketch_constraints = sketch_projection.constraints;
+    let feature_projection = crate::feature::project(
+        &feature_inventory,
+        &design_inventory,
+        &sketch_inventory,
+        &ir.model.parameters,
+        &ir.model.sketches,
+    );
+    let unresolved_features = feature_projection.unresolved_features;
+    let unresolved_feature_states = feature_projection.unresolved_states;
+    ir.model.features = feature_projection.features;
+    ir.model.feature_result_topologies = feature_projection.result_topologies;
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "cfb_major_version".into(),
@@ -1482,12 +1493,19 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 ),
             ));
         }
-        if !feature_inventory.features.is_empty() {
+        if unresolved_features != 0 {
             losses.push(LossNote::new(
                 LossKind::FeatureHistoryRetained,
                 format!(
-                    "Retained {} typed Inventor feature record(s) without neutral operation semantics.",
-                    feature_inventory.features.len()
+                    "Retained {unresolved_features} typed Inventor feature record(s) whose operation graph is not closed."
+                ),
+            ));
+        }
+        if unresolved_feature_states != 0 {
+            losses.push(LossNote::new(
+                LossKind::FeatureHistoryRetained,
+                format!(
+                    "Transferred {unresolved_feature_states} Inventor operation(s) with native result-body identity and unresolved suppression and dependency state."
                 ),
             ));
         }
@@ -1694,6 +1712,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let transferred_sketch_count = ir.model.sketches.len();
     let transferred_sketch_entity_count = ir.model.sketch_entities.len();
     let transferred_sketch_constraint_count = ir.model.sketch_constraints.len();
+    let transferred_feature_count = ir.model.features.len();
+    let transferred_feature_result_count = ir.model.feature_result_topologies.len();
     Ok(DecodeResult::new(
         ir,
         DecodeReport {
@@ -1789,6 +1809,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 (
                     "feature_record_issues".into(),
                     feature_inventory.issues.len(),
+                ),
+                ("features_transferred".into(), transferred_feature_count),
+                (
+                    "feature_result_topologies_transferred".into(),
+                    transferred_feature_result_count,
                 ),
                 ("sketches_transferred".into(), transferred_sketch_count),
                 (

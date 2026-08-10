@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Current Inventor native namespace version.
-pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 24;
+pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 25;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct VersionTupleRecord {

@@ -1,8 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed `PmDc` feature records and feature-list terminators.
 
+use std::collections::{BTreeMap, HashMap, HashSet};
+
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::{
+    Angle, BooleanOp, ChamferGroup, ChamferSpec, DesignParameter, EdgeSelection, ExtrudeDirection,
+    ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, Feature, FeatureDefinition,
+    FeatureId, FeatureResultTopology, FilletGroup, HoleKind, HolePlacement, Length, ParameterValue,
+    ProfileRef, RadiusSpec, Termination,
+};
+use cadmpeg_ir::ids::FeatureResultTopologyId;
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::sketches::Sketch;
 use serde::{Deserialize, Serialize};
 
 use crate::pmdc::{
@@ -10,6 +21,7 @@ use crate::pmdc::{
     PmDcReferenceList, PmDcU32List,
 };
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
+use crate::{design::DesignInventory, sketch::SketchInventory};
 
 const FEATURE_TYPE: [u8; 16] = [
     0x91, 0x4d, 0x87, 0x90, 0xd0, 0x11, 0xf8, 0xd1, 0x00, 0x08, 0xca, 0xbc, 0x06, 0x63, 0xdc, 0x09,
@@ -63,6 +75,9 @@ const FILLET_TYPE: [u8; 16] = [
 const CHAMFER_TYPE: [u8; 16] = [
     0x32, 0x00, 0xaa, 0x7d, 0xd2, 0x11, 0x2b, 0x83, 0x60, 0x00, 0xf3, 0xa8, 0x9d, 0xcc, 0xef, 0xb0,
 ];
+const FILLET_EDGE_SELECTION_TYPE: [u8; 16] = [
+    0x4a, 0x37, 0x49, 0x49, 0xd2, 0x11, 0x00, 0x1d, 0x00, 0x08, 0x3b, 0xab, 0x1b, 0x14, 0xdc, 0x09,
+];
 const RECTANGULAR_PATTERN_FEATURE_TYPE: [u8; 16] = [
     0x44, 0x32, 0x67, 0x20, 0xd2, 0x11, 0xc5, 0x1d, 0x60, 0x00, 0x2a, 0xab, 0x01, 0xf3, 0x1b, 0xb0,
 ];
@@ -95,6 +110,13 @@ pub(crate) struct FeatureInventory {
     pub(crate) issues: Vec<FeatureRecordIssue>,
 }
 
+pub(crate) struct FeatureProjection {
+    pub(crate) features: Vec<Feature>,
+    pub(crate) result_topologies: Vec<FeatureResultTopology>,
+    pub(crate) unresolved_features: usize,
+    pub(crate) unresolved_states: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct PmDcFeatureProperty {
     pub(crate) id: String,
@@ -113,6 +135,11 @@ pub(crate) enum PmDcFeaturePropertyKind {
         family: PmDcFeatureEnumFamily,
         type_value: i16,
         value: u16,
+    },
+    WideEnumeration {
+        family: PmDcFeatureEnum32Family,
+        type_value: u32,
+        value: u32,
     },
     Boolean {
         name: String,
@@ -163,6 +190,12 @@ pub(crate) enum PmDcFeatureEnumFamily {
     Fillet,
     Chamfer,
     Auxiliary,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum PmDcFeatureEnum32Family {
+    FilletEdgeSelection,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -548,6 +581,7 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         HOLE_TYPE => Some(parse_hole),
         FILLET_TYPE => Some(parse_fillet),
         CHAMFER_TYPE => Some(parse_chamfer),
+        FILLET_EDGE_SELECTION_TYPE => Some(parse_fillet_edge_selection),
         AUXILIARY_ENUM_TYPE => Some(parse_auxiliary_enum),
         BOOLEAN_TYPE => Some(parse_boolean),
         BOUNDARY_PATCH_TYPE => Some(parse_boundary_patch),
@@ -655,6 +689,27 @@ fn parse_chamfer(
         header,
         PmDcFeaturePropertyKind::Enumeration {
             family: PmDcFeatureEnumFamily::Chamfer,
+            type_value,
+            value,
+        },
+    ))
+}
+
+fn parse_fillet_edge_selection(
+    _: &DecodeContext<'_>,
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcFeatureProperty, CodecError> {
+    let mut cursor = Cursor::new(source);
+    let header = content_header(&mut cursor)?;
+    let type_value = cursor.u32("fillet edge-selection enumeration type")?;
+    let value = cursor.u32("fillet edge-selection enumeration value")?;
+    cursor.finish("fillet edge-selection enumeration")?;
+    Ok(property(
+        version,
+        header,
+        PmDcFeaturePropertyKind::WideEnumeration {
+            family: PmDcFeatureEnum32Family::FilletEdgeSelection,
             type_value,
             value,
         },
@@ -920,10 +975,707 @@ fn parse_label(
     })
 }
 
+const EXTRUSION_CLASS_ID: &str = "3111a90cd0118b83000819b00524dc09";
+const FILLET_CLASS_ID: &str = "dc15f7f1d1114205000830b00524dc09";
+const CHAMFER_CLASS_ID: &str = "3f7100f9d2118b6f6000f0a89dccefb0";
+const HOLE_CLASS_ID: &str = "1a7d751fd2119c54a00020803603c8c9";
+
+struct ProjectionIndex<'a> {
+    properties: HashMap<(&'a str, u32), &'a PmDcFeatureProperty>,
+    parameters: HashMap<(&'a str, u32), &'a crate::design::PmDcParameter>,
+    parameter_values: HashMap<&'a str, &'a ParameterValue>,
+    sketches: HashMap<(&'a str, u32), &'a crate::sketch::PmDcSketch>,
+    sketch_ids: HashMap<&'a str, cadmpeg_ir::sketches::SketchId>,
+    directions: HashMap<(&'a str, u32), &'a crate::sketch::PmDcDirection>,
+    transforms: HashMap<(&'a str, u32), &'a crate::sketch::PmDcTransform>,
+    entity_style_links: HashSet<(&'a str, u32)>,
+}
+
+pub(crate) fn project(
+    inventory: &FeatureInventory,
+    design: &DesignInventory,
+    sketch: &SketchInventory,
+    parameters: &[DesignParameter],
+    sketches: &[Sketch],
+) -> FeatureProjection {
+    let total = inventory
+        .features
+        .len()
+        .saturating_add(inventory.pattern_features.len());
+    let feature_tokens = inventory
+        .features
+        .iter()
+        .map(|feature| feature.segment_token.as_str())
+        .chain(
+            inventory
+                .pattern_features
+                .iter()
+                .map(|feature| feature.segment_token.as_str()),
+        )
+        .collect::<HashSet<_>>();
+    if feature_tokens.len() > 1 {
+        return FeatureProjection {
+            features: Vec::new(),
+            result_topologies: Vec::new(),
+            unresolved_features: total,
+            unresolved_states: 0,
+        };
+    }
+
+    let index = ProjectionIndex {
+        properties: unique_by_key(&inventory.properties, |record| {
+            (record.segment_token.as_str(), record.record_ordinal)
+        }),
+        parameters: unique_by_key(&design.parameters, |record| {
+            (record.segment_token.as_str(), record.record_ordinal)
+        }),
+        parameter_values: parameters
+            .iter()
+            .filter_map(|parameter| {
+                Some((parameter.native_ref.as_deref()?, parameter.value.as_ref()?))
+            })
+            .collect(),
+        sketches: unique_by_key(&sketch.sketches, |record| {
+            (record.segment_token.as_str(), record.record_ordinal)
+        }),
+        sketch_ids: sketches
+            .iter()
+            .filter_map(|sketch| {
+                sketch
+                    .native_ref
+                    .as_deref()
+                    .map(|native| (native, sketch.id.clone()))
+            })
+            .collect(),
+        directions: unique_by_key(&sketch.directions, |record| {
+            (record.segment_token.as_str(), record.record_ordinal)
+        }),
+        transforms: unique_by_key(&sketch.transforms, |record| {
+            (record.segment_token.as_str(), record.record_ordinal)
+        }),
+        entity_style_links: inventory
+            .entity_style_links
+            .iter()
+            .map(|record| (record.segment_token.as_str(), record.record_ordinal))
+            .collect(),
+    };
+    let labels = unique_by_key(&inventory.labels, |label| {
+        (
+            label.segment_token.as_str(),
+            label.header.owner.index.saturating_sub(1),
+        )
+    });
+    let mut projected = Vec::new();
+    for feature in &inventory.features {
+        let Some(label) = labels.get(&(feature.segment_token.as_str(), feature.record_ordinal))
+        else {
+            continue;
+        };
+        let value = match label.class_id.as_str() {
+            EXTRUSION_CLASS_ID => project_extrusion(feature, label, &index),
+            FILLET_CLASS_ID => project_fillet(feature, label, &index),
+            CHAMFER_CLASS_ID => project_chamfer(feature, label, &index),
+            HOLE_CLASS_ID => project_hole(feature, label, &index),
+            _ => None,
+        };
+        if let Some(value) = value {
+            projected.push(value);
+        }
+    }
+    let duplicate_ordinals = projected
+        .iter()
+        .map(|(feature, _)| feature.ordinal)
+        .fold(HashMap::<u64, usize>::new(), |mut counts, ordinal| {
+            *counts.entry(ordinal).or_default() += 1;
+            counts
+        })
+        .into_iter()
+        .filter_map(|(ordinal, count)| (count > 1).then_some(ordinal))
+        .collect::<HashSet<_>>();
+    projected.retain(|(feature, _)| !duplicate_ordinals.contains(&feature.ordinal));
+    projected.sort_by_key(|(feature, _)| feature.ordinal);
+    let (features, result_topologies): (Vec<_>, Vec<_>) = projected.into_iter().unzip();
+    FeatureProjection {
+        unresolved_features: total.saturating_sub(features.len()),
+        unresolved_states: features.len(),
+        features,
+        result_topologies,
+    }
+}
+
+fn project_extrusion(
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Option<(Feature, FeatureResultTopology)> {
+    let operation = enum16(source, 0, PmDcFeatureEnumFamily::PartOperation, index)?;
+    let op = match operation {
+        1 => BooleanOp::NewBody,
+        2 => BooleanOp::Cut,
+        3 => BooleanOp::Join,
+        4 => BooleanOp::Intersect,
+        _ => return None,
+    };
+    let boundary = references(source, 1, PmDcFeatureReferenceFamily::BoundaryPatch, index)?;
+    if source.properties.references.get(23)? != source.properties.references.get(1)? {
+        return None;
+    }
+    let selections = boundary
+        .references
+        .iter()
+        .map(|reference| {
+            let property = resolve_property(&source.segment_token, reference.index, index)?;
+            let PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } = &property.kind
+            else {
+                return None;
+            };
+            let ordinal = entity_link.index.checked_sub(1)?;
+            index
+                .entity_style_links
+                .contains(&(source.segment_token.as_str(), ordinal))
+                .then(|| property.id.clone())
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if selections.is_empty() || label.participants.references.len() != 1 {
+        return None;
+    }
+    let sketch_reference = label.participants.references.first()?;
+    let sketch = index.sketches.get(&(
+        source.segment_token.as_str(),
+        sketch_reference.index.checked_sub(1)?,
+    ))?;
+    let sketch_id = index.sketch_ids.get(sketch.id.as_str())?.clone();
+
+    let direction_record = resolve_direction(source, 2, index)?;
+    let mut direction = Vector3::new(
+        direction_record.direction[0],
+        direction_record.direction[1],
+        direction_record.direction[2],
+    )
+    .unit()?;
+    if boolean(source, 3, index)? {
+        direction = direction.scale(-1.0);
+    }
+    let length = length_parameter(source, 4, index)?;
+    let taper = angle_parameter(source, 5, index)?;
+    let termination = match enum16(source, 6, PmDcFeatureEnumFamily::Extent, index)? {
+        1 if length.0 > 0.0 => Termination::Blind { length },
+        4 => Termination::ThroughNext,
+        5 => Termination::ThroughAll,
+        _ => return None,
+    };
+    let side = ExtrudeSide {
+        termination,
+        draft: (taper.0 != 0.0).then_some(taper),
+        offset: None,
+    };
+    let extent = if boolean(source, 7, index)? {
+        ExtrudeExtent::Symmetric { side }
+    } else {
+        ExtrudeExtent::OneSided { side }
+    };
+    let (feature_id, result) = feature_result(source, 26, index)?;
+    let feature = Feature {
+        id: feature_id,
+        ordinal: u64::from(label.index),
+        name: Some(label.name.clone()),
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: boolean_properties(source, &[20, 22], index),
+        source_tag: Some("extrude".into()),
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Extrude {
+            profile: ProfileRef::SketchSelection {
+                sketch: sketch_id,
+                selections,
+            },
+            direction: ExtrudeDirection::Explicit(direction),
+            start: ExtrudeStart::ProfilePlane,
+            extent,
+            op,
+            direction_source: Some(ExtrusionDirectionSource::Custom),
+            solid: Some(true),
+            face_maker: None,
+            inner_wire_taper: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
+        },
+        native_ref: Some(source.id.clone()),
+    };
+    Some((feature, result))
+}
+
+fn project_fillet(
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Option<(Feature, FeatureResultTopology)> {
+    if enum16(source, 11, PmDcFeatureEnumFamily::Fillet, index)? != 0
+        || source.properties.references.get(1)?.index != 0
+        || source.properties.references.get(10)?.index != 0
+    {
+        return None;
+    }
+    let sets = references(source, 0, PmDcFeatureReferenceFamily::FilletEdgeSets, index)?;
+    let groups = sets
+        .references
+        .iter()
+        .map(|reference| {
+            let set = resolve_property(&source.segment_token, reference.index, index)?;
+            let PmDcFeaturePropertyKind::FilletEdgeSet {
+                edges,
+                radius,
+                selection,
+                continuity,
+            } = &set.kind
+            else {
+                return None;
+            };
+            let selection = resolve_property(&source.segment_token, selection.index, index)?;
+            if !matches!(
+                selection.kind,
+                PmDcFeaturePropertyKind::WideEnumeration {
+                    family: PmDcFeatureEnum32Family::FilletEdgeSelection,
+                    type_value: 4,
+                    value: 0
+                }
+            ) || !matches!(
+                resolve_property(&source.segment_token, continuity.index, index)?.kind,
+                PmDcFeaturePropertyKind::Boolean { value: false, .. }
+            ) {
+                return None;
+            }
+            let edge_collection = resolve_property(&source.segment_token, edges.index, index)?;
+            let PmDcFeaturePropertyKind::References {
+                family: PmDcFeatureReferenceFamily::EdgeCollection,
+                items,
+            } = &edge_collection.kind
+            else {
+                return None;
+            };
+            if !closed_edge_items(&source.segment_token, items, index) {
+                return None;
+            }
+            Some(FilletGroup {
+                edges: EdgeSelection::Native(edge_collection.id.clone()),
+                radius: RadiusSpec::Constant {
+                    radius: length_reference(&source.segment_token, radius.index, index)?,
+                },
+                tangency_weight: None,
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if groups.is_empty() {
+        return None;
+    }
+    let (feature_id, result) = feature_result(source, 15, index)?;
+    Some((
+        Feature {
+            id: feature_id,
+            ordinal: u64::from(label.index),
+            name: Some(label.name.clone()),
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: boolean_properties(source, &[2, 3, 4, 5, 8], index),
+            source_tag: Some("fillet".into()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Fillet { groups },
+            native_ref: Some(source.id.clone()),
+        },
+        result,
+    ))
+}
+
+fn project_chamfer(
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Option<(Feature, FeatureResultTopology)> {
+    if enum16(source, 4, PmDcFeatureEnumFamily::Chamfer, index)? != 0 {
+        return None;
+    }
+    let edges = slot_property(source, 0, index)?;
+    let PmDcFeaturePropertyKind::References {
+        family: PmDcFeatureReferenceFamily::EdgeCollection,
+        items,
+    } = &edges.kind
+    else {
+        return None;
+    };
+    if !closed_edge_items(&source.segment_token, items, index) {
+        return None;
+    }
+    let (feature_id, result) = feature_result(source, 11, index)?;
+    Some((
+        Feature {
+            id: feature_id,
+            ordinal: u64::from(label.index),
+            name: Some(label.name.clone()),
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: boolean_properties(source, &[6, 9], index),
+            source_tag: Some("chamfer".into()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Chamfer {
+                groups: vec![ChamferGroup {
+                    edges: EdgeSelection::Native(edges.id.clone()),
+                    spec: ChamferSpec::Distance {
+                        distance: length_parameter(source, 2, index)?,
+                    },
+                }],
+                flip_direction: boolean(source, 5, index)?,
+            },
+            native_ref: Some(source.id.clone()),
+        },
+        result,
+    ))
+}
+
+fn project_hole(
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Option<(Feature, FeatureResultTopology)> {
+    let hole_form = enum16(source, 0, PmDcFeatureEnumFamily::Hole, index)?;
+    if boolean(source, 17, index)? {
+        return None;
+    }
+    let diameter = length_parameter(source, 1, index)?;
+    let depth = length_parameter(source, 2, index)?;
+    let head_diameter = length_parameter(source, 3, index)?;
+    let head_depth = length_parameter(source, 4, index)?;
+    let head_angle = angle_parameter(source, 5, index)?;
+    let point_angle = angle_parameter(source, 6, index)?;
+    let kind = match hole_form {
+        0 if point_angle.0 == 0.0 => HoleKind::Simple,
+        0 => HoleKind::SimpleDrilled {
+            drill_point_angle: point_angle,
+        },
+        1 => HoleKind::Countersink {
+            diameter: head_diameter,
+            angle: head_angle,
+        },
+        2 if point_angle.0 == 0.0 => HoleKind::Counterbore {
+            diameter: head_diameter,
+            depth: head_depth,
+        },
+        2 => HoleKind::CounterboreDrilled {
+            diameter: head_diameter,
+            depth: head_depth,
+            drill_point_angle: point_angle,
+        },
+        _ => return None,
+    };
+    let extent = match enum16(source, 9, PmDcFeatureEnumFamily::Extent, index)? {
+        1 if depth.0 > 0.0 => Termination::Blind { length: depth },
+        4 => Termination::ThroughNext,
+        5 => Termination::ThroughAll,
+        _ => return None,
+    };
+    let transform_reference = source.properties.references.get(8)?;
+    let transform = index.transforms.get(&(
+        source.segment_token.as_str(),
+        transform_reference.index.checked_sub(1)?,
+    ))?;
+    if transform.matrix[3]
+        .iter()
+        .zip([0.0, 0.0, 0.0, 1.0])
+        .any(|(actual, expected)| (actual - expected).abs() > 1.0e-10)
+    {
+        return None;
+    }
+    let direction_record = resolve_direction(source, 16, index)?;
+    let direction = Vector3::new(
+        direction_record.direction[0],
+        direction_record.direction[1],
+        direction_record.direction[2],
+    )
+    .unit()?;
+    let placement = slot_property(source, 21, index)?;
+    let PmDcFeaturePropertyKind::Placement {
+        transform: placement_transform,
+        point,
+        value,
+    } = &placement.kind
+    else {
+        return None;
+    };
+    if placement_transform.index != transform_reference.index
+        || point.index == 0
+        || value.index == 0
+    {
+        return None;
+    }
+    let (feature_id, result) = feature_result(source, 24, index)?;
+    Some((
+        Feature {
+            id: feature_id,
+            ordinal: u64::from(label.index),
+            name: Some(label.name.clone()),
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("hole".into()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Hole {
+                profile: None,
+                profile_filter: None,
+                face: None,
+                position: None,
+                direction: None,
+                placements: vec![HolePlacement::Directed {
+                    position: Point3::new(
+                        transform.matrix[0][3] * 10.0,
+                        transform.matrix[1][3] * 10.0,
+                        transform.matrix[2][3] * 10.0,
+                    ),
+                    direction,
+                }],
+                kind,
+                exit_kind: None,
+                diameter: Some(diameter),
+                extent: Some(extent),
+                bottom: None,
+                taper_angle: None,
+                specification: None,
+                allow_multi_profile_faces: None,
+            },
+            native_ref: Some(source.id.clone()),
+        },
+        result,
+    ))
+}
+
+fn feature_result(
+    source: &PmDcFeature,
+    slot: usize,
+    index: &ProjectionIndex<'_>,
+) -> Option<(FeatureId, FeatureResultTopology)> {
+    let collection = slot_property(source, slot, index)?;
+    let PmDcFeaturePropertyKind::References {
+        family: PmDcFeatureReferenceFamily::ObjectCollection,
+        items,
+    } = &collection.kind
+    else {
+        return None;
+    };
+    let bodies = items
+        .references
+        .iter()
+        .map(|reference| {
+            let body = resolve_property(&source.segment_token, reference.index, index)?;
+            matches!(body.kind, PmDcFeaturePropertyKind::SurfaceBody { .. })
+                .then(|| body.id.clone())
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if bodies.is_empty() {
+        return None;
+    }
+    let feature_id = FeatureId(format!(
+        "inventor:design:feature#{}-{}",
+        source.segment_token, source.record_ordinal
+    ));
+    let result = FeatureResultTopology {
+        id: FeatureResultTopologyId(format!(
+            "inventor:design:feature-result#{}-{}",
+            source.segment_token, source.record_ordinal
+        )),
+        output_of: feature_id.clone(),
+        bodies,
+        faces: Vec::new(),
+        edges: Vec::new(),
+        vertices: Vec::new(),
+        native_ref: Some(collection.id.clone()),
+    };
+    Some((feature_id, result))
+}
+
+fn closed_edge_items(token: &str, items: &PmDcReferenceList, index: &ProjectionIndex<'_>) -> bool {
+    !items.references.is_empty()
+        && items.references.iter().all(|reference| {
+            resolve_property(token, reference.index, index).is_some_and(|property| {
+                matches!(
+                    &property.kind,
+                    PmDcFeaturePropertyKind::EdgeItem {
+                        index_references,
+                        ..
+                    } if !index_references.values.is_empty()
+                )
+            })
+        })
+}
+
+fn slot_property<'a>(
+    source: &PmDcFeature,
+    slot: usize,
+    index: &'a ProjectionIndex<'a>,
+) -> Option<&'a PmDcFeatureProperty> {
+    resolve_property(
+        &source.segment_token,
+        source.properties.references.get(slot)?.index,
+        index,
+    )
+}
+
+fn resolve_property<'a>(
+    token: &str,
+    reference: u32,
+    index: &'a ProjectionIndex<'a>,
+) -> Option<&'a PmDcFeatureProperty> {
+    index
+        .properties
+        .get(&(token, reference.checked_sub(1)?))
+        .copied()
+}
+
+fn references<'a>(
+    source: &PmDcFeature,
+    slot: usize,
+    family: PmDcFeatureReferenceFamily,
+    index: &'a ProjectionIndex<'a>,
+) -> Option<&'a PmDcReferenceList> {
+    match &slot_property(source, slot, index)?.kind {
+        PmDcFeaturePropertyKind::References {
+            family: actual,
+            items,
+        } if *actual == family => Some(items),
+        _ => None,
+    }
+}
+
+fn enum16(
+    source: &PmDcFeature,
+    slot: usize,
+    family: PmDcFeatureEnumFamily,
+    index: &ProjectionIndex<'_>,
+) -> Option<u16> {
+    let expected_type = match family {
+        PmDcFeatureEnumFamily::PartOperation => 5,
+        PmDcFeatureEnumFamily::Extent => 11,
+        PmDcFeatureEnumFamily::Hole => 3,
+        PmDcFeatureEnumFamily::Fillet | PmDcFeatureEnumFamily::Chamfer => 2,
+        PmDcFeatureEnumFamily::Auxiliary => return None,
+    };
+    match slot_property(source, slot, index)?.kind {
+        PmDcFeaturePropertyKind::Enumeration {
+            family: actual,
+            type_value,
+            value,
+        } if actual == family && type_value == expected_type => Some(value),
+        _ => None,
+    }
+}
+
+fn boolean(source: &PmDcFeature, slot: usize, index: &ProjectionIndex<'_>) -> Option<bool> {
+    match slot_property(source, slot, index)?.kind {
+        PmDcFeaturePropertyKind::Boolean { value, .. } => Some(value),
+        _ => None,
+    }
+}
+
+fn resolve_direction<'a>(
+    source: &PmDcFeature,
+    slot: usize,
+    index: &'a ProjectionIndex<'a>,
+) -> Option<&'a crate::sketch::PmDcDirection> {
+    let reference = source.properties.references.get(slot)?;
+    index
+        .directions
+        .get(&(
+            source.segment_token.as_str(),
+            reference.index.checked_sub(1)?,
+        ))
+        .copied()
+}
+
+fn length_parameter(
+    source: &PmDcFeature,
+    slot: usize,
+    index: &ProjectionIndex<'_>,
+) -> Option<Length> {
+    length_reference(
+        &source.segment_token,
+        source.properties.references.get(slot)?.index,
+        index,
+    )
+}
+
+fn length_reference(token: &str, reference: u32, index: &ProjectionIndex<'_>) -> Option<Length> {
+    let parameter = index.parameters.get(&(token, reference.checked_sub(1)?))?;
+    match index.parameter_values.get(parameter.id.as_str())? {
+        ParameterValue::Length(value) if value.0.is_finite() && value.0 >= 0.0 => Some(*value),
+        _ => None,
+    }
+}
+
+fn angle_parameter(
+    source: &PmDcFeature,
+    slot: usize,
+    index: &ProjectionIndex<'_>,
+) -> Option<Angle> {
+    let reference = source.properties.references.get(slot)?;
+    let parameter = index.parameters.get(&(
+        source.segment_token.as_str(),
+        reference.index.checked_sub(1)?,
+    ))?;
+    match index.parameter_values.get(parameter.id.as_str())? {
+        ParameterValue::Angle(value) if value.0.is_finite() => Some(*value),
+        _ => None,
+    }
+}
+
+fn boolean_properties(
+    source: &PmDcFeature,
+    slots: &[usize],
+    index: &ProjectionIndex<'_>,
+) -> BTreeMap<String, String> {
+    slots
+        .iter()
+        .filter_map(|slot| {
+            boolean(source, *slot, index)
+                .map(|value| (format!("property_{slot}_boolean"), value.to_string()))
+        })
+        .collect()
+}
+
+fn unique_by_key<'a, T, K: Eq + std::hash::Hash + Copy>(
+    records: &'a [T],
+    key: impl Fn(&'a T) -> K,
+) -> HashMap<K, &'a T> {
+    let mut unique = HashMap::new();
+    let mut duplicate = HashSet::new();
+    for record in records {
+        let key = key(record);
+        if unique.insert(key, record).is_some() {
+            duplicate.insert(key);
+        }
+    }
+    for key in duplicate {
+        unique.remove(&key);
+    }
+    unique
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_ir::features::{ParameterId, ParameterValue};
+    use cadmpeg_ir::sketches::{SketchId, SketchPlacement};
+
+    const SEGMENT: &str = "generated";
 
     fn content(index: u32) -> Vec<u8> {
         let mut bytes = Vec::new();
@@ -965,6 +1717,213 @@ mod tests {
         let policy = DecodePolicy::default();
         let (ctx, source) = DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("view");
         parser(&ctx, source)
+    }
+
+    fn reference(index: u32) -> crate::pmdc::PmDcReference {
+        crate::pmdc::PmDcReference {
+            index,
+            qualified: index != 0,
+        }
+    }
+
+    fn reference_list(values: &[u32]) -> PmDcReferenceList {
+        PmDcReferenceList {
+            marker: 2,
+            metadata: (!values.is_empty())
+                .then_some(crate::pmdc::PmDcListMetadata::U32([values.len() as u32, 0])),
+            references: values.iter().copied().map(reference).collect(),
+        }
+    }
+
+    fn test_header() -> PmDcContentHeader {
+        PmDcContentHeader {
+            header_value: 0,
+            header_id: 0,
+            next: reference(0),
+            flags: 0,
+            context: reference(0),
+            source_index: 0,
+        }
+    }
+
+    fn test_property(ordinal: u32, kind: PmDcFeaturePropertyKind) -> PmDcFeatureProperty {
+        PmDcFeatureProperty {
+            id: format!("inventor:pmdc:feature-property#{SEGMENT}-{ordinal}"),
+            type_id: format!("{ordinal:032x}"),
+            segment_token: SEGMENT.into(),
+            record_ordinal: ordinal,
+            save_version_major: 16,
+            header: test_header(),
+            kind,
+        }
+    }
+
+    fn test_feature(ordinal: u32, slot_count: usize, slots: &[(usize, u32)]) -> PmDcFeature {
+        let mut references = vec![reference(0); slot_count];
+        for (slot, record_ordinal) in slots {
+            references[*slot] = reference(record_ordinal + 1);
+        }
+        PmDcFeature {
+            id: format!("inventor:pmdc:feature#{SEGMENT}-{ordinal}"),
+            type_id: type_id_string(FEATURE_TYPE),
+            segment_token: SEGMENT.into(),
+            record_ordinal: ordinal,
+            save_version_major: 16,
+            header: test_header(),
+            state: 69,
+            outline_value: 0,
+            properties: PmDcReferenceList {
+                marker: 2,
+                metadata: Some(crate::pmdc::PmDcListMetadata::U32([slot_count as u32, 0])),
+                references,
+            },
+            value: 0,
+        }
+    }
+
+    fn test_label(owner_ordinal: u32, index: u32, class_id: &str) -> PmDcFeatureLabel {
+        PmDcFeatureLabel {
+            id: format!("inventor:pmdc:feature-label#{SEGMENT}-{owner_ordinal}"),
+            type_id: type_id_string(FEATURE_LABEL_TYPE),
+            segment_token: SEGMENT.into(),
+            record_ordinal: owner_ordinal + 1000,
+            save_version_major: 16,
+            header: PmDcLinkedHeader {
+                header_value: 0,
+                header_id: 0,
+                values: [0; 2],
+                owner: reference(owner_ordinal + 1),
+                parent: reference(0),
+                next: reference(0),
+            },
+            index,
+            participants: reference_list(&[]),
+            name: format!("Feature {index}"),
+            class_id: class_id.into(),
+        }
+    }
+
+    fn raw_parameter(ordinal: u32) -> crate::design::PmDcParameter {
+        crate::design::PmDcParameter {
+            id: format!("inventor:pmdc:parameter#{SEGMENT}-{ordinal}"),
+            type_id: "264d8790d011f8d10008cabc0663dc09".into(),
+            segment_token: SEGMENT.into(),
+            record_ordinal: ordinal,
+            save_version_major: 16,
+            header_value: 0,
+            header_id: 0,
+            next: reference(0),
+            flags: 0,
+            context: reference(0),
+            source_index: ordinal,
+            name: format!("p{ordinal}"),
+            name_value: 0,
+            unit: reference(0),
+            formula: reference(0),
+            nominal_value: 0.0,
+            model_value: 0.0,
+            tolerance: 0,
+            terminal_value: 0,
+        }
+    }
+
+    fn neutral_parameter(
+        raw: &crate::design::PmDcParameter,
+        value: ParameterValue,
+    ) -> DesignParameter {
+        DesignParameter {
+            id: ParameterId(format!("inventor:design:parameter#{}", raw.record_ordinal)),
+            owner: None,
+            ordinal: raw.record_ordinal,
+            name: raw.name.clone(),
+            expression: String::new(),
+            display: None,
+            value: Some(value),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: Some(raw.id.clone()),
+        }
+    }
+
+    // The fixture builder keeps each independently indexed record family explicit.
+    #[allow(clippy::too_many_arguments)]
+    fn test_projection_index<'a>(
+        properties: &'a [PmDcFeatureProperty],
+        parameters: &'a [crate::design::PmDcParameter],
+        neutral_parameters: &'a [DesignParameter],
+        sketches: &'a [crate::sketch::PmDcSketch],
+        neutral_sketches: &'a [Sketch],
+        directions: &'a [crate::sketch::PmDcDirection],
+        transforms: &'a [crate::sketch::PmDcTransform],
+        entity_style_links: &'a [PmDcEntityStyleLink],
+    ) -> ProjectionIndex<'a> {
+        ProjectionIndex {
+            properties: properties
+                .iter()
+                .map(|record| {
+                    (
+                        (record.segment_token.as_str(), record.record_ordinal),
+                        record,
+                    )
+                })
+                .collect(),
+            parameters: parameters
+                .iter()
+                .map(|record| {
+                    (
+                        (record.segment_token.as_str(), record.record_ordinal),
+                        record,
+                    )
+                })
+                .collect(),
+            parameter_values: neutral_parameters
+                .iter()
+                .filter_map(|parameter| {
+                    Some((parameter.native_ref.as_deref()?, parameter.value.as_ref()?))
+                })
+                .collect(),
+            sketches: sketches
+                .iter()
+                .map(|record| {
+                    (
+                        (record.segment_token.as_str(), record.record_ordinal),
+                        record,
+                    )
+                })
+                .collect(),
+            sketch_ids: neutral_sketches
+                .iter()
+                .filter_map(|sketch| {
+                    sketch
+                        .native_ref
+                        .as_deref()
+                        .map(|native| (native, sketch.id.clone()))
+                })
+                .collect(),
+            directions: directions
+                .iter()
+                .map(|record| {
+                    (
+                        (record.segment_token.as_str(), record.record_ordinal),
+                        record,
+                    )
+                })
+                .collect(),
+            transforms: transforms
+                .iter()
+                .map(|record| {
+                    (
+                        (record.segment_token.as_str(), record.record_ordinal),
+                        record,
+                    )
+                })
+                .collect(),
+            entity_style_links: entity_style_links
+                .iter()
+                .map(|record| (record.segment_token.as_str(), record.record_ordinal))
+                .collect(),
+        }
     }
 
     #[test]
@@ -1051,6 +2010,502 @@ mod tests {
     }
 
     #[test]
+    fn projects_generated_fillet_and_chamfer() {
+        let raw_radius = raw_parameter(20);
+        let neutral_radius = neutral_parameter(&raw_radius, ParameterValue::Length(Length(2.5)));
+        let fillet_properties = vec![
+            test_property(
+                1,
+                PmDcFeaturePropertyKind::Enumeration {
+                    family: PmDcFeatureEnumFamily::Fillet,
+                    type_value: 2,
+                    value: 0,
+                },
+            ),
+            test_property(
+                2,
+                PmDcFeaturePropertyKind::References {
+                    family: PmDcFeatureReferenceFamily::FilletEdgeSets,
+                    items: reference_list(&[4]),
+                },
+            ),
+            test_property(
+                3,
+                PmDcFeaturePropertyKind::FilletEdgeSet {
+                    edges: reference(5),
+                    radius: reference(21),
+                    selection: reference(6),
+                    continuity: reference(7),
+                },
+            ),
+            test_property(
+                4,
+                PmDcFeaturePropertyKind::References {
+                    family: PmDcFeatureReferenceFamily::EdgeCollection,
+                    items: reference_list(&[8]),
+                },
+            ),
+            test_property(
+                5,
+                PmDcFeaturePropertyKind::WideEnumeration {
+                    family: PmDcFeatureEnum32Family::FilletEdgeSelection,
+                    type_value: 4,
+                    value: 0,
+                },
+            ),
+            test_property(
+                6,
+                PmDcFeaturePropertyKind::Boolean {
+                    name: String::new(),
+                    name_value: 0,
+                    value: false,
+                },
+            ),
+            test_property(
+                7,
+                PmDcFeaturePropertyKind::EdgeItem {
+                    index_references: PmDcU32List {
+                        marker: 2,
+                        metadata: Some(crate::pmdc::PmDcListMetadata::U32([1, 0])),
+                        values: vec![42],
+                    },
+                    index_reference_value: 0,
+                    value: 0,
+                },
+            ),
+            test_property(
+                8,
+                PmDcFeaturePropertyKind::References {
+                    family: PmDcFeatureReferenceFamily::ObjectCollection,
+                    items: reference_list(&[10]),
+                },
+            ),
+            test_property(
+                9,
+                PmDcFeaturePropertyKind::SurfaceBody {
+                    body: reference(30),
+                },
+            ),
+        ];
+        let fillet = test_feature(100, 16, &[(0, 2), (11, 1), (15, 8)]);
+        let label = test_label(100, 7, FILLET_CLASS_ID);
+        let index = test_projection_index(
+            &fillet_properties,
+            std::slice::from_ref(&raw_radius),
+            std::slice::from_ref(&neutral_radius),
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        let (projected, result) = project_fillet(&fillet, &label, &index).expect("fillet");
+        assert!(matches!(
+            projected.definition,
+            FeatureDefinition::Fillet { groups }
+                if matches!(groups[0].radius, RadiusSpec::Constant { radius: Length(2.5) })
+        ));
+        assert_eq!(result.bodies, vec![fillet_properties[8].id.clone()]);
+
+        let raw_distance = raw_parameter(40);
+        let neutral_distance =
+            neutral_parameter(&raw_distance, ParameterValue::Length(Length(1.25)));
+        let chamfer_properties = vec![
+            test_property(
+                31,
+                PmDcFeaturePropertyKind::References {
+                    family: PmDcFeatureReferenceFamily::EdgeCollection,
+                    items: reference_list(&[34]),
+                },
+            ),
+            test_property(
+                32,
+                PmDcFeaturePropertyKind::Enumeration {
+                    family: PmDcFeatureEnumFamily::Chamfer,
+                    type_value: 2,
+                    value: 0,
+                },
+            ),
+            test_property(
+                33,
+                PmDcFeaturePropertyKind::EdgeItem {
+                    index_references: PmDcU32List {
+                        marker: 2,
+                        metadata: Some(crate::pmdc::PmDcListMetadata::U32([1, 0])),
+                        values: vec![17],
+                    },
+                    index_reference_value: -1,
+                    value: 0,
+                },
+            ),
+            test_property(
+                34,
+                PmDcFeaturePropertyKind::Boolean {
+                    name: String::new(),
+                    name_value: 0,
+                    value: true,
+                },
+            ),
+            test_property(
+                35,
+                PmDcFeaturePropertyKind::References {
+                    family: PmDcFeatureReferenceFamily::ObjectCollection,
+                    items: reference_list(&[37]),
+                },
+            ),
+            test_property(
+                36,
+                PmDcFeaturePropertyKind::SurfaceBody {
+                    body: reference(30),
+                },
+            ),
+        ];
+        let chamfer = test_feature(101, 12, &[(0, 31), (2, 40), (4, 32), (5, 34), (11, 35)]);
+        let label = test_label(101, 8, CHAMFER_CLASS_ID);
+        let index = test_projection_index(
+            &chamfer_properties,
+            std::slice::from_ref(&raw_distance),
+            std::slice::from_ref(&neutral_distance),
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        let (projected, _) = project_chamfer(&chamfer, &label, &index).expect("chamfer");
+        assert!(matches!(
+            projected.definition,
+            FeatureDefinition::Chamfer {
+                groups,
+                flip_direction: true
+            } if matches!(groups[0].spec, ChamferSpec::Distance { distance: Length(1.25) })
+        ));
+    }
+
+    #[test]
+    fn projects_generated_extrusion() {
+        let raw_length = raw_parameter(70);
+        let raw_taper = raw_parameter(71);
+        let neutral_parameters = vec![
+            neutral_parameter(&raw_length, ParameterValue::Length(Length(12.0))),
+            neutral_parameter(&raw_taper, ParameterValue::Angle(Angle(0.1))),
+        ];
+        let raw_sketch = crate::sketch::PmDcSketch {
+            id: format!("inventor:pmdc:sketch#{SEGMENT}-50"),
+            type_id: "114d8790d011f8d10008cabc0663dc09".into(),
+            segment_token: SEGMENT.into(),
+            record_ordinal: 50,
+            save_version_major: 16,
+            header: test_header(),
+            state: 0,
+            count_value: 0,
+            entities: PmDcReferenceList {
+                marker: 8,
+                metadata: None,
+                references: Vec::new(),
+            },
+            transform: reference(0),
+            direction: reference(0),
+            values: [0; 2],
+            auxiliary: None,
+        };
+        let neutral_sketch = Sketch {
+            id: SketchId(format!("inventor:design:sketch#{SEGMENT}-50")),
+            name: None,
+            configuration: None,
+            placement: SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            profiles: Vec::new(),
+            native_ref: Some(raw_sketch.id.clone()),
+        };
+        let direction = crate::sketch::PmDcDirection {
+            id: format!("inventor:pmdc:direction#{SEGMENT}-60"),
+            type_id: "40df52ced011d0d20008ccbc0663dc09".into(),
+            segment_token: SEGMENT.into(),
+            record_ordinal: 60,
+            save_version_major: 16,
+            header: test_header(),
+            entity_flags: 0,
+            parameter: 0.0,
+            extension: None,
+            direction: [0.0, 0.0, 1.0],
+        };
+        let entity_link = PmDcEntityStyleLink {
+            id: format!("inventor:pmdc:entity-style-link#{SEGMENT}-51"),
+            type_id: type_id_string(ENTITY_STYLE_LINK_TYPE),
+            segment_token: SEGMENT.into(),
+            record_ordinal: 51,
+            save_version_major: 16,
+            header: PmDcLinkedHeader {
+                header_value: 0,
+                header_id: 0,
+                values: [0; 2],
+                owner: reference(0),
+                parent: reference(0),
+                next: reference(0),
+            },
+            value: 0,
+            associative_id: 1,
+            entity_type: 1,
+        };
+        let properties = vec![
+            test_property(
+                1,
+                PmDcFeaturePropertyKind::Enumeration {
+                    family: PmDcFeatureEnumFamily::PartOperation,
+                    type_value: 5,
+                    value: 1,
+                },
+            ),
+            test_property(
+                2,
+                PmDcFeaturePropertyKind::References {
+                    family: PmDcFeatureReferenceFamily::BoundaryPatch,
+                    items: reference_list(&[4]),
+                },
+            ),
+            test_property(
+                3,
+                PmDcFeaturePropertyKind::ProfileSelection {
+                    entity_link: reference(52),
+                    value: 0,
+                },
+            ),
+            test_property(
+                4,
+                PmDcFeaturePropertyKind::Boolean {
+                    name: String::new(),
+                    name_value: 0,
+                    value: true,
+                },
+            ),
+            test_property(
+                5,
+                PmDcFeaturePropertyKind::Enumeration {
+                    family: PmDcFeatureEnumFamily::Extent,
+                    type_value: 11,
+                    value: 1,
+                },
+            ),
+            test_property(
+                6,
+                PmDcFeaturePropertyKind::Boolean {
+                    name: String::new(),
+                    name_value: 0,
+                    value: false,
+                },
+            ),
+            test_property(
+                7,
+                PmDcFeaturePropertyKind::References {
+                    family: PmDcFeatureReferenceFamily::ObjectCollection,
+                    items: reference_list(&[9]),
+                },
+            ),
+            test_property(
+                8,
+                PmDcFeaturePropertyKind::SurfaceBody {
+                    body: reference(30),
+                },
+            ),
+        ];
+        let feature = test_feature(
+            100,
+            27,
+            &[
+                (0, 1),
+                (1, 2),
+                (2, 60),
+                (3, 4),
+                (4, 70),
+                (5, 71),
+                (6, 5),
+                (7, 6),
+                (23, 2),
+                (26, 7),
+            ],
+        );
+        let mut label = test_label(100, 5, EXTRUSION_CLASS_ID);
+        label.participants = reference_list(&[51]);
+        let raw_parameters = vec![raw_length, raw_taper];
+        let index = test_projection_index(
+            &properties,
+            &raw_parameters,
+            &neutral_parameters,
+            std::slice::from_ref(&raw_sketch),
+            std::slice::from_ref(&neutral_sketch),
+            std::slice::from_ref(&direction),
+            &[],
+            std::slice::from_ref(&entity_link),
+        );
+        let (projected, _) = project_extrusion(&feature, &label, &index).expect("extrusion");
+        assert!(matches!(
+            projected.definition,
+            FeatureDefinition::Extrude {
+                direction: ExtrudeDirection::Explicit(Vector3 { z: -1.0, .. }),
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: Termination::Blind {
+                            length: Length(12.0)
+                        },
+                        draft: Some(Angle(0.1)),
+                        ..
+                    }
+                },
+                op: BooleanOp::NewBody,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn projects_generated_hole() {
+        let raw_parameters = (70..76).map(raw_parameter).collect::<Vec<_>>();
+        let neutral_parameters = [
+            ParameterValue::Length(Length(5.0)),
+            ParameterValue::Length(Length(20.0)),
+            ParameterValue::Length(Length(9.0)),
+            ParameterValue::Length(Length(3.0)),
+            ParameterValue::Angle(Angle(1.5)),
+            ParameterValue::Angle(Angle(2.0)),
+        ]
+        .into_iter()
+        .zip(&raw_parameters)
+        .map(|(value, raw)| neutral_parameter(raw, value))
+        .collect::<Vec<_>>();
+        let transform = crate::sketch::PmDcTransform {
+            id: format!("inventor:pmdc:transform#{SEGMENT}-60"),
+            type_id: "184d8790d011f8d10008cabc0663dc09".into(),
+            segment_token: SEGMENT.into(),
+            record_ordinal: 60,
+            save_version_major: 16,
+            header: test_header(),
+            prefix: None,
+            value_mask: 0,
+            zero_mask: 0,
+            matrix: [
+                [1.0, 0.0, 0.0, 1.0],
+                [0.0, 1.0, 0.0, 2.0],
+                [0.0, 0.0, 1.0, 3.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+        };
+        let direction = crate::sketch::PmDcDirection {
+            id: format!("inventor:pmdc:direction#{SEGMENT}-61"),
+            type_id: "40df52ced011d0d20008ccbc0663dc09".into(),
+            segment_token: SEGMENT.into(),
+            record_ordinal: 61,
+            save_version_major: 16,
+            header: test_header(),
+            entity_flags: 0,
+            parameter: 0.0,
+            extension: None,
+            direction: [0.0, 0.0, -1.0],
+        };
+        let properties = vec![
+            test_property(
+                1,
+                PmDcFeaturePropertyKind::Enumeration {
+                    family: PmDcFeatureEnumFamily::Hole,
+                    type_value: 3,
+                    value: 2,
+                },
+            ),
+            test_property(
+                2,
+                PmDcFeaturePropertyKind::Enumeration {
+                    family: PmDcFeatureEnumFamily::Extent,
+                    type_value: 11,
+                    value: 5,
+                },
+            ),
+            test_property(
+                3,
+                PmDcFeaturePropertyKind::Boolean {
+                    name: String::new(),
+                    name_value: 0,
+                    value: false,
+                },
+            ),
+            test_property(
+                4,
+                PmDcFeaturePropertyKind::Placement {
+                    transform: reference(61),
+                    point: reference(90),
+                    value: reference(91),
+                },
+            ),
+            test_property(
+                5,
+                PmDcFeaturePropertyKind::References {
+                    family: PmDcFeatureReferenceFamily::ObjectCollection,
+                    items: reference_list(&[7]),
+                },
+            ),
+            test_property(
+                6,
+                PmDcFeaturePropertyKind::SurfaceBody {
+                    body: reference(30),
+                },
+            ),
+        ];
+        let feature = test_feature(
+            100,
+            25,
+            &[
+                (0, 1),
+                (1, 70),
+                (2, 71),
+                (3, 72),
+                (4, 73),
+                (5, 74),
+                (6, 75),
+                (8, 60),
+                (9, 2),
+                (16, 61),
+                (17, 3),
+                (21, 4),
+                (24, 5),
+            ],
+        );
+        let label = test_label(100, 9, HOLE_CLASS_ID);
+        let index = test_projection_index(
+            &properties,
+            &raw_parameters,
+            &neutral_parameters,
+            &[],
+            &[],
+            std::slice::from_ref(&direction),
+            std::slice::from_ref(&transform),
+            &[],
+        );
+        let (projected, _) = project_hole(&feature, &label, &index).expect("hole");
+        assert!(matches!(
+            projected.definition,
+            FeatureDefinition::Hole {
+                placements,
+                kind: HoleKind::CounterboreDrilled {
+                    diameter: Length(9.0),
+                    depth: Length(3.0),
+                    drill_point_angle: Angle(2.0)
+                },
+                diameter: Some(Length(5.0)),
+                extent: Some(Termination::ThroughAll),
+                ..
+            } if matches!(
+                placements.as_slice(),
+                [HolePlacement::Directed {
+                    position: Point3 { x: 10.0, y: 20.0, z: 30.0 },
+                    direction: Vector3 { z: -1.0, .. }
+                }]
+            )
+        ));
+    }
+
+    #[test]
     fn parses_generated_feature_properties_and_label() {
         let mut enumeration = content(10);
         enumeration.extend_from_slice(&5i16.to_le_bytes());
@@ -1079,6 +2534,21 @@ mod tests {
             PmDcFeaturePropertyKind::Enumeration {
                 family: PmDcFeatureEnumFamily::Chamfer,
                 type_value: 2,
+                value: 0
+            }
+        ));
+
+        let mut fillet_selection = content(10);
+        fillet_selection.extend_from_slice(&4u32.to_le_bytes());
+        fillet_selection.extend_from_slice(&0u32.to_le_bytes());
+        let parsed = parse(&fillet_selection, |ctx, source| {
+            parse_fillet_edge_selection(ctx, source, 16).expect("fillet edge selection")
+        });
+        assert!(matches!(
+            parsed.kind,
+            PmDcFeaturePropertyKind::WideEnumeration {
+                family: PmDcFeatureEnum32Family::FilletEdgeSelection,
+                type_value: 4,
                 value: 0
             }
         ));

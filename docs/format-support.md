@@ -42,7 +42,7 @@ A **proven** score satisfies every criterion for the declared envelope:
 | --------------------------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | FreeCAD `.FCStd` (schema 4, file 1)                                   | **L5 tested**  | deterministic retained writes, checked edits, source-less typed application graphs                                         |
 | Autodesk Fusion `.f3d`                                                | **L4 tested**  | native replay + patch + broad source-less generation, procedural carriers, ACT/Design/history records                      |
-| Autodesk Inventor `.ipt`/`.iam` (CFB v3, RSe 31, Meta Stream 8)       | **L1 claimed** | typed active ASM and ACIS 217/218 part-carrier transfer and unbound Protein appearance catalogs                            |
+| Autodesk Inventor `.ipt`/`.iam` (CFB v3, RSe 31, Meta Stream 8)       | **L1 claimed** | typed part carriers, parameters, planar sketches, and closed extrude, hole, fillet, and chamfer operation branches          |
 | SolidWorks `.sldprt`                                                  | **L4 tested**  | typed features, sketches, parameters, configurations, native replay + bounded generation                                   |
 | Rhino `.3dm` (archive 50/60/70/80)                                    | **L1 tested**  | partial typed geometry, topology, presentation, and bounded source-less native writing                                     |
 | CATIA V5 `.CATPart` (standard-nested band)                            | **L2 claimed** | conditionally connected B-rep                                                                                              |
@@ -71,7 +71,7 @@ Each current score applies to the envelope described in its profile.
 - **ACIS 217/218 part carriers: L3 claimed.** The 32-bit ACIS header and solved SAB partition transfer through the same direct and embedded kernel decoder. Connected B-rep validation and direct-carrier parity pass for this finite envelope. Other ACIS save-format bands remain retained and produce blocking `geometry_not_transferred`.
 - **Assemblies: structural.** External document references remain unresolved and no persisted path is opened. Occurrence identity, hierarchy, and placements remain untransferred because the external-reference occurrence count does not define those fields.
 - **Materials: catalog only.** Shared Protein schema decoding produces typed native assets and neutral appearance definitions. No body or face receives an appearance without a typed assignment record.
-- **Design intent: retained.** Exact record frames expose stable segment and record identities. Feature and history operation semantics are not projected.
+- **Design intent: partial extra.** Closed scalar parameter graphs and closed planar point, line, circle, ellipse, and constraint graphs transfer with native cross-links. Extrude, hole, constant-radius edge fillet, and equal-distance edge chamfer operations transfer only when every required typed property, dimension, native selection, placement, and result-body reference resolves. Each transferred result has a native intermediate-body identity. Suppression and dependency state remain unresolved, so this extra does not claim L4.
 - **Write:** None. The codec has no encoder, replay path, or patch path.
 
 See [`formats/inventor.md`](formats/inventor.md) and [`formats/inventor-open-items.md`](formats/inventor-open-items.md).

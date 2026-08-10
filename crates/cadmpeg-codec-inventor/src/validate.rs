@@ -163,7 +163,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_active_carrier(&data, &mut findings);
     validate_design(&data, ir, &mut findings);
     validate_sketches(&data, ir, &mut findings);
-    validate_features(&data, &mut findings);
+    validate_features(ir, &data, &mut findings);
     unique(
         &mut findings,
         data.unknowns.iter().map(|record| record.id.0.as_str()),
@@ -665,7 +665,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     }
 }
 
-fn validate_features(data: &NativeData, findings: &mut Vec<Finding>) {
+fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
     let raw = data
         .records
         .iter()
@@ -795,6 +795,7 @@ fn validate_features(data: &NativeData, findings: &mut Vec<Finding>) {
                 continuity,
             } => references.extend([edges.index, radius.index, selection.index, continuity.index]),
             PmDcFeaturePropertyKind::Enumeration { .. }
+            | PmDcFeaturePropertyKind::WideEnumeration { .. }
             | PmDcFeaturePropertyKind::Boolean { .. }
             | PmDcFeaturePropertyKind::RdxVariable { .. }
             | PmDcFeaturePropertyKind::EdgeItem { .. } => {}
@@ -875,6 +876,158 @@ fn validate_features(data: &NativeData, findings: &mut Vec<Finding>) {
                 Check::NativeLinks,
                 "Inventor PmDc feature-terminator record or reference does not resolve".into(),
                 Some(terminator.id.clone()),
+            ));
+        }
+    }
+    let raw_features = data
+        .pm_dc_features
+        .iter()
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    let labels = data
+        .pm_dc_feature_labels
+        .iter()
+        .filter_map(|label| {
+            Some((
+                (
+                    label.segment_token.as_str(),
+                    label.header.owner.index.checked_sub(1)?,
+                ),
+                label,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let properties = data
+        .pm_dc_feature_properties
+        .iter()
+        .map(|property| (property.id.as_str(), property))
+        .collect::<HashMap<_, _>>();
+    let properties_by_record = data
+        .pm_dc_feature_properties
+        .iter()
+        .map(|property| {
+            (
+                (property.segment_token.as_str(), property.record_ordinal),
+                property,
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let results = ir
+        .model
+        .feature_result_topologies
+        .iter()
+        .map(|result| (&result.output_of, result))
+        .collect::<HashMap<_, _>>();
+    for feature in &ir.model.features {
+        let Some(raw_feature) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native| raw_features.get(native).copied())
+        else {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral feature does not resolve to its PmDc source record".into(),
+                Some(feature.id.0.clone()),
+            ));
+            continue;
+        };
+        let (expected_class, output_slot) = match &feature.definition {
+            cadmpeg_ir::features::FeatureDefinition::Extrude { .. } => {
+                ("3111a90cd0118b83000819b00524dc09", 26)
+            }
+            cadmpeg_ir::features::FeatureDefinition::Fillet { .. } => {
+                ("dc15f7f1d1114205000830b00524dc09", 15)
+            }
+            cadmpeg_ir::features::FeatureDefinition::Chamfer { .. } => {
+                ("3f7100f9d2118b6f6000f0a89dccefb0", 11)
+            }
+            cadmpeg_ir::features::FeatureDefinition::Hole { .. } => {
+                ("1a7d751fd2119c54a00020803603c8c9", 24)
+            }
+            _ => ("", usize::MAX),
+        };
+        if expected_class.is_empty()
+            || labels
+                .get(&(
+                    raw_feature.segment_token.as_str(),
+                    raw_feature.record_ordinal,
+                ))
+                .is_none_or(|label| label.class_id != expected_class)
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral feature family does not match its PmDc label".into(),
+                Some(feature.id.0.clone()),
+            ));
+        }
+        let expected_collection = raw_feature
+            .properties
+            .references
+            .get(output_slot)
+            .and_then(|reference| reference.index.checked_sub(1))
+            .and_then(|ordinal| {
+                properties_by_record
+                    .get(&(raw_feature.segment_token.as_str(), ordinal))
+                    .copied()
+            });
+        if expected_collection.is_none_or(|collection| {
+            results
+                .get(&feature.id)
+                .and_then(|result| result.native_ref.as_deref())
+                != Some(collection.id.as_str())
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral feature result does not match its PmDc output slot".into(),
+                Some(feature.id.0.clone()),
+            ));
+        }
+    }
+    for result in &ir.model.feature_result_topologies {
+        let Some(collection) = result
+            .native_ref
+            .as_deref()
+            .and_then(|native| properties.get(native).copied())
+        else {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor feature result does not resolve to its PmDc object collection".into(),
+                Some(result.id.0.clone()),
+            ));
+            continue;
+        };
+        let PmDcFeaturePropertyKind::References {
+            family: crate::feature::PmDcFeatureReferenceFamily::ObjectCollection,
+            items,
+        } = &collection.kind
+        else {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor feature result native reference is not an object collection".into(),
+                Some(result.id.0.clone()),
+            ));
+            continue;
+        };
+        let expected_bodies = items
+            .references
+            .iter()
+            .filter_map(|reference| {
+                let ordinal = reference.index.checked_sub(1)?;
+                properties_by_record
+                    .get(&(collection.segment_token.as_str(), ordinal))
+                    .filter(|property| {
+                        matches!(property.kind, PmDcFeaturePropertyKind::SurfaceBody { .. })
+                    })
+                    .map(|property| property.id.as_str())
+            })
+            .collect::<Vec<_>>();
+        if expected_bodies.len() != items.references.len()
+            || expected_bodies != result.bodies.iter().map(String::as_str).collect::<Vec<_>>()
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor feature result bodies do not match its PmDc object collection".into(),
+                Some(result.id.0.clone()),
             ));
         }
     }

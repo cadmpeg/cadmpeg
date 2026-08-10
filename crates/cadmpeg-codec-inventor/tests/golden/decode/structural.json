@@ -166,7 +166,7 @@
           "vertex_ownerships": [],
           "wire_topologies": []
         },
-        "version": 24
+        "version": 25
       }
     },
     "source": {
@@ -201,6 +201,8 @@
       "external_references": 0,
       "face_color_appearances": 0,
       "feature_record_issues": 0,
+      "feature_result_topologies_transferred": 0,
+      "features_transferred": 0,
       "kernel_unknown_records": 0,
       "kernel_unknown_surface_faces": 0,
       "pm_app_default_styles": 0,
