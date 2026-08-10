@@ -108,6 +108,12 @@ fn finish_decode(
         .collect::<HashSet<_>>();
     let design_feature_transfer =
         design_feature::transfer_design_features(&mut ir, &native, modeling_graph_scope.as_ref());
+    sketch::transfer_native_sketch_entities(
+        &mut ir,
+        &native,
+        &design_feature_transfer,
+        modeling_graph_scope.as_ref(),
+    );
     sketch::transfer_constraint_ranges(
         &mut ir,
         &native,
@@ -1594,6 +1600,17 @@ fn finish_decode(
                 .starts_with("catia:consolidated:line-profile-curve#")
         })
         .count();
+    let transferred_native_sketch_entity_count = ir
+        .model
+        .sketch_entities
+        .iter()
+        .filter(|entity| {
+            matches!(
+                &entity.geometry,
+                cadmpeg_ir::sketches::SketchGeometry::Native { .. }
+            )
+        })
+        .count();
     report.coverage.extend([
         (
             "decoded_appearance_packet_count".to_string(),
@@ -3002,6 +3019,10 @@ fn finish_decode(
         (
             "transferred_sketch_entity_count".to_string(),
             ir.model.sketch_entities.len(),
+        ),
+        (
+            "transferred_native_sketch_entity_count".to_string(),
+            transferred_native_sketch_entity_count,
         ),
         (
             "transferred_sketch_constraint_count".to_string(),

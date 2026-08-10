@@ -273,6 +273,12 @@ current scores require those matrices and representative fixtures.
   one sketch identity and one unresolved sketch history node. The transfer
   does not assign placement, geometry, profiles, or constraints. A `PRTSketch`
   or `Sketch` field class alone does not establish a sketch instance.
+- An exact ordered owner-record reference from a transferred `Sketch` can
+  retain one native sketch entity when its selected child owner group resolves
+  to one child design object containing exactly one complete `2DPoint` field
+  with its paired entity record. The entity keeps the source field identity and
+  class as native geometry. Coordinates, placement, construction state,
+  profiles, and constraints remain unresolved under DI-15 through DI-22.
 - A transferred typed parameter receives a feature owner only when its exact
   entity record selects an object record whose complete design-object owner
   chain resolves to exactly one transferred feature identity. A missing
