@@ -2680,25 +2680,62 @@ fn extrusion_definition(
     sketches: &[Sketch],
 ) -> Option<FeatureDefinition> {
     if kind == "Part::Extrusion" {
-        let raw_direction = vector_property(properties, "Dir")?;
-        let magnitude = (raw_direction.x * raw_direction.x
-            + raw_direction.y * raw_direction.y
-            + raw_direction.z * raw_direction.z)
-            .sqrt();
-        let mut direction = unit_vector(raw_direction)?;
-        let nonnegative_length = |name| match scalar_named(properties, name) {
-            Some(value) if value >= 0.0 => Some(value),
+        let raw_direction = vector_property(properties, "Dir");
+        let direction_magnitude = raw_direction.map(|direction| {
+            (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
+                .sqrt()
+        });
+        let direction_mode = integer_property(properties, "DirMode").unwrap_or(0);
+        let (mut direction, direction_source) = match direction_mode {
+            0 => (
+                unit_vector(raw_direction?)?,
+                ExtrusionDirectionSource::Custom,
+            ),
+            1 => {
+                let reference = property(properties, "DirLink")?;
+                if reference.links.len() != 1 {
+                    return None;
+                }
+                (
+                    unit_vector(raw_direction?)?,
+                    ExtrusionDirectionSource::Edge {
+                        reference: PathRef::Native(reference.id.clone()),
+                    },
+                )
+            }
+            2 => {
+                let normal = match &profile {
+                    ProfileRef::Sketch(sketch_id) => sketches
+                        .iter()
+                        .find(|sketch| sketch.id == *sketch_id)
+                        .and_then(Sketch::resolved_placement)
+                        .map(|(_, normal, _)| normal)
+                        .or(profile_normal),
+                    _ => profile_normal,
+                }?;
+                (
+                    unit_vector(normal)?,
+                    ExtrusionDirectionSource::ProfileNormal,
+                )
+            }
+            _ => return None,
+        };
+        let signed_length = |name| match scalar_named(properties, name) {
+            Some(value) if value.is_finite() => Some(value),
             Some(_) => None,
             None => Some(0.0),
         };
-        let mut forward = nonnegative_length("LengthFwd")?;
-        let reverse = nonnegative_length("LengthRev")?;
+        let mut forward = signed_length("LengthFwd")?;
+        let reverse = signed_length("LengthRev")?;
         if forward == 0.0 && reverse == 0.0 {
-            forward = magnitude;
+            forward = direction_magnitude.filter(|value| value.is_finite() && *value > 0.0)?;
         }
         let symmetric = bool_property(properties, "Symmetric").unwrap_or(false);
         let forward_draft = scalar_named(properties, "TaperAngle").unwrap_or(0.0);
         let reverse_draft = scalar_named(properties, "TaperAngleRev").unwrap_or(0.0);
+        if !forward_draft.is_finite() || !reverse_draft.is_finite() {
+            return None;
+        }
         let to_draft = |degrees: f64| {
             (degrees != 0.0).then_some(cadmpeg_ir::features::Angle(degrees.to_radians()))
         };
@@ -2709,7 +2746,7 @@ fn extrusion_definition(
                 ExtrudeExtent::Symmetric {
                     side: ExtrudeSide {
                         termination: Termination::Blind {
-                            length: Length((forward > 0.0).then_some(forward)?),
+                            length: Length((forward != 0.0).then_some(forward.abs())?),
                         },
                         draft: to_draft(forward_draft),
                         offset: None,
@@ -2718,72 +2755,73 @@ fn extrusion_definition(
                 false,
             )
         } else {
-            match (forward > 0.0, reverse > 0.0) {
-                (true, false) => (
+            let forward_travel = (forward != 0.0).then_some((forward, forward_draft));
+            let reverse_travel = (reverse != 0.0).then_some((-reverse, reverse_draft));
+            let same_side = forward_travel
+                .zip(reverse_travel)
+                .is_some_and(|((first, _), (second, _))| first.signum() == second.signum());
+            if same_side && forward_draft != reverse_draft {
+                return None;
+            }
+            let farthest = |positive: bool| {
+                [forward_travel, reverse_travel]
+                    .into_iter()
+                    .flatten()
+                    .filter(|(travel, _)| (*travel > 0.0) == positive)
+                    .max_by(|left, right| left.0.abs().total_cmp(&right.0.abs()))
+            };
+            let positive = farthest(true);
+            let negative = farthest(false);
+            match (positive, negative) {
+                (Some((length, draft)), None) => (
                     ExtrudeExtent::OneSided {
                         side: ExtrudeSide {
                             termination: Termination::Blind {
-                                length: Length(forward),
+                                length: Length(length),
                             },
-                            draft: to_draft(forward_draft),
+                            draft: to_draft(draft),
                             offset: None,
                         },
                     },
                     false,
                 ),
-                (false, true) => (
-                    // Reverse-only: the direction is flipped and the single
-                    // traveled side carries `TaperAngleRev`.
+                (None, Some((length, draft))) => (
                     ExtrudeExtent::OneSided {
                         side: ExtrudeSide {
                             termination: Termination::Blind {
-                                length: Length(reverse),
+                                length: Length(-length),
                             },
-                            draft: to_draft(reverse_draft),
+                            draft: to_draft(draft),
                             offset: None,
                         },
                     },
                     true,
                 ),
-                (true, true) => (
+                (Some((first, first_draft)), Some((second, second_draft))) => (
                     ExtrudeExtent::TwoSided {
                         first: ExtrudeSide {
                             termination: Termination::Blind {
-                                length: Length(forward),
+                                length: Length(first),
                             },
-                            draft: to_draft(forward_draft),
+                            draft: to_draft(first_draft),
                             offset: None,
                         },
                         second: ExtrudeSide {
                             termination: Termination::Blind {
-                                length: Length(reverse),
+                                length: Length(-second),
                             },
-                            draft: to_draft(reverse_draft),
+                            draft: to_draft(second_draft),
                             offset: None,
                         },
                     },
                     false,
                 ),
-                (false, false) => return None,
+                (None, None) => return None,
             }
         };
-        if reverse_direction {
+        if reverse_direction ^ bool_property(properties, "Reversed").unwrap_or(false) {
             direction = Vector3::new(-direction.x, -direction.y, -direction.z);
         }
-        let direction_source = match integer_property(properties, "DirMode").unwrap_or(0) {
-            0 => ExtrusionDirectionSource::Custom,
-            1 => {
-                let reference = property(properties, "DirLink")?;
-                if reference.links.len() != 1 {
-                    return None;
-                }
-                ExtrusionDirectionSource::Edge {
-                    reference: PathRef::Native(reference.id.clone()),
-                }
-            }
-            2 => ExtrusionDirectionSource::ProfileNormal,
-            _ => return None,
-        };
         let face_maker = if let Some(class_property) = property(properties, "FaceMakerClass") {
             let mode = if property(properties, "FaceMakerMode").is_some() {
                 Some(u32::try_from(integer_property(properties, "FaceMakerMode")?).ok()?)

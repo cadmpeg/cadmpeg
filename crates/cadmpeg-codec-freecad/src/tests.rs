@@ -4816,7 +4816,7 @@ fn transfers_remaining_semantic_annotation_families_and_assets() {
 #[test]
 fn transfers_non_default_extrusion_termination_branches() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="8">
+<Objects Count="9">
   <Object type="Sketcher::SketchObject" name="Sketch" id="1"/>
   <Object type="PartDesign::Pad" name="ToLast" id="2"/>
   <Object type="PartDesign::Pad" name="ToFirst" id="3"/>
@@ -4825,8 +4825,9 @@ fn transfers_non_default_extrusion_termination_branches() {
   <Object type="PartDesign::Pocket" name="ThroughAll" id="6"/>
   <Object type="PartDesign::Pad" name="Symmetric" id="7"/>
   <Object type="Part::Extrusion" name="PartExtrusion" id="8"/>
+  <Object type="Part::Extrusion" name="NegativeProfileNormal" id="9"/>
 </Objects>
-<ObjectData Count="8">
+<ObjectData Count="9">
   <Object name="Sketch"><Properties Count="0"/></Object>
   <Object name="ToLast"><Properties Count="2">
     <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
@@ -4870,6 +4871,14 @@ fn transfers_non_default_extrusion_termination_branches() {
     <Property name="FaceMakerClass" type="App::PropertyString"><String value="Part::FaceMakerUnified"/></Property>
     <Property name="FaceMakerMode" type="App::PropertyEnumeration"><Integer value="4"/></Property>
     <Property name="InnerWireTaper" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  </Properties></Object>
+  <Object name="NegativeProfileNormal"><Properties Count="6">
+    <Property name="Base" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="DirMode" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+    <Property name="LengthFwd" type="App::PropertyLength"><Float value="5"/></Property>
+    <Property name="LengthRev" type="App::PropertyLength"><Float value="-1"/></Property>
+    <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
+    <Property name="Solid" type="App::PropertyBool"><Bool value="true"/></Property>
   </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -4991,6 +5000,20 @@ fn transfers_non_default_extrusion_termination_branches() {
             && (*reverse_draft - 4_f64.to_radians()).abs() < 1e-12
             && reference.ends_with(":DirLink")
             && face_maker.class == "Part::FaceMakerUnified" && face_maker.mode == Some(4)
+    ));
+    assert!(matches!(
+        definition("NegativeProfileNormal"),
+        FeatureDefinition::Extrude {
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind { length },
+                    ..
+                }
+            },
+            direction_source: Some(ExtrusionDirectionSource::ProfileNormal),
+            ..
+        } if direction.z == -1.0 && length.0 == 5.0
     ));
 }
 
