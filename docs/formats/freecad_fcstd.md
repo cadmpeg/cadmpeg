@@ -257,7 +257,9 @@ family-specific data. Dimensional relations create canonical parameters linked t
 constraint property and retain whether the value is driving. A dimension parameter uses its
 one-based constraint index as its neutral name. Its persisted label remains source metadata and is
 an expression alias only when that label is unique in the sketch. A one-entity angle measures that
-entity from the horizontal sketch axis. A one-locus horizontal or vertical distance measures the
+entity from the horizontal sketch axis. In a two-operand angle, negative geometry indices identify
+the horizontal or vertical sketch axis independently of their position field. A one-locus
+horizontal or vertical distance measures the
 locus from the sketch root point. The persisted endpoint-one selector of an isolated point resolves
 to the point entity, not to a nonexistent curve endpoint. Negative indices resolve through the
 ordered external-reference entities. Invalid indices, unresolved operands, and future family codes
@@ -642,7 +644,8 @@ forms define link zero as the target and the remaining ordered `Shapes` links as
 claiming that application-object links are already neutral body ids. For non-container features,
 feature dependencies are the stable union of all declared object dependencies and earlier
 link-property operands in source order. PartDesign body dependency records describe structural
-membership and do not duplicate the body's neutral child relations. A declared dependency can
+membership and do not duplicate the body's neutral child relations. Body membership comes from the
+current `Group` link list or the legacy `Model` link list. A declared dependency can
 target a later declaration. Neutral feature ordinals use a stable dependency order and use source
 order as the tie-break rule. Forward profile, base-feature, and pattern-seed links also precede
 their consumers. Body child lists are structural membership, not body inputs. If the native graph

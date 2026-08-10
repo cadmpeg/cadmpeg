@@ -682,7 +682,7 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>
  <Geometry type="Part::GeomCircle"><Circle CenterX="4" CenterY="5" Radius="2"/></Geometry>
 </GeometryList></Property>
-<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="15">
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="16">
  <Constrain Type="14" First="0" FirstPos="1" Second="1" SecondPos="1" Third="2" ThirdPos="0"/>
  <Constrain Type="6" First="0" FirstPos="1" Second="1" SecondPos="2" Value="4" IsDriving="1"/>
  <Constrain Name="OnAxis" MetaData="reviewed" Type="13" Orientation="4" Value="0" LabelDistance="2.5" LabelPosition="0.25" IsDriving="0" IsInVirtualSpace="1" IsVisible="0" IsActive="1" First="0" FirstPos="1" Second="2" SecondPos="0"/>
@@ -698,6 +698,7 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
  <Constrain Type="7" First="-4" FirstPos="1" Second="0" SecondPos="1" Value="3" IsDriving="1"/>
  <Constrain Name="Repeated" Type="9" First="0" FirstPos="0" Value="0.5" IsDriving="1"/>
  <Constrain Name="Repeated" Type="8" First="3" FirstPos="1" Value="6" IsDriving="1"/>
+ <Constrain Type="9" First="0" FirstPos="0" Second="-2" SecondPos="2" Value="1.5" IsDriving="1"/>
 </ConstraintList></Property>
 </Properties></Object><Object name="Source"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let result = FcstdCodec
@@ -832,6 +833,13 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
     assert_eq!(repeated_parameters.len(), 2);
     assert_eq!(repeated_parameters[0].name, "Constraint14");
     assert_eq!(repeated_parameters[1].name, "Constraint15");
+    assert!(matches!(
+        constraint(16).definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::AngleToAxis {
+            axis: cadmpeg_ir::sketches::SketchAxis::Vertical,
+            ..
+        }
+    ));
     assert!(result.ir.model.sketch_entities.iter().any(|entity| {
         entity.id.0.ends_with(":reference-horizontal-axis")
             && matches!(
@@ -2308,7 +2316,7 @@ fn transfers_ordered_body_membership_and_active_tip() {
 </Objects>
 <ObjectData Count="3">
  <Object name="Body"><Properties Count="2">
-  <Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="First"/><Link value="Second"/></LinkList></Property>
+  <Property name="Model" type="App::PropertyLinkList"><LinkList count="2"><Link value="First"/><Link value="Second"/></LinkList></Property>
   <Property name="Tip" type="App::PropertyLink"><Link value="Second"/></Property>
  </Properties></Object>
  <Object name="First"><Properties Count="0"/></Object>

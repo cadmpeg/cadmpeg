@@ -58,9 +58,8 @@ pub(crate) fn transfer(
         .flat_map(|body| {
             properties_by_owner
                 .get(body.id.as_str())
+                .and_then(|properties| body_membership_property(properties))
                 .into_iter()
-                .flatten()
-                .filter(|property| property.name == "Group")
                 .flat_map(|property| &property.links)
                 .filter_map(|link| link.object.as_deref())
                 .map(move |member| (member, feature_id(body)))
@@ -121,7 +120,14 @@ pub(crate) fn transfer(
         } else if is_body(&object.type_name) {
             FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::SolidBodies,
-                children: linked_feature_ids(&owned, "Group", &feature_ids),
+                children: body_membership_property(&owned).map_or_else(Vec::new, |property| {
+                    property
+                        .links
+                        .iter()
+                        .filter_map(|link| link.object.as_deref())
+                        .filter_map(|target| feature_ids.get(target).cloned())
+                        .collect()
+                }),
                 active_child: linked_feature_ids(&owned, "Tip", &feature_ids)
                     .into_iter()
                     .next(),
@@ -446,6 +452,10 @@ pub(crate) fn transfer(
     }
     bind_parameter_dependencies(&mut ir.model.parameters, objects);
     Ok(())
+}
+
+fn body_membership_property<'a>(properties: &'a [&PropertyRecord]) -> Option<&'a PropertyRecord> {
+    property(properties, "Group").or_else(|| property(properties, "Model"))
 }
 
 fn feature_ordinals<'a>(
@@ -1104,11 +1114,19 @@ fn builtin_reference_usage(properties: &[&PropertyRecord]) -> (bool, bool, bool)
         .descendants()
         .filter(|node| node.has_tag_name("Constrain"))
     {
+        let type_code = int_attr(node, "Type");
         let Ok(operands) = constraint_operands(node) else {
             continue;
         };
-        root |= matches!(int_attr(node, "Type"), Some(7 | 8)) && operands.len() == 1;
+        root |= matches!(type_code, Some(7 | 8)) && operands.len() == 1;
         for (entity, position) in operands {
+            if type_code == Some(9) {
+                horizontal |= entity == -1;
+                vertical |= entity == -2;
+                if matches!(entity, -1 | -2) {
+                    continue;
+                }
+            }
             horizontal |= entity == -1 && position == 0;
             root |= entity == -1 && position == 1;
             vertical |= entity == -2 && position == 0;
@@ -1347,9 +1365,19 @@ fn parse_constraints(
                 index + 1
             ))
         })?;
+        let resolve = |entity, position| {
+            if type_code == 9 {
+                match entity {
+                    -1 => return resolve_operand(-1, 0, entities),
+                    -2 => return resolve_operand(-2, 0, entities),
+                    _ => {}
+                }
+            }
+            resolve_operand(entity, position, entities)
+        };
         let mut resolved = operands
             .iter()
-            .filter_map(|(entity, position)| resolve_operand(*entity, *position, entities))
+            .filter_map(|(entity, position)| resolve(*entity, *position))
             .collect::<Vec<_>>();
         let all_resolved = resolved.len() == operands.len();
         if matches!(type_code, 7 | 8) && operands.len() == 1 && resolved.len() == 1 {
@@ -1477,7 +1505,7 @@ fn parse_constraints(
                 operands: operands
                     .iter()
                     .filter_map(|(entity, position)| {
-                        if *entity < 0 || resolve_operand(*entity, *position, entities).is_none() {
+                        if *entity < 0 || resolve(*entity, *position).is_none() {
                             Some(SketchNativeOperand {
                                 native_kind: format!("position:{position}"),
                                 native_field: None,
@@ -1721,6 +1749,20 @@ fn neutral_constraint(
             second: loci.get(1)?.clone(),
             parameter: parameter?,
         },
+        9 if loci.len() == 2 && sketch_axis(&loci[0]).is_some() => {
+            SketchConstraintDefinition::AngleToAxis {
+                entity: entity(1)?,
+                axis: sketch_axis(&loci[0])?,
+                parameter: parameter?,
+            }
+        }
+        9 if loci.len() == 2 && sketch_axis(&loci[1]).is_some() => {
+            SketchConstraintDefinition::AngleToAxis {
+                entity: entity(0)?,
+                axis: sketch_axis(&loci[1])?,
+                parameter: parameter?,
+            }
+        }
         9 if loci.len() == 1 => SketchConstraintDefinition::AngleToAxis {
             entity: entity(0)?,
             axis: SketchAxis::Horizontal,
@@ -1756,6 +1798,17 @@ fn neutral_constraint(
         },
         _ => return None,
     })
+}
+
+fn sketch_axis(locus: &SketchLocus) -> Option<SketchAxis> {
+    let id = locus_entity(locus);
+    if id.0.ends_with(":reference-horizontal-axis") {
+        Some(SketchAxis::Horizontal)
+    } else if id.0.ends_with(":reference-vertical-axis") {
+        Some(SketchAxis::Vertical)
+    } else {
+        None
+    }
 }
 
 fn constraint_operands(node: roxmltree::Node<'_, '_>) -> Result<Vec<(i64, i64)>, &'static str> {
