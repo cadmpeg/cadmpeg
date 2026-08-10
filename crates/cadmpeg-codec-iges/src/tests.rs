@@ -12323,6 +12323,39 @@ fn encode_regenerates_decoded_vertex_only_pole_loop_without_source_bytes() {
 }
 
 #[test]
+fn encode_promotes_an_unclassified_brep_loop_to_outer() {
+    let mut decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_vertex_loop_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    decoded.ir.model.loops[0].boundary_role = LoopBoundaryRole::Unspecified;
+
+    let plan = IgesCodec
+        .plan(EncodeInput {
+            ir: &decoded.ir,
+            fidelity: None,
+        })
+        .unwrap();
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        round_trip.ir.model.loops[0].boundary_role,
+        LoopBoundaryRole::Outer
+    );
+    assert!(
+        round_trip.report.losses.is_empty(),
+        "{:#?}",
+        round_trip.report.losses
+    );
+}
+
+#[test]
 fn encode_regenerates_decoded_non_manifold_sheet_without_source_bytes() {
     let decoded = IgesCodec
         .decode(

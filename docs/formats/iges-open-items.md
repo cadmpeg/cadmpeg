@@ -124,18 +124,6 @@ from a conformant file.
 
 ## 7. Write path
 
-### WR-01. An unclassified loop is written as an inner loop
-
-**Question.** How does the writer encode a loop whose source does not classify it as outer or inner?
-
-**Known.** `writer.rs:1328-1337` computes `has_outer` from the first loop's `boundary_role` and writes `i32::from(has_outer)` as the Type 510 outer-loop flag. `LoopBoundaryRole::Unspecified` is the default variant and is documented as "The source does not classify this loop as outer or inner" (`cadmpeg-ir/src/topology.rs:149-151`). The writer maps that third state onto `OF = 0`, whose meaning `iges.md` "Topology" states as fact: every loop is inner and the support surface's parameter domain supplies the exterior boundary.
-
-**Note.** Every non-STEP decoder in the workspace emits `Unspecified` (sldprt, nx, catia, rhino, freecad, f3d, asm). A six-face solid from any of them writes six faces each declared to have no outer boundary, over Type 190 planes whose domain is unbounded. The receiving system reads unbounded faces. `validate_brep_topology` has no `boundary_role` test.
-
-**Note.** The sheet path already handles this: commit `175d17b42` routes all-`Unspecified` loops to a Type 143 bounded surface (`writer.rs:1755-1757`). The B-rep path did not get the same treatment.
-
-**Need.** The IGES reader only ever produces `Outer` or `Inner`, so no round-trip test can see this. We need the encoding for an unclassified loop, and a refusal if none exists.
-
 ### WR-02. The declared Global minimum resolution is tighter than the writer's own acceptance bound
 
 **Question.** What minimum resolution must a generated file declare?

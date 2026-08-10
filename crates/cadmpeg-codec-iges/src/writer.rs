@@ -1326,9 +1326,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                     CodecError::Malformed(format!("IGES B-rep face {face_id} is missing"))
                 })?;
             let loops = face_loop_order(ir, face)?;
-            let has_outer = loops
-                .first()
-                .is_some_and(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer);
+            let has_outer = face_outer_loop(&loops).is_some();
             let mut parameters = format!(
                 "510,{},{},{}",
                 reference_marker(surface_indices[face.surface.as_str()]),
@@ -1811,9 +1809,7 @@ fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                 loops.len()
             )
         } else {
-            let outer = loops
-                .first()
-                .filter(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer);
+            let outer = face_outer_loop(&loops);
             let inner = if outer.is_some() {
                 &loops[1..]
             } else {
@@ -2295,8 +2291,19 @@ fn face_loop_order<'a>(
             face.id
         )));
     }
-    loops.sort_by_key(|loop_| usize::from(loop_.boundary_role != LoopBoundaryRole::Outer));
+    loops.sort_by_key(|loop_| match loop_.boundary_role {
+        LoopBoundaryRole::Outer => 0,
+        LoopBoundaryRole::Unspecified => 1,
+        LoopBoundaryRole::Inner => 2,
+    });
     Ok(loops)
+}
+
+fn face_outer_loop<'a>(loops: &'a [&Loop]) -> Option<&'a Loop> {
+    loops
+        .first()
+        .copied()
+        .filter(|loop_| loop_.boundary_role != LoopBoundaryRole::Inner)
 }
 
 fn boundary_entity(
@@ -4995,5 +5002,50 @@ mod tests {
 
         let ordered = face_loop_order(&ir, &face).expect("both face loops resolve");
         assert_eq!(ordered[0].id, outer_id);
+    }
+
+    #[test]
+    fn face_loop_order_promotes_the_first_unclassified_loop() {
+        use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
+        use cadmpeg_ir::topology::Face;
+        use cadmpeg_ir::units::Units;
+
+        let face_id = FaceId::from("face");
+        let inner_id = LoopId::from("inner");
+        let unclassified_id = LoopId::from("unclassified");
+        let face = Face {
+            id: face_id.clone(),
+            shell: ShellId::from("shell"),
+            surface: SurfaceId::from("surface"),
+            sense: Sense::Forward,
+            loops: vec![inner_id.clone(), unclassified_id.clone()],
+            name: None,
+            color: None,
+            tolerance: None,
+        };
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.loops = vec![
+            Loop {
+                id: inner_id,
+                face: face_id.clone(),
+                boundary_role: LoopBoundaryRole::Inner,
+                coedges: Vec::new(),
+                vertex_uses: Vec::new(),
+            },
+            Loop {
+                id: unclassified_id.clone(),
+                face: face_id,
+                boundary_role: LoopBoundaryRole::Unspecified,
+                coedges: Vec::new(),
+                vertex_uses: Vec::new(),
+            },
+        ];
+
+        let ordered = face_loop_order(&ir, &face).expect("both face loops resolve");
+        assert_eq!(ordered[0].id, unclassified_id);
+        assert_eq!(
+            face_outer_loop(&ordered).map(|loop_| &loop_.id),
+            Some(&unclassified_id)
+        );
     }
 }
