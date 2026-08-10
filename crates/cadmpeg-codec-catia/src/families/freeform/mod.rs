@@ -229,12 +229,18 @@ pub(crate) fn try_decode_freeform_surfaces(
         &scan.data,
         &consolidated_records,
     );
+    let b2_line_profile_count = crate::families::b2::records::b2_line_profiles_from_records(
+        &scan.data,
+        &consolidated_records,
+    )
+    .len();
     let b2_spatial_circle_count = b2_spatial_circles.len();
     if fallback_surfaces.as_ref().is_some_and(Vec::is_empty)
         && crate::families::a5a8::records::a8_freeform_curves(&scan.data).is_empty()
         && b2_nurbs_curves.is_empty()
         && a5_nurbs_curves.is_empty()
         && b2_spatial_circles.is_empty()
+        && b2_line_profile_count == 0
     {
         return None;
     }

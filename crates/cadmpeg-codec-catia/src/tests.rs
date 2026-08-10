@@ -7221,6 +7221,32 @@ fn decode_transfers_exact_consolidated_line_profiles() {
 }
 
 #[test]
+fn decode_routes_a_line_profile_only_nested_stream_to_a_wire() {
+    let file = standard_catpart_from_streams(&b2_line_profile_stream(), &[]);
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode line-profile-only nested stream");
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_CONSOLIDATED_LINE_PROFILE_COUNT),
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage_count(cadmpeg_ir::CoverageKey(
+            "attached_standalone_wire_edge_count"
+        )),
+        1
+    );
+    assert_eq!(decoded.ir.model.edges[0].param_range, Some([-4.0, 9.0]));
+    assert_eq!(
+        decoded.ir.model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Wire
+    );
+    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn transferred_line_profile_identities_retain_their_native_ordinals() {
     let mut file = standard_catpart();
     file.splice(
