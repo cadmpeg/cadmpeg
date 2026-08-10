@@ -122,16 +122,6 @@ from a conformant file.
 
 ## 6. Product structure, annotation, and presentation
 
-### PS-04. Enumerated value tables exist only in the source
-
-**Question.** What are the admitted Type 316 unit values, Type 230 pattern codes, and Type 322 attribute-list classifications?
-
-**Known.** `structure.rs:188-207`, `annotation.rs:573-582`, `structure.rs:461-478`, and `structure.rs:1118-1120` hold closed tables and ranges. `iges.md` "Views and drawings" gives "unit values use the standard type-specific codes" and `iges.md` "Product structure" gives "attribute-list classification". The tables are not in this repository outside the source, so a refusal rests on grounds no reader of `iges.md` can reconstruct.
-
-**Note.** The `LENGTH` row admits `KN` and omits `KM`, `MM`, and `CM`. `KN` is not a length unit. `KM` is the most probable intended value, so this row is likely a transcription defect. The single fixture (`tests.rs:4554`) uses `1HM` only, so no unit code outside the happy path is exercised.
-
-**Need.** We need the standard tables recorded, and the `LENGTH` row checked against them.
-
 ### PS-05. Type 420 accepts a wrong-typed type flag and Type 320 does not
 
 **Question.** Does the Type 420 type flag have a default?

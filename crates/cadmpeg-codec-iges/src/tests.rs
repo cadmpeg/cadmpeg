@@ -5455,7 +5455,7 @@ fn units_data_file() -> Vec<u8> {
             form: 0,
             label: "UNITS".into(),
             status: "00000200",
-            parameters: "316,3,6HLENGTH,1HM,1000,4HTIME,1HS,1,5HPLANE,1HD,0.017453292519943295;"
+            parameters: "316,3,6HLENGTH,2HKN,1852,4HTIME,1HS,1,5HPLANE,1HD,0.017453292519943295;"
                 .into(),
         },
     ])
@@ -8668,8 +8668,11 @@ fn decode_types_fundamental_units_and_property_owner() {
     let units = &result.ir.native.namespace("iges").unwrap().arenas["units_data"][0];
     assert_eq!(units.fields()["units"].as_array().unwrap().len(), 3);
     assert_eq!(units.fields()["units"][0]["unit_type"][0], 76);
-    assert_eq!(units.fields()["units"][0]["unit_value"][0], 77);
-    assert_eq!(units.fields()["units"][0]["scale_factor"], 1000.0);
+    assert_eq!(
+        units.fields()["units"][0]["unit_value"],
+        serde_json::json!([75, 78])
+    );
+    assert_eq!(units.fields()["units"][0]["scale_factor"], 1852.0);
     assert_eq!(
         units.fields()["units"][2]["scale_factor"],
         0.017_453_292_519_943_295
