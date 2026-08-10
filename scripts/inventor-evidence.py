@@ -1241,6 +1241,14 @@ def normalize_strings(value, replacements: Sequence[tuple[str, str]]):
 def load_json_command(
     command: Sequence[str], timeout: float
 ) -> tuple[int, object | None]:
+    status, stdout = run_capture(command, timeout)
+    try:
+        return status, json.loads(stdout)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return status, None
+
+
+def run_capture(command: Sequence[str], timeout: float) -> tuple[int, str]:
     try:
         result = subprocess.run(
             list(command),
@@ -1251,13 +1259,96 @@ def load_json_command(
             text=True,
         )
     except subprocess.TimeoutExpired:
-        return 124, None
+        return 124, ""
     except OSError:
-        return 127, None
-    try:
-        return result.returncode, json.loads(result.stdout)
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return result.returncode, None
+        return 127, ""
+    return result.returncode, result.stdout
+
+
+def cli_sweep(
+    source_path: Path, ordinal: int, cadmpeg: Path, timeout: float
+) -> dict:
+    """Run the local inspect/decode/validate matrix for one document."""
+
+    runs = []
+    with tempfile.TemporaryDirectory(prefix="inventor-sweep-") as directory:
+        temporary = Path(directory)
+        for profile in ("desktop", "service"):
+            for strict in (False, True):
+                strict_flag = ("--strict",) if strict else ()
+                prefix = f"{profile}-{'strict' if strict else 'salvage'}"
+                inspect_command = [
+                    str(cadmpeg),
+                    "inspect",
+                    "--input-format",
+                    "inventor",
+                    "--limits",
+                    profile,
+                    "--json",
+                    str(source_path),
+                ]
+                inspect_status, inspect_stdout = run_capture(inspect_command, timeout)
+                decode_outputs = []
+                validate_outputs = []
+                for repeat in (0, 1):
+                    decode_path = temporary / f"{prefix}-decode-{repeat}.json"
+                    decode_command = [
+                        str(cadmpeg),
+                        "decode",
+                        "--input-format",
+                        "inventor",
+                        "--limits",
+                        profile,
+                        *strict_flag,
+                        "--output",
+                        str(decode_path),
+                        "--force",
+                        str(source_path),
+                    ]
+                    decode_status, _decode_stdout = run_capture(decode_command, timeout)
+                    decode_outputs.append(
+                        {
+                            "status": decode_status,
+                            "sha256": digest(decode_path.read_bytes()) if decode_path.exists() else None,
+                        }
+                    )
+                    report_path = temporary / f"{prefix}-validate-{repeat}.json"
+                    validate_command = [
+                        str(cadmpeg),
+                        "validate",
+                        "--input-format",
+                        "inventor",
+                        "--limits",
+                        profile,
+                        *strict_flag,
+                        "--json",
+                        "--report",
+                        str(report_path),
+                        "--force",
+                        str(source_path),
+                    ]
+                    validate_status, validate_stdout = run_capture(validate_command, timeout)
+                    validate_outputs.append(
+                        {
+                            "status": validate_status,
+                            "sha256": digest(validate_stdout.encode()),
+                        }
+                    )
+                runs.append(
+                    {
+                        "profile": profile,
+                        "mode": "strict" if strict else "salvage",
+                        "inspect": {
+                            "status": inspect_status,
+                            "sha256": digest(inspect_stdout.encode()),
+                        },
+                        "decode": decode_outputs,
+                        "validate": validate_outputs,
+                        "decode_deterministic": decode_outputs[0] == decode_outputs[1],
+                        "validate_deterministic": validate_outputs[0] == validate_outputs[1],
+                    }
+                )
+    return {"source_ordinal": ordinal, "runs": runs}
 
 
 def compare_carriers(
@@ -1418,6 +1509,7 @@ def process(args: argparse.Namespace) -> dict:
     documents = []
     failures = []
     parity = []
+    sweeps = []
     ordinal = 0
     for path in paths:
         try:
@@ -1443,6 +1535,8 @@ def process(args: argparse.Namespace) -> dict:
                         "detail": "temporary comparison operation failed",
                     }
                 )
+        if args.sweep:
+            sweeps.append(cli_sweep(path, evidence.ordinal, Path(args.cadmpeg), args.timeout))
         documents.append(evidence.as_json())
     envelope_counts: dict[str, int] = {}
     for document in documents:
@@ -1463,6 +1557,8 @@ def process(args: argparse.Namespace) -> dict:
     }
     if args.compare:
         result["carrier_parity"] = parity
+    if args.sweep:
+        result["cli_sweep"] = sweeps
     return result
 
 
@@ -1479,6 +1575,11 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--compare",
         action="store_true",
         help="run wrapper/direct-carrier semantic and validation comparisons",
+    )
+    parser.add_argument(
+        "--sweep",
+        action="store_true",
+        help="run inspect/decode/validate in desktop/service and salvage/strict modes",
     )
     parser.add_argument(
         "--cadmpeg",

@@ -354,6 +354,19 @@ class EvidenceTest(unittest.TestCase):
         self.assertTrue(comparison["semantic_model_equal"])
         self.assertTrue(comparison["validation_findings_equal"])
 
+    def test_cli_sweep_is_per_profile_and_deterministic(self) -> None:
+        cadmpeg = Path("target/debug/cadmpeg")
+        if not cadmpeg.is_file():
+            self.skipTest("the cadmpeg binary is not built")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "synthetic.ipt"
+            path.write_bytes(synthetic_primary())
+            document = evidence.locate_document(path.read_bytes(), 0, 1 << 20)
+            result = evidence.cli_sweep(path, document.ordinal, cadmpeg, 30)
+        self.assertEqual(len(result["runs"]), 4)
+        self.assertTrue(all(run["decode_deterministic"] for run in result["runs"]))
+        self.assertTrue(all(run["validate_deterministic"] for run in result["runs"]))
+
 
 if __name__ == "__main__":
     unittest.main()
