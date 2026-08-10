@@ -10799,6 +10799,21 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             version: 3,
             version_offset: 0,
         },
+        SegmentType {
+            id: "generated:sketch-type-06-point-companion#0".into(),
+            byte_offset: 6,
+            module: "Geometry".into(),
+            entity_ids: vec![101],
+            entity_id_offsets: Vec::new(),
+            type_guid: crate::design::decode::sketch::CURRENT_SKETCH_POINT_COMPANION_TYPE
+                .0
+                .into(),
+            type_guid_offset: 0,
+            base_type_guid: None,
+            base_type_guid_offset: None,
+            version: crate::design::decode::sketch::CURRENT_SKETCH_POINT_COMPANION_TYPE.1,
+            version_offset: 0,
+        },
     ];
     native.design_entity_headers = vec![DesignEntityHeader {
         id: "generated:sketch-header#0".into(),
@@ -10819,7 +10834,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     native.sketch_points = vec![SketchPoint {
         id: "generated:sketch-point#0".into(),
         record_index: 100,
-        owner_reference: None,
+        owner_reference: Some(277),
         class_tag: "258".into(),
         byte_offset: 0,
         coordinate_offset: 89,
@@ -10833,7 +10848,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         SketchCurveIdentity {
             id: "generated:sketch-curve#0".into(),
             record_index: 600,
-            owner_reference: None,
+            owner_reference: Some(277),
             class_tag: "259".into(),
             byte_offset: 0,
             geometry_offset: 133,
@@ -10850,7 +10865,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         SketchCurveIdentity {
             id: "generated:sketch-curve#1".into(),
             record_index: 601,
-            owner_reference: None,
+            owner_reference: Some(277),
             class_tag: "260".into(),
             byte_offset: 0,
             geometry_offset: 133,
@@ -10869,7 +10884,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         SketchCurveIdentity {
             id: "generated:sketch-curve#2".into(),
             record_index: 602,
-            owner_reference: None,
+            owner_reference: Some(277),
             class_tag: "261".into(),
             byte_offset: 0,
             geometry_offset: 133,
@@ -10937,6 +10952,59 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         })
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less sketch BulkStream encode");
+    {
+        let mut archive = zip::ZipArchive::new(Cursor::new(&encoded)).expect("generated F3D ZIP");
+        let mut bulkstream = Vec::new();
+        archive
+            .by_name("FusionAssetName[Active]/Design1/BulkStream.dat")
+            .expect("generated Design BulkStream")
+            .read_to_end(&mut bulkstream)
+            .expect("read generated Design BulkStream");
+        let mut companion = Vec::new();
+        companion.extend_from_slice(&3u32.to_le_bytes());
+        companion.extend_from_slice(b"262");
+        companion.extend_from_slice(&101u32.to_le_bytes());
+        companion.extend_from_slice(&[0; 15]);
+        companion.push(1);
+        companion.extend_from_slice(&100u64.to_le_bytes());
+        companion.extend_from_slice(&[0; 2]);
+        assert_eq!(companion.len(), 37);
+        assert!(bulkstream
+            .windows(companion.len())
+            .any(|window| window == companion));
+    }
+    f3d_native_mut(&mut source_less).sketch_points[0].owner_reference = None;
+    let error = F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect_err("source-less points require their direct owner backlink");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    f3d_native_mut(&mut source_less).sketch_points[0].owner_reference = Some(277);
+    f3d_native_mut(&mut source_less).design_types[6]
+        .entity_ids
+        .clear();
+    let error = F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect_err("source-less points require a registered inverse companion");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    f3d_native_mut(&mut source_less).design_types[6].entity_ids = vec![101];
+    f3d_native_mut(&mut source_less).design_types[2].version = 10;
+    let error = F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect_err("source-less points require the current writable class version");
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    f3d_native_mut(&mut source_less).design_types[2].version = 11;
     {
         let relation = &mut f3d_native_mut(&mut source_less).sketch_relations[0];
         relation.members = vec![100, 600, 100, 600, 100, 600, 100, 600];
@@ -11017,6 +11085,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     assert_eq!(native.sketch_points[0].entity_genesis, Some(900));
     assert_eq!(native.sketch_points[0].coordinate_offset, 141);
     assert_eq!(native.sketch_points[0].owner_reference, Some(277));
+    assert_eq!(native.sketch_points[0].raw_bytes.len(), 165);
     assert_eq!(
         native.sketch_points[0].coordinates,
         Point2::new(12.5, -25.0)
@@ -11030,6 +11099,10 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     assert_eq!(genesis_curve.entity_genesis, Some(901));
     assert_eq!(genesis_curve.geometry_offset, 185);
     assert_eq!(genesis_curve.owner_reference, Some(277));
+    assert!(native
+        .sketch_curve_identities
+        .iter()
+        .all(|curve| curve.owner_reference == Some(277)));
     for expected in expected_geometries {
         assert!(native
             .sketch_curve_identities
@@ -13111,14 +13184,14 @@ fn generated_design_metastream(records: &[(u64, u64)]) -> Vec<u8> {
                 base,
                 11,
                 "Geometry",
-                &[100, 200, 300, 400],
+                &[100, 200, 300, 400, 700],
             ),
             (
-                "44444444-5555-4666-8777-888888888888",
+                crate::design::decode::sketch::CURRENT_SKETCH_POINT_COMPANION_TYPE.0,
                 base,
-                1,
-                "Geometry",
-                &[700],
+                crate::design::decode::sketch::CURRENT_SKETCH_POINT_COMPANION_TYPE.1,
+                crate::design::decode::sketch::CURRENT_SKETCH_POINT_COMPANION_TYPE.2,
+                &[101, 201, 301, 401, 701],
             ),
         ],
         records,
@@ -13328,6 +13401,30 @@ fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
         out.extend_from_slice(&[0, 0]);
     }
 
+    fn close_current_point(out: &mut Vec<u8>, paired_reference: u32, owner_reference: u32) {
+        out.extend_from_slice(&[0; 16]);
+        out.push(1);
+        out.extend_from_slice(&[0; 12]);
+        out.extend_from_slice(&1.0f32.to_le_bytes());
+        out.extend_from_slice(&1.0f32.to_le_bytes());
+        out.extend_from_slice(&[0, 1, 0, 0, 0]);
+        push_reference(out, u64::from(paired_reference));
+        push_reference(out, u64::from(owner_reference));
+    }
+
+    fn push_point_companion(
+        out: &mut Vec<u8>,
+        class_tag: &str,
+        record_index: u32,
+        point_record_index: u32,
+    ) {
+        out.extend_from_slice(&3u32.to_le_bytes());
+        out.extend_from_slice(class_tag.as_bytes());
+        out.extend_from_slice(&record_index.to_le_bytes());
+        out.extend_from_slice(&[0; 15]);
+        push_reference(out, u64::from(point_record_index));
+    }
+
     let mut out = Vec::new();
     let mut records = vec![(899, 0)];
     out.extend_from_slice(&3u32.to_le_bytes());
@@ -13434,7 +13531,8 @@ fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
             u64::from(record_index),
             u64::try_from(out.len()).expect("synthetic Design record offset"),
         ));
-        let mut point = vec![0u8; 112];
+        let paired_reference = record_index + 1;
+        let mut point = vec![0u8; 105];
         point[0..4].copy_from_slice(&3u32.to_le_bytes());
         point[4..7].copy_from_slice(b"266");
         point[7..11].copy_from_slice(&record_index.to_le_bytes());
@@ -13446,10 +13544,16 @@ fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
         point[39..62].copy_from_slice(b"IntrinsicMetaTypeuint64");
         point[62..70].copy_from_slice(&persistent_id.to_le_bytes());
         point[70] = 1;
-        point[71..75].copy_from_slice(&(record_index + 1).to_le_bytes());
+        point[71..75].copy_from_slice(&paired_reference.to_le_bytes());
         point[89..97].copy_from_slice(&coordinates[0].to_le_bytes());
         point[97..105].copy_from_slice(&coordinates[1].to_le_bytes());
+        close_current_point(&mut point, paired_reference, 277);
         out.extend_from_slice(&point);
+        records.push((
+            u64::from(paired_reference),
+            u64::try_from(out.len()).expect("synthetic Design record offset"),
+        ));
+        push_point_companion(&mut out, "267", paired_reference, record_index);
     }
     records.push((
         600,
@@ -13491,14 +13595,15 @@ fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
         let offset = 133 + ordinal * 8;
         curve[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
+    push_reference(&mut curve, 277);
     out.extend_from_slice(&curve);
     records.push((
         700,
         u64::try_from(out.len()).expect("synthetic Design record offset"),
     ));
-    let mut alternate_point = vec![0u8; 164];
+    let mut alternate_point = vec![0u8; 157];
     alternate_point[0..4].copy_from_slice(&3u32.to_le_bytes());
-    alternate_point[4..7].copy_from_slice(b"267");
+    alternate_point[4..7].copy_from_slice(b"266");
     alternate_point[7..11].copy_from_slice(&700u32.to_le_bytes());
     alternate_point[20] = 1;
     alternate_point[21..25].copy_from_slice(&2u32.to_le_bytes());
@@ -13516,7 +13621,13 @@ fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     alternate_point[123..127].copy_from_slice(&701u32.to_le_bytes());
     alternate_point[141..149].copy_from_slice(&(-4.0f64).to_le_bytes());
     alternate_point[149..157].copy_from_slice(&5.0f64.to_le_bytes());
+    close_current_point(&mut alternate_point, 701, 277);
     out.extend_from_slice(&alternate_point);
+    records.push((
+        701,
+        u64::try_from(out.len()).expect("synthetic Design record offset"),
+    ));
+    push_point_companion(&mut out, "267", 701, 700);
 
     records.push((
         800,
@@ -13570,6 +13681,7 @@ fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
         let offset = 371 + ordinal * 8;
         alternate_curve[offset..offset + 8].copy_from_slice(&coordinate.to_le_bytes());
     }
+    push_reference(&mut alternate_curve, 277);
     out.extend_from_slice(&alternate_curve);
     out.extend_from_slice(&10u32.to_le_bytes());
     out.extend_from_slice(b"BodiesRoot");

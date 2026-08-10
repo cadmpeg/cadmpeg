@@ -262,7 +262,7 @@ fn register_generated_type(
     Ok(ordinal)
 }
 
-fn dynamic_class_tag(type_ordinal: usize) -> Result<String, CodecError> {
+pub(crate) fn dynamic_class_tag(type_ordinal: usize) -> Result<String, CodecError> {
     let tag = u32::try_from(type_ordinal)
         .ok()
         .and_then(|ordinal| ordinal.checked_add(256))

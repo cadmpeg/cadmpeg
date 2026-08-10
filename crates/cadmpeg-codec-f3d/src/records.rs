@@ -5024,7 +5024,7 @@ pub struct SketchPoint {
     pub id: String,
     /// Index of this point record within the `BulkStream` tree.
     pub record_index: u32,
-    /// Owning sketch entity derived from the relation records that use this point.
+    /// Direct owning-sketch backlink when the point record form carries one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_reference: Option<u32>,
     /// Source per-file dynamic three-digit ASCII class tag naming this point's record type.
@@ -5057,7 +5057,7 @@ pub struct SketchCurveIdentity {
     pub id: String,
     /// Index of this identity record within the `BulkStream` tree.
     pub record_index: u32,
-    /// Owning sketch entity derived from the relation records that use this curve.
+    /// Direct owning-sketch backlink when the curve record form carries one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_reference: Option<u32>,
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.

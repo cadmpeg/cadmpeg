@@ -2124,18 +2124,28 @@ fn decode_sketch_point_variant(
     ))
 }
 
+pub(crate) const CURRENT_SKETCH_POINT_TYPE: (&str, u32, &str) =
+    ("C2CEDAE7-1716-47C1-B7B1-07B70081D0FB", 11, "Geometry");
+pub(crate) const CURRENT_SKETCH_POINT_COMPANION_TYPE: (&str, u32, &str) =
+    ("362B7EC3-0F09-47C8-A3BE-DC066715CDAE", 0, "Geometry");
+pub(crate) const CURRENT_SKETCH_LINE_TYPE: (&str, u32, &str) =
+    ("DCA267ED-D615-4934-B64F-AD805E8003E2", 2, "Geometry");
+pub(crate) const CURRENT_SKETCH_CIRCULAR_TYPE: (&str, u32, &str) =
+    ("F0130424-8B7E-4092-93C9-1CA807482534", 0, "Geometry");
+pub(crate) const CURRENT_SKETCH_NURBS_TYPE: (&str, u32, &str) =
+    ("D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B", 3, "MSketch");
+
 const SKETCH_LINE_TYPES: [(&str, u32, &str); 5] = [
-    ("DCA267ED-D615-4934-B64F-AD805E8003E2", 2, "Geometry"),
+    CURRENT_SKETCH_LINE_TYPE,
     ("EA3B930A-3383-4AD3-BE25-4B2814EA3985", 0, "Geometry"),
     ("AE42BAB6-643F-4169-A33C-529C8E0A4D84", 0, "Geometry"),
     ("F279874A-17AB-43DA-BF8E-80259802D06E", 0, "Geometry"),
     ("58751243-FEA8-41E6-BBC9-37960EB8164B", 0, "Geometry"),
 ];
 const SKETCH_CIRCULAR_TYPES: [(&str, u32, &str); 2] = [
-    ("F0130424-8B7E-4092-93C9-1CA807482534", 0, "Geometry"),
+    CURRENT_SKETCH_CIRCULAR_TYPE,
     ("FF23079A-D99C-47AB-940E-2F4E18F022AB", 2, "Geometry"),
 ];
-const SKETCH_NURBS_TYPE_GUID: &str = "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B";
 const SKETCH_TEXT_FRAME_LINE_TYPE_GUID: &str = "16DEFC4D-1816-4FB0-8E39-9BDA23954248";
 
 /// Geometry grammar selected by a sketch curve's stable type identity and
@@ -2160,9 +2170,9 @@ impl SketchCurveClass {
             Some(Self::Line)
         } else if SKETCH_CIRCULAR_TYPES.iter().any(matches) {
             Some(Self::Circular)
-        } else if type_guid.eq_ignore_ascii_case(SKETCH_NURBS_TYPE_GUID)
-            && version == 3
-            && module == "MSketch"
+        } else if type_guid.eq_ignore_ascii_case(CURRENT_SKETCH_NURBS_TYPE.0)
+            && version == CURRENT_SKETCH_NURBS_TYPE.1
+            && module == CURRENT_SKETCH_NURBS_TYPE.2
         {
             Some(Self::Nurbs)
         } else if type_guid.eq_ignore_ascii_case(SKETCH_TEXT_FRAME_LINE_TYPE_GUID)
@@ -3561,7 +3571,7 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
 mod curve_class_tests {
     use super::{
         decode_circular_arc, decode_line, decode_sketch_curve_geometry, SketchCurveClass,
-        SKETCH_CIRCULAR_TYPES, SKETCH_LINE_TYPES, SKETCH_NURBS_TYPE_GUID,
+        CURRENT_SKETCH_NURBS_TYPE, SKETCH_CIRCULAR_TYPES, SKETCH_LINE_TYPES,
         SKETCH_TEXT_FRAME_LINE_TYPE_GUID,
     };
     use crate::records::SketchCurveGeometry;
@@ -3646,7 +3656,11 @@ mod curve_class_tests {
             );
         }
         assert_eq!(
-            SketchCurveClass::of(SKETCH_NURBS_TYPE_GUID, 3, "MSketch"),
+            SketchCurveClass::of(
+                CURRENT_SKETCH_NURBS_TYPE.0,
+                CURRENT_SKETCH_NURBS_TYPE.1,
+                CURRENT_SKETCH_NURBS_TYPE.2,
+            ),
             Some(SketchCurveClass::Nurbs)
         );
         assert_eq!(
@@ -3662,7 +3676,7 @@ mod curve_class_tests {
             None
         );
         assert_eq!(
-            SketchCurveClass::of(SKETCH_NURBS_TYPE_GUID, 2, "MSketch"),
+            SketchCurveClass::of(CURRENT_SKETCH_NURBS_TYPE.0, 2, CURRENT_SKETCH_NURBS_TYPE.2,),
             None
         );
         assert_eq!(

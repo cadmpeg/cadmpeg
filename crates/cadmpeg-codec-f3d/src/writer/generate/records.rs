@@ -285,8 +285,44 @@ pub(crate) fn encode_design_bulkstream(
         out.extend_from_slice(&header.record_index.to_le_bytes());
     }
     for point in &native.sketch_points {
+        let expected = crate::design::decode::sketch::CURRENT_SKETCH_POINT_COMPANION_TYPE;
+        let mut companion_types = registry
+            .types
+            .iter()
+            .enumerate()
+            .filter(|(_, design_type)| {
+                design_type.type_guid.eq_ignore_ascii_case(expected.0)
+                    && design_type.version == expected.1
+                    && design_type.module == expected.2
+                    && design_type
+                        .entity_ids
+                        .contains(&u64::from(point.paired_reference))
+            });
+        let companion_type_ordinal = companion_types
+            .next()
+            .map(|(ordinal, _)| ordinal)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "generated sketch point {} has no registered companion type",
+                    point.id
+                ))
+            })?;
+        if companion_types.next().is_some() {
+            return Err(CodecError::Malformed(format!(
+                "generated sketch point {} has multiple registered companion types",
+                point.id
+            )));
+        }
+        let companion_class_tag = super::presentation::dynamic_class_tag(companion_type_ordinal)?;
         primary_records.push(primary_record(point.record_index, out.len())?);
         encode_sketch_point(&mut out, point)?;
+        primary_records.push(primary_record(point.paired_reference, out.len())?);
+        encode_sketch_point_companion(
+            &mut out,
+            &companion_class_tag,
+            point.paired_reference,
+            point.record_index,
+        )?;
     }
     for curve in &native.sketch_curve_identities {
         primary_records.push(primary_record(curve.record_index, out.len())?);
@@ -413,8 +449,14 @@ fn encode_sketch_point(
             "source-less sketch point coordinates must be finite".into(),
         ));
     }
+    let owner_reference = point.owner_reference.ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "source-less sketch point {} has no direct owner",
+            point.id
+        ))
+    })?;
     let shift = usize::from(point.entity_genesis.is_some()) * 52;
-    let mut record = vec![0u8; 112 + shift];
+    let mut record = vec![0u8; 105 + shift];
     encode_sketch_record_header(&mut record, &point.class_tag, point.record_index)?;
     record[20] = 1;
     record[21..25].copy_from_slice(&(1 + u32::from(point.entity_genesis.is_some())).to_le_bytes());
@@ -432,6 +474,30 @@ fn encode_sketch_point(
         .copy_from_slice(&(point.coordinates.u / LEN_TO_MM).to_le_bytes());
     record[97 + shift..105 + shift]
         .copy_from_slice(&(point.coordinates.v / LEN_TO_MM).to_le_bytes());
+    // Current point records retain a planar zero depth, a zero reserved
+    // scalar, state value one, two f32 values equal to one, and the
+    // point/companion inverse link before the final direct sketch owner.
+    record.extend_from_slice(&[0; 16]);
+    record.push(1);
+    record.extend_from_slice(&[0; 12]);
+    record.extend_from_slice(&1.0f32.to_le_bytes());
+    record.extend_from_slice(&1.0f32.to_le_bytes());
+    record.extend_from_slice(&[0, 1, 0, 0, 0]);
+    write_reference(&mut record, point.paired_reference);
+    write_reference(&mut record, owner_reference);
+    out.extend_from_slice(&record);
+    Ok(())
+}
+
+fn encode_sketch_point_companion(
+    out: &mut Vec<u8>,
+    class_tag: &str,
+    record_index: u32,
+    point_record_index: u32,
+) -> Result<(), CodecError> {
+    let mut record = vec![0u8; 26];
+    encode_sketch_record_header(&mut record, class_tag, record_index)?;
+    write_reference(&mut record, point_record_index);
     out.extend_from_slice(&record);
     Ok(())
 }
@@ -440,6 +506,12 @@ fn encode_sketch_curve_identity(
     out: &mut Vec<u8>,
     curve: &crate::records::SketchCurveIdentity,
 ) -> Result<(), CodecError> {
+    let owner_reference = curve.owner_reference.ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "source-less sketch curve {} has no direct owner",
+            curve.id
+        ))
+    })?;
     let shift = usize::from(curve.entity_genesis.is_some()) * 52;
     let mut record = vec![0u8; 133 + shift];
     encode_sketch_record_header(&mut record, &curve.class_tag, curve.record_index)?;
@@ -527,8 +599,14 @@ fn encode_sketch_curve_identity(
             weights,
             control_points,
         )?,
-        None => {}
+        None => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less sketch curve {} has no writable geometry",
+                curve.id
+            )))
+        }
     }
+    write_reference(&mut record, owner_reference);
     out.extend_from_slice(&record);
     Ok(())
 }

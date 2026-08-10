@@ -5,7 +5,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::native::F3dNative;
-use crate::records::{PersistentDesignLink, PersistentSubentityTag};
+use crate::records::{
+    PersistentDesignLink, PersistentSubentityTag, SegmentType, SketchCurveGeometry,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::document::CadIr;
@@ -203,6 +205,41 @@ pub(crate) fn validate_source_less_recipes(native: &F3dNative) -> Result<(), Cod
     Ok(())
 }
 
+fn source_less_design_record_type<'a>(
+    native: &'a F3dNative,
+    class_tag: &str,
+    record_index: u32,
+    record_kind: &str,
+) -> Result<&'a SegmentType, CodecError> {
+    validate_dynamic_class_tag(class_tag, record_kind)?;
+    let type_ordinal = class_tag
+        .parse::<usize>()
+        .ok()
+        .and_then(|class_tag| class_tag.checked_sub(256))
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "F3D {record_kind} class tag {class_tag} is below the dynamic type range"
+            ))
+        })?;
+    let design_type = native.design_types.get(type_ordinal).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "F3D {record_kind} class tag {class_tag} is outside the Design type table"
+        ))
+    })?;
+    if !design_type.entity_ids.contains(&u64::from(record_index)) {
+        return Err(CodecError::Malformed(format!(
+            "F3D {record_kind} {record_index} is not registered by class tag {class_tag}"
+        )));
+    }
+    Ok(design_type)
+}
+
+fn design_type_matches(design_type: &SegmentType, expected: (&str, u32, &str)) -> bool {
+    design_type.type_guid.eq_ignore_ascii_case(expected.0)
+        && design_type.version == expected.1
+        && design_type.module == expected.2
+}
+
 pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<(), CodecError> {
     let sketch_owners = native
         .design_entity_headers
@@ -217,34 +254,152 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
         .flat_map(|header| header.reference_indices.iter().copied())
         .collect::<BTreeSet<_>>();
     let mut typed_indices = BTreeMap::<u32, &str>::new();
-    for (record_index, id) in native
+    let mut typed_records = Vec::new();
+    for (record_index, id, class_tag) in native
         .sketch_points
         .iter()
-        .map(|record| (record.record_index, record.id.as_str()))
-        .chain(
-            native
-                .sketch_curve_identities
-                .iter()
-                .map(|record| (record.record_index, record.id.as_str())),
-        )
-        .chain(
-            native
-                .sketch_relations
-                .iter()
-                .map(|record| (record.record_index, record.id.as_str())),
-        )
-        .chain(
-            native
-                .sketch_texts
-                .iter()
-                .map(|record| (record.record_index, record.id.as_str())),
-        )
+        .map(|record| {
+            (
+                record.record_index,
+                record.id.as_str(),
+                record.class_tag.as_str(),
+            )
+        })
+        .chain(native.sketch_curve_identities.iter().map(|record| {
+            (
+                record.record_index,
+                record.id.as_str(),
+                record.class_tag.as_str(),
+            )
+        }))
+        .chain(native.sketch_relations.iter().map(|record| {
+            (
+                record.record_index,
+                record.id.as_str(),
+                record.class_tag.as_str(),
+            )
+        }))
+        .chain(native.sketch_texts.iter().map(|record| {
+            (
+                record.record_index,
+                record.id.as_str(),
+                record.class_tag.as_str(),
+            )
+        }))
     {
         if let Some(before) = typed_indices.insert(record_index, id) {
             return Err(CodecError::Malformed(format!(
                 "F3D sketch records {before} and {id} share record index {record_index}"
             )));
         }
+        typed_records.push((record_index, class_tag));
+    }
+    for (record_index, class_tag) in typed_records {
+        source_less_design_record_type(native, class_tag, record_index, "sketch record")?;
+    }
+    let mut geometry_owners = BTreeMap::new();
+    let mut point_companions = BTreeSet::new();
+    for point in &native.sketch_points {
+        let point_type = source_less_design_record_type(
+            native,
+            &point.class_tag,
+            point.record_index,
+            "sketch point",
+        )?;
+        if !design_type_matches(
+            point_type,
+            crate::design::decode::sketch::CURRENT_SKETCH_POINT_TYPE,
+        ) {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D sketch point {} requires the current point record type",
+                point.id
+            )));
+        }
+        let owner_reference = point.owner_reference.ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "F3D sketch point {} has no direct sketch owner",
+                point.id
+            ))
+        })?;
+        if !sketch_owners.contains(&u64::from(owner_reference)) {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch point {} references missing sketch owner {owner_reference}",
+                point.id
+            )));
+        }
+        if point.paired_reference == point.record_index
+            || typed_indices.contains_key(&point.paired_reference)
+            || !point_companions.insert(point.paired_reference)
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch point {} has a conflicting companion record {}",
+                point.id, point.paired_reference
+            )));
+        }
+        let companion_type = native
+            .design_types
+            .iter()
+            .filter(|design_type| {
+                design_type
+                    .entity_ids
+                    .contains(&u64::from(point.paired_reference))
+                    && design_type_matches(
+                        design_type,
+                        crate::design::decode::sketch::CURRENT_SKETCH_POINT_COMPANION_TYPE,
+                    )
+            })
+            .count();
+        if companion_type != 1 {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch point {} companion {} does not have one current companion type registration",
+                point.id, point.paired_reference
+            )));
+        }
+        geometry_owners.insert(point.record_index, owner_reference);
+    }
+    for curve in &native.sketch_curve_identities {
+        let curve_type = source_less_design_record_type(
+            native,
+            &curve.class_tag,
+            curve.record_index,
+            "sketch curve",
+        )?;
+        let expected_type = match curve.geometry.as_ref() {
+            Some(SketchCurveGeometry::Line { .. }) => {
+                crate::design::decode::sketch::CURRENT_SKETCH_LINE_TYPE
+            }
+            Some(SketchCurveGeometry::Arc { .. }) => {
+                crate::design::decode::sketch::CURRENT_SKETCH_CIRCULAR_TYPE
+            }
+            Some(SketchCurveGeometry::Nurbs { .. }) => {
+                crate::design::decode::sketch::CURRENT_SKETCH_NURBS_TYPE
+            }
+            None => {
+                return Err(CodecError::NotImplemented(format!(
+                    "source-less F3D sketch curve {} has no writable geometry",
+                    curve.id
+                )))
+            }
+        };
+        if !design_type_matches(curve_type, expected_type) {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D sketch curve {} requires its current geometry record type",
+                curve.id
+            )));
+        }
+        let owner_reference = curve.owner_reference.ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "F3D sketch curve {} has no direct sketch owner",
+                curve.id
+            ))
+        })?;
+        if !sketch_owners.contains(&u64::from(owner_reference)) {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch curve {} references missing sketch owner {owner_reference}",
+                curve.id
+            )));
+        }
+        geometry_owners.insert(curve.record_index, owner_reference);
     }
     for relation in &native.sketch_relations {
         if !root_indices.contains(&relation.record_index) {
@@ -258,6 +413,17 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
                 "F3D sketch relation {} references missing sketch owner {}",
                 relation.id, relation.owner_reference
             )));
+        }
+        for member in relation.members.iter().chain(&relation.return_members) {
+            if geometry_owners
+                .get(member)
+                .is_some_and(|owner| *owner != relation.owner_reference)
+            {
+                return Err(CodecError::Malformed(format!(
+                    "F3D sketch relation {} owner disagrees with geometry record {member}",
+                    relation.id
+                )));
+            }
         }
     }
     for text in &native.sketch_texts {
