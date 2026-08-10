@@ -213,12 +213,19 @@ pub(crate) fn transfer(
                 }
             })
         } else if is_helical_sweep(&object.type_name) {
-            helical_sweep_definition(&object.type_name, &object.id, &owned, &sketch_ids)
-                .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
-                    parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
-                })
+            helical_sweep_definition(
+                &object.type_name,
+                &object.id,
+                &owned,
+                &sketch_ids,
+                objects,
+                &properties_by_owner,
+            )
+            .unwrap_or_else(|| FeatureDefinition::Native {
+                kind: object.type_name.clone(),
+                parameters: native_parameters(&owned),
+                properties: BTreeMap::new(),
+            })
         } else if matches!(object.type_name.as_str(), "Part::Helix" | "Part::Spiral") {
             parametric_helix_definition(&object.type_name, &owned).unwrap_or_else(|| {
                 FeatureDefinition::Native {
@@ -4064,6 +4071,8 @@ fn helical_sweep_definition(
     owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
+    objects: &[ObjectRecord],
+    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
 ) -> Option<FeatureDefinition> {
     let law = match integer_property(properties, "Mode")? {
         0 => HelicalSweepLaw::PitchHeightAngle,
@@ -4072,12 +4081,14 @@ fn helical_sweep_definition(
         3 => HelicalSweepLaw::HeightTurnsGrowth,
         _ => return None,
     };
-    let origin = vector_property(properties, "Base")?;
-    let axis_direction = vector_property(properties, "Axis")?;
+    let (axis_origin, axis_direction) = vector_property(properties, "Base")
+        .zip(vector_property(properties, "Axis"))
+        .map(|(origin, direction)| (Point3::new(origin.x, origin.y, origin.z), direction))
+        .or_else(|| axis_reference(properties, "ReferenceAxis", objects, properties_by_owner))?;
     let construction = HelicalSweepConstruction {
         profile: profile_ref(owner, properties, sketches),
-        axis_origin: Point3::new(origin.x, origin.y, origin.z),
-        axis_direction,
+        axis_origin,
+        axis_direction: unit_vector(axis_direction)?,
         law,
         pitch: Length(scalar_named(properties, "Pitch")?),
         height: Length(scalar_named(properties, "Height")?),
@@ -4086,7 +4097,7 @@ fn helical_sweep_definition(
         cone_angle: cadmpeg_ir::features::Angle(scalar_named(properties, "Angle")?.to_radians()),
         left_handed: bool_property(properties, "LeftHanded")?,
         reversed: bool_property(properties, "Reversed")?,
-        tolerance: scalar_named(properties, "Tolerance")?,
+        tolerance: scalar_named(properties, "Tolerance"),
         allow_multi_profile_faces: if property(properties, "AllowMultiFace").is_some() {
             Some(bool_property(properties, "AllowMultiFace")?)
         } else {
@@ -4246,9 +4257,25 @@ fn pattern_definition(
             .links
             .iter()
             .filter_map(|link| link.object.as_deref())
-            .filter_map(|object| features.get(object).cloned())
+            .map(|target| {
+                features.get(target).cloned().map(Some).or_else(|| {
+                    objects
+                        .iter()
+                        .find(|object| object.id == target)
+                        .filter(|object| {
+                            matches!(
+                                object.type_name.as_str(),
+                                "App::Line" | "App::Plane" | "App::Point" | "App::CoordinateSystem"
+                            )
+                        })
+                        .map(|_| None)
+                })
+            })
+            .collect::<Option<Vec<_>>>()?
+            .into_iter()
+            .flatten()
             .collect::<Vec<_>>();
-        if seeds.is_empty() || seeds.len() != originals.links.len() {
+        if seeds.is_empty() {
             return None;
         }
         seeds

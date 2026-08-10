@@ -3101,8 +3101,9 @@ pub struct HelicalSweepConstruction {
     pub left_handed: bool,
     /// Whether path travel runs opposite the declared axis direction.
     pub reversed: bool,
-    /// Relative tolerance used while joining the generated sweep.
-    pub tolerance: f64,
+    /// Relative tolerance used while joining the generated sweep, when persisted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tolerance: Option<f64>,
     /// Whether a profile containing multiple faces is accepted as one operation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow_multi_profile_faces: Option<bool>,

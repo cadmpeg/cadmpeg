@@ -2618,7 +2618,7 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
   <Property name="MirrorPlane" type="App::PropertyLinkSub"><LinkSub value="Plane" count="1"><Sub value=""/></LinkSub></Property>
  </Properties></Object>
  <Object name="FaceMirror"><Properties Count="2">
-  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="2"><Link value="Seed"/><Link value="Plane"/></LinkList></Property>
   <Property name="MirrorPlane" type="App::PropertyLinkSub"><LinkSub value="Seed" count="1"><Sub value="Face1"/></LinkSub></Property>
  </Properties></Object>
  <Object name="Body"><Properties Count="1">
@@ -2769,7 +2769,7 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
  <Object type="PartDesign::SubtractiveHelix" name="OutsideCut" id="3"/>
 </Objects>
 <ObjectData Count="3">
- <Object name="Profile"><Properties Count="0"/></Object>
+ <Object name="Profile"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
  <Object name="Spring"><Properties Count="14">
   <Property name="Profile" type="App::PropertyLinkSub"><LinkSub value="Profile" count="1"><Sub value=""/></LinkSub></Property>
   <Property name="Base" type="App::PropertyVector"><Vector x="1" y="2" z="3"/></Property>
@@ -2786,10 +2786,9 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
   <Property name="Tolerance" type="App::PropertyFloatConstraint"><Float value="0.25"/></Property>
   <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="false"/></Property>
  </Properties></Object>
- <Object name="OutsideCut"><Properties Count="13">
+ <Object name="OutsideCut"><Properties Count="11">
   <Property name="Profile" type="App::PropertyLinkSub"><LinkSub value="Profile" count="1"><Sub value=""/></LinkSub></Property>
-  <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
-  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="1" z="0"/></Property>
+  <Property name="ReferenceAxis" type="App::PropertyLinkSub"><LinkSub value="Profile" count="1"><Sub value="N_Axis"/></LinkSub></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="3"/></Property>
   <Property name="Pitch" type="App::PropertyLength"><Float value="0"/></Property>
   <Property name="Height" type="App::PropertyLength"><Float value="0"/></Property>
@@ -2799,7 +2798,6 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
   <Property name="LeftHanded" type="App::PropertyBool"><Bool value="false"/></Property>
   <Property name="Reversed" type="App::PropertyBool"><Bool value="false"/></Property>
   <Property name="Outside" type="App::PropertyBool"><Bool value="true"/></Property>
-  <Property name="Tolerance" type="App::PropertyFloatConstraint"><Float value="0.1"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -2825,7 +2823,7 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
     } if construction.law == cadmpeg_ir::features::HelicalSweepLaw::PitchTurnsAngle
         && construction.axis_origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
         && construction.left_handed && construction.reversed
-        && construction.turns == 2.5 && construction.tolerance == 0.25
+        && construction.turns == 2.5 && construction.tolerance == Some(0.25)
         && construction.allow_multi_profile_faces == Some(false))
     );
     assert!(
@@ -2833,7 +2831,9 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
         construction,
         op: cadmpeg_ir::features::BooleanOp::Intersect,
     } if construction.law == cadmpeg_ir::features::HelicalSweepLaw::HeightTurnsGrowth
-        && construction.pitch.0 == 0.0 && construction.radial_growth.0 == 2.0)
+        && construction.pitch.0 == 0.0 && construction.radial_growth.0 == 2.0
+        && construction.axis_direction == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+        && construction.tolerance.is_none())
     );
     assert!(result.report.losses.is_empty());
 }

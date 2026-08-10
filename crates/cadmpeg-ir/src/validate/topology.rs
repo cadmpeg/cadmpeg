@@ -4033,7 +4033,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     construction.height.0,
                     construction.radial_growth.0,
                     construction.cone_angle.0,
-                    construction.tolerance,
                 ]
                 .into_iter()
                 .all(f64::is_finite)
@@ -4041,7 +4040,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     && construction.pitch.0 >= 0.0
                     && construction.turns.is_finite()
                     && construction.turns > 0.0
-                    && construction.tolerance > 0.0
+                    && construction
+                        .tolerance
+                        .is_none_or(|tolerance| tolerance.is_finite() && tolerance > 0.0)
                     && (construction.height.0 != 0.0 || construction.radial_growth.0 != 0.0);
                 if !valid {
                     feature_geometry_error(findings, feature, "helical sweep is invalid");
