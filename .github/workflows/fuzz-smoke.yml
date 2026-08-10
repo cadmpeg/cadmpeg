@@ -43,6 +43,9 @@ jobs:
         run: |
           for t in $(cargo +nightly fuzz list --fuzz-dir crates/cadmpeg-fuzz); do
             seed_dir="crates/cadmpeg-fuzz/seeds/$t"
+            if [ ! -d "$seed_dir" ] && [ -d "seeds/$t" ]; then
+              seed_dir="seeds/$t"
+            fi
             if [ -d "$seed_dir" ]; then
               cargo +nightly fuzz run "$t" "$seed_dir" --fuzz-dir crates/cadmpeg-fuzz -- -max_total_time=60
             else

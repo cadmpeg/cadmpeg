@@ -84,6 +84,9 @@ Focused parser coverage:
 - NX: `nx_parasolid`, `nx_geometry_points`, `nx_geometry_surfaces`,
   `nx_geometry_curves`, `nx_nurbs_surfaces`, `nx_nurbs_curves`, `nx_om`,
   `nx_topology`, `nx_deltas`, `nx_intersection`
+- Inventor and shared containers: `inventor_codec`, `inventor_database`,
+  `inventor_rse_meta`, `inventor_rse_records`, `inventor_property_set`,
+  `inventor_protein_envelope`, `compound_snapshot`, `protein_decode`
 - Rhino: `rhino_chunks`, `rhino_object_record`, `rhino_nurbs`,
   `rhino_mesh_buffer`, `rhino_brep`, `rhino_subd`, `rhino_cage`, `rhino_hatch`,
   `rhino_polyedge`

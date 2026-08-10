@@ -31,6 +31,14 @@ use cadmpeg_core::{CodecError, ContainerSummary};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeResult};
 use cadmpeg_ir::{CadIr, Finding};
 
+pub(crate) fn issue_detail(error: CodecError) -> Result<String, CodecError> {
+    if matches!(&error, CodecError::ResourceLimit(_)) {
+        Err(error)
+    } else {
+        Ok(error.to_string())
+    }
+}
+
 /// Read-only Autodesk Inventor IPT and IAM codec.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct InventorCodec;

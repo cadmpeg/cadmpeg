@@ -14,6 +14,8 @@ use crate::InventorCodec;
 
 const INSPECT: &str = include_str!("../tests/golden/inspect/structural.json");
 const DECODE: &str = include_str!("../tests/golden/decode/structural.json");
+const PRIMARY_INSPECT: &str = include_str!("../tests/golden/inspect/primary.json");
+const PRIMARY_DECODE: &str = include_str!("../tests/golden/decode/primary.json");
 
 fn inspect_snapshot(bytes: &[u8]) -> String {
     let value = match InventorCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default()) {
@@ -54,6 +56,30 @@ fn golden_snapshots_hold() {
 #[test]
 fn golden_output_is_deterministic() {
     let bytes = crate::tests::fixture(true);
+    assert_eq!(inspect_snapshot(&bytes), inspect_snapshot(&bytes));
+    assert_eq!(decode_snapshot(&bytes), decode_snapshot(&bytes));
+}
+
+#[test]
+fn primary_golden_snapshots_hold() {
+    let bytes = crate::tests::primary_envelope_fixture();
+    let inspect = inspect_snapshot(&bytes);
+    let decode = decode_snapshot(&bytes);
+    if std::env::var_os("UPDATE_GOLDEN").is_some() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
+        std::fs::write(root.join("inspect/primary.json"), &inspect)
+            .expect("write primary inspect golden");
+        std::fs::write(root.join("decode/primary.json"), &decode)
+            .expect("write primary decode golden");
+        return;
+    }
+    assert_eq!(PRIMARY_INSPECT, inspect);
+    assert_eq!(PRIMARY_DECODE, decode);
+}
+
+#[test]
+fn primary_golden_output_is_deterministic() {
+    let bytes = crate::tests::primary_envelope_fixture();
     assert_eq!(inspect_snapshot(&bytes), inspect_snapshot(&bytes));
     assert_eq!(decode_snapshot(&bytes), decode_snapshot(&bytes));
 }

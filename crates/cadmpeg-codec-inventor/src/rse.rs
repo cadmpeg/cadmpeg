@@ -272,7 +272,7 @@ impl<'a> RseInventory<'a> {
         ctx: &DecodeContext<'a>,
         snapshot: &CompoundSnapshot<'a>,
         bulk_mode: BulkReadMode,
-    ) -> Self {
+    ) -> Result<Self, CodecError> {
         let mut databases = Vec::new();
         let mut metadata = BTreeMap::new();
         let mut bulk = BTreeMap::new();
@@ -310,7 +310,7 @@ impl<'a> RseInventory<'a> {
                     .and_then(|view| parse_database(ctx, view.window()))
                 {
                     Ok(database) => ParsedState::Parsed(database),
-                    Err(error) => ParsedState::Unavailable(error.to_string()),
+                    Err(error) => ParsedState::Unavailable(crate::issue_detail(error)?),
                 },
                 None => ParsedState::Unavailable("RSe database stream handle is absent".into()),
             };
@@ -330,7 +330,7 @@ impl<'a> RseInventory<'a> {
                 parse_registry(ctx, view.window(), schema.expect("checked schema"))
             }) {
                 Ok(value) => ParsedState::Parsed(value),
-                Err(error) => ParsedState::Unavailable(error.to_string()),
+                Err(error) => ParsedState::Unavailable(crate::issue_detail(error)?),
             },
         };
         let revisions = match snapshot.stream("RSeStorage/RSeDbRevisionInfo") {
@@ -340,7 +340,7 @@ impl<'a> RseInventory<'a> {
                 .and_then(|view| parse_revisions(ctx, view.window()))
             {
                 Ok(value) => ParsedState::Parsed(value),
-                Err(error) => ParsedState::Unavailable(error.to_string()),
+                Err(error) => ParsedState::Unavailable(crate::issue_detail(error)?),
             },
         };
         let pairs = metadata
@@ -355,7 +355,7 @@ impl<'a> RseInventory<'a> {
             .collect::<Vec<_>>();
         let mut segments = pairs
             .into_iter()
-            .map(|pair| {
+            .map(|pair| -> Result<SegmentDescriptor<'a>, CodecError> {
                 let meta = snapshot
                     .stream_by_id(pair.metadata)
                     .ok_or_else(|| {
@@ -365,7 +365,7 @@ impl<'a> RseInventory<'a> {
                     .and_then(|view| parse_meta_stream_v8(ctx, view));
                 let meta = match meta {
                     Ok(meta) => meta,
-                    Err(error) => SegmentMetaState::Malformed(error.to_string()),
+                    Err(error) => SegmentMetaState::Malformed(crate::issue_detail(error)?),
                 };
                 let bulk = snapshot
                     .stream_by_id(pair.bulk)
@@ -374,9 +374,9 @@ impl<'a> RseInventory<'a> {
                     .and_then(|view| parse_bulk_stream(ctx, view, bulk_mode));
                 let bulk = match bulk {
                     Ok(bulk) => SegmentBulkState::Framed(bulk),
-                    Err(error) => SegmentBulkState::Malformed(error.to_string()),
+                    Err(error) => SegmentBulkState::Malformed(crate::issue_detail(error)?),
                 };
-                SegmentDescriptor {
+                Ok(SegmentDescriptor {
                     pair,
                     registry_index: None,
                     registry_version_major: None,
@@ -384,9 +384,9 @@ impl<'a> RseInventory<'a> {
                     identity_issues: Vec::new(),
                     meta,
                     bulk,
-                }
+                })
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, _>>()?;
         if let ParsedState::Parsed(registry) = &registry {
             join_registry(&mut segments, registry);
         } else {
@@ -399,7 +399,7 @@ impl<'a> RseInventory<'a> {
                     .push("segment registry is unavailable".into());
             }
         }
-        frame_segment_records(ctx, &mut segments);
+        frame_segment_records(ctx, &mut segments)?;
         let unpaired_metadata = metadata
             .keys()
             .filter(|token| !bulk.contains_key(*token))
@@ -412,7 +412,7 @@ impl<'a> RseInventory<'a> {
             .collect();
         let document_kind = document_kind_for_segments(&segments);
         let active_carrier = select_active_carrier(&segments, &document_kind);
-        Self {
+        Ok(Self {
             databases: database_descriptors,
             registry,
             revisions,
@@ -420,7 +420,7 @@ impl<'a> RseInventory<'a> {
             unpaired_metadata,
             unpaired_bulk,
             active_carrier,
-        }
+        })
     }
 
     pub(crate) fn document_kind(&self) -> DocumentKind {
@@ -538,7 +538,10 @@ fn parse_bulk_stream<'a>(
     })
 }
 
-fn frame_segment_records<'a>(ctx: &DecodeContext<'a>, segments: &mut [SegmentDescriptor<'a>]) {
+fn frame_segment_records<'a>(
+    ctx: &DecodeContext<'a>,
+    segments: &mut [SegmentDescriptor<'a>],
+) -> Result<(), CodecError> {
     for segment in segments {
         let SegmentBulkState::Framed(bulk) = &mut segment.bulk else {
             continue;
@@ -559,9 +562,10 @@ fn frame_segment_records<'a>(ctx: &DecodeContext<'a>, segments: &mut [SegmentDes
         };
         bulk.records = match result {
             Ok(records) => RecordFrameState::Framed(records),
-            Err(error) => RecordFrameState::Unavailable(error.to_string()),
+            Err(error) => RecordFrameState::Unavailable(crate::issue_detail(error)?),
         };
     }
+    Ok(())
 }
 
 fn parse_meta_stream_v8<'a>(

@@ -1838,6 +1838,13 @@ fn validate_properties(data: &NativeData, findings: &mut Vec<Finding>) {
                 Some(section.id.clone()),
             ));
         }
+        if !section.offsets_ordered {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor OLE property directory offsets are not strictly increasing".into(),
+                Some(section.id.clone()),
+            ));
+        }
     }
 }
 

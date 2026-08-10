@@ -147,7 +147,7 @@ pub(crate) fn parse<'a>(
         }
         Err(error) => UfrxState::Malformed {
             stream: stream.id(),
-            detail: error.to_string(),
+            detail: crate::issue_detail(error)?,
         },
     })
 }

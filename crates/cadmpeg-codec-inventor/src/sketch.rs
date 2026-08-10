@@ -382,7 +382,7 @@ pub(crate) fn inventory(
                     type_id: type_id_string(record.type_id),
                     segment_token: segment.pair.token.as_str().into(),
                     record_ordinal: record.ordinal,
-                    detail: error.to_string(),
+                    detail: crate::issue_detail(error)?,
                 });
             }
         }

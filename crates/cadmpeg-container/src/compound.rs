@@ -3,6 +3,7 @@
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 use cadmpeg_core::decode::{ByteRange, DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
@@ -16,6 +17,8 @@ const NO_STREAM: u32 = 0xffff_ffff;
 const V3_MAX_FILE_SIZE: u64 = 0x8000_0000;
 const RANGE_LOCK_START: u64 = 0x7fff_ff00;
 const RANGE_LOCK_END: u64 = 0x8000_0000;
+
+static NEXT_COMPOUND_SNAPSHOT_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Stable directory identity for a CFB entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -92,6 +95,7 @@ impl CompoundStorageEntry {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompoundStreamEntry {
     id: CompoundStreamId,
+    snapshot_id: u64,
     path: String,
     logical_size: u64,
     start_sector: u32,
@@ -200,6 +204,7 @@ struct CompoundState {
 #[derive(Debug)]
 pub struct CompoundSnapshot<'a> {
     root: View<'a>,
+    snapshot_id: u64,
     parsed: CompoundState,
     entries: Vec<CompoundEntry>,
     by_path: BTreeMap<Vec<Vec<u16>>, usize>,
@@ -210,7 +215,13 @@ impl<'a> CompoundSnapshot<'a> {
     /// Parses and validates the complete CFB structure without opening streams.
     pub fn new(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Self, CodecError> {
         let parsed = CompoundState::parse(ctx, root.window())?;
-        let entries = parsed.build_entries(ctx)?;
+        let snapshot_id = NEXT_COMPOUND_SNAPSHOT_ID.fetch_add(1, AtomicOrdering::Relaxed);
+        let mut entries = parsed.build_entries(ctx)?;
+        for entry in &mut entries {
+            if let CompoundEntry::Stream(stream) = entry {
+                stream.snapshot_id = snapshot_id;
+            }
+        }
         parsed.validate_sector_ownership(&entries)?;
         let mut by_path = BTreeMap::new();
         let mut streams_by_id = BTreeMap::new();
@@ -248,6 +259,7 @@ impl<'a> CompoundSnapshot<'a> {
         }
         Ok(Self {
             root,
+            snapshot_id,
             parsed,
             entries,
             by_path,
@@ -301,7 +313,7 @@ impl<'a> CompoundSnapshot<'a> {
         ctx: &DecodeContext<'a>,
         entry: &CompoundStreamEntry,
     ) -> Result<View<'a>, CodecError> {
-        if self.stream_by_id(entry.id()).is_none() {
+        if entry.snapshot_id != self.snapshot_id || self.stream_by_id(entry.id()).is_none() {
             return malformed("CFB stream handle does not belong to this snapshot");
         }
         if entry.logical_size == 0 {
@@ -967,6 +979,7 @@ impl CompoundState {
                     };
                     output.push(CompoundEntry::Stream(CompoundStreamEntry {
                         id: CompoundStreamId(CompoundEntryId(id)),
+                        snapshot_id: 0,
                         path,
                         logical_size: entry.size,
                         start_sector: entry.start_sector,
@@ -1086,6 +1099,9 @@ impl CompoundPrefixProbe {
         if prefix.get(8..24) != Some(&[0; 16])
             || le_u16(prefix, 24) != Some(0x003e)
             || le_u16(prefix, 28) != Some(0xfffe)
+            || le_u16(prefix, 32) != Some(6)
+            || prefix.get(34..40) != Some(&[0; 6])
+            || le_u32(prefix, 56) != Some(4096)
         {
             return Self::Malformed("invalid CFB header".into());
         }
@@ -1682,6 +1698,28 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_rejects_stream_handles_from_another_snapshot() {
+        let file = fixture();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy)
+            .expect("synthetic CFB fits the decode policy");
+        let first = CompoundSnapshot::new(&ctx, root).expect("first CFB snapshot parses");
+        let second = CompoundSnapshot::new(&ctx, root).expect("second CFB snapshot parses");
+        let foreign = second.stream("Small").expect("foreign stream exists");
+        assert!(first.open(&ctx, foreign).is_err());
+
+        let owned = first.stream("Small").expect("owned stream exists").clone();
+        assert_eq!(
+            first
+                .open(&ctx, &owned)
+                .expect("owned clone opens")
+                .window(),
+            b"small"
+        );
+    }
+
+    #[test]
     fn prefix_probe_reaches_directory_names_without_scanning_bytes() {
         let file = fixture();
         let CompoundPrefixProbe::DirectoryEvidence(paths) = CompoundPrefixProbe::inspect(&file)
@@ -1808,6 +1846,29 @@ mod tests {
         let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy)
             .expect("synthetic CFB fits the decode policy");
         assert!(CompoundSnapshot::new(&ctx, root).is_err());
+    }
+
+    #[test]
+    fn prefix_probe_requires_the_same_header_invariants_as_full_parse() {
+        for (offset, value) in [(32, 5_u16), (56, 512_u16)] {
+            let mut file = fixture();
+            if offset == 32 {
+                put_u16(&mut file, offset, value);
+            } else {
+                put_u32(&mut file, offset, u32::from(value));
+            }
+            assert!(matches!(
+                CompoundPrefixProbe::inspect(&file),
+                CompoundPrefixProbe::Malformed(_)
+            ));
+        }
+
+        let mut file = fixture();
+        file[34] = 1;
+        assert!(matches!(
+            CompoundPrefixProbe::inspect(&file),
+            CompoundPrefixProbe::Malformed(_)
+        ));
     }
 
     #[test]

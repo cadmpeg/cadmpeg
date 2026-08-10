@@ -3,10 +3,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use zip::CompressionMethod;
+
+static NEXT_ARCHIVE_SNAPSHOT_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Compression methods supported by [`ArchiveSnapshot::open`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,6 +63,7 @@ pub struct EntryRecord {
     pub data_start: u64,
     /// Physical start of the central-directory record.
     pub central_start: u64,
+    snapshot_id: u64,
 }
 
 impl EntryRecord {
@@ -77,6 +81,7 @@ impl EntryRecord {
 #[derive(Debug)]
 pub struct ArchiveSnapshot<'a> {
     root: View<'a>,
+    snapshot_id: u64,
     entries: Vec<EntryRecord>,
     by_name: BTreeMap<String, usize>,
 }
@@ -86,6 +91,7 @@ impl<'a> ArchiveSnapshot<'a> {
     pub fn new(root: View<'a>) -> Result<Self, CodecError> {
         let mut archive = zip::ZipArchive::new(Cursor::new(root.window()))
             .map_err(|error| CodecError::Malformed(format!("not a readable ZIP: {error}")))?;
+        let snapshot_id = NEXT_ARCHIVE_SNAPSHOT_ID.fetch_add(1, AtomicOrdering::Relaxed);
         let mut names = BTreeSet::new();
         let mut entries = Vec::with_capacity(archive.len());
         for index in 0..archive.len() {
@@ -114,6 +120,7 @@ impl<'a> ArchiveSnapshot<'a> {
                 header_start: file.header_start(),
                 data_start,
                 central_start: file.central_header_start(),
+                snapshot_id,
             };
             for offset in [
                 record.header_start,
@@ -138,6 +145,7 @@ impl<'a> ArchiveSnapshot<'a> {
             .collect();
         Ok(Self {
             root,
+            snapshot_id,
             entries,
             by_name,
         })
@@ -159,6 +167,11 @@ impl<'a> ArchiveSnapshot<'a> {
         ctx: &DecodeContext<'a>,
         entry: &EntryRecord,
     ) -> Result<View<'a>, CodecError> {
+        if entry.snapshot_id != self.snapshot_id {
+            return Err(CodecError::Malformed(
+                "ZIP entry handle does not belong to this snapshot".into(),
+            ));
+        }
         let end = entry.data_end()?;
         let archive_start = u64::try_from(self.root.start())
             .map_err(|_| CodecError::Malformed("ZIP root offset does not fit u64".into()))?;
@@ -727,6 +740,30 @@ mod tests {
                 .expect("Zstandard entry opens")
                 .window(),
             b"Zstandard payload"
+        );
+    }
+
+    #[test]
+    fn snapshot_rejects_entry_handles_from_another_snapshot() {
+        let bytes = archive_bytes();
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("archive fits root policy");
+        let first = ArchiveSnapshot::new(root).expect("first archive snapshot");
+        let second = ArchiveSnapshot::new(root).expect("second archive snapshot");
+        let foreign = second.entry("stored.bin").expect("foreign entry exists");
+        assert!(first.open(&ctx, foreign).is_err());
+
+        let owned = first
+            .entry("stored.bin")
+            .expect("owned entry exists")
+            .clone();
+        assert_eq!(
+            first
+                .open(&ctx, &owned)
+                .expect("owned clone opens")
+                .window(),
+            b"stored"
         );
     }
 

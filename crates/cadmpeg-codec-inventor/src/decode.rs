@@ -269,7 +269,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let (protein_instances, protein_semantic_issue) = match &container.protein {
         ProteinState::Package(package) => match crate::protein::decode_instances(ctx, package) {
             Ok(instances) => (instances, None),
-            Err(error) => (Vec::new(), Some(error.to_string())),
+            Err(error) => (Vec::new(), Some(crate::issue_detail(error)?)),
         },
         ProteinState::Absent | ProteinState::Empty { .. } | ProteinState::Malformed { .. } => {
             (Vec::new(), None)
@@ -1305,6 +1305,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                     apply_kernel_header(&mut ir, carrier.family, &decoded.header);
                     Some(decoded.brep)
                 }
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
                     geometry_failure = Some(error.to_string());
                     None

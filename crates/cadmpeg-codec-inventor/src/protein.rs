@@ -58,7 +58,7 @@ pub(crate) fn parse<'a>(
         }),
         Err(error) => ProteinState::Malformed {
             stream: stream.id(),
-            detail: error.to_string(),
+            detail: crate::issue_detail(error)?,
         },
     })
 }

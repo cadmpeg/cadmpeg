@@ -254,7 +254,7 @@ pub(crate) fn inventory<'a>(
                 issues.push(AssemblyRecordIssue {
                     segment_token: segment.pair.token.as_str().into(),
                     record_ordinal: record.ordinal,
-                    detail: error.to_string(),
+                    detail: crate::issue_detail(error)?,
                 });
             }
         }

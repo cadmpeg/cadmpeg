@@ -1,0 +1,502 @@
+{
+  "ir": {
+    "ir_version": "5",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [
+        {
+          "id": "inventor:document:product#root",
+          "kind": "part"
+        }
+      ],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {
+      "inventor": {
+        "arenas": {
+          "active_carrier": [
+            {
+              "carrier_len": 95,
+              "carrier_offset": 18,
+              "carrier_sha256": "a7035f79b059782669443978e618f275354009908bdcc551817b03b87532ca0d",
+              "delta_state": -1,
+              "detail": null,
+              "enabled": true,
+              "family": "asm",
+              "header_kind": 2,
+              "header_state": 1,
+              "header_value": 3,
+              "history_reference": 6,
+              "id": "inventor:kernel:active-carrier#root",
+              "record_ordinal": 0,
+              "schema": 4,
+              "segment_token": "seg",
+              "segment_version_major": 18,
+              "selected_key": 5,
+              "state": "selected"
+            }
+          ],
+          "assembly_occurrences": [],
+          "assembly_placements": [],
+          "assembly_record_issues": [],
+          "body_native_keys": [],
+          "database_issues": [],
+          "databases": [
+            {
+              "band": 1,
+              "created_by": {
+                "major": 24,
+                "minor": 2,
+                "revision": 1,
+                "state": "0405060708"
+              },
+              "created_filetime": 17,
+              "database_id": "21212121212121212121212121212121",
+              "id": "inventor:rse:database#v1",
+              "note": "synthetic primary document",
+              "saved_by": {
+                "major": 25,
+                "minor": 2,
+                "revision": 1,
+                "state": "0405060708"
+              },
+              "saved_filetime": 18,
+              "schema": 31
+            }
+          ],
+          "design_record_issues": [],
+          "edge_continuities": [],
+          "edge_ownerships": [],
+          "embedded_references": [],
+          "external_references": [],
+          "face_native_keys": [],
+          "face_sidedness": [],
+          "feature_record_issues": [],
+          "mesh_surface_sentinels": [],
+          "meta_sections": [
+            {
+              "discriminator": 1,
+              "id": "inventor:rse:meta-section#seg-1",
+              "number": 1,
+              "payload_len": 4,
+              "payload_sha256": "3a3c573c2b8fb2dbddeb9db11c1c3c1cbe565c258557edd53d1111244c27feba",
+              "token": "seg"
+            },
+            {
+              "discriminator": 0,
+              "id": "inventor:rse:meta-section#seg-10",
+              "number": 10,
+              "payload_len": 0,
+              "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "token": "seg"
+            },
+            {
+              "discriminator": 18,
+              "id": "inventor:rse:meta-section#seg-11",
+              "number": 11,
+              "payload_len": 72,
+              "payload_sha256": "834a709ba2534ebe3ee1397fd4f7bd288b2acc1d20a08d6c862dcd99b6f04400",
+              "token": "seg"
+            },
+            {
+              "discriminator": 0,
+              "id": "inventor:rse:meta-section#seg-2",
+              "number": 2,
+              "payload_len": 0,
+              "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "token": "seg"
+            },
+            {
+              "discriminator": 0,
+              "id": "inventor:rse:meta-section#seg-3",
+              "number": 3,
+              "payload_len": 0,
+              "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "token": "seg"
+            },
+            {
+              "discriminator": 1,
+              "id": "inventor:rse:meta-section#seg-4",
+              "number": 4,
+              "payload_len": 28,
+              "payload_sha256": "c8ed610647173863a903aae4b2358d18f6c0ca32ff04e3d8429ccbfaf7957725",
+              "token": "seg"
+            },
+            {
+              "discriminator": 4294967295,
+              "id": "inventor:rse:meta-section#seg-5",
+              "number": 5,
+              "payload_len": 0,
+              "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "token": "seg"
+            },
+            {
+              "discriminator": 0,
+              "id": "inventor:rse:meta-section#seg-6",
+              "number": 6,
+              "payload_len": 0,
+              "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "token": "seg"
+            },
+            {
+              "discriminator": 0,
+              "id": "inventor:rse:meta-section#seg-7",
+              "number": 7,
+              "payload_len": 0,
+              "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "token": "seg"
+            },
+            {
+              "discriminator": 0,
+              "id": "inventor:rse:meta-section#seg-8",
+              "number": 8,
+              "payload_len": 0,
+              "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "token": "seg"
+            },
+            {
+              "discriminator": 0,
+              "id": "inventor:rse:meta-section#seg-9",
+              "number": 9,
+              "payload_len": 0,
+              "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "token": "seg"
+            }
+          ],
+          "meta_types": [
+            {
+              "fields": [
+                [
+                  1,
+                  2
+                ],
+                [
+                  3,
+                  4
+                ]
+              ],
+              "id": "inventor:rse:meta-type#seg-0",
+              "index": 0,
+              "token": "seg",
+              "type_id": "5c5945f6d5113313100060a6bba647b5"
+            }
+          ],
+          "pm_app_default_styles": [],
+          "pm_app_rendering_styles": [],
+          "pm_dc_directions": [],
+          "pm_dc_entity_style_links": [],
+          "pm_dc_expressions": [],
+          "pm_dc_feature_labels": [],
+          "pm_dc_feature_properties": [],
+          "pm_dc_feature_terminators": [],
+          "pm_dc_features": [],
+          "pm_dc_parameters": [],
+          "pm_dc_pattern_features": [],
+          "pm_dc_sketch_constraints": [],
+          "pm_dc_sketch_entities": [],
+          "pm_dc_sketches": [],
+          "pm_dc_transforms": [],
+          "pm_dc_units": [],
+          "pm_graphics_faces": [],
+          "pm_graphics_primary_color_styles": [],
+          "pm_graphics_style_collections": [],
+          "presentation_record_issues": [],
+          "properties": [],
+          "property_sections": [],
+          "property_set_issues": [],
+          "property_sets": [],
+          "protein": [
+            {
+              "declared_len": null,
+              "detail": null,
+              "directory_id": null,
+              "entry_count": 0,
+              "id": "inventor:protein:state#root",
+              "state": "absent"
+            }
+          ],
+          "protein_assets": [],
+          "protein_entries": [],
+          "protein_rejections": [],
+          "revisions": [],
+          "rse_records": [
+            {
+              "id": "inventor:rse:record#seg-0",
+              "ordinal": 0,
+              "payload_len": 126,
+              "payload_offset": 4,
+              "payload_sha256": "4474a8a9e83fcd67903be2ef864c2282573f36f4f0c3b65aa468486f1932d865",
+              "selector": 0,
+              "token": "seg",
+              "trailer_len": 0,
+              "trailer_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "trailing_payload_len": 126,
+              "type_id": "5c5945f6d5113313100060a6bba647b5",
+              "type_index": 0
+            }
+          ],
+          "segment_bulk": [
+            {
+              "compressed_len": 141,
+              "compressed_sha256": "f8c963587cd6d5224db289db2e07a677bcfc616165af9a085a7c2f37a934e270",
+              "expanded_len": 138,
+              "expanded_sha256": "1a133b9bfcc466cccf67daad148e3033866358db9b6b82b509e13e4f8a53ef86",
+              "form": 260,
+              "id": "inventor:rse:segment-bulk#seg",
+              "prefix": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c",
+              "record_count": 1,
+              "record_detail": null,
+              "record_state": "framed",
+              "stream_trailer_len": 4,
+              "stream_trailer_sha256": "ad95131bc0b799c0b1af477fb14fcf26a6a9f76079e48bf090acb7e8367bfd0e",
+              "token": "seg"
+            }
+          ],
+          "segment_bulk_issues": [],
+          "segment_meta": [
+            {
+              "block_count": 1,
+              "body_form": 1,
+              "created": "created",
+              "display_name": "PmBRepSegment",
+              "expanded_body_len": 218,
+              "expanded_body_sha256": "4c00e9a2f871ecd961fb894105a2f28780b13f1589542ab07a5dd4f72642bda1",
+              "header_values": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+              ],
+              "id": "inventor:rse:segment-meta#seg",
+              "kind": "pm_brep",
+              "modified": "modified",
+              "segment_id": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+              "state_words": [
+                5,
+                6,
+                7
+              ],
+              "table_prefix": [
+                3,
+                0,
+                2,
+                1,
+                0,
+                4,
+                0
+              ],
+              "terminal_id": "77777777777777777777777777777777",
+              "token": "seg",
+              "type_count": 1,
+              "version": 8
+            }
+          ],
+          "segment_meta_issues": [],
+          "segment_pairs": [
+            {
+              "bulk_directory_id": 6,
+              "id": "inventor:rse:segment#seg",
+              "metadata_directory_id": 7,
+              "token": "seg"
+            }
+          ],
+          "segment_registry": [
+            {
+              "display_name": "PmBRepSegment",
+              "id": "inventor:rse:registry-entry#0",
+              "node_count": 1,
+              "object_count": 1,
+              "ordinal": 0,
+              "revision_id": "20202020202020202020202020202020",
+              "segment_id": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+              "type_name": "PmBrepSegmentType"
+            }
+          ],
+          "sketch_record_issues": [],
+          "storage_bands": [
+            {
+              "band": 1,
+              "database_directory_id": 4,
+              "id": "inventor:rse:storage-band#v1"
+            }
+          ],
+          "structural_issues": [],
+          "tolerant_coedge_parameters": [],
+          "tolerant_edge_tails": [],
+          "tolerant_vertex_tails": [],
+          "transform_hints": [],
+          "ufrx": [
+            {
+              "caption": null,
+              "detail": null,
+              "directory_id": null,
+              "embedded_reference_count": 0,
+              "id": "inventor:ufrx:state#root",
+              "model_state_count": 0,
+              "occurrence_count": 0,
+              "original_file_name": null,
+              "reference_count": 0,
+              "representation": null,
+              "schema": null,
+              "section_versions": [],
+              "state": "absent",
+              "tail_len": 0,
+              "tail_sha256": null
+            }
+          ],
+          "ufrx_model_states": [],
+          "ufrx_occurrences": [],
+          "unknowns": [],
+          "unpaired_segments": [],
+          "vertex_ownerships": [],
+          "wire_topologies": []
+        },
+        "version": 25
+      }
+    },
+    "source": {
+      "attributes": {
+        "cfb_major_version": "3",
+        "cfb_sector_size": "512",
+        "document_kind": "part",
+        "kernel_entity_count": "0",
+        "kernel_family": "asm",
+        "kernel_flags": "0",
+        "kernel_product_family": "Inventor",
+        "kernel_product_version": "synthetic ASM",
+        "kernel_save_format_version": "700",
+        "rse_segment_pairs": "1"
+      },
+      "format": "inventor"
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "container_only": false,
+    "coverage": {
+      "active_kernel_carriers": 1,
+      "appearance_bindings_transferred": 0,
+      "assembly_occurrences": 0,
+      "assembly_occurrences_transferred": 0,
+      "assembly_placements": 0,
+      "assembly_record_issues": 0,
+      "design_parameters_transferred": 0,
+      "design_record_issues": 0,
+      "embedded_references": 0,
+      "external_references": 0,
+      "face_color_appearances": 0,
+      "feature_record_issues": 0,
+      "feature_result_topologies_transferred": 0,
+      "features_transferred": 0,
+      "kernel_unknown_records": 0,
+      "kernel_unknown_surface_faces": 0,
+      "pm_app_default_styles": 0,
+      "pm_app_rendering_styles": 0,
+      "pm_dc_directions": 0,
+      "pm_dc_entity_style_links": 0,
+      "pm_dc_expressions": 0,
+      "pm_dc_feature_labels": 0,
+      "pm_dc_feature_properties": 0,
+      "pm_dc_feature_terminators": 0,
+      "pm_dc_features": 0,
+      "pm_dc_parameters": 0,
+      "pm_dc_pattern_features": 0,
+      "pm_dc_sketch_constraints": 0,
+      "pm_dc_sketch_entities": 0,
+      "pm_dc_sketches": 0,
+      "pm_dc_transforms": 0,
+      "pm_dc_units": 0,
+      "pm_graphics_faces": 0,
+      "pm_graphics_primary_color_styles": 0,
+      "pm_graphics_style_collections": 0,
+      "presentation_record_issues": 0,
+      "preview_assets": 0,
+      "properties": 0,
+      "property_sets": 0,
+      "protein_appearances": 0,
+      "protein_assets": 0,
+      "protein_entries": 0,
+      "protein_rejections": 0,
+      "rse_databases": 1,
+      "rse_meta_types": 1,
+      "rse_records": 1,
+      "rse_registry_entries": 1,
+      "rse_revisions": 0,
+      "rse_segment_bulk": 1,
+      "rse_segment_bulk_issues": 0,
+      "rse_segment_meta": 1,
+      "rse_segment_meta_issues": 0,
+      "rse_segment_pairs": 1,
+      "rse_storage_bands": 1,
+      "sketch_constraints_transferred": 0,
+      "sketch_entities_transferred": 0,
+      "sketch_record_issues": 0,
+      "sketches_transferred": 0,
+      "ufrx_model_states": 0,
+      "ufrx_occurrences": 0
+    },
+    "format": "inventor",
+    "geometry_transferred": false,
+    "losses": [
+      {
+        "code": "geometry_not_transferred",
+        "message": "the active kernel carrier decoded no surfaces, points, or faces",
+        "severity": "blocking"
+      },
+      {
+        "code": "record_not_typed",
+        "message": "Retained 1 structurally paired RSe segment(s) without record semantics.",
+        "severity": "warning"
+      }
+    ],
+    "notes": []
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "version": "3"
+  }
+}

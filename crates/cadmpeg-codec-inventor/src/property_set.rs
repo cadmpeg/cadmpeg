@@ -112,13 +112,7 @@ pub(crate) fn inventory<'a>(
         let CompoundEntry::Stream(stream) = entry else {
             continue;
         };
-        let root_component = stream.path().split('/').next().unwrap_or_default();
-        if root_component.eq_ignore_ascii_case("RSeStorage")
-            || root_component.eq_ignore_ascii_case("Protein")
-            || root_component.eq_ignore_ascii_case("UFRxDoc")
-            || stream.logical_size() < 28
-            || stream.logical_size() > MAX_STREAM_SIZE as u64
-        {
+        if stream.logical_size() < 28 || stream.logical_size() > MAX_STREAM_SIZE as u64 {
             continue;
         }
         let view = snapshot.open(ctx, stream)?;
@@ -129,7 +123,7 @@ pub(crate) fn inventory<'a>(
         }
         let state = match parse_property_set_stream(ctx, view) {
             Ok(property_set) => PropertySetState::Parsed(property_set),
-            Err(error) => PropertySetState::Malformed(error.to_string()),
+            Err(error) => PropertySetState::Malformed(crate::issue_detail(error)?),
         };
         property_sets.push(PropertySetDescriptor {
             stream: stream.id(),
