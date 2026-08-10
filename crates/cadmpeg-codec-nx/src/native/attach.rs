@@ -5212,7 +5212,7 @@ fn non_boolean_feature_definition_with_parameters(
         };
     }
     match kind {
-        "DATUM_PLANE" => FeatureDefinition::DatumPlaneUnresolved,
+        "DATUM_PLANE" | "EXTRACT_DATUM_PLANE" => FeatureDefinition::DatumPlaneUnresolved,
         "POINT" => FeatureDefinition::DatumPointUnresolved,
         "DATUM_CSYS" => FeatureDefinition::DatumCoordinateSystemUnresolved,
         "BLOCK" => FeatureDefinition::Block {
@@ -10353,6 +10353,10 @@ mod tests {
         }
         assert!(matches!(
             super::non_boolean_feature_definition("DATUM_PLANE", &[], None, None, None),
+            cadmpeg_ir::features::FeatureDefinition::DatumPlaneUnresolved
+        ));
+        assert!(matches!(
+            super::non_boolean_feature_definition("EXTRACT_DATUM_PLANE", &[], None, None, None,),
             cadmpeg_ir::features::FeatureDefinition::DatumPlaneUnresolved
         ));
         assert!(matches!(

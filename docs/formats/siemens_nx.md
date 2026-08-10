@@ -1554,6 +1554,10 @@ The `Container` label identifies an object-model grouping record, not a modeling
 
 The `MASTER SNAPSHOT BODY` label identifies a captured-result base feature.
 
+The `DATUM_PLANE` and `EXTRACT_DATUM_PLANE` operation labels identify datum-plane
+history operations. Their model-space frame remains unresolved until the
+operation's scalar-pair roles and coordinate space are established.
+
 The `SPHERE` operation label identifies a primitive spherical construction.
 Neutral projection requires exactly one connected solid result body with one
 face whose owned surface is a valid sphere with finite center and positive
