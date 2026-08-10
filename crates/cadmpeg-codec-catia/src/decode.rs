@@ -108,7 +108,7 @@ fn finish_decode(
         .collect::<HashSet<_>>();
     let design_feature_transfer =
         design_feature::transfer_design_features(&mut ir, &native, modeling_graph_scope.as_ref());
-    sketch::transfer_native_sketch_entities(
+    let transferred_native_sketch_entity_records = sketch::transfer_native_sketch_entities(
         &mut ir,
         &native,
         &design_feature_transfer,
@@ -1559,6 +1559,7 @@ fn finish_decode(
         .collect::<HashSet<_>>();
     let transferred_design_records = transferred_formula_design_records
         .union(&transferred_design_feature_records)
+        .chain(transferred_native_sketch_entity_records.intersection(&structurally_owned_records))
         .cloned()
         .collect::<HashSet<_>>();
     let unresolved_object_record_count = modeling_object_records

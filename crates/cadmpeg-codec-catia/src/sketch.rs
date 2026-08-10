@@ -25,12 +25,14 @@ const NATIVE_SKETCH_GEOMETRY_CLASSES: &[&str] = &["2DPoint"];
 /// owner record resolves to one child design object and that child has exactly
 /// one admitted geometry field. The field remains native geometry; this lane
 /// does not infer coordinates, construction state, profiles, or constraints.
+/// The returned object-record identities are the exact fields represented by
+/// the emitted native entities and are used to close design-record accounting.
 pub(crate) fn transfer_native_sketch_entities(
     ir: &mut CadIr,
     native: &CatiaNative,
     feature_transfer: &DesignFeatureTransfer,
     graph_scope: Option<&HashSet<String>>,
-) -> usize {
+) -> HashSet<String> {
     let (object_records, ambiguous_object_records) = unique_object_records(native);
     let (entity_records, ambiguous_entity_records) = unique_entity_records(native);
     let (design_objects, ambiguous_design_objects) = unique_design_objects(native);
@@ -60,7 +62,7 @@ pub(crate) fn transfer_native_sketch_entities(
                 .map(|native_ref| (sketch.id.clone(), native_ref.to_string()))
         })
         .collect::<Vec<_>>();
-    let mut transferred = 0;
+    let mut transferred = HashSet::new();
 
     for (sketch_id, sketch_native_ref) in sketches {
         let Some(sketch_object) = design_objects.get(sketch_native_ref.as_str()).copied() else {
@@ -177,7 +179,7 @@ pub(crate) fn transfer_native_sketch_entities(
                 endpoint_refs: Vec::new(),
                 geometry: SketchGeometry::Native { native_kind },
             });
-            transferred += 1;
+            transferred.insert(geometry_field.id.clone());
         }
     }
 
@@ -845,10 +847,10 @@ mod tests {
     fn transfers_one_exact_native_sketch_geometry_member() {
         let (mut ir, native, transfer, graph_scope) = native_sketch_fixture("2DPoint");
 
-        assert_eq!(
-            transfer_native_sketch_entities(&mut ir, &native, &transfer, Some(&graph_scope)),
-            1
-        );
+        let transferred =
+            transfer_native_sketch_entities(&mut ir, &native, &transfer, Some(&graph_scope));
+        assert_eq!(transferred.len(), 1);
+        assert!(transferred.contains("catia:outer:object-record#geometry-field"));
         assert_eq!(ir.model.sketch_entities.len(), 1);
         let entity = &ir.model.sketch_entities[0];
         assert_eq!(entity.sketch.0, "synthetic:test:sketch#0");
@@ -868,9 +870,9 @@ mod tests {
     fn does_not_promote_an_unadmitted_native_sketch_member() {
         let (mut ir, native, transfer, graph_scope) = native_sketch_fixture("Point");
 
-        assert_eq!(
-            transfer_native_sketch_entities(&mut ir, &native, &transfer, Some(&graph_scope)),
-            0
+        assert!(
+            transfer_native_sketch_entities(&mut ir, &native, &transfer, Some(&graph_scope))
+                .is_empty()
         );
         assert!(ir.model.sketch_entities.is_empty());
     }
@@ -900,9 +902,9 @@ mod tests {
             .fields
             .push(second_field_id.to_string());
 
-        assert_eq!(
-            transfer_native_sketch_entities(&mut ir, &native, &transfer, Some(&graph_scope)),
-            0
+        assert!(
+            transfer_native_sketch_entities(&mut ir, &native, &transfer, Some(&graph_scope))
+                .is_empty()
         );
         assert!(ir.model.sketch_entities.is_empty());
     }
