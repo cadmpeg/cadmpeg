@@ -7,6 +7,7 @@ spec = "docs/formats/f3d.md"
 endianness = "little"
 note = """
 Covers the fixed Design-segment headers and body-map prefix, the named solid-primitive prologue,
+the ParaMesh entry-name, container-GUID, mesh-body transform, and scope-join fields,
 the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, the
 compact `Loft` prefix and nested profile-region frames, the class-418
 `SplitFace` prefix, the grouped recipe-reference prefix, the three `Combine`
@@ -126,6 +127,161 @@ anchor = "and a `u32 count`"
 path = "crates/cadmpeg-codec-f3d/src/design/decode/body.rs"
 contains = "for prefix_len in crate::design::body::BODY_MAP_ZERO_PREFIX_LENGTHS"
 note = "The exact primary-record parser tests each supported reserved-zero width."
+
+[[record]]
+name = "paramesh_entry_name_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Its indexed header is followed by ten zero bytes, a marked same-segment reference to the GUID record at offset 21"
+size = 32
+note = "Offsets are relative to the entry-name record's indexed header. The variable u32-count UTF-16LE entry name starts at offset 32 and ends at the primary-record boundary."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its indexed header is followed by ten zero bytes"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "followed by ten zero bytes"
+
+[[record.field]]
+name = "guid_record_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked same-segment reference to the GUID record at offset 21"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
+contains = "const MESH_ENTRY_GUID_REFERENCE_AT: usize = 21;"
+note = "The typed entry-name parser reads the GUID reference at the tabulated offset."
+
+[[record]]
+name = "paramesh_guid_join_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Its indexed header is followed by 21 zero bytes, the 36-byte LP-ASCII `fusion_uuid` at offset 32"
+size = 83
+note = "Offsets are relative to the container-GUID record's indexed header. A type-specific tail can follow the fixed join prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its indexed header is followed by 21 zero bytes"
+
+[[record.field]]
+name = "zero_run_21"
+offset = 11
+type = "bytes[21]"
+source = "spec"
+anchor = "followed by 21 zero bytes"
+
+[[record.field]]
+name = "fusion_uuid"
+offset = 32
+type = "bytes[40]"
+source = "spec"
+anchor = "the 36-byte LP-ASCII `fusion_uuid` at offset 32"
+
+[[record.field]]
+name = "entry_name_backlink"
+offset = 72
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked same-segment backlink to the entry-name record at offset 72"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
+contains = "const MESH_GUID_ENTRY_REFERENCE_AT: usize = 72;"
+note = "The typed GUID parser reads the entry-name backlink at the tabulated offset."
+
+[[record]]
+name = "paramesh_mesh_body_join_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "It carries two equal row-major 4×4 f64 affine matrices at record-relative offsets 42 and 171."
+size = 552
+note = "Offsets are relative to the mesh-body primary indexed header. Presentation fields occupy the unstated spans, and the primary record can continue after this fixed prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its indexed header is followed by ten zero bytes."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Its indexed header is followed by ten zero bytes."
+
+[[record.gap]]
+offset = 21
+size = 21
+note = "The remaining mesh-body prologue is outside this fixed join table."
+
+[[record.field]]
+name = "first_transform"
+offset = 42
+type = "f64[16]"
+source = "spec"
+anchor = "two equal row-major 4×4 f64 affine matrices at record-relative offsets 42 and 171"
+
+[[record.gap]]
+offset = 170
+size = 1
+note = "One structural byte separates the two transform blocks."
+
+[[record.field]]
+name = "second_transform"
+offset = 171
+type = "f64[16]"
+source = "spec"
+anchor = "two equal row-major 4×4 f64 affine matrices at record-relative offsets 42 and 171"
+
+[[record.gap]]
+offset = 299
+size = 209
+note = "Presentation fields occupy the span before the feature-scope reference."
+
+[[record.field]]
+name = "feature_scope_reference"
+offset = 508
+type = "bytes[11]"
+source = "spec"
+anchor = "A marked same-segment reference at offset 508 names the owning `Base Mesh Feature` scope."
+
+[[record.gap]]
+offset = 519
+size = 22
+note = "Presentation fields occupy the span between the feature-scope and container-GUID references."
+
+[[record.field]]
+name = "container_guid_reference"
+offset = 541
+type = "bytes[11]"
+source = "spec"
+anchor = "A marked same-segment reference at offset 541 names the GUID record."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
+contains = "const MESH_BODY_SCOPE_REFERENCE_AT: usize = 508;"
+note = "The typed mesh-body parser reads the feature-scope reference at the tabulated offset."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs"
+contains = "const MESH_BODY_GUID_REFERENCE_AT: usize = 541;"
+note = "The typed mesh-body parser reads the container-GUID reference at the tabulated offset."
 
 [[record]]
 name = "assembly_operand_path_locator_reference_run"

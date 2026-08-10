@@ -2503,13 +2503,11 @@ fn project_mesh_bodies(
     };
     for body in bodies {
         let id = body.id.clone();
-        for scope_record_index in body.design_scope_record_indices {
-            projection
-                .tessellations_by_scope
-                .entry((body.design_stream.clone(), scope_record_index))
-                .or_default()
-                .push(id.clone());
-        }
+        projection
+            .tessellations_by_scope
+            .entry((body.design_stream.clone(), body.design_scope_record_index))
+            .or_default()
+            .push(id.clone());
         let channels = mesh_attribute_channels(
             &body.attributes,
             body.vertices.len(),

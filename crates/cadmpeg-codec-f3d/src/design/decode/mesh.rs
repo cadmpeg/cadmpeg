@@ -7,14 +7,28 @@
 //! the GUID the container's protobuf message carries as `fusion_uuid`, and the
 //! mesh-body class carries the affine map between container coordinates and
 //! model centimetres. The two identity records reference each other, and the
-//! body record references the GUID record.
+//! body record references the GUID record and its owning feature scope.
 
+use crate::bytes::{is_guid_hyphenated, lp_ascii_strict, lp_utf16_bounded, take_reference};
 use crate::container::{role, ContainerScan};
-use crate::design::decode::sketch::{indexed_record_index, next_indexed_record_offset};
+use crate::design::decode::meta::{
+    metadata_for_bulk_stream, typed_primary_frames, TypedPrimaryFrame,
+};
 use crate::ids;
 use crate::paramesh::decode_mesh_container;
-use cadmpeg_core::le::{f64_at, u64_at as read_u64};
+use cadmpeg_core::le::{f64_at, u32_at};
 use cadmpeg_core::CodecError;
+
+const PARAMESH_MODULE: &str = "ParaMesh";
+const MESH_ENTRY_NAME_TYPE_GUID: &str = "A1BAA3F6-4B67-4A0D-BACC-75F38A2230F3";
+const MESH_ENTRY_NAME_BASE_TYPE_GUID: &str = "130A0711-4E92-4FCD-AADE-B9C82238BB27";
+const MESH_ENTRY_NAME_TYPE_VERSION: u32 = 0;
+const MESH_GUID_TYPE_GUID: &str = "A8338A26-5436-433C-8BAC-C3CF024AD595";
+const MESH_GUID_BASE_TYPE_GUID: &str = "98542EB9-A4F2-4137-A808-DBB5B3CD6159";
+const MESH_GUID_TYPE_VERSION: u32 = 1;
+const MESH_BODY_TYPE_GUID: &str = "EA90DA22-556C-4C61-89BB-20C2681B7A9D";
+const MESH_BODY_BASE_TYPE_GUID: &str = "CB844AB6-240D-4FC9-9C9F-3679DC896D6F";
+const MESH_BODY_TYPE_VERSION: u32 = 7;
 
 /// Row-major 4x4 f64 matrix byte length.
 const MATRIX_BYTES: usize = 128;
@@ -22,6 +36,13 @@ const MESH_BODY_FIRST_MATRIX_AT: usize = 42;
 const MESH_BODY_MATRIX_SEPARATOR_BYTES: usize = 1;
 const MESH_BODY_SECOND_MATRIX_AT: usize =
     MESH_BODY_FIRST_MATRIX_AT + MATRIX_BYTES + MESH_BODY_MATRIX_SEPARATOR_BYTES;
+const MESH_BODY_SCOPE_REFERENCE_AT: usize = 508;
+const MESH_BODY_GUID_REFERENCE_AT: usize = 541;
+const SAME_SEGMENT_REFERENCE_BYTES: usize = 11;
+const MESH_ENTRY_GUID_REFERENCE_AT: usize = 21;
+const MESH_ENTRY_NAME_AT: usize = 32;
+const MESH_GUID_VALUE_AT: usize = 32;
+const MESH_GUID_ENTRY_REFERENCE_AT: usize = 72;
 
 /// One mesh body's geometry, in model millimetres.
 pub(crate) struct MeshBody {
@@ -29,8 +50,8 @@ pub(crate) struct MeshBody {
     pub(crate) id: String,
     /// Native Design stream containing the mesh-body record.
     pub(crate) design_stream: String,
-    /// Indexed Design scope records referenced by the mesh-body record.
-    pub(crate) design_scope_record_indices: Vec<u32>,
+    /// Sole indexed Design feature scope referenced by the mesh-body record.
+    pub(crate) design_scope_record_index: u32,
     /// Vertex positions in model millimetres.
     pub(crate) vertices: Vec<cadmpeg_ir::math::Point3>,
     /// Triangle corner indices into `vertices`.
@@ -96,74 +117,268 @@ pub(crate) enum MeshContainerOutcome {
     },
 }
 
-/// The eleven bytes of a same-segment reference naming `entity`.
-fn same_segment_reference(entity: u32) -> Vec<u8> {
-    let mut bytes = vec![1u8];
-    bytes.extend_from_slice(&u64::from(entity).to_le_bytes());
-    bytes.extend_from_slice(&[0, 0]);
-    bytes
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct MeshEntryNameRecord {
+    record_index: u32,
+    guid_record_index: u32,
+    entry_name: String,
 }
 
-/// Read the marked indexed-record references carried by a mesh-body record.
-fn marked_record_indices(payload: &[u8]) -> Vec<u32> {
-    let mut indices = Vec::new();
-    for at in 0..payload.len().saturating_sub(10) {
-        if payload.get(at) != Some(&1) || payload.get(at + 9..at + 11) != Some(&[0, 0]) {
-            continue;
-        }
-        let Some(index) = read_u64(payload, at + 1).and_then(|value| u32::try_from(value).ok())
-        else {
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct MeshGuidRecord {
+    record_index: u32,
+    entry_name_record_index: u32,
+    fusion_uuid: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct MeshBodyRecord {
+    byte_offset: usize,
+    guid_record_index: u32,
+    scope_record_index: u32,
+    transform: MeshAffineTransform,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct MeshDesignRecords {
+    stream: String,
+    entry_names: Vec<MeshEntryNameRecord>,
+    guids: Vec<MeshGuidRecord>,
+    bodies: Vec<MeshBodyRecord>,
+}
+
+fn validate_mesh_registration(
+    frame: TypedPrimaryFrame<'_>,
+    expected_version: u32,
+    expected_base_type_guid: &str,
+    record_kind: &str,
+) -> Result<(), CodecError> {
+    if frame.design_type.version != expected_version {
+        return Err(CodecError::NotImplemented(format!(
+            "F3D Design {record_kind} record version {} is unsupported",
+            frame.design_type.version
+        )));
+    }
+    if frame.design_type.module != PARAMESH_MODULE
+        || !frame
+            .design_type
+            .base_type_guid
+            .as_deref()
+            .is_some_and(|base| base.eq_ignore_ascii_case(expected_base_type_guid))
+    {
+        return Err(CodecError::Malformed(format!(
+            "F3D Design {record_kind} entity {} has incompatible registration metadata",
+            frame.entity_id
+        )));
+    }
+    Ok(())
+}
+
+fn exact_record_index(
+    record: &[u8],
+    frame: TypedPrimaryFrame<'_>,
+    record_kind: &str,
+) -> Result<u32, CodecError> {
+    u32_at(record, 7)
+        .filter(|record_index| u64::from(*record_index) == frame.entity_id)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "F3D Design {record_kind} entity {} has an invalid record index",
+                frame.entity_id
+            ))
+        })
+}
+
+fn exact_local_record_index(record: &[u8], at: usize) -> Option<u32> {
+    let mut cursor = at;
+    let reference = take_reference(record, &mut cursor)?;
+    if cursor != at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)?
+        || reference.segment.is_some()
+        || reference.link_name.is_some()
+    {
+        return None;
+    }
+    u32::try_from(reference.target?)
+        .ok()
+        .filter(|target| *target != 0)
+}
+
+fn parse_mesh_entry_name_record(
+    bytes: &[u8],
+    frame: TypedPrimaryFrame<'_>,
+) -> Result<MeshEntryNameRecord, CodecError> {
+    validate_mesh_registration(
+        frame,
+        MESH_ENTRY_NAME_TYPE_VERSION,
+        MESH_ENTRY_NAME_BASE_TYPE_GUID,
+        "mesh-entry-name",
+    )?;
+    let record = &bytes[frame.start..frame.end];
+    let record_index = exact_record_index(record, frame, "mesh-entry-name")?;
+    let parsed = (|| {
+        (record.get(11..21) == Some(&[0; 10])).then_some(())?;
+        let guid_record_index = exact_local_record_index(record, MESH_ENTRY_GUID_REFERENCE_AT)?;
+        let (entry_name, end) = lp_utf16_bounded(record, MESH_ENTRY_NAME_AT, 1..=1024)?;
+        (end == record.len()).then_some(MeshEntryNameRecord {
+            record_index,
+            guid_record_index,
+            entry_name,
+        })
+    })();
+    parsed.ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "F3D Design mesh-entry-name entity {} has an invalid primary frame",
+            frame.entity_id
+        ))
+    })
+}
+
+fn parse_mesh_guid_record(
+    bytes: &[u8],
+    frame: TypedPrimaryFrame<'_>,
+) -> Result<MeshGuidRecord, CodecError> {
+    validate_mesh_registration(
+        frame,
+        MESH_GUID_TYPE_VERSION,
+        MESH_GUID_BASE_TYPE_GUID,
+        "mesh-GUID",
+    )?;
+    let record = &bytes[frame.start..frame.end];
+    let record_index = exact_record_index(record, frame, "mesh-GUID")?;
+    let parsed = (|| {
+        (record.get(11..32) == Some(&[0; 21])).then_some(())?;
+        let (fusion_uuid, end) = lp_ascii_strict(record, MESH_GUID_VALUE_AT, 36..=36)?;
+        (end == MESH_GUID_ENTRY_REFERENCE_AT && is_guid_hyphenated(&fusion_uuid)).then_some(())?;
+        let entry_name_record_index =
+            exact_local_record_index(record, MESH_GUID_ENTRY_REFERENCE_AT)?;
+        Some(MeshGuidRecord {
+            record_index,
+            entry_name_record_index,
+            fusion_uuid,
+        })
+    })();
+    parsed.ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "F3D Design mesh-GUID entity {} has an invalid primary frame",
+            frame.entity_id
+        ))
+    })
+}
+
+fn parse_mesh_body_record(
+    bytes: &[u8],
+    frame: TypedPrimaryFrame<'_>,
+) -> Result<MeshBodyRecord, CodecError> {
+    validate_mesh_registration(
+        frame,
+        MESH_BODY_TYPE_VERSION,
+        MESH_BODY_BASE_TYPE_GUID,
+        "mesh-body",
+    )?;
+    let record = &bytes[frame.start..frame.end];
+    exact_record_index(record, frame, "mesh-body")?;
+    let parsed = (|| {
+        (record.get(11..21) == Some(&[0; 10])).then_some(())?;
+        let scope_record_index = exact_local_record_index(record, MESH_BODY_SCOPE_REFERENCE_AT)?;
+        let guid_record_index = exact_local_record_index(record, MESH_BODY_GUID_REFERENCE_AT)?;
+        let transform = mesh_body_transform(record)?;
+        Some(MeshBodyRecord {
+            byte_offset: frame.start,
+            guid_record_index,
+            scope_record_index,
+            transform,
+        })
+    })();
+    parsed.ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "F3D Design mesh-body entity {} has an invalid primary frame",
+            frame.entity_id
+        ))
+    })
+}
+
+fn parse_mesh_design_records(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    stream: String,
+) -> Result<MeshDesignRecords, CodecError> {
+    let entry_names =
+        typed_primary_frames(bytes, meta, MESH_ENTRY_NAME_TYPE_GUID, "mesh-entry-name")?
+            .into_iter()
+            .map(|frame| parse_mesh_entry_name_record(bytes, frame))
+            .collect::<Result<Vec<_>, _>>()?;
+    let guids = typed_primary_frames(bytes, meta, MESH_GUID_TYPE_GUID, "mesh-GUID")?
+        .into_iter()
+        .map(|frame| parse_mesh_guid_record(bytes, frame))
+        .collect::<Result<Vec<_>, _>>()?;
+    let bodies = typed_primary_frames(bytes, meta, MESH_BODY_TYPE_GUID, "mesh-body")?
+        .into_iter()
+        .map(|frame| parse_mesh_body_record(bytes, frame))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(MeshDesignRecords {
+        stream,
+        entry_names,
+        guids,
+        bodies,
+    })
+}
+
+fn decode_mesh_design_records(scan: &ContainerScan) -> Result<Vec<MeshDesignRecords>, CodecError> {
+    let mut out = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+    {
+        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
-        if !indices.contains(&index) {
-            indices.push(index);
+        let records = parse_mesh_design_records(
+            scan.entry_bytes(&entry.name)?,
+            &meta,
+            ids::native_scope(&entry.name),
+        )?;
+        if !records.entry_names.is_empty()
+            || !records.guids.is_empty()
+            || !records.bodies.is_empty()
+        {
+            out.push(records);
         }
     }
-    indices
+    Ok(out)
 }
 
-/// A u32-count length-prefixed ASCII string as it appears in a record.
-fn lp_ascii_bytes(value: &str) -> Vec<u8> {
-    let mut bytes = (value.len() as u32).to_le_bytes().to_vec();
-    bytes.extend_from_slice(value.as_bytes());
-    bytes
-}
-
-/// A u32-count length-prefixed UTF-16LE string as it appears in a record.
-fn lp_utf16_bytes(value: &str) -> Vec<u8> {
-    let encoded = value.encode_utf16().collect::<Vec<_>>();
-    let mut bytes = (encoded.len() as u32).to_le_bytes().to_vec();
-    bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
-    bytes
-}
-
-/// One framed record of a Design `BulkStream`.
-struct IndexedRecord<'a> {
-    index: u32,
-    offset: usize,
-    payload: &'a [u8],
-}
-
-/// Frame every indexed record of a Design `BulkStream`.
-fn indexed_records(bytes: &[u8]) -> Vec<IndexedRecord<'_>> {
-    let mut records = Vec::new();
-    let mut at = 0usize;
-    while let Some(offset) = next_indexed_record_offset(bytes, at) {
-        let Some(index) = indexed_record_index(bytes, offset) else {
-            break;
-        };
-        let end = next_indexed_record_offset(bytes, offset + 7).unwrap_or(bytes.len());
-        let Some(payload) = bytes.get(offset..end) else {
-            break;
-        };
-        records.push(IndexedRecord {
-            index,
-            offset,
-            payload,
-        });
-        at = end;
+fn resolve_mesh_body<'a>(
+    records: &'a [MeshDesignRecords],
+    entry_name: &str,
+    fusion_uuid: &str,
+) -> Option<(&'a MeshDesignRecords, &'a MeshBodyRecord)> {
+    let mut matches = Vec::new();
+    for design in records {
+        for entry in design
+            .entry_names
+            .iter()
+            .filter(|entry| entry.entry_name == entry_name)
+        {
+            for guid in design.guids.iter().filter(|guid| {
+                guid.record_index == entry.guid_record_index
+                    && guid.entry_name_record_index == entry.record_index
+                    && guid.fusion_uuid == fusion_uuid
+            }) {
+                matches.extend(
+                    design
+                        .bodies
+                        .iter()
+                        .filter(|body| body.guid_record_index == guid.record_index)
+                        .map(|body| (design, body)),
+                );
+            }
+        }
     }
-    records
+    let [joined] = matches.as_slice() else {
+        return None;
+    };
+    Some(*joined)
 }
 
 /// Decode every mesh body: one per `.paramesh` container joined to the
@@ -171,19 +386,7 @@ fn indexed_records(bytes: &[u8]) -> Vec<IndexedRecord<'_>> {
 pub(crate) fn decode_mesh_bodies(
     scan: &ContainerScan,
 ) -> Result<Vec<MeshContainerOutcome>, CodecError> {
-    let design_streams = scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
-        .map(|entry| {
-            scan.entry_bytes(&entry.name)
-                .map(|bytes| (ids::native_scope(&entry.name), indexed_records(bytes)))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let records = design_streams
-        .iter()
-        .flat_map(|(stream, records)| records.iter().map(move |record| (stream.as_str(), record)))
-        .collect::<Vec<_>>();
+    let design_records = decode_mesh_design_records(scan)?;
     let mut outcomes = Vec::new();
     for entry in scan
         .entries
@@ -205,63 +408,28 @@ pub(crate) fn decode_mesh_bodies(
         };
         let name = &entry.name;
         let base = name.rsplit('/').next().unwrap_or(name);
-        let guid = lp_ascii_bytes(&container.fusion_uuid);
-        let joined = records
-            .iter()
-            .find_map(|(stream, guid_record)| {
-                contains(guid_record.payload, &guid).then_some((*stream, guid_record.index))
-            })
-            .and_then(|(stream, guid_record_index)| {
-                let reference = same_segment_reference(guid_record_index);
-                let entry_name = lp_utf16_bytes(base);
-                records
-                    .iter()
-                    .any(|(candidate_stream, record)| {
-                        *candidate_stream == stream
-                            && contains(record.payload, &entry_name)
-                            && contains(record.payload, &reference)
-                    })
-                    .then_some((stream, reference))
-            })
-            .and_then(|(stream, reference)| {
-                records.iter().find_map(|(candidate_stream, record)| {
-                    if *candidate_stream != stream || !contains(record.payload, &reference) {
-                        return None;
-                    }
-                    Some((
-                        stream.to_owned(),
-                        marked_record_indices(record.payload),
-                        *record,
-                        mesh_body_transform(record.payload)?,
-                    ))
-                })
-            });
-        let Some((design_stream, design_scope_record_indices, body, transform)) = joined else {
+        let Some((design, body)) = resolve_mesh_body(&design_records, base, &container.fusion_uuid)
+        else {
             outcomes.push(MeshContainerOutcome::Unjoined {
                 entry_name: entry.name.clone(),
             });
             continue;
         };
         outcomes.push(MeshContainerOutcome::Joined(MeshBody {
-            id: ids::native_mesh_body_id(&entry.name, body.offset),
-            design_stream,
-            design_scope_record_indices,
+            id: ids::native_mesh_body_id(&entry.name, body.byte_offset),
+            design_stream: design.stream.clone(),
+            design_scope_record_index: body.scope_record_index,
             vertices: container
                 .vertices
                 .iter()
                 .copied()
-                .map(|point| transform.transform(point))
+                .map(|point| body.transform.transform(point))
                 .collect(),
             triangles: container.triangles,
             attributes: container.attributes,
         }));
     }
     Ok(outcomes)
-}
-
-/// Whether `haystack` holds `needle`.
-fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    memchr::memmem::find(haystack, needle).is_some()
 }
 
 #[cfg(test)]
@@ -284,18 +452,225 @@ mod tests {
         payload
     }
 
-    #[test]
-    fn marked_record_indices_preserve_unique_reference_order() {
-        let mut payload = vec![0; 64];
-        payload[12] = 1;
-        payload[13..21].copy_from_slice(&217u64.to_le_bytes());
-        payload[30] = 1;
-        payload[31..39].copy_from_slice(&210u64.to_le_bytes());
-        payload[48] = 1;
-        payload[49..57].copy_from_slice(&217u64.to_le_bytes());
-        payload[57] = 9;
+    fn push_indexed_header(bytes: &mut Vec<u8>, class_tag: u32, record_index: u32) {
+        let class_tag = class_tag.to_string();
+        assert_eq!(class_tag.len(), 3);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(class_tag.as_bytes());
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
 
-        assert_eq!(marked_record_indices(&payload), [217, 210]);
+    fn put_reference(bytes: &mut [u8], at: usize, target: u32) {
+        bytes[at] = 1;
+        bytes[at + 1..at + 9].copy_from_slice(&u64::from(target).to_le_bytes());
+        bytes[at + 9..at + 11].copy_from_slice(&[0, 0]);
+    }
+
+    fn push_reference(bytes: &mut Vec<u8>, target: u32) {
+        let at = bytes.len();
+        bytes.resize(at + SAME_SEGMENT_REFERENCE_BYTES, 0);
+        put_reference(bytes, at, target);
+    }
+
+    fn push_ascii(bytes: &mut Vec<u8>, value: &str) {
+        bytes.extend_from_slice(
+            &u32::try_from(value.len())
+                .expect("test ASCII length")
+                .to_le_bytes(),
+        );
+        bytes.extend_from_slice(value.as_bytes());
+    }
+
+    fn push_utf16(bytes: &mut Vec<u8>, value: &str) {
+        let encoded = value.encode_utf16().collect::<Vec<_>>();
+        bytes.extend_from_slice(
+            &u32::try_from(encoded.len())
+                .expect("test UTF-16 length")
+                .to_le_bytes(),
+        );
+        bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
+    }
+
+    fn mesh_entry_record(
+        class_tag: u32,
+        record_index: u32,
+        guid_record_index: u32,
+        entry_name: &str,
+    ) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        push_indexed_header(&mut bytes, class_tag, record_index);
+        bytes.extend_from_slice(&[0; 10]);
+        push_reference(&mut bytes, guid_record_index);
+        push_utf16(&mut bytes, entry_name);
+        bytes
+    }
+
+    fn mesh_guid_record(
+        class_tag: u32,
+        record_index: u32,
+        entry_name_record_index: u32,
+        fusion_uuid: &str,
+    ) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        push_indexed_header(&mut bytes, class_tag, record_index);
+        bytes.extend_from_slice(&[0; 21]);
+        push_ascii(&mut bytes, fusion_uuid);
+        push_reference(&mut bytes, entry_name_record_index);
+        bytes.extend_from_slice(&[0; 4]);
+        bytes
+    }
+
+    fn mesh_body_record(
+        class_tag: u32,
+        record_index: u32,
+        guid_record_index: u32,
+        scope_record_index: u32,
+        decoy_scope_record_index: u32,
+    ) -> Vec<u8> {
+        let identity = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let mut bytes = Vec::new();
+        push_indexed_header(&mut bytes, class_tag, record_index);
+        bytes.resize(600, 0);
+        bytes[MESH_BODY_FIRST_MATRIX_AT..MESH_BODY_FIRST_MATRIX_AT + MATRIX_BYTES]
+            .copy_from_slice(&matrix(identity));
+        bytes[MESH_BODY_SECOND_MATRIX_AT..MESH_BODY_SECOND_MATRIX_AT + MATRIX_BYTES]
+            .copy_from_slice(&matrix(identity));
+        put_reference(&mut bytes, MESH_BODY_SCOPE_REFERENCE_AT, scope_record_index);
+        put_reference(&mut bytes, MESH_BODY_GUID_REFERENCE_AT, guid_record_index);
+        put_reference(&mut bytes, 560, decoy_scope_record_index);
+        let tail_at = bytes.len() - SAME_SEGMENT_REFERENCE_BYTES;
+        put_reference(&mut bytes, tail_at, decoy_scope_record_index);
+        bytes
+    }
+
+    fn design_type(
+        type_guid: &str,
+        base_type_guid: Option<&str>,
+        version: u32,
+        module: &str,
+        entity_ids: Vec<u64>,
+    ) -> crate::records::SegmentType {
+        crate::records::SegmentType {
+            id: String::new(),
+            byte_offset: 0,
+            type_guid: type_guid.into(),
+            type_guid_offset: 0,
+            base_type_guid: base_type_guid.map(str::to_owned),
+            base_type_guid_offset: base_type_guid.map(|_| 0),
+            version,
+            version_offset: 0,
+            module: module.into(),
+            entity_ids,
+            entity_id_offsets: Vec::new(),
+        }
+    }
+
+    fn primary_record(entity_id: u64, bulk_offset: usize) -> crate::metastream::RecordIndexEntry {
+        crate::metastream::RecordIndexEntry {
+            entity_id,
+            bulk_offset: u64::try_from(bulk_offset).expect("test bulk offset"),
+        }
+    }
+
+    #[test]
+    fn typed_mesh_join_ignores_unregistered_collision_chain() {
+        const ENTRY_NAME: &str = "ParaMeshGeometry.11111111-2222-4333-8444-555555555555.paramesh";
+        const FUSION_UUID: &str = "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE";
+        const UNKNOWN_TYPE_GUID: &str = "00000000-0000-0000-0000-000000000001";
+
+        let mut bytes = Vec::new();
+        let mut records = Vec::new();
+        for (entity_id, frame) in [
+            (100, mesh_guid_record(256, 100, 101, FUSION_UUID)),
+            (101, mesh_entry_record(257, 101, 100, ENTRY_NAME)),
+            (102, mesh_body_record(258, 102, 100, 999, 998)),
+            (210, mesh_guid_record(260, 210, 211, FUSION_UUID)),
+            (211, mesh_entry_record(259, 211, 210, ENTRY_NAME)),
+            (212, mesh_body_record(261, 212, 210, 208, 777)),
+        ] {
+            records.push(primary_record(entity_id, bytes.len()));
+            bytes.extend_from_slice(&frame);
+        }
+        let meta = crate::metastream::MetaStream {
+            types: vec![
+                design_type(UNKNOWN_TYPE_GUID, None, 0, "", vec![100]),
+                design_type(UNKNOWN_TYPE_GUID, None, 0, "", vec![101]),
+                design_type(UNKNOWN_TYPE_GUID, None, 0, "", vec![102]),
+                design_type(
+                    MESH_ENTRY_NAME_TYPE_GUID,
+                    Some(MESH_ENTRY_NAME_BASE_TYPE_GUID),
+                    MESH_ENTRY_NAME_TYPE_VERSION,
+                    PARAMESH_MODULE,
+                    vec![211],
+                ),
+                design_type(
+                    MESH_GUID_TYPE_GUID,
+                    Some(MESH_GUID_BASE_TYPE_GUID),
+                    MESH_GUID_TYPE_VERSION,
+                    PARAMESH_MODULE,
+                    vec![210],
+                ),
+                design_type(
+                    MESH_BODY_TYPE_GUID,
+                    Some(MESH_BODY_BASE_TYPE_GUID),
+                    MESH_BODY_TYPE_VERSION,
+                    PARAMESH_MODULE,
+                    vec![212],
+                ),
+            ],
+            records,
+        };
+
+        let design = parse_mesh_design_records(&bytes, &meta, "design-stream".into())
+            .expect("typed mesh records");
+        assert_eq!(design.entry_names.len(), 1);
+        assert_eq!(design.guids.len(), 1);
+        assert_eq!(design.bodies.len(), 1);
+        let valid_body_offset =
+            usize::try_from(meta.records[5].bulk_offset).expect("test body offset");
+        let designs = [design];
+        let (joined_design, joined_body) =
+            resolve_mesh_body(&designs, ENTRY_NAME, FUSION_UUID).expect("exact mesh join");
+        assert_eq!(joined_design.stream, "design-stream");
+        assert_eq!(joined_body.byte_offset, valid_body_offset);
+        assert_eq!(joined_body.guid_record_index, 210);
+        assert_eq!(joined_body.scope_record_index, 208);
+    }
+
+    #[test]
+    fn mesh_join_rejects_multiple_typed_body_candidates() {
+        let mut design = MeshDesignRecords {
+            stream: "design-stream".into(),
+            entry_names: vec![MeshEntryNameRecord {
+                record_index: 11,
+                guid_record_index: 10,
+                entry_name: "mesh.paramesh".into(),
+            }],
+            guids: vec![MeshGuidRecord {
+                record_index: 10,
+                entry_name_record_index: 11,
+                fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
+            }],
+            bodies: vec![MeshBodyRecord {
+                byte_offset: 100,
+                guid_record_index: 10,
+                scope_record_index: 12,
+                transform: MeshAffineTransform([0.0; 16]),
+            }],
+        };
+        design.bodies.push(MeshBodyRecord {
+            byte_offset: 200,
+            ..design.bodies[0]
+        });
+
+        assert!(resolve_mesh_body(
+            &[design],
+            "mesh.paramesh",
+            "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE"
+        )
+        .is_none());
     }
 
     #[test]

@@ -48,6 +48,87 @@ pub(crate) fn metadata_for_bulk_stream(
     crate::metastream::parse(scan.entry_bytes(&meta_name)?, &meta_name).map(Some)
 }
 
+/// One primary `BulkStream` frame selected through a registered Design type.
+#[derive(Clone, Copy)]
+pub(crate) struct TypedPrimaryFrame<'a> {
+    pub(crate) entity_id: u64,
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    pub(crate) design_type: &'a SegmentType,
+}
+
+/// Resolve every entity registered to `type_guid` through the sibling
+/// `MetaStream` primary index and verify its dynamic class tag.
+pub(crate) fn typed_primary_frames<'a>(
+    bytes: &[u8],
+    meta: &'a crate::metastream::MetaStream,
+    type_guid: &str,
+    record_kind: &str,
+) -> Result<Vec<TypedPrimaryFrame<'a>>, CodecError> {
+    let primary_frames = crate::metastream::primary_record_frames(meta, bytes.len())?;
+
+    let mut primary_by_entity = HashMap::<u64, Option<usize>>::new();
+    for (ordinal, record) in primary_frames.iter().enumerate() {
+        primary_by_entity
+            .entry(record.entity_id)
+            .and_modify(|candidate| *candidate = None)
+            .or_insert(Some(ordinal));
+    }
+
+    let mut typed_entities = HashSet::new();
+    let mut frames = Vec::new();
+    for (type_ordinal, design_type) in meta.types.iter().enumerate() {
+        if !design_type.type_guid.eq_ignore_ascii_case(type_guid) {
+            continue;
+        }
+        let class_tag = u32::try_from(type_ordinal)
+            .ok()
+            .and_then(|ordinal| ordinal.checked_add(256))
+            .filter(|tag| *tag <= 999)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "F3D Design {record_kind} class tag is not three digits"
+                ))
+            })?
+            .to_string();
+        for &entity_id in &design_type.entity_ids {
+            if !typed_entities.insert(entity_id) {
+                return Err(CodecError::Malformed(format!(
+                    "F3D Design {record_kind} entity {entity_id} is registered more than once"
+                )));
+            }
+            let record_ordinal = match primary_by_entity.get(&entity_id) {
+                Some(Some(ordinal)) => *ordinal,
+                Some(None) => {
+                    return Err(CodecError::Malformed(format!(
+                        "F3D Design {record_kind} entity {entity_id} has multiple primary records"
+                    )))
+                }
+                None => {
+                    return Err(CodecError::Malformed(format!(
+                        "F3D Design {record_kind} entity {entity_id} has no primary record"
+                    )))
+                }
+            };
+            let primary_frame = primary_frames[record_ordinal];
+            let record = &bytes[primary_frame.start..primary_frame.end];
+            if u32_at(record, 0) != Some(3) || record.get(4..7) != Some(class_tag.as_bytes()) {
+                return Err(CodecError::Malformed(format!(
+                    "F3D Design {record_kind} entity {entity_id} has an invalid primary frame"
+                )));
+            }
+            frames.push(TypedPrimaryFrame {
+                entity_id,
+                start: primary_frame.start,
+                end: primary_frame.end,
+                design_type,
+            });
+        }
+    }
+    frames.sort_by_key(|frame| frame.start);
+    Ok(frames)
+}
+
 /// Type GUID and record version keyed by the Design entity ids that carry the
 /// type in the sibling `BulkStream`.
 pub(crate) fn stream_types_by_entity<'a>(

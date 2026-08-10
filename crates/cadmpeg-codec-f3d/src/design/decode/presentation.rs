@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse typed Design body-presentation and browser-node records.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use cadmpeg_core::le::{u32_at, u64_at};
 use cadmpeg_core::CodecError;
 
 use crate::bytes::{is_guid_prefix, lp_utf16_bounded, lp_utf16_bytes, take_reference};
+use crate::design::decode::meta::typed_primary_frames;
 use crate::design::decode::sketch::{parse_genesis_entity_header, parse_settled_entity_header};
 use crate::design::presentation::{
     is_physical_material_token, visual_token, APPEARANCE_LIBRARY_ID,
@@ -63,86 +64,6 @@ pub(crate) enum BodyPresentationOwner {
     },
     /// The owner stores only its u64 entity suffix in the indexed head.
     Bare,
-}
-
-#[derive(Clone, Copy)]
-struct TypedPrimaryFrame<'a> {
-    entity_id: u64,
-    start: usize,
-    end: usize,
-    design_type: &'a crate::records::SegmentType,
-}
-
-/// Resolve every entity registered to one type GUID through the sibling
-/// `MetaStream` primary index.
-fn typed_primary_frames<'a>(
-    bytes: &[u8],
-    meta: &'a crate::metastream::MetaStream,
-    type_guid: &str,
-    record_kind: &str,
-) -> Result<Vec<TypedPrimaryFrame<'a>>, CodecError> {
-    let primary_frames = crate::metastream::primary_record_frames(meta, bytes.len())?;
-
-    let mut primary_by_entity = HashMap::<u64, Option<usize>>::new();
-    for (ordinal, record) in primary_frames.iter().enumerate() {
-        primary_by_entity
-            .entry(record.entity_id)
-            .and_modify(|candidate| *candidate = None)
-            .or_insert(Some(ordinal));
-    }
-
-    let mut typed_entities = HashSet::new();
-    let mut frames = Vec::new();
-    for (type_ordinal, design_type) in meta.types.iter().enumerate() {
-        if !design_type.type_guid.eq_ignore_ascii_case(type_guid) {
-            continue;
-        }
-        let class_tag = u32::try_from(type_ordinal)
-            .ok()
-            .and_then(|ordinal| ordinal.checked_add(256))
-            .filter(|tag| *tag <= 999)
-            .ok_or_else(|| {
-                CodecError::Malformed(format!(
-                    "F3D Design {record_kind} class tag is not three digits"
-                ))
-            })?
-            .to_string();
-        for &entity_id in &design_type.entity_ids {
-            if !typed_entities.insert(entity_id) {
-                return Err(CodecError::Malformed(format!(
-                    "F3D Design {record_kind} entity {entity_id} is registered more than once"
-                )));
-            }
-            let record_ordinal = match primary_by_entity.get(&entity_id) {
-                Some(Some(ordinal)) => *ordinal,
-                Some(None) => {
-                    return Err(CodecError::Malformed(format!(
-                        "F3D Design {record_kind} entity {entity_id} has multiple primary records"
-                    )))
-                }
-                None => {
-                    return Err(CodecError::Malformed(format!(
-                        "F3D Design {record_kind} entity {entity_id} has no primary record"
-                    )))
-                }
-            };
-            let primary_frame = primary_frames[record_ordinal];
-            let record = &bytes[primary_frame.start..primary_frame.end];
-            if u32_at(record, 0) != Some(3) || record.get(4..7) != Some(class_tag.as_bytes()) {
-                return Err(CodecError::Malformed(format!(
-                    "F3D Design {record_kind} entity {entity_id} has an invalid primary frame"
-                )));
-            }
-            frames.push(TypedPrimaryFrame {
-                entity_id,
-                start: primary_frame.start,
-                end: primary_frame.end,
-                design_type,
-            });
-        }
-    }
-    frames.sort_by_key(|frame| frame.start);
-    Ok(frames)
 }
 
 /// Decode every browser node whose dynamic class resolves to the registered

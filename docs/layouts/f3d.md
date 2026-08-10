@@ -8,6 +8,7 @@ Source of truth: [`docs/formats/f3d.md`](../../docs/formats/f3d.md).
 Table source: `docs/layouts/f3d.toml`.
 
 Covers the fixed Design-segment headers and body-map prefix, the named solid-primitive prologue,
+the ParaMesh entry-name, container-GUID, mesh-body transform, and scope-join fields,
 the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, the
 compact `Loft` prefix and nested profile-region frames, the class-418
 `SplitFace` prefix, the grouped recipe-reference prefix, the three `Combine`
@@ -66,6 +67,66 @@ Eleven-reserved-byte variant. Offsets are relative to the typed body-map indexed
 Cross-checked against code:
 
 - `crates/cadmpeg-codec-f3d/src/design/decode/body.rs` — The exact primary-record parser tests each supported reserved-zero width.
+
+## `paramesh_entry_name_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 32 B
+
+Offsets are relative to the entry-name record's indexed header. The variable u32-count UTF-16LE entry name starts at offset 32 and ends at the primary-record boundary.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its indexed header is followed by ten zero bytes |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | followed by ten zero bytes |
+| 21 | 11 | `guid_record_reference` | `bytes[11]` | little | spec | a marked same-segment reference to the GUID record at offset 21 |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs` — The typed entry-name parser reads the GUID reference at the tabulated offset.
+
+## `paramesh_guid_join_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 83 B
+
+Offsets are relative to the container-GUID record's indexed header. A type-specific tail can follow the fixed join prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its indexed header is followed by 21 zero bytes |
+| 11 | 21 | `zero_run_21` | `bytes[21]` | little | spec | followed by 21 zero bytes |
+| 32 | 40 | `fusion_uuid` | `bytes[40]` | little | spec | the 36-byte LP-ASCII `fusion_uuid` at offset 32 |
+| 72 | 11 | `entry_name_backlink` | `bytes[11]` | little | spec | a marked same-segment backlink to the entry-name record at offset 72 |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs` — The typed GUID parser reads the entry-name backlink at the tabulated offset.
+
+## `paramesh_mesh_body_join_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 552 B
+
+Offsets are relative to the mesh-body primary indexed header. Presentation fields occupy the unstated spans, and the primary record can continue after this fixed prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its indexed header is followed by ten zero bytes. |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Its indexed header is followed by ten zero bytes. |
+| 42 | 128 | `first_transform` | `f64[16]` | little | spec | two equal row-major 4×4 f64 affine matrices at record-relative offsets 42 and 171 |
+| 171 | 128 | `second_transform` | `f64[16]` | little | spec | two equal row-major 4×4 f64 affine matrices at record-relative offsets 42 and 171 |
+| 508 | 11 | `feature_scope_reference` | `bytes[11]` | little | spec | A marked same-segment reference at offset 508 names the owning `Base Mesh Feature` scope. |
+| 541 | 11 | `container_guid_reference` | `bytes[11]` | little | spec | A marked same-segment reference at offset 541 names the GUID record. |
+
+Unstated regions:
+
+- `21..42` (21 B): The remaining mesh-body prologue is outside this fixed join table.
+- `170..171` (1 B): One structural byte separates the two transform blocks.
+- `299..508` (209 B): Presentation fields occupy the span before the feature-scope reference.
+- `519..541` (22 B): Presentation fields occupy the span between the feature-scope and container-GUID references.
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs` — The typed mesh-body parser reads the feature-scope reference at the tabulated offset.
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs` — The typed mesh-body parser reads the container-GUID reference at the tabulated offset.
 
 ## `assembly_operand_path_locator_reference_run`
 

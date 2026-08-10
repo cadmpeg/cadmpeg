@@ -487,16 +487,6 @@ The `.f3z` merge writes the note `(identity placement)` for the first cause. The
 
 **Need.** We must know the five payloads to write a mesh body from a neutral model, which duplicate matrix governs if they differ, and how a negative-determinant matrix affects triangle winding.
 
-### PM-03. Join from a mesh geometry container to its feature scope
-
-**Question.** Which stored reference joins a mesh body's geometry container to the `Base Mesh Feature` scope that owns it?
-
-**Known.** `f3d.md` §3.1 "A mesh body's geometry container" gives the mesh-body record and its marked reference to the scope's record index. `marked_record_indices` in `design/decode/mesh.rs` does not read one reference. It scans every byte offset of the payload for the pattern of a marker byte, eight bytes, and two zero bytes, and keeps every hit. `decode.rs` then registers the tessellation under every hit.
-
-`decode_mesh_bodies` reaches the container through two chained first-match searches: the first record whose bytes hold the GUID, then the first record in the same stream whose bytes hold the reference and whose two stored matrices decode. Neither search proves that no second record qualifies.
-
-**Need.** A document with two mesh bodies whose byte windows collide gives one feature two tessellations. The single stored reference the specification names must be read at its own offset.
-
 ## 7. Test evidence
 
 ### EV-01. Typed feature projection reached only by a direct call
