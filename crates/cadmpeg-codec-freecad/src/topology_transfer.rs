@@ -1231,9 +1231,7 @@ impl<'a> Builder<'a> {
                         index,
                         representation.secondary.is_some() && reversed,
                     ),
-                    (!degenerated)
-                        .then_some(representation.parameter_range)
-                        .flatten(),
+                    bounded_pcurve_range(*degenerated, representation.parameter_range),
                 )
             })
     }
@@ -1250,6 +1248,13 @@ impl<'a> Builder<'a> {
         self.root_discriminator
             .map_or(label.clone(), |ordinal| format!("{label}~root{ordinal}"))
     }
+}
+
+fn bounded_pcurve_range(degenerated: bool, range: Option<[f64; 2]>) -> Option<[f64; 2]> {
+    (!degenerated)
+        .then_some(range)
+        .flatten()
+        .filter(|range| range[0] < range[1])
 }
 
 fn connected_components(connectivity: &[HashSet<String>]) -> Vec<Vec<usize>> {
@@ -1802,6 +1807,16 @@ mod tests {
                 .expect("periodic range");
         assert_eq!(start, 0.0);
         assert!((end - start - (std::f64::consts::FRAC_PI_2 + 1.0e-15)).abs() < 1.0e-15);
+    }
+
+    #[test]
+    fn collapsed_pcurve_ranges_are_unbounded() {
+        assert_eq!(bounded_pcurve_range(false, Some([2.0, 2.0])), None);
+        assert_eq!(bounded_pcurve_range(true, Some([1.0, 3.0])), None);
+        assert_eq!(
+            bounded_pcurve_range(false, Some([1.0, 3.0])),
+            Some([1.0, 3.0])
+        );
     }
 
     #[test]
