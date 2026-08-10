@@ -606,21 +606,37 @@ fn walk_face(bridge: &Record, t: &topology::Tables) -> WalkedFace {
         let Some(lp) = t.loops.get(&loop_ref) else {
             break;
         };
+        let owner_bridge = lp.refs.get(2).copied().unwrap_or(0);
+        let same_face_use = owner_bridge == bridge.attr
+            || bridge.owner.is_some_and(|owner| {
+                t.bridges
+                    .get(&owner_bridge)
+                    .and_then(|candidate| candidate.owner)
+                    == Some(owner)
+            });
+        if !same_face_use {
+            break;
+        }
         let first = *lp.refs.get(1).unwrap_or(&0);
         let mut ring = Vec::new();
         let mut ce_ref = first;
         let mut ce_guard = HashSet::new();
+        let mut ring_closed = false;
         while ce_ref != 0 && ce_guard.insert(ce_ref) {
             let Some(ce) = t.coedges.get(&ce_ref) else {
                 break;
             };
+            if ce.refs.get(1).copied() != Some(loop_ref) {
+                break;
+            }
             ring.push(ce_ref);
             ce_ref = *ce.refs.get(3).unwrap_or(&0);
             if ce_ref == first {
+                ring_closed = true;
                 break;
             }
         }
-        if !ring.is_empty() {
+        if ring_closed {
             loops.push((loop_ref, ring));
         }
         loop_ref = *lp.refs.get(3).unwrap_or(&0);
@@ -4396,7 +4412,52 @@ fn emit_curve(out: &mut Brep, carrier: &Carrier) {
 mod tests {
     use super::unique_face_colors;
     use crate::brep::entity;
+    use crate::brep::topology::{Record, Tables};
     use cadmpeg_ir::topology::Color;
+
+    fn topology_record(attr: u16, refs: Vec<u16>) -> Record {
+        Record {
+            attr,
+            refs,
+            marker: None,
+            xyz_m: None,
+            xyz_offset: None,
+            owner: None,
+            offset: 0,
+        }
+    }
+
+    #[test]
+    fn face_walk_rejects_a_loop_owned_by_another_bridge() {
+        let bridge = topology_record(10, vec![0, 0, 20, 0, 30]);
+        let mut tables = Tables::default();
+        tables
+            .loops
+            .insert(20, topology_record(20, vec![0, 40, 11, 0]));
+        tables
+            .coedges
+            .insert(40, topology_record(40, vec![0, 0, 0, 40]));
+
+        let face = super::walk_face(&bridge, &tables);
+
+        assert!(face.loops.is_empty());
+    }
+
+    #[test]
+    fn face_walk_rejects_a_ring_owned_by_another_loop() {
+        let bridge = topology_record(10, vec![0, 0, 20, 0, 30]);
+        let mut tables = Tables::default();
+        tables
+            .loops
+            .insert(20, topology_record(20, vec![0, 40, 10, 0]));
+        tables
+            .coedges
+            .insert(40, topology_record(40, vec![0, 21, 0, 40]));
+
+        let face = super::walk_face(&bridge, &tables);
+
+        assert!(face.loops.is_empty());
+    }
 
     fn face_color(
         face_attr: u16,
