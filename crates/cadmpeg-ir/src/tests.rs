@@ -5463,7 +5463,7 @@ fn feature_operation_geometry_is_validated() {
                 cone_angle: crate::features::Angle(0.0),
                 left_handed: false,
                 reversed: false,
-                tolerance: 0.0,
+                tolerance: Some(0.0),
                 allow_multi_profile_faces: None,
             },
             op: crate::features::BooleanOp::Join,

@@ -11760,6 +11760,7 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
             plane_origin,
             plane_normal,
         } => !finite_feature_point(*plane_origin) || !valid_feature_direction(*plane_normal),
+        PatternKind::MirrorReference { .. } => true,
         PatternKind::CurveDriven {
             path,
             spacing,
@@ -11916,7 +11917,7 @@ pub(crate) fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
         | PatternKind::Scale { count, .. } => usize::try_from(*count).ok(),
         PatternKind::LinearOffsets { offsets, .. } => Some(offsets.len()),
         PatternKind::CircularAngles { angles, .. } => Some(angles.len()),
-        PatternKind::Mirror { .. } => Some(2),
+        PatternKind::Mirror { .. } | PatternKind::MirrorReference { .. } => Some(2),
         PatternKind::Composite { stages } => {
             stages
                 .iter()

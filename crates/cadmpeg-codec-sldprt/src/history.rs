@@ -15688,7 +15688,9 @@ pub fn sync_neutral_features(
                         Some(PatternForm::Circular)
                     }
                     PatternKind::CurveDriven { .. } => Some(PatternForm::CurveDriven),
-                    PatternKind::Mirror { .. } => Some(PatternForm::Mirror),
+                    PatternKind::Mirror { .. } | PatternKind::MirrorReference { .. } => {
+                        Some(PatternForm::Mirror)
+                    }
                     PatternKind::Scale { .. } => Some(PatternForm::Scale),
                     PatternKind::Composite { .. } => Some(PatternForm::Composite),
                 };
@@ -15897,6 +15899,12 @@ pub fn sync_neutral_features(
                         require_direction(*plane_normal, &feature.id, "mirror plane normal")?;
                         properties.insert("PlaneOrigin".into(), format_point3_mm(*plane_origin));
                         properties.insert("PlaneNormal".into(), format_vector3(*plane_normal));
+                    }
+                    PatternKind::MirrorReference { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has an unresolved mirror plane",
+                            feature.id
+                        )));
                     }
                     PatternKind::LinearOffsets { .. }
                     | PatternKind::CircularAngles { .. }

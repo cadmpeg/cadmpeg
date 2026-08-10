@@ -1952,7 +1952,7 @@ fn transform_sketch_block_geometry(
             horizontal_alignment: *horizontal_alignment,
             vertical_alignment: *vertical_alignment,
         },
-        SketchGeometry::Native { .. } => return None,
+        SketchGeometry::ExternalReference { .. } | SketchGeometry::Native { .. } => return None,
     })
 }
 

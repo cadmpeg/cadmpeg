@@ -1,0 +1,810 @@
+{
+  "ir": {
+    "ir_version": "5",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "fcstd:model:body#ConicWitness:Shape:ConicWitness.Shape.brp:23",
+          "kind": "general",
+          "regions": [
+            "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:7",
+            "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:11",
+            "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:14",
+            "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:18",
+            "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:22"
+          ]
+        }
+      ],
+      "coedges": [],
+      "configurations": [],
+      "curves": [
+        {
+          "geometry": {
+            "axis": {
+              "x": 0.0,
+              "y": -0.0,
+              "z": 1.0
+            },
+            "center": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "circle",
+            "radius": 8.0,
+            "ref_direction": {
+              "x": 0.9323273456060345,
+              "y": 0.361615431964962,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:1",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#ConicWitness"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": -0.9872296614027263,
+              "y": -0.1593034702906954,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 12.0,
+              "y": 10.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:2",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#ConicWitness"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.7373852133281609,
+              "y": 0.6754724621810889,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 6.368670388392447,
+              "y": 4.841491245888316,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:3",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#ConicWitness"
+          }
+        },
+        {
+          "geometry": {
+            "axis": {
+              "x": 0.0,
+              "y": -0.0,
+              "z": 1.0
+            },
+            "center": {
+              "x": 30.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "ellipse",
+            "major_direction": {
+              "x": 0.8628070705147609,
+              "y": 0.505533341204847,
+              "z": 0.0
+            },
+            "major_radius": 10.999999999999998,
+            "minor_radius": 4.000000000000001
+          },
+          "id": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:4",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#ConicWitness"
+          }
+        },
+        {
+          "geometry": {
+            "axis": {
+              "x": 0.0,
+              "y": -0.0,
+              "z": 1.0
+            },
+            "center": {
+              "x": 0.0,
+              "y": 30.0,
+              "z": 0.0
+            },
+            "kind": "ellipse",
+            "major_direction": {
+              "x": 0.7583618759905084,
+              "y": 0.6518337710215366,
+              "z": 0.0
+            },
+            "major_radius": 9.0,
+            "minor_radius": 2.9999999999999973
+          },
+          "id": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:5",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#ConicWitness"
+          }
+        },
+        {
+          "geometry": {
+            "axis": {
+              "x": 0.0,
+              "y": -0.0,
+              "z": 1.0
+            },
+            "center": {
+              "x": 30.0,
+              "y": 30.0,
+              "z": 0.0
+            },
+            "kind": "hyperbola",
+            "major_direction": {
+              "x": 0.8915682881953287,
+              "y": 0.4528862853790689,
+              "z": 0.0
+            },
+            "major_radius": 7.000000000000004,
+            "minor_radius": 3.0000000000000027
+          },
+          "id": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:6",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#ConicWitness"
+          }
+        },
+        {
+          "geometry": {
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "focal_distance": 3.9999999999999996,
+            "kind": "parabola",
+            "major_direction": {
+              "x": 0.7838216658808489,
+              "y": 0.6209859870365603,
+              "z": -0.0
+            },
+            "vertex": {
+              "x": 60.0,
+              "y": 20.0,
+              "z": 0.0
+            }
+          },
+          "id": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:7",
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#ConicWitness"
+          }
+        }
+      ],
+      "drawings": [],
+      "edges": [
+        {
+          "curve": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:4",
+          "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:9",
+          "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:10",
+          "param_range": [
+            5.863185307179586,
+            7.653185307179586
+          ],
+          "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:8",
+          "tolerance": 1e-7
+        },
+        {
+          "curve": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:5",
+          "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:12",
+          "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:13",
+          "param_range": [
+            0.0,
+            6.283185307179586
+          ],
+          "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:12",
+          "tolerance": 1e-7
+        },
+        {
+          "curve": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:6",
+          "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:16",
+          "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:17",
+          "param_range": [
+            -0.63,
+            0.88
+          ],
+          "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:15",
+          "tolerance": 1e-7
+        },
+        {
+          "curve": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:7",
+          "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:20",
+          "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:21",
+          "param_range": [
+            -0.26250000000000007,
+            0.30000000000000004
+          ],
+          "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:19",
+          "tolerance": 1e-7
+        },
+        {
+          "curve": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:1",
+          "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:2",
+          "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:3",
+          "param_range": [
+            0.28,
+            1.46
+          ],
+          "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:1",
+          "tolerance": 1e-7
+        },
+        {
+          "curve": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:2",
+          "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:2",
+          "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:5",
+          "param_range": [
+            0.0,
+            14.232237761025381
+          ],
+          "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:4",
+          "tolerance": 1e-7
+        },
+        {
+          "curve": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:3",
+          "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:4",
+          "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:6",
+          "param_range": [
+            0.0,
+            7.636889796298946
+          ],
+          "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:1",
+          "tolerance": 1e-7
+        }
+      ],
+      "faces": [],
+      "features": [
+        {
+          "definition": {
+            "definition": "sketch",
+            "sketch": "fcstd:design:sketch#ConicWitness",
+            "space": "planar"
+          },
+          "id": "fcstd:design:feature#ConicWitness",
+          "name": "ConicWitness",
+          "native_ref": "fcstd:native:object#ConicWitness",
+          "ordinal": 1,
+          "outputs": [
+            "fcstd:model:body#ConicWitness:Shape:ConicWitness.Shape.brp:23"
+          ],
+          "source_properties": {
+            "MapMode": "0",
+            "Visibility": "true"
+          },
+          "source_tag": "Sketcher::SketchObject",
+          "suppressed": null
+        }
+      ],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [
+        {
+          "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:1",
+          "position": {
+            "x": 6.368670388392447,
+            "y": 4.841491245888317,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#ConicWitness"
+          }
+        },
+        {
+          "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:12",
+          "position": {
+            "x": 6.825256883914576,
+            "y": 35.86650393919383,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#ConicWitness"
+          }
+        },
+        {
+          "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:15",
+          "position": {
+            "x": 38.434720873714745,
+            "y": 32.02165247596257,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#ConicWitness"
+          }
+        },
+        {
+          "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:16",
+          "position": {
+            "x": 37.46149067127983,
+            "y": 37.148506816578966,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#ConicWitness"
+          }
+        },
+        {
+          "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:19",
+          "position": {
+            "x": 61.52011141943519,
+            "y": 18.52513376432717,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#ConicWitness"
+          }
+        },
+        {
+          "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:2",
+          "position": {
+            "x": -2.050487265820181,
+            "y": 7.73275513466638,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#ConicWitness"
+          }
+        },
+        {
+          "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:20",
+          "position": {
+            "x": 58.79180943082936,
+            "y": 22.104726953447198,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#ConicWitness"
+          }
+        },
+        {
+          "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:4",
+          "position": {
+            "x": 12.0,
+            "y": 10.0,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#ConicWitness"
+          }
+        },
+        {
+          "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:8",
+          "position": {
+            "x": 39.49056154779882,
+            "y": 3.670291523041618,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#ConicWitness"
+          }
+        },
+        {
+          "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:9",
+          "position": {
+            "x": 29.911448138968304,
+            "y": 4.490999737757602,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "fcstd",
+            "object_id": "fcstd:native:object#ConicWitness"
+          }
+        }
+      ],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [
+        {
+          "body": "fcstd:model:body#ConicWitness:Shape:ConicWitness.Shape.brp:23",
+          "id": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:11",
+          "shells": [
+            "fcstd:model:shell#ConicWitness:Shape:ConicWitness.Shape.brp:11"
+          ]
+        },
+        {
+          "body": "fcstd:model:body#ConicWitness:Shape:ConicWitness.Shape.brp:23",
+          "id": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:14",
+          "shells": [
+            "fcstd:model:shell#ConicWitness:Shape:ConicWitness.Shape.brp:14"
+          ]
+        },
+        {
+          "body": "fcstd:model:body#ConicWitness:Shape:ConicWitness.Shape.brp:23",
+          "id": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:18",
+          "shells": [
+            "fcstd:model:shell#ConicWitness:Shape:ConicWitness.Shape.brp:18"
+          ]
+        },
+        {
+          "body": "fcstd:model:body#ConicWitness:Shape:ConicWitness.Shape.brp:23",
+          "id": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:22",
+          "shells": [
+            "fcstd:model:shell#ConicWitness:Shape:ConicWitness.Shape.brp:22"
+          ]
+        },
+        {
+          "body": "fcstd:model:body#ConicWitness:Shape:ConicWitness.Shape.brp:23",
+          "id": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:7",
+          "shells": [
+            "fcstd:model:shell#ConicWitness:Shape:ConicWitness.Shape.brp:7"
+          ]
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [
+        {
+          "faces": [],
+          "id": "fcstd:model:shell#ConicWitness:Shape:ConicWitness.Shape.brp:11",
+          "region": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:11",
+          "wire_edges": [
+            "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:10"
+          ]
+        },
+        {
+          "faces": [],
+          "id": "fcstd:model:shell#ConicWitness:Shape:ConicWitness.Shape.brp:14",
+          "region": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:14",
+          "wire_edges": [
+            "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:13"
+          ]
+        },
+        {
+          "faces": [],
+          "id": "fcstd:model:shell#ConicWitness:Shape:ConicWitness.Shape.brp:18",
+          "region": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:18",
+          "wire_edges": [
+            "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:17"
+          ]
+        },
+        {
+          "faces": [],
+          "id": "fcstd:model:shell#ConicWitness:Shape:ConicWitness.Shape.brp:22",
+          "region": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:22",
+          "wire_edges": [
+            "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:21"
+          ]
+        },
+        {
+          "faces": [],
+          "id": "fcstd:model:shell#ConicWitness:Shape:ConicWitness.Shape.brp:7",
+          "region": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:7",
+          "wire_edges": [
+            "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:3",
+            "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:5",
+            "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:6"
+          ]
+        }
+      ],
+      "sketch_constraints": [],
+      "sketch_entities": [
+        {
+          "construction": false,
+          "geometry": {
+            "center": {
+              "u": 0.0,
+              "v": 0.0
+            },
+            "end_angle": 1.83,
+            "kind": "arc",
+            "radius": 8.0,
+            "start_angle": 0.65
+          },
+          "id": "fcstd:design:sketch-entity#ConicWitness:1",
+          "native_ref": "fcstd:native:property#ConicWitness:Geometry",
+          "sketch": "fcstd:design:sketch#ConicWitness"
+        },
+        {
+          "construction": false,
+          "geometry": {
+            "end": {
+              "u": 12.0,
+              "v": 10.0
+            },
+            "kind": "line",
+            "start": {
+              "u": 6.368670388392447,
+              "v": 4.841491245888316
+            }
+          },
+          "id": "fcstd:design:sketch-entity#ConicWitness:2",
+          "native_ref": "fcstd:native:property#ConicWitness:Geometry",
+          "sketch": "fcstd:design:sketch#ConicWitness"
+        },
+        {
+          "construction": false,
+          "geometry": {
+            "end": {
+              "u": -2.0504872658201823,
+              "v": 7.73275513466638
+            },
+            "kind": "line",
+            "start": {
+              "u": 12.0,
+              "v": 10.0
+            }
+          },
+          "id": "fcstd:design:sketch-entity#ConicWitness:3",
+          "native_ref": "fcstd:native:property#ConicWitness:Geometry",
+          "sketch": "fcstd:design:sketch#ConicWitness"
+        },
+        {
+          "construction": false,
+          "geometry": {
+            "center": {
+              "u": 30.0,
+              "v": 0.0
+            },
+            "end_angle": 7.653185307179586,
+            "kind": "ellipse",
+            "major_angle": 0.5300000000000001,
+            "major_radius": 10.999999999999998,
+            "minor_radius": 4.000000000000001,
+            "start_angle": 5.863185307179586
+          },
+          "id": "fcstd:design:sketch-entity#ConicWitness:4",
+          "native_ref": "fcstd:native:property#ConicWitness:Geometry",
+          "sketch": "fcstd:design:sketch#ConicWitness"
+        },
+        {
+          "construction": false,
+          "geometry": {
+            "center": {
+              "u": 0.0,
+              "v": 30.0
+            },
+            "kind": "ellipse",
+            "major_angle": 0.71,
+            "major_radius": 9.0,
+            "minor_radius": 2.9999999999999973
+          },
+          "id": "fcstd:design:sketch-entity#ConicWitness:5",
+          "native_ref": "fcstd:native:property#ConicWitness:Geometry",
+          "sketch": "fcstd:design:sketch#ConicWitness"
+        },
+        {
+          "construction": false,
+          "geometry": {
+            "center": {
+              "u": 30.0,
+              "v": 30.0
+            },
+            "end_parameter": 0.88,
+            "kind": "hyperbola",
+            "major_angle": 0.4700000000000007,
+            "major_radius": 7.000000000000004,
+            "minor_radius": 3.0000000000000027,
+            "start_parameter": -0.63
+          },
+          "id": "fcstd:design:sketch-entity#ConicWitness:6",
+          "native_ref": "fcstd:native:property#ConicWitness:Geometry",
+          "sketch": "fcstd:design:sketch#ConicWitness"
+        },
+        {
+          "construction": false,
+          "geometry": {
+            "axis_angle": 0.6700000000000007,
+            "end_parameter": 2.4,
+            "focal_length": 3.9999999999999996,
+            "kind": "parabola",
+            "start_parameter": -2.1,
+            "vertex": {
+              "u": 60.0,
+              "v": 20.0
+            }
+          },
+          "id": "fcstd:design:sketch-entity#ConicWitness:7",
+          "native_ref": "fcstd:native:property#ConicWitness:Geometry",
+          "sketch": "fcstd:design:sketch#ConicWitness"
+        }
+      ],
+      "sketches": [
+        {
+          "id": "fcstd:design:sketch#ConicWitness",
+          "name": "ConicWitness",
+          "native_ref": "fcstd:native:object#ConicWitness",
+          "placement": {
+            "kind": "resolved",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "profiles": [
+            [
+              {
+                "entity": "fcstd:design:sketch-entity#ConicWitness:1",
+                "reversed": false
+              },
+              {
+                "entity": "fcstd:design:sketch-entity#ConicWitness:3",
+                "reversed": true
+              },
+              {
+                "entity": "fcstd:design:sketch-entity#ConicWitness:2",
+                "reversed": true
+              }
+            ],
+            [
+              {
+                "entity": "fcstd:design:sketch-entity#ConicWitness:4",
+                "reversed": false
+              }
+            ],
+            [
+              {
+                "entity": "fcstd:design:sketch-entity#ConicWitness:5",
+                "reversed": false
+              }
+            ],
+            [
+              {
+                "entity": "fcstd:design:sketch-entity#ConicWitness:6",
+                "reversed": false
+              }
+            ],
+            [
+              {
+                "entity": "fcstd:design:sketch-entity#ConicWitness:7",
+                "reversed": false
+              }
+            ]
+          ]
+        }
+      ],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [
+        {
+          "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:1",
+          "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:1",
+          "tolerance": 1.00000001e-7
+        },
+        {
+          "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:12",
+          "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:12",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:15",
+          "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:15",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:16",
+          "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:16",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:19",
+          "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:19",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:2",
+          "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:2",
+          "tolerance": 1.00000001e-7
+        },
+        {
+          "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:20",
+          "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:20",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:4",
+          "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:4",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:8",
+          "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:8",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:9",
+          "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:9",
+          "tolerance": 1e-7
+        }
+      ],
+      "view_presentations": []
+    },
+    "native": {
+      "__elided": "native arenas are pinned by digest, not by value",
+      "__serialized_len": 326298,
+      "__sha256": "36ca9f9e638badc4306c892f5432a5ec8f3978c7f0ff276de8f23f31063baca0"
+    },
+    "source": {
+      "attributes": {
+        "application_domains": "App,Sketcher",
+        "archive_entry_count": "4",
+        "document_kind": "application-document",
+        "document_root": "Document",
+        "file_version": "1",
+        "object_count": "2",
+        "physical_archive_bytes": "4309",
+        "physical_ledger_spans": "29",
+        "program_version": "1.1R20260414 (Git shallow)",
+        "schema_version": "4"
+      },
+      "format": "fcstd"
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "container_only": false,
+    "format": "fcstd",
+    "geometry_transferred": true,
+    "losses": [],
+    "notes": [
+      "SchemaVersion=4",
+      "FileVersion=1",
+      "document root=Document",
+      "document kind=application-document",
+      "object count=2",
+      "physical ledger spans=29 coverage=exact",
+      "ProgramVersion=1.1R20260414 (Git shallow)"
+    ]
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "version": "3"
+  }
+}

@@ -737,6 +737,7 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
         ],
         SketchGeometry::Nurbs { .. }
         | SketchGeometry::Text { .. }
+        | SketchGeometry::ExternalReference { .. }
         | SketchGeometry::Native { .. } => Vec::new(),
     }
 }
