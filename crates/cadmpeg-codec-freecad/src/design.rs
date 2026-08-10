@@ -3264,9 +3264,13 @@ fn derived_shape_definition(
 ) -> Option<FeatureDefinition> {
     match kind {
         "Part::Compound" | "Part::Compound2" => {
-            let links = property(properties, "Links")?;
+            let Some(links) = property(properties, "Links") else {
+                return property(properties, "Shape").map(|_| FeatureDefinition::StoredGeometry);
+            };
             if links.links.is_empty() {
-                return None;
+                return Some(FeatureDefinition::Compound {
+                    members: BodySelection::Native(links.id.clone()),
+                });
             }
             Some(FeatureDefinition::Compound {
                 members: BodySelection::Native(links.id.clone()),

@@ -1503,21 +1503,23 @@ fn transfers_uniform_and_anisotropic_part_scale() {
 #[test]
 fn transfers_part_compound_refine_and_reverse_operations() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="6">
+<Objects Count="7">
  <Object type="Part::Box" name="A" id="1"/>
  <Object type="Part::Box" name="B" id="2"/>
  <Object type="Part::Compound" name="Compound" id="3"/>
  <Object type="Part::Compound2" name="Compound2" id="4"/>
  <Object type="Part::Refine" name="Refine" id="5"/>
  <Object type="Part::Reverse" name="Reverse" id="6"/>
+ <Object type="Part::Compound" name="CachedCompound" id="7"/>
 </Objects>
-<ObjectData Count="6">
+<ObjectData Count="7">
  <Object name="A"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
  <Object name="B"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="2"/></Property><Property name="Width" type="App::PropertyLength"><Float value="2"/></Property><Property name="Height" type="App::PropertyLength"><Float value="2"/></Property></Properties></Object>
  <Object name="Compound"><Properties Count="1"><Property name="Links" type="App::PropertyLinkList"><LinkList count="2"><Link value="A"/><Link value="B"/></LinkList></Property></Properties></Object>
  <Object name="Compound2"><Properties Count="1"><Property name="Links" type="App::PropertyLinkList"><LinkList count="2"><Link value="B"/><Link value="A"/></LinkList></Property></Properties></Object>
  <Object name="Refine"><Properties Count="1"><Property name="Source" type="App::PropertyLink"><Link value="Compound"/></Property></Properties></Object>
  <Object name="Reverse"><Properties Count="1"><Property name="Source" type="App::PropertyLink"><Link value="Refine"/></Property></Properties></Object>
+ <Object name="CachedCompound"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"/></Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
         .decode(
@@ -1547,6 +1549,10 @@ fn transfers_part_compound_refine_and_reverse_operations() {
     assert!(matches!(
         feature("Reverse").definition,
         cadmpeg_ir::features::FeatureDefinition::ReverseShape { .. }
+    ));
+    assert!(matches!(
+        feature("CachedCompound").definition,
+        cadmpeg_ir::features::FeatureDefinition::StoredGeometry
     ));
     assert_eq!(feature("Compound").dependencies.len(), 2);
     assert_eq!(feature("Compound2").dependencies.len(), 2);
