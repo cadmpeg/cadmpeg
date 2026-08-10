@@ -7181,6 +7181,8 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
         strip_lengths: Vec::new(),
         normals: Vec::new(),
         corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
         channels: Vec::new(),
     });
     let error = F3dCodec

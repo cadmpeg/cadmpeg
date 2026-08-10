@@ -28821,6 +28821,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                 .map(|normal| Vector3::new(normal[0], normal[1], normal[2]))
                 .collect(),
             corner_normals: Vec::new(),
+            triangle_groups: Vec::new(),
+            texture_assignments: Vec::new(),
             channels: Vec::new(),
         });
     }

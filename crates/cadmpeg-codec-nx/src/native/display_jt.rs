@@ -4024,6 +4024,8 @@ pub(crate) fn display_jt_tessellations(
                     strip_lengths: Vec::new(),
                     normals: normal_vectors,
                     corner_normals: Vec::new(),
+                    triangle_groups: Vec::new(),
+                    texture_assignments: Vec::new(),
                     channels,
                 },
                 shape_node.source_offset,

@@ -276,6 +276,8 @@ impl<'a> Builder<'a> {
                 strip_lengths: Vec::new(),
                 normals: triangulation.normals.clone().unwrap_or_default(),
                 corner_normals: Vec::new(),
+                triangle_groups: Vec::new(),
+                texture_assignments: Vec::new(),
                 channels: Vec::new(),
             });
         }
@@ -638,6 +640,8 @@ impl<'a> Builder<'a> {
                 strip_lengths: Vec::new(),
                 normals,
                 corner_normals: Vec::new(),
+                triangle_groups: Vec::new(),
+                texture_assignments: Vec::new(),
                 channels: Vec::new(),
             });
         }

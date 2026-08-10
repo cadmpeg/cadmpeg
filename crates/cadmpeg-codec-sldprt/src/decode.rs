@@ -2487,6 +2487,8 @@ fn build_geometry_ir(
                     strip_lengths: mesh.strip_lengths,
                     normals: mesh.normals,
                     corner_normals: Vec::new(),
+                    triangle_groups: Vec::new(),
+                    texture_assignments: Vec::new(),
                     channels: mesh.channels,
                 });
         }

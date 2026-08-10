@@ -3074,6 +3074,8 @@ fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link() {
             strip_lengths: Vec::new(),
             normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
             corner_normals: Vec::new(),
+            triangle_groups: Vec::new(),
+            texture_assignments: Vec::new(),
             channels: Vec::new(),
         });
     let options = StepWriteOptions {
@@ -3098,6 +3100,72 @@ fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link() {
     assert_eq!(mesh.triangles, [[0, 1, 2], [2, 1, 0]]);
     assert_eq!(mesh.normals.len(), 3);
     assert!(mesh.body.is_some());
+}
+
+#[test]
+fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
+    use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
+    use cadmpeg_ir::tessellation::{TessellationTextureAssignment, TessellationTriangleGroup};
+
+    let mut ir = unit_cube();
+    let texture = AssetId("synthetic:test:asset#0".into());
+    ir.model.assets.push(Asset {
+        id: texture.clone(),
+        name: None,
+        media_type: Some("image/png".into()),
+        content: AssetContent::Embedded { data: vec![0] },
+        native_ref: None,
+    });
+    ir.model
+        .tessellations
+        .push(cadmpeg_ir::tessellation::Tessellation {
+            id: "synthetic:test:tessellation#triangle-metadata".into(),
+            body: None,
+            faces: Vec::new(),
+            chordal_deflection: None,
+            source_object: None,
+            vertices: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            triangles: vec![[0, 1, 2]],
+            feature_edges: Vec::new(),
+            strip_lengths: Vec::new(),
+            normals: Vec::new(),
+            corner_normals: Vec::new(),
+            triangle_groups: vec![TessellationTriangleGroup {
+                source_id: Some("synthetic:test:group#0".into()),
+                triangles: vec![0],
+            }],
+            texture_assignments: vec![TessellationTextureAssignment {
+                source_id: Some("synthetic:test:texture-resource#0".into()),
+                texture,
+                triangles: vec![0],
+            }],
+            channels: Vec::new(),
+        });
+
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("write tessellation geometry");
+    assert_eq!(
+        report
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code == cadmpeg_ir::LossKind::AttributesNotTransferred
+                    && loss.severity == cadmpeg_ir::Severity::Warning
+            })
+            .count(),
+        2
+    );
 }
 
 #[test]
@@ -5661,6 +5729,8 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
             strip_lengths: Vec::new(),
             normals: Vec::new(),
             corner_normals: Vec::new(),
+            triangle_groups: Vec::new(),
+            texture_assignments: Vec::new(),
             channels: Vec::new(),
         });
 

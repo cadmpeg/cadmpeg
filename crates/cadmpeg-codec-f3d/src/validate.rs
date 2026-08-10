@@ -1595,6 +1595,10 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .and_then(|bytes| bytes.checked_add(36))
                     == Some(body.entry_name_record.frame_length)
                 && valid_design_guid(&body.fusion_uuid)
+                && body
+                    .container_mesh_uuid
+                    .as_deref()
+                    .is_none_or(crate::paramesh::valid_mesh_uuid)
                 && mesh_record_offset_is(&body.guid_record, 36, body.fusion_uuid_offset)
                 && body.guid_record.frame_length >= 83
                 && design::decode::mesh::valid_mesh_transform(body.transform)

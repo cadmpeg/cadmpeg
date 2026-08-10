@@ -3003,6 +3003,8 @@ impl<'a> DecodeContext<'a> {
             strip_lengths: mesh.tessellation.strip_lengths,
             normals: mesh.tessellation.normals,
             corner_normals: mesh.tessellation.corner_normals,
+            triangle_groups: Vec::new(),
+            texture_assignments: Vec::new(),
             channels: mesh.tessellation.channels,
         });
         self.annotations.exactness.insert(

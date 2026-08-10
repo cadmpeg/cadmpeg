@@ -101,6 +101,75 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                 entity: Some(mesh.id.clone()),
             });
         }
+        if !mesh.triangle_groups.is_empty() {
+            let mut memberships = vec![0u32; mesh.triangles.len()];
+            let mut source_ids = std::collections::BTreeSet::new();
+            let valid = mesh.triangle_groups.iter().all(|group| {
+                !group.triangles.is_empty()
+                    && group
+                        .triangles
+                        .windows(2)
+                        .all(|ordinals| ordinals[0] < ordinals[1])
+                    && group.triangles.iter().all(|ordinal| {
+                        usize::try_from(*ordinal)
+                            .ok()
+                            .and_then(|ordinal| memberships.get_mut(ordinal))
+                            .is_some_and(|count| {
+                                *count += 1;
+                                true
+                            })
+                    })
+                    && group.source_id.as_ref().is_none_or(|source_id| {
+                        !source_id.is_empty() && source_ids.insert(source_id.as_str())
+                    })
+            }) && memberships.iter().all(|count| *count == 1);
+            if !valid {
+                findings.push(Finding {
+                    check: Check::Tessellation,
+                    severity: Severity::Error,
+                    message: "contains an invalid tessellation triangle-group partition".into(),
+                    entity: Some(mesh.id.clone()),
+                });
+            }
+        }
+        if !mesh.texture_assignments.is_empty() {
+            let mut memberships = vec![0u32; mesh.triangles.len()];
+            let mut source_ids = std::collections::BTreeSet::new();
+            let mut anonymous_textures = std::collections::BTreeSet::new();
+            let valid = mesh.texture_assignments.iter().all(|assignment| {
+                !assignment.triangles.is_empty()
+                    && match assignment.source_id.as_deref() {
+                        Some(source_id) => !source_id.is_empty() && source_ids.insert(source_id),
+                        None => anonymous_textures.insert(&assignment.texture),
+                    }
+                    && ir
+                        .model
+                        .assets
+                        .iter()
+                        .any(|asset| asset.id == assignment.texture)
+                    && assignment
+                        .triangles
+                        .windows(2)
+                        .all(|ordinals| ordinals[0] < ordinals[1])
+                    && assignment.triangles.iter().all(|ordinal| {
+                        usize::try_from(*ordinal)
+                            .ok()
+                            .and_then(|ordinal| memberships.get_mut(ordinal))
+                            .is_some_and(|count| {
+                                *count += 1;
+                                true
+                            })
+                    })
+            }) && memberships.iter().all(|count| *count <= 1);
+            if !valid {
+                findings.push(Finding {
+                    check: Check::Tessellation,
+                    severity: Severity::Error,
+                    message: "contains invalid tessellation texture assignments".into(),
+                    entity: Some(mesh.id.clone()),
+                });
+            }
+        }
         if mesh.feature_edges.iter().any(|edge| {
             edge[0] >= edge[1]
                 || usize::try_from(edge[1]).map_or(true, |index| index >= mesh.vertices.len())

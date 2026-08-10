@@ -1403,6 +1403,8 @@ fn tessellation_counts_must_be_consistent() {
         strip_lengths: vec![4],
         normals: vec![Vector3::new(0.0, 0.0, 1.0); 2],
         corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
         channels: vec![TessellationChannel {
             domain: TessellationChannelDomain::Corner,
             item_size: 1,
@@ -1429,6 +1431,8 @@ fn tessellation_counts_must_be_consistent() {
         strip_lengths: vec![3],
         normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
         corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
         channels: Vec::new(),
     });
     ir.finalize();
@@ -1480,6 +1484,8 @@ fn corner_normals_and_feature_edges_have_explicit_domains() {
         strip_lengths: Vec::new(),
         normals: Vec::new(),
         corner_normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
         channels: Vec::new(),
     };
     let mut invalid_normals = mesh("synthetic:test:tessellation#invalid-corner-normals");
@@ -1514,6 +1520,107 @@ fn corner_normals_and_feature_edges_have_explicit_domains() {
         1
     );
     assert_eq!(errors_for("synthetic:test:tessellation#valid-domains"), 0);
+}
+
+#[test]
+fn tessellation_triangle_groups_and_texture_assignments_validate() {
+    use crate::assets::{Asset, AssetContent, AssetId};
+    use crate::math::Point3;
+    use crate::report::{Check, Severity};
+    use crate::tessellation::{
+        Tessellation, TessellationTextureAssignment, TessellationTriangleGroup,
+    };
+
+    let texture = AssetId("synthetic:test:asset#mesh-texture".into());
+    let valid = Tessellation {
+        id: "synthetic:test:tessellation#valid-groups".into(),
+        body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
+        source_object: None,
+        vertices: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(1.0, 1.0, 0.0),
+        ],
+        triangles: vec![[0, 1, 2], [1, 3, 2]],
+        feature_edges: Vec::new(),
+        strip_lengths: Vec::new(),
+        normals: Vec::new(),
+        corner_normals: Vec::new(),
+        triangle_groups: vec![
+            TessellationTriangleGroup {
+                source_id: Some("group-a".into()),
+                triangles: vec![0],
+            },
+            TessellationTriangleGroup {
+                source_id: Some("group-b".into()),
+                triangles: vec![1],
+            },
+        ],
+        texture_assignments: vec![
+            TessellationTextureAssignment {
+                source_id: Some("texture-resource-a".into()),
+                texture: texture.clone(),
+                triangles: vec![0],
+            },
+            TessellationTextureAssignment {
+                source_id: Some("texture-resource-b".into()),
+                texture: texture.clone(),
+                triangles: vec![1],
+            },
+        ],
+        channels: Vec::new(),
+    };
+    let mut invalid = valid.clone();
+    invalid.id = "synthetic:test:tessellation#invalid-groups".into();
+    invalid.triangle_groups.push(TessellationTriangleGroup {
+        source_id: Some("group-b".into()),
+        triangles: vec![0],
+    });
+    invalid.texture_assignments[0].texture = AssetId("synthetic:test:asset#missing".into());
+    let mut duplicate_group_id = valid.clone();
+    duplicate_group_id.id = "synthetic:test:tessellation#duplicate-group-id".into();
+    duplicate_group_id.triangle_groups[1].source_id = Some("group-a".into());
+    let mut duplicate_texture = valid.clone();
+    duplicate_texture.id = "synthetic:test:tessellation#duplicate-texture".into();
+    duplicate_texture.texture_assignments[1].source_id = Some("texture-resource-a".into());
+
+    let mut ir = unit_cube();
+    ir.model.assets.push(Asset {
+        id: texture,
+        name: None,
+        media_type: None,
+        content: AssetContent::Embedded { data: vec![0] },
+        native_ref: None,
+    });
+    ir.model
+        .tessellations
+        .extend([valid, invalid, duplicate_group_id, duplicate_texture]);
+    ir.finalize();
+    let report = validate(&ir, Vec::new());
+    let errors_for = |entity: &str| {
+        report
+            .findings
+            .iter()
+            .filter(|finding| {
+                finding.check == Check::Tessellation
+                    && finding.severity == Severity::Error
+                    && finding.entity.as_deref() == Some(entity)
+            })
+            .count()
+    };
+    assert_eq!(errors_for("synthetic:test:tessellation#valid-groups"), 0);
+    assert_eq!(errors_for("synthetic:test:tessellation#invalid-groups"), 2);
+    assert_eq!(
+        errors_for("synthetic:test:tessellation#duplicate-group-id"),
+        1
+    );
+    assert_eq!(
+        errors_for("synthetic:test:tessellation#duplicate-texture"),
+        1
+    );
 }
 
 #[test]

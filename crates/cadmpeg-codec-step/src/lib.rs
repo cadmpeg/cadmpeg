@@ -1701,6 +1701,26 @@ impl<'a> Builder<'a> {
                     ),
                 );
             }
+            if !mesh.triangle_groups.is_empty() {
+                self.loss(
+                    LossKind::AttributesNotTransferred,
+                    Severity::Warning,
+                    format!(
+                        "tessellation '{}' triangle groups are not represented",
+                        mesh.id
+                    ),
+                );
+            }
+            if !mesh.texture_assignments.is_empty() {
+                self.loss(
+                    LossKind::AttributesNotTransferred,
+                    Severity::Warning,
+                    format!(
+                        "tessellation '{}' texture assignments are not represented",
+                        mesh.id
+                    ),
+                );
+            }
             if mesh.vertices.is_empty()
                 || mesh.triangles.is_empty()
                 || mesh

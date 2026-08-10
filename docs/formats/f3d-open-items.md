@@ -455,21 +455,7 @@ The `.f3z` merge writes the note `(identity placement)` for the first cause. The
 
 **Need.** A writer must know the compact-form tail before it can emit this record from a neutral Form feature. The decoder can bind the sole cage from the settled prefix and retain the tail for source fidelity.
 
-## 5. Mesh geometry
-
-### PM-01. `.paramesh` per-triangle and registry contents
-
-**Question.** We must find three answers:
-
-- what a code-7 per-triangle value selects
-- what descriptor `T` values other than `0`, `1`, and `3` select
-- what registry field 9 selects and what registry field 12 identifies
-
-**Known.** `f3d.md` §1.1.2 gives the container framing, both stream encodings, the descriptor value types, the registry channel entries, the octahedral code-5 normal mapping, and the field-7 feature-edge stream. A code-7 channel carries one zero per triangle while authored per-triangle colours instead add a code-4 channel, so a code-7 value is not that colour selector. Registry field 9 is a varint. Registry field 12 is a byte string that carries a GUID.
-
-**Need.** We must know the code-7 value, the complete component-type enum, and the two remaining registry fields to write a container from a neutral model.
-
-## 7. Test evidence
+## 5. Test evidence
 
 ### EV-01. Typed feature projection reached only by a direct call
 

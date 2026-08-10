@@ -2535,6 +2535,34 @@ fn project_mesh_bodies(
         });
     }
     extend_unique_assets(&mut ir.model.assets, texture_assets)?;
+    let mut texture_tables = std::collections::HashMap::new();
+    for feature in &native.design_mesh_features {
+        let texture_table = feature
+            .textures
+            .iter()
+            .enumerate()
+            .map(|(ordinal, texture)| {
+                if usize::try_from(texture.ordinal) != Ok(ordinal) {
+                    return Err(CodecError::Malformed(
+                        "F3D mesh texture ordinals do not match flags-map order".into(),
+                    ));
+                }
+                Ok((texture.resource_guid.clone(), texture.asset.clone()))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        for body in &feature.bodies {
+            if let Some(tessellation_id) = &body.tessellation_id {
+                if texture_tables
+                    .insert(tessellation_id.clone(), texture_table.clone())
+                    .is_some()
+                {
+                    return Err(CodecError::Malformed(
+                        "F3D mesh tessellation belongs to more than one texture table".into(),
+                    ));
+                }
+            }
+        }
+    }
     let mut bodies = Vec::new();
     for outcome in decoded.outcomes {
         match outcome {
@@ -2568,8 +2596,25 @@ fn project_mesh_bodies(
         count: bodies.len(),
         tessellations_by_scope: std::collections::HashMap::new(),
     };
-    for body in bodies {
+    for mut body in bodies {
         let id = body.id.clone();
+        let texture_table = texture_tables.remove(&id).ok_or_else(|| {
+            CodecError::Malformed("F3D joined mesh body has no owning texture table".into())
+        })?;
+        let texture_assignments = mesh_texture_assignments(
+            body.texture_ids.as_deref(),
+            &texture_table,
+            body.triangles.len(),
+        )?;
+        let triangle_groups = std::mem::take(&mut body.triangle_groups)
+            .into_iter()
+            .map(
+                |group| cadmpeg_ir::tessellation::TessellationTriangleGroup {
+                    source_id: Some(group.source_id),
+                    triangles: group.triangles,
+                },
+            )
+            .collect();
         let channels = mesh_attribute_channels(
             &body.attributes,
             body.vertices.len(),
@@ -2592,8 +2637,15 @@ fn project_mesh_bodies(
                 strip_lengths: Vec::new(),
                 normals: Vec::new(),
                 corner_normals: body.corner_normals,
+                triangle_groups,
+                texture_assignments,
                 channels,
             });
+    }
+    if !texture_tables.is_empty() {
+        return Err(CodecError::Malformed(
+            "F3D mesh texture table has no joined tessellation body".into(),
+        ));
     }
     for feature in &native.design_mesh_features {
         let tessellations = feature
@@ -2619,6 +2671,54 @@ fn project_mesh_bodies(
     }
     report_unresolved_mesh_attributes(report, &unresolved);
     Ok(projection)
+}
+
+/// Resolve one-based `tid` values through a Design texture table. Zero leaves
+/// the triangle untextured.
+fn mesh_texture_assignments(
+    texture_ids: Option<&[u32]>,
+    textures: &[(String, cadmpeg_ir::assets::AssetId)],
+    triangle_count: usize,
+) -> Result<Vec<cadmpeg_ir::tessellation::TessellationTextureAssignment>, CodecError> {
+    let Some(texture_ids) = texture_ids else {
+        return Ok(Vec::new());
+    };
+    if texture_ids.len() != triangle_count {
+        return Err(CodecError::Malformed(
+            "F3D mesh texture-id count differs from the triangle count".into(),
+        ));
+    }
+    let mut triangles = vec![Vec::new(); textures.len()];
+    for (triangle, texture_id) in texture_ids.iter().enumerate() {
+        if *texture_id == 0 {
+            continue;
+        }
+        let index = texture_id
+            .checked_sub(1)
+            .and_then(|index| usize::try_from(index).ok())
+            .filter(|index| *index < textures.len())
+            .ok_or_else(|| {
+                CodecError::Malformed(
+                    "F3D mesh triangle texture id names no Design texture resource".into(),
+                )
+            })?;
+        triangles[index].push(u32::try_from(triangle).map_err(|_| {
+            CodecError::Malformed("F3D mesh triangle ordinal is out of range".into())
+        })?);
+    }
+    Ok(textures
+        .iter()
+        .cloned()
+        .zip(triangles)
+        .filter(|(_, triangles)| !triangles.is_empty())
+        .map(|((source_id, texture), triangles)| {
+            cadmpeg_ir::tessellation::TessellationTextureAssignment {
+                source_id: Some(source_id),
+                texture,
+                triangles,
+            }
+        })
+        .collect())
 }
 
 /// Replace the native definition of each mesh-import scope with its exact
@@ -4483,7 +4583,8 @@ mod tests {
         apply_appearance_base_colors, bind_mesh_feature_definitions,
         container_only_dimension_parameters, design_projection_gaps,
         feature_definition_is_incomplete, incomplete_feature_families, mesh_attribute_channels,
-        unresolved_dimension_companion_count, DesignProjectionGaps, MeshProjection,
+        mesh_texture_assignments, unresolved_dimension_companion_count, DesignProjectionGaps,
+        MeshProjection,
     };
     use crate::native::F3dNative;
     use crate::records::{
@@ -4540,14 +4641,61 @@ mod tests {
     }
 
     #[test]
+    fn mesh_texture_ids_resolve_through_design_table_order() {
+        use cadmpeg_ir::assets::AssetId;
+        use cadmpeg_ir::tessellation::TessellationTextureAssignment;
+
+        let first = AssetId("asset:first".into());
+        let second = AssetId("asset:second".into());
+        let textures = [
+            ("resource:first".into(), first.clone()),
+            ("resource:second".into(), second.clone()),
+            ("resource:third".into(), first.clone()),
+        ];
+        assert_eq!(
+            mesh_texture_assignments(Some(&[0, 2, 1, 3, 2]), &textures, 5)
+                .expect("texture assignments"),
+            vec![
+                TessellationTextureAssignment {
+                    source_id: Some("resource:first".into()),
+                    texture: first,
+                    triangles: vec![2],
+                },
+                TessellationTextureAssignment {
+                    source_id: Some("resource:second".into()),
+                    texture: second,
+                    triangles: vec![1, 4],
+                },
+                TessellationTextureAssignment {
+                    source_id: Some("resource:third".into()),
+                    texture: AssetId("asset:first".into()),
+                    triangles: vec![3],
+                },
+            ]
+        );
+        assert!(matches!(
+            mesh_texture_assignments(
+                Some(&[2]),
+                &[("resource:only".into(), AssetId("asset:only".into()))],
+                1,
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
+
+    #[test]
     fn indexed_mesh_channels_project_default_and_override_selectors() {
         let attribute = crate::paramesh::MeshAttribute {
             role: 4,
+            resource_guid: None,
+            authored_name: None,
+            groups: Vec::new(),
             element_code: 4,
             domain: crate::paramesh::MeshAttributeDomain::Corner,
             item_size: Some(1),
             values: vec![10, 11, 12, 13, 14],
             indices: Some(vec![0, 2]),
+            triangle_values: None,
         };
         let mut unresolved = std::collections::BTreeMap::new();
         let channels = mesh_attribute_channels(&[attribute], 3, &[[0, 1, 2]], &mut unresolved);

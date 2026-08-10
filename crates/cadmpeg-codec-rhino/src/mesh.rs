@@ -376,6 +376,8 @@ pub(crate) fn decode(
             strip_lengths: Vec::new(),
             normals: decoded.normals,
             corner_normals: Vec::new(),
+            triangle_groups: Vec::new(),
+            texture_assignments: Vec::new(),
             channels: decoded.channels,
         },
         warnings: decoded.warnings,

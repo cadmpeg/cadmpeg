@@ -5056,6 +5056,8 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
             strip_lengths: vec![3],
             normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
             corner_normals: Vec::new(),
+            triangle_groups: Vec::new(),
+            texture_assignments: Vec::new(),
             channels: Vec::new(),
         })
         .collect();
@@ -21800,6 +21802,8 @@ fn semantic_writer_expands_indexed_tessellation() {
         strip_lengths: Vec::new(),
         normals: vec![Vector3::new(0.0, 0.0, 1.0); 4],
         corner_normals: corner_normals.clone(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
         channels: vec![TessellationChannel {
             domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
             item_size: 1,
@@ -21818,6 +21822,18 @@ fn semantic_writer_expands_indexed_tessellation() {
     assert!(expanded.corner_normals.is_empty());
     assert_eq!(expanded.channels[0].count, 6);
     assert_eq!(expanded.channels[0].data, vec![10, 11, 12, 10, 12, 13]);
+
+    let mut attributed = mesh.clone();
+    attributed
+        .triangle_groups
+        .push(cadmpeg_ir::tessellation::TessellationTriangleGroup {
+            source_id: Some("synthetic:test:group#0".into()),
+            triangles: vec![0, 1],
+        });
+    assert!(matches!(
+        crate::writer::sequential_tessellation(&attributed),
+        Err(cadmpeg_core::CodecError::NotImplemented(_))
+    ));
 
     let mut edged = mesh;
     edged.feature_edges.push([0, 1]);
@@ -21844,6 +21860,8 @@ fn semantic_writer_rejects_out_of_range_tessellation_indices() {
         strip_lengths: Vec::new(),
         normals: Vec::new(),
         corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
         channels: Vec::new(),
     };
     let error = crate::writer::sequential_tessellation(&mesh).unwrap_err();

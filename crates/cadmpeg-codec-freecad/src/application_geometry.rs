@@ -123,6 +123,8 @@ fn parse_mesh(property: &PropertyRecord, bytes: &[u8]) -> Result<Tessellation, C
         strip_lengths: Vec::new(),
         normals: Vec::new(),
         corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
         channels: Vec::new(),
     })
 }

@@ -112,6 +112,10 @@ pub(crate) struct MeshBody {
     pub(crate) feature_edges: Vec<[u32; 2]>,
     /// One transformed unit normal per flattened triangle corner.
     pub(crate) corner_normals: Vec<cadmpeg_ir::math::Vector3>,
+    /// Source face groups as an ordered partition of triangle ordinals.
+    pub(crate) triangle_groups: Vec<crate::paramesh::MeshTriangleGroup>,
+    /// One texture-table selector per triangle, when authored.
+    pub(crate) texture_ids: Option<Vec<u32>>,
     /// The attribute channels the container's registry declares.
     pub(crate) attributes: Vec<crate::paramesh::MeshAttribute>,
 }
@@ -378,10 +382,13 @@ impl MeshBody {
     ) -> Result<Self, CodecError> {
         let MeshContainer {
             fusion_uuid: _,
+            mesh_uuid: _,
             vertices,
             triangles,
             feature_edges,
             corner_normals,
+            triangle_groups,
+            texture_ids,
             attributes,
         } = container;
         Ok(Self {
@@ -398,6 +405,8 @@ impl MeshBody {
                 .into_iter()
                 .map(|normal| transform.transform_normal(normal))
                 .collect::<Result<_, _>>()?,
+            triangle_groups,
+            texture_ids,
             attributes,
         })
     }
@@ -1370,6 +1379,7 @@ where
                 entry_name: entry_name.entry_name,
                 entry_name_offset: entry_name.entry_name_offset,
                 fusion_uuid: guid.fusion_uuid,
+                container_mesh_uuid: None,
                 fusion_uuid_offset: guid.fusion_uuid_offset,
                 transform: body.transform.rows(),
                 transform_offsets: [
@@ -1534,6 +1544,8 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
             });
             continue;
         };
+        design_records[design_ordinal].features[feature_ordinal].bodies[body_ordinal]
+            .container_mesh_uuid = Some(container.mesh_uuid.clone());
         let body = &design_records[design_ordinal].features[feature_ordinal].bodies[body_ordinal];
         let projected = match MeshBody::from_container(
             &entry.name,
@@ -2558,17 +2570,24 @@ mod tests {
         let transform = mesh_body_transform(&mesh_body_payload(cells)).expect("reflected map");
         let container = MeshContainer {
             fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
+            mesh_uuid: "11111111-2222-4333-8444-555555555555".into(),
             vertices: vec![[2.0, 8.0, 3.0], [0.0, 0.0, 0.0], [4.0, 4.0, -1.0]],
             triangles: vec![[2, 0, 1]],
             feature_edges: vec![[0, 2]],
             corner_normals: Vec::new(),
+            triangle_groups: Vec::new(),
+            texture_ids: None,
             attributes: vec![crate::paramesh::MeshAttribute {
                 role: 4,
+                resource_guid: None,
+                authored_name: None,
+                groups: Vec::new(),
                 element_code: 4,
                 domain: crate::paramesh::MeshAttributeDomain::Corner,
                 item_size: Some(16),
                 values: (0..80).collect(),
                 indices: Some(vec![0, 2]),
+                triangle_values: None,
             }],
         };
         let body = MeshBody::from_container("mesh.paramesh", 100, transform, container)
@@ -2595,10 +2614,13 @@ mod tests {
         let transform = mesh_body_transform(&mesh_body_payload(cells)).expect("affine map");
         let container = MeshContainer {
             fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
+            mesh_uuid: "11111111-2222-4333-8444-555555555555".into(),
             vertices: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
             triangles: vec![[0, 1, 2]],
             feature_edges: vec![[0, 1]],
             corner_normals: vec![[0.0, 0.0, 1.0]; 3],
+            triangle_groups: Vec::new(),
+            texture_ids: None,
             attributes: Vec::new(),
         };
         let body = MeshBody::from_container("mesh.paramesh", 100, transform, container)

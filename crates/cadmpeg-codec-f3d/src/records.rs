@@ -4529,6 +4529,10 @@ pub struct DesignMeshBody {
     pub entry_name_offset: u64,
     /// Container identity stored by both Design and `.paramesh` payloads.
     pub fusion_uuid: String,
+    /// Container-local version-4 mesh UUID from protobuf registry field 12,
+    /// when the geometry container joined this Design body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container_mesh_uuid: Option<String>,
     /// Byte offset of the ASCII `fusion_uuid` payload.
     pub fusion_uuid_offset: u64,
     /// Equal row-major container-to-model-centimetre affine transform.
