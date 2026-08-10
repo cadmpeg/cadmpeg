@@ -180,12 +180,12 @@ pub struct FeaturePayloadString {
     pub source_offset: u64,
 }
 
-/// Typed operation template carried by a `SIMPLE HOLE` payload string.
+/// Typed operation template carried by a hole payload string.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSimpleHoleTemplate {
     /// Globally unique template identity.
     pub id: String,
-    /// Owning `SIMPLE HOLE` operation label.
+    /// Owning `SIMPLE HOLE` or `CBORE_HOLE` operation label.
     pub operation_label: String,
     /// Source string in the native payload-string arena.
     pub payload_string: String,
@@ -312,6 +312,8 @@ pub enum SimpleHoleFamily {
 pub enum SimpleHoleForm {
     /// Plain cylindrical cross-section.
     Simple,
+    /// Counterbored cross-section.
+    Counterbored,
 }
 
 /// Axial termination named by a simple-hole template.
@@ -320,12 +322,16 @@ pub enum SimpleHoleForm {
 pub enum SimpleHoleExtent {
     /// Continue through all intersected material.
     Through,
+    /// Stop at a blind termination whose distance is carried by another field.
+    Blind,
 }
 
 /// End treatment named by a simple-hole template.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SimpleHoleEndTreatment {
+    /// No separate end treatment is named.
+    None,
     /// Chamfer the circular end edge.
     Chamfer,
 }
@@ -3064,7 +3070,7 @@ pub fn feature_payload_strings(container: &Container) -> Vec<FeaturePayloadStrin
     strings
 }
 
-/// Join exact `SIMPLE HOLE` payload templates to their operation identities.
+/// Join exact hole payload templates to their operation identities.
 pub fn feature_simple_hole_templates(
     labels: &[FeatureOperationLabel],
     records: &[FeatureOperationRecord],
@@ -3086,7 +3092,9 @@ pub fn feature_simple_hole_templates(
         let Some(label) = labels_by_id.get(record.operation_label.as_str()) else {
             continue;
         };
-        if label.value != "SIMPLE HOLE" || !string.value.starts_with("Hole_") {
+        if !matches!(label.value.as_str(), "SIMPLE HOLE" | "CBORE_HOLE")
+            || !string.value.starts_with("Hole_")
+        {
             continue;
         }
         templates_by_operation
@@ -3455,21 +3463,37 @@ pub(crate) fn parse_simple_hole_template(
     SimpleHoleEndTreatment,
     SimpleHoleEndTreatment,
 )> {
-    (value.split('_').collect::<Vec<_>>().as_slice()
-        == [
-            "Hole",
-            "GeneralHole",
-            "Simple",
-            "Through",
-            "StartChamfer",
-            "EndChamfer",
-        ])
-    .then_some((
+    let tokens = value.split('_').collect::<Vec<_>>();
+    if tokens.len() < 4 || tokens[0] != "Hole" || tokens[1] != "GeneralHole" {
+        return None;
+    }
+    let form = match tokens[2] {
+        "Simple" => SimpleHoleForm::Simple,
+        "Counterbored" => SimpleHoleForm::Counterbored,
+        _ => return None,
+    };
+    let extent = match tokens[3] {
+        "Through" => SimpleHoleExtent::Through,
+        "Blind" => SimpleHoleExtent::Blind,
+        _ => return None,
+    };
+    let (start_treatment, end_treatment) = match (form, extent, &tokens[4..]) {
+        (SimpleHoleForm::Simple, SimpleHoleExtent::Through, ["StartChamfer", "EndChamfer"]) => (
+            SimpleHoleEndTreatment::Chamfer,
+            SimpleHoleEndTreatment::Chamfer,
+        ),
+        (SimpleHoleForm::Counterbored, SimpleHoleExtent::Through, [])
+        | (SimpleHoleForm::Simple, SimpleHoleExtent::Blind, []) => {
+            (SimpleHoleEndTreatment::None, SimpleHoleEndTreatment::None)
+        }
+        _ => return None,
+    };
+    Some((
         SimpleHoleFamily::GeneralHole,
-        SimpleHoleForm::Simple,
-        SimpleHoleExtent::Through,
-        SimpleHoleEndTreatment::Chamfer,
-        SimpleHoleEndTreatment::Chamfer,
+        form,
+        extent,
+        start_treatment,
+        end_treatment,
     ))
 }
 
@@ -8914,6 +8938,53 @@ mod tests {
             SimpleHoleEndTreatment::Chamfer
         );
         assert_eq!(templates[0].end_treatment, SimpleHoleEndTreatment::Chamfer);
+
+        assert_eq!(
+            super::parse_simple_hole_template("Hole_GeneralHole_Counterbored_Through"),
+            Some((
+                SimpleHoleFamily::GeneralHole,
+                SimpleHoleForm::Counterbored,
+                SimpleHoleExtent::Through,
+                SimpleHoleEndTreatment::None,
+                SimpleHoleEndTreatment::None,
+            ))
+        );
+        assert_eq!(
+            super::parse_simple_hole_template("Hole_GeneralHole_Simple_Blind"),
+            Some((
+                SimpleHoleFamily::GeneralHole,
+                SimpleHoleForm::Simple,
+                SimpleHoleExtent::Blind,
+                SimpleHoleEndTreatment::None,
+                SimpleHoleEndTreatment::None,
+            ))
+        );
+        assert!(super::parse_simple_hole_template("Hole_GeneralHole_Simple_Through").is_none());
+        assert!(super::parse_simple_hole_template("Hole_GeneralHole_Counterbored_Blind").is_none());
+
+        let mut counterbored_label = label.clone();
+        counterbored_label.id = "operation#4".to_string();
+        counterbored_label.value = "CBORE_HOLE".to_string();
+        let mut counterbored_record = record.clone();
+        counterbored_record.id = "record#4".to_string();
+        counterbored_record.operation_label = counterbored_label.id.clone();
+        let counterbored_string = FeaturePayloadString {
+            id: "payload-string#4-0".to_string(),
+            operation_record: counterbored_record.id.clone(),
+            ordinal: 0,
+            value: "Hole_GeneralHole_Counterbored_Through".to_string(),
+            source_offset: 130,
+        };
+        let counterbored_templates = super::feature_simple_hole_templates(
+            &[counterbored_label],
+            &[counterbored_record],
+            &[counterbored_string],
+        );
+        let [counterbored_template] = counterbored_templates.as_slice() else {
+            panic!("counterbored hole template was not admitted");
+        };
+        assert_eq!(counterbored_template.form, SimpleHoleForm::Counterbored);
+        assert_eq!(counterbored_template.extent, SimpleHoleExtent::Through);
 
         let mut duplicate = string.clone();
         duplicate.id = "payload-string#3-1".to_string();

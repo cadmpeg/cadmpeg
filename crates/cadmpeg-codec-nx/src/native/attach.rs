@@ -5055,7 +5055,7 @@ fn non_boolean_feature_definition_with_parameters(
     hole: HoleProjection,
     native_parameters: BTreeMap<String, String>,
 ) -> FeatureDefinition {
-    let simple_hole_template = unique_simple_hole_template(payload_strings);
+    let hole_template = unique_simple_hole_template(payload_strings);
     if let ("BLOCK", Some(dimensions)) = (kind, block_dimensions) {
         return FeatureDefinition::Block {
             dimensions: Some(dimensions.map(Length)),
@@ -5131,46 +5131,110 @@ fn non_boolean_feature_definition_with_parameters(
             distance: None,
             method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
         },
-        "SIMPLE HOLE" => FeatureDefinition::Hole {
-            profile: None,
-            profile_filter: None,
-            face: None,
-            position: None,
-            direction: None,
-            placements: hole.placements,
-            kind: hole.chamfer.unwrap_or_else(|| {
-                if simple_hole_template.is_some() {
-                    HoleKind::Unresolved {
-                        form: Some(HoleForm::Chamfer),
-                        counterbore_diameter: None,
-                        counterbore_depth: None,
-                        countersink_diameter: None,
-                        countersink_angle: None,
-                    }
-                } else {
-                    HoleKind::Simple
-                }
-            }),
-            exit_kind: hole.chamfer.or_else(|| {
-                simple_hole_template
-                    .is_some()
-                    .then_some(HoleKind::Unresolved {
-                        form: Some(HoleForm::Chamfer),
-                        counterbore_diameter: None,
-                        counterbore_depth: None,
-                        countersink_diameter: None,
-                        countersink_angle: None,
-                    })
-            }),
-            diameter: hole.diameter,
-            extent: simple_hole_template
-                .is_some()
-                .then_some(cadmpeg_ir::features::Termination::ThroughAll),
-            bottom: None,
-            taper_angle: None,
-            specification: None,
-            allow_multi_profile_faces: None,
-        },
+        "SIMPLE HOLE" | "CBORE_HOLE" => {
+            let measured_chamfer = hole.chamfer;
+            let (template_kind, template_exit_kind, template_extent) = hole_template.map_or(
+                (
+                    if kind == "CBORE_HOLE" {
+                        HoleKind::Unresolved {
+                            form: None,
+                            counterbore_diameter: None,
+                            counterbore_depth: None,
+                            countersink_diameter: None,
+                            countersink_angle: None,
+                        }
+                    } else {
+                        HoleKind::Simple
+                    },
+                    None,
+                    None,
+                ),
+                |(_, form, extent, start_treatment, end_treatment)| {
+                    let kind = match start_treatment {
+                        crate::native::features::SimpleHoleEndTreatment::Chamfer => {
+                            HoleKind::Unresolved {
+                                form: Some(HoleForm::Chamfer),
+                                counterbore_diameter: None,
+                                counterbore_depth: None,
+                                countersink_diameter: None,
+                                countersink_angle: None,
+                            }
+                        }
+                        crate::native::features::SimpleHoleEndTreatment::None => match form {
+                            crate::native::features::SimpleHoleForm::Simple => HoleKind::Simple,
+                            crate::native::features::SimpleHoleForm::Counterbored => {
+                                HoleKind::Unresolved {
+                                    form: Some(HoleForm::Counterbore),
+                                    counterbore_diameter: None,
+                                    counterbore_depth: None,
+                                    countersink_diameter: None,
+                                    countersink_angle: None,
+                                }
+                            }
+                        },
+                    };
+                    let exit_kind = match end_treatment {
+                        crate::native::features::SimpleHoleEndTreatment::Chamfer => {
+                            Some(HoleKind::Unresolved {
+                                form: Some(HoleForm::Chamfer),
+                                counterbore_diameter: None,
+                                counterbore_depth: None,
+                                countersink_diameter: None,
+                                countersink_angle: None,
+                            })
+                        }
+                        crate::native::features::SimpleHoleEndTreatment::None => None,
+                    };
+                    let extent = match extent {
+                        crate::native::features::SimpleHoleExtent::Through => {
+                            Some(cadmpeg_ir::features::Termination::ThroughAll)
+                        }
+                        crate::native::features::SimpleHoleExtent::Blind => None,
+                    };
+                    (kind, exit_kind, extent)
+                },
+            );
+            FeatureDefinition::Hole {
+                profile: None,
+                profile_filter: None,
+                face: None,
+                position: None,
+                direction: None,
+                placements: hole.placements,
+                kind: match (measured_chamfer, hole_template) {
+                    (
+                        Some(chamfer),
+                        Some((
+                            _,
+                            crate::native::features::SimpleHoleForm::Simple,
+                            crate::native::features::SimpleHoleExtent::Through,
+                            crate::native::features::SimpleHoleEndTreatment::Chamfer,
+                            crate::native::features::SimpleHoleEndTreatment::Chamfer,
+                        )),
+                    ) => chamfer,
+                    _ => template_kind,
+                },
+                exit_kind: match (measured_chamfer, hole_template) {
+                    (
+                        Some(chamfer),
+                        Some((
+                            _,
+                            crate::native::features::SimpleHoleForm::Simple,
+                            crate::native::features::SimpleHoleExtent::Through,
+                            crate::native::features::SimpleHoleEndTreatment::Chamfer,
+                            crate::native::features::SimpleHoleEndTreatment::Chamfer,
+                        )),
+                    ) => Some(chamfer),
+                    _ => template_exit_kind,
+                },
+                diameter: hole.diameter,
+                extent: template_extent,
+                bottom: None,
+                taper_angle: None,
+                specification: None,
+                allow_multi_profile_faces: None,
+            }
+        }
         "HOLE PACKAGE" => FeatureDefinition::Hole {
             profile: None,
             profile_filter: None,
@@ -9291,6 +9355,42 @@ mod tests {
         assert!(matches!(
             super::non_boolean_feature_definition("SIMPLE HOLE", &["unrelated"], None, None, None,),
             cadmpeg_ir::features::FeatureDefinition::Hole { extent: None, .. }
+        ));
+        assert!(matches!(
+            super::non_boolean_feature_definition(
+                "CBORE_HOLE",
+                &["Hole_GeneralHole_Counterbored_Through"],
+                None,
+                None,
+                None,
+            ),
+            cadmpeg_ir::features::FeatureDefinition::Hole {
+                kind: cadmpeg_ir::features::HoleKind::Unresolved {
+                    form: Some(cadmpeg_ir::features::HoleForm::Counterbore),
+                    counterbore_diameter: None,
+                    counterbore_depth: None,
+                    countersink_diameter: None,
+                    countersink_angle: None,
+                },
+                exit_kind: None,
+                extent: Some(cadmpeg_ir::features::Termination::ThroughAll),
+                ..
+            }
+        ));
+        assert!(matches!(
+            super::non_boolean_feature_definition(
+                "SIMPLE HOLE",
+                &["Hole_GeneralHole_Simple_Blind"],
+                None,
+                None,
+                None,
+            ),
+            cadmpeg_ir::features::FeatureDefinition::Hole {
+                kind: cadmpeg_ir::features::HoleKind::Simple,
+                exit_kind: None,
+                extent: None,
+                ..
+            }
         ));
         for competing in [
             "Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer",
