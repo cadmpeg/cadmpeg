@@ -250,13 +250,15 @@ Documents exist with two unplaced ordinal-one carriers whose component GUIDs are
 
 **Need.** Their meanings determine whether they participate in persistent body identity and how a writer derives them from a cross-document body selection.
 
-### DR-62. Point-closure state and extended sketch ownership
+### DR-62. Point selectors and flags
 
-**Question.** What does the state byte in the compact version-11 point closure select? Which members carry the owning Sketch and the point-companion inverse link in extended point and curve record forms that do not end with a direct owner backlink or use the compact point-companion form?
+**Question.** What semantic point roles do selector values `0`, `1`, `2`, and `4` identify? What does state value zero or one select? What do the one, seven, or eight versioned flag bytes before the point coordinates select?
 
-**Known.** `f3d.md` §3.1 "When the final eleven bytes" gives the direct-owner form. `f3d.md` §3.1 "The compact version-11 point closure" gives the compact point and companion forms. The state byte is zero or one. Version-11 point records and version-2 line records carry the direct owner. Some point records below version 11 and some extended circular-curve, NURBS-curve, and point-companion records contain additional member runs instead of one of these compact endings. A sketch entity container or a relation can independently establish the owner of a geometry record.
+**Known.** `f3d.md` §3.1 "A sketch-point geometry payload" gives the complete class-version-0, class-version-8, class-version-10, and class-version-11 member sequences. `f3d.md` §3.1 "`paired_reference` resolves" gives both companion prefixes, both reference encodings, the complete incident-curve run, and the inverse point link. `f3d.md` §3.1 "When the final eleven bytes" gives all three sketch-ownership joins and defines a record with no join as unowned Geometry.
 
-**Need.** A decoder must retain the extended forms without assigning an additional member to the owner or inverse-link role. A writer must derive the point state and know the extended member semantics before it can generate or modify these forms without retaining their raw payloads.
+Selector-state pair `(1,0)` is used by NURBS incidence and current-line auxiliary or control geometry. Pair `(4,0)` occurs only on points incident to line type `AE42BAB6-643F-4169-A33C-529C8E0A4D84`. Pair `(2,1)` has no incident curve.
+
+**Need.** The mappings determine which point and curve records are construction or helper geometry, which records can participate in a neutral profile, and which versioned flags and selector-state pair a writer derives from each neutral point role.
 
 ## 2. External references
 

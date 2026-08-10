@@ -11,7 +11,7 @@ use crate::design::geometry::{
 };
 use crate::ids::{
     self, native_stream, neutral_sketch_curve_id, neutral_sketch_id, neutral_sketch_point_id,
-    neutral_spatial_sketch_curve_id, neutral_spatial_sketch_id,
+    neutral_sketch_record_id, neutral_spatial_sketch_curve_id, neutral_spatial_sketch_id,
 };
 use crate::records::{
     DesignConstructionOperandGroup, DesignEntityHeader, DesignEntitySelectionOperand,
@@ -1462,11 +1462,17 @@ fn resolved_selection_member_points(
 ) -> Option<Vec<Point3>> {
     use cadmpeg_ir::sketches::SketchGeometry;
 
-    let SketchRelationOperand::Point { persistent_id, .. } = member.resolved_geometry.as_ref()?
+    let SketchRelationOperand::Point {
+        record_index,
+        persistent_id,
+    } = member.resolved_geometry.as_ref()?
     else {
         return None;
     };
-    let entity_id = neutral_sketch_point_id(&sketch.id, *persistent_id);
+    let entity_id = persistent_id.map_or_else(
+        || neutral_sketch_record_id(&sketch.id, *record_index),
+        |persistent_id| neutral_sketch_point_id(&sketch.id, persistent_id),
+    );
     let SketchGeometry::Point { position } = &entities
         .iter()
         .find(|entity| entity.id == entity_id && entity.sketch == sketch.id)?

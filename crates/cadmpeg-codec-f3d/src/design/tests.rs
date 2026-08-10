@@ -12120,7 +12120,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     point_member.local_id = 587;
     point_member.resolved_geometry = Some(SketchRelationOperand::Point {
         record_index: 401,
-        persistent_id: 587,
+        persistent_id: Some(587),
     });
     group.members.push(201);
     let mut sketch = sketch;
@@ -13956,17 +13956,33 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
         byte_offset: 0,
         coordinate_offset: 141,
         entity_genesis: Some(2),
-        persistent_id: 20,
+        record_form: crate::records::SketchPointRecordForm::default(),
+        persistent_id: Some(20),
         paired_reference: 0,
+        flags: [0; 8],
         coordinates: Point2::new(120.0, 30.0),
-        raw_bytes: Vec::new(),
+        depth: 0.0,
+        closure: None,
+        companion: None,
     };
+    let mut identityless_point = point.clone();
+    identityless_point.id = "f3d:native:sketch-point#1".into();
+    identityless_point.record_index = 21;
+    identityless_point.coordinate_offset = 33;
+    identityless_point.entity_genesis = None;
+    identityless_point.record_form = crate::records::SketchPointRecordForm::Version0;
+    identityless_point.persistent_id = None;
 
     // The `EntityGenesis`-flavor frame stores its origin in centimetres
     // while the sketch records carry ten-times-centimetre values; the
     // projected sketch origin scales by ten to stay commensurate.
-    let (sketches, entities) =
-        project_sketch_design(&[placement(341)], &[point.clone()], &[], &[], 1.0e-6);
+    let (sketches, entities) = project_sketch_design(
+        &[placement(341)],
+        &[point.clone(), identityless_point],
+        &[],
+        &[],
+        1.0e-6,
+    );
     assert_eq!(sketches.len(), 1);
     assert_eq!(
         sketches[0].resolved_placement(),
@@ -13981,6 +13997,10 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
         cadmpeg_ir::sketches::SketchGeometry::Point { position }
             if position == Point2::new(120.0, 30.0)
     ));
+    assert_eq!(
+        entities[1].id,
+        crate::ids::neutral_sketch_record_id(&sketches[0].id, 21)
+    );
 
     // The settled explicit frame keeps its stored origin unscaled.
     let (sketches, _) = project_sketch_design(&[placement(329)], &[point], &[], &[], 1.0e-6);
@@ -14502,10 +14522,14 @@ fn sketch_member_run_backfills_relation_free_owners() {
         byte_offset: u64::from(record_index),
         coordinate_offset: 141,
         entity_genesis: Some(2),
-        persistent_id: u64::from(record_index),
+        record_form: crate::records::SketchPointRecordForm::default(),
+        persistent_id: Some(u64::from(record_index)),
         paired_reference: 0,
+        flags: [0; 8],
         coordinates: Point2::new(0.0, 0.0),
-        raw_bytes: Vec::new(),
+        depth: 0.0,
+        closure: None,
+        companion: None,
     };
 
     // Relation-free geometry named by the container's member run binds to
@@ -14699,10 +14723,14 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         byte_offset: 400,
         coordinate_offset: 89,
         entity_genesis: None,
-        persistent_id: 10,
+        record_form: crate::records::SketchPointRecordForm::default(),
+        persistent_id: Some(10),
         paired_reference: 0,
+        flags: [0; 8],
         coordinates: Point2::new(2.5, 4.0),
-        raw_bytes: Vec::new(),
+        depth: 0.0,
+        closure: None,
+        companion: None,
     };
     let line = SketchCurveIdentity {
         id: "f3d:native:curve#217".into(),
@@ -14849,7 +14877,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         .resolved_members
         .push(SketchRelationOperand::Point {
             record_index: 175,
-            persistent_id: 10,
+            persistent_id: Some(10),
         });
     curve_point_coincidence.member_offsets.push(40);
     curve_point_coincidence.return_members.push(175);
@@ -14888,7 +14916,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         175,
         SketchRelationOperand::Point {
             record_index: 175,
-            persistent_id: 10,
+            persistent_id: Some(10),
         },
     );
     horizontal_point.auxiliary_references = vec![999];
@@ -15148,8 +15176,6 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         return_member_offsets: Vec::new(),
         raw_bytes: Vec::new(),
     };
-    let mut point_bytes = vec![0; 24];
-    point_bytes[16..24].copy_from_slice(&0.45f64.to_le_bytes());
     let point = SketchPoint {
         id: "f3d:Design/BulkStream.dat:point#106".into(),
         record_index: 106,
@@ -15158,10 +15184,14 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         byte_offset: 106,
         coordinate_offset: 0,
         entity_genesis: None,
-        persistent_id: 5,
+        record_form: crate::records::SketchPointRecordForm::default(),
+        persistent_id: Some(5),
         paired_reference: 0,
+        flags: [0; 8],
         coordinates: Point2::new(2.5, 3.5),
-        raw_bytes: point_bytes,
+        depth: 4.5,
+        closure: None,
+        companion: None,
     };
     let mut midpoint_relation = relation.clone();
     midpoint_relation.id = "f3d:Design/BulkStream.dat:relation#106".into();
@@ -15174,7 +15204,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     coincident_point.id = "f3d:Design/BulkStream.dat:point#107".into();
     coincident_point.record_index = 107;
     coincident_point.byte_offset = 107;
-    coincident_point.persistent_id = 6;
+    coincident_point.persistent_id = Some(6);
     let mut coincident_relation = relation.clone();
     coincident_relation.id = "f3d:Design/BulkStream.dat:relation#107".into();
     coincident_relation.record_index = 107;
@@ -15924,10 +15954,14 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         byte_offset: 0,
         coordinate_offset: 0,
         entity_genesis: None,
-        persistent_id: 40,
+        record_form: crate::records::SketchPointRecordForm::default(),
+        persistent_id: Some(40),
         paired_reference: 0,
+        flags: [0; 8],
         coordinates: Point2::new(0.0, 0.0),
-        raw_bytes: Vec::new(),
+        depth: 0.0,
+        closure: None,
+        companion: None,
     };
     let curve = |record_index: u32, start: Point2, end: Point2| {
         let delta_u = end.u - start.u;
@@ -16529,10 +16563,14 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         byte_offset: 0,
         coordinate_offset: 0,
         entity_genesis: None,
-        persistent_id: u64::from(record_index),
+        record_form: crate::records::SketchPointRecordForm::default(),
+        persistent_id: Some(u64::from(record_index)),
         paired_reference: 0,
+        flags: [0; 8],
         coordinates: Point2::new(0.0, y),
-        raw_bytes: Vec::new(),
+        depth: 0.0,
+        closure: None,
+        companion: None,
     };
     let points = [point(40, 0.0), point(41, 2.0)];
     let sketch = neutral_sketch_id(&placement);
@@ -17352,10 +17390,14 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
         byte_offset: 0,
         coordinate_offset: 89,
         entity_genesis: None,
-        persistent_id: u64::from(record_index),
+        record_form: crate::records::SketchPointRecordForm::default(),
+        persistent_id: Some(u64::from(record_index)),
         paired_reference: 0,
+        flags: [0; 8],
         coordinates: Point2::new(0.0, 0.0),
-        raw_bytes: Vec::new(),
+        depth: 0.0,
+        closure: None,
+        companion: None,
     };
     let mut points = vec![
         point("A", 20),
@@ -18283,10 +18325,14 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         byte_offset: 0,
         coordinate_offset: 89,
         entity_genesis: None,
-        persistent_id: 20,
+        record_form: crate::records::SketchPointRecordForm::default(),
+        persistent_id: Some(20),
         paired_reference: 0,
+        flags: [0; 8],
         coordinates: Point2::new(1.0, 2.0),
-        raw_bytes: Vec::new(),
+        depth: 0.0,
+        closure: None,
+        companion: None,
     };
     let relation = |stream: &str| SketchRelation {
         id: format!("f3d:{stream}:sketch-relation#30"),
@@ -22750,6 +22796,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
     const POINT: u64 = 50;
     const CURVE: u64 = 51;
     const TEXT: u64 = 52;
+    const COMPANION: u64 = 60;
 
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
         bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
@@ -22766,10 +22813,13 @@ fn sketch_records_use_the_primary_index_live_copy() {
         bytes.extend_from_slice(&[0; 9]);
         bytes
     };
-    let owner_reference = |bytes: &mut Vec<u8>| {
+    let local_reference = |bytes: &mut Vec<u8>, target: u64| {
         bytes.push(1);
-        bytes.extend_from_slice(&201u32.to_le_bytes());
-        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&target.to_le_bytes());
+        bytes.extend_from_slice(&[0; 2]);
+    };
+    let owner_reference = |bytes: &mut Vec<u8>| {
+        local_reference(bytes, PARENT);
     };
     let point_record = |x: f64, y: f64| {
         let mut bytes = record_prefix(257, POINT);
@@ -22778,12 +22828,18 @@ fn sketch_records_use_the_primary_index_live_copy() {
         push_ascii(&mut bytes, "pt_tag");
         push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
         bytes.extend_from_slice(&500u64.to_le_bytes());
-        bytes.push(1);
-        bytes.extend_from_slice(&60u32.to_le_bytes());
-        bytes.extend_from_slice(&[0; 14]);
+        local_reference(&mut bytes, COMPANION);
+        bytes.extend_from_slice(&[0; 7]);
         bytes.extend_from_slice(&x.to_le_bytes());
         bytes.extend_from_slice(&y.to_le_bytes());
         bytes.extend_from_slice(&0.0f64.to_le_bytes());
+        bytes.extend_from_slice(&0u64.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&[0; 12]);
+        bytes.extend_from_slice(&1.0f32.to_le_bytes());
+        bytes.extend_from_slice(&1.0f32.to_le_bytes());
+        bytes.extend_from_slice(&[0, 1, 0, 0, 0]);
+        local_reference(&mut bytes, COMPANION);
         owner_reference(&mut bytes);
         bytes
     };
@@ -22857,19 +22913,26 @@ fn sketch_records_use_the_primary_index_live_copy() {
     bytes.extend_from_slice(&curve_record(5.0));
     let live_text_at = bytes.len();
     bytes.extend_from_slice(&text_record("live text"));
+    let companion_at = bytes.len();
+    let mut companion = record_prefix(261, COMPANION);
+    companion.push(0);
+    companion.extend_from_slice(&0u32.to_le_bytes());
+    companion.push(0);
+    local_reference(&mut companion, POINT);
+    bytes.extend_from_slice(&companion);
 
-    let meta = MetaStream {
+    let mut meta = MetaStream {
         types: vec![
             design_type(
-                "00000000-0000-0000-0000-000000000001",
+                crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID,
                 0,
                 "Fusion",
                 vec![PARENT],
             ),
             design_type(
-                "00000000-0000-0000-0000-000000000002",
-                0,
-                "MSketch",
+                "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB",
+                10,
+                "Geometry",
                 vec![POINT],
             ),
             design_type(
@@ -22890,6 +22953,12 @@ fn sketch_records_use_the_primary_index_live_copy() {
                 "Fusion",
                 Vec::new(),
             ),
+            design_type(
+                crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.0,
+                crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.1,
+                crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.2,
+                vec![COMPANION],
+            ),
         ],
         records: vec![
             RecordIndexEntry {
@@ -22908,6 +22977,10 @@ fn sketch_records_use_the_primary_index_live_copy() {
                 entity_id: TEXT,
                 bulk_offset: live_text_at as u64,
             },
+            RecordIndexEntry {
+                entity_id: COMPANION,
+                bulk_offset: companion_at as u64,
+            },
         ],
         secondary_records: vec![RecordIndexEntry {
             entity_id: PARENT,
@@ -22924,6 +22997,29 @@ fn sketch_records_use_the_primary_index_live_copy() {
     assert_eq!(points.len(), 1);
     assert_eq!(points[0].byte_offset, live_point_at as u64);
     assert_eq!(points[0].coordinates, Point2::new(70.0, -30.0));
+    meta.types[1].type_guid = "00000000-0000-0000-0000-000000000002".into();
+    assert!(
+        crate::design::decode::sketch::decode_sketch_points_from_stream(
+            &bytes,
+            &meta,
+            "Design/BulkStream.dat",
+        )
+        .expect("structurally point-shaped foreign type")
+        .is_empty()
+    );
+    meta.types[1].type_guid = crate::design::decode::sketch::CURRENT_SKETCH_POINT_TYPE
+        .0
+        .into();
+    let mut malformed_point = bytes.clone();
+    malformed_point[live_point_at + 70] = 0;
+    assert!(matches!(
+        crate::design::decode::sketch::decode_sketch_points_from_stream(
+            &malformed_point,
+            &meta,
+            "Design/BulkStream.dat",
+        ),
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
 
     let curves = crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
         &bytes,

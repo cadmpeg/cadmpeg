@@ -9,9 +9,9 @@ use crate::design::feature_project::closed_spatial_sketch_profiles;
 use crate::design::geometry::closed_sketch_profiles;
 use crate::ids::{
     native_stream, neutral_sketch_constraint_id, neutral_sketch_curve_id, neutral_sketch_id,
-    neutral_sketch_point_id, neutral_sketch_text_id, neutral_sketch_text_record_id,
+    neutral_sketch_point_id, neutral_sketch_record_id, neutral_sketch_text_id,
     neutral_spatial_sketch_curve_id, neutral_spatial_sketch_id, neutral_spatial_sketch_point_id,
-    neutral_spatial_sketch_surface_id,
+    neutral_spatial_sketch_record_id, neutral_spatial_sketch_surface_id,
 };
 use crate::records::{
     DesignSketchPlacement, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
@@ -123,7 +123,10 @@ pub fn project_sketch_design(
             let placement = placements_by_suffix.get(&(scope, owner))?;
             let sketch = neutral_sketch_id(placement);
             Some(SketchEntity {
-                id: neutral_sketch_point_id(&sketch, point.persistent_id),
+                id: point.persistent_id.map_or_else(
+                    || neutral_sketch_record_id(&sketch, point.record_index),
+                    |persistent_id| neutral_sketch_point_id(&sketch, persistent_id),
+                ),
                 sketch,
                 construction: false,
                 native_ref: Some(point.id.clone()),
@@ -221,7 +224,7 @@ pub fn project_sketch_design(
         let sketch = neutral_sketch_id(placement);
         Some(SketchEntity {
             id: text.persistent_id.map_or_else(
-                || neutral_sketch_text_record_id(&sketch, text.record_index),
+                || neutral_sketch_record_id(&sketch, text.record_index),
                 |persistent_id| neutral_sketch_text_id(&sketch, persistent_id),
             ),
             sketch,
@@ -490,7 +493,10 @@ pub fn project_spatial_sketch_design(
         let sketch = neutral_spatial_sketch_id(placement);
         let depth = sketch_point_depth(point)?;
         Some(SpatialSketchEntity {
-            id: neutral_spatial_sketch_point_id(&sketch, point.persistent_id),
+            id: point.persistent_id.map_or_else(
+                || neutral_spatial_sketch_record_id(&sketch, point.record_index),
+                |persistent_id| neutral_spatial_sketch_point_id(&sketch, persistent_id),
+            ),
             sketch,
             construction: false,
             native_ref: Some(point.id.clone()),

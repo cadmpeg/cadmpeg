@@ -2449,11 +2449,11 @@ pub fn bind_extrude_selection_geometry(
         let point_operands = points.iter().filter_map(|point| {
             (native_stream(&point.id) == Some(stream)
                 && point.owner_reference == Some(entity_suffix)
-                && point.persistent_id == member.local_id)
-                .then_some(SketchRelationOperand::Point {
-                    record_index: point.record_index,
-                    persistent_id: point.persistent_id,
-                })
+                && point.persistent_id == Some(member.local_id))
+            .then_some(SketchRelationOperand::Point {
+                record_index: point.record_index,
+                persistent_id: point.persistent_id,
+            })
         });
         let curve_operands = curves.iter().filter_map(|curve| {
             (native_stream(&curve.id) == Some(stream)

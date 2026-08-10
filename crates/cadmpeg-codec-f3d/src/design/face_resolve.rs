@@ -10,7 +10,6 @@ use crate::records::{
     DesignExtrudeFaceRole, DesignFaceOperand, DesignParameter, DesignParameterScope,
     DesignSketchPlacement, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
 };
-use cadmpeg_core::le::f64_at;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
@@ -1460,7 +1459,7 @@ pub(crate) fn sketch_curve_is_spatial(curve: &SketchCurveIdentity) -> bool {
 }
 
 pub(crate) fn sketch_point_depth(point: &SketchPoint) -> Option<f64> {
-    f64_at(&point.raw_bytes, point.coordinate_offset as usize + 16).map(|value| value * 10.0)
+    point.depth.is_finite().then_some(point.depth)
 }
 
 #[cfg(test)]

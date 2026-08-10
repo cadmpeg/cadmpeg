@@ -8,10 +8,11 @@ use crate::ids::{self, native_stream};
 use crate::records::{
     DesignEntityHeader, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
     LostEdgeReference, PersistentReference, PersistentReferenceKind, SketchConstraintKind,
-    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
-    SketchSurface, SketchText, DESIGN_MODULE_SKETCH,
+    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchPointClosure,
+    SketchPointCompanion, SketchPointCompanionReferenceEncoding, SketchPointRecordForm,
+    SketchRelation, SketchRelationOperand, SketchSurface, SketchText, DESIGN_MODULE_SKETCH,
 };
-use cadmpeg_core::le::{f64_at, f64s_at, take_f32, u32_at, u64_at as read_u64, utf16le_at};
+use cadmpeg_core::le::{f32_at, f64_at, f64s_at, take_f32, u32_at, u64_at as read_u64, utf16le_at};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::Color;
@@ -1315,43 +1316,128 @@ pub(crate) fn decode_sketch_points_from_stream(
     meta: &crate::metastream::MetaStream,
     stream: &str,
 ) -> Result<Vec<SketchPoint>, CodecError> {
+    let frames = design_primary_frames(bytes, meta)?;
+    let frames_by_entity = frames
+        .iter()
+        .filter_map(|frame| Some((u32::try_from(frame.entity_id).ok()?, frame)))
+        .collect::<HashMap<_, _>>();
+    let types_by_entity = frames
+        .iter()
+        .filter_map(|frame| {
+            Some((
+                u32::try_from(frame.entity_id).ok()?,
+                (
+                    frame.design_type.type_guid.as_str(),
+                    frame.design_type.version,
+                    frame.design_type.module.as_str(),
+                ),
+            ))
+        })
+        .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
-    for frame in design_primary_frames(bytes, meta)? {
-        let payload = &bytes[frame.start..frame.end];
-        let Some((persistent_id, paired_reference, x, y, shift, entity_genesis)) =
-            decode_sketch_point(payload)
-        else {
-            continue;
-        };
-        let record_index = u32::try_from(frame.entity_id)
-            .map_err(|_| CodecError::Malformed("F3D sketch-point entity ID exceeds u32".into()))?;
-        let (u, v) = (x * 10.0, y * 10.0);
-        let depth = f64_at(payload, 105 + shift).map(|value| value * 10.0);
-        if !u.is_finite() || !v.is_finite() || depth.is_some_and(|value| !value.is_finite()) {
+    for frame in &frames {
+        if !frame
+            .design_type
+            .type_guid
+            .eq_ignore_ascii_case(SKETCH_POINT_TYPE_GUID)
+            || frame.design_type.module != CURRENT_SKETCH_POINT_TYPE.2
+            || ![0, 8, 10, CURRENT_SKETCH_POINT_TYPE.1].contains(&frame.design_type.version)
+        {
             continue;
         }
-        let raw_end = payload.len().min(113 + shift);
+        let payload = &bytes[frame.start..frame.end];
+        let record_index = u32::try_from(frame.entity_id)
+            .map_err(|_| CodecError::Malformed("F3D sketch-point entity ID exceeds u32".into()))?;
+        let decoded =
+            decode_sketch_point_record(payload, frame.design_type.version).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "F3D sketch point {record_index} has an invalid version-{} member sequence",
+                    frame.design_type.version
+                ))
+            })?;
+        let (u, v, depth) = (
+            decoded.coordinates[0] * 10.0,
+            decoded.coordinates[1] * 10.0,
+            decoded.coordinates[2] * 10.0,
+        );
+        if !u.is_finite() || !v.is_finite() || !depth.is_finite() {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch point {record_index} has a non-finite coordinate"
+            )));
+        }
+        if !point_target_has_guid(
+            &types_by_entity,
+            decoded.trailing_reference(),
+            SKETCH_CONTAINER_TYPE_GUID,
+        ) {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch point {record_index} has an invalid trailing container reference"
+            )));
+        }
+        let companion_encoding = if decoded.record_form.uses_inline_typed_references() {
+            SketchPointCompanionReferenceEncoding::InlineTyped
+        } else {
+            SketchPointCompanionReferenceEncoding::SameSegment
+        };
+        let companion = frames_by_entity
+            .get(&decoded.paired_reference)
+            .filter(|companion_frame| {
+                let design_type = companion_frame.design_type;
+                design_type
+                    .type_guid
+                    .eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0)
+                    && design_type.version == SKETCH_POINT_COMPANION_TYPE.1
+                    && design_type.module == SKETCH_POINT_COMPANION_TYPE.2
+            })
+            .and_then(|companion_frame| {
+                decode_sketch_point_companion(
+                    &bytes[companion_frame.start..companion_frame.end],
+                    record_index,
+                    companion_encoding,
+                    matches!(decoded.record_form, SketchPointRecordForm::Version11 { .. }),
+                    &types_by_entity,
+                )
+            })
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "F3D sketch point {record_index} has no valid inverse companion"
+                ))
+            })?;
+        if decoded.record_form.uses_inline_typed_references()
+            != (companion.reference_encoding == SketchPointCompanionReferenceEncoding::InlineTyped)
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch point {record_index} and its companion use different reference encodings"
+            )));
+        }
         out.push(SketchPoint {
             id: ids::native_sketch_point_id(stream, frame.start),
             record_index,
-            owner_reference: trailing_sketch_owner_reference(payload),
+            owner_reference: decoded.owner_reference,
             class_tag: frame.class_tag.to_string(),
             byte_offset: frame.start as u64,
-            coordinate_offset: (89 + shift) as u32,
-            entity_genesis,
-            persistent_id,
-            paired_reference,
+            coordinate_offset: decoded.coordinate_offset,
+            entity_genesis: decoded.entity_genesis,
+            record_form: decoded.record_form,
+            persistent_id: decoded.persistent_id,
+            paired_reference: decoded.paired_reference,
+            flags: decoded.flags,
             coordinates: Point2::new(u, v),
-            raw_bytes: payload[..raw_end].to_vec(),
+            depth,
+            closure: decoded.closure,
+            companion: Some(companion),
         });
     }
     Ok(out)
 }
 
 /// Decode every sketch-point record ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata), `pt_tag`) from each design
-/// `BulkStream` entry in `scan`: the persistent point id, a paired record
-/// reference, and the sketch `(u, v)` coordinates, converted centimetre→
-/// millimetre. Records whose scaled coordinates are non-finite are skipped.
+/// `BulkStream` entry in `scan`: its versioned identity, flags, coordinates,
+/// closure, trailing reference, and paired reverse curve-incidence record,
+/// converted centimetre→millimetre. Class version 0 supplies `(u,v)` and no
+/// persistent identity; later forms supply `(u,v,w)` and `pt_tag`. A known
+/// point record with a malformed or non-finite member sequence makes the
+/// stream malformed.
 pub fn decode_sketch_points(scan: &ContainerScan) -> Result<Vec<SketchPoint>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
@@ -2081,53 +2167,308 @@ pub(crate) fn decode_sketch_text_record(
     ))
 }
 
-fn decode_sketch_point(payload: &[u8]) -> Option<(u64, u32, f64, f64, usize, Option<u64>)> {
-    if let Some(point) = decode_sketch_point_variant(payload, 0, 1) {
-        return Some((point.0, point.1, point.2, point.3, 0, None));
-    }
-    if u32_at(payload, 25) != Some(13)
-        || payload.get(29..42) != Some(b"EntityGenesis")
-        || u32_at(payload, 42) != Some(23)
-        || payload.get(46..69) != Some(b"IntrinsicMetaTypeuint64")
-    {
-        return None;
-    }
-    let entity_genesis = u64::from_le_bytes(payload.get(69..77)?.try_into().ok()?);
-    decode_sketch_point_variant(payload, 52, 2)
-        .map(|point| (point.0, point.1, point.2, point.3, 52, Some(entity_genesis)))
+#[derive(Debug)]
+struct DecodedSketchPoint {
+    owner_reference: Option<u32>,
+    coordinate_offset: u32,
+    entity_genesis: Option<u64>,
+    record_form: SketchPointRecordForm,
+    persistent_id: Option<u64>,
+    paired_reference: u32,
+    flags: [u8; 8],
+    coordinates: [f64; 3],
+    closure: Option<SketchPointClosure>,
 }
 
-fn decode_sketch_point_variant(
+impl DecodedSketchPoint {
+    fn trailing_reference(&self) -> Option<u32> {
+        match self.record_form {
+            SketchPointRecordForm::Version10InlineTyped { trailing_reference } => {
+                Some(trailing_reference)
+            }
+            _ => self.owner_reference,
+        }
+    }
+}
+
+fn take_local_sketch_reference(
     payload: &[u8],
-    shift: usize,
-    property_count: u32,
-) -> Option<(u64, u32, f64, f64)> {
-    if payload.get(20) != Some(&1)
-        || u32_at(payload, 21) != Some(property_count)
-        || u32_at(payload, 25 + shift) != Some(6)
-        || payload.get(29 + shift..35 + shift) != Some(b"pt_tag")
-        || u32_at(payload, 35 + shift) != Some(23)
-        || payload.get(39 + shift..62 + shift) != Some(b"IntrinsicMetaTypeuint64")
-        || payload.get(70 + shift) != Some(&1)
-        || !payload
-            .get(75 + shift..89 + shift)?
-            .iter()
-            .all(|&byte| byte <= 1)
-    {
+    cursor: &mut usize,
+) -> Option<(u32, Option<String>)> {
+    let reference = take_reference(payload, cursor)?;
+    if reference.segment.is_some() || reference.link_name.is_some() {
         return None;
     }
     Some((
-        u64::from_le_bytes(payload.get(62 + shift..70 + shift)?.try_into().ok()?),
-        u32_at(payload, 71 + shift)?,
-        f64_at(payload, 89 + shift)?,
-        f64_at(payload, 97 + shift)?,
+        u32::try_from(reference.target?).ok()?,
+        reference.inline_type_guid,
     ))
 }
 
+fn take_same_segment_sketch_reference(payload: &[u8], cursor: &mut usize) -> Option<u32> {
+    let (target, inline_type_guid) = take_local_sketch_reference(payload, cursor)?;
+    inline_type_guid.is_none().then_some(target)
+}
+
+fn decode_version_zero_sketch_point(
+    payload: &[u8],
+    header_end: usize,
+) -> Option<DecodedSketchPoint> {
+    let mut cursor = header_end;
+    let prefix_end = cursor.checked_add(10)?;
+    if payload.get(cursor..prefix_end) != Some(&[0; 10][..]) {
+        return None;
+    }
+    cursor = prefix_end;
+    let paired_reference = take_same_segment_sketch_reference(payload, &mut cursor)?;
+    let flag = *payload.get(cursor)?;
+    if flag > 1 {
+        return None;
+    }
+    cursor = cursor.checked_add(1)?;
+    let coordinate_offset = u32::try_from(cursor).ok()?;
+    let x = f64_at(payload, cursor)?;
+    let y = f64_at(payload, cursor.checked_add(8)?)?;
+    cursor = cursor.checked_add(16)?;
+    if payload.get(cursor..cursor.checked_add(20)?) != Some(&[0; 20][..])
+        || f32_at(payload, cursor + 20) != Some(1.0)
+        || payload.get(cursor + 24..cursor + 36) != Some(&[0; 12][..])
+        || f32_at(payload, cursor + 36) != Some(1.0)
+        || f32_at(payload, cursor + 40) != Some(1.0)
+        || payload.get(cursor + 44..cursor + 54) != Some(&[1, 1, 0, 0, 0, 0, 1, 0, 0, 0][..])
+    {
+        return None;
+    }
+    cursor = cursor.checked_add(54)?;
+    if take_same_segment_sketch_reference(payload, &mut cursor)? != paired_reference {
+        return None;
+    }
+    let owner_reference = take_same_segment_sketch_reference(payload, &mut cursor)?;
+    if cursor != payload.len() {
+        return None;
+    }
+    let mut flags = [0; 8];
+    flags[0] = flag;
+    Some(DecodedSketchPoint {
+        owner_reference: Some(owner_reference),
+        coordinate_offset,
+        entity_genesis: None,
+        record_form: SketchPointRecordForm::Version0,
+        persistent_id: None,
+        paired_reference,
+        flags,
+        coordinates: [x, y, 0.0],
+        closure: None,
+    })
+}
+
+fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<DecodedSketchPoint> {
+    let (_, after_class_tag) = lp_ascii_filtered(payload, 0, 3..=3, u8::is_ascii_digit)?;
+    let header_end = after_class_tag.checked_add(4)?;
+    if class_version == 0 {
+        return decode_version_zero_sketch_point(payload, header_end);
+    }
+    if !matches!(class_version, 8 | 10 | 11)
+        || payload.get(header_end..header_end.checked_add(9)?) != Some(&[0; 9][..])
+    {
+        return None;
+    }
+    let mut cursor = header_end.checked_add(9)?;
+    let properties = read_property_block(payload, &mut cursor)?;
+    let (entity_genesis, persistent_id) = match properties.as_slice() {
+        [(key, persistent_id)] if key == "pt_tag" => (None, *persistent_id),
+        [(genesis_key, entity_genesis), (point_key, persistent_id)]
+            if class_version == 11 && genesis_key == "EntityGenesis" && point_key == "pt_tag" =>
+        {
+            (Some(*entity_genesis), *persistent_id)
+        }
+        _ => return None,
+    };
+    let (paired_reference, paired_type_guid) = take_local_sketch_reference(payload, &mut cursor)?;
+    let inline_typed = match (class_version, paired_type_guid.as_deref()) {
+        (8 | 10 | 11, None) => false,
+        (10, Some(type_guid)) if type_guid.eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0) => {
+            true
+        }
+        _ => return None,
+    };
+    let flag_count = if class_version == 11 { 8 } else { 7 };
+    let flags_end = cursor.checked_add(flag_count)?;
+    let source_flags = payload.get(cursor..flags_end)?;
+    if source_flags.iter().any(|flag| *flag > 1) {
+        return None;
+    }
+    let mut flags = [0; 8];
+    flags[..flag_count].copy_from_slice(source_flags);
+    cursor = flags_end;
+    let coordinate_offset = u32::try_from(cursor).ok()?;
+    let coordinates = [
+        f64_at(payload, cursor)?,
+        f64_at(payload, cursor.checked_add(8)?)?,
+        f64_at(payload, cursor.checked_add(16)?)?,
+    ];
+    cursor = cursor.checked_add(24)?;
+    let selector = read_u64(payload, cursor)?;
+    let state = *payload.get(cursor.checked_add(8)?)?;
+    let reserved_zero_count = if class_version == 8 { 8 } else { 12 };
+    let floats_at = cursor.checked_add(9 + reserved_zero_count)?;
+    if payload
+        .get(cursor + 9..floats_at)?
+        .iter()
+        .any(|byte| *byte != 0)
+        || f32_at(payload, floats_at) != Some(1.0)
+        || f32_at(payload, floats_at + 4) != Some(1.0)
+        || payload.get(floats_at + 8..floats_at + 13) != Some(&[0, 1, 0, 0, 0][..])
+    {
+        return None;
+    }
+    cursor = floats_at.checked_add(13)?;
+    let (repeated_reference, repeated_type_guid) =
+        take_local_sketch_reference(payload, &mut cursor)?;
+    let repeated_encoding_matches = match repeated_type_guid.as_deref() {
+        None => !inline_typed,
+        Some(type_guid) => {
+            inline_typed && type_guid.eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0)
+        }
+    };
+    if repeated_reference != paired_reference || !repeated_encoding_matches {
+        return None;
+    }
+    let closure = SketchPointClosure { selector, state };
+    let (record_form, owner_reference) = match (class_version, inline_typed) {
+        (8, false) => {
+            let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
+            (SketchPointRecordForm::Version8, Some(owner))
+        }
+        (10, false) => {
+            let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
+            (SketchPointRecordForm::Version10, Some(owner))
+        }
+        (10, true) => {
+            let (trailing_reference, type_guid) =
+                take_local_sketch_reference(payload, &mut cursor)?;
+            if type_guid
+                .as_deref()
+                .is_none_or(|type_guid| !type_guid.eq_ignore_ascii_case(SKETCH_CONTAINER_TYPE_GUID))
+            {
+                return None;
+            }
+            (
+                SketchPointRecordForm::Version10InlineTyped { trailing_reference },
+                None,
+            )
+        }
+        (11, false) => {
+            let padded_paired_reference = match payload.len().checked_sub(cursor)? {
+                11 => false,
+                15 if payload.get(cursor..cursor + 4) == Some(&[0; 4][..]) => {
+                    cursor += 4;
+                    true
+                }
+                _ => return None,
+            };
+            let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
+            (
+                SketchPointRecordForm::Version11 {
+                    padded_paired_reference,
+                },
+                Some(owner),
+            )
+        }
+        _ => return None,
+    };
+    if cursor != payload.len() || !record_form.closure_is_valid(Some(&closure)) {
+        return None;
+    }
+    Some(DecodedSketchPoint {
+        owner_reference,
+        coordinate_offset,
+        entity_genesis,
+        record_form,
+        persistent_id: Some(persistent_id),
+        paired_reference,
+        flags,
+        coordinates,
+        closure: Some(closure),
+    })
+}
+
+fn point_target_has_guid(
+    types_by_entity: &HashMap<u32, (&str, u32, &str)>,
+    target: Option<u32>,
+    expected_guid: &str,
+) -> bool {
+    let Some(target) = target else {
+        return false;
+    };
+    types_by_entity
+        .get(&target)
+        .is_some_and(|(type_guid, _, _)| type_guid.eq_ignore_ascii_case(expected_guid))
+}
+
+fn decode_sketch_point_companion(
+    payload: &[u8],
+    point_record_index: u32,
+    reference_encoding: SketchPointCompanionReferenceEncoding,
+    allow_present_zero_prefix: bool,
+    types_by_entity: &HashMap<u32, (&str, u32, &str)>,
+) -> Option<SketchPointCompanion> {
+    let (prefix_present_zero, mut cursor) = if payload.get(11..21) == Some(&[0; 10][..]) {
+        (false, 21)
+    } else if payload.get(11..20) == Some(&[0; 9][..])
+        && payload.get(20..25) == Some(&[1, 0, 0, 0, 0][..])
+    {
+        allow_present_zero_prefix.then_some((true, 25))?
+    } else {
+        return None;
+    };
+    let count = usize::try_from(u32_at(payload, cursor)?).ok()?;
+    if count > MAX_RELATION_RUN {
+        return None;
+    }
+    cursor = cursor.checked_add(4)?;
+    let mut incident_curves = Vec::with_capacity(count);
+    for _ in 0..count {
+        let (target, type_guid) = take_local_sketch_reference(payload, &mut cursor)?;
+        let registered_type = types_by_entity.get(&target)?;
+        match reference_encoding {
+            SketchPointCompanionReferenceEncoding::SameSegment if type_guid.is_none() => {}
+            SketchPointCompanionReferenceEncoding::InlineTyped
+                if type_guid
+                    .as_deref()
+                    .is_some_and(|type_guid| type_guid.eq_ignore_ascii_case(registered_type.0)) => {
+            }
+            _ => return None,
+        }
+        incident_curves.push(target);
+    }
+    if payload.get(cursor) != Some(&0) {
+        return None;
+    }
+    cursor = cursor.checked_add(1)?;
+    let (inverse, inverse_type_guid) = take_local_sketch_reference(payload, &mut cursor)?;
+    let inverse_encoding_matches = match reference_encoding {
+        SketchPointCompanionReferenceEncoding::SameSegment => inverse_type_guid.is_none(),
+        SketchPointCompanionReferenceEncoding::InlineTyped => inverse_type_guid
+            .as_deref()
+            .is_some_and(|type_guid| type_guid.eq_ignore_ascii_case(SKETCH_POINT_TYPE_GUID)),
+    };
+    if inverse != point_record_index || !inverse_encoding_matches || cursor != payload.len() {
+        return None;
+    }
+    Some(SketchPointCompanion {
+        prefix_present_zero,
+        reference_encoding,
+        incident_curves,
+    })
+}
+
+pub(crate) const SKETCH_POINT_TYPE_GUID: &str = "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB";
 pub(crate) const CURRENT_SKETCH_POINT_TYPE: (&str, u32, &str) =
-    ("C2CEDAE7-1716-47C1-B7B1-07B70081D0FB", 11, "Geometry");
-pub(crate) const CURRENT_SKETCH_POINT_COMPANION_TYPE: (&str, u32, &str) =
+    (SKETCH_POINT_TYPE_GUID, 11, "Geometry");
+pub(crate) const SKETCH_POINT_COMPANION_TYPE: (&str, u32, &str) =
     ("362B7EC3-0F09-47C8-A3BE-DC066715CDAE", 0, "Geometry");
+pub(crate) const SKETCH_CONTAINER_TYPE_GUID: &str = "44A64366-4BD3-4B24-881A-F94C206E8F2D";
 pub(crate) const CURRENT_SKETCH_LINE_TYPE: (&str, u32, &str) =
     ("DCA267ED-D615-4934-B64F-AD805E8003E2", 2, "Geometry");
 pub(crate) const CURRENT_SKETCH_CIRCULAR_TYPE: (&str, u32, &str) =
@@ -2480,10 +2821,10 @@ pub(crate) fn bind_sketch_graph(
             }
         }
     }
-    // Relation-free geometry carries no owner backlink of its own. The
-    // `EntityGenesis`-form sketch container's paired record names every owned
-    // record in its counted member run; backfill those owners after the
-    // relation-derived pass, holding both sources to one owner per record.
+    // A direct backlink, a typed relation, and the sketch container's counted
+    // member run are the three independent ownership joins. Payload-internal
+    // references in an otherwise unowned Geometry record do not name a Sketch.
+    // Apply the container join after relations and require all joins to agree.
     for entity in entities.iter().filter(|entity| entity.in_sketch_module()) {
         let (Some(scope), Ok(suffix)) = (
             native_stream(&entity.id),
@@ -3565,6 +3906,222 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
         reference_offsets,
         end: cursor,
     })
+}
+
+#[cfg(test)]
+mod point_record_tests {
+    use super::{
+        decode_sketch_point_companion, decode_sketch_point_record, SKETCH_CONTAINER_TYPE_GUID,
+        SKETCH_POINT_COMPANION_TYPE, SKETCH_POINT_TYPE_GUID,
+    };
+    use crate::records::{
+        SketchPointClosure, SketchPointCompanion, SketchPointCompanionReferenceEncoding,
+        SketchPointRecordForm,
+    };
+    use std::collections::HashMap;
+
+    const POINT: u32 = 41;
+    const COMPANION: u32 = 43;
+    const OWNER: u32 = 17;
+    const LINE: &str = "DCA267ED-D615-4934-B64F-AD805E8003E2";
+    const ARC: &str = "F0130424-8B7E-4092-93C9-1CA807482534";
+
+    fn push_header(out: &mut Vec<u8>, class_tag: &str, record_index: u32) {
+        out.extend_from_slice(&u32::try_from(class_tag.len()).unwrap().to_le_bytes());
+        out.extend_from_slice(class_tag.as_bytes());
+        out.extend_from_slice(&record_index.to_le_bytes());
+    }
+
+    fn push_ascii(out: &mut Vec<u8>, value: &str) {
+        out.extend_from_slice(&u32::try_from(value.len()).unwrap().to_le_bytes());
+        out.extend_from_slice(value.as_bytes());
+    }
+
+    fn push_reference(out: &mut Vec<u8>, target: u32, type_guid: Option<&str>) {
+        out.push(1);
+        out.extend_from_slice(&u64::from(target).to_le_bytes());
+        if let Some(type_guid) = type_guid {
+            push_ascii(out, type_guid);
+        }
+        out.extend_from_slice(&[0; 2]);
+    }
+
+    fn tagged_point_payload(
+        version: u32,
+        inline_typed: bool,
+        selector: u64,
+        state: u8,
+        padded_paired_reference: bool,
+    ) -> Vec<u8> {
+        let mut payload = Vec::new();
+        push_header(&mut payload, "257", POINT);
+        payload.extend_from_slice(&[0; 9]);
+        payload.push(1);
+        payload.extend_from_slice(&1u32.to_le_bytes());
+        push_ascii(&mut payload, "pt_tag");
+        push_ascii(&mut payload, "IntrinsicMetaTypeuint64");
+        payload.extend_from_slice(&500u64.to_le_bytes());
+        let paired_type = inline_typed.then_some(SKETCH_POINT_COMPANION_TYPE.0);
+        push_reference(&mut payload, COMPANION, paired_type);
+        payload.extend(std::iter::repeat_n(0, if version == 11 { 8 } else { 7 }));
+        for value in [1.25f64, -2.5, 0.25] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        payload.extend_from_slice(&selector.to_le_bytes());
+        payload.push(state);
+        payload.extend(std::iter::repeat_n(0, if version == 8 { 8 } else { 12 }));
+        payload.extend_from_slice(&1.0f32.to_le_bytes());
+        payload.extend_from_slice(&1.0f32.to_le_bytes());
+        payload.extend_from_slice(&[0, 1, 0, 0, 0]);
+        push_reference(&mut payload, COMPANION, paired_type);
+        if padded_paired_reference {
+            payload.extend_from_slice(&[0; 4]);
+        }
+        push_reference(
+            &mut payload,
+            OWNER,
+            inline_typed.then_some(SKETCH_CONTAINER_TYPE_GUID),
+        );
+        payload
+    }
+
+    #[test]
+    fn point_record_parser_closes_every_versioned_three_coordinate_form() {
+        let cases = [
+            (8, false, 0, 0, false, SketchPointRecordForm::Version8),
+            (10, false, 0, 1, false, SketchPointRecordForm::Version10),
+            (
+                10,
+                true,
+                0,
+                1,
+                false,
+                SketchPointRecordForm::Version10InlineTyped {
+                    trailing_reference: OWNER,
+                },
+            ),
+        ];
+        for (version, inline_typed, selector, state, padded, expected_form) in cases {
+            let decoded = decode_sketch_point_record(
+                &tagged_point_payload(version, inline_typed, selector, state, padded),
+                version,
+            )
+            .expect("synthetic point form");
+            assert_eq!(decoded.record_form, expected_form);
+            assert_eq!(decoded.persistent_id, Some(500));
+            assert_eq!(decoded.paired_reference, COMPANION);
+            assert_eq!(decoded.coordinates, [1.25, -2.5, 0.25]);
+            assert_eq!(
+                decoded.closure,
+                Some(SketchPointClosure { selector, state })
+            );
+        }
+        for (selector, state) in [(0, 0), (0, 1), (1, 0), (2, 1), (4, 0)] {
+            for padded_paired_reference in [false, true] {
+                let decoded = decode_sketch_point_record(
+                    &tagged_point_payload(11, false, selector, state, padded_paired_reference),
+                    11,
+                )
+                .expect("synthetic version-11 point");
+                assert_eq!(
+                    decoded.record_form,
+                    SketchPointRecordForm::Version11 {
+                        padded_paired_reference,
+                    }
+                );
+                assert_eq!(
+                    decoded.closure,
+                    Some(SketchPointClosure { selector, state })
+                );
+            }
+        }
+        for (selector, state) in [(1, 1), (2, 0), (4, 1), (3, 0), (0, 2)] {
+            assert!(decode_sketch_point_record(
+                &tagged_point_payload(11, false, selector, state, false),
+                11,
+            )
+            .is_none());
+        }
+    }
+
+    #[test]
+    fn version_zero_point_retains_its_one_flag_and_source_local_identity() {
+        let mut payload = Vec::new();
+        push_header(&mut payload, "257", POINT);
+        payload.extend_from_slice(&[0; 10]);
+        push_reference(&mut payload, COMPANION, None);
+        payload.push(1);
+        payload.extend_from_slice(&1.25f64.to_le_bytes());
+        payload.extend_from_slice(&(-2.5f64).to_le_bytes());
+        payload.extend_from_slice(&[0; 20]);
+        payload.extend_from_slice(&1.0f32.to_le_bytes());
+        payload.extend_from_slice(&[0; 12]);
+        payload.extend_from_slice(&1.0f32.to_le_bytes());
+        payload.extend_from_slice(&1.0f32.to_le_bytes());
+        payload.extend_from_slice(&[1, 1, 0, 0, 0, 0, 1, 0, 0, 0]);
+        push_reference(&mut payload, COMPANION, None);
+        push_reference(&mut payload, OWNER, None);
+        let decoded = decode_sketch_point_record(&payload, 0).expect("version-0 point");
+        assert_eq!(decoded.record_form, SketchPointRecordForm::Version0);
+        assert_eq!(decoded.persistent_id, None);
+        assert_eq!(decoded.flags, [1, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(decoded.coordinates, [1.25, -2.5, 0.0]);
+        assert_eq!(decoded.closure, None);
+    }
+
+    #[test]
+    fn point_companion_retains_both_prefixes_and_reference_encodings() {
+        let types = HashMap::from([
+            (POINT, (SKETCH_POINT_TYPE_GUID, 11, "Geometry")),
+            (71, (LINE, 2, "Geometry")),
+            (72, (ARC, 0, "Geometry")),
+        ]);
+        for prefix_present_zero in [false, true] {
+            for reference_encoding in [
+                SketchPointCompanionReferenceEncoding::SameSegment,
+                SketchPointCompanionReferenceEncoding::InlineTyped,
+            ] {
+                if prefix_present_zero
+                    && reference_encoding == SketchPointCompanionReferenceEncoding::InlineTyped
+                {
+                    continue;
+                }
+                let mut payload = Vec::new();
+                push_header(&mut payload, "258", COMPANION);
+                if prefix_present_zero {
+                    payload.extend_from_slice(&[0; 9]);
+                    payload.extend_from_slice(&[1, 0, 0, 0, 0]);
+                } else {
+                    payload.extend_from_slice(&[0; 10]);
+                }
+                payload.extend_from_slice(&2u32.to_le_bytes());
+                let inline_typed =
+                    reference_encoding == SketchPointCompanionReferenceEncoding::InlineTyped;
+                push_reference(&mut payload, 71, inline_typed.then_some(LINE));
+                push_reference(&mut payload, 72, inline_typed.then_some(ARC));
+                payload.push(0);
+                push_reference(
+                    &mut payload,
+                    POINT,
+                    inline_typed.then_some(SKETCH_POINT_TYPE_GUID),
+                );
+                assert_eq!(
+                    decode_sketch_point_companion(
+                        &payload,
+                        POINT,
+                        reference_encoding,
+                        true,
+                        &types,
+                    ),
+                    Some(SketchPointCompanion {
+                        prefix_present_zero,
+                        reference_encoding,
+                        incident_curves: vec![71, 72],
+                    })
+                );
+            }
+        }
+    }
 }
 
 #[cfg(test)]

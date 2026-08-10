@@ -10727,7 +10727,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
             entity_ids: vec![277],
             entity_id_offsets: Vec::new(),
-            type_guid: "22222222-3333-4444-5555-666666666666".into(),
+            type_guid: crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID.into(),
             type_guid_offset: 0,
             base_type_guid: None,
             base_type_guid_offset: None,
@@ -10805,13 +10805,13 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             module: "Geometry".into(),
             entity_ids: vec![101],
             entity_id_offsets: Vec::new(),
-            type_guid: crate::design::decode::sketch::CURRENT_SKETCH_POINT_COMPANION_TYPE
+            type_guid: crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE
                 .0
                 .into(),
             type_guid_offset: 0,
             base_type_guid: None,
             base_type_guid_offset: None,
-            version: crate::design::decode::sketch::CURRENT_SKETCH_POINT_COMPANION_TYPE.1,
+            version: crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.1,
             version_offset: 0,
         },
     ];
@@ -10839,10 +10839,23 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         byte_offset: 0,
         coordinate_offset: 89,
         entity_genesis: Some(900),
-        persistent_id: 500,
+        record_form: crate::records::SketchPointRecordForm::Version11 {
+            padded_paired_reference: false,
+        },
+        persistent_id: Some(500),
         paired_reference: 101,
+        flags: [0; 8],
         coordinates: Point2::new(12.5, -25.0),
-        raw_bytes: Vec::new(),
+        depth: 0.0,
+        closure: Some(crate::records::SketchPointClosure {
+            selector: 0,
+            state: 1,
+        }),
+        companion: Some(crate::records::SketchPointCompanion {
+            prefix_present_zero: false,
+            reference_encoding: crate::records::SketchPointCompanionReferenceEncoding::SameSegment,
+            incident_curves: Vec::new(),
+        }),
     }];
     native.sketch_curve_identities = vec![
         SketchCurveIdentity {
@@ -10952,6 +10965,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         })
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less sketch BulkStream encode");
+    let mut extended_source_less = source_less.clone();
     {
         let mut archive = zip::ZipArchive::new(Cursor::new(&encoded)).expect("generated F3D ZIP");
         let mut bulkstream = Vec::new();
@@ -11081,11 +11095,26 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         .expect("source-less sketch BulkStream round trip");
     let native = f3d_native(&round_trip.ir);
     assert_eq!(native.sketch_points.len(), 1);
-    assert_eq!(native.sketch_points[0].persistent_id, 500);
+    assert_eq!(native.sketch_points[0].persistent_id, Some(500));
     assert_eq!(native.sketch_points[0].entity_genesis, Some(900));
     assert_eq!(native.sketch_points[0].coordinate_offset, 141);
     assert_eq!(native.sketch_points[0].owner_reference, Some(277));
-    assert_eq!(native.sketch_points[0].raw_bytes.len(), 165);
+    assert_eq!(native.sketch_points[0].depth, 0.0);
+    assert_eq!(
+        native.sketch_points[0].closure,
+        Some(crate::records::SketchPointClosure {
+            selector: 0,
+            state: 1,
+        })
+    );
+    assert_eq!(
+        native.sketch_points[0].companion,
+        Some(crate::records::SketchPointCompanion {
+            prefix_present_zero: false,
+            reference_encoding: crate::records::SketchPointCompanionReferenceEncoding::SameSegment,
+            incident_curves: Vec::new(),
+        })
+    );
     assert_eq!(
         native.sketch_points[0].coordinates,
         Point2::new(12.5, -25.0)
@@ -11121,7 +11150,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         [
             crate::records::SketchRelationOperand::Point {
                 record_index: 100,
-                persistent_id: 500,
+                persistent_id: Some(500),
             },
             crate::records::SketchRelationOperand::Curve {
                 record_index: 600,
@@ -11140,11 +11169,63 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             },
             crate::records::SketchRelationOperand::Point {
                 record_index: 100,
-                persistent_id: 500,
+                persistent_id: Some(500),
             },
         ]
     );
     assert!(crate::validate::validate_native(&round_trip.ir).is_empty());
+
+    {
+        let point = &mut f3d_native_mut(&mut extended_source_less).sketch_points[0];
+        point.depth = 7.5;
+        point.flags = [1, 0, 0, 1, 0, 1, 0, 1];
+        point.record_form = crate::records::SketchPointRecordForm::Version11 {
+            padded_paired_reference: true,
+        };
+        point.closure = Some(crate::records::SketchPointClosure {
+            selector: 4,
+            state: 0,
+        });
+        point.companion = Some(crate::records::SketchPointCompanion {
+            prefix_present_zero: true,
+            reference_encoding: crate::records::SketchPointCompanionReferenceEncoding::SameSegment,
+            incident_curves: vec![600],
+        });
+    }
+    let mut extended_encoded = Vec::new();
+    F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &extended_source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut extended_encoded))
+        .expect("source-less extended sketch point encode");
+    let extended_round_trip = F3dCodec
+        .decode(
+            &mut Cursor::new(extended_encoded),
+            &DecodeOptions::default(),
+        )
+        .expect("source-less extended sketch point round trip");
+    let extended_native = f3d_native(&extended_round_trip.ir);
+    let extended_point = &extended_native.sketch_points[0];
+    assert_eq!(extended_point.depth, 7.5);
+    assert_eq!(extended_point.flags, [1, 0, 0, 1, 0, 1, 0, 1]);
+    assert_eq!(
+        extended_point.closure,
+        Some(crate::records::SketchPointClosure {
+            selector: 4,
+            state: 0,
+        })
+    );
+    assert_eq!(
+        extended_point.companion,
+        Some(crate::records::SketchPointCompanion {
+            prefix_present_zero: true,
+            reference_encoding: crate::records::SketchPointCompanionReferenceEncoding::SameSegment,
+            incident_curves: vec![600],
+        })
+    );
+    assert!(crate::validate::validate_native(&extended_round_trip.ir).is_empty());
 
     let mut inconsistent = round_trip.ir.clone();
     f3d_native_mut(&mut inconsistent).sketch_relations[0]
@@ -12305,10 +12386,10 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let object = native
         .design_types
         .iter_mut()
-        .find(|design_type| design_type.entity_ids == [277])
-        .expect("generated sketch design object");
+        .find(|design_type| design_type.entity_ids == [33, 44])
+        .expect("generated relation design type");
     assert!(object.byte_offset < object.version_offset);
-    assert_eq!(object.entity_id_offsets.len(), 1);
+    assert_eq!(object.entity_id_offsets.len(), 2);
     object.type_guid = "91111111-2222-3333-4444-555555555555".into();
     object.base_type_guid = Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef".into());
     object.version = 9;
@@ -12410,10 +12491,10 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let object = f3d_native(&round_trip.ir)
         .design_types
         .iter()
-        .find(|design_type| design_type.entity_ids == [277])
+        .find(|design_type| design_type.entity_ids == [33, 44])
         .cloned()
-        .expect("round-trip sketch design object");
-    assert_eq!(object.entity_ids, [277]);
+        .expect("round-trip relation design type");
+    assert_eq!(object.entity_ids, [33, 44]);
     assert_eq!(object.type_guid, "91111111-2222-3333-4444-555555555555");
     assert_eq!(
         object.base_type_guid.as_deref(),
@@ -13117,7 +13198,7 @@ fn generated_design_metastream(records: &[(u64, u64)]) -> Vec<u8> {
                 &[985],
             ),
             (
-                "22222222-3333-4444-5555-666666666666",
+                crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID,
                 base,
                 4,
                 "MSketch",
@@ -13187,10 +13268,10 @@ fn generated_design_metastream(records: &[(u64, u64)]) -> Vec<u8> {
                 &[100, 200, 300, 400, 700],
             ),
             (
-                crate::design::decode::sketch::CURRENT_SKETCH_POINT_COMPANION_TYPE.0,
+                crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.0,
                 base,
-                crate::design::decode::sketch::CURRENT_SKETCH_POINT_COMPANION_TYPE.1,
-                crate::design::decode::sketch::CURRENT_SKETCH_POINT_COMPANION_TYPE.2,
+                crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.1,
+                crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.2,
                 &[101, 201, 301, 401, 701],
             ),
         ],
@@ -25686,7 +25767,7 @@ fn decode_transfers_generated_protein_appearance() {
     let point_500 = f3d_native(&result.ir)
         .sketch_points
         .iter()
-        .find(|point| point.persistent_id == 500)
+        .find(|point| point.persistent_id == Some(500))
         .cloned()
         .expect("point 500");
     assert_eq!(point_500.coordinates.u, 12.5);
@@ -25694,7 +25775,7 @@ fn decode_transfers_generated_protein_appearance() {
     let point_600 = f3d_native(&result.ir)
         .sketch_points
         .iter()
-        .find(|point| point.persistent_id == 600)
+        .find(|point| point.persistent_id == Some(600))
         .cloned()
         .expect("point 600");
     assert_eq!(point_600.coordinates.u, -40.0);

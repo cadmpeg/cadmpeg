@@ -299,6 +299,11 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
     }
     let mut geometry_owners = BTreeMap::new();
     let mut point_companions = BTreeSet::new();
+    let curve_indices = native
+        .sketch_curve_identities
+        .iter()
+        .map(|curve| curve.record_index)
+        .collect::<BTreeSet<_>>();
     for point in &native.sketch_points {
         let point_type = source_less_design_record_type(
             native,
@@ -315,6 +320,32 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
                 point.id
             )));
         }
+        if point.record_form.class_version() != point_type.version
+            || !matches!(
+                point.record_form,
+                crate::records::SketchPointRecordForm::Version11 { .. }
+            )
+        {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D sketch point {} requires the version-11 member sequence",
+                point.id
+            )));
+        }
+        if !point.record_form.closure_is_valid(point.closure.as_ref()) {
+            return Err(CodecError::Malformed(format!(
+                "source-less F3D sketch point {} has an invalid versioned closure",
+                point.id
+            )));
+        }
+        if point
+            .persistent_id
+            .is_none_or(|persistent_id| persistent_id == 0)
+        {
+            return Err(CodecError::Malformed(format!(
+                "source-less F3D sketch point {} has no persistent identity",
+                point.id
+            )));
+        }
         let owner_reference = point.owner_reference.ok_or_else(|| {
             CodecError::Malformed(format!(
                 "F3D sketch point {} has no direct sketch owner",
@@ -324,6 +355,22 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
         if !sketch_owners.contains(&u64::from(owner_reference)) {
             return Err(CodecError::Malformed(format!(
                 "F3D sketch point {} references missing sketch owner {owner_reference}",
+                point.id
+            )));
+        }
+        let owner_type_count = native
+            .design_types
+            .iter()
+            .filter(|design_type| {
+                design_type.entity_ids.contains(&u64::from(owner_reference))
+                    && design_type.type_guid.eq_ignore_ascii_case(
+                        crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID,
+                    )
+            })
+            .count();
+        if owner_type_count != 1 {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch point {} owner {owner_reference} does not have one sketch-container type registration",
                 point.id
             )));
         }
@@ -345,7 +392,7 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
                     .contains(&u64::from(point.paired_reference))
                     && design_type_matches(
                         design_type,
-                        crate::design::decode::sketch::CURRENT_SKETCH_POINT_COMPANION_TYPE,
+                        crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE,
                     )
             })
             .count();
@@ -354,6 +401,35 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
                 "F3D sketch point {} companion {} does not have one current companion type registration",
                 point.id, point.paired_reference
             )));
+        }
+        let companion = point.companion.as_ref().ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "source-less F3D sketch point {} has no inverse companion",
+                point.id
+            ))
+        })?;
+        if companion.reference_encoding
+            != crate::records::SketchPointCompanionReferenceEncoding::SameSegment
+        {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D sketch point {} companion requires same-segment references",
+                point.id
+            )));
+        }
+        let mut incident_curves = BTreeSet::new();
+        for curve in &companion.incident_curves {
+            if !incident_curves.insert(*curve) {
+                return Err(CodecError::Malformed(format!(
+                    "F3D sketch point {} companion repeats curve {curve}",
+                    point.id
+                )));
+            }
+            if !curve_indices.contains(curve) {
+                return Err(CodecError::Malformed(format!(
+                    "F3D sketch point {} companion references missing curve {curve}",
+                    point.id
+                )));
+            }
         }
         geometry_owners.insert(point.record_index, owner_reference);
     }

@@ -5474,11 +5474,11 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
             (selected_sketch.is_some()
                 && design_stream(&point.id) == native_stream
                 && point.owner_reference == selected_sketch
-                && point.persistent_id == member.local_id)
-                .then_some(records::SketchRelationOperand::Point {
-                    record_index: point.record_index,
-                    persistent_id: point.persistent_id,
-                })
+                && point.persistent_id == Some(member.local_id))
+            .then_some(records::SketchRelationOperand::Point {
+                record_index: point.record_index,
+                persistent_id: point.persistent_id,
+            })
         });
         let curve_targets = native.sketch_curve_identities.iter().filter_map(|curve| {
             (selected_sketch.is_some()
@@ -7167,7 +7167,10 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
     // An unresolved owner is not one shared sketch. Enforce uniqueness only
     // when the owning sketch reference is known.
     for point in &native.sketch_points {
-        if !point.coordinates.u.is_finite() || !point.coordinates.v.is_finite() {
+        if !point.coordinates.u.is_finite()
+            || !point.coordinates.v.is_finite()
+            || !point.depth.is_finite()
+        {
             findings.push(Finding {
                 check: Check::Bounds,
                 severity: Severity::Error,
@@ -7175,14 +7178,72 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 entity: Some(point.id.clone()),
             });
         }
-        let duplicate = point.owner_reference.is_some_and(|owner_reference| {
-            !sketch_point_identities.insert((
-                design_stream(&point.id),
-                owner_reference,
-                point.persistent_id,
-            ))
+        let closure_valid = point.record_form.closure_is_valid(point.closure.as_ref());
+        let flag_count = point.record_form.flag_count();
+        let flags_valid = point.flags[..flag_count].iter().all(|flag| *flag <= 1)
+            && point.flags[flag_count..].iter().all(|flag| *flag == 0);
+        let companion_curves_unique = point.companion.as_ref().is_none_or(|companion| {
+            companion
+                .incident_curves
+                .iter()
+                .collect::<HashSet<_>>()
+                .len()
+                == companion.incident_curves.len()
         });
-        if point.persistent_id == 0 || duplicate {
+        let companion_form_valid = point.companion.as_ref().is_some_and(|companion| {
+            let expected_encoding = if point.record_form.uses_inline_typed_references() {
+                crate::records::SketchPointCompanionReferenceEncoding::InlineTyped
+            } else {
+                crate::records::SketchPointCompanionReferenceEncoding::SameSegment
+            };
+            companion.reference_encoding == expected_encoding
+                && (!companion.prefix_present_zero
+                    || matches!(
+                        point.record_form,
+                        crate::records::SketchPointRecordForm::Version11 { .. }
+                    ))
+        });
+        let identity_form_valid = match point.record_form {
+            crate::records::SketchPointRecordForm::Version0 => {
+                point.persistent_id.is_none()
+                    && point.entity_genesis.is_none()
+                    && point.depth == 0.0
+            }
+            crate::records::SketchPointRecordForm::Version8
+            | crate::records::SketchPointRecordForm::Version10
+            | crate::records::SketchPointRecordForm::Version10InlineTyped { .. } => {
+                point
+                    .persistent_id
+                    .is_some_and(|persistent_id| persistent_id != 0)
+                    && point.entity_genesis.is_none()
+            }
+            crate::records::SketchPointRecordForm::Version11 { .. } => point
+                .persistent_id
+                .is_some_and(|persistent_id| persistent_id != 0),
+        };
+        if !flags_valid
+            || !closure_valid
+            || !companion_curves_unique
+            || !companion_form_valid
+            || !identity_form_valid
+        {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion sketch point has an invalid versioned form or companion".into(),
+                entity: Some(point.id.clone()),
+            });
+        }
+        let duplicate = point.persistent_id.is_some_and(|persistent_id| {
+            point.owner_reference.is_some_and(|owner_reference| {
+                !sketch_point_identities.insert((
+                    design_stream(&point.id),
+                    owner_reference,
+                    persistent_id,
+                ))
+            })
+        });
+        if duplicate {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,

@@ -90,6 +90,8 @@ pub(crate) fn take_lp_utf8_capped(bytes: &[u8], at: &mut usize, max: usize) -> O
 pub(crate) struct Reference {
     /// Target entity ID, or `None` for the one-byte null form.
     pub(crate) target: Option<u64>,
+    /// Target type GUID serialized inline after the entity ID.
+    pub(crate) inline_type_guid: Option<String>,
     /// Target segment ID when the reference leaves its own segment.
     pub(crate) segment: Option<u32>,
     /// `RedirectionsStream.dat` `neutronRole` of a cross-document reference.
@@ -99,10 +101,10 @@ pub(crate) struct Reference {
 /// Take one reference, advancing `at` past every byte it owns.
 ///
 /// The width is not fixed: a null reference is one byte, a same-segment
-/// reference eleven, a cross-segment reference fifteen, and a cross-document
-/// reference carries an asset GUID, a type GUID, a link name, and an optional
-/// version tail. Any arithmetic that assumes one width desynchronizes on the
-/// first record that reaches another segment.
+/// reference eleven, an inline-typed same-segment reference 51, a cross-segment
+/// reference fifteen, and a cross-document reference carries an asset GUID, a
+/// type GUID, a link name, and an optional version tail. Any arithmetic that
+/// assumes one width desynchronizes on the first nonstandard reference.
 pub(crate) fn take_reference(bytes: &[u8], at: &mut usize) -> Option<Reference> {
     let mut cursor = *at;
     let present = *bytes.get(cursor)?;
@@ -118,15 +120,19 @@ pub(crate) fn take_reference(bytes: &[u8], at: &mut usize) -> Option<Reference> 
     cursor += 8;
     // One container generation writes the target's type GUID inline, between
     // the entity ID and the `cross_document` flag.
-    if u32_at(bytes, cursor) == Some(36) {
+    let inline_type_guid = if u32_at(bytes, cursor) == Some(36) {
         let (guid, end) = lp_ascii_filtered(bytes, cursor, 36..=36, u8::is_ascii_graphic)?;
         if !is_guid_hyphenated(&guid) {
             return None;
         }
         cursor = end;
-    }
+        Some(guid)
+    } else {
+        None
+    };
     let mut reference = Reference {
         target: Some(target),
+        inline_type_guid,
         ..Reference::default()
     };
     match *bytes.get(cursor)? {

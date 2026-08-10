@@ -2,7 +2,8 @@
 //! Bulkstream and sketch/design record encoders for source-less generation.
 
 use crate::records::{
-    ConstructionRecipeKind, PersistentReferenceKind, SketchCurveGeometry, SketchText,
+    ConstructionRecipeKind, PersistentReferenceKind, SketchCurveGeometry,
+    SketchPointCompanionReferenceEncoding, SketchPointRecordForm, SketchText,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -285,7 +286,7 @@ pub(crate) fn encode_design_bulkstream(
         out.extend_from_slice(&header.record_index.to_le_bytes());
     }
     for point in &native.sketch_points {
-        let expected = crate::design::decode::sketch::CURRENT_SKETCH_POINT_COMPANION_TYPE;
+        let expected = crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE;
         let mut companion_types = registry
             .types
             .iter()
@@ -322,6 +323,7 @@ pub(crate) fn encode_design_bulkstream(
             &companion_class_tag,
             point.paired_reference,
             point.record_index,
+            point.companion.as_ref(),
         )?;
     }
     for curve in &native.sketch_curve_identities {
@@ -444,7 +446,10 @@ fn encode_sketch_point(
     out: &mut Vec<u8>,
     point: &crate::records::SketchPoint,
 ) -> Result<(), CodecError> {
-    if !point.coordinates.u.is_finite() || !point.coordinates.v.is_finite() {
+    if !point.coordinates.u.is_finite()
+        || !point.coordinates.v.is_finite()
+        || !point.depth.is_finite()
+    {
         return Err(CodecError::Malformed(
             "source-less sketch point coordinates must be finite".into(),
         ));
@@ -456,6 +461,21 @@ fn encode_sketch_point(
         ))
     })?;
     let shift = usize::from(point.entity_genesis.is_some()) * 52;
+    let &SketchPointRecordForm::Version11 {
+        padded_paired_reference,
+    } = &point.record_form
+    else {
+        return Err(CodecError::NotImplemented(format!(
+            "source-less sketch point {} requires the version-11 member sequence",
+            point.id
+        )));
+    };
+    let persistent_id = point.persistent_id.ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "source-less sketch point {} has no persistent identity",
+            point.id
+        ))
+    })?;
     let mut record = vec![0u8; 105 + shift];
     encode_sketch_record_header(&mut record, &point.class_tag, point.record_index)?;
     record[20] = 1;
@@ -467,23 +487,43 @@ fn encode_sketch_point(
     record[29 + shift..35 + shift].copy_from_slice(b"pt_tag");
     record[35 + shift..39 + shift].copy_from_slice(&23u32.to_le_bytes());
     record[39 + shift..62 + shift].copy_from_slice(b"IntrinsicMetaTypeuint64");
-    record[62 + shift..70 + shift].copy_from_slice(&point.persistent_id.to_le_bytes());
+    record[62 + shift..70 + shift].copy_from_slice(&persistent_id.to_le_bytes());
     record[70 + shift] = 1;
     record[71 + shift..75 + shift].copy_from_slice(&point.paired_reference.to_le_bytes());
+    if point.flags.iter().any(|flag| *flag > 1) {
+        return Err(CodecError::Malformed(format!(
+            "source-less sketch point {} has a flag outside zero or one",
+            point.id
+        )));
+    }
+    record[81 + shift..89 + shift].copy_from_slice(&point.flags);
     record[89 + shift..97 + shift]
         .copy_from_slice(&(point.coordinates.u / LEN_TO_MM).to_le_bytes());
     record[97 + shift..105 + shift]
         .copy_from_slice(&(point.coordinates.v / LEN_TO_MM).to_le_bytes());
-    // Current point records retain a planar zero depth, a zero reserved
-    // scalar, state value one, two f32 values equal to one, and the
-    // point/companion inverse link before the final direct sketch owner.
-    record.extend_from_slice(&[0; 16]);
-    record.push(1);
+    let closure = point.closure.as_ref().ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "source-less sketch point {} has no version-11 closure",
+            point.id
+        ))
+    })?;
+    if !point.record_form.closure_is_valid(Some(closure)) {
+        return Err(CodecError::Malformed(format!(
+            "source-less sketch point {} has an invalid closure selector or state",
+            point.id
+        )));
+    }
+    record.extend_from_slice(&(point.depth / LEN_TO_MM).to_le_bytes());
+    record.extend_from_slice(&closure.selector.to_le_bytes());
+    record.push(closure.state);
     record.extend_from_slice(&[0; 12]);
     record.extend_from_slice(&1.0f32.to_le_bytes());
     record.extend_from_slice(&1.0f32.to_le_bytes());
     record.extend_from_slice(&[0, 1, 0, 0, 0]);
     write_reference(&mut record, point.paired_reference);
+    if padded_paired_reference {
+        record.extend_from_slice(&[0; 4]);
+    }
     write_reference(&mut record, owner_reference);
     out.extend_from_slice(&record);
     Ok(())
@@ -494,9 +534,34 @@ fn encode_sketch_point_companion(
     class_tag: &str,
     record_index: u32,
     point_record_index: u32,
+    companion: Option<&crate::records::SketchPointCompanion>,
 ) -> Result<(), CodecError> {
-    let mut record = vec![0u8; 26];
+    let companion = companion.ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "source-less sketch point {point_record_index} has no inverse companion"
+        ))
+    })?;
+    let prefix_present_zero = companion.prefix_present_zero;
+    if companion.reference_encoding != SketchPointCompanionReferenceEncoding::SameSegment {
+        return Err(CodecError::NotImplemented(
+            "source-less sketch point companions require same-segment references".into(),
+        ));
+    }
+    let incident_curves = companion.incident_curves.as_slice();
+    let count = u32::try_from(incident_curves.len()).map_err(|_| {
+        CodecError::Malformed("source-less sketch point companion exceeds u32::MAX curves".into())
+    })?;
+    let prefix_len = if prefix_present_zero { 25 } else { 21 };
+    let mut record = vec![0u8; prefix_len];
     encode_sketch_record_header(&mut record, class_tag, record_index)?;
+    if prefix_present_zero {
+        record[20] = 1;
+    }
+    record.extend_from_slice(&count.to_le_bytes());
+    for incident_curve in incident_curves {
+        write_reference(&mut record, *incident_curve);
+    }
+    record.push(0);
     write_reference(&mut record, point_record_index);
     out.extend_from_slice(&record);
     Ok(())

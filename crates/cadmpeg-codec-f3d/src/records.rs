@@ -4805,12 +4805,13 @@ pub struct SketchRelation {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SketchRelationOperand {
-    /// A persistent sketch point.
+    /// A sketch point.
     Point {
         /// Indexed Design record referenced by the relation.
         record_index: u32,
-        /// Persistent point identity stored by that record.
-        persistent_id: u64,
+        /// Persistent point identity stored by that record, when present.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        persistent_id: Option<u64>,
     },
     /// A persistent sketch curve.
     Curve {
@@ -5016,7 +5017,119 @@ pub struct SketchText {
     pub raw_bytes: Vec<u8>,
 }
 
-/// One persistent 2D point in a Fusion sketch coordinate system.
+/// Selector and state following a three-coordinate sketch point payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SketchPointClosure {
+    /// Native selector. Its defined values are `0`, `1`, `2`, and `4`.
+    pub selector: u64,
+    /// Native point state. Its defined values are zero and one.
+    pub state: u8,
+}
+
+/// Serialized member sequence of one sketch-point record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SketchPointRecordForm {
+    /// Class version 0: one flag, two coordinates, and no persistent identity.
+    Version0,
+    /// Class version 8: seven flags and an eight-zero closure lane.
+    Version8,
+    /// Class version 10 with same-segment references and seven flags.
+    Version10,
+    /// Class version 10 with inline target-type GUIDs on its references.
+    Version10InlineTyped {
+        /// Final inline-typed reference following the repeated companion reference.
+        trailing_reference: u32,
+    },
+    /// Class version 11 with same-segment references and eight flags.
+    Version11 {
+        /// Whether four fixed zero bytes follow the repeated companion reference.
+        padded_paired_reference: bool,
+    },
+}
+
+impl Default for SketchPointRecordForm {
+    fn default() -> Self {
+        Self::Version11 {
+            padded_paired_reference: false,
+        }
+    }
+}
+
+impl SketchPointRecordForm {
+    pub(crate) fn class_version(&self) -> u32 {
+        match self {
+            Self::Version0 => 0,
+            Self::Version8 => 8,
+            Self::Version10 | Self::Version10InlineTyped { .. } => 10,
+            Self::Version11 { .. } => 11,
+        }
+    }
+
+    pub(crate) fn flag_count(&self) -> usize {
+        match self {
+            Self::Version0 => 1,
+            Self::Version8 | Self::Version10 | Self::Version10InlineTyped { .. } => 7,
+            Self::Version11 { .. } => 8,
+        }
+    }
+
+    pub(crate) fn uses_inline_typed_references(&self) -> bool {
+        matches!(self, Self::Version10InlineTyped { .. })
+    }
+
+    pub(crate) fn closure_is_valid(&self, closure: Option<&SketchPointClosure>) -> bool {
+        matches!(
+            (
+                self,
+                closure.map(|closure| (closure.selector, closure.state)),
+            ),
+            (Self::Version0, None)
+                | (Self::Version8, Some((0, 0)))
+                | (
+                    Self::Version10 | Self::Version10InlineTyped { .. },
+                    Some((0, 0 | 1))
+                )
+                | (Self::Version11 { .. }, Some((0 | 1 | 4, 0) | (0 | 2, 1)))
+        )
+    }
+}
+
+/// Encoding of every reference owned by a point companion.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum SketchPointCompanionReferenceEncoding {
+    /// Target entity ID followed directly by the same-segment flags.
+    #[default]
+    SameSegment,
+    /// Target entity ID followed by the target type GUID and same-segment flags.
+    InlineTyped,
+}
+
+/// Reverse curve-incidence record paired with one sketch point.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SketchPointCompanion {
+    /// Whether the companion prefix carries the fixed present-zero member.
+    pub prefix_present_zero: bool,
+    /// Encoding shared by every incident reference and the inverse point reference.
+    #[serde(default)]
+    pub reference_encoding: SketchPointCompanionReferenceEncoding,
+    /// Incident sketch-curve record indexes in serialized order.
+    #[serde(default)]
+    pub incident_curves: Vec<u32>,
+}
+
+// Serde requires `skip_serializing_if` predicates to borrow the field.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn sketch_point_flags_are_zero(flags: &[u8; 8]) -> bool {
+    flags.iter().all(|flag| *flag == 0)
+}
+
+/// One point in a Fusion sketch coordinate system.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SketchPoint {
@@ -5024,7 +5137,8 @@ pub struct SketchPoint {
     pub id: String,
     /// Index of this point record within the `BulkStream` tree.
     pub record_index: u32,
-    /// Direct owning-sketch backlink when the point record form carries one.
+    /// Resolved owning-sketch reference from a direct backlink, typed relation,
+    /// or sketch-container member run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_reference: Option<u32>,
     /// Source per-file dynamic three-digit ASCII class tag naming this point's record type.
@@ -5036,17 +5150,29 @@ pub struct SketchPoint {
     /// Optional persistent genesis identity carried ahead of the point identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity_genesis: Option<u64>,
-    /// Persistent Fusion identifier for this sketch point, stable across regeneration.
-    pub persistent_id: u64,
-    /// Record index of a paired/companion record (e.g. the owning sketch curve),
-    /// when the source record carried one.
+    /// Serialized point-record member sequence and class version.
+    #[serde(default)]
+    pub record_form: SketchPointRecordForm,
+    /// Persistent Fusion identifier, absent from the class-version-0 form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub persistent_id: Option<u64>,
+    /// Record index of the paired reverse curve-incidence companion.
     pub paired_reference: u32,
-    /// Sketch coordinates in millimetres.
+    /// Native flags between the first companion reference and coordinates.
+    /// `record_form` selects whether one, seven, or eight entries are serialized.
+    #[serde(default, skip_serializing_if = "sketch_point_flags_are_zero")]
+    pub flags: [u8; 8],
+    /// First two sketch coordinates in millimetres.
     pub coordinates: Point2,
-    /// Complete source record bytes for native replay and rewrite.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
-    pub raw_bytes: Vec<u8>,
+    /// Third sketch coordinate in millimetres.
+    #[serde(default)]
+    pub depth: f64,
+    /// Selector and state closure, absent only from the class-version-0 form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub closure: Option<SketchPointClosure>,
+    /// Typed reverse curve-incidence record named by `paired_reference`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub companion: Option<SketchPointCompanion>,
 }
 
 /// Persistent identity pair attached to one source sketch-curve record.
