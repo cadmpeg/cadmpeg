@@ -5,6 +5,8 @@ use cadmpeg_container::compound::{CompoundSnapshot, CompoundStreamId};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
+use crate::rse::DocumentKind;
+
 #[derive(Debug)]
 pub(crate) enum UfrxState<'a> {
     Absent,
@@ -61,8 +63,8 @@ pub(crate) struct UfrxModelState<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UfrxRepresentationState {
     pub(crate) prefix: u16,
-    pub(crate) active_representation: String,
-    pub(crate) active_representation_kind: String,
+    pub(crate) active_representation: Option<String>,
+    pub(crate) active_representation_kind: Option<String>,
     pub(crate) secondary_active_lod_state: [u16; 2],
     pub(crate) active_model_state: String,
     pub(crate) active_model_state_state: [u16; 2],
@@ -113,12 +115,13 @@ pub(crate) struct InventorEmbeddedReference<'a> {
 pub(crate) fn parse<'a>(
     ctx: &DecodeContext<'a>,
     snapshot: &CompoundSnapshot<'a>,
+    document_kind: &DocumentKind,
 ) -> Result<UfrxState<'a>, CodecError> {
     let Some(stream) = snapshot.stream("UFRxDoc") else {
         return Ok(UfrxState::Absent);
     };
     let source = snapshot.open(ctx, stream)?;
-    Ok(match parse_stream(ctx, source) {
+    Ok(match parse_stream(ctx, source, document_kind) {
         Ok(document) => UfrxState::Parsed(Box::new(UfrxDocument {
             stream: stream.id(),
             schema: document.schema,
@@ -165,6 +168,7 @@ struct ParsedUfrx<'a> {
 fn parse_stream<'a>(
     ctx: &DecodeContext<'a>,
     source: View<'a>,
+    document_kind: &DocumentKind,
 ) -> Result<ParsedUfrx<'a>, CodecError> {
     let mut cursor = Cursor::new(source.window());
     let schema = cursor.u16("schema")?;
@@ -218,11 +222,34 @@ fn parse_stream<'a>(
         cursor.utf16(ctx, "header pair value", 65_536)?;
     }
     cursor.take(4, "active LOD state")?;
+    let assembly_representation = if schema == 15 {
+        match document_kind {
+            DocumentKind::Assembly => true,
+            DocumentKind::Part => false,
+            DocumentKind::Drawing | DocumentKind::Presentation | DocumentKind::Unknown(_) => {
+                return Err(CodecError::NotImplemented(format!(
+                    "UFRxDoc schema 15 {} header is not implemented",
+                    document_kind.label()
+                )));
+            }
+        }
+    } else {
+        false
+    };
     let representation = if schema == 15 {
+        let prefix = cursor.u16("schema 15 representation prefix")?;
+        let (active_representation, active_representation_kind) = if assembly_representation {
+            (
+                Some(cursor.utf16(ctx, "active representation", 65_536)?),
+                Some(cursor.utf16(ctx, "active representation kind", 65_536)?),
+            )
+        } else {
+            (None, None)
+        };
         Some(UfrxRepresentationState {
-            prefix: cursor.u16("schema 15 representation prefix")?,
-            active_representation: cursor.utf16(ctx, "active representation", 65_536)?,
-            active_representation_kind: cursor.utf16(ctx, "active representation kind", 65_536)?,
+            prefix,
+            active_representation,
+            active_representation_kind,
             secondary_active_lod_state: [
                 cursor.u16("secondary active LOD state")?,
                 cursor.u16("secondary active LOD state")?,
@@ -906,7 +933,7 @@ mod tests {
             let (ctx, root) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
                     .expect("synthetic UFRxDoc fits policy");
-            let document = parse_stream(&ctx, root)
+            let document = parse_stream(&ctx, root, &DocumentKind::Assembly)
                 .unwrap_or_else(|error| panic!("synthetic UFRxDoc schema {schema}: {error}"));
             assert_eq!(document.schema, schema);
             assert_eq!(document.original_file_name, "synthetic.ipt");
@@ -923,8 +950,14 @@ mod tests {
                     .as_ref()
                     .expect("schema 15 representation state");
                 assert_eq!(representation.active_model_state, "Master");
-                assert_eq!(representation.active_representation, "Default");
-                assert_eq!(representation.active_representation_kind, "DesignView");
+                assert_eq!(
+                    representation.active_representation.as_deref(),
+                    Some("Default")
+                );
+                assert_eq!(
+                    representation.active_representation_kind.as_deref(),
+                    Some("DesignView")
+                );
                 assert_eq!(document.model_states.len(), 1);
                 assert_eq!(document.model_states[0].prefix, 0);
                 assert_eq!(document.model_states[0].name, "Master");
@@ -940,13 +973,31 @@ mod tests {
     }
 
     #[test]
+    fn schema_15_part_omits_assembly_representation_strings() {
+        let (bytes, _) = fixture_for_kind(15, false);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic part UFRxDoc fits policy");
+
+        let document =
+            parse_stream(&ctx, root, &DocumentKind::Part).expect("schema-15 part UFRxDoc parses");
+
+        let representation = document.representation.expect("model-state header parses");
+        assert_eq!(representation.active_representation, None);
+        assert_eq!(representation.active_representation_kind, None);
+        assert_eq!(representation.active_model_state, "Master");
+        assert_eq!(document.model_states.len(), 1);
+        assert_eq!(document.references.len(), 1);
+    }
+
+    #[test]
     fn unsupported_schema_is_rejected() {
         let (bytes, _) = fixture(16);
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic UFRxDoc fits policy");
         assert!(matches!(
-            parse_stream(&ctx, root),
+            parse_stream(&ctx, root, &DocumentKind::Assembly),
             Err(CodecError::NotImplemented(_))
         ));
     }
@@ -958,7 +1009,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic UFRxDoc fits policy");
-        assert!(parse_stream(&ctx, root).is_err());
+        assert!(parse_stream(&ctx, root, &DocumentKind::Assembly).is_err());
     }
 
     #[test]
@@ -1019,6 +1070,10 @@ mod tests {
     }
 
     fn fixture(schema: u16) -> (Vec<u8>, usize) {
+        fixture_for_kind(schema, true)
+    }
+
+    fn fixture_for_kind(schema: u16, assembly: bool) -> (Vec<u8>, usize) {
         let mut bytes = Vec::new();
         push_u16(&mut bytes, schema);
         push_u16(&mut bytes, if schema == 15 { 27 } else { 23 });
@@ -1068,8 +1123,10 @@ mod tests {
         bytes.extend_from_slice(&[0; 4]);
         if schema == 15 {
             push_u16(&mut bytes, 0);
-            push_utf16(&mut bytes, "Default");
-            push_utf16(&mut bytes, "DesignView");
+            if assembly {
+                push_utf16(&mut bytes, "Default");
+                push_utf16(&mut bytes, "DesignView");
+            }
             bytes.extend_from_slice(&[0; 4]);
             push_utf16(&mut bytes, "Master");
             bytes.extend_from_slice(&[0; 4]);

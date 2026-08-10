@@ -140,7 +140,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_protein_assets(&data, &mut findings);
     validate_protein_rejections(&data, &mut findings);
     validate_protein_record_coverage(&data, &mut findings);
-    validate_ufrx(&data, &mut findings);
+    validate_ufrx(ir, &data, &mut findings);
     validate_assembly(ir, &data, &mut findings);
     validate_presentation(&data, &mut findings);
     for issue in &data.structural_issues {
@@ -933,7 +933,7 @@ fn validate_protein_record_coverage(data: &NativeData, findings: &mut Vec<Findin
     }
 }
 
-fn validate_ufrx(data: &NativeData, findings: &mut Vec<Finding>) {
+fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
     if data.ufrx.len() != 1 {
         findings.push(finding(
             Check::NativeLinks,
@@ -1068,8 +1068,21 @@ fn validate_ufrx(data: &NativeData, findings: &mut Vec<Finding>) {
         ));
     }
     if let Some(representation) = &record.representation {
-        if representation.active_representation.is_empty()
-            || representation.active_representation_kind.is_empty()
+        let representation_pair_present = match (
+            &representation.active_representation,
+            &representation.active_representation_kind,
+        ) {
+            (Some(name), Some(kind)) if !name.is_empty() && !kind.is_empty() => Some(true),
+            (None, None) => Some(false),
+            _ => None,
+        };
+        let expected_pair = document_kind(ir).and_then(|kind| match kind {
+            "assembly" => Some(true),
+            "part" => Some(false),
+            _ => None,
+        });
+        if representation_pair_present.is_none()
+            || expected_pair.is_some_and(|expected| representation_pair_present != Some(expected))
             || representation.active_model_state.is_empty()
         {
             findings.push(finding(
@@ -1125,6 +1138,7 @@ fn validate_ufrx(data: &NativeData, findings: &mut Vec<Finding>) {
         .map(|occurrence| occurrence.occurrence_id)
         .collect::<HashSet<_>>();
     let mut actual_counts = HashMap::<u32, u64>::new();
+    let assembly_document = is_assembly_document(ir);
     for occurrence in &data.ufrx_occurrences {
         *actual_counts
             .entry(occurrence.file_reference_id)
@@ -1133,7 +1147,7 @@ fn validate_ufrx(data: &NativeData, findings: &mut Vec<Finding>) {
             || occurrence.record_sha256.len() != 64
             || occurrence.header_padding_words > 8
             || !reference_ids.contains(&occurrence.file_reference_id)
-            || !assembly_ids.contains(&occurrence.occurrence_id)
+            || (assembly_document && !assembly_ids.contains(&occurrence.occurrence_id))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -1196,7 +1210,7 @@ fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             ));
         }
     }
-    if !data.external_references.is_empty() {
+    if is_assembly_document(ir) && !data.external_references.is_empty() {
         let declared = data
             .external_references
             .iter()
@@ -1239,6 +1253,17 @@ fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             None,
         ));
     }
+}
+
+fn is_assembly_document(ir: &CadIr) -> bool {
+    document_kind(ir) == Some("assembly")
+}
+
+fn document_kind(ir: &CadIr) -> Option<&str> {
+    ir.source
+        .as_ref()
+        .and_then(|source| source.attributes.get("document_kind"))
+        .map(String::as_str)
 }
 
 fn unique<T: Eq + std::hash::Hash>(

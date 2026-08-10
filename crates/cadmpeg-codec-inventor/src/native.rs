@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Current Inventor native namespace version.
-pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 16;
+pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 17;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct VersionTupleRecord {
@@ -177,8 +177,8 @@ pub(crate) struct UfrxRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct UfrxRepresentationRecord {
     pub(crate) prefix: u16,
-    pub(crate) active_representation: String,
-    pub(crate) active_representation_kind: String,
+    pub(crate) active_representation: Option<String>,
+    pub(crate) active_representation_kind: Option<String>,
     pub(crate) secondary_active_lod_state: [u16; 2],
     pub(crate) active_model_state: String,
     pub(crate) active_model_state_state: [u16; 2],
