@@ -7,12 +7,13 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, Pcurve, PcurveGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition,
+    Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
+    RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::Tessellation;
@@ -1085,11 +1086,28 @@ impl<'a> Builder<'a> {
                     CodecError::Malformed(format!("missing surface table entry {source}"))
                 })?
                 .clone();
+            let has_procedural_construction = ir
+                .model
+                .procedural_surfaces
+                .iter()
+                .any(|surface| surface.surface == base_id);
             ir.model.surfaces.push(Surface {
                 id: id.clone(),
                 geometry: transform_surface(&base.geometry, transform)?,
                 source_object: base.source_object,
             });
+            if has_procedural_construction {
+                ir.model.procedural_surfaces.push(ProceduralSurface {
+                    id: ProceduralSurfaceId(format!("{}:construction", id.0)),
+                    surface: id.clone(),
+                    definition: ProceduralSurfaceDefinition::Replica {
+                        source: base_id,
+                        transform,
+                    },
+                    record_bounds: None,
+                    cache_fit_tolerance: None,
+                });
+            }
         }
         Ok(id)
     }
