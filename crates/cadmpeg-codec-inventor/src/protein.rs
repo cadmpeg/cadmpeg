@@ -113,6 +113,11 @@ fn parse_stream<'a>(
     })
 }
 
+#[cfg(feature = "fuzzing")]
+pub(crate) fn fuzz_parse_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
+    let _ = parse_stream(ctx, source);
+}
+
 pub(crate) fn decode_instances(
     ctx: &DecodeContext<'_>,
     package: &ProteinEnvelope<'_>,

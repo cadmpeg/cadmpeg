@@ -19,7 +19,7 @@ cadmpeg-asm = { path = "../cadmpeg-asm" }
 cadmpeg-core = { path = "../cadmpeg-core" }
 cadmpeg-container = { path = "../cadmpeg-container" }
 cadmpeg-codec-f3d = { path = "../cadmpeg-codec-f3d" }
-cadmpeg-codec-inventor = { path = "../cadmpeg-codec-inventor" }
+cadmpeg-codec-inventor = { path = "../cadmpeg-codec-inventor", features = ["fuzzing"] }
 cadmpeg-protein = { path = "../cadmpeg-protein" }
 cadmpeg-codec-freecad = { path = "../cadmpeg-codec-freecad" }
 cadmpeg-codec-sldprt = { path = "../cadmpeg-codec-sldprt", features = ["fuzzing"] }
@@ -56,6 +56,41 @@ bench = false
 [[bin]]
 name = "inventor_codec"
 path = "fuzz_targets/inventor_codec.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "inventor_database"
+path = "fuzz_targets/inventor_database.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "inventor_rse_meta"
+path = "fuzz_targets/inventor_rse_meta.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "inventor_rse_records"
+path = "fuzz_targets/inventor_rse_records.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "inventor_property_set"
+path = "fuzz_targets/inventor_property_set.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "inventor_protein_envelope"
+path = "fuzz_targets/inventor_protein_envelope.rs"
 test = false
 doc = false
 bench = false

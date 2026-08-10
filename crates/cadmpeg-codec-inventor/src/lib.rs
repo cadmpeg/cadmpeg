@@ -11,6 +11,8 @@ mod decode;
 mod design;
 mod external_reference;
 mod feature;
+#[cfg(feature = "fuzzing")]
+pub mod fuzzing;
 mod kernel;
 mod materials;
 mod native;

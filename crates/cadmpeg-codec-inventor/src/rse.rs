@@ -606,6 +606,16 @@ fn parse_meta_stream_v8<'a>(
     })))
 }
 
+#[cfg(feature = "fuzzing")]
+pub(crate) fn fuzz_meta_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
+    let _ = parse_meta_stream_v8(ctx, source);
+}
+
+#[cfg(feature = "fuzzing")]
+pub(crate) fn fuzz_bulk_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
+    let _ = parse_bulk_stream(ctx, source, BulkReadMode::Expand);
+}
+
 struct MetaCursor<'a> {
     bytes: &'a [u8],
     position: usize,
