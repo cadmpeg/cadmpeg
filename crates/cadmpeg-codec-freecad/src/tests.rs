@@ -7230,6 +7230,36 @@ fn preserves_forward_declared_feature_dependencies() {
 }
 
 #[test]
+fn orders_forward_linked_sketches_before_profile_consumers() {
+    for property_name in ["Profile", "Sketch", "Base", "Source"] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="PartDesign::Pad" name="Pad"/><Object type="Sketcher::SketchObject" name="Sketch"/></Objects>
+<ObjectData Count="2"><Object name="Pad"><Properties Count="1"><Property name="{property_name}" type="App::PropertyLink"><Link value="Sketch"/></Property></Properties></Object><Object name="Sketch"><Properties Count="0"/></Object></ObjectData>
+</Document>"#
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .expect("forward-linked sketch");
+        let features = &result.ir.model.features;
+        let pad = features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Pad"))
+            .expect("pad feature");
+        let sketch = features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Sketch"))
+            .expect("sketch feature");
+
+        assert!(sketch.ordinal < pad.ordinal, "property {property_name}");
+        assert_valid_document(&result.ir);
+    }
+}
+
+#[test]
 fn retains_native_dependency_cycles_as_a_stable_acyclic_feature_projection() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2" Dependencies="1">

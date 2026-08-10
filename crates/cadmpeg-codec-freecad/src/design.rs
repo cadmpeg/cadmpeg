@@ -584,11 +584,14 @@ fn feature_ordinals<'a>(
                         object_by_id.get(dependency).is_some_and(|dependency| {
                             matches!(
                                 *property_name,
-                                "BaseFeature"
+                                "Base"
+                                    | "BaseFeature"
                                     | "Originals"
                                     | "Path"
                                     | "Profile"
+                                    | "Sketch"
                                     | "Sections"
+                                    | "Source"
                                     | "Spine"
                             ) || source_order[&feature_id(dependency)] < object.order
                         })
