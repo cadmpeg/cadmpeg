@@ -1603,6 +1603,12 @@ fn append_text_curve(
         },
         brep::TextCurve::Circle {
             center,
+            axis: _,
+            ref_direction: _,
+            radius,
+        } if *radius == 0.0 => CurveGeometry::Degenerate { point: *center },
+        brep::TextCurve::Circle {
+            center,
             axis,
             ref_direction,
             radius,

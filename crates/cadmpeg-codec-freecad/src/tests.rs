@@ -18,6 +18,39 @@ const CORE_DESIGN_PRODUCT: &[u8] = include_bytes!(concat!(
 ));
 
 #[test]
+fn transfers_zero_radius_brep_circles_as_degenerate_curves() {
+    let center = cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0);
+    let curve = crate::brep::TextCurve::Circle {
+        center,
+        axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        radius: 0.0,
+    };
+    let association = cadmpeg_ir::SourceObjectAssociation {
+        format: "fcstd".into(),
+        object_id: "object".into(),
+        name: None,
+        color: None,
+        visible: None,
+        layer: None,
+        instance_path: Vec::new(),
+    };
+    let mut transfer = crate::CurveTransfer::default();
+
+    let geometry = crate::append_text_curve(
+        &curve,
+        cadmpeg_ir::ids::CurveId("curve".into()),
+        &association,
+        &mut transfer,
+    );
+
+    assert_eq!(
+        geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Degenerate { point: center }
+    );
+}
+
+#[test]
 fn writes_typed_property_edits_and_preserves_other_entries() {
     let decoded = FcstdCodec
         .decode(
