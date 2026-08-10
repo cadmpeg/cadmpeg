@@ -66,6 +66,58 @@ enum BooleanTerm {
     Operation,
 }
 
+fn subtree_contains_brep(
+    sequence: u32,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    boolean_definitions: &BTreeMap<u32, Vec<BooleanTerm>>,
+    path: &mut BTreeSet<u32>,
+    memo: &mut BTreeMap<u32, bool>,
+) -> Option<bool> {
+    if let Some(contains) = memo.get(&sequence) {
+        return Some(*contains);
+    }
+    if !path.insert(sequence) {
+        return None;
+    }
+    let result = (|| {
+        let entry = entries.get(&sequence)?;
+        match entry.entity_type {
+            186 => Some(true),
+            180 => boolean_definitions
+                .get(&sequence)?
+                .iter()
+                .try_fold(false, |contains, term| match term {
+                    BooleanTerm::Operand(target) => subtree_contains_brep(
+                        *target,
+                        entries,
+                        records,
+                        boolean_definitions,
+                        path,
+                        memo,
+                    )
+                    .map(|child_contains| contains || child_contains),
+                    BooleanTerm::Operation => Some(contains),
+                }),
+            430 if entry.form == 1 => {
+                let target = records
+                    .get(&sequence)
+                    .and_then(|record| pointer(record, 1))?;
+                entries
+                    .get(&target)
+                    .is_some_and(|target| target.entity_type == 186)
+                    .then_some(true)
+            }
+            _ => Some(false),
+        }
+    })();
+    path.remove(&sequence);
+    if let Some(contains) = result {
+        memo.insert(sequence, contains);
+    }
+    result
+}
+
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -354,6 +406,7 @@ pub(super) fn project(
         boolean_definitions.insert(entry.sequence, terms);
     }
     let mut visited = BTreeSet::new();
+    let mut brep_content = BTreeMap::new();
     for (sequence, terms) in &boolean_definitions {
         let entry = entries[sequence];
         let operands_valid = terms.iter().all(|term| match term {
@@ -365,11 +418,17 @@ pub(super) fn project(
                 ) || (entry.form == 1 && target_entry.entity_type == 186)
             }),
         });
-        let has_brep = terms.iter().any(|term| match term {
-            BooleanTerm::Operand(target) => entries
-                .get(target)
-                .is_some_and(|target_entry| target_entry.entity_type == 186),
-            BooleanTerm::Operation => false,
+        let has_brep = terms.iter().try_fold(false, |contains, term| match term {
+            BooleanTerm::Operand(target) => subtree_contains_brep(
+                *target,
+                &entries,
+                &records,
+                &boolean_definitions,
+                &mut BTreeSet::new(),
+                &mut brep_content,
+            )
+            .map(|child_contains| contains || child_contains),
+            BooleanTerm::Operation => Some(contains),
         });
         let cyclic = super::directed_cycle(*sequence, &mut visited, |sequence| {
             boolean_definitions
@@ -384,7 +443,7 @@ pub(super) fn project(
                 })
                 .collect()
         });
-        if !operands_valid || (entry.form == 1) != has_brep || cyclic {
+        if !operands_valid || has_brep != Some(entry.form == 1) || cyclic {
             losses.push(entity_loss(
                 entry,
                 "Boolean operands, form, or reference acyclicity is invalid",

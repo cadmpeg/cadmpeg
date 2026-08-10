@@ -4103,6 +4103,53 @@ fn solid_instance_file() -> Vec<u8> {
     ])
 }
 
+fn nested_brep_boolean_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 186,
+            form: 0,
+            label: "BREP".into(),
+            status: "00000000",
+            parameters: "186,0,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 430,
+            form: 1,
+            label: "BREPINST".into(),
+            status: "00000000",
+            parameters: "430,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 158,
+            form: 0,
+            label: "SPHERE".into(),
+            status: "00000000",
+            parameters: "158,1,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 180,
+            form: 1,
+            label: "INSTTREE".into(),
+            status: "00000000",
+            parameters: "180,3,-3,-5,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 180,
+            form: 1,
+            label: "NESTED".into(),
+            status: "00000000",
+            parameters: "180,3,-7,-5,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 180,
+            form: 0,
+            label: "WRONG".into(),
+            status: "00000000",
+            parameters: "180,3,-7,-5,1;".into(),
+        },
+    ])
+}
+
 fn patterned_instance_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -6816,6 +6863,31 @@ fn decode_types_form_one_boolean_tree_with_brep_operand() {
     assert_eq!(instance.fields()["solid"], "iges:entity:directory#55");
     assert!(
         result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_classifies_brep_content_across_complete_boolean_subtrees() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(nested_brep_boolean_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let trees = &result.ir.native.namespace("iges").unwrap().arenas["boolean_trees"];
+    assert_eq!(trees.len(), 3);
+    assert_eq!(
+        result
+            .report
+            .losses
+            .iter()
+            .filter(|loss| loss
+                .message
+                .contains("Boolean operands, form, or reference acyclicity is invalid"))
+            .count(),
+        1,
         "{:#?}",
         result.report.losses
     );

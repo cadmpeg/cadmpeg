@@ -120,16 +120,6 @@ from a conformant file.
 
 ## 5. Surfaces and topology
 
-### TP-06. Type 180 Form 1 requires a direct Type 186 operand
-
-**Question.** Does "contains a Manifold Solid B-rep operand" apply to direct operands or to the complete subtree?
-
-**Known.** `csg.rs:370-389` tests the direct operands only and compares with strict equality in both directions, so `(entry.form == 1) != has_brep` refuses the tree. `iges.md` "Primitive solids" repeats the ambiguity of the standard text ("Form 1 contains at least one such operand").
-
-**Note.** A tree that unions two Type 430 Form 1 instances, each referencing a Type 186 (`iges.md` "Product structure"), holds B-rep content with no direct Type 186 operand. The complete tree is refused.
-
-**Need.** We need the scope of the Form 1 rule.
-
 ### TP-07. Type 144 with a zero outer-boundary flag requires a literal zero pointer
 
 **Question.** May the Type 144 outer pointer field be omitted when the outer-boundary flag is zero?
