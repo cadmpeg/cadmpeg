@@ -72,7 +72,7 @@ impl<'a> InventorContainer<'a> {
                     );
                     entry
                         .attributes
-                        .insert("segment_kind".into(), meta.kind.label().into());
+                        .insert("segment_kind".into(), segment.kind.label().into());
                     entry
                         .attributes
                         .insert("display_name".into(), meta.display_name.clone());
@@ -127,7 +127,7 @@ impl<'a> InventorContainer<'a> {
                 "CFB v{} with {} RSe segment pair(s) and {} versioned database(s)",
                 self.snapshot.major_version(),
                 self.rse.segments.len(),
-                self.rse.storage_bands.len()
+                self.rse.databases.len()
             )],
         }
     }

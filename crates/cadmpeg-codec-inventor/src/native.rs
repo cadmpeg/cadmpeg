@@ -4,7 +4,64 @@
 use serde::{Deserialize, Serialize};
 
 /// Current Inventor native namespace version.
-pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 1;
+pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 2;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct VersionTupleRecord {
+    pub(crate) revision: u8,
+    pub(crate) minor: u8,
+    pub(crate) major: u8,
+    pub(crate) state: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DatabaseRecord {
+    pub(crate) id: String,
+    pub(crate) band: u32,
+    pub(crate) database_id: String,
+    pub(crate) schema: u32,
+    pub(crate) created_by: VersionTupleRecord,
+    pub(crate) created_filetime: u64,
+    pub(crate) saved_by: VersionTupleRecord,
+    pub(crate) saved_filetime: u64,
+    pub(crate) note: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DatabaseIssueRecord {
+    pub(crate) id: String,
+    pub(crate) band: u32,
+    pub(crate) detail: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct SegmentRegistryRecord {
+    pub(crate) id: String,
+    pub(crate) ordinal: u32,
+    pub(crate) display_name: String,
+    pub(crate) segment_id: String,
+    pub(crate) revision_id: String,
+    pub(crate) type_name: String,
+    pub(crate) object_count: u64,
+    pub(crate) node_count: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct RevisionRecord {
+    pub(crate) id: String,
+    pub(crate) ordinal: u32,
+    pub(crate) revision_id: String,
+    pub(crate) flags: u32,
+    pub(crate) kind: u16,
+    pub(crate) payload_form: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct StructuralIssueRecord {
+    pub(crate) id: String,
+    pub(crate) scope: String,
+    pub(crate) detail: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct StorageBandRecord {

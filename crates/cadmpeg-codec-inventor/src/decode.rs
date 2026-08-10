@@ -13,11 +13,14 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::SourceFidelity;
 
 use crate::container::{ContainerPurpose, InventorContainer};
+use crate::database::{RevisionPayload, VersionTuple};
 use crate::native::{
-    SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
-    SegmentPairRecord, StorageBandRecord, UnpairedSegmentRecord, INVENTOR_NATIVE_VERSION,
+    DatabaseIssueRecord, DatabaseRecord, RevisionRecord, SegmentBulkIssueRecord, SegmentBulkRecord,
+    SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord,
+    StorageBandRecord, StructuralIssueRecord, UnpairedSegmentRecord, VersionTupleRecord,
+    INVENTOR_NATIVE_VERSION,
 };
-use crate::rse::{SegmentBulkState, SegmentMetaState};
+use crate::rse::{ParsedState, SegmentBulkState, SegmentMetaState};
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
     let container = InventorContainer::open(ctx, root, ContainerPurpose::Decode)?;
@@ -41,14 +44,110 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     });
     let storage_bands = container
         .rse
-        .storage_bands
+        .databases
         .iter()
-        .map(|(band, stream)| StorageBandRecord {
-            id: format!("inventor:rse:database:v{}", band.value()),
-            band: band.value(),
-            database_directory_id: stream.directory_id(),
+        .map(|database| StorageBandRecord {
+            id: format!("inventor:rse:database:v{}", database.band.value()),
+            band: database.band.value(),
+            database_directory_id: database.stream.directory_id(),
         })
         .collect::<Vec<_>>();
+    let databases = container
+        .rse
+        .databases
+        .iter()
+        .filter_map(|descriptor| {
+            let ParsedState::Parsed(database) = &descriptor.state else {
+                return None;
+            };
+            Some(DatabaseRecord {
+                id: format!("inventor:rse:database-record:v{}", descriptor.band.value()),
+                band: descriptor.band.value(),
+                database_id: hex(&database.id),
+                schema: database.schema.value(),
+                created_by: version_record(database.created_by),
+                created_filetime: database.created_filetime,
+                saved_by: version_record(database.saved_by),
+                saved_filetime: database.saved_filetime,
+                note: database.note.clone(),
+            })
+        })
+        .collect::<Vec<_>>();
+    let database_issues = container
+        .rse
+        .databases
+        .iter()
+        .filter_map(|descriptor| {
+            let ParsedState::Unavailable(detail) = &descriptor.state else {
+                return None;
+            };
+            Some(DatabaseIssueRecord {
+                id: format!("inventor:rse:database-issue:v{}", descriptor.band.value()),
+                band: descriptor.band.value(),
+                detail: detail.clone(),
+            })
+        })
+        .collect::<Vec<_>>();
+    let segment_registry = match &container.rse.registry {
+        ParsedState::Parsed(registry) => registry
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(ordinal, entry)| SegmentRegistryRecord {
+                id: format!("inventor:rse:registry:{ordinal}"),
+                ordinal: ordinal as u32,
+                display_name: entry.display_name.clone(),
+                segment_id: hex(&entry.segment_id),
+                revision_id: hex(&entry.revision_id),
+                type_name: entry.type_name.clone(),
+                object_count: entry.objects.len() as u64,
+                node_count: entry.nodes.len() as u64,
+            })
+            .collect(),
+        ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
+    };
+    let revisions = match &container.rse.revisions {
+        ParsedState::Parsed(table) => table
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(ordinal, entry)| RevisionRecord {
+                id: format!("inventor:rse:revision:{ordinal}"),
+                ordinal: ordinal as u32,
+                revision_id: hex(&entry.id),
+                flags: entry.flags,
+                kind: entry.kind,
+                payload_form: match entry.payload {
+                    RevisionPayload::None => "none",
+                    RevisionPayload::Short { .. } => "short",
+                    RevisionPayload::Long { .. } => "long",
+                }
+                .into(),
+            })
+            .collect(),
+        ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
+    };
+    let mut structural_issues = Vec::new();
+    if let ParsedState::Unavailable(detail) = &container.rse.registry {
+        structural_issues.push(structural_issue("segment_registry", detail));
+    }
+    if let ParsedState::Unavailable(detail) = &container.rse.revisions {
+        structural_issues.push(structural_issue("revision_table", detail));
+    }
+    structural_issues.extend(container.rse.segments.iter().flat_map(|segment| {
+        segment
+            .identity_issues
+            .iter()
+            .enumerate()
+            .map(move |(ordinal, detail)| StructuralIssueRecord {
+                id: format!(
+                    "inventor:rse:structural-issue:segment:{}:{ordinal}",
+                    segment.pair.token.as_str()
+                ),
+                scope: format!("segment:{}", segment.pair.token.as_str()),
+                detail: detail.clone(),
+            })
+    }));
     let segment_pairs = container
         .rse
         .segments
@@ -72,7 +171,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 id: format!("inventor:rse:segment-meta:{}", segment.pair.token.as_str()),
                 token: segment.pair.token.as_str().into(),
                 version: meta.version.value(),
-                kind: meta.kind.label().into(),
+                kind: segment.kind.label().into(),
                 display_name: meta.display_name.clone(),
                 segment_id: hex(&meta.segment_id),
                 header_words: meta.header_words,
@@ -175,6 +274,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         storage_bands
             .len()
             .saturating_add(segment_pairs.len())
+            .saturating_add(databases.len())
+            .saturating_add(database_issues.len())
+            .saturating_add(segment_registry.len())
+            .saturating_add(revisions.len())
+            .saturating_add(structural_issues.len())
             .saturating_add(segment_meta.len())
             .saturating_add(segment_meta_issues.len())
             .saturating_add(segment_bulk.len())
@@ -185,6 +289,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let namespace = ir.native.namespace_mut("inventor");
     namespace.version = INVENTOR_NATIVE_VERSION;
     namespace.set_arena("storage_bands", &storage_bands)?;
+    namespace.set_arena("databases", &databases)?;
+    namespace.set_arena("database_issues", &database_issues)?;
+    namespace.set_arena("segment_registry", &segment_registry)?;
+    namespace.set_arena("revisions", &revisions)?;
+    namespace.set_arena("structural_issues", &structural_issues)?;
     namespace.set_arena("segment_pairs", &segment_pairs)?;
     namespace.set_arena("segment_meta", &segment_meta)?;
     namespace.set_arena("segment_meta_issues", &segment_meta_issues)?;
@@ -252,6 +361,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             geometry_transferred: false,
             coverage: BTreeMap::from([
                 ("rse_storage_bands".into(), storage_bands.len()),
+                ("rse_databases".into(), databases.len()),
+                ("rse_registry_entries".into(), segment_registry.len()),
+                ("rse_revisions".into(), revisions.len()),
                 ("rse_segment_pairs".into(), segment_pairs.len()),
                 ("rse_segment_meta".into(), segment_meta.len()),
                 ("rse_segment_meta_issues".into(), segment_meta_issues.len()),
@@ -264,6 +376,23 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         },
         SourceFidelity::default(),
     ))
+}
+
+fn version_record(version: VersionTuple) -> VersionTupleRecord {
+    VersionTupleRecord {
+        revision: version.revision,
+        minor: version.minor,
+        major: version.major,
+        state: hex(&version.state),
+    }
+}
+
+fn structural_issue(scope: &str, detail: &str) -> StructuralIssueRecord {
+    StructuralIssueRecord {
+        id: format!("inventor:rse:structural-issue:{scope}"),
+        scope: scope.into(),
+        detail: detail.into(),
+    }
 }
 
 fn hex(bytes: &[u8]) -> String {

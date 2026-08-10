@@ -8,6 +8,11 @@ use cadmpeg_container::compression::inflate_zlib_exact;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
+use crate::database::{
+    parse_database, parse_registry, parse_revisions, RevisionTable, RseDatabase, RseSchema,
+    SegmentRegistry,
+};
+
 /// A validated `V<n>` storage-band number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct StorageBand(u32);
@@ -86,24 +91,25 @@ pub(crate) enum SegmentKind {
 }
 
 impl SegmentKind {
-    fn classify(display_name: &str) -> Self {
-        match display_name {
-            "PmBRepSegment" => Self::PmBRep,
-            "PmDCSegment" => Self::PmDc,
-            "PmGraphicsSegment" => Self::PmGraphics,
-            "PmAppSegment" => Self::PmApp,
-            "PmBrowserSegment" => Self::PmBrowser,
-            "PmResultSegment" => Self::PmResult,
-            "FBAttributeSegment" => Self::FbAttribute,
-            "AmDCSegment" => Self::AmDc,
-            "AmBRepSegment" => Self::AmBRep,
-            "AmGraphicsSegment" => Self::AmGraphics,
-            "AmAppSegment" => Self::AmApp,
-            "AmBrowserSegment" => Self::AmBrowser,
-            "AmRxSegment" => Self::AmRx,
-            "NBNotebookSegment" => Self::Notebook,
-            "DesignViewSegment" => Self::DesignView,
-            name => Self::Unknown(name.into()),
+    fn classify(display_name: &str, type_name: Option<&str>) -> Self {
+        match type_name {
+            Some("PmBrepSegmentType") => Self::PmBRep,
+            Some("PmDcSegmentType") => Self::PmDc,
+            Some("PmGRxSegmentType") => Self::PmGraphics,
+            Some("PmAppSegmentType") => Self::PmApp,
+            Some("PmBRxSegmentType" | "PmBrowserSegment") => Self::PmBrowser,
+            Some("PmResultSegmentType") => Self::PmResult,
+            Some("FBAttributeSegment") => Self::FbAttribute,
+            Some("AmDcSegmentType") => Self::AmDc,
+            Some("AmBREPSegmentType") => Self::AmBRep,
+            Some("AmGRxSegmentType") => Self::AmGraphics,
+            Some("AmAppSegmentType") => Self::AmApp,
+            Some("AmBRxSegmentType") => Self::AmBrowser,
+            Some("AmRxSegmentType") => Self::AmRx,
+            Some("NotebookSegmentType") => Self::Notebook,
+            Some("FWxDesignViewType" | "FWxDesignViewManagerType") => Self::DesignView,
+            Some(type_name) => Self::Unknown(type_name.into()),
+            None => Self::Unknown(display_name.into()),
         }
     }
 
@@ -134,7 +140,6 @@ pub(crate) struct SegmentMeta<'a> {
     pub(crate) version: MetaStreamVersion,
     pub(crate) header_words: [u32; 4],
     pub(crate) display_name: String,
-    pub(crate) kind: SegmentKind,
     pub(crate) segment_id: [u8; 16],
     pub(crate) state_words: [u32; 3],
     pub(crate) created: String,
@@ -153,6 +158,9 @@ pub(crate) enum SegmentMetaState<'a> {
 #[derive(Debug)]
 pub(crate) struct SegmentDescriptor<'a> {
     pub(crate) pair: SegmentPair,
+    pub(crate) registry_index: Option<usize>,
+    pub(crate) kind: SegmentKind,
+    pub(crate) identity_issues: Vec<String>,
     pub(crate) meta: SegmentMetaState<'a>,
     pub(crate) bulk: SegmentBulkState<'a>,
 }
@@ -186,10 +194,26 @@ pub(crate) enum SegmentBulkState<'a> {
     Malformed(String),
 }
 
+#[derive(Debug)]
+pub(crate) enum ParsedState<T> {
+    Absent,
+    Parsed(T),
+    Unavailable(String),
+}
+
+#[derive(Debug)]
+pub(crate) struct DatabaseDescriptor {
+    pub(crate) band: StorageBand,
+    pub(crate) stream: CompoundStreamId,
+    pub(crate) state: ParsedState<RseDatabase>,
+}
+
 /// `RSe` paths established from the compound directory.
 #[derive(Debug)]
 pub(crate) struct RseInventory<'a> {
-    pub(crate) storage_bands: Vec<(StorageBand, CompoundStreamId)>,
+    pub(crate) databases: Vec<DatabaseDescriptor>,
+    pub(crate) registry: ParsedState<SegmentRegistry>,
+    pub(crate) revisions: ParsedState<RevisionTable>,
     pub(crate) segments: Vec<SegmentDescriptor<'a>>,
     pub(crate) unpaired_metadata: Vec<SegmentToken>,
     pub(crate) unpaired_bulk: Vec<SegmentToken>,
@@ -230,6 +254,47 @@ impl<'a> RseInventory<'a> {
             }
         }
         databases.sort_by_key(|(band, _)| *band);
+        let mut database_descriptors = Vec::with_capacity(databases.len());
+        for (band, stream_id) in databases {
+            let state = match snapshot.stream_by_id(stream_id) {
+                Some(stream) => match snapshot
+                    .open(ctx, stream)
+                    .and_then(|view| parse_database(ctx, view.window()))
+                {
+                    Ok(database) => ParsedState::Parsed(database),
+                    Err(error) => ParsedState::Unavailable(error.to_string()),
+                },
+                None => ParsedState::Unavailable("RSe database stream handle is absent".into()),
+            };
+            database_descriptors.push(DatabaseDescriptor {
+                band,
+                stream: stream_id,
+                state,
+            });
+        }
+        let schema = coherent_schema(&database_descriptors);
+        let registry = match snapshot.stream("RSeStorage/RSeSegInfo") {
+            None => ParsedState::Absent,
+            Some(_) if schema.is_none() => ParsedState::Unavailable(
+                "RSe database schemas do not select one registry grammar".into(),
+            ),
+            Some(stream) => match snapshot.open(ctx, stream).and_then(|view| {
+                parse_registry(ctx, view.window(), schema.expect("checked schema"))
+            }) {
+                Ok(value) => ParsedState::Parsed(value),
+                Err(error) => ParsedState::Unavailable(error.to_string()),
+            },
+        };
+        let revisions = match snapshot.stream("RSeStorage/RSeDbRevisionInfo") {
+            None => ParsedState::Absent,
+            Some(stream) => match snapshot
+                .open(ctx, stream)
+                .and_then(|view| parse_revisions(ctx, view.window()))
+            {
+                Ok(value) => ParsedState::Parsed(value),
+                Err(error) => ParsedState::Unavailable(error.to_string()),
+            },
+        };
         let pairs = metadata
             .iter()
             .filter_map(|(token, metadata)| {
@@ -240,7 +305,7 @@ impl<'a> RseInventory<'a> {
                 })
             })
             .collect::<Vec<_>>();
-        let segments = pairs
+        let mut segments = pairs
             .into_iter()
             .map(|pair| {
                 let meta = snapshot
@@ -263,9 +328,28 @@ impl<'a> RseInventory<'a> {
                     Ok(bulk) => SegmentBulkState::Framed(bulk),
                     Err(error) => SegmentBulkState::Malformed(error.to_string()),
                 };
-                SegmentDescriptor { pair, meta, bulk }
+                SegmentDescriptor {
+                    pair,
+                    registry_index: None,
+                    kind: SegmentKind::Unknown("unresolved".into()),
+                    identity_issues: Vec::new(),
+                    meta,
+                    bulk,
+                }
             })
-            .collect();
+            .collect::<Vec<_>>();
+        if let ParsedState::Parsed(registry) = &registry {
+            join_registry(&mut segments, registry);
+        } else {
+            for segment in &mut segments {
+                if let SegmentMetaState::Parsed(meta) = &segment.meta {
+                    segment.kind = SegmentKind::classify(&meta.display_name, None);
+                }
+                segment
+                    .identity_issues
+                    .push("segment registry is unavailable".into());
+            }
+        }
         let unpaired_metadata = metadata
             .keys()
             .filter(|token| !bulk.contains_key(*token))
@@ -277,10 +361,57 @@ impl<'a> RseInventory<'a> {
             .cloned()
             .collect();
         Self {
-            storage_bands: databases,
+            databases: database_descriptors,
+            registry,
+            revisions,
             segments,
             unpaired_metadata,
             unpaired_bulk,
+        }
+    }
+}
+
+fn coherent_schema(databases: &[DatabaseDescriptor]) -> Option<RseSchema> {
+    let mut schemas = databases
+        .iter()
+        .filter_map(|descriptor| match &descriptor.state {
+            ParsedState::Parsed(database) => Some(database.schema),
+            ParsedState::Absent | ParsedState::Unavailable(_) => None,
+        });
+    let first = schemas.next()?;
+    schemas.all(|schema| schema == first).then_some(first)
+}
+
+fn join_registry(segments: &mut [SegmentDescriptor<'_>], registry: &SegmentRegistry) {
+    for segment in segments {
+        let SegmentMetaState::Parsed(meta) = &segment.meta else {
+            segment
+                .identity_issues
+                .push("segment metadata is unavailable".into());
+            continue;
+        };
+        let matches = registry
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| entry.segment_id == meta.segment_id)
+            .collect::<Vec<_>>();
+        let [(index, entry)] = matches.as_slice() else {
+            segment.identity_issues.push(if matches.is_empty() {
+                "metadata segment id is absent from the registry".into()
+            } else {
+                "metadata segment id is duplicated in the registry".into()
+            });
+            segment.kind = SegmentKind::classify(&meta.display_name, None);
+            continue;
+        };
+        segment.registry_index = Some(*index);
+        segment.kind = SegmentKind::classify(&entry.display_name, Some(&entry.type_name));
+        if entry.display_name != meta.display_name {
+            segment.identity_issues.push(format!(
+                "registry display name {:?} differs from metadata display name {:?}",
+                entry.display_name, meta.display_name
+            ));
         }
     }
 }
@@ -344,12 +475,10 @@ fn parse_meta_stream_v8<'a>(
         .child(source.start() + cursor.position, source.end())
         .ok_or_else(|| CodecError::Malformed("RSe metadata body range is invalid".into()))?;
     let body = inflate_zlib_exact(ctx, compressed)?;
-    let kind = SegmentKind::classify(&display_name);
     Ok(SegmentMetaState::Parsed(SegmentMeta {
         version: MetaStreamVersion(version),
         header_words,
         display_name,
-        kind,
         segment_id,
         state_words,
         created,
@@ -494,7 +623,6 @@ mod tests {
         assert_eq!(meta.version.value(), 8);
         assert_eq!(meta.header_words, [1, 2, 3, 4]);
         assert_eq!(meta.display_name, "PmBRepSegment");
-        assert_eq!(meta.kind, SegmentKind::PmBRep);
         assert_eq!(meta.segment_id, [0x5a; 16]);
         assert_eq!(meta.state_words, [5, 6, 7]);
         assert_eq!(meta.body.window(), b"typed metadata body");

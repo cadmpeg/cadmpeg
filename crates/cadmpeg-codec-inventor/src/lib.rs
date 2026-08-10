@@ -5,6 +5,7 @@
 //! directory structure. It does not classify unrelated CFB files as Inventor.
 
 mod container;
+mod database;
 mod decode;
 mod native;
 mod rse;
