@@ -3345,9 +3345,9 @@ fn draft_definition(
 }
 
 fn chamfer_spec(properties: &[&PropertyRecord]) -> Option<ChamferSpec> {
-    let mode = property(properties, "ChamferType")
-        .and_then(scalar_value)
-        .unwrap_or(-1.0) as i64;
+    let mode = property(properties, "ChamferType").map_or(Some(0), |property| {
+        scalar_value(property).map(|value| value as i64)
+    })?;
     let first = property(properties, "Size")
         .and_then(scalar_value)
         .filter(|value| value.is_finite() && *value > 0.0);
@@ -4097,7 +4097,9 @@ fn pattern_definition(
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
 ) -> Option<FeatureDefinition> {
-    let originals = property(properties, "Originals")?;
+    let originals = property(properties, "Originals")
+        .filter(|property| !property.links.is_empty())
+        .or_else(|| property(properties, "BaseFeature"))?;
     let seeds = originals
         .links
         .iter()
@@ -4353,8 +4355,8 @@ fn axis_reference(
     let (origin, z_axis, x_axis, y_axis) = placement_frame(owned)?;
     let selector = link_selectors(link).next();
     let direction = match object.type_name.as_str() {
-        "PartDesign::Line" => z_axis,
-        "PartDesign::Plane" => z_axis,
+        "PartDesign::Line" | "App::Line" => z_axis,
+        "PartDesign::Plane" | "App::Plane" => z_axis,
         "PartDesign::CoordinateSystem" => match selector {
             Some("X_Axis" | "XAxis" | "X") => x_axis,
             Some("Y_Axis" | "YAxis" | "Y") => y_axis,
@@ -4385,7 +4387,7 @@ fn plane_reference(
     let (origin, z_axis, x_axis, y_axis) = placement_frame(owned)?;
     let selector = link_selectors(link).next();
     let normal = match object.type_name.as_str() {
-        "PartDesign::Plane" => z_axis,
+        "PartDesign::Plane" | "App::Plane" => z_axis,
         "PartDesign::CoordinateSystem" => match selector {
             Some("XY_Plane" | "XYPlane" | "XY") | None => z_axis,
             Some("XZ_Plane" | "XZPlane" | "XZ") => y_axis,

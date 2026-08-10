@@ -901,17 +901,19 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
 #[test]
 fn transfers_revolution_fillet_and_chamfer_semantics() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="4" Dependencies="1">
+<Objects Count="5" Dependencies="1">
  <ObjectDeps Name="Sketch" Count="0"/>
  <ObjectDeps Name="Revolution" Count="1"><Dep Name="Sketch"/></ObjectDeps>
  <ObjectDeps Name="Fillet" Count="1"><Dep Name="Revolution"/></ObjectDeps>
  <ObjectDeps Name="Chamfer" Count="1"><Dep Name="Fillet"/></ObjectDeps>
+ <ObjectDeps Name="LegacyChamfer" Count="1"><Dep Name="Chamfer"/></ObjectDeps>
  <Object type="Sketcher::SketchObject" name="Sketch" id="1"/>
  <Object type="PartDesign::Revolution" name="Revolution" id="2"/>
  <Object type="PartDesign::Fillet" name="Fillet" id="3"/>
  <Object type="PartDesign::Chamfer" name="Chamfer" id="4"/>
+ <Object type="PartDesign::Chamfer" name="LegacyChamfer" id="5"/>
 </Objects>
-<ObjectData Count="4">
+<ObjectData Count="5">
  <Object name="Sketch"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
  <Object name="Revolution"><Properties Count="5">
   <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
@@ -931,6 +933,10 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
   <Property name="Size" type="App::PropertyLength"><Float value="1.5"/></Property>
   <Property name="Angle" type="App::PropertyAngle"><Float value="30"/></Property>
   <Property name="FlipDirection" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+ <Object name="LegacyChamfer"><Properties Count="2">
+  <Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Chamfer" count="1"><Sub value="Edge3"/></LinkSub></Property>
+  <Property name="Size" type="App::PropertyLength"><Float value="0.75"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -981,6 +987,16 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             spec: cadmpeg_ir::features::ChamferSpec::DistanceAngle { distance: cadmpeg_ir::features::Length(1.5), angle }, ..
         }] if (angle.0 - std::f64::consts::FRAC_PI_6).abs() < 1e-12)
+    ));
+    assert!(matches!(
+        definition("LegacyChamfer"),
+        cadmpeg_ir::features::FeatureDefinition::Chamfer { groups, .. }
+            if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+                spec: cadmpeg_ir::features::ChamferSpec::Distance {
+                    distance: cadmpeg_ir::features::Length(0.75)
+                },
+                ..
+            }])
     ));
 }
 
@@ -2474,8 +2490,8 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="5">
  <Object type="Part::Box" name="Seed" id="1"/>
- <Object type="PartDesign::Line" name="Axis" id="2"/>
- <Object type="PartDesign::Plane" name="Plane" id="3"/>
+ <Object type="App::Line" name="Axis" id="2"/>
+ <Object type="App::Plane" name="Plane" id="3"/>
  <Object type="PartDesign::PolarPattern" name="Ring" id="4"/>
  <Object type="PartDesign::Mirrored" name="Mirror" id="5"/>
 </Objects>
@@ -2491,7 +2507,7 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
   <Property name="Occurrences" type="App::PropertyInteger"><Integer value="4"/></Property>
  </Properties></Object>
  <Object name="Mirror"><Properties Count="2">
-  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="BaseFeature" type="App::PropertyLink"><Link value="Seed"/></Property>
   <Property name="MirrorPlane" type="App::PropertyLinkSub"><LinkSub value="Plane" count="1"><Sub value=""/></LinkSub></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
