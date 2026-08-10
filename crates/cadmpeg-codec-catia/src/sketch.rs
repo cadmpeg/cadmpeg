@@ -197,9 +197,9 @@ fn is_native_sketch_geometry_class(class_name: &str) -> bool {
 /// framing, and evaluation are retained as native properties. The unique
 /// source record is retained as an unresolved native operand; no geometry,
 /// dimensional, or driving-parameter role is inferred from the range alone.
-/// The returned object-record identities are the exact range records
-/// represented by the emitted neutral constraints. The source operand remains
-/// unresolved by design.
+/// The returned object-record identities are the exact range and source
+/// operand records represented by the emitted neutral constraints. The source
+/// operand's semantic role remains unresolved by design.
 pub(crate) fn transfer_constraint_ranges(
     ir: &mut CadIr,
     native: &CatiaNative,
@@ -254,6 +254,7 @@ pub(crate) fn transfer_constraint_ranges(
             native_ref: Some(entity.id.clone()),
         });
         transferred.insert(entity.object_record.clone());
+        transferred.insert(binding.source_object_record);
     }
 
     transferred
@@ -261,6 +262,7 @@ pub(crate) fn transfer_constraint_ranges(
 
 struct ConstraintBinding {
     sketch: SketchId,
+    source_object_record: String,
     operand: SketchNativeOperand,
 }
 
@@ -368,6 +370,7 @@ fn constraint_binding(
         .unwrap_or_else(|| "record".to_string());
     Some(ConstraintBinding {
         sketch,
+        source_object_record: source_record.id.clone(),
         operand: SketchNativeOperand {
             native_kind,
             native_field: Some(source_record.id.clone()),
@@ -918,7 +921,7 @@ mod tests {
 
         assert_eq!(
             transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope)),
-            HashSet::from(["range-record".to_string()])
+            HashSet::from(["range-record".to_string(), "source-record".to_string()])
         );
         assert_eq!(ir.model.sketch_constraints.len(), 1);
         let constraint = &ir.model.sketch_constraints[0];
@@ -966,7 +969,7 @@ mod tests {
 
         assert_eq!(
             transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope)),
-            HashSet::from(["range-record".to_string()])
+            HashSet::from(["range-record".to_string(), "source-record".to_string()])
         );
         assert_eq!(ir.model.sketch_constraints.len(), 1);
     }
