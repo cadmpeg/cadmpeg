@@ -24,14 +24,14 @@ use crate::kernel::ActiveCarrierState;
 use crate::native::{
     ActiveCarrierRecord, ActiveCarrierRecordState, AssemblyOccurrenceRecord,
     AssemblyPlacementRecord, AssemblyRecordIssueRecord, DatabaseIssueRecord, DatabaseRecord,
-    ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord, PropertyRecord,
-    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, ProteinAssetRecord,
-    ProteinEntryRecord, ProteinRecord, ProteinRecordState, ProteinRejectionRecord, RevisionRecord,
-    RseRecordRecord, SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord,
-    SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord,
-    StructuralIssueRecord, UfrxModelStateParameterRecord, UfrxModelStateRecord,
-    UfrxOccurrenceRecord, UfrxRecord, UfrxRecordState, UfrxRepresentationRecord,
-    UnpairedSegmentRecord, VersionTupleRecord, INVENTOR_NATIVE_VERSION,
+    EmbeddedReferenceRecord, ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord,
+    PropertyRecord, PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord,
+    ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRecordState,
+    ProteinRejectionRecord, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
+    SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
+    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UfrxModelStateParameterRecord,
+    UfrxModelStateRecord, UfrxOccurrenceRecord, UfrxRecord, UfrxRecordState,
+    UfrxRepresentationRecord, UnpairedSegmentRecord, VersionTupleRecord, INVENTOR_NATIVE_VERSION,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
@@ -283,7 +283,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         })
         .collect::<Vec<_>>();
     ir.model.appearances = material_catalog.appearances;
-    let (ufrx, ufrx_model_states, external_references, ufrx_occurrences) = match &container.ufrx {
+    let ufrx_projection = match &container.ufrx {
         UfrxState::Absent => (
             UfrxRecord {
                 id: "inventor:ufrx:state#root".into(),
@@ -302,6 +302,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 tail_sha256: None,
                 detail: None,
             },
+            Vec::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -324,6 +325,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 tail_sha256: None,
                 detail: Some(detail.clone()),
             },
+            Vec::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -352,6 +354,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 tail_sha256: Some(sha256_hex(source.window())),
                 detail: Some(detail.clone()),
             },
+            Vec::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -405,6 +408,28 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                     flags: reference.flags,
                 })
                 .collect::<Vec<_>>();
+            let embedded = document
+                .embedded_references
+                .iter()
+                .enumerate()
+                .map(|(ordinal, reference)| EmbeddedReferenceRecord {
+                    id: format!("inventor:ufrx:embedded-reference#{ordinal}"),
+                    ordinal: ordinal as u32,
+                    value_0: reference.value_0,
+                    filetime: reference.filetime,
+                    value_1: reference.value_1,
+                    extended_value: reference.extended_value,
+                    value_2: reference.value_2,
+                    path: reference.path.clone(),
+                    library_id: reference.library_id,
+                    library_name: reference.library_name.clone(),
+                    state: reference.state,
+                    display_name: reference.display_name.clone(),
+                    state_values: reference.state_values,
+                    record_len: reference.source.window().len() as u64,
+                    record_sha256: sha256_hex(reference.source.window()),
+                })
+                .collect::<Vec<_>>();
             let occurrences = document
                 .occurrences
                 .iter()
@@ -443,18 +468,21 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                     }),
                     model_state_count: model_states.len() as u64,
                     reference_count: references.len() as u64,
-                    embedded_reference_count: u64::from(document.embedded_reference_count),
+                    embedded_reference_count: embedded.len() as u64,
                     occurrence_count: occurrences.len() as u64,
                     tail_len: document.unparsed_tail.window().len() as u64,
                     tail_sha256: Some(sha256_hex(document.unparsed_tail.window())),
                     detail: None,
                 },
                 model_states,
+                embedded,
                 references,
                 occurrences,
             )
         }
     };
+    let (ufrx, ufrx_model_states, embedded_references, external_references, ufrx_occurrences) =
+        ufrx_projection;
     if let DocumentKind::Unknown(_) = document_kind {
         if let Some(property_kind) = metadata.document_kind.take() {
             document_kind = property_kind;
@@ -999,6 +1027,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .saturating_add(protein_rejections.len())
             .saturating_add(1)
             .saturating_add(ufrx_model_states.len())
+            .saturating_add(embedded_references.len())
             .saturating_add(ufrx_occurrences.len())
             .saturating_add(external_references.len())
             .saturating_add(assembly_occurrences.len())
@@ -1026,6 +1055,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     namespace.set_arena("protein_rejections", &protein_rejections)?;
     namespace.set_arena("ufrx", std::slice::from_ref(&ufrx))?;
     namespace.set_arena("ufrx_model_states", &ufrx_model_states)?;
+    namespace.set_arena("embedded_references", &embedded_references)?;
     namespace.set_arena("ufrx_occurrences", &ufrx_occurrences)?;
     namespace.set_arena("external_references", &external_references)?;
     namespace.set_arena("assembly_occurrences", &assembly_occurrences)?;
@@ -1360,6 +1390,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 ("protein_rejections".into(), protein_rejections.len()),
                 ("protein_appearances".into(), protein_appearance_count),
                 ("external_references".into(), external_references.len()),
+                ("embedded_references".into(), embedded_references.len()),
                 ("ufrx_model_states".into(), ufrx_model_states.len()),
                 ("ufrx_occurrences".into(), ufrx_occurrences.len()),
                 ("assembly_occurrences".into(), assembly_occurrences.len()),

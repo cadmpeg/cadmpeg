@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Current Inventor native namespace version.
-pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 14;
+pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 15;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct VersionTupleRecord {
@@ -232,6 +232,25 @@ pub(crate) struct ExternalReferenceRecord {
     pub(crate) occurrence_count: u32,
     pub(crate) version: u32,
     pub(crate) flags: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct EmbeddedReferenceRecord {
+    pub(crate) id: String,
+    pub(crate) ordinal: u32,
+    pub(crate) value_0: u32,
+    pub(crate) filetime: u64,
+    pub(crate) value_1: u32,
+    pub(crate) extended_value: Option<u32>,
+    pub(crate) value_2: u32,
+    pub(crate) path: String,
+    pub(crate) library_id: i32,
+    pub(crate) library_name: String,
+    pub(crate) state: u16,
+    pub(crate) display_name: String,
+    pub(crate) state_values: [u8; 8],
+    pub(crate) record_len: u64,
+    pub(crate) record_sha256: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

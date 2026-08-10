@@ -8,7 +8,7 @@ use cadmpeg_core::CodecError;
 #[derive(Debug)]
 pub(crate) enum UfrxState<'a> {
     Absent,
-    Parsed(UfrxDocument<'a>),
+    Parsed(Box<UfrxDocument<'a>>),
     Unsupported {
         stream: CompoundStreamId,
         schema: u16,
@@ -32,7 +32,7 @@ pub(crate) struct UfrxDocument<'a> {
     pub(crate) representation: Option<UfrxRepresentationState>,
     pub(crate) model_states: Vec<UfrxModelState<'a>>,
     pub(crate) references: Vec<InventorExternalReference>,
-    pub(crate) embedded_reference_count: u32,
+    pub(crate) embedded_references: Vec<InventorEmbeddedReference<'a>>,
     pub(crate) occurrences: Vec<UfrxOccurrence<'a>>,
     pub(crate) unparsed_tail: View<'a>,
 }
@@ -94,6 +94,22 @@ pub(crate) struct InventorExternalReference {
     pub(crate) flags: u32,
 }
 
+#[derive(Debug)]
+pub(crate) struct InventorEmbeddedReference<'a> {
+    pub(crate) value_0: u32,
+    pub(crate) filetime: u64,
+    pub(crate) value_1: u32,
+    pub(crate) extended_value: Option<u32>,
+    pub(crate) value_2: u32,
+    pub(crate) path: String,
+    pub(crate) library_id: i32,
+    pub(crate) library_name: String,
+    pub(crate) state: u16,
+    pub(crate) display_name: String,
+    pub(crate) state_values: [u8; 8],
+    pub(crate) source: View<'a>,
+}
+
 pub(crate) fn parse<'a>(
     ctx: &DecodeContext<'a>,
     snapshot: &CompoundSnapshot<'a>,
@@ -103,7 +119,7 @@ pub(crate) fn parse<'a>(
     };
     let source = snapshot.open(ctx, stream)?;
     Ok(match parse_stream(ctx, source) {
-        Ok(document) => UfrxState::Parsed(UfrxDocument {
+        Ok(document) => UfrxState::Parsed(Box::new(UfrxDocument {
             stream: stream.id(),
             schema: document.schema,
             section_versions: document.section_versions,
@@ -112,10 +128,10 @@ pub(crate) fn parse<'a>(
             representation: document.representation,
             model_states: document.model_states,
             references: document.references,
-            embedded_reference_count: document.embedded_reference_count,
+            embedded_references: document.embedded_references,
             occurrences: document.occurrences,
             unparsed_tail: document.unparsed_tail,
-        }),
+        })),
         Err(CodecError::NotImplemented(detail)) => {
             let (schema, section_versions) = parse_schema_table(ctx, source)?;
             UfrxState::Unsupported {
@@ -141,7 +157,7 @@ struct ParsedUfrx<'a> {
     representation: Option<UfrxRepresentationState>,
     model_states: Vec<UfrxModelState<'a>>,
     references: Vec<InventorExternalReference>,
-    embedded_reference_count: u32,
+    embedded_references: Vec<InventorEmbeddedReference<'a>>,
     occurrences: Vec<UfrxOccurrence<'a>>,
     unparsed_tail: View<'a>,
 }
@@ -308,8 +324,9 @@ fn parse_stream<'a>(
             "UFRxDoc external-reference terminator is nonzero".into(),
         ));
     }
-    let embedded_reference_count = parse_embedded_references(
+    let embedded_references = parse_embedded_references(
         ctx,
+        source,
         &mut cursor,
         section_versions.get(15).copied().unwrap_or_default(),
     )?;
@@ -331,7 +348,7 @@ fn parse_stream<'a>(
         representation,
         model_states,
         references,
-        embedded_reference_count,
+        embedded_references,
         occurrences,
         unparsed_tail,
     })
@@ -345,34 +362,58 @@ fn save_year(major: u8) -> u16 {
     }
 }
 
-fn parse_embedded_references(
-    ctx: &DecodeContext<'_>,
+fn parse_embedded_references<'a>(
+    ctx: &DecodeContext<'a>,
+    source: View<'a>,
     cursor: &mut Cursor<'_>,
     section_version: u16,
-) -> Result<u32, CodecError> {
+) -> Result<Vec<InventorEmbeddedReference<'a>>, CodecError> {
     let count = cursor.count32("embedded-reference count", 1_000_000)?;
     ctx.charge_collection_items(count as u64, "admit UFRxDoc embedded references")?;
+    let mut references = Vec::with_capacity(count);
     for _ in 0..count {
-        cursor.u32("embedded-reference value")?;
-        cursor.take(8, "embedded-reference FILETIME")?;
-        cursor.u32("embedded-reference value")?;
-        if section_version >= 7 {
-            cursor.u32("embedded-reference padding")?;
-        }
-        cursor.u32("embedded-reference value")?;
-        cursor.utf16(ctx, "embedded-reference path", 65_536)?;
-        cursor.i32("embedded-reference library id")?;
-        cursor.utf16(ctx, "embedded-reference library name", 65_536)?;
-        cursor.u16("embedded-reference state")?;
-        cursor.utf16(ctx, "embedded-reference display name", 65_536)?;
-        cursor.take(8, "embedded-reference state values")?;
+        let start = cursor.position;
+        let value_0 = cursor.u32("embedded-reference value")?;
+        let filetime = u64::from_le_bytes(cursor.array("embedded-reference FILETIME")?);
+        let value_1 = cursor.u32("embedded-reference value")?;
+        let extended_value = if section_version >= 7 {
+            Some(cursor.u32("embedded-reference extended value")?)
+        } else {
+            None
+        };
+        let value_2 = cursor.u32("embedded-reference value")?;
+        let path = cursor.utf16(ctx, "embedded-reference path", 65_536)?;
+        let library_id = cursor.i32("embedded-reference library id")?;
+        let library_name = cursor.utf16(ctx, "embedded-reference library name", 65_536)?;
+        let state = cursor.u16("embedded-reference state")?;
+        let display_name = cursor.utf16(ctx, "embedded-reference display name", 65_536)?;
+        let state_values = cursor.array("embedded-reference state values")?;
+        let record = source
+            .child(source.start() + start, source.start() + cursor.position)
+            .ok_or_else(|| {
+                CodecError::Malformed("UFRxDoc embedded-reference range is invalid".into())
+            })?;
+        references.push(InventorEmbeddedReference {
+            value_0,
+            filetime,
+            value_1,
+            extended_value,
+            value_2,
+            path,
+            library_id,
+            library_name,
+            state,
+            display_name,
+            state_values,
+            source: record,
+        });
     }
     if section_version >= 6 && cursor.u8("embedded-reference terminator")? != 0 {
         return Err(CodecError::Malformed(
             "UFRxDoc embedded-reference terminator is nonzero".into(),
         ));
     }
-    Ok(count as u32)
+    Ok(references)
 }
 
 fn parse_occurrences<'a>(
@@ -938,6 +979,42 @@ mod tests {
         assert_eq!(occurrences[0].occurrence_id, 17);
         assert_eq!(occurrences[0].title.as_deref(), Some("extended"));
         assert_eq!(occurrences[0].header_padding_words, 2);
+        assert_eq!(cursor.position, bytes.len());
+    }
+
+    #[test]
+    fn frames_extended_embedded_reference() {
+        let mut bytes = Vec::new();
+        push_u32(&mut bytes, 1);
+        push_u32(&mut bytes, 3);
+        bytes.extend_from_slice(&44_u64.to_le_bytes());
+        push_u32(&mut bytes, 5);
+        push_u32(&mut bytes, 6);
+        push_u32(&mut bytes, 7);
+        push_utf16(&mut bytes, "embedded/component.ipt");
+        bytes.extend_from_slice(&(-2_i32).to_le_bytes());
+        push_utf16(&mut bytes, "library");
+        push_u16(&mut bytes, 8);
+        push_utf16(&mut bytes, "component");
+        bytes.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
+        bytes.push(0);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic embedded reference fits policy");
+        let mut cursor = Cursor::new(root.window());
+
+        let references = parse_embedded_references(&ctx, root, &mut cursor, 7)
+            .expect("extended embedded reference parses");
+
+        let [reference] = references.as_slice() else {
+            panic!("one embedded reference must parse");
+        };
+        assert_eq!(reference.value_0, 3);
+        assert_eq!(reference.filetime, 44);
+        assert_eq!(reference.extended_value, Some(6));
+        assert_eq!(reference.path, "embedded/component.ipt");
+        assert_eq!(reference.state_values, [1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(reference.source.window().len() + 5, bytes.len());
         assert_eq!(cursor.position, bytes.len());
     }
 

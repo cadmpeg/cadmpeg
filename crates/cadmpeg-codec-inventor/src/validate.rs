@@ -8,13 +8,14 @@ use cadmpeg_ir::{CadIr, Check, Finding, NativeUnknownRecord, Severity};
 use crate::native::{
     ActiveCarrierRecord, ActiveCarrierRecordState, AssemblyOccurrenceRecord,
     AssemblyPlacementRecord, AssemblyRecordIssueRecord, DatabaseIssueRecord, DatabaseRecord,
-    ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord, PropertyRecord,
-    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, ProteinAssetRecord,
-    ProteinEntryRecord, ProteinRecord, ProteinRecordState, ProteinRejectionRecord, RevisionRecord,
-    RseRecordRecord, SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord,
-    SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord,
-    StructuralIssueRecord, UfrxModelStateRecord, UfrxOccurrenceRecord, UfrxRecord, UfrxRecordState,
-    UnpairedSegmentRecord, INVENTOR_NATIVE_VERSION,
+    EmbeddedReferenceRecord, ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord,
+    PropertyRecord, PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord,
+    ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRecordState,
+    ProteinRejectionRecord, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
+    SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
+    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UfrxModelStateRecord,
+    UfrxOccurrenceRecord, UfrxRecord, UfrxRecordState, UnpairedSegmentRecord,
+    INVENTOR_NATIVE_VERSION,
 };
 
 const ARENAS: &[&str] = &[
@@ -25,6 +26,7 @@ const ARENAS: &[&str] = &[
     "body_native_keys",
     "database_issues",
     "databases",
+    "embedded_references",
     "external_references",
     "edge_continuities",
     "edge_ownerships",
@@ -253,6 +255,7 @@ struct NativeData {
     ufrx: Vec<UfrxRecord>,
     ufrx_model_states: Vec<UfrxModelStateRecord>,
     ufrx_occurrences: Vec<UfrxOccurrenceRecord>,
+    embedded_references: Vec<EmbeddedReferenceRecord>,
     external_references: Vec<ExternalReferenceRecord>,
     assembly_occurrences: Vec<AssemblyOccurrenceRecord>,
     assembly_placements: Vec<AssemblyPlacementRecord>,
@@ -292,6 +295,7 @@ impl NativeData {
             ufrx: namespace.arena_as("ufrx")?,
             ufrx_model_states: namespace.arena_as("ufrx_model_states")?,
             ufrx_occurrences: namespace.arena_as("ufrx_occurrences")?,
+            embedded_references: namespace.arena_as("embedded_references")?,
             external_references: namespace.arena_as("external_references")?,
             assembly_occurrences: namespace.arena_as("assembly_occurrences")?,
             assembly_placements: namespace.arena_as("assembly_placements")?,
@@ -875,6 +879,7 @@ fn validate_ufrx(data: &NativeData, findings: &mut Vec<Finding>) {
                 && record.detail.is_none()
                 && data.ufrx_model_states.is_empty()
                 && data.ufrx_occurrences.is_empty()
+                && data.embedded_references.is_empty()
                 && data.external_references.is_empty()
         }
         UfrxRecordState::ParsedPrefix => {
@@ -888,6 +893,7 @@ fn validate_ufrx(data: &NativeData, findings: &mut Vec<Finding>) {
                 && record.model_state_count == data.ufrx_model_states.len() as u64
                 && (record.schema == Some(15)) == record.representation.is_some()
                 && record.reference_count == data.external_references.len() as u64
+                && record.embedded_reference_count == data.embedded_references.len() as u64
                 && record.occurrence_count == data.ufrx_occurrences.len() as u64
                 && record.tail_sha256.is_some()
                 && record.detail.is_none()
@@ -907,6 +913,7 @@ fn validate_ufrx(data: &NativeData, findings: &mut Vec<Finding>) {
                 && record.detail.is_some()
                 && data.ufrx_model_states.is_empty()
                 && data.ufrx_occurrences.is_empty()
+                && data.embedded_references.is_empty()
                 && data.external_references.is_empty()
         }
         UfrxRecordState::Malformed => {
@@ -920,6 +927,7 @@ fn validate_ufrx(data: &NativeData, findings: &mut Vec<Finding>) {
                 && record.detail.is_some()
                 && data.ufrx_model_states.is_empty()
                 && data.ufrx_occurrences.is_empty()
+                && data.embedded_references.is_empty()
                 && data.external_references.is_empty()
         }
     };
@@ -985,6 +993,20 @@ fn validate_ufrx(data: &NativeData, findings: &mut Vec<Finding>) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor external reference has neither a path nor a document id".into(),
+                Some(reference.id.clone()),
+            ));
+        }
+    }
+    unique(
+        findings,
+        data.embedded_references.iter().map(|record| record.ordinal),
+        "embedded reference ordinal",
+    );
+    for reference in &data.embedded_references {
+        if reference.record_len == 0 || reference.record_sha256.len() != 64 {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor embedded-reference framing is inconsistent".into(),
                 Some(reference.id.clone()),
             ));
         }

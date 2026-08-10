@@ -73,6 +73,7 @@
           "databases": [],
           "edge_continuities": [],
           "edge_ownerships": [],
+          "embedded_references": [],
           "external_references": [],
           "face_sidedness": [],
           "mesh_surface_sentinels": [],
@@ -141,7 +142,7 @@
           "vertex_ownerships": [],
           "wire_topologies": []
         },
-        "version": 14
+        "version": 15
       }
     },
     "source": {
@@ -171,6 +172,7 @@
       "assembly_occurrences_transferred": 0,
       "assembly_placements": 0,
       "assembly_record_issues": 0,
+      "embedded_references": 0,
       "external_references": 0,
       "preview_assets": 0,
       "properties": 0,
