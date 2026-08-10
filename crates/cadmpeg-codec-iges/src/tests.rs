@@ -1396,7 +1396,7 @@ fn decode_concatenates_ordered_composite_curve_children() {
 fn composite_join_uses_global_resolution_and_reports_degradation() {
     let within_resolution = IgesCodec
         .decode(
-            &mut Cursor::new(composite_curve_with_join_gap(0.0005)),
+            &mut Cursor::new(composite_curve_with_join_gap(0.000_999)),
             &DecodeOptions::default(),
         )
         .unwrap();
@@ -1415,7 +1415,7 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
 
     let outside_resolution = IgesCodec
         .decode(
-            &mut Cursor::new(composite_curve_with_join_gap(0.002)),
+            &mut Cursor::new(composite_curve_with_join_gap(0.001_001)),
             &DecodeOptions::default(),
         )
         .unwrap();
@@ -1648,23 +1648,28 @@ fn decode_preserves_coincident_segments_in_a_copious_linear_path() {
 
 #[test]
 fn decode_closes_form_63_with_the_global_minimum_resolution() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(copious_data_file(
-                63,
-                b"106,1,3,0,0,0,1,0,0,0.0005;",
-                "00000000",
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+    for (gap, decoded) in [("0.000999", true), ("0.001001", false)] {
+        let parameters = format!("106,1,3,0,0,0,1,0,0,{gap};");
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(copious_data_file(63, parameters.as_bytes(), "00000000")),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
 
-    assert_eq!(result.ir.model.curves.len(), 1);
-    assert_eq!(result.ir.model.edges[0].tolerance, Some(0.001));
-    assert_eq!(result.ir.model.edges[0].start, result.ir.model.edges[0].end);
-    assert!(result.report.losses.is_empty());
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
-    assert!(validation.is_ok(), "{:#?}", validation.findings);
+        assert_eq!(result.ir.model.curves.len(), usize::from(decoded), "{gap}");
+        if decoded {
+            assert_eq!(result.ir.model.edges[0].tolerance, Some(0.001));
+            assert_eq!(result.ir.model.edges[0].start, result.ir.model.edges[0].end);
+            assert!(result.report.losses.is_empty());
+            let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+            assert!(validation.is_ok(), "{:#?}", validation.findings);
+        } else {
+            assert!(result.report.losses.iter().any(|loss| loss
+                .message
+                .contains("endpoints disagree beyond the minimum resolution")));
+        }
+    }
 }
 
 #[test]
@@ -3234,7 +3239,7 @@ fn bounded_plane_file() -> Vec<u8> {
 fn bounded_plane_with_resolution_gap_file() -> Vec<u8> {
     let mut bytes = bounded_plane_file();
     let original = b"110,1,1,0,1,0,0;";
-    let replacement = b"110,1,1,0,1,0.0005,0;";
+    let replacement = b"110,1,1,0,1,0.000999,0;";
     let start = bytes
         .windows(original.len())
         .position(|window| window == original)
@@ -10021,6 +10026,42 @@ fn decode_accepts_a_bounded_sheet_join_within_global_resolution() {
 }
 
 #[test]
+fn decode_rejects_a_bounded_sheet_join_just_beyond_global_resolution() {
+    let mut bytes = bounded_plane_file();
+    let original = b"110,1,1,0,1,0,0;";
+    let replacement = b"110,1,1,0,1,0.001001,0;";
+    let start = bytes
+        .windows(original.len())
+        .position(|window| window == original)
+        .expect("bounded-plane edge parameter record");
+    let line_start = bytes[..start]
+        .iter()
+        .rposition(|byte| *byte == b'\n')
+        .map_or(0, |index| index + 1);
+    let payload_end = line_start + 64;
+    bytes[start..start + replacement.len()].copy_from_slice(replacement);
+    bytes[start + replacement.len()..payload_end].fill(b' ');
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(result
+        .ir
+        .model
+        .faces
+        .iter()
+        .all(|face| face.id.0 != "iges:model:face#D13"));
+    assert!(
+        result.report.losses.iter().any(|loss| {
+            loss.message
+                .contains("boundary segments do not form a closed ring")
+        }),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
 fn decode_converts_non_millimetre_resolution_before_sewing_a_bounded_sheet() {
     let result = IgesCodec
         .decode(
@@ -10844,8 +10885,8 @@ fn decode_accepts_arc_endpoints_within_model_resolution() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(transformed_circular_arc_file(
-                b"124,0,-1,0,0,1,0,0,0,0,0,1,0;",
-                b"100,0,0,0,16,0,-3.326587053,15.65036161;",
+                b"124,1,0,0,0,0,1,0,0,0,0,1,0;",
+                b"100,0,0,0,16,0,0,16.000999;",
             )),
             &DecodeOptions::default(),
         )
@@ -10871,8 +10912,8 @@ fn decode_rejects_arc_endpoints_beyond_model_resolution() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(transformed_circular_arc_file(
-                b"124,0,-1,0,0,1,0,0,0,0,0,1,0;",
-                b"100,0,0,0,16,0,-3.326587053,15.75036161;",
+                b"124,1,0,0,0,0,1,0,0,0,0,1,0;",
+                b"100,0,0,0,16,0,0,16.001001;",
             )),
             &DecodeOptions::default(),
         )
