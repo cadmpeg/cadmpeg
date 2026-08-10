@@ -28,6 +28,14 @@ This document lists unknown Inventor byte semantics. [inventor.md](inventor.md) 
 
 **Need.** We must validate the long item sequence without accepting arbitrary payload widths.
 
+### RS-04. Revision and record-trailer variants
+
+**Question.** Which revision-table versions, extended record-trailer property types, and trailer list forms govern RSe database variants outside the supported branch?
+
+**Known.** The current envelope parses revision-table version 3 and the implemented trailer property and reference-list forms. Unsupported revision versions and trailer property types are refused after their owning record boundary is established.
+
+**Need.** Each revision and trailer variant requires an exact field grammar, range rule, and native retention policy before semantic decode.
+
 ## 2. Kernel ownership
 
 ### KE-01. Multiple part carriers
@@ -37,6 +45,14 @@ This document lists unknown Inventor byte semantics. [inventor.md](inventor.md) 
 **Known.** The supported envelope has one `PmBRep` segment and one typed kernel-carrier record. Carrier signatures do not establish ownership.
 
 **Need.** We must select active and historical carriers without appending all geometry.
+
+### KE-02. ACIS save-format and carrier-footer bands
+
+**Question.** Which ACIS save-format bands outside 217/218 and which segment-version carrier footers use a compatible SAB grammar and active-carrier semantic contract?
+
+**Known.** ACIS 217 and 218 use the supported 32-bit header and SAB decoder. Other ACIS save-format bands are retained carriers with blocking geometry loss. The current carrier footer branch supports segment major versions 15 through 22 and 23 and later; earlier or otherwise incompatible variants are refused.
+
+**Need.** Each additional ACIS or footer band requires direct-carrier framing, geometry, validation, and wrapper-parity evidence before activation.
 
 ## 3. Product structure
 
@@ -50,6 +66,14 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 
 **Need.** We must establish local component definitions and parent links from typed records before emitting non-root or local-prototype occurrences.
 
+### AS-03. UFRx schema and occurrence-tag branches
+
+**Question.** Which UFRxDoc schemas outside 11 through 15 and which occurrence property/export tags have stable field grammars and semantic roles?
+
+**Known.** Schemas 11 through 15 and the supported occurrence/export tag sets are framed. Other schemas and tags are refused as unsupported semantic branches; their containing UFRx records remain bounded and are reported without inventing fields.
+
+**Need.** Each additional schema or tag requires exact field widths, repeated-tag rules, identity joins, and loss behavior before semantic transfer.
+
 ### AS-02. Transform units and exceptional branches
 
 **Question.** What semantics apply to non-active placement branches, scale, mirrored state, and singular matrices?
@@ -58,7 +82,15 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 
 **Need.** We must type the exceptional branches before transferring their scale, reflection, or singular-transform semantics.
 
-## 4. Materials and design intent
+## 4. Properties, materials, and design intent
+
+### PR-01. OLE property variants and code pages
+
+**Question.** Which additional OLE code pages, property value types, section-directory variants, and preview payloads occur in Inventor documents, and what are their exact mappings?
+
+**Known.** The current parser handles the supported little-endian property-set header, section ranges, scalar/vector/FILETIME/BLOB/clipboard forms, UTF-16, and the admitted `encoding_rs` code-page set. Unknown typed values remain native-only; an unsupported code page or property variant stops typed property projection after its stream has been identified.
+
+**Need.** Additional code pages, typed variants, and preview encodings require exact decoding, range validation, and neutral/native mapping rules before transfer.
 
 ### MA-01. Additional face appearance styles
 
