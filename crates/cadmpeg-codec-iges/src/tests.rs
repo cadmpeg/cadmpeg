@@ -424,12 +424,20 @@ fn envelope_admission_exactly_matches_the_machine_matrix() {
             );
         }
     }
-    for form in [101, 5000, 5001, 9999, 10000] {
-        assert_eq!(
-            crate::profile::envelope_a_admits(302, form),
-            matches!(form, 5001..=9999)
-        );
+    for (&entity_type, forms) in &admitted {
+        for form in [101, 5000, 5001, 9999, 10000, i64::MAX] {
+            let expected = forms
+                .as_ref()
+                .map_or(matches!(form, 5001..=9999), |forms| forms.contains(&form));
+            assert_eq!(
+                crate::profile::envelope_a_admits(entity_type, form),
+                expected,
+                "high-form probe: entity type {entity_type} form {form}"
+            );
+        }
     }
+    assert!(!crate::profile::envelope_a_admits(601, 5001));
+    assert!(!crate::profile::envelope_a_admits(i64::MAX, i64::MAX));
 }
 
 #[test]

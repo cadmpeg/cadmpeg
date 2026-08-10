@@ -191,11 +191,3 @@ from a conformant file.
 **Note.** Removing `* factor` from `global.rs:244` keeps every test green. On a centimetre file the true tolerance is 20 times the value the decoder would then use.
 
 **Need.** We need a resolution-gated fixture in a unit other than millimetres.
-
-### EV-09. The envelope rejection sweep stops at form 100
-
-**Question.** Does the envelope matrix test prove the rejection side?
-
-**Known.** `tests.rs:222-241` sweeps entity types 0 through 600 against forms -1 through 100, and probes forms above 100 for Type 302 only. Every matrix-listed form is inside -1 through 100, so admission is complete and rejection is not. A `profile.rs` arm widened to admit an implementor-defined range on a type other than 302 passes.
-
-**Need.** We need the rejection probe extended to every admitted type.
