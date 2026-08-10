@@ -388,7 +388,7 @@ pub(crate) fn assemble(
         .filter(|entry| !(entry.entity_type == 0 && entry.parameter_line_count == 0))
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut owners = BTreeMap::<u32, u32>::new();
+    let mut owned_by_entry = BTreeMap::<u32, Vec<u32>>::new();
     for (sequence, line) in &lines {
         let pointer = back_pointer(line)?;
         if pointer == 0 || pointer % 2 == 0 || !entries.contains_key(&pointer) {
@@ -396,7 +396,7 @@ pub(crate) fn assemble(
                 "IGES Parameter Data card P{sequence} back-pointer {pointer} is not an owning odd Directory Entry sequence"
             )));
         }
-        owners.insert(*sequence, pointer);
+        owned_by_entry.entry(pointer).or_default().push(*sequence);
     }
     let mut records = Vec::new();
     for entry in directory {
@@ -419,10 +419,9 @@ pub(crate) fn assemble(
                 "Parameter Data line count is zero",
             ));
         }
-        let owned = owners
-            .iter()
-            .filter_map(|(sequence, owner)| (*owner == entry.sequence).then_some(*sequence))
-            .collect::<Vec<_>>();
+        let owned = owned_by_entry
+            .get(&entry.sequence)
+            .map_or(&[][..], Vec::as_slice);
         let actual_start = owned.first().copied().ok_or_else(|| {
             malformed(
                 entry.sequence,
