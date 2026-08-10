@@ -265,6 +265,9 @@ mod tests {
         }
         put_u32(&mut file, 76, 9);
         let directory = sector_mut(&mut file, 0);
+        for entry in directory.chunks_exact_mut(128) {
+            entry[68..80].fill(0xff);
+        }
         directory_entry(directory, 0, "Root Entry", 5, 1, CFB_END, 0);
         directory_entry(directory, 1, "Payload", 2, CFB_FREE, 1, 4096);
         for sector in 1..=8 {

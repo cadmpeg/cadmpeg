@@ -97,6 +97,9 @@ fn fixture(inventor: bool) -> Vec<u8> {
     }
     put_u32(&mut file, 76, 1);
     let directory = sector_mut(&mut file, 0);
+    for entry in directory.chunks_exact_mut(128) {
+        entry[68..80].fill(0xff);
+    }
     directory_entry(directory, 0, "Root Entry", 5, 1, END_OF_CHAIN, 0);
     let storage_name = if inventor {
         "RSeStorage"

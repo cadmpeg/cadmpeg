@@ -1810,6 +1810,9 @@ fn synthetic_compound_with_storage(name: &str) -> Vec<u8> {
     file[76..80].copy_from_slice(&1_u32.to_le_bytes());
 
     let directory = &mut file[SECTOR_SIZE..SECTOR_SIZE * 2];
+    for entry in directory.chunks_exact_mut(128) {
+        entry[68..80].fill(0xff);
+    }
     write_compound_directory_entry(directory, 0, "Root Entry", 5, 1);
     write_compound_directory_entry(directory, 1, name, 1, FREE);
     let fat = &mut file[SECTOR_SIZE * 2..SECTOR_SIZE * 3];
