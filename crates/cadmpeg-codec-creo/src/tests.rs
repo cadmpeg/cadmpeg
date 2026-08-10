@@ -8240,6 +8240,41 @@ fn scan_discovers_curve_halfedge_topology() {
 }
 
 #[test]
+fn repeated_curve_rows_receive_source_offset_native_keys() {
+    let mut payload = visibgeom_payload(0, 2);
+    payload.extend_from_slice(b"topol_ref_data\0");
+    payload.extend_from_slice(b"\x07\x08\x04\x01\xf6\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
+    payload.extend_from_slice(b"\x07\x08\x04\x01\xf6\x0c\x0d\x07\x07\0\0\xe3\xe1\xe3");
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(data.clone());
+
+    assert_eq!(scan.curves.topology_rows.len(), 2);
+    assert_eq!(
+        scan.curves.topology_rows[0].id,
+        scan.curves.topology_rows[1].id
+    );
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let rows = &result
+        .ir
+        .native
+        .namespace("creo")
+        .expect("native namespace")
+        .arenas["curve_topology_rows"];
+    assert_eq!(rows.len(), 2);
+    for (native, source) in rows.iter().zip(&scan.curves.topology_rows) {
+        assert_eq!(
+            native.id(),
+            format!("creo:visibgeom:curve_topology#7-{:020}", source.offset)
+        );
+    }
+    assert_ne!(rows[0].id(), rows[1].id());
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
 fn scan_decodes_long_terminated_rows_in_each_curve_namespace() {
     let mut payload = b"crv_array\0topol_ref_data\0".to_vec();
     payload.extend_from_slice(b"\x07\x08\x04\x01\xf6\x0a\x0b\x07\x07\0\0\xe3");

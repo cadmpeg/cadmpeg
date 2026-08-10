@@ -1450,11 +1450,29 @@ pub(super) fn surface_prototype_records(
         .collect()
 }
 
+fn curve_occurrence_identity(curve_id: u32, offset: usize, occurrence_count: usize) -> String {
+    if occurrence_count == 1 {
+        curve_id.to_string()
+    } else {
+        // The separator sorts before a decimal digit.  This keeps source-order
+        // emission lexicographically ordered when a repeated id is followed by
+        // an id with the repeated id as a decimal prefix, such as `1` and `10`.
+        format!("{curve_id}-{offset:020}")
+    }
+}
+
 pub(super) fn curve_parameter_records(
     scan: &ContainerScan,
     records: &[crate::curve::CurveParameterRecord],
     id_namespace: &str,
 ) -> Vec<CreoCurveParameterRecord> {
+    let curve_id_counts =
+        records
+            .iter()
+            .fold(BTreeMap::<u32, usize>::new(), |mut counts, record| {
+                *counts.entry(record.curve_id).or_default() += 1;
+                counts
+            });
     records
         .iter()
         .map(|record| {
@@ -1465,7 +1483,14 @@ pub(super) fn curve_parameter_records(
                 }
             };
             CreoCurveParameterRecord {
-                id: format!("creo:{id_namespace}:curve_parameter#{}", record.curve_id),
+                id: format!(
+                    "creo:{id_namespace}:curve_parameter#{}",
+                    curve_occurrence_identity(
+                        record.curve_id,
+                        record.offset,
+                        curve_id_counts[&record.curve_id],
+                    )
+                ),
                 curve_id: record.curve_id,
                 type_byte: record.type_byte,
                 body: record.body.clone(),
@@ -1513,11 +1538,21 @@ pub(super) fn curve_parameter_records(
 pub(super) fn cross_section_curve_row_records(
     scan: &ContainerScan,
 ) -> Vec<CreoCrossSectionCurveRowRecord> {
+    let curve_id_counts = scan.curves.cross_section_rows.iter().fold(
+        BTreeMap::<u32, usize>::new(),
+        |mut counts, row| {
+            *counts.entry(row.id).or_default() += 1;
+            counts
+        },
+    );
     scan.curves
         .cross_section_rows
         .iter()
         .map(|row| CreoCrossSectionCurveRowRecord {
-            id: format!("creo:cross_section_geometry:curve_row#{}", row.id),
+            id: format!(
+                "creo:cross_section_geometry:curve_row#{}",
+                curve_occurrence_identity(row.id, row.offset, curve_id_counts[&row.id])
+            ),
             curve_id: row.id,
             type_byte: row.type_byte,
             feature_id: row.feature_id,
@@ -1564,9 +1599,18 @@ pub(super) fn curve_topology_row_records(
     rows: &[crate::curve::CurveTopologyRow],
     id_namespace: &str,
 ) -> Vec<CreoCurveTopologyRowRecord> {
+    let curve_id_counts = rows
+        .iter()
+        .fold(BTreeMap::<u32, usize>::new(), |mut counts, row| {
+            *counts.entry(row.id).or_default() += 1;
+            counts
+        });
     rows.iter()
         .map(|row| CreoCurveTopologyRowRecord {
-            id: format!("creo:{id_namespace}:curve_topology#{}", row.id),
+            id: format!(
+                "creo:{id_namespace}:curve_topology#{}",
+                curve_occurrence_identity(row.id, row.offset, curve_id_counts[&row.id])
+            ),
             curve_id: row.id,
             type_byte: row.type_byte,
             feature_id: row.feature_id,

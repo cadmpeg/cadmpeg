@@ -1267,6 +1267,14 @@ the same feature namespace. A nonzero generator identifier establishes that
 feature identity even when no operation-state or feature-definition row is
 stored for it.
 
+The `crv_id` is a source reference and is not an occurrence identity. Within
+one curve namespace, a native parameter, topology, or cross-section curve-row
+record uses its family key with `<crv_id>` when that identifier occurs once.
+When it occurs more than once, the native key is `<crv_id>-<source_offset>`
+with the source offset rendered as a 20-digit zero-padded decimal value. The
+repeated-row key does not alter any geometry or topology join: a semantic join
+still requires one uniquely identified row.
+
 When the byte following either row terminator begins a valid positional prefix,
 that boundary prefix is authoritative; prefix-like byte sequences inside its
 bounded parameter body do not introduce competing row starts. A segment that
