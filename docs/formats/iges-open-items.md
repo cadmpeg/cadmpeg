@@ -172,16 +172,6 @@ from a conformant file.
 
 **Need.** We need each row to name the arena of the entity the fixture exists to exercise, and a test that compares the table with the matrix `destination` column.
 
-### EV-06. Nine property forms are asserted through a copied form number
-
-**Question.** Do the Type 406 Forms 28 through 36 typed fields decode correctly?
-
-**Known.** `tests.rs:6285-6311` asserts for each form that some property record has `fields()["form"] == form`. `native.rs:2798` sets `form: entry.form`, a copy of the Directory field the builder wrote, so the assertion proves only that the match arm gave `Some`. The fixtures write about 35 typed values across nine variants (`native.rs:624-677`), and no test names any of them. None of the four fixtures has a golden.
-
-**Note.** `native.rs:2789-2792` reads the Form 36 closure flags from token indices 2 and 3. Shifting both to 1 and 2 keeps every test in the repository green. Sibling tests at `tests.rs:6169-6247` assert field values correctly, so this test is the outlier.
-
-**Need.** We need field-value assertions for each typed property variant.
-
 ### EV-07. Tolerance gates are bracketed at 100 times the threshold
 
 **Question.** Which tolerance value does each gated test actually pin?

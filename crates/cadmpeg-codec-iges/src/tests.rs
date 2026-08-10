@@ -4844,18 +4844,18 @@ fn text_score_property_forms_file() -> Vec<u8> {
 fn closure_property_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
-            entity_type: 100,
+            entity_type: 108,
             form: 0,
-            label: "CIRCLE".into(),
+            label: "SURFACE".into(),
             status: "00000000",
-            parameters: "100,0,0,0,1,0,0,1,0,1,3;".into(),
+            parameters: "108,0,0,1,0,0,0,0,0,0,0,1,3;".into(),
         },
         OwnedTestEntity {
             entity_type: 406,
             form: 36,
             label: "CLOSURE".into(),
             status: "00010000",
-            parameters: "406,1,2;".into(),
+            parameters: "406,2,0,1;".into(),
         },
     ])
 }
@@ -8140,25 +8140,120 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap()
     };
-    for (bytes, expected_forms) in [
-        (dimension_property_forms_file(), vec![28, 29, 30, 31]),
-        (drawing_metadata_property_forms_file(), vec![32, 33]),
-        (text_score_property_forms_file(), vec![34, 35]),
-        (closure_property_file(), vec![36]),
-    ] {
-        let result = decode(bytes);
-        let properties = &result.ir.native.namespace("iges").unwrap().arenas["properties"];
-        for form in &expected_forms {
-            assert!(properties
-                .iter()
-                .any(|property| property.fields()["form"] == *form));
-        }
-        assert!(
-            result.report.losses.is_empty(),
-            "forms {expected_forms:?}: {:#?}",
-            result.report.losses
-        );
+    let dimensions = decode(dimension_property_forms_file());
+    let properties = &dimensions.ir.native.namespace("iges").unwrap().arenas["properties"];
+    let property = |form| {
+        properties
+            .iter()
+            .find(|property| property.fields()["form"] == form)
+            .expect("dimension property form exists")
+            .fields()
+    };
+    let units = property(28);
+    assert_eq!(units["property_kind"], "dimension_units");
+    assert_eq!(units["secondary_position"], 0);
+    assert_eq!(units["units_indicator"], 2);
+    assert_eq!(units["character_set"], 1);
+    assert_eq!(units["suffix"], serde_json::json!([77, 77]));
+    assert_eq!(units["fraction_flag"], 0);
+    assert_eq!(units["precision"], 3);
+    let tolerance = property(29);
+    assert_eq!(tolerance["property_kind"], "dimension_tolerance");
+    assert_eq!(tolerance["secondary_flag"], 0);
+    assert_eq!(tolerance["tolerance_type"], 2);
+    assert_eq!(tolerance["placement"], 2);
+    assert_eq!(tolerance["upper"], 0.1);
+    assert_eq!(tolerance["lower"], -0.1);
+    assert_eq!(tolerance["suppress_plus"], false);
+    assert_eq!(tolerance["fraction_flag"], 0);
+    assert_eq!(tolerance["precision"], 3);
+    let display = property(30);
+    assert_eq!(display["property_kind"], "dimension_display_data");
+    assert_eq!(display["dimension_type"], 2);
+    assert_eq!(display["label_position"], 1);
+    assert_eq!(display["declared_character_set"], 1);
+    assert_eq!(display["character_set"], 1);
+    assert_eq!(display["label"], serde_json::json!([68, 73, 65]));
+    assert_eq!(display["decimal_symbol"], 0);
+    assert_eq!(
+        display["declared_witness_line_angle"],
+        std::f64::consts::FRAC_PI_2
+    );
+    assert_eq!(display["witness_line_angle"], std::f64::consts::FRAC_PI_2);
+    assert_eq!(display["text_alignment"], 1);
+    assert_eq!(display["text_level"], 0);
+    assert_eq!(display["text_placement"], 0);
+    assert_eq!(display["arrow_orientation"], 0);
+    assert_eq!(display["initial_value"], 12.5);
+    assert_eq!(display["supplemental_notes"][0]["position"], 1);
+    assert_eq!(display["supplemental_notes"][0]["first_text"], 1);
+    assert_eq!(display["supplemental_notes"][0]["last_text"], 1);
+    let basic = property(31);
+    assert_eq!(basic["property_kind"], "basic_dimension");
+    assert_eq!(
+        basic["corners"],
+        serde_json::json!([[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0]])
+    );
+    assert!(
+        dimensions.report.losses.is_empty(),
+        "{:#?}",
+        dimensions.report.losses
+    );
+
+    let drawing = decode(drawing_metadata_property_forms_file());
+    let properties = &drawing.ir.native.namespace("iges").unwrap().arenas["properties"];
+    let approval = properties
+        .iter()
+        .find(|property| property.fields()["form"] == 32)
+        .expect("approval property")
+        .fields();
+    assert_eq!(approval["property_kind"], "drawing_sheet_approval");
+    assert_eq!(approval["name"], serde_json::json!([74, 65, 78, 69]));
+    assert_eq!(approval["organization"], serde_json::json!([69, 78, 71]));
+    assert_eq!(approval["date"], serde_json::json!(b"20260714.123456"));
+    let sheet = properties
+        .iter()
+        .find(|property| property.fields()["form"] == 33)
+        .expect("sheet-id property")
+        .fields();
+    assert_eq!(sheet["property_kind"], "drawing_sheet_id");
+    assert_eq!(sheet["sheet_number"], 2);
+    assert_eq!(sheet["revision"], serde_json::json!([67]));
+    assert!(
+        drawing.report.losses.is_empty(),
+        "{:#?}",
+        drawing.report.losses
+    );
+
+    let scores = decode(text_score_property_forms_file());
+    let properties = &scores.ir.native.namespace("iges").unwrap().arenas["properties"];
+    for (form, kind, first, last) in [(34, "underscore", 2, 4), (35, "overscore", 3, 5)] {
+        let property = properties
+            .iter()
+            .find(|property| property.fields()["form"] == form)
+            .expect("text-score property")
+            .fields();
+        assert_eq!(property["property_kind"], kind);
+        assert_eq!(property["ranges"][0]["text_index"], 1);
+        assert_eq!(property["ranges"][0]["first_character"], first);
+        assert_eq!(property["ranges"][0]["last_character"], last);
     }
+    assert!(
+        scores.report.losses.is_empty(),
+        "{:#?}",
+        scores.report.losses
+    );
+
+    let closure = decode(closure_property_file());
+    let property = closure.ir.native.namespace("iges").unwrap().arenas["properties"][0].fields();
+    assert_eq!(property["property_kind"], "closure");
+    assert_eq!(property["u"], 0);
+    assert_eq!(property["v"], 1);
+    assert!(
+        closure.report.losses.is_empty(),
+        "{:#?}",
+        closure.report.losses
+    );
 }
 
 #[test]
