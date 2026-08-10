@@ -695,8 +695,8 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
  <Constrain Type="6" First="-1" FirstPos="1" Second="0" SecondPos="1" Value="2" IsDriving="1"/>
  <Constrain Type="13" First="0" FirstPos="2" Second="-3" SecondPos="0"/>
  <Constrain Type="7" First="-4" FirstPos="1" Second="0" SecondPos="1" Value="3" IsDriving="1"/>
- <Constrain Type="9" First="0" FirstPos="0" Value="0.5" IsDriving="1"/>
- <Constrain Type="8" First="1" FirstPos="1" Value="6" IsDriving="1"/>
+ <Constrain Name="Repeated" Type="9" First="0" FirstPos="0" Value="0.5" IsDriving="1"/>
+ <Constrain Name="Repeated" Type="8" First="1" FirstPos="1" Value="6" IsDriving="1"/>
 </ConstraintList></Property>
 </Properties></Object><Object name="Source"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let result = FcstdCodec
@@ -816,6 +816,21 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
         } if matches!(first, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.0.ends_with(":reference-root-point"))
             && matches!(second, cadmpeg_ir::sketches::SketchLocus::Start(_))
     ));
+    let repeated_parameters = result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| {
+            parameter
+                .properties
+                .get("source_name")
+                .is_some_and(|name| name == "Repeated")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(repeated_parameters.len(), 2);
+    assert_eq!(repeated_parameters[0].name, "Constraint14");
+    assert_eq!(repeated_parameters[1].name, "Constraint15");
     assert!(result.ir.model.sketch_entities.iter().any(|entity| {
         entity.id.0.ends_with(":reference-horizontal-axis")
             && matches!(

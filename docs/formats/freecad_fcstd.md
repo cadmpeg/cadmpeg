@@ -252,7 +252,9 @@ distance, horizontal/vertical distance, angle, radius, and diameter relations tr
 constraints when every operand resolves. Point-on-object, symmetry, internal alignment, optical
 refraction, B-spline weight, geometry group, and text relations retain their typed operands and
 family-specific data. Dimensional relations create canonical parameters linked to the source
-constraint property and retain whether the value is driving. A one-entity angle measures that
+constraint property and retain whether the value is driving. A dimension parameter uses its
+one-based constraint index as its neutral name. Its persisted label remains source metadata and is
+an expression alias only when that label is unique in the sketch. A one-entity angle measures that
 entity from the horizontal sketch axis. A one-locus horizontal or vertical distance measures the
 locus from the sketch root point. Negative indices resolve through the
 ordered external-reference entities. Invalid indices, unresolved operands, and future family codes

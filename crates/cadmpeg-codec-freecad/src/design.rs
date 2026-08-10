@@ -1371,6 +1371,9 @@ fn parse_constraints(
                     )]
                     .into_iter()
                     .collect::<BTreeMap<_, _>>();
+                    if let Some(name) = node.attribute("Name").filter(|name| !name.is_empty()) {
+                        parameter_properties.insert("source_name".into(), name.to_owned());
+                    }
                     if let Some((native_ref, _)) = &expression {
                         parameter_properties
                             .insert("expression_native_ref".into(), native_ref.clone());
@@ -1379,10 +1382,7 @@ fn parse_constraints(
                         id: id.clone(),
                         owner: Some(feature_id(object)),
                         ordinal: index as u32,
-                        name: node
-                            .attribute("Name")
-                            .filter(|name| !name.is_empty())
-                            .map_or_else(|| format!("Constraint{}", index + 1), str::to_owned),
+                        name: format!("Constraint{}", index + 1),
                         expression: expression.map_or_else(
                             || node.attribute("Value").unwrap_or_default().to_owned(),
                             |(_, expression)| expression,
@@ -1553,22 +1553,40 @@ fn bind_parameter_dependencies(parameters: &mut Vec<DesignParameter>, objects: &
     let candidates = parameters
         .iter()
         .map(|parameter| {
-            (
-                parameter.id.clone(),
-                parameter.owner.clone(),
-                parameter.name.clone(),
-            )
+            let mut names = vec![parameter.name.clone()];
+            if let Some(source_name) = parameter.properties.get("source_name") {
+                if source_name != &parameter.name {
+                    names.push(source_name.clone());
+                }
+            }
+            (parameter.id.clone(), parameter.owner.clone(), names)
         })
         .collect::<Vec<_>>();
-    let mut local = HashMap::<(FeatureId, String), ParameterId>::new();
-    let mut qualified = HashMap::<String, ParameterId>::new();
-    for (id, owner, name) in &candidates {
+    let mut local_candidates = HashMap::<(FeatureId, String), Vec<ParameterId>>::new();
+    let mut qualified_candidates = HashMap::<String, Vec<ParameterId>>::new();
+    for (id, owner, names) in &candidates {
         let Some(owner) = owner else { continue };
-        local.insert((owner.clone(), name.clone()), id.clone());
-        if let Some(object) = object_names.get(owner) {
-            qualified.insert(format!("{object}.{name}"), id.clone());
+        for name in names {
+            local_candidates
+                .entry((owner.clone(), name.clone()))
+                .or_default()
+                .push(id.clone());
+            if let Some(object) = object_names.get(owner) {
+                qualified_candidates
+                    .entry(format!("{object}.{name}"))
+                    .or_default()
+                    .push(id.clone());
+            }
         }
     }
+    let local = local_candidates
+        .into_iter()
+        .filter_map(|(key, ids)| (ids.len() == 1).then(|| (key, ids[0].clone())))
+        .collect::<HashMap<_, _>>();
+    let qualified = qualified_candidates
+        .into_iter()
+        .filter_map(|(key, ids)| (ids.len() == 1).then(|| (key, ids[0].clone())))
+        .collect::<HashMap<_, _>>();
     for parameter in parameters.iter_mut() {
         let mut dependencies = BTreeSet::new();
         for identifier in expression_identifiers(&parameter.expression) {
