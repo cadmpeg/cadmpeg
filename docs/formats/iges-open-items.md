@@ -124,14 +124,6 @@ from a conformant file.
 
 ## 7. Write path
 
-### WR-11. Type 123 is missing from the export census
-
-**Question.** Which entity types does the export report count?
-
-**Known.** `writer.rs:3168-3202` matches 25 entity types and omits Type 123, although `pointer_surface_support` (`writer.rs:3560-3569`) writes two Type 123 direction entities for every analytic surface. A solid with six analytic faces reports `unknown_entity: 12` for a fully supported export.
-
-**Need.** `cadmpeg query counts` and any consumer that treats `unknown_entity > 0` as a coverage gap gets a false signal. We need Type 123 in the census.
-
 ## 8. Evidence
 
 ### EV-01. No file authored by another system has ever been decoded

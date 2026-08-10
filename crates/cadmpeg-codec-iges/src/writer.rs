@@ -3258,6 +3258,7 @@ fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
             198 => "198_torus",
             110 => "110_line",
             116 => "116_point",
+            123 => "123_direction",
             126 => "126_nurbs_curve",
             128 => "128_nurbs_surface",
             124 => "124_transformation",

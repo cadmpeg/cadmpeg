@@ -226,6 +226,8 @@ A Form 0 Curve on a Parametric Surface Entity (Type 142) stores its creation met
 
 Semantic Type 141 output sets `PREF=1` because the neutral edge carrier is the authoritative trimming curve. Semantic Type 142 output sets creation method `0` because neutral IR does not identify projection, intersection, or isoparametric provenance, and sets `PREF=2` because the model-space edge carrier is authoritative while the parameter curve is accepted within the declared topology tolerance. Generated Type 502, 504, 508, 510, and 514 constituent topology entities use subordinate switch `01` and hierarchy `00`. Type 504 has no distinct hierarchy policy.
 
+The semantic export census names every emitted standard entity type, including each physically dependent Direction Entity as `123_direction`. `unknown_entity` counts only an emitted type with no standard census mapping.
+
 A Form 0 Trimmed Surface Entity (Type 144) stores a support-surface pointer, an outer-boundary flag, an inner-boundary count, an outer Curve on a Parametric Surface pointer, and the ordered inner Curve on a Parametric Surface pointers. When the outer-boundary flag is zero, the outer pointer is zero or omitted and the rectangular parameter domain of the support surface supplies the outer boundary. The entity then produces no explicit outer loop; each listed loop is `inner`. When the flag is one, the outer pointer is present and produces the single `outer` loop; each listed loop is `inner`.
 
 ## Appearance

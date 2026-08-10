@@ -12189,6 +12189,8 @@ fn encode_regenerates_decoded_manifold_brep_without_source_bytes() {
         Some(&1)
     );
     assert_eq!(report.census.counts.get("190_pointer_plane"), Some(&4));
+    assert_eq!(report.census.counts.get("123_direction"), Some(&8));
+    assert_eq!(report.census.counts.get("unknown_entity"), None);
     assert_eq!(report.census.counts.get("502_vertex_list"), Some(&1));
     assert_eq!(report.census.counts.get("504_edge_list"), Some(&1));
     assert_eq!(report.census.counts.get("508_loop"), Some(&4));
