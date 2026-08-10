@@ -1036,7 +1036,7 @@ pub(crate) fn project_geometry(
     decoded.extend(splines.decoded);
     losses.extend(splines.losses);
     wire_edges.extend(splines.wire_edges);
-    let composites = super::composite::project(ir, directory, parameters);
+    let composites = super::composite::project(ir, directory, parameters, global);
     handled.extend(composites.handled);
     decoded.extend(composites.decoded);
     losses.extend(composites.losses);

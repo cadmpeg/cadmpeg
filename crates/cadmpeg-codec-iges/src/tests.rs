@@ -1165,6 +1165,32 @@ fn composite_curve_file() -> Vec<u8> {
     bytes
 }
 
+fn composite_curve_with_join_gap(gap: f64) -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "CHILD1".into(),
+            status: "00010000",
+            parameters: "110,0,0,0,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "CHILD2".into(),
+            status: "00010000",
+            parameters: format!("110,{},0,0,2,0,0;", 1.0 + gap),
+        },
+        OwnedTestEntity {
+            entity_type: 102,
+            form: 0,
+            label: "COMPOSIT".into(),
+            status: "00000000",
+            parameters: "102,2,1,3;".into(),
+        },
+    ])
+}
+
 fn mixed_analytic_composite_curve_file() -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
@@ -1332,6 +1358,59 @@ fn decode_concatenates_ordered_composite_curve_children() {
     );
     assert!(result.report.losses.is_empty());
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn composite_join_uses_global_resolution_and_reports_degradation() {
+    let within_resolution = IgesCodec
+        .decode(
+            &mut Cursor::new(composite_curve_with_join_gap(0.0005)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let within_curve = within_resolution
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .expect("Type 102 curve within the Global resolution");
+    assert!(matches!(
+        within_curve.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
+    ));
+    assert!(within_resolution.report.losses.is_empty());
+
+    let outside_resolution = IgesCodec
+        .decode(
+            &mut Cursor::new(composite_curve_with_join_gap(0.002)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let outside_curve = outside_resolution
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .expect("degraded Type 102 curve");
+    let cadmpeg_ir::geometry::CurveGeometry::Composite { segments, .. } = &outside_curve.geometry
+    else {
+        panic!("expected retained native Type 102 carrier")
+    };
+    assert_eq!(
+        segments[1].transition,
+        cadmpeg_ir::geometry::CompositeCurveTransition::Discontinuous
+    );
+    assert!(outside_resolution.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::GeometryNotTransferred
+            && loss.message.contains("Global minimum resolution")
+    }));
+    let validation = cadmpeg_ir::validate(
+        &outside_resolution.ir,
+        outside_resolution.report.losses.clone(),
+    );
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

@@ -118,16 +118,6 @@ from a conformant file.
 
 ## 4. Geometry carriers and tolerances
 
-### GE-05. Type 102 carrier concatenation uses a private tolerance and degrades silently
-
-**Question.** Which tolerance joins Type 102 composite children, and what does a failed join mean?
-
-**Known.** A tolerance-aware entry point exists, and `trimming.rs:111` gives it `global.minimum_resolution_mm()`. `composite.rs:475-478` gives `None`, so the join uses the relative 1e-10 constant in `close()` (`composite.rs:500-513`). The codec's own test `tolerance_allows_a_bounded_carrier_join_within_resolution` (`composite.rs:958-1023`) shows the same composite fails with `None` and passes with `Some(0.001)`.
-
-**Conflict.** A failed join is not a loss. Five sites (`composite.rs:692`, `:709`, `:722`, `:737`, `:752`) fall back to `project_native_composite`, add the edge, insert the entity in `decoded`, and continue. The fallback edge carries `param_range: None` and `Discontinuous` joins, so the report shows complete coverage while the IR states that a closed producer profile is a set of disconnected segments. A genuinely non-concatenable composite and a valid one that misses a 1e-10 join give the same output.
-
-**Need.** We need the join tolerance for Type 102, and a loss for every degraded carrier.
-
 ### GE-07. The curve parameter-domain convention
 
 **Question.** Which parameter domain does each IGES curve type give to its neutral edge?
