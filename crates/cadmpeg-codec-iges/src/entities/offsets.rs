@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Offset curve entity projection.
 
+use super::curve_conversion::angularly_equal;
 use super::geometry::{declared_unit_vector, entity_loss, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
@@ -77,6 +78,61 @@ pub(super) struct OffsetProjection {
     pub(super) wire_edges: Vec<EdgeId>,
 }
 
+#[derive(Clone, Copy)]
+struct SourceParameterMap {
+    native: [f64; 2],
+    neutral: [f64; 2],
+}
+
+impl SourceParameterMap {
+    fn new(native: [f64; 2], neutral: [f64; 2]) -> Option<Self> {
+        (native
+            .iter()
+            .chain(neutral.iter())
+            .all(|value| value.is_finite())
+            && native[0] < native[1]
+            && neutral[0] < neutral[1])
+            .then_some(Self { native, neutral })
+    }
+
+    fn scale(self) -> f64 {
+        (self.neutral[1] - self.neutral[0]) / (self.native[1] - self.native[0])
+    }
+
+    fn to_neutral(self, value: f64) -> f64 {
+        self.neutral[0] + (value - self.native[0]) * self.scale()
+    }
+}
+
+fn source_parameter_map(
+    entry: &DirectoryEntry,
+    record: &ParameterRecord,
+    neutral: [f64; 2],
+) -> Option<SourceParameterMap> {
+    let native = match entry.entity_type {
+        100 => {
+            let center = [record.number(2)?, record.number(3)?];
+            let start = [record.number(4)?, record.number(5)?];
+            let end = [record.number(6)?, record.number(7)?];
+            let start_parameter = (start[1] - center[1])
+                .atan2(start[0] - center[0])
+                .rem_euclid(std::f64::consts::TAU);
+            let end_parameter = (end[1] - center[1])
+                .atan2(end[0] - center[0])
+                .rem_euclid(std::f64::consts::TAU);
+            let mut sweep = (end_parameter - start_parameter).rem_euclid(std::f64::consts::TAU);
+            if angularly_equal(sweep, 0.0) {
+                sweep = std::f64::consts::TAU;
+            }
+            [start_parameter, start_parameter + sweep]
+        }
+        110 => [0.0, 1.0],
+        130 => [record.number(13)?, record.number(14)?],
+        _ => return None,
+    };
+    SourceParameterMap::new(native, neutral)
+}
+
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -86,6 +142,10 @@ pub(super) fn project(
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
+        .collect::<BTreeMap<_, _>>();
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
     let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
@@ -164,34 +224,46 @@ pub(super) fn project(
                 .then_some(edge.param_range)
                 .flatten()
         });
-        let (parameter_origin, parameter_factor) =
-            if matches!(source.geometry, CurveGeometry::Line { .. }) {
-                let Some(range) = source_range else {
-                    losses.push(entity_loss(
-                        entry,
-                        "offset line source has no bounded parameter domain",
-                    ));
-                    continue;
-                };
-                (range[0], range[1] - range[0])
-            } else {
-                (0.0, 1.0)
-            };
-        let start = parameter_origin + native_start * parameter_factor;
-        let end = parameter_origin + native_end * parameter_factor;
-        let within_source_domain = ir.model.edges.iter().any(|edge| {
-            edge.curve.as_ref() == Some(&source_id)
-                && edge
-                    .param_range
-                    .is_some_and(|range| start >= range[0] && end <= range[1])
-        });
-        if !within_source_domain {
+        let Some(source_range) = source_range else {
+            losses.push(entity_loss(
+                entry,
+                "offset source has no bounded neutral parameter domain",
+            ));
+            continue;
+        };
+        let Some(source_entry) = entries.get(&source_sequence).copied() else {
+            losses.push(entity_loss(
+                entry,
+                "offset source Directory Entry is missing",
+            ));
+            continue;
+        };
+        let Some(source_record) = records.get(&source_sequence).copied() else {
+            losses.push(entity_loss(
+                entry,
+                "offset source Parameter Data record is missing",
+            ));
+            continue;
+        };
+        let Some(parameter_map) = source_parameter_map(source_entry, source_record, source_range)
+        else {
+            losses.push(entity_loss(
+                entry,
+                "offset source has no supported native-to-neutral parameter mapping",
+            ));
+            continue;
+        };
+        if native_start < parameter_map.native[0] || native_end > parameter_map.native[1] {
             losses.push(entity_loss(
                 entry,
                 "offset parameter interval lies outside the source curve domain",
             ));
             continue;
         }
+        let start = parameter_map.to_neutral(native_start);
+        let end = parameter_map.to_neutral(native_end);
+        let parameter_origin = parameter_map.to_neutral(0.0);
+        let parameter_factor = parameter_map.scale();
         let (distance, distance_law, geometry) = match flag {
             1 => {
                 if record.integer(3) != Some(0) {

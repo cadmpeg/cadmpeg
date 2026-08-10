@@ -1043,6 +1043,29 @@ fn uniform_offset_circle_file_with_parameters(offset: &[u8]) -> Vec<u8> {
     bytes
 }
 
+fn offset_quarter_circle_with_absolute_native_parameters() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 100,
+            form: 0,
+            label: "ARC".into(),
+            status: "00010000",
+            parameters: "100,0,0,0,0,2,-2,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 130,
+            form: 0,
+            label: "OFFSET".into(),
+            status: "00000000",
+            parameters: format!(
+                "130,1,1,0,,,0.5,,,,0,0,1,{},{};",
+                std::f64::consts::FRAC_PI_2,
+                std::f64::consts::PI
+            ),
+        },
+    ])
+}
+
 fn linear_offset_line_file(basis: i64) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
@@ -9749,6 +9772,44 @@ fn decode_defaults_unused_uniform_offset_scalars_to_zero() {
         .unwrap();
     assert_eq!(edge.param_range, Some([0.0, std::f64::consts::FRAC_PI_2]));
     assert_eq!(result.ir.model.procedural_curves.len(), 1);
+    assert!(result.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_maps_absolute_arc_parameters_to_the_neutral_domain() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(offset_quarter_circle_with_absolute_native_parameters()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let edge = result
+        .ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.id.0 == "iges:model:edge#D3")
+        .expect("offset arc");
+    assert_eq!(edge.param_range, Some([0.0, std::f64::consts::FRAC_PI_2]));
+    let start = result
+        .ir
+        .model
+        .vertices
+        .iter()
+        .find(|vertex| vertex.id == edge.start)
+        .and_then(|vertex| {
+            result
+                .ir
+                .model
+                .points
+                .iter()
+                .find(|point| point.id == vertex.point)
+        })
+        .expect("offset start point");
+    assert_eq!(start.position, cadmpeg_ir::math::Point3::new(0.0, 1.5, 0.0));
     assert!(result.report.losses.is_empty());
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);

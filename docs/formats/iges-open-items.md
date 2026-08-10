@@ -118,16 +118,6 @@ from a conformant file.
 
 ## 4. Geometry carriers and tolerances
 
-### GE-07. The curve parameter-domain convention
-
-**Question.** Which parameter domain does each IGES curve type give to its neutral edge?
-
-**Known.** The codec holds three conventions for one entity type. A standalone Type 110 edge gets `[0.0, length]` (`geometry.rs:605`). The same Type 110 as a composite child is given `[0.0, 1.0]` (`composite.rs:420-435`) after the code reads and discards `edge.param_range`. `offsets.rs:156-168` compensates for the `[0, length]` convention for lines only and asserts an identity mapping for everything else. An arc edge carries `[0, angle]` in radians (`geometry.rs:446`) and a Type 106 path carries `[0, n-1]` in point indices (`copious.rs:232`).
-
-**Note.** `within_source_domain` (`offsets.rs:171-176`) accepts an interval because its numbers lie inside the domain, and not because a field declares the convention. A Type 130 of a full circle whose SPARM and EPARM are 0.0 and 1.0 in a normalized native parameter gives an edge that covers one radian, with no loss.
-
-**Need.** We need the native parameter domain of each admitted curve type, and one recorded mapping to the IR domain.
-
 ## 5. Surfaces and topology
 
 ### TP-01. The Global minimum resolution serves five unrelated roles
