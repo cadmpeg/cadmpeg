@@ -122,14 +122,6 @@ from a conformant file.
 
 ## 6. Product structure, annotation, and presentation
 
-### PS-05. Type 420 accepts a wrong-typed type flag and Type 320 does not
-
-**Question.** Does the Type 420 type flag have a default?
-
-**Known.** `structure.rs:1959` gives `record.integer(8).is_none_or(|value| matches!(value, 0..=2))`. `integer()` gives `None` for a missing token, an omitted token, a real, and a Hollerith alike, so all four are accepted. The identical field on the Type 320 definition uses `is_some_and` (`structure.rs:1878-1880`) and is refused. `iges.md` "Product structure" give the flag for both with no default and no optionality.
-
-**Need.** `is_none_or` over `integer()` is not the spelling of "may be defaulted" used anywhere else in the file. We need the default, and one spelling.
-
 ### PS-06. Type 402 Form 5 requires a non-null leader pointer
 
 **Question.** May a label placement have no leader?

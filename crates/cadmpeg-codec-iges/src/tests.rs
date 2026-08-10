@@ -5624,7 +5624,26 @@ fn network_subfigure_file() -> Vec<u8> {
             form: 0,
             label: "NETINST".into(),
             status: "00000000",
-            parameters: "420,1,1,2,3,2,,,1,2HU1,0,2,0,0;".into(),
+            parameters: "420,1,1,2,3,2,,,,2HU1,0,2,0,0;".into(),
+        },
+    ])
+}
+
+fn wrong_typed_network_instance_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 320,
+            form: 0,
+            label: "NETWORK".into(),
+            status: "00000200",
+            parameters: "320,0,3HNET,0,1,2HR1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 420,
+            form: 0,
+            label: "NETINST".into(),
+            status: "00000000",
+            parameters: "420,1,1,2,3,2,,,1HX,2HU1,0,0;".into(),
         },
     ])
 }
@@ -8951,6 +8970,7 @@ fn decode_preserves_network_definition_and_anisotropic_instance() {
     assert_eq!(instance.fields()["scale"][0], 2.0);
     assert!(instance.fields()["scale"][1].is_null());
     assert!(instance.fields()["scale"][2].is_null());
+    assert!(instance.fields()["type_flag"].is_null());
     let occurrence = &native.arenas["product_occurrences"][0];
     assert_eq!(occurrence.fields()["world_transform"][0][0], 2.0);
     assert_eq!(occurrence.fields()["world_transform"][1][1], 2.0);
@@ -8958,6 +8978,23 @@ fn decode_preserves_network_definition_and_anisotropic_instance() {
     assert_eq!(occurrence.fields()["world_transform"][0][3], 1.0);
     assert!(
         result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_rejects_wrong_typed_network_instance_type_flag() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(wrong_typed_network_instance_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(
+        result.report.losses.iter().any(|loss| loss
+            .message
+            .contains("network instance placement or connection list is invalid")),
         "{:#?}",
         result.report.losses
     );

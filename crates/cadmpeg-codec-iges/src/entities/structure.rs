@@ -1948,7 +1948,9 @@ pub(super) fn project(
                     .number_or(7, x_scale)
                     .is_some_and(|value| value.is_finite() && value > 0.0)
         });
-        let type_flag_valid = record.integer(8).is_none_or(|value| matches!(value, 0..=2));
+        let type_flag_valid = record
+            .integer_or(8, 0)
+            .is_some_and(|value| matches!(value, 0..=2));
         let designator_valid = record.string(9).is_some();
         let display_valid = record.integer(10).is_some_and(|value| {
             value == 0
