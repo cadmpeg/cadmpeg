@@ -152,7 +152,7 @@ struct SourceOccurrenceKey(String);
 
 impl SourceOccurrenceKey {
     fn new(shape: usize, transform: Transform) -> Self {
-        Self(format!("{}@{}", shape, transform_digest(transform)))
+        Self(format!("{}@{}", shape, exact_transform_digest(transform)))
     }
 }
 
@@ -1434,6 +1434,16 @@ fn transform_digest(transform: Transform) -> String {
     sha256_hex(&bytes)[..16].to_owned()
 }
 
+fn exact_transform_digest(transform: Transform) -> String {
+    let mut bytes = Vec::with_capacity(16 * 8);
+    for row in transform.rows {
+        for value in row {
+            bytes.extend_from_slice(&value.to_bits().to_le_bytes());
+        }
+    }
+    sha256_hex(&bytes)[..16].to_owned()
+}
+
 fn is_identity(transform: Transform) -> bool {
     transforms_equal(transform, Transform::identity())
 }
@@ -1540,7 +1550,7 @@ mod tests {
             OccurrenceKey::new(7, positive).0,
             occurrence_label(7, positive)
         );
-        assert_eq!(
+        assert_ne!(
             SourceOccurrenceKey::new(7, positive),
             SourceOccurrenceKey::new(7, negative)
         );
@@ -1555,7 +1565,7 @@ mod tests {
             OccurrenceKey::new(14, composed),
             OccurrenceKey::new(14, direct)
         );
-        assert_eq!(
+        assert_ne!(
             SourceOccurrenceKey::new(14, composed),
             SourceOccurrenceKey::new(14, direct)
         );
