@@ -1199,7 +1199,7 @@ fn builtin_reference_usage(properties: &[&PropertyRecord]) -> (bool, bool, bool)
                 }
             }
             horizontal |= entity == -1 && position == 0;
-            root |= entity == -1 && position == 1;
+            root |= matches!(entity, -1 | -2) && position == 1;
             vertical |= entity == -2 && position == 0;
         }
     }
@@ -1966,6 +1966,7 @@ fn resolve_operand(entity: i64, position: i64, entities: &[SketchEntity]) -> Opt
         (-1, 0) => return reference(":reference-horizontal-axis"),
         (-1, 1) => return reference(":reference-root-point"),
         (-2, 0) => return reference(":reference-vertical-axis"),
+        (-2, 1) => return reference(":reference-root-point"),
         _ => {}
     }
     if entity <= -3 {

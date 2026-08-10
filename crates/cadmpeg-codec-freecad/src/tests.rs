@@ -695,7 +695,7 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>
  <Geometry type="Part::GeomCircle"><Circle CenterX="4" CenterY="5" Radius="2"/></Geometry>
 </GeometryList></Property>
-<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="16">
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="17">
  <Constrain Type="14" First="0" FirstPos="1" Second="1" SecondPos="1" Third="2" ThirdPos="0"/>
  <Constrain Type="6" First="0" FirstPos="1" Second="1" SecondPos="2" Value="4" IsDriving="1"/>
  <Constrain Name="OnAxis" MetaData="reviewed" Type="13" Orientation="4" Value="0" LabelDistance="2.5" LabelPosition="0.25" IsDriving="0" IsInVirtualSpace="1" IsVisible="0" IsActive="1" First="0" FirstPos="1" Second="2" SecondPos="0"/>
@@ -712,6 +712,7 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
  <Constrain Name="Repeated" Type="9" First="0" FirstPos="0" Value="0.5" IsDriving="1"/>
  <Constrain Name="Repeated" Type="8" First="3" FirstPos="1" Value="6" IsDriving="1"/>
  <Constrain Type="9" First="0" FirstPos="0" Second="-2" SecondPos="2" Value="1.5" IsDriving="1"/>
+ <Constrain Type="7" First="-2" FirstPos="1" Second="3" SecondPos="1" Value="3.175" IsDriving="1"/>
 </ConstraintList></Property>
 </Properties></Object><Object name="Source"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let result = FcstdCodec
@@ -852,6 +853,15 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
             axis: cadmpeg_ir::sketches::SketchAxis::Vertical,
             ..
         }
+    ));
+    assert!(matches!(
+        constraint(17).definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::HorizontalDistance {
+            ref first,
+            ref second,
+            ..
+        } if matches!(first, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.0.ends_with(":reference-root-point"))
+            && matches!(second, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.0.ends_with(":4"))
     ));
     assert!(result.ir.model.sketch_entities.iter().any(|entity| {
         entity.id.0.ends_with(":reference-horizontal-axis")
