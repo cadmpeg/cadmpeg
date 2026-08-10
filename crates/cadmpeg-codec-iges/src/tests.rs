@@ -1802,10 +1802,28 @@ fn decode_classifies_and_bounds_all_standard_conic_arc_families() {
 }
 
 #[test]
-fn decode_rejects_conic_endpoints_off_the_coefficient_defined_carrier() {
-    for (parameters, point_name) in [
-        (b"104,0.25,0,1,0,0,-1,0,4,0,0,1;".as_slice(), "start"),
-        (b"104,0.25,0,1,0,0,-1,0,2,0,0,2;".as_slice(), "terminate"),
+fn decode_brackets_conic_endpoint_agreement_at_the_global_resolution() {
+    for (parameters, point_name, decoded) in [
+        (
+            b"104,0.25,0,1,0,0,-1,0,2.000999,0,0,1;".as_slice(),
+            "start",
+            true,
+        ),
+        (
+            b"104,0.25,0,1,0,0,-1,0,2.001001,0,0,1;".as_slice(),
+            "start",
+            false,
+        ),
+        (
+            b"104,0.25,0,1,0,0,-1,0,2,0,0,1.000999;".as_slice(),
+            "terminate",
+            true,
+        ),
+        (
+            b"104,0.25,0,1,0,0,-1,0,2,0,0,1.001001;".as_slice(),
+            "terminate",
+            false,
+        ),
     ] {
         let result = IgesCodec
             .decode(
@@ -1814,16 +1832,28 @@ fn decode_rejects_conic_endpoints_off_the_coefficient_defined_carrier() {
             )
             .unwrap();
 
-        assert!(result.ir.model.curves.is_empty(), "{point_name}");
-        assert!(result.ir.model.edges.is_empty(), "{point_name}");
-        assert_eq!(result.report.losses.len(), 1, "{point_name}");
-        assert!(
-            result.report.losses[0]
-                .message
-                .contains(&format!("conic {point_name} point disagrees")),
-            "{point_name}: {:?}",
-            result.report.losses
+        assert_eq!(
+            result.ir.model.curves.len(),
+            usize::from(decoded),
+            "{point_name}"
         );
+        assert_eq!(
+            result.ir.model.edges.len(),
+            usize::from(decoded),
+            "{point_name}"
+        );
+        if decoded {
+            assert!(result.report.losses.is_empty(), "{point_name}");
+        } else {
+            assert_eq!(result.report.losses.len(), 1, "{point_name}");
+            assert!(
+                result.report.losses[0]
+                    .message
+                    .contains(&format!("conic {point_name} point disagrees")),
+                "{point_name}: {:?}",
+                result.report.losses
+            );
+        }
     }
 }
 
@@ -2155,8 +2185,8 @@ fn decode_converts_nonzero_bicubic_cross_terms_on_nonunit_intervals() {
 #[test]
 fn decode_propagates_declared_precision_through_parametric_spline_segments() {
     for (first_slope, second_start, terminal_x, decoded, terminal_loss) in [
-        ("1.", "1000.004", "2000.012", true, false),
-        ("1.", "1000.02", "2000.02", false, false),
+        ("1.", "1000.009999", "2000.012", true, false),
+        ("1.", "1000.010001", "2000.02", false, false),
         ("1.D0", "1000.004D0", "2000.004D0", false, false),
         ("1.", "1000.004", "2000.1", true, true),
     ] {
@@ -6527,27 +6557,39 @@ fn decode_retains_nurbs_surface_parameter_subranges() {
 }
 
 #[test]
-fn decode_rejects_disagreeing_curve_on_surface_carriers() {
-    let shifted_outer = "106,1,5,0,0.1,0,1.1,0,1.1,1,0.1,1,0.1,0;";
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(trimmed_plane_with_inner_loop_and_outer_pcurve(
-                shifted_outer,
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    assert!(result
-        .ir
-        .model
-        .faces
-        .iter()
-        .all(|face| face.id.0 != "iges:model:face#D15"));
-    assert!(result.report.losses.iter().any(|loss| loss
-        .message
-        .contains("carriers disagree beyond the minimum resolution")));
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
-    assert!(validation.is_ok(), "{:#?}", validation.findings);
+fn decode_brackets_curve_on_surface_carrier_agreement_at_the_global_resolution() {
+    for (shift, decoded) in [("0.000999", true), ("0.001001", false)] {
+        let shifted_one = 1.0 + shift.parse::<f64>().unwrap();
+        let shifted_outer =
+            format!("106,1,5,0,{shift},0,{shifted_one},0,{shifted_one},1,{shift},1,{shift},0;");
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(trimmed_plane_with_inner_loop_and_outer_pcurve(
+                    &shifted_outer,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            result
+                .ir
+                .model
+                .faces
+                .iter()
+                .any(|face| face.id.0 == "iges:model:face#D15"),
+            decoded,
+            "{shift}"
+        );
+        assert_eq!(
+            result.report.losses.iter().any(|loss| loss
+                .message
+                .contains("carriers disagree beyond the minimum resolution")),
+            !decoded,
+            "{shift}"
+        );
+        let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
 }
 
 #[test]
@@ -6674,25 +6716,35 @@ fn decode_retains_agreeing_pcurves_when_type_141_prefers_model_curves() {
 }
 
 #[test]
-fn decode_rejects_disagreeing_type_141_pcurve_collections() {
-    let shifted = "126,1,1,1,0,1,0,0,0,1,1,1,1,0.1,0,0,1,1,0,0,1,0,0,1;";
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(multi_pcurve_boundary_file_with_first_pcurve(shifted)),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    assert!(result
-        .ir
-        .model
-        .bodies
-        .iter()
-        .all(|body| body.id.0 != "iges:model:body#D11"));
-    assert!(result.report.losses.iter().any(|loss| loss
-        .message
-        .contains("curve-on-surface carriers disagree beyond the minimum resolution")));
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
-    assert!(validation.is_ok(), "{:#?}", validation.findings);
+fn decode_brackets_type_141_pcurve_agreement_at_the_global_resolution() {
+    for (shift, decoded) in [("0.000999", true), ("0.001001", false)] {
+        let shifted = format!("126,1,1,1,0,1,0,0,0,1,1,1,1,{shift},0,0,1,1,0,0,1,0,0,1;");
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(multi_pcurve_boundary_file_with_first_pcurve(&shifted)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            result
+                .ir
+                .model
+                .bodies
+                .iter()
+                .any(|body| body.id.0 == "iges:model:body#D11"),
+            decoded,
+            "{shift}"
+        );
+        assert_eq!(
+            result.report.losses.iter().any(|loss| loss
+                .message
+                .contains("curve-on-surface carriers disagree beyond the minimum resolution")),
+            !decoded,
+            "{shift}"
+        );
+        let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
 }
 
 #[test]
@@ -6794,48 +6846,67 @@ fn decode_preserves_ordered_loop_pcurve_collection_and_isoparametric_flags() {
 }
 
 #[test]
-fn decode_rejects_disagreeing_explicit_loop_pcurves() {
-    let shifted = "126,1,1,1,0,1,0,0,0,1,1,1,1,0.1,0,0,0.5,0,0,0,1,0,0,1;";
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(explicit_multi_pcurve_loop_file_with_first_pcurve(shifted)),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    assert!(result
-        .ir
-        .model
-        .bodies
-        .iter()
-        .all(|body| body.id.0 != "iges:model:body#D27"));
-    assert!(result.report.losses.iter().any(|loss| loss
-        .message
-        .contains("loop edge-use pcurves disagree with the edge vertices")));
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
-    assert!(validation.is_ok(), "{:#?}", validation.findings);
+fn decode_brackets_explicit_loop_pcurve_agreement_at_the_global_resolution() {
+    for (shift, decoded) in [("0.000999", true), ("0.001001", false)] {
+        let shifted = format!("126,1,1,1,0,1,0,0,0,1,1,1,1,{shift},0,0,0.5,0,0,0,1,0,0,1;");
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(explicit_multi_pcurve_loop_file_with_first_pcurve(&shifted)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            result
+                .ir
+                .model
+                .bodies
+                .iter()
+                .any(|body| body.id.0 == "iges:model:body#D27"),
+            decoded,
+            "{shift}"
+        );
+        assert_eq!(
+            result.report.losses.iter().any(|loss| loss
+                .message
+                .contains("loop edge-use pcurves disagree with the edge vertices")),
+            !decoded,
+            "{shift}"
+        );
+        let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
 }
 
 #[test]
-fn decode_rejects_explicit_edges_that_miss_their_vertices() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(explicit_multi_pcurve_loop_file_with_first_edge(
-                "110,0,0,0,1.1,0,0;",
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    assert!(result
-        .ir
-        .model
-        .bodies
-        .iter()
-        .all(|body| body.id.0 != "iges:model:body#D27"));
-    assert!(result.report.losses.iter().any(|loss| loss
-        .message
-        .contains("edge curve endpoints disagree with the vertex-list points")));
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
-    assert!(validation.is_ok(), "{:#?}", validation.findings);
+fn decode_brackets_explicit_edge_vertex_agreement_at_the_global_resolution() {
+    for (end_x, decoded) in [("1.000999", true), ("1.001001", false)] {
+        let edge = format!("110,0,0,0,{end_x},0,0;");
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(explicit_multi_pcurve_loop_file_with_first_edge(&edge)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            result
+                .ir
+                .model
+                .bodies
+                .iter()
+                .any(|body| body.id.0 == "iges:model:body#D27"),
+            decoded,
+            "{end_x}"
+        );
+        assert_eq!(
+            result.report.losses.iter().any(|loss| loss
+                .message
+                .contains("edge curve endpoints disagree with the vertex-list points")),
+            !decoded,
+            "{end_x}"
+        );
+        let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
 }
 
 #[test]
@@ -7142,8 +7213,8 @@ fn decode_rejects_invalid_csg_primitive_dimensions_semantically() {
 #[test]
 fn decode_applies_declared_real_significance_to_primitive_axes() {
     for (axes, decoded) in [
-        (".8,.6,0,-.6000001,.8,0", true),
-        (".8,.6,0,-.5,.8,0", false),
+        (".8,.6,0,-.60000116,.8,0", true),
+        (".8,.6,0,-.60000118,.8,0", false),
         (".8D0,.6D0,0,-.6000001D0,.8D0,0", false),
     ] {
         let bytes = owned_test_file(&[OwnedTestEntity {
@@ -7215,8 +7286,8 @@ fn decode_types_swept_solids_and_balanced_boolean_postfix() {
 #[test]
 fn decode_applies_declared_real_significance_to_solid_sweep_axes() {
     for (axis, decoded) in [
-        (".5773503,.5773503,.5773503", true),
-        (".57,.57,.57", false),
+        ("0,0,.9999995", true),
+        ("0,0,.99999949", false),
         (".5773503D0,.5773503D0,.5773503D0", false),
     ] {
         let bytes = owned_test_file(&[
@@ -7245,6 +7316,40 @@ fn decode_applies_declared_real_significance_to_solid_sweep_axes() {
             .iter()
             .any(|loss| loss.message.contains("solid sweep axis is invalid"));
         assert_eq!(!sweep_loss, decoded, "{axis}");
+    }
+}
+
+#[test]
+fn decode_brackets_solid_profile_closure_at_the_global_resolution() {
+    for (end, decoded) in [
+        ("0.99999950099937551,0.000999", true),
+        ("0.99999949899937457,0.001001", false),
+    ] {
+        let bytes = owned_test_file(&[
+            OwnedTestEntity {
+                entity_type: 100,
+                form: 0,
+                label: "PROFILE".into(),
+                status: "00010000",
+                parameters: format!("100,0,0,0,1,0,{end};"),
+            },
+            OwnedTestEntity {
+                entity_type: 164,
+                form: 0,
+                label: "EXTRUDE".into(),
+                status: "00000000",
+                parameters: "164,1,5,0,0,1;".into(),
+            },
+        ]);
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+
+        let closure_loss = result.report.losses.iter().any(|loss| {
+            loss.message
+                .contains("sweep form disagrees with profile closure")
+        });
+        assert_eq!(!closure_loss, decoded, "{end}");
     }
 }
 
@@ -10534,8 +10639,8 @@ fn decode_uses_the_cylinder_normal_at_the_designated_parameters() {
 #[test]
 fn decode_applies_declared_real_significance_to_offset_surface_indicators() {
     for (components, decoded) in [
-        (("0", "0", ".9999999"), true),
-        (("0", "0", ".99"), false),
+        (("0", "0", ".9999995"), true),
+        (("0", "0", ".99999949"), false),
         (("0", "0", ".9999999D0"), false),
     ] {
         let result = IgesCodec
@@ -10814,7 +10919,7 @@ fn decode_accepts_rounded_transformed_circular_arc_frame() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(transformed_circular_arc_file(
-                b"124,.7071068,-.7071068,0,0,.7071068,.7071068,0,0,0,0,1,0;",
+                b"124,1.0000049,0,0,0,0,1,0,0,0,0,1,0;",
                 b"100,0,0,0,1,0,0,1;",
             )),
             &DecodeOptions::default(),
@@ -10838,6 +10943,25 @@ fn decode_accepts_rounded_transformed_circular_arc_frame() {
 
 #[test]
 fn decode_rejects_transform_roundoff_beyond_its_declared_precision() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(transformed_circular_arc_file(
+                b"124,1.0000051,0,0,0,0,1,0,0,0,0,1,0;",
+                b"100,0,0,0,1,0,0,1;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir.model.curves.is_empty());
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("not orthonormal within its declared numeric precision")
+    }));
+}
+
+#[test]
+fn decode_applies_declared_double_precision_to_transform_coefficients() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(transformed_circular_arc_file(
@@ -11024,7 +11148,11 @@ fn decode_does_not_default_an_unused_offset_pointer() {
 
 #[test]
 fn decode_applies_declared_real_significance_to_curve_offset_normals() {
-    for (normal_z, decoded) in [(".9999999", true), (".99", false), (".9999999D0", false)] {
+    for (normal_z, decoded) in [
+        (".9999995", true),
+        (".99999949", false),
+        (".9999999D0", false),
+    ] {
         let parameters = format!("130,1,1,0,,,0.5,,,,0,0,{normal_z},0,1.5707963267948966;");
         let result = IgesCodec
             .decode(

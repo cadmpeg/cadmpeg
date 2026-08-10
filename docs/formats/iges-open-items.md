@@ -171,13 +171,3 @@ from a conformant file.
 - The table names the decoder's internal arena keys and is not cross-checked against the `destination` column of `corpus/iges-envelope-a.toml`. Envelope admission is cross-checked against that file (`tests.rs:190-242`); the arena table is not.
 
 **Need.** We need each row to name the arena of the entity the fixture exists to exercise, and a test that compares the table with the matrix `destination` column.
-
-### EV-07. Tolerance gates are bracketed at 100 times the threshold
-
-**Question.** Which tolerance value does each gated test actually pin?
-
-**Known.** Every fixture declares a Global minimum resolution of `0.001`. The accept and reject pair for the Type 100 radius gate uses a radius delta of 1.7e-9 to accept and 9.8e-2 to refuse (`tests.rs:8298`, `:8325`). The threshold sits between them with seven orders of magnitude of slack, so any tolerance in `[2e-9, 9.7e-2)` keeps both tests green, including removal of `minimum_resolution_mm()` from `geometry.rs:380`. The three carrier-disagreement reject tests use a 0.1 coordinate shift against the same 0.001 tolerance.
-
-**Note.** `bounded_plane_with_resolution_gap_file` (`tests.rs:2464`) is the exception and shows the correct shape: a 0.0005 gap against a 0.001 tolerance. It has no reject-side twin.
-
-**Need.** GE-01 through GE-10 record tolerances that no test pins. We need each gate bracketed on both sides.
