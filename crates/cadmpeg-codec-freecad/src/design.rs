@@ -39,6 +39,7 @@ pub(crate) fn transfer(
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
     entries: &[EntryRecord],
+    program_version: Option<&str>,
 ) -> Result<(), CodecError> {
     let properties_by_owner = properties.iter().fold(
         HashMap::<&str, Vec<&PropertyRecord>>::new(),
@@ -261,6 +262,7 @@ pub(crate) fn transfer(
                 &sketch_ids,
                 objects,
                 &properties_by_owner,
+                program_version,
             )
             .unwrap_or_else(|| FeatureDefinition::Native {
                 kind: object.type_name.clone(),
@@ -3835,6 +3837,7 @@ fn hole_definition(
     sketches: &HashMap<&str, SketchId>,
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+    program_version: Option<&str>,
 ) -> Option<FeatureDefinition> {
     let profile = profile_ref(owner, properties, sketches);
     if matches!(profile, ProfileRef::Unresolved(_)) {
@@ -3856,6 +3859,9 @@ fn hole_definition(
             .filter(|value| *value < 180.0)
             .map(|value| cadmpeg_ir::features::Angle(value.to_radians()))
     };
+    let legacy_cut_types = program_version
+        .and_then(freecad_program_version)
+        .is_some_and(|version| version < (0, 21));
     let kind = match integer_property(properties, "HoleCutType").unwrap_or(0) {
         0 => HoleKind::Simple,
         1 => HoleKind::Counterbore {
@@ -3866,10 +3872,18 @@ fn hole_definition(
             diameter: Length(positive("HoleCutDiameter")?),
             angle: cut_angle()?,
         },
-        3 => HoleKind::Counterdrill {
+        3 if !legacy_cut_types => HoleKind::Counterdrill {
             diameter: Length(positive("HoleCutDiameter")?),
             entry_diameter: None,
             depth: Length(positive("HoleCutDepth")?),
+            angle: cut_angle()?,
+        },
+        3 | 5 if legacy_cut_types => HoleKind::Counterbore {
+            diameter: Length(positive("HoleCutDiameter")?),
+            depth: Length(positive("HoleCutDepth")?),
+        },
+        4 if legacy_cut_types => HoleKind::Countersink {
+            diameter: Length(positive("HoleCutDiameter")?),
             angle: cut_angle()?,
         },
         _ => return None,
@@ -3919,7 +3933,9 @@ fn hole_definition(
                 enumeration_label(properties, "ThreadFit")
             },
             threaded,
-            modeled: bool_property(properties, "ModelThread").unwrap_or(false),
+            modeled: bool_property(properties, "ModelThread")
+                .or_else(|| bool_property(properties, "ModelActualThread"))
+                .unwrap_or(false),
             cosmetic: bool_property(properties, "CosmeticThread").unwrap_or(false),
             pitch: positive("ThreadPitch").map(Length),
             major_diameter: positive("ThreadDiameter").map(Length),
@@ -3965,6 +3981,19 @@ fn hole_definition(
             None
         },
     })
+}
+
+fn freecad_program_version(value: &str) -> Option<(u64, u64)> {
+    value
+        .split(|character: char| !character.is_ascii_digit() && character != '.')
+        .filter(|part| part.contains('.'))
+        .find_map(|part| {
+            let mut components = part.split('.');
+            Some((
+                components.next()?.parse().ok()?,
+                components.next()?.parse().ok()?,
+            ))
+        })
 }
 
 fn thread_standard(value: u64) -> Option<&'static str> {

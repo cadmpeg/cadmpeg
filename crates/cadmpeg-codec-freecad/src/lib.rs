@@ -1327,6 +1327,7 @@ impl Codec for FcstdCodec {
                 &graph.properties,
                 &shape_payloads,
                 &entry_records,
+                scan.document.program_version.as_deref(),
             )?;
             let (product_definitions, occurrences) = product::transfer_neutral(
                 ctx,

@@ -3191,6 +3191,49 @@ fn transfers_branch_complete_threaded_counterdrill_hole() {
 }
 
 #[test]
+fn resolves_deprecated_fcstd_hole_cut_indices() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1" ProgramVersion="0.18R4">
+<Objects Count="2"><Object type="Sketcher::SketchObject" name="Locations"/><Object type="PartDesign::Hole" name="Hole"/></Objects>
+<ObjectData Count="2">
+ <Object name="Locations"><Properties Count="0"/></Object>
+ <Object name="Hole"><Properties Count="8">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Locations"/></Property>
+  <Property name="Diameter" type="App::PropertyLength"><Float value="4.4"/></Property>
+  <Property name="HoleCutType" type="App::PropertyEnumeration"><Integer value="5"/></Property>
+  <Property name="HoleCutDiameter" type="App::PropertyLength"><Float value="6"/></Property>
+  <Property name="HoleCutDepth" type="App::PropertyLength"><Float value="5"/></Property>
+  <Property name="DepthType" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="DrillPoint" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+  <Property name="ThreadType" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("legacy hole");
+    let hole = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Hole"))
+        .expect("hole feature");
+    assert!(matches!(
+        hole.definition,
+        FeatureDefinition::Hole {
+            kind: cadmpeg_ir::features::HoleKind::Counterbore {
+                diameter: cadmpeg_ir::features::Length(6.0),
+                depth: cadmpeg_ir::features::Length(5.0),
+            },
+            ..
+        }
+    ));
+    assert!(result.report.losses.is_empty());
+}
+
+#[test]
 fn transfers_datum_frames_from_persisted_placements() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">
