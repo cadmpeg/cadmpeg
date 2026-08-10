@@ -281,8 +281,12 @@ pub(crate) fn try_decode_freeform_surfaces(
         }
     }
     append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data);
-    append_consolidated_line_profiles(&mut ir, &mut annotations, &scan.data, &consolidated_records);
-    let mut standalone_wires = Vec::new();
+    let mut standalone_wires = append_consolidated_line_profiles(
+        &mut ir,
+        &mut annotations,
+        &scan.data,
+        &consolidated_records,
+    );
     for curve in b2_nurbs_curves {
         let id = CurveId(format!("catia:b2:nurbs-curve#{}", ir.model.curves.len()));
         let parameter_range = [
@@ -787,7 +791,8 @@ fn append_consolidated_line_profiles(
     annotations: &mut AnnotationBuilder,
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
-) {
+) -> Vec<(CurveId, [f64; 2], usize)> {
+    let mut standalone_wires = Vec::new();
     for (index, line) in crate::families::b2::records::b2_line_profiles_from_records(data, records)
         .into_iter()
         .enumerate()
@@ -802,7 +807,7 @@ fn append_consolidated_line_profiles(
             Exactness::ByteExact,
         );
         ir.model.curves.push(Curve {
-            id,
+            id: id.clone(),
             geometry: CurveGeometry::Line {
                 origin: Point3::new(line.origin[0], line.origin[1], line.origin[2]),
                 direction: Vector3::new(line.direction[0], line.direction[1], line.direction[2]),
@@ -812,7 +817,9 @@ fn append_consolidated_line_profiles(
                 format!("{:010}", line.pos),
             )),
         });
+        standalone_wires.push((id, line.range, line.pos));
     }
+    standalone_wires
 }
 
 /// Append standalone freeform carriers and return the number of consolidated
@@ -904,7 +911,7 @@ pub(crate) fn append_freeform_surface_pools(
         });
     }
 
-    append_consolidated_line_profiles(ir, annotations, data, records);
+    let _ = append_consolidated_line_profiles(ir, annotations, data, records);
 
     for guide in crate::families::a5a8::records::a5_guide_curves_from_records(data, records) {
         let points = guide
@@ -2356,8 +2363,9 @@ pub(crate) fn rolling_ball_derivative(values: [f64; 10]) -> RollingBallJetDeriva
 #[cfg(test)]
 mod tests {
     use super::{
-        append_freeform_surface_pools, append_resolved_consolidated_surface_curves,
-        attach_standalone_wires, freeform_surface_carriers, pcurve_lift_reaches_endpoints,
+        append_consolidated_line_profiles, append_freeform_surface_pools,
+        append_resolved_consolidated_surface_curves, attach_standalone_wires,
+        freeform_surface_carriers, pcurve_lift_reaches_endpoints,
         rechart_equivalent_surface_pcurve, same_surface_locus, solve_planar_chart_rechart,
         unique_endpoint_pair_match, unique_paired_surface_lift_match, ConsolidatedCarrierChart,
     };
@@ -2405,6 +2413,38 @@ mod tests {
         );
         assert_eq!(ir.model.points[1].position, Point3::new(2.0, 3.0, 5.0));
         assert_eq!(ir.model.points[0].position, Point3::new(7.0, 11.0, 13.0));
+        ir.finalize();
+        let validation = cadmpeg_ir::validate(&ir, Vec::new());
+        assert!(validation.is_ok(), "{:?}", validation.findings);
+    }
+
+    #[test]
+    fn consolidated_line_profile_retains_its_stored_wire_interval() {
+        let mut ir = CadIr::empty(Units::default());
+        let bytes = crate::tests::b2_line_profile_stream();
+        let wires = append_consolidated_line_profiles(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &bytes,
+            &crate::wire::records::consolidated_records(&bytes),
+        );
+        assert_eq!(wires.len(), 1);
+        assert!(attach_standalone_wires(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &wires,
+        ));
+        assert_eq!(ir.model.edges[0].param_range, Some([-4.0, 9.0]));
+        let expected_start = Point3::new(1.0, -0.4, -0.2);
+        let expected_end = Point3::new(1.0, 7.4, 10.2);
+        for (actual, expected) in [
+            (ir.model.points[1].position, expected_start),
+            (ir.model.points[0].position, expected_end),
+        ] {
+            assert!((actual.x - expected.x).abs() < 1e-12);
+            assert!((actual.y - expected.y).abs() < 1e-12);
+            assert!((actual.z - expected.z).abs() < 1e-12);
+        }
         ir.finalize();
         let validation = cadmpeg_ir::validate(&ir, Vec::new());
         assert!(validation.is_ok(), "{:?}", validation.findings);
