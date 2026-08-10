@@ -3,7 +3,7 @@
 //!
 //! `cadmpeg query` reads one of the three JSON artifact kinds the CLI
 //! produces — a decoded CADIR document, a versioned command report, or a
-//! `.decode.json` sidecar — detects which one it was given, and prints one
+//! `<stem>.fidelity.json` decode sidecar — detects which one it was given, and prints one
 //! named view. Aggregate views print tab-separated rows; `item` prints
 //! pretty-printed JSON records (or a TSV projection with `--fields`). It
 //! replaces ad-hoc `jq` path exploration: the view names are stable and each
@@ -88,7 +88,7 @@ enum Artifact {
     Report(ReportProbe),
     /// A decoded CADIR document.
     Cadir(CadirProbe),
-    /// A `.decode.json` sidecar.
+    /// A `<stem>.fidelity.json` decode sidecar.
     Sidecar(SidecarProbe),
 }
 
@@ -297,7 +297,7 @@ fn detect(bytes: &[u8], path: &Path) -> Result<Artifact> {
     let sniff: KindProbe = serde_json::from_slice(bytes).with_context(|| {
         format!(
             "{} is not a JSON object; query reads a command report (--report/-o), \
-             a decoded CADIR document, or a .decode.json sidecar",
+             a decoded CADIR document, or a .fidelity.json decode sidecar",
             path.display()
         )
     })?;
@@ -319,7 +319,7 @@ fn detect(bytes: &[u8], path: &Path) -> Result<Artifact> {
     bail!(
         "{} is JSON but not a recognized artifact; query reads a command report \
          (top-level `schema_version` and `command`), a decoded CADIR document \
-         (`ir_version` and `model`), or a .decode.json sidecar (`version` and \
+         (`ir_version` and `model`), or a .fidelity.json decode sidecar (`version` and \
          `ir_sha256`)",
         path.display()
     )
@@ -479,7 +479,7 @@ fn coverage(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
         Artifact::Sidecar(sidecar) => sidecar.report.as_ref(),
         Artifact::Cadir(_) => bail!(
             "a CADIR document has no decode report; coverage is in the report \
-             written by `decode --report` or in the `.decode.json` sidecar"
+             written by `decode --report` or in the `.fidelity.json` sidecar"
         ),
     };
     let (coverage, note): (&BTreeMap<String, u64>, Option<&str>) = match decode {
@@ -573,7 +573,7 @@ fn losses(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
         },
         Artifact::Cadir(_) => bail!(
             "a CADIR document has no loss notes; losses are in the report written \
-             by `--report` or in the `.decode.json` sidecar"
+             by `--report` or in the `.fidelity.json` sidecar"
         ),
     };
     if args.json {

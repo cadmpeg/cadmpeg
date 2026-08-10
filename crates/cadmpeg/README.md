@@ -231,7 +231,8 @@ exit status 1 count the same `error` and `blocking` findings.
 ## Query reports
 
 `query` projects one named view from a JSON artifact without `jq`: it reads a
-command report, a decoded CADIR document, or a `.decode.json` sidecar, detects
+command report, a decoded CADIR document, or a `<stem>.fidelity.json` decode
+sidecar, detects
 which one it was given, and prints the view. Aggregate views print
 tab-separated rows with a header; `item` prints pretty-printed JSON records.
 

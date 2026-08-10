@@ -60,7 +60,7 @@ fn summary_detects_all_three_artifact_kinds() {
     for (name, content, kind) in [
         ("report.json", VALIDATE_REPORT, "command report"),
         ("model.cadir.json", CADIR_DOC, "CADIR document"),
-        ("model.decode.json", SIDECAR, "decode sidecar"),
+        ("model.fidelity.json", SIDECAR, "decode sidecar"),
     ] {
         let path = write(dir.path(), name, content);
         cadmpeg()
@@ -114,7 +114,7 @@ fn coverage_on_a_report_without_a_decode_stage_is_empty_not_an_error() {
 #[test]
 fn coverage_projects_a_sidecar_decode_report() {
     let dir = tempdir().unwrap();
-    let sidecar = write(dir.path(), "model.decode.json", SIDECAR);
+    let sidecar = write(dir.path(), "model.fidelity.json", SIDECAR);
     cadmpeg()
         .args(["query", "coverage", sidecar.to_str().unwrap()])
         .assert()
@@ -149,7 +149,7 @@ fn counts_works_on_all_three_kinds_with_teaching_on_the_sidecar() {
              model\tfaces\t2\n",
         );
 
-    let sidecar = write(dir.path(), "model.decode.json", SIDECAR);
+    let sidecar = write(dir.path(), "model.fidelity.json", SIDECAR);
     cadmpeg()
         .args(["query", "counts", sidecar.to_str().unwrap()])
         .assert()
@@ -221,7 +221,7 @@ fn a_version_two_sidecar_still_projects() {
     let dir = tempdir().unwrap();
     let sidecar = write(
         dir.path(),
-        "model.decode.json",
+        "model.fidelity.json",
         &SIDECAR.replace("\"version\": \"1\"", "\"version\": \"2\""),
     );
     cadmpeg()
@@ -242,7 +242,7 @@ fn an_unrecognized_json_file_names_the_expected_kinds() {
         .stderr(
             predicate::str::contains("command report")
                 .and(predicate::str::contains("CADIR document"))
-                .and(predicate::str::contains(".decode.json sidecar")),
+                .and(predicate::str::contains(".fidelity.json decode sidecar")),
         );
 }
 
@@ -728,6 +728,45 @@ fn item_reads_stdin_with_dash() {
         .assert()
         .success()
         .stdout(predicate::str::contains("other:face#802"));
+}
+
+#[test]
+fn item_head_conflicts_with_ids_and_fields_conflicts_with_json() {
+    let dir = tempdir().unwrap();
+    let doc = write(dir.path(), "doc.json", ITEM_DOC);
+    let path = doc.to_str().unwrap();
+
+    let head = cadmpeg()
+        .args([
+            "query",
+            "item",
+            path,
+            "model.sketch_entities",
+            "face#802",
+            "--head",
+            "2",
+        ])
+        .output()
+        .unwrap();
+    assert!(!head.status.success());
+    let stderr = String::from_utf8_lossy(&head.stderr);
+    assert!(stderr.contains("cannot be used with"), "{stderr}");
+
+    let fields = cadmpeg()
+        .args([
+            "query",
+            "item",
+            "--json",
+            "--fields",
+            "id",
+            path,
+            "model.sketch_entities",
+        ])
+        .output()
+        .unwrap();
+    assert!(!fields.status.success());
+    let stderr = String::from_utf8_lossy(&fields.stderr);
+    assert!(stderr.contains("cannot be used with"), "{stderr}");
 }
 
 #[test]
