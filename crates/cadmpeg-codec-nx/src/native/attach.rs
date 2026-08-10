@@ -1651,7 +1651,7 @@ fn attach_feature_operations(
     let mut simple_hole_diameters = BTreeMap::new();
     if let Some(projection) = hole_body_projection(ir, &simple_hole_operations, &hole_outputs) {
         hole_outputs.extend(projection.outputs);
-        simple_hole_diameters = projection.diameters;
+        simple_hole_diameters.extend(projection.diameters);
     }
     let counterbore_operations =
         counterbore_operations(simple_hole_templates, &operation_positions).unwrap_or_default();
@@ -1660,12 +1660,24 @@ fn attach_feature_operations(
         counterbore_body_projection(ir, &counterbore_operations, &hole_outputs)
     {
         hole_outputs.extend(projection.outputs);
-        counterbore_dimensions = projection.counterbores;
+        simple_hole_diameters.extend(projection.diameters);
+        counterbore_dimensions.extend(projection.counterbores);
+    }
+    let blind_hole_operations =
+        blind_hole_operations(simple_hole_templates, &operation_positions).unwrap_or_default();
+    let mut blind_hole_depths = BTreeMap::new();
+    if let Some(projection) = blind_hole_body_projection(ir, &blind_hole_operations, &hole_outputs)
+    {
+        hole_outputs.extend(projection.outputs);
+        simple_hole_diameters.extend(projection.diameters);
+        blind_hole_depths = projection.blind_depths;
     }
     let simple_hole_placements =
         hole_axis_placements_for_operations(ir, &simple_hole_operations, &hole_outputs);
     let counterbore_hole_placements =
         counterbore_axis_placements_for_operations(ir, &counterbore_operations, &hole_outputs);
+    let blind_hole_placements =
+        blind_hole_axis_placements_for_operations(ir, &blind_hole_operations, &hole_outputs);
     let simple_hole_chamfers = simple_hole_chamfers(ir, simple_hole_templates, &hole_outputs);
     let hole_packages = hole_package_projection(
         ir,
@@ -3200,6 +3212,7 @@ fn attach_feature_operations(
                                 .cloned()
                                 .into_iter()
                                 .chain(counterbore_hole_placements.get(label.id.as_str()).cloned())
+                                .chain(blind_hole_placements.get(label.id.as_str()).cloned())
                                 .chain(
                                     hole_packages
                                         .placements
@@ -3212,6 +3225,10 @@ fn attach_feature_operations(
                                 .get(label.id.as_str())
                                 .or_else(|| hole_packages.diameters.get(label.id.as_str()))
                                 .copied(),
+                            extent: blind_hole_depths
+                                .get(label.id.as_str())
+                                .copied()
+                                .map(|length| Termination::Blind { length }),
                             counterbore: counterbore_dimensions.get(label.id.as_str()).copied(),
                             chamfer: simple_hole_chamfers
                                 .get(label.id.as_str())
@@ -5153,6 +5170,7 @@ fn non_boolean_feature_definition(
 struct HoleProjection {
     pub(crate) placements: Vec<HolePlacement>,
     pub(crate) diameter: Option<Length>,
+    pub(crate) extent: Option<Termination>,
     pub(crate) counterbore: Option<CounterboreDimensions>,
     pub(crate) chamfer: Option<HoleKind>,
     pub(crate) grouped_simple_through: bool,
@@ -5361,7 +5379,7 @@ fn non_boolean_feature_definition_with_parameters(
                     _ => template_exit_kind,
                 },
                 diameter: hole.diameter,
-                extent: template_extent,
+                extent: hole.extent.or(template_extent),
                 bottom: None,
                 taper_angle: None,
                 specification: None,
@@ -5497,18 +5515,32 @@ fn simple_hole_operations(
     groups: &[crate::native::features::FeatureSimpleHoleConstructionGroup],
     operation_positions: &BTreeMap<&str, usize>,
 ) -> Option<Vec<String>> {
-    let template_operations = templates
+    let template_counts = templates
+        .iter()
+        .fold(BTreeMap::new(), |mut counts, template| {
+            *counts
+                .entry(template.operation_label.as_str())
+                .or_insert(0usize) += 1;
+            counts
+        });
+    let mut ordered_templates = templates
         .iter()
         .filter(|template| {
             template.form == crate::native::features::SimpleHoleForm::Simple
                 && template.extent == crate::native::features::SimpleHoleExtent::Through
         })
+        .collect::<Vec<_>>();
+    let template_operations = ordered_templates
+        .iter()
         .map(|template| template.operation_label.as_str())
         .collect::<BTreeSet<_>>();
-    if template_operations.len() != templates.len() || template_operations.is_empty() {
+    if template_operations.is_empty()
+        || ordered_templates
+            .iter()
+            .any(|template| template_counts.get(template.operation_label.as_str()) != Some(&1))
+    {
         return None;
     }
-    let mut ordered_templates = templates.iter().collect::<Vec<_>>();
     if ordered_templates
         .iter()
         .any(|template| !operation_positions.contains_key(template.operation_label.as_str()))
@@ -5521,7 +5553,21 @@ fn simple_hole_operations(
             .cmp(&operation_positions.get(second.operation_label.as_str()))
             .then_with(|| first.operation_label.cmp(&second.operation_label))
     });
-    Some(match groups {
+    let matching_groups = groups
+        .iter()
+        .filter(|group| {
+            let group_operations = group
+                .operation_labels
+                .iter()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>();
+            group_operations == template_operations
+        })
+        .collect::<Vec<_>>();
+    if matching_groups.len() > 1 {
+        return None;
+    }
+    Some(match matching_groups.as_slice() {
         [] => ordered_templates
             .iter()
             .map(|template| template.operation_label.clone())
@@ -5546,8 +5592,49 @@ fn simple_hole_operations(
             }
             group.operation_labels.clone()
         }
-        _ => return None,
+        _ => unreachable!(),
     })
+}
+
+/// Return simple blind-hole operations in feature-history order. A blind
+/// operation with competing typed templates is not assignable to one body
+/// witness and remains native-only.
+fn blind_hole_operations(
+    templates: &[crate::native::features::FeatureSimpleHoleTemplate],
+    operation_positions: &BTreeMap<&str, usize>,
+) -> Option<Vec<String>> {
+    let template_counts = templates
+        .iter()
+        .fold(BTreeMap::new(), |mut counts, template| {
+            *counts
+                .entry(template.operation_label.as_str())
+                .or_insert(0usize) += 1;
+            counts
+        });
+    let mut operations = templates
+        .iter()
+        .filter(|template| {
+            template.form == crate::native::features::SimpleHoleForm::Simple
+                && template.extent == crate::native::features::SimpleHoleExtent::Blind
+        })
+        .filter(|template| template_counts.get(template.operation_label.as_str()) == Some(&1))
+        .map(|template| template.operation_label.clone())
+        .collect::<Vec<_>>();
+    if operations.is_empty()
+        || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
+        || operations
+            .iter()
+            .any(|operation| !operation_positions.contains_key(operation.as_str()))
+    {
+        return None;
+    }
+    operations.sort_by(|first, second| {
+        operation_positions
+            .get(first.as_str())
+            .cmp(&operation_positions.get(second.as_str()))
+            .then_with(|| first.cmp(second))
+    });
+    Some(operations)
 }
 
 /// Return counterbored through-hole operations in feature-history order.
@@ -5744,6 +5831,7 @@ fn hole_package_projection(
 struct HoleBodyProjection {
     outputs: BTreeMap<String, Vec<BodyId>>,
     diameters: BTreeMap<String, Length>,
+    blind_depths: BTreeMap<String, Length>,
     counterbores: BTreeMap<String, CounterboreDimensions>,
 }
 
@@ -5783,6 +5871,7 @@ fn hole_body_projection(
     Some(HoleBodyProjection {
         outputs: projected_outputs,
         diameters,
+        blind_depths: BTreeMap::new(),
         counterbores: BTreeMap::new(),
     })
 }
@@ -5825,7 +5914,42 @@ fn counterbore_body_projection(
     Some(HoleBodyProjection {
         outputs: projected_outputs,
         diameters,
+        blind_depths: BTreeMap::new(),
         counterbores,
+    })
+}
+
+fn blind_hole_body_projection(
+    ir: &CadIr,
+    operations: &[String],
+    outputs: &BTreeMap<String, Vec<BodyId>>,
+) -> Option<HoleBodyProjection> {
+    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
+    {
+        return None;
+    }
+    let operations_by_body = hole_operations_by_body(ir, operations, outputs)?;
+    let mut projected_outputs = BTreeMap::new();
+    let mut diameters = BTreeMap::new();
+    let mut blind_depths = BTreeMap::new();
+    for (body, operations) in operations_by_body {
+        let [operation] = operations.as_slice() else {
+            return None;
+        };
+        let body_faces = connected_solid_body_faces(ir, &body)?;
+        let witnesses = blind_bore_cylinders(ir, &body_faces)?;
+        let [witness] = witnesses.as_slice() else {
+            return None;
+        };
+        projected_outputs.insert(operation.clone(), vec![body.clone()]);
+        diameters.insert(operation.clone(), Length(witness.bore_radius * 2.0));
+        blind_depths.insert(operation.clone(), Length(witness.depth));
+    }
+    Some(HoleBodyProjection {
+        outputs: projected_outputs,
+        diameters,
+        blind_depths,
+        counterbores: BTreeMap::new(),
     })
 }
 
@@ -5891,6 +6015,43 @@ fn counterbore_axis_placements_for_operations(
             HolePlacement::Axis {
                 origin: witness.line_origin,
                 axis: witness.axis,
+            },
+        );
+    }
+    placements
+}
+
+fn blind_hole_axis_placements_for_operations(
+    ir: &CadIr,
+    operations: &[String],
+    outputs: &BTreeMap<String, Vec<BodyId>>,
+) -> BTreeMap<String, HolePlacement> {
+    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
+    {
+        return BTreeMap::new();
+    }
+    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
+        return BTreeMap::new();
+    };
+    let mut placements = BTreeMap::new();
+    for (body, operations) in operations_by_body {
+        let [operation] = operations.as_slice() else {
+            return BTreeMap::new();
+        };
+        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
+            return BTreeMap::new();
+        };
+        let Some(witnesses) = blind_bore_cylinders(ir, &body_faces) else {
+            return BTreeMap::new();
+        };
+        let [witness] = witnesses.as_slice() else {
+            return BTreeMap::new();
+        };
+        placements.insert(
+            operation.clone(),
+            HolePlacement::Directed {
+                position: witness.position,
+                direction: witness.direction,
             },
         );
     }
@@ -5963,6 +6124,14 @@ struct CounterboreCylinderWitness {
     axis: Vector3,
     bore_radius: f64,
     counterbore_radius: f64,
+    depth: f64,
+}
+
+#[derive(Clone, Copy)]
+struct BlindBoreCylinderWitness {
+    position: Point3,
+    direction: Vector3,
+    bore_radius: f64,
     depth: f64,
 }
 
@@ -6377,6 +6546,123 @@ fn counterbore_cylinders(
     Some(witnesses)
 }
 
+/// Identify one blind bore from its unique planar termination. The cylinder
+/// boundary and cap loop must share the exact edge identities; a radius or
+/// station match alone is not a topology relation.
+fn blind_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<BlindBoreCylinderWitness>> {
+    let cylinders = cylindrical_face_witnesses(ir, body_faces)?;
+    let [cylinder] = cylinders.as_slice() else {
+        return None;
+    };
+    let surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, &surface.geometry))
+        .collect::<BTreeMap<_, _>>();
+    let edges = ir
+        .model
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge.curve.as_ref()))
+        .collect::<BTreeMap<_, _>>();
+    let curves = ir
+        .model
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, &curve.geometry))
+        .collect::<BTreeMap<_, _>>();
+    let mut coedges_by_loop = BTreeMap::<&LoopId, Vec<&Coedge>>::new();
+    for coedge in &ir.model.coedges {
+        coedges_by_loop
+            .entry(&coedge.owner_loop)
+            .or_default()
+            .push(coedge);
+    }
+    let linear_tolerance = ir.tolerances.linear.max(1e-9);
+    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let mut cap_stations = Vec::new();
+    for (station_ordinal, station) in cylinder.stations.iter().enumerate() {
+        let cylinder_loop = &cylinder.loop_ids[station_ordinal];
+        let cylinder_edges = loop_edge_ids(cylinder_loop, &coedges_by_loop)?;
+        for face in body_faces {
+            let [cap_loop] = face.loops.as_slice() else {
+                continue;
+            };
+            if loop_edge_ids(cap_loop, &coedges_by_loop) != Some(cylinder_edges.clone()) {
+                continue;
+            }
+            let Some(SurfaceGeometry::Plane { origin, normal, .. }) = surfaces.get(&face.surface)
+            else {
+                continue;
+            };
+            let Some(normal) = canonical_axis(*normal, angular_tolerance) else {
+                continue;
+            };
+            let Some((center, circle_axis, circle_radius)) = circular_loop_geometry(
+                cap_loop,
+                &coedges_by_loop,
+                &edges,
+                &curves,
+                linear_tolerance,
+                angular_tolerance,
+            ) else {
+                continue;
+            };
+            if (circle_radius - cylinder.radius).abs() > linear_tolerance
+                || (1.0 - dot_vector(circle_axis, normal).abs()) > angular_tolerance
+                || (1.0 - dot_vector(normal, cylinder.axis).abs()) > angular_tolerance
+                || cross_vector(
+                    Vector3::new(
+                        center.x - cylinder.line_origin.x,
+                        center.y - cylinder.line_origin.y,
+                        center.z - cylinder.line_origin.z,
+                    ),
+                    cylinder.axis,
+                )
+                .norm()
+                    > linear_tolerance
+                || (dot_vector(Vector3::new(center.x, center.y, center.z), cylinder.axis)
+                    - *station)
+                    .abs()
+                    > linear_tolerance
+                || (dot_vector(Vector3::new(origin.x, origin.y, origin.z), cylinder.axis)
+                    - *station)
+                    .abs()
+                    > linear_tolerance
+            {
+                continue;
+            }
+            cap_stations.push((station_ordinal, *station));
+        }
+    }
+    let [(cap_ordinal, cap_station)] = cap_stations.as_slice() else {
+        return None;
+    };
+    let entry_ordinal = 1 - *cap_ordinal;
+    let entry_station = cylinder.stations[entry_ordinal];
+    let depth = (*cap_station - entry_station).abs();
+    if !depth.is_finite() || depth <= linear_tolerance {
+        return None;
+    }
+    let position = Point3::new(
+        cylinder.line_origin.x + entry_station * cylinder.axis.x,
+        cylinder.line_origin.y + entry_station * cylinder.axis.y,
+        cylinder.line_origin.z + entry_station * cylinder.axis.z,
+    );
+    let direction = if *cap_station > entry_station {
+        cylinder.axis
+    } else {
+        Vector3::new(-cylinder.axis.x, -cylinder.axis.y, -cylinder.axis.z)
+    };
+    Some(vec![BlindBoreCylinderWitness {
+        position,
+        direction,
+        bore_radius: cylinder.radius,
+        depth,
+    }])
+}
+
 /// Resolve hole operations to their explicit output bodies, or to the one
 /// connected solid when NX omits every operation-output relation.
 fn hole_operations_by_body(
@@ -6438,6 +6724,14 @@ fn simple_hole_chamfers(
     templates: &[crate::native::features::FeatureSimpleHoleTemplate],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> BTreeMap<String, HoleKind> {
+    let template_counts = templates
+        .iter()
+        .fold(BTreeMap::new(), |mut counts, template| {
+            *counts
+                .entry(template.operation_label.as_str())
+                .or_insert(0usize) += 1;
+            counts
+        });
     let operations = templates
         .iter()
         .filter(|template| {
@@ -6448,9 +6742,10 @@ fn simple_hole_chamfers(
                 && template.end_treatment
                     == crate::native::features::SimpleHoleEndTreatment::Chamfer
         })
+        .filter(|template| template_counts.get(template.operation_label.as_str()) == Some(&1))
         .map(|template| template.operation_label.clone())
         .collect::<BTreeSet<_>>();
-    if operations.len() != templates.len() || operations.is_empty() {
+    if operations.is_empty() {
         return BTreeMap::new();
     }
     let operations = operations.into_iter().collect::<Vec<_>>();
@@ -7797,6 +8092,44 @@ mod tests {
         };
         assert!(
             simple_hole_operations(&templates, &[unordered_group], &operation_positions,).is_none()
+        );
+
+        let mut blind_template = template("operation#blind");
+        blind_template.extent = SimpleHoleExtent::Blind;
+        blind_template.start_treatment = SimpleHoleEndTreatment::None;
+        blind_template.end_treatment = SimpleHoleEndTreatment::None;
+        let mixed_templates = vec![
+            templates[0].clone(),
+            blind_template.clone(),
+            templates[1].clone(),
+        ];
+        let mixed_positions = BTreeMap::from([
+            ("operation#older", 0usize),
+            ("operation#newer", 1usize),
+            ("operation#blind", 2usize),
+        ]);
+        assert_eq!(
+            simple_hole_operations(&mixed_templates, &[], &mixed_positions),
+            Some(vec!["operation#older".into(), "operation#newer".into()])
+        );
+        assert_eq!(
+            blind_hole_operations(&mixed_templates, &mixed_positions),
+            Some(vec!["operation#blind".into()])
+        );
+        let duplicate_group = FeatureSimpleHoleConstructionGroup {
+            id: "duplicate-group".into(),
+            first_data_blocks: ["a".into(), "b".into()],
+            second_data_blocks: ["c".into(), "d".into()],
+            operation_labels: vec![
+                "operation#older".into(),
+                "operation#newer".into(),
+                "operation#older".into(),
+            ],
+            scalar_lanes: vec!["lane-a".into(), "lane-b".into()],
+            block_references: vec!["refs-a".into(), "refs-b".into()],
+        };
+        assert!(
+            simple_hole_operations(&templates, &[duplicate_group], &operation_positions,).is_none()
         );
     }
 
@@ -11298,6 +11631,286 @@ mod tests {
         };
         *radius = 3.0;
         assert!(simple_hole_diameters(&mismatched, &templates, &[group], &outputs,).is_empty());
+    }
+
+    #[test]
+    fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
+        use crate::native::features::{
+            FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily,
+            SimpleHoleForm,
+        };
+        use cadmpeg_ir::document::{CadIr, Model, IR_VERSION};
+        use cadmpeg_ir::features::{
+            FeatureDefinition, HoleKind, HolePlacement, Length, Termination,
+        };
+        use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
+        use cadmpeg_ir::ids::{
+            BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId,
+            VertexId,
+        };
+        use cadmpeg_ir::math::{Point3, Vector3};
+        use cadmpeg_ir::native::Native;
+        use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
+        use cadmpeg_ir::units::{Tolerances, Units};
+
+        let operation = "blind".to_string();
+        let template = FeatureSimpleHoleTemplate {
+            id: "template-blind".into(),
+            operation_label: operation.clone(),
+            payload_string: "payload-blind".into(),
+            family: SimpleHoleFamily::GeneralHole,
+            form: SimpleHoleForm::Simple,
+            extent: SimpleHoleExtent::Blind,
+            start_treatment: SimpleHoleEndTreatment::None,
+            end_treatment: SimpleHoleEndTreatment::None,
+        };
+        let mut model = Model::default();
+        let cylinder_surface = SurfaceId("blind-cylinder-surface".into());
+        let cap_surface = SurfaceId("blind-cap-surface".into());
+        model.surfaces.push(Surface {
+            id: cylinder_surface.clone(),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+            source_object: None,
+        });
+        model.surfaces.push(Surface {
+            id: cap_surface.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 3.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        let (entry_loop, cylinder_cap_loop, cap_face_loop) = {
+            let mut add_circle_loop =
+                |loop_name: &str, edge_name: &str, center: Point3, radius: f64| {
+                    let loop_id = LoopId(loop_name.into());
+                    let edge_id = EdgeId(edge_name.into());
+                    let curve_id = CurveId(format!("{edge_name}-curve"));
+                    if !model.edges.iter().any(|edge| edge.id == edge_id) {
+                        model.curves.push(Curve {
+                            id: curve_id.clone(),
+                            geometry: CurveGeometry::Circle {
+                                center,
+                                axis: Vector3::new(0.0, 0.0, 1.0),
+                                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                                radius,
+                            },
+                            source_object: None,
+                        });
+                        model.edges.push(Edge {
+                            id: edge_id.clone(),
+                            curve: Some(curve_id),
+                            start: VertexId("vertex".into()),
+                            end: VertexId("vertex".into()),
+                            param_range: None,
+                            tolerance: None,
+                        });
+                    }
+                    let coedge_id = CoedgeId(format!("{loop_name}-coedge"));
+                    model.coedges.push(Coedge {
+                        id: coedge_id.clone(),
+                        owner_loop: loop_id.clone(),
+                        edge: edge_id,
+                        next: coedge_id.clone(),
+                        previous: coedge_id.clone(),
+                        radial_next: coedge_id,
+                        sense: Sense::Forward,
+                        pcurves: Vec::new(),
+                        use_curve: None,
+                        use_curve_parameter_range: None,
+                    });
+                    loop_id
+                };
+            (
+                add_circle_loop(
+                    "blind-entry-loop",
+                    "blind-entry-edge",
+                    Point3::new(0.0, 0.0, 0.0),
+                    2.0,
+                ),
+                add_circle_loop(
+                    "blind-cylinder-cap-loop",
+                    "blind-cap-edge",
+                    Point3::new(0.0, 0.0, 3.0),
+                    2.0,
+                ),
+                add_circle_loop(
+                    "blind-cap-face-loop",
+                    "blind-cap-edge",
+                    Point3::new(0.0, 0.0, 3.0),
+                    2.0,
+                ),
+            )
+        };
+        let cylinder_face = FaceId("blind-cylinder-face".into());
+        let cap_face = FaceId("blind-cap-face".into());
+        model.faces.push(Face {
+            id: cylinder_face.clone(),
+            shell: ShellId("blind-shell".into()),
+            surface: cylinder_surface,
+            sense: Sense::Reversed,
+            loops: vec![entry_loop, cylinder_cap_loop],
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+        model.faces.push(Face {
+            id: cap_face.clone(),
+            shell: ShellId("blind-shell".into()),
+            surface: cap_surface,
+            sense: Sense::Forward,
+            loops: vec![cap_face_loop],
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+        let body = BodyId("blind-body".into());
+        model.bodies.push(Body {
+            id: body.clone(),
+            kind: BodyKind::Solid,
+            regions: vec![RegionId("blind-region".into())],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        model.regions.push(Region {
+            id: RegionId("blind-region".into()),
+            body: body.clone(),
+            shells: vec![ShellId("blind-shell".into())],
+        });
+        model.shells.push(Shell {
+            id: ShellId("blind-shell".into()),
+            region: RegionId("blind-region".into()),
+            faces: vec![cylinder_face, cap_face],
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+        let ir = CadIr {
+            ir_version: IR_VERSION.into(),
+            source: None,
+            units: Units::default(),
+            tolerances: Tolerances::default(),
+            model,
+            native: Native::default(),
+        };
+        let operation_positions = BTreeMap::from([("blind", 0usize)]);
+        assert_eq!(
+            super::blind_hole_operations(std::slice::from_ref(&template), &operation_positions),
+            Some(vec![operation.clone()]),
+        );
+        let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
+        let projection =
+            super::blind_hole_body_projection(&ir, std::slice::from_ref(&operation), &outputs)
+                .expect("complete blind-bore witness");
+        assert_eq!(projection.outputs, outputs);
+        assert_eq!(
+            projection.diameters,
+            BTreeMap::from([(operation.clone(), Length(4.0))])
+        );
+        assert_eq!(
+            projection.blind_depths,
+            BTreeMap::from([(operation.clone(), Length(3.0))])
+        );
+        assert_eq!(
+            super::blind_hole_axis_placements_for_operations(
+                &ir,
+                std::slice::from_ref(&operation),
+                &outputs,
+            ),
+            BTreeMap::from([(
+                operation.clone(),
+                HolePlacement::Directed {
+                    position: Point3::new(0.0, 0.0, 0.0),
+                    direction: Vector3::new(0.0, 0.0, 1.0),
+                },
+            )])
+        );
+        let definition = super::non_boolean_feature_definition_with_parameters(
+            "SIMPLE HOLE",
+            &["Hole_GeneralHole_Simple_Blind"],
+            None,
+            None,
+            super::HoleProjection {
+                placements: vec![HolePlacement::Directed {
+                    position: Point3::new(0.0, 0.0, 0.0),
+                    direction: Vector3::new(0.0, 0.0, 1.0),
+                }],
+                diameter: Some(Length(4.0)),
+                extent: Some(Termination::Blind {
+                    length: Length(3.0),
+                }),
+                ..super::HoleProjection::default()
+            },
+            BTreeMap::new(),
+        );
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Hole {
+                kind: HoleKind::Simple,
+                diameter: Some(Length(4.0)),
+                extent: Some(Termination::Blind { length: Length(3.0) }),
+                placements,
+                ..
+            } if placements == [HolePlacement::Directed {
+                position: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(0.0, 0.0, 1.0),
+            }]
+        ));
+
+        let mut missing_cap = ir.clone();
+        missing_cap.model.shells[0]
+            .faces
+            .retain(|face| face != &FaceId("blind-cap-face".into()));
+        assert!(super::blind_hole_body_projection(
+            &missing_cap,
+            std::slice::from_ref(&operation),
+            &outputs,
+        )
+        .is_none());
+        let mut duplicate_cap = ir.clone();
+        duplicate_cap.model.faces.push(Face {
+            id: FaceId("blind-duplicate-cap-face".into()),
+            shell: ShellId("blind-shell".into()),
+            surface: SurfaceId("blind-cap-surface".into()),
+            sense: Sense::Forward,
+            loops: vec![LoopId("blind-cap-face-loop".into())],
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+        duplicate_cap.model.shells[0]
+            .faces
+            .push(FaceId("blind-duplicate-cap-face".into()));
+        assert!(super::blind_hole_body_projection(
+            &duplicate_cap,
+            std::slice::from_ref(&operation),
+            &outputs,
+        )
+        .is_none());
+        let mut sheet = ir.clone();
+        sheet.model.bodies[0].kind = BodyKind::Sheet;
+        assert!(super::blind_hole_body_projection(
+            &sheet,
+            std::slice::from_ref(&operation),
+            &outputs,
+        )
+        .is_none());
+        assert!(super::blind_hole_body_projection(
+            &ir,
+            &[operation.clone(), "second-operation".into()],
+            &BTreeMap::from([
+                (operation, vec![body.clone()]),
+                ("second-operation".into(), vec![body]),
+            ]),
+        )
+        .is_none());
     }
 
     #[test]
