@@ -1038,6 +1038,18 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                     ),
                 ));
             }
+            let unplaced_occurrences = external_references
+                .iter()
+                .map(|reference| u64::from(reference.occurrence_count))
+                .sum::<u64>();
+            if unplaced_occurrences != 0 {
+                losses.push(LossNote::new(
+                    LossKind::AssemblyPlacementsNotTransferred,
+                    format!(
+                        "The external-reference table declares {unplaced_occurrences} occurrence placement(s), but it does not contain occurrence identities or transforms."
+                    ),
+                ));
+            }
         }
         UfrxState::Absent | UfrxState::Parsed(_) => {}
         }

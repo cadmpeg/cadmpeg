@@ -98,7 +98,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
     assert!(container_only.source_fidelity.retained_records.is_empty());
 }
 
-fn fixture(inventor: bool) -> Vec<u8> {
+pub(crate) fn fixture(inventor: bool) -> Vec<u8> {
     let mut file = vec![0u8; SECTOR_SIZE * 3];
     file[..8].copy_from_slice(&MAGIC);
     put_u16(&mut file, 24, 0x003e);

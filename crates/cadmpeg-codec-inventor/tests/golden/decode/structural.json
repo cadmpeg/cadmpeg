@@ -1,0 +1,194 @@
+{
+  "ir": {
+    "ir_version": "5",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {
+      "inventor": {
+        "arenas": {
+          "active_carrier": [
+            {
+              "carrier_len": null,
+              "carrier_offset": null,
+              "carrier_sha256": null,
+              "delta_state": null,
+              "detail": null,
+              "enabled": null,
+              "family": null,
+              "header_kind": null,
+              "header_state": null,
+              "header_value": null,
+              "history_reference": null,
+              "id": "inventor:kernel:active-carrier#root",
+              "record_ordinal": null,
+              "schema": null,
+              "segment_token": null,
+              "segment_version_major": null,
+              "selected_key": null,
+              "state": "not_applicable"
+            }
+          ],
+          "body_native_keys": [],
+          "database_issues": [],
+          "databases": [],
+          "edge_continuities": [],
+          "edge_ownerships": [],
+          "external_references": [],
+          "face_sidedness": [],
+          "mesh_surface_sentinels": [],
+          "meta_sections": [],
+          "meta_types": [],
+          "properties": [],
+          "property_sections": [],
+          "property_set_issues": [],
+          "property_sets": [],
+          "protein": [
+            {
+              "declared_len": null,
+              "detail": null,
+              "directory_id": null,
+              "entry_count": 0,
+              "id": "inventor:protein:state#root",
+              "state": "absent"
+            }
+          ],
+          "protein_assets": [],
+          "protein_entries": [],
+          "revisions": [],
+          "rse_records": [],
+          "segment_bulk": [],
+          "segment_bulk_issues": [],
+          "segment_meta": [],
+          "segment_meta_issues": [],
+          "segment_pairs": [],
+          "segment_registry": [],
+          "storage_bands": [],
+          "structural_issues": [
+            {
+              "detail": "RSe database schemas do not select one registry grammar",
+              "id": "inventor:rse:structural-issue#segment_registry",
+              "scope": "segment_registry"
+            }
+          ],
+          "tolerant_coedge_parameters": [],
+          "tolerant_edge_tails": [],
+          "tolerant_vertex_tails": [],
+          "transform_hints": [],
+          "ufrx": [
+            {
+              "caption": null,
+              "detail": null,
+              "directory_id": null,
+              "id": "inventor:ufrx:state#root",
+              "original_file_name": null,
+              "reference_count": 0,
+              "schema": null,
+              "section_versions": [],
+              "state": "absent",
+              "tail_len": 0,
+              "tail_sha256": null
+            }
+          ],
+          "unknowns": [],
+          "unpaired_segments": [],
+          "vertex_ownerships": [],
+          "wire_topologies": []
+        },
+        "version": 9
+      }
+    },
+    "source": {
+      "attributes": {
+        "cfb_major_version": "3",
+        "cfb_sector_size": "512",
+        "document_kind": "unknown",
+        "rse_segment_pairs": "0"
+      },
+      "format": "inventor"
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "container_only": false,
+    "coverage": {
+      "active_kernel_carriers": 0,
+      "asm_unknown_records": 0,
+      "asm_unknown_surface_faces": 0,
+      "external_references": 0,
+      "preview_assets": 0,
+      "properties": 0,
+      "property_sets": 0,
+      "protein_appearances": 0,
+      "protein_assets": 0,
+      "protein_entries": 0,
+      "rse_databases": 0,
+      "rse_meta_types": 0,
+      "rse_records": 0,
+      "rse_registry_entries": 0,
+      "rse_revisions": 0,
+      "rse_segment_bulk": 0,
+      "rse_segment_bulk_issues": 0,
+      "rse_segment_meta": 0,
+      "rse_segment_meta_issues": 0,
+      "rse_segment_pairs": 0,
+      "rse_storage_bands": 0
+    },
+    "format": "inventor",
+    "geometry_transferred": false,
+    "losses": [
+      {
+        "code": "geometry_not_transferred",
+        "message": "Inventor geometry is not available for this document kind.",
+        "severity": "blocking"
+      }
+    ],
+    "notes": []
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "version": "3"
+  }
+}

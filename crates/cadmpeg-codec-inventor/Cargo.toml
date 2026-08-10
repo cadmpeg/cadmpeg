@@ -12,6 +12,7 @@ readme = "README.md"
 documentation = "https://docs.rs/cadmpeg-codec-inventor"
 keywords = ["cad", "inventor", "ipt", "iam", "parser"]
 categories = ["encoding", "parser-implementations", "graphics"]
+exclude = ["tests/golden/**"]
 
 [features]
 schema = ["dep:schemars", "cadmpeg-core/schema", "cadmpeg-ir/schema"]
@@ -27,7 +28,9 @@ schemars = { workspace = true, optional = true }
 serde.workspace = true
 
 [dev-dependencies]
+cadmpeg-core = { workspace = true, features = ["golden"] }
 flate2.workspace = true
+serde_json.workspace = true
 zip.workspace = true
 
 [lints]

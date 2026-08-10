@@ -263,6 +263,7 @@ dependencies = [
  "flate2",
  "schemars",
  "serde",
+ "serde_json",
  "zip",
 ]
 
