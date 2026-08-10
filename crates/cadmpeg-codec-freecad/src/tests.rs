@@ -3028,13 +3028,14 @@ fn transfers_part_thickness_and_shape_offset_construction() {
 #[test]
 fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="4">
+<Objects Count="5">
  <Object type="Part::Box" name="Base" id="1"/>
  <Object type="PartDesign::Plane" name="Neutral" id="2"/>
  <Object type="PartDesign::Line" name="Pull" id="3"/>
  <Object type="PartDesign::Draft" name="Draft" id="4"/>
+ <Object type="PartDesign::Draft" name="FaceDraft" id="5"/>
 </Objects>
-<ObjectData Count="4">
+<ObjectData Count="5">
  <Object name="Base"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="10"/></Property><Property name="Width" type="App::PropertyLength"><Float value="10"/></Property><Property name="Height" type="App::PropertyLength"><Float value="10"/></Property></Properties></Object>
  <Object name="Neutral"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="2" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
  <Object name="Pull"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0.7071067811865476" Q1="0" Q2="0" Q3="0.7071067811865476"/></Property></Properties></Object>
@@ -3044,6 +3045,12 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
   <Property name="PullDirection" type="App::PropertyLinkSub"><LinkSub value="Pull" count="1"><Sub value=""/></LinkSub></Property>
   <Property name="Angle" type="App::PropertyAngle"><Float value="5"/></Property>
   <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+ <Object name="FaceDraft"><Properties Count="4">
+  <Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Face2"/></LinkSub></Property>
+  <Property name="NeutralPlane" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Face1"/></LinkSub></Property>
+  <Property name="PullDirection" type="App::PropertyLinkSub"><LinkSub value="" count="0"/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="3"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -3078,6 +3085,20 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
             && (*angle + 5f64.to_radians()).abs() < 1e-12
     ));
     assert_eq!(draft.dependencies.len(), 3);
+    let face_draft = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("FaceDraft"))
+        .expect("face draft");
+    assert!(matches!(
+        face_draft.definition,
+        FeatureDefinition::Draft {
+            pull_direction: None,
+            ..
+        }
+    ));
     assert!(result.report.losses.is_empty());
 }
 

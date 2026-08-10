@@ -3381,12 +3381,12 @@ fn draft_definition(
 ) -> Option<FeatureDefinition> {
     let faces = property(properties, "Base")?;
     let neutral_plane = property(properties, "NeutralPlane")?;
-    let (_, plane_normal) =
-        plane_reference(properties, "NeutralPlane", objects, properties_by_owner)?;
+    let plane_normal = plane_reference(properties, "NeutralPlane", objects, properties_by_owner)
+        .map(|(_, normal)| normal);
     let pull_direction = if property(properties, "PullDirection")
-        .is_some_and(|property| !property.links.is_empty())
+        .is_some_and(|property| property.links.iter().any(nonempty_link))
     {
-        axis_reference(properties, "PullDirection", objects, properties_by_owner)?.1
+        Some(axis_reference(properties, "PullDirection", objects, properties_by_owner)?.1)
     } else {
         plane_normal
     };
@@ -3399,7 +3399,7 @@ fn draft_definition(
         faces: cadmpeg_ir::features::FaceSelection::Native(faces.id.clone()),
         neutral_plane: cadmpeg_ir::features::FaceSelection::Native(neutral_plane.id.clone()),
         parting_tool: None,
-        pull_direction: Some(pull_direction),
+        pull_direction,
         pull_plane: None,
         angle: Some(cadmpeg_ir::features::Angle(
             if reversed { -angle } else { angle }.to_radians(),
