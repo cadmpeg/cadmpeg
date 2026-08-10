@@ -32,6 +32,8 @@ Units flags `1` through `11` select inches, millimetres, other named units, feet
 
 Semantic output for IGES 5.1 and 5.2 uses the same emitted entity and form set except that neither version defines the open Shell Entity Type 514 Form 2. IGES 5.3 admits that form. Selecting 5.1 or 5.2 for a model that requires an open shell refuses the write before any bytes are produced. Closed-shell manifold B-rep Types 186 and 502 through 514 Form 1 and pointer-defined analytic surface Types 190 through 198 are available in all three targets.
 
+Semantic output represents a plane as the parameterized Plane Surface Type 190 Form 1. A circular cylinder, circular cone, sphere, or torus that supports B-rep topology uses its exact B-rep analytic entity Type 192, 194, 196, or 198 with physically dependent Point Type 116 and Direction Type 123 entities. These analytic entities retain the unbounded carrier and its parameter frame without rational conversion. Types 192 through 198 are B-rep surface entities and are not emitted as standalone or trimmed-surface carriers. A non-B-rep analytic surface has no finite parameter bounds in neutral IR from which to construct an equivalent Type 128 patch, so semantic output refuses it before producing bytes. This refusal has no loss note because no output representation is selected.
+
 Global Hollerith values are byte strings. The source image and physical-card arena retain every byte. A sender-product or native-file-name payload that is valid UTF-8 becomes the corresponding source attribute. Any other payload becomes `sender_product_bytes_hex` or `native_file_name_bytes_hex` with lowercase hexadecimal bytes, so metadata is not silently removed.
 
 ## Directory Entry section

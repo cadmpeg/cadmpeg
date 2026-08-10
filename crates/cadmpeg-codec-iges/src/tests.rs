@@ -11535,7 +11535,7 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
 }
 
 #[test]
-fn encode_regenerates_pointer_defined_analytic_surfaces() {
+fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
     let mut ir = CadIr::empty(Units::default());
     ir.model.surfaces.extend([
         Surface {
@@ -11583,57 +11583,53 @@ fn encode_regenerates_pointer_defined_analytic_surfaces() {
         },
     ]);
 
-    let plan = IgesEncoder::new(IgesWriteOptions::default())
+    let error = IgesEncoder::new(IgesWriteOptions::default())
         .plan(EncodeInput {
             ir: &ir,
             fidelity: None,
         })
-        .unwrap();
-    let mut written = Vec::new();
-    let report = plan.write_to(&mut written).unwrap();
-    assert!(report.losses.is_empty(), "{:#?}", report.losses);
-
-    let decoded = IgesCodec
-        .decode(&mut Cursor::new(written), &DecodeOptions::default())
-        .unwrap();
-    assert_eq!(decoded.ir.model.surfaces.len(), 4);
-    assert!(decoded.ir.model.bodies.is_empty());
-    assert!(decoded.ir.model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Cylinder { radius, .. } if (radius - 2.0).abs() < 1.0e-12
-    )));
-    assert!(decoded.ir.model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Cone { radius, half_angle, .. }
-            if (radius - 1.0).abs() < 1.0e-12
-                && (half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
-    )));
-    assert!(decoded.ir.model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Sphere { radius, .. } if (radius - 3.0).abs() < 1.0e-12
-    )));
-    assert!(decoded.ir.model.surfaces.iter().any(|surface| matches!(
-        surface.geometry,
-        SurfaceGeometry::Torus {
-            major_radius,
-            minor_radius,
-            ..
-        } if (major_radius - 4.0).abs() < 1.0e-12
-            && (minor_radius - 1.0).abs() < 1.0e-12
-    )));
+        .err()
+        .expect("standalone pointer-defined analytic surface must be refused");
     assert!(
-        decoded.report.losses.is_empty(),
-        "{:#?}",
-        decoded.report.losses
+        error.to_string().contains(
+            "requires B-rep topology for Type 192 through 198 output; no bounded Type 128 domain is available"
+        ),
+        "{error}"
     );
-    let validation = cadmpeg_ir::validate(&decoded.ir, Vec::new());
-    assert!(validation.is_ok(), "{:#?}", validation.findings);
-    let entities = &decoded.ir.native.namespace("iges").unwrap().arenas["entities"];
-    for entity_type in [192, 194, 196, 198] {
-        assert!(entities.iter().any(|record| {
-            record.field("entity_type").and_then(|value| value.as_i64()) == Some(entity_type)
-        }));
-    }
+}
+
+#[test]
+fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
+    let mut decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_tetrahedron_solid_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    decoded.ir.model.surfaces.push(Surface {
+        id: SurfaceId("surface#free-sphere".into()),
+        geometry: SurfaceGeometry::Sphere {
+            center: Point3::new(10.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 1.0,
+        },
+        source_object: None,
+    });
+
+    let error = IgesEncoder::new(IgesWriteOptions::default())
+        .plan(EncodeInput {
+            ir: &decoded.ir,
+            fidelity: None,
+        })
+        .err()
+        .expect("free analytic surface must not inherit B-rep eligibility");
+    assert!(
+        error
+            .to_string()
+            .contains("analytic surface surface#free-sphere requires B-rep topology"),
+        "{error}"
+    );
 }
 
 #[test]

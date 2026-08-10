@@ -186,6 +186,7 @@ struct Synthesis {
 
 fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, CodecError> {
     reject_unsupported_model(ir)?;
+    validate_analytic_surface_context(ir)?;
     let mut losses = procedural_reduction_losses(ir)?;
     losses.extend(reject_unsupported_native(ir)?);
 
@@ -265,6 +266,25 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         counts,
         losses,
     })
+}
+
+fn validate_analytic_surface_context(ir: &CadIr) -> Result<(), CodecError> {
+    let writes_brep = has_brep_topology(ir);
+    if let Some(surface) = ir.model.surfaces.iter().find(|surface| {
+        matches!(
+            surface.geometry,
+            SurfaceGeometry::Cylinder { .. }
+                | SurfaceGeometry::Cone { .. }
+                | SurfaceGeometry::Sphere { .. }
+                | SurfaceGeometry::Torus { .. }
+        ) && (!writes_brep || !ir.model.faces.iter().any(|face| face.surface == surface.id))
+    }) {
+        return Err(CodecError::NotImplemented(format!(
+            "IGES analytic surface {} requires B-rep topology for Type 192 through 198 output; no bounded Type 128 domain is available",
+            surface.id
+        )));
+    }
+    Ok(())
 }
 
 fn ensure_version_support(

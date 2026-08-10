@@ -124,16 +124,6 @@ from a conformant file.
 
 ## 7. Write path
 
-### WR-06. The analytic surface family is fixed with no fallback
-
-**Question.** Which IGES surface entity should a generated file use for each analytic surface?
-
-**Known.** `writer.rs:3593-3763` maps a plane to Type 190 Form 1 and a cylinder, cone, sphere, and torus to Types 192, 194, 196, and 198. `reject_unsupported_native` (`writer.rs:3414-3423`) shows the reader accepts twelve native surface types. Twelve types in, five types out, with no recorded rationale and no loss note when a low-interoperability encoding is selected.
-
-**Note.** A plane has at least three legal encodings (Type 108, Type 190, Type 128) and a cylinder at least three (Type 192, Type 120, Type 128). Types 190 through 198 are pointer-defined records that a receiver may not implement; a receiver that drops them also drops every Type 510 and Type 144 that refers to them, so the body disappears.
-
-**Need.** We need the encoding choice recorded with its reason, and a loss note when the chosen family is not the most portable one.
-
 ### WR-07. Orthonormality gates refuse foreign frames instead of repairing them
 
 **Question.** What frame perturbation must the writer accept?
