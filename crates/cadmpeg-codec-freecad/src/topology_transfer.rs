@@ -237,16 +237,7 @@ impl<'a> Builder<'a> {
                 let (u_scale, v_scale) = representation
                     .surface
                     .and_then(|surface| self.tables.surfaces.get(surface - 1))
-                    .map_or((None, None), |surface| match surface {
-                        TextSurface::Plane {
-                            v_reversed: true, ..
-                        } => (None, Some(-1.0)),
-                        TextSurface::Cylinder {
-                            u_reversed: true, ..
-                        } => (Some(-1.0), None),
-                        TextSurface::Cone { half_angle, .. } => (None, Some(half_angle.cos())),
-                        _ => (None, None),
-                    });
+                    .map_or((None, None), pcurve_parameter_scales);
                 let mut primary_geometry =
                     pcurve_geometry(&self.tables.curve2ds[representation.primary - 1]);
                 if let Some(v_scale) = v_scale {
@@ -1161,6 +1152,29 @@ impl<'a> Builder<'a> {
     }
 }
 
+fn pcurve_parameter_scales(surface: &TextSurface) -> (Option<f64>, Option<f64>) {
+    match surface {
+        TextSurface::Plane {
+            v_reversed: true, ..
+        } => (None, Some(-1.0)),
+        TextSurface::Cylinder {
+            u_reversed: true, ..
+        }
+        | TextSurface::Sphere {
+            u_reversed: true, ..
+        }
+        | TextSurface::Torus {
+            u_reversed: true, ..
+        } => (Some(-1.0), None),
+        TextSurface::Cone {
+            half_angle,
+            u_reversed,
+            ..
+        } => (u_reversed.then_some(-1.0), Some(half_angle.cos())),
+        _ => (None, None),
+    }
+}
+
 fn positive_tolerance(value: f64) -> Option<f64> {
     (value.is_finite() && value > 0.0).then_some(value)
 }
@@ -1806,5 +1820,29 @@ mod tests {
                 .expect("periodic range");
         assert!((0.0..std::f64::consts::TAU).contains(&start));
         assert!((end - start - (std::f64::consts::FRAC_PI_2 + 1.0e-15)).abs() < 1.0e-15);
+    }
+
+    #[test]
+    fn indirect_analytic_frames_reverse_the_pcurve_u_parameter() {
+        let surface = TextSurface::Sphere {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 1.0,
+            u_reversed: true,
+        };
+        assert_eq!(pcurve_parameter_scales(&surface), (Some(-1.0), None));
+
+        let cone = TextSurface::Cone {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 1.0,
+            half_angle: std::f64::consts::FRAC_PI_3,
+            u_reversed: true,
+        };
+        let (u_scale, v_scale) = pcurve_parameter_scales(&cone);
+        assert_eq!(u_scale, Some(-1.0));
+        assert!((v_scale.expect("cone axial scale") - 0.5).abs() < 1.0e-15);
     }
 }

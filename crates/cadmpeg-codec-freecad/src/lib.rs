@@ -1800,6 +1800,7 @@ fn append_text_surface(
             ref_direction,
             radius,
             half_angle,
+            ..
         } => SurfaceGeometry::Cone {
             origin: *origin,
             axis: *axis,
@@ -1813,6 +1814,7 @@ fn append_text_surface(
             axis,
             ref_direction,
             radius,
+            ..
         } => SurfaceGeometry::Sphere {
             center: *center,
             axis: *axis,
@@ -1825,6 +1827,7 @@ fn append_text_surface(
             ref_direction,
             major_radius,
             minor_radius,
+            ..
         } => SurfaceGeometry::Torus {
             center: *center,
             axis: *axis,

@@ -20,8 +20,9 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus, SketchNativeOperand,
+    Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
+    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
+    SketchNativeOperand,
 };
 use cadmpeg_ir::spreadsheets::{
     Spreadsheet, SpreadsheetDimension, SpreadsheetId, SpreadsheetRange,
@@ -261,12 +262,27 @@ pub(crate) fn transfer(
             })
         } else if is_extrusion(&object.type_name) {
             let profile = profile_ref(&object.id, &owned, &sketch_ids);
-            extrusion_definition(&object.type_name, &owned, profile, &ir.model.sketches)
-                .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
-                    parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
-                })
+            let profile_normal = profile_target(&owned)
+                .and_then(|(_, target)| objects.iter().find(|object| object.id == target))
+                .map(|profile_object| {
+                    let profile_properties = properties_by_owner
+                        .get(profile_object.id.as_str())
+                        .map(Vec::as_slice)
+                        .unwrap_or_default();
+                    sketch_frame(profile_properties).1
+                });
+            extrusion_definition(
+                &object.type_name,
+                &owned,
+                profile,
+                profile_normal,
+                &ir.model.sketches,
+            )
+            .unwrap_or_else(|| FeatureDefinition::Native {
+                kind: object.type_name.clone(),
+                parameters: native_parameters(&owned),
+                properties: BTreeMap::new(),
+            })
         } else if is_revolution(&object.type_name) {
             revolution_definition(&object.type_name, &object.id, &owned, &sketch_ids)
                 .unwrap_or_else(|| FeatureDefinition::Native {
@@ -1080,6 +1096,7 @@ fn builtin_reference_usage(properties: &[&PropertyRecord]) -> (bool, bool, bool)
         let Ok(operands) = constraint_operands(node) else {
             continue;
         };
+        root |= matches!(int_attr(node, "Type"), Some(7 | 8)) && operands.len() == 1;
         for (entity, position) in operands {
             horizontal |= entity == -1 && position == 0;
             root |= entity == -1 && position == 1;
@@ -1319,11 +1336,19 @@ fn parse_constraints(
                 index + 1
             ))
         })?;
-        let resolved = operands
+        let mut resolved = operands
             .iter()
             .filter_map(|(entity, position)| resolve_operand(*entity, *position, entities))
             .collect::<Vec<_>>();
         let all_resolved = resolved.len() == operands.len();
+        if matches!(type_code, 7 | 8) && operands.len() == 1 && resolved.len() == 1 {
+            if let Some(root) = entities
+                .iter()
+                .find(|entity| entity.id.0.ends_with(":reference-root-point"))
+            {
+                resolved.insert(0, SketchLocus::Entity(root.id.clone()));
+            }
+        }
         let parameter = if matches!(type_code, 6..=9 | 11 | 16 | 18 | 19) {
             node.attribute("Value")
                 .and_then(|value| value.parse::<f64>().ok())
@@ -1520,7 +1545,7 @@ fn expression_binding(properties: &[&PropertyRecord], path: &str) -> Option<(Str
         })
 }
 
-fn bind_parameter_dependencies(parameters: &mut [DesignParameter], objects: &[ObjectRecord]) {
+fn bind_parameter_dependencies(parameters: &mut Vec<DesignParameter>, objects: &[ObjectRecord]) {
     let object_names = objects
         .iter()
         .map(|object| (feature_id(object), object.name.as_str()))
@@ -1544,7 +1569,7 @@ fn bind_parameter_dependencies(parameters: &mut [DesignParameter], objects: &[Ob
             qualified.insert(format!("{object}.{name}"), id.clone());
         }
     }
-    for parameter in parameters {
+    for parameter in parameters.iter_mut() {
         let mut dependencies = BTreeSet::new();
         for identifier in expression_identifiers(&parameter.expression) {
             let dependency = qualified.get(identifier).or_else(|| {
@@ -1558,6 +1583,46 @@ fn bind_parameter_dependencies(parameters: &mut [DesignParameter], objects: &[Ob
             }
         }
         parameter.dependencies = dependencies.into_iter().collect();
+    }
+    let mut owner_ordinals = HashMap::<Option<FeatureId>, Vec<u32>>::new();
+    for parameter in parameters.iter() {
+        owner_ordinals
+            .entry(parameter.owner.clone())
+            .or_default()
+            .push(parameter.ordinal);
+    }
+    for ordinals in owner_ordinals.values_mut() {
+        ordinals.sort_unstable();
+    }
+    order_parameters_by_dependencies(parameters);
+    let mut next_ordinal = HashMap::<Option<FeatureId>, usize>::new();
+    for parameter in parameters {
+        let index = next_ordinal.entry(parameter.owner.clone()).or_default();
+        parameter.ordinal = owner_ordinals[&parameter.owner][*index];
+        *index += 1;
+    }
+}
+
+fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) {
+    let known = parameters
+        .iter()
+        .map(|parameter| parameter.id.clone())
+        .collect::<BTreeSet<_>>();
+    let mut remaining = std::mem::take(parameters);
+    let mut emitted = BTreeSet::new();
+    while !remaining.is_empty() {
+        let Some(index) = remaining.iter().position(|parameter| {
+            parameter
+                .dependencies
+                .iter()
+                .all(|dependency| !known.contains(dependency) || emitted.contains(dependency))
+        }) else {
+            parameters.append(&mut remaining);
+            return;
+        };
+        let parameter = remaining.remove(index);
+        emitted.insert(parameter.id.clone());
+        parameters.push(parameter);
     }
 }
 
@@ -1625,6 +1690,11 @@ fn neutral_constraint(
         8 => SketchConstraintDefinition::VerticalDistance {
             first: loci.first()?.clone(),
             second: loci.get(1)?.clone(),
+            parameter: parameter?,
+        },
+        9 if loci.len() == 1 => SketchConstraintDefinition::AngleToAxis {
+            entity: entity(0)?,
+            axis: SketchAxis::Horizontal,
             parameter: parameter?,
         },
         9 => SketchConstraintDefinition::Angle {
@@ -2148,21 +2218,24 @@ fn profile_ref(
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
 ) -> ProfileRef {
-    let property_and_target = ["Profile", "Base", "Source"].iter().find_map(|name| {
-        let property = property(properties, name)?;
-        let target = property
-            .links
-            .iter()
-            .find_map(|link| link.object.as_deref())?;
-        (!target.is_empty()).then_some((property, target))
-    });
-    let Some((property, target)) = property_and_target else {
+    let Some((property, target)) = profile_target(properties) else {
         return ProfileRef::Unresolved(owner.to_owned());
     };
     sketches.get(target).cloned().map_or_else(
         || ProfileRef::Native(property.id.clone()),
         ProfileRef::Sketch,
     )
+}
+
+fn profile_target<'a>(properties: &'a [&PropertyRecord]) -> Option<(&'a PropertyRecord, &'a str)> {
+    ["Profile", "Base", "Source"].iter().find_map(|name| {
+        let property = property(properties, name)?;
+        let target = property
+            .links
+            .iter()
+            .find_map(|link| link.object.as_deref())?;
+        (!target.is_empty()).then_some((property, target))
+    })
 }
 
 fn revolution_axis(properties: &[&PropertyRecord]) -> Option<RevolutionAxis> {
@@ -2495,6 +2568,7 @@ fn extrusion_definition(
     kind: &str,
     properties: &[&PropertyRecord],
     profile: ProfileRef,
+    profile_normal: Option<Vector3>,
     sketches: &[Sketch],
 ) -> Option<FeatureDefinition> {
     if kind == "Part::Extrusion" {
@@ -2757,17 +2831,19 @@ fn extrusion_definition(
             },
         )
     } else {
-        let ProfileRef::Sketch(sketch_id) = &profile else {
-            return None;
+        let direction = match &profile {
+            ProfileRef::Sketch(sketch_id) => {
+                sketches
+                    .iter()
+                    .find(|sketch| sketch.id == *sketch_id)?
+                    .resolved_placement()?
+                    .1
+            }
+            ProfileRef::Native(_) => profile_normal?,
+            ProfileRef::Unresolved(_) => return None,
+            _ => return None,
         };
-        (
-            sketches
-                .iter()
-                .find(|sketch| sketch.id == *sketch_id)?
-                .resolved_placement()?
-                .1,
-            ExtrusionDirectionSource::ProfileNormal,
-        )
+        (direction, ExtrusionDirectionSource::ProfileNormal)
     };
     if bool_property(properties, "Reversed").unwrap_or(false) {
         direction = Vector3::new(-direction.x, -direction.y, -direction.z);

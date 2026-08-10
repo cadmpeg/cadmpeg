@@ -410,6 +410,7 @@ pub enum TextSurface {
         ref_direction: Vector3,
         radius: f64,
         half_angle: f64,
+        u_reversed: bool,
     },
     /// Sphere.
     Sphere {
@@ -417,6 +418,7 @@ pub enum TextSurface {
         axis: Vector3,
         ref_direction: Vector3,
         radius: f64,
+        u_reversed: bool,
     },
     /// Torus.
     Torus {
@@ -425,6 +427,7 @@ pub enum TextSurface {
         ref_direction: Vector3,
         major_radius: f64,
         minor_radius: f64,
+        u_reversed: bool,
     },
     /// Rational or non-rational tensor-product B-spline surface.
     Nurbs(NurbsSurface),
@@ -1495,38 +1498,41 @@ fn parse_binary_surface(
             let origin = cursor.point3("binary cone origin")?;
             let axis = cursor.vector3("binary cone axis")?;
             let ref_direction = cursor.vector3("binary cone reference direction")?;
-            cursor.vector3("binary cone v direction")?;
+            let y_direction = cursor.vector3("binary cone v direction")?;
             TextSurface::Cone {
                 origin,
                 axis,
                 ref_direction,
                 radius: cursor.f64("binary cone reference radius")?,
                 half_angle: cursor.f64("binary cone half angle")?,
+                u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
             }
         }
         4 => {
             let center = cursor.point3("binary sphere center")?;
             let axis = cursor.vector3("binary sphere axis")?;
             let ref_direction = cursor.vector3("binary sphere reference direction")?;
-            cursor.vector3("binary sphere v direction")?;
+            let y_direction = cursor.vector3("binary sphere v direction")?;
             TextSurface::Sphere {
                 center,
                 axis,
                 ref_direction,
                 radius: cursor.f64("binary sphere radius")?,
+                u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
             }
         }
         5 => {
             let center = cursor.point3("binary torus center")?;
             let axis = cursor.vector3("binary torus axis")?;
             let ref_direction = cursor.vector3("binary torus reference direction")?;
-            cursor.vector3("binary torus v direction")?;
+            let y_direction = cursor.vector3("binary torus v direction")?;
             TextSurface::Torus {
                 center,
                 axis,
                 ref_direction,
                 major_radius: cursor.f64("binary torus major radius")?,
                 minor_radius: cursor.f64("binary torus minor radius")?,
+                u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
             }
         }
         6 => TextSurface::Extrusion {
@@ -3145,12 +3151,14 @@ fn parse_analytic_surface(
             ref_direction,
             radius: cursor.real("cone radius")?,
             half_angle: cursor.real("cone half angle")?,
+            u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
         },
         4 => TextSurface::Sphere {
             center: origin,
             axis,
             ref_direction,
             radius: cursor.real("sphere radius")?,
+            u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
         },
         5 => TextSurface::Torus {
             center: origin,
@@ -3158,6 +3166,7 @@ fn parse_analytic_surface(
             ref_direction,
             major_radius: cursor.real("torus major radius")?,
             minor_radius: cursor.real("torus minor radius")?,
+            u_reversed: frame_v_reversed(axis, ref_direction, y_direction),
         },
         _ => unreachable!("analytic surface kind was range checked"),
     })
@@ -3577,6 +3586,53 @@ mod tests {
         assert_eq!(record.secondary, Some(2));
         assert_eq!(record.continuity.as_deref(), Some("CN"));
         assert!(cursor.is_empty());
+    }
+
+    #[test]
+    fn retains_indirect_analytic_surface_parameter_frames() {
+        let tokens = [
+            "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "2", "0.5",
+        ];
+        let mut cursor = TokenCursor::new(&tokens);
+        let cone = parse_analytic_surface(3, &mut cursor).expect("indirect cone");
+        assert!(matches!(
+            cone,
+            TextSurface::Cone {
+                radius: 2.0,
+                half_angle: 0.5,
+                u_reversed: true,
+                ..
+            }
+        ));
+
+        let tokens = [
+            "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "2",
+        ];
+        let mut cursor = TokenCursor::new(&tokens);
+        let sphere = parse_analytic_surface(4, &mut cursor).expect("indirect sphere");
+        assert!(matches!(
+            sphere,
+            TextSurface::Sphere {
+                radius: 2.0,
+                u_reversed: true,
+                ..
+            }
+        ));
+
+        let tokens = [
+            "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "4", "1",
+        ];
+        let mut cursor = TokenCursor::new(&tokens);
+        let torus = parse_analytic_surface(5, &mut cursor).expect("indirect torus");
+        assert!(matches!(
+            torus,
+            TextSurface::Torus {
+                major_radius: 4.0,
+                minor_radius: 1.0,
+                u_reversed: true,
+                ..
+            }
+        ));
     }
 
     #[test]

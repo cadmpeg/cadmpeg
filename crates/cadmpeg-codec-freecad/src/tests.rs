@@ -681,7 +681,7 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>
  <Geometry type="Part::GeomCircle"><Circle CenterX="4" CenterY="5" Radius="2"/></Geometry>
 </GeometryList></Property>
-<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="13">
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="15">
  <Constrain Type="14" First="0" FirstPos="1" Second="1" SecondPos="1" Third="2" ThirdPos="0"/>
  <Constrain Type="6" First="0" FirstPos="1" Second="1" SecondPos="2" Value="4" IsDriving="1"/>
  <Constrain Name="OnAxis" MetaData="reviewed" Type="13" Orientation="4" Value="0" LabelDistance="2.5" LabelPosition="0.25" IsDriving="0" IsInVirtualSpace="1" IsVisible="0" IsActive="1" First="0" FirstPos="1" Second="2" SecondPos="0"/>
@@ -695,6 +695,8 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
  <Constrain Type="6" First="-1" FirstPos="1" Second="0" SecondPos="1" Value="2" IsDriving="1"/>
  <Constrain Type="13" First="0" FirstPos="2" Second="-3" SecondPos="0"/>
  <Constrain Type="7" First="-4" FirstPos="1" Second="0" SecondPos="1" Value="3" IsDriving="1"/>
+ <Constrain Type="9" First="0" FirstPos="0" Value="0.5" IsDriving="1"/>
+ <Constrain Type="8" First="1" FirstPos="1" Value="6" IsDriving="1"/>
 </ConstraintList></Property>
 </Properties></Object><Object name="Source"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let result = FcstdCodec
@@ -797,6 +799,22 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
     assert!(matches!(
         constraint(13).definition,
         cadmpeg_ir::sketches::SketchConstraintDefinition::HorizontalDistance { .. }
+    ));
+    assert!(matches!(
+        constraint(14).definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::AngleToAxis {
+            axis: cadmpeg_ir::sketches::SketchAxis::Horizontal,
+            ..
+        }
+    ));
+    assert!(matches!(
+        constraint(15).definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::VerticalDistance {
+            ref first,
+            ref second,
+            ..
+        } if matches!(first, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.0.ends_with(":reference-root-point"))
+            && matches!(second, cadmpeg_ir::sketches::SketchLocus::Start(_))
     ));
     assert!(result.ir.model.sketch_entities.iter().any(|entity| {
         entity.id.0.ends_with(":reference-horizontal-axis")
@@ -3225,8 +3243,8 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
 </Objects>
 <ObjectData Count="2">
  <Object name="Sheet"><Properties Count="3"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="2" xlink="1">
-  <Cell address="A1" content="5" alias="width" displayUnit="mm" rowSpan="1" colSpan="2"/>
   <Cell address="A2" content="=width * 3" alias="height" style="bold"/>
+  <Cell address="A1" content="5" alias="width" displayUnit="mm" rowSpan="1" colSpan="2"/>
  </Cells></Property>
  <Property name="columnWidths" type="Spreadsheet::PropertyColumnWidths"><ColumnInfo Count="2"><Column name="A" width="120"/><Column name="B" width="80"/></ColumnInfo></Property>
  <Property name="rowHeights" type="Spreadsheet::PropertyRowHeights"><RowInfo Count="1"><Row name="2" height="45"/></RowInfo></Property>
@@ -3272,6 +3290,21 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         .find(|parameter| parameter.owner.as_ref() == Some(&pad.id) && parameter.name == "Length")
         .expect("pad length");
     assert_eq!(length.dependencies, vec![width.id.clone()]);
+    let width_position = result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .position(|parameter| parameter.name == "width")
+        .expect("width position");
+    let height_position = result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .position(|parameter| parameter.name == "height")
+        .expect("height position");
+    assert!(width_position < height_position);
     let sheet = result.ir.model.spreadsheets.first().expect("sheet state");
     assert_eq!(sheet.feature.0, "fcstd:design:feature#Sheet");
     assert_eq!(sheet.cells.len(), 2);
@@ -4919,6 +4952,42 @@ fn transfers_non_default_extrusion_termination_branches() {
             && reference.ends_with(":DirLink")
             && face_maker.class == "Part::FaceMakerUnified" && face_maker.mode == Some(4)
     ));
+}
+
+#[test]
+fn derives_extrusion_direction_from_a_non_sketch_profile_frame() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Part2DObjectPython" name="Profile"/><Object type="PartDesign::Pocket" name="Pocket"/></Objects>
+<ObjectData Count="2">
+ <Object name="Profile"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0.7071067811865476" Q2="0" Q3="0.7071067811865476"/></Property></Properties></Object>
+ <Object name="Pocket"><Properties Count="3"><Property name="Profile" type="App::PropertyLinkSub"><LinkSub value="Profile" count="0"/></Property><Property name="Length" type="App::PropertyLength"><Float value="5"/></Property><Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("non-sketch profile extrusion");
+    let pocket = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Pocket"))
+        .expect("pocket feature");
+    assert!(matches!(
+        &pocket.definition,
+        FeatureDefinition::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Native(_),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+            op: cadmpeg_ir::features::BooleanOp::Cut,
+            ..
+        } if (direction.x - 1.0).abs() < 1.0e-12
+            && direction.y.abs() < 1.0e-12
+            && direction.z.abs() < 1.0e-12
+    ));
+    assert!(result.report.losses.is_empty());
+    assert_valid_document(&result.ir);
 }
 
 #[test]

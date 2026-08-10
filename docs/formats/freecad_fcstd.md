@@ -209,7 +209,12 @@ supplies the exact neutral carrier and parameter range. Only when no 3D curve ex
 stored polygon representation supply an approximate carrier. For a face use, the first pcurve
 representation whose surface and composed location equal the face surface supplies the pcurve.
 A closed-surface representation supplies its second pcurve when the edge use is reversed. Later
-matching representations remain in the native edge record.
+matching representations remain in the native edge record. The neutral analytic-surface frame uses
+the cross product of its axis and reference direction. If the persisted plane frame has the
+opposite V direction, the pcurve V parameter is negated. If a persisted cylinder, cone, sphere, or
+torus frame has the opposite circumferential direction, the pcurve U parameter is negated. A cone
+pcurve V parameter is also multiplied by the cosine of the cone half-angle to convert persisted
+slant distance to neutral axial distance.
 
 The B-rep edge record stores incidence but no radial order between three or more face uses. One
 coedge is self-radial. Two coedges reference each other. Three or more coedges remain self-radial;
@@ -247,7 +252,9 @@ distance, horizontal/vertical distance, angle, radius, and diameter relations tr
 constraints when every operand resolves. Point-on-object, symmetry, internal alignment, optical
 refraction, B-spline weight, geometry group, and text relations retain their typed operands and
 family-specific data. Dimensional relations create canonical parameters linked to the source
-constraint property and retain whether the value is driving. Negative indices resolve through the
+constraint property and retain whether the value is driving. A one-entity angle measures that
+entity from the horizontal sketch axis. A one-locus horizontal or vertical distance measures the
+locus from the sketch root point. Negative indices resolve through the
 ordered external-reference entities. Invalid indices, unresolved operands, and future family codes
 remain explicit native relations rather than being guessed.
 
@@ -263,7 +270,8 @@ content, display unit, alignment, style, colors, and spans are retained independ
 content supplies a dimensionless evaluated value, while formula content remains an expression.
 Same-sheet aliases and qualified `Sheet.alias` references connect spreadsheet and feature
 parameters without evaluating arbitrary formulas in the decoder. Cell counts are bounded and must
-match their declared framing. A neutral sheet record binds those cell identities to the owning
+match their declared framing. Parameter ordinals use stable dependency order and persisted cell
+order as the tie-break rule. A neutral sheet record binds those cell identities to the owning
 feature and retains ordered non-default column widths, row heights, and inclusive merged ranges.
 Only positive row and column spans define a neutral merged range. Nonpositive span attributes remain
 native cell metadata and do not create a neutral range.
@@ -755,7 +763,8 @@ termination, while signed blind lengths preserve the persisted side orientation.
 both taper angles and offsets, whether length follows the profile normal, and whether multiple
 profile faces are allowed. Direction provenance distinguishes the profile normal, an explicit
 custom vector, and a selected reference axis while also retaining the normalized resolved
-direction; reversal inverts that direction. A pad joins and a pocket cuts. Missing required lengths
+direction. A non-sketch planar profile supplies its profile normal from its persisted placement
+frame. Reversal inverts the direction. A pad joins and a pocket cuts. Missing required lengths
 or selections and invalid directions remain attributable native operations instead of being
 rewritten as zero-length or blind features.
 
