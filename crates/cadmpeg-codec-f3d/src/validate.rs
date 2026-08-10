@@ -2954,8 +2954,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         prefix_value,
                         prefix_value_offset,
                         operation_offset,
-                        extent_discriminator,
-                        extent_discriminator_offset,
+                        extent_kind,
+                        extent_kind_offset,
                         direction_reversed_offset,
                         geometry_kind,
                         geometry_kind_offset,
@@ -2978,10 +2978,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         _ => false,
                     };
                     prefix_valid
-                        && extent_discriminator == 2
-                        && extent_discriminator_offset == operation_offset.saturating_add(4)
-                        && direction_reversed_offset
-                            == extent_discriminator_offset.saturating_add(4)
+                        && extent_kind == 2
+                        && extent_kind_offset == operation_offset.saturating_add(4)
+                        && direction_reversed_offset == extent_kind_offset.saturating_add(4)
                         && matches!(geometry_kind, 0 | 1)
                         && geometry_kind_offset == direction_reversed_offset.saturating_add(1)
                 }

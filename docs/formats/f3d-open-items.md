@@ -260,14 +260,6 @@ The arc grammar and the line grammar read the same twelve f64 at the same offset
 
 **Need.** A stream that appends the current copy after the superseded copy makes every one of these records decode to the pre-edit content: a sketch text keeps its earlier string, height, and anchor, and a sketch point keeps its earlier coordinates. The decoder emits one record and records no loss, so no consumer can detect the substitution. The rule that marks the live copy settles the item. Until then the two copies must decode to equal content, or the record must be withheld with a loss.
 
-### DR-38. Extent of the legacy-distance Extrude dialect
-
-**Question.** Which field carries the extent form of the legacy-distance `Extrude` prologue?
-
-**Known.** `exact_legacy_distance_extrude_prologue` in `design/decode/scopes.rs` reads one word at `operation + 4` and refuses the record when the value is not `2`. Under `f3d.md` §3.1 "An `Extrude` or `Extrusion` scope stores its result-operation" that word is the travel direction and the value `2` is two sides. `DesignExtrudePrologue::extent` in `records.rs` returns a one-sided distance for this dialect without reading a field.
-
-**Need.** The projector emits a one-sided blind extent from that value. If the word is the travel direction, the second side is dropped and no loss is recorded. The field that carries the extent of this dialect settles the item.
-
 ### DR-60. Member order of a spline-group constraint
 
 **Question.** Which reference run gives the member order of a neutral spline-group constraint?

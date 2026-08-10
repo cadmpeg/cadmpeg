@@ -1040,6 +1040,51 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The current Extrude parser retains the exact ordinal offset and advances five bytes to the first-side extent.
 
+## `early_distance_extrude_absent_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 34 B
+
+Offsets are relative to the early distance-only Extrude primary indexed header. The scope reference-count field is at offset 208.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 1 | `absent_prefix` | `u8` | little | spec | An absent field is one zero byte |
+| 21 | 4 | `operation` | `u32` | little | spec | places the operation u32 at offset 21 |
+| 25 | 4 | `extent_kind` | `u32` | little | spec | The extent-kind u32 value `2` follows the operation |
+| 29 | 1 | `direction_reversed` | `u8` | little | spec | The direction-reversal Boolean follows the extent kind |
+| 30 | 4 | `geometry_kind` | `u32` | little | spec | A u32 geometry-kind discriminator follows the Boolean |
+
+Unstated regions:
+
+- `0..20` (20 B): The indexed header and the preceding scope envelope are outside the fixed prologue fields.
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The early Extrude parser reads the extent kind from the operation-relative field and requires value 2.
+
+## `early_distance_extrude_present_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 38 B
+
+Offsets are relative to the early distance-only Extrude primary indexed header. The scope reference-count field is at offset 212.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 1 | `present_prefix_marker` | `u8` | little | spec | A present field is byte `01` |
+| 21 | 4 | `prefix_value` | `u32` | little | spec | and u32 zero |
+| 25 | 4 | `operation` | `u32` | little | spec | places the operation at offset 25 |
+| 29 | 4 | `extent_kind` | `u32` | little | spec | The extent-kind u32 value `2` follows the operation |
+| 33 | 1 | `direction_reversed` | `u8` | little | spec | The direction-reversal Boolean follows the extent kind |
+| 34 | 4 | `geometry_kind` | `u32` | little | spec | A u32 geometry-kind discriminator follows the Boolean |
+
+Unstated regions:
+
+- `0..20` (20 B): The indexed header and the preceding scope envelope are outside the fixed prologue fields.
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The present-prefix form uses the same operation-relative extent-kind field as the absent-prefix form.
+
 ## `shifted_extrude_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 42 B

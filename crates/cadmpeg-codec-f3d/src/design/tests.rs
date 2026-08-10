@@ -8424,8 +8424,8 @@ fn legacy_distance_extrude_scope_decodes_nullable_prefix_forms() {
             prefix_value_offset: None,
             operation: DesignExtrudeOperation::Join,
             operation_offset: 21,
-            extent_discriminator: 2,
-            extent_discriminator_offset: 25,
+            extent_kind: 2,
+            extent_kind_offset: 25,
             direction_reversed: true,
             direction_reversed_offset: 29,
             geometry_kind: 1,
@@ -8439,14 +8439,21 @@ fn legacy_distance_extrude_scope_decodes_nullable_prefix_forms() {
             prefix_value_offset: Some(21),
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 25,
-            extent_discriminator: 2,
-            extent_discriminator_offset: 29,
+            extent_kind: 2,
+            extent_kind_offset: 29,
             direction_reversed: true,
             direction_reversed_offset: 33,
             geometry_kind: 0,
             geometry_kind_offset: 34,
         })
     );
+
+    let mut invalid_extent_kind = scope(false, 1, 1).extrude_prologue.unwrap();
+    let DesignExtrudePrologue::LegacyDistance { extent_kind, .. } = &mut invalid_extent_kind else {
+        unreachable!("the fixture constructs the early distance-only layout");
+    };
+    *extent_kind = 1;
+    assert_eq!(invalid_extent_kind.extent(), None);
 }
 
 #[test]

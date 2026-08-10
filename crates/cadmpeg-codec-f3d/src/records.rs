@@ -657,10 +657,12 @@ pub enum DesignExtrudePrologue {
         operation: DesignExtrudeOperation,
         /// Byte offset of `operation`.
         operation_offset: u64,
-        /// Raw distance-extent discriminator.
-        extent_discriminator: u32,
-        /// Byte offset of `extent_discriminator`.
-        extent_discriminator_offset: u64,
+        /// Raw extent-kind value (`2 = one-sided distance`).
+        #[serde(alias = "extent_discriminator")]
+        extent_kind: u32,
+        /// Byte offset of `extent_kind`.
+        #[serde(alias = "extent_discriminator_offset")]
+        extent_kind_offset: u64,
         /// Direction-reversal state.
         direction_reversed: bool,
         /// Byte offset of `direction_reversed`.
@@ -757,7 +759,10 @@ impl DesignExtrudePrologue {
     /// Decoded extent form.
     pub fn extent(self) -> Option<DesignExtrudeExtent> {
         match self {
-            Self::LegacyDistance { .. } => Some(DesignExtrudeExtent::OneSidedDistance),
+            Self::LegacyDistance { extent_kind: 2, .. } => {
+                Some(DesignExtrudeExtent::OneSidedDistance)
+            }
+            Self::LegacyDistance { .. } => None,
             Self::ReferenceAware { extent, .. } => Some(extent),
             Self::LegacyShifted { extent, .. } => extent,
         }

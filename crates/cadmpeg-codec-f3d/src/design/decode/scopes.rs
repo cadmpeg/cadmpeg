@@ -5989,12 +5989,12 @@ fn exact_legacy_distance_extrude_prologue(
         4 => DesignExtrudeOperation::NewBody,
         _ => return None,
     };
-    let extent_discriminator_offset = operation_offset.checked_add(4)?;
-    let extent_discriminator = u32_at(bytes, extent_discriminator_offset)?;
-    if extent_discriminator != 2 {
+    let extent_kind_offset = operation_offset.checked_add(4)?;
+    let extent_kind = u32_at(bytes, extent_kind_offset)?;
+    if extent_kind != 2 {
         return None;
     }
-    let direction_reversed_offset = extent_discriminator_offset.checked_add(4)?;
+    let direction_reversed_offset = extent_kind_offset.checked_add(4)?;
     let direction_reversed = match bytes.get(direction_reversed_offset)? {
         0 => false,
         1 => true,
@@ -6010,8 +6010,8 @@ fn exact_legacy_distance_extrude_prologue(
         prefix_value_offset: prefix_value_offset.map(|offset| offset as u64),
         operation,
         operation_offset: operation_offset as u64,
-        extent_discriminator,
-        extent_discriminator_offset: extent_discriminator_offset as u64,
+        extent_kind,
+        extent_kind_offset: extent_kind_offset as u64,
         direction_reversed,
         direction_reversed_offset: direction_reversed_offset as u64,
         geometry_kind,

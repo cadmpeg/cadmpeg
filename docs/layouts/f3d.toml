@@ -2964,6 +2964,119 @@ contains = "scope_reference_ordinal_offset: extent_cursor as u64"
 note = "The current Extrude parser retains the exact ordinal offset and advances five bytes to the first-side extent."
 
 [[record]]
+name = "early_distance_extrude_absent_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "An absent field is one zero byte and places the operation u32 at offset 21"
+size = 34
+note = "Offsets are relative to the early distance-only Extrude primary indexed header. The scope reference-count field is at offset 208."
+
+[[record.gap]]
+offset = 0
+size = 20
+note = "The indexed header and the preceding scope envelope are outside the fixed prologue fields."
+
+[[record.field]]
+name = "absent_prefix"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "An absent field is one zero byte"
+
+[[record.field]]
+name = "operation"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "places the operation u32 at offset 21"
+
+[[record.field]]
+name = "extent_kind"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "The extent-kind u32 value `2` follows the operation"
+
+[[record.field]]
+name = "direction_reversed"
+offset = 29
+type = "u8"
+source = "spec"
+anchor = "The direction-reversal Boolean follows the extent kind"
+
+[[record.field]]
+name = "geometry_kind"
+offset = 30
+type = "u32"
+source = "spec"
+anchor = "A u32 geometry-kind discriminator follows the Boolean"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+contains = "let extent_kind_offset = operation_offset.checked_add(4)?;"
+note = "The early Extrude parser reads the extent kind from the operation-relative field and requires value 2."
+
+[[record]]
+name = "early_distance_extrude_present_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A present field is byte `01` and u32 zero and places the operation at offset 25"
+size = 38
+note = "Offsets are relative to the early distance-only Extrude primary indexed header. The scope reference-count field is at offset 212."
+
+[[record.gap]]
+offset = 0
+size = 20
+note = "The indexed header and the preceding scope envelope are outside the fixed prologue fields."
+
+[[record.field]]
+name = "present_prefix_marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "A present field is byte `01`"
+
+[[record.field]]
+name = "prefix_value"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "and u32 zero"
+
+[[record.field]]
+name = "operation"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "places the operation at offset 25"
+
+[[record.field]]
+name = "extent_kind"
+offset = 29
+type = "u32"
+source = "spec"
+anchor = "The extent-kind u32 value `2` follows the operation"
+
+[[record.field]]
+name = "direction_reversed"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "The direction-reversal Boolean follows the extent kind"
+
+[[record.field]]
+name = "geometry_kind"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "A u32 geometry-kind discriminator follows the Boolean"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+contains = "let extent_kind_offset = operation_offset.checked_add(4)?;"
+note = "The present-prefix form uses the same operation-relative extent-kind field as the absent-prefix form."
+
+[[record]]
 name = "shifted_extrude_prologue"
 kind = "byte"
 section = "3.1"
