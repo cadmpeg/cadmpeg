@@ -12,14 +12,14 @@ Record offsets, field widths, and endianness are also maintained as a machine-ch
 
 A file stores its geometry in one of six families; the family determines the record grammar.
 
-| Variant                          | Detection                                                                                                            | Geometry source                                                                               |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| **Standard nested `V5_CFV2`**    | Outer file contains a nested `V5_CFV2` container, no coherent overriding E5 stream                                   | Inner-body BREP spine, trim mesh records, `00 33 <kind>` surface markers, `05 08 01` vertices |
+| Variant                          | Detection                                                                                                            | Geometry source                                                                                                           |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Standard nested `V5_CFV2`**    | Outer file contains a nested `V5_CFV2` container, no coherent overriding E5 stream                                   | Inner-body BREP spine, trim mesh records, `00 33 <kind>` surface markers, `05 08 01` vertices                             |
 | **FBB-only partial spine**       | Nested `V5_CFV2` with contiguous FBB face rows + `05 08 01` vertices but no standard edge-row table                  | FBB face group + vertex records; post-FBB edge rows and trim `H` handles share a selected `u8`, `u16be`, or `u24be` width |
-| **E5 `0D 03` stream**            | Coherent walked E5 record stream in the preamble or a FINJPL segment                                                 | Native E5 records: faces, loops, edge-uses, p-curves, curve supports, surface carriers        |
-| **Zero-entity `a9 03`**          | No nested inner `V5_CFV2`; outer preamble carries `a9 03 XX YY` record families                                      | Outer-preamble `a9 03` records                                                                |
-| **Float-packed inner-no-FBB**    | Nested `V5_CFV2` with no standard FBB spine, large vertex/object-graph/float populations                              | Object-stream (`b5 <frame_flag>` / `a8 <frame_flag>`) records; surface-kind markers only for the pure marker case |
-| **Inner body without directory** | Nested `V5_CFV2` whose directory contains no BREP body; the body occupies the contiguous region before the directory | Contiguous inner records and freeform carrier families                                        |
+| **E5 `0D 03` stream**            | Coherent walked E5 record stream in the preamble or a FINJPL segment                                                 | Native E5 records: faces, loops, edge-uses, p-curves, curve supports, surface carriers                                    |
+| **Zero-entity `a9 03`**          | No nested inner `V5_CFV2`; outer preamble carries `a9 03 XX YY` record families                                      | Outer-preamble `a9 03` records                                                                                            |
+| **Float-packed inner-no-FBB**    | Nested `V5_CFV2` with no standard FBB spine, large vertex/object-graph/float populations                             | Object-stream (`b5 <frame_flag>` / `a8 <frame_flag>`) records; surface-kind markers only for the pure marker case         |
+| **Inner body without directory** | Nested `V5_CFV2` whose directory contains no BREP body; the body occupies the contiguous region before the directory | Contiguous inner records and freeform carrier families                                                                    |
 
 Detection invariants: a standard file has one nested inner `V5_CFV2` past byte 8; the standard BREP spine contains the largest FBB run followed by parseable edge tables and a `kind=0x06` table of 15-byte `05 08 01` vertex records. E5 classification requires a coherent record walk. Zero-entity classification requires no inner `V5_CFV2` and at least one recognized `a9 03` family.
 
@@ -129,7 +129,7 @@ A parallel representation of faces/edges/vertices indexed by the same topologica
 | `7C 02`                               | outer preamble             | total-length-framed source-schema string catalog                         |
 | `7C 05` / `7C 08` / `7C 09` / `7C 0A` | outer preamble             | entity table / object-graph root / object records / tagged-atom payloads |
 | `7C D9`                               | outer preamble             | literal float-data bytes (not a framed record family)                    |
-| `(30|b0) 04 04 ff`                    | inner body                 | face outer-bound (FBB) spine row marker                                  |
+| `(30                                  | b0) 04 04 ff`              | inner body                                                               | face outer-bound (FBB) spine row marker |
 | `10 24 04 ff ff 00 00 00`             | inner body                 | standard edge-table delimiter                                            |
 | `05 08 01`                            | inner body / E5 areas      | 15-byte vertex XYZ record (3×f32le)                                      |
 | `00 33 30`                            | inner body                 | surface-of-revolution kind tag (geometry in a `b2 03 2d` record)         |
@@ -452,10 +452,10 @@ A resolved edge block binds to a standard edge when its shared 3D endpoint loci 
 
 Each side stores its jet in its own carrier's chart. The free side's carrier is not the standard face carrier, so its stored chart needs a chart relation before the jet describes the face:
 
-| free-side standard carrier | chart relation | recovery |
-| -------------------------- | -------------- | -------- |
+| free-side standard carrier | chart relation | recovery                               |
+| -------------------------- | -------------- | -------------------------------------- |
 | plane                      | plane isometry | solved from the block's shared 3D loci |
-| any other kind             | none defined   | none |
+| any other kind             | none defined   | none                                   |
 
 The plane isometry is the one rigid motion of the parameter plane that carries every stored definition site onto the image of its shared locus in the target plane's chart. It exists when every shared locus lies on the target plane and the stored sites are not collinear. It applies to the stored positions, and its linear part alone applies to the stored first and second derivatives.
 
@@ -492,6 +492,7 @@ Every complete run is retained as a typed native historical edge record referenc
 - **`b2/b3/b4 03 0f` spatial circle:** the complete payload is fourteen finite `f64le` values: `<center:3> <reference_direction:3> <transverse_direction:3> <radius> <parameter_lower> <parameter_upper> <scale=1> <chart_shift>`. Both directions are unit and mutually perpendicular. Their cross product is the circle axis. Radius is positive and `parameter_lower < parameter_upper`. Parameters are arc lengths in millimetres.
 
 When these clamped NURBS or bounded spatial-circle carriers are the complete geometric population and no surface graph is present, each carrier is one wire edge. The NURBS edge range is its knot domain. The circle edge range is the stored arc-length interval divided by its radius. Evaluating those exact ranges supplies the edge vertices.
+
 - **`b2/b3/b4 03 16` rational NURBS curve:** the payload is `<degree:compact> <2:compact> 0C <knot0:f64le> <knot1:f64le> <1:compact> <control_points:[f64le;3]^(degree+1)> <weights:f64le^(degree+1)> <1:compact> <1:compact> <knot0:f64le> <knot1:f64le> <scale:f64le=1> <offset:f64le=0> 00 07`. The degree is in `1..=64`, both knots are finite with `knot0 < knot1`, every coordinate is finite, and every weight is finite and positive. The repeated knots are bit-identical to the first pair. The neutral curve is one non-periodic clamped span with each endpoint knot repeated `degree+1` times. Control points and weights retain source order.
 - **`b2/b3/b4 03 18` parameter-space record:** header token `5`, then payload prefix `<selector:u8> <control:u8>`, where `selector ∈ {05,09,0d,11}`. Payload length `0x12` stores `(u,v):2×f64le`, `0x1a` stores `(station,u,v):3×f64le`, and `0x2a` stores five unsplit `f64le` values. Every scalar is finite.
 - **`b2 03 37`** stores a compact-int persistent-tag reference list followed by f64 `1.0`; its payload length is `0x22`, `0x24`, or `0x26`.
@@ -522,23 +523,23 @@ For `a8 <frame_flag> 34`, the lead byte, U degree/flags, finite strictly increas
 
 The elided-pole form places the fixed 141-byte range/affine/extrapolation tail immediately after the mode byte. The inline-pole form may place the same tail immediately after its XYZ pole grid and optional rational weight grid. An inline-pole frame may also end after that grid or weight grid without the tail. Its byte layout is:
 
-| Tail offset | Width | Value |
-| --- | ---: | --- |
-| `+0` | 1 | `05` |
-| `+1` | 1 | `4n+1` control |
-| `+2` | 1 | `05` |
-| `+3` | 1 | `4n+1` control |
-| `+4` | 8 | `f64le` zero |
-| `+12` | 8 | finite positive `f64le` |
-| `+20` | 8 | `f64le` zero |
-| `+28` | 8 | finite positive `f64le`, equal to `last(V) - first(V)` |
-| `+36` | 8 | `f64le` one |
-| `+44` | 8 | `f64le` zero |
-| `+52` | 8 | `f64le` one |
-| `+60` | 8 | `f64le` zero |
-| `+68` | 3 | `01 01 01` |
-| `+71` | 64 | zero bytes |
-| `+135` | 6 | `01 00 01 00 07 07` |
+| Tail offset | Width | Value                                                  |
+| ----------- | ----: | ------------------------------------------------------ |
+| `+0`        |     1 | `05`                                                   |
+| `+1`        |     1 | `4n+1` control                                         |
+| `+2`        |     1 | `05`                                                   |
+| `+3`        |     1 | `4n+1` control                                         |
+| `+4`        |     8 | `f64le` zero                                           |
+| `+12`       |     8 | finite positive `f64le`                                |
+| `+20`       |     8 | `f64le` zero                                           |
+| `+28`       |     8 | finite positive `f64le`, equal to `last(V) - first(V)` |
+| `+36`       |     8 | `f64le` one                                            |
+| `+44`       |     8 | `f64le` zero                                           |
+| `+52`       |     8 | `f64le` one                                            |
+| `+60`       |     8 | `f64le` zero                                           |
+| `+68`       |     3 | `01 01 01`                                             |
+| `+71`       |    64 | zero bytes                                             |
+| `+135`      |     6 | `01 00 01 00 07 07`                                    |
 
 The first four bytes are two independent control lanes: `+1` is the U-side
 control and `+3` is the V-side control. The eight f64 lanes are, in order,
@@ -861,16 +862,16 @@ The `5e1a` edge-stride, `0638` coedge-twin, `2569` side-pair header, and `2171` 
 
 Inline support pcurves share a clamped NURBS grammar. Distinct f64 knots are followed by equally many tagged `u32` multiplicities; `degree = first_multiplicity - 1`, `control_count = sum(multiplicities) - degree - 1`, and the full knot vector repeats each distinct knot by its multiplicity. Pole pairs follow the final multiplicity token. The families are:
 
-| Tag | Distinct knots | Multiplicities | Pole start | Degree/control count | Weights |
-| --- | --- | --- | --- | --- | --- |
-| `2145` | `+67..+107`, stride 8 | `+115..+140`, stride 5 | `+145` | 3 / 12 | none |
-| `2171` | `+67,+75` | `+83,+88` | `+93` | 1 / 2 | none |
-| `2172` | `+67..+115`, stride 8 | `+123..+153`, stride 5 | `+158` | 3 / 14 | none |
-| `2191` | `+67,+75` | `+83,+88` | `+93` | 3 / 4 | none |
-| `2199` | `+67,+75` | `+83,+88` | `+93` | 2 / 3 | three f64 values after the poles |
-| `219f` | `+67..+123`, stride 8 | `+131..+166`, stride 5 | `+171` | 3 / 16 | none |
-| `21d6` | `+67,+75,+83` | `+91,+96,+101` | `+106` | 2 / 5 | five f64 values after the poles |
-| `21e8` | `+67,+75,+83,+91,+99` | `+107,+112,+117,+122,+127` | `+132` | 3 / 7 | none |
+| Tag    | Distinct knots        | Multiplicities             | Pole start | Degree/control count | Weights                          |
+| ------ | --------------------- | -------------------------- | ---------- | -------------------- | -------------------------------- |
+| `2145` | `+67..+107`, stride 8 | `+115..+140`, stride 5     | `+145`     | 3 / 12               | none                             |
+| `2171` | `+67,+75`             | `+83,+88`                  | `+93`      | 1 / 2                | none                             |
+| `2172` | `+67..+115`, stride 8 | `+123..+153`, stride 5     | `+158`     | 3 / 14               | none                             |
+| `2191` | `+67,+75`             | `+83,+88`                  | `+93`      | 3 / 4                | none                             |
+| `2199` | `+67,+75`             | `+83,+88`                  | `+93`      | 2 / 3                | three f64 values after the poles |
+| `219f` | `+67..+123`, stride 8 | `+131..+166`, stride 5     | `+171`     | 3 / 16               | none                             |
+| `21d6` | `+67,+75,+83`         | `+91,+96,+101`             | `+106`     | 2 / 5                | five f64 values after the poles  |
+| `21e8` | `+67,+75,+83,+91,+99` | `+107,+112,+117,+122,+127` | `+132`     | 3 / 7                | none                             |
 
 The pole coordinates use the carrier's native parameter units. Neutral IR conversion is `(u/r,v)` for cylinders, `(u,v cos α)` for cones, `(u/R,v/r)` for tori, and identity for planes and NURBS surfaces. The first and last neutral poles equal the support endpoint pair. `2118` is degenerate and has no pcurve payload. A radial `2118` pair owned by a plane and torus defines their intersection branch. The plane normal is perpendicular to the torus axis. Let `d` be the signed plane offset from the torus center, `R,r` the torus radii, `φ` the torus minor angle, and `q` the in-plane transverse coordinate; the branch satisfies `ρ=R+r cos φ`, `q=±sqrt(ρ²-d²)`, and axial coordinate `r sin φ`. The endpoint signs select `±`, and the edge occupies the shorter monotone `φ` interval between its endpoints. The `2145`, `2172`, and `219f` logical records own the 256 bytes following their nominal frames. Their logical lengths are respectively 337, 382, and 427 bytes; the continuation contains the remainder of the inline row-major f64 `(u,v)` pole array.
 
