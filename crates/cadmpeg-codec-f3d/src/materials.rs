@@ -1654,6 +1654,7 @@ mod tests {
 
     fn distance_record(unit: u32, value: f64) -> cadmpeg_protein::DecodedRecord {
         cadmpeg_protein::DecodedRecord {
+            ordinal: 0,
             schema: "TestSchema".into(),
             guid: String::new(),
             base: String::new(),
@@ -1715,6 +1716,7 @@ mod tests {
 
     fn albedo_record(schema: &str) -> cadmpeg_protein::DecodedRecord {
         cadmpeg_protein::DecodedRecord {
+            ordinal: 0,
             schema: schema.to_owned(),
             guid: "11111111-2222-3333-4444-555555555555".to_owned(),
             base: "Prism-001".to_owned(),

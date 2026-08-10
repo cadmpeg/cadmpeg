@@ -9,10 +9,11 @@ use crate::native::{
     ActiveCarrierRecord, ActiveCarrierRecordState, DatabaseIssueRecord, DatabaseRecord,
     ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord, PropertyRecord,
     PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, ProteinAssetRecord,
-    ProteinEntryRecord, ProteinRecord, ProteinRecordState, RevisionRecord, RseRecordRecord,
-    SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
-    SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UfrxRecord,
-    UfrxRecordState, UnpairedSegmentRecord, INVENTOR_NATIVE_VERSION,
+    ProteinEntryRecord, ProteinRecord, ProteinRecordState, ProteinRejectionRecord, RevisionRecord,
+    RseRecordRecord, SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord,
+    SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord,
+    StructuralIssueRecord, UfrxRecord, UfrxRecordState, UnpairedSegmentRecord,
+    INVENTOR_NATIVE_VERSION,
 };
 
 const ARENAS: &[&str] = &[
@@ -34,6 +35,7 @@ const ARENAS: &[&str] = &[
     "protein",
     "protein_assets",
     "protein_entries",
+    "protein_rejections",
     "revisions",
     "rse_records",
     "segment_bulk",
@@ -123,6 +125,9 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         data.protein_assets.iter().map(|record| record.id.as_str()),
         "Protein asset id",
     );
+    validate_protein_assets(&data, &mut findings);
+    validate_protein_rejections(&data, &mut findings);
+    validate_protein_record_coverage(&data, &mut findings);
     validate_ufrx(&data, &mut findings);
     for issue in &data.structural_issues {
         findings.push(finding(
@@ -237,6 +242,7 @@ struct NativeData {
     protein: Vec<ProteinRecord>,
     protein_assets: Vec<ProteinAssetRecord>,
     protein_entries: Vec<ProteinEntryRecord>,
+    protein_rejections: Vec<ProteinRejectionRecord>,
     ufrx: Vec<UfrxRecord>,
     external_references: Vec<ExternalReferenceRecord>,
     active_carrier: Vec<ActiveCarrierRecord>,
@@ -270,6 +276,7 @@ impl NativeData {
             protein: namespace.arena_as("protein")?,
             protein_assets: namespace.arena_as("protein_assets")?,
             protein_entries: namespace.arena_as("protein_entries")?,
+            protein_rejections: namespace.arena_as("protein_rejections")?,
             ufrx: namespace.arena_as("ufrx")?,
             external_references: namespace.arena_as("external_references")?,
             active_carrier: namespace.arena_as("active_carrier")?,
@@ -660,6 +667,8 @@ fn validate_protein(data: &NativeData, findings: &mut Vec<Finding>) {
                 && record.entry_count == 0
                 && record.detail.is_none()
                 && data.protein_entries.is_empty()
+                && data.protein_assets.is_empty()
+                && data.protein_rejections.is_empty()
         }
         ProteinRecordState::Empty => {
             record.directory_id.is_some()
@@ -667,6 +676,8 @@ fn validate_protein(data: &NativeData, findings: &mut Vec<Finding>) {
                 && record.entry_count == 0
                 && record.detail.is_none()
                 && data.protein_entries.is_empty()
+                && data.protein_assets.is_empty()
+                && data.protein_rejections.is_empty()
         }
         ProteinRecordState::Package => {
             record.directory_id.is_some()
@@ -679,6 +690,8 @@ fn validate_protein(data: &NativeData, findings: &mut Vec<Finding>) {
                 && record.entry_count == 0
                 && record.detail.is_some()
                 && data.protein_entries.is_empty()
+                && data.protein_assets.is_empty()
+                && data.protein_rejections.is_empty()
         }
     };
     if !valid {
@@ -697,6 +710,109 @@ fn validate_protein(data: &NativeData, findings: &mut Vec<Finding>) {
             ),
             Some(record.id.clone()),
         ));
+    }
+}
+
+fn validate_protein_assets(data: &NativeData, findings: &mut Vec<Finding>) {
+    unique(
+        findings,
+        data.protein_assets
+            .iter()
+            .map(|record| (record.entry_name.as_str(), record.ordinal)),
+        "Protein decoded-record position",
+    );
+    let entry_names = data
+        .protein_entries
+        .iter()
+        .map(|entry| entry.name.as_str())
+        .collect::<HashSet<_>>();
+    for asset in &data.protein_assets {
+        if asset.ordinal != asset.asset.ordinal
+            || !asset.entry_name.ends_with("InstanceProperties.bin")
+            || !entry_names.contains(asset.entry_name.as_str())
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor Protein asset position is inconsistent or does not resolve to a package entry"
+                    .into(),
+                Some(asset.id.clone()),
+            ));
+        }
+    }
+}
+
+fn validate_protein_rejections(data: &NativeData, findings: &mut Vec<Finding>) {
+    unique(
+        findings,
+        data.protein_rejections
+            .iter()
+            .map(|record| record.id.as_str()),
+        "Protein rejection id",
+    );
+    unique(
+        findings,
+        data.protein_rejections
+            .iter()
+            .map(|record| (record.entry_name.as_str(), record.ordinal)),
+        "Protein rejected-record position",
+    );
+    let entry_names = data
+        .protein_entries
+        .iter()
+        .map(|entry| entry.name.as_str())
+        .collect::<HashSet<_>>();
+    let accepted_positions = data
+        .protein_assets
+        .iter()
+        .map(|record| (record.entry_name.as_str(), record.ordinal))
+        .collect::<HashSet<_>>();
+    for rejection in &data.protein_rejections {
+        if rejection.detail.is_empty()
+            || !rejection.entry_name.ends_with("InstanceProperties.bin")
+            || !entry_names.contains(rejection.entry_name.as_str())
+            || accepted_positions.contains(&(rejection.entry_name.as_str(), rejection.ordinal))
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor Protein rejection position overlaps an asset or does not resolve to a package entry and detail"
+                    .into(),
+                Some(rejection.id.clone()),
+            ));
+        }
+    }
+}
+
+fn validate_protein_record_coverage(data: &NativeData, findings: &mut Vec<Finding>) {
+    let mut positions = HashMap::<&str, HashSet<u64>>::new();
+    for (entry_name, ordinal) in data
+        .protein_assets
+        .iter()
+        .map(|record| (record.entry_name.as_str(), record.ordinal))
+        .chain(
+            data.protein_rejections
+                .iter()
+                .map(|record| (record.entry_name.as_str(), record.ordinal)),
+        )
+    {
+        positions.entry(entry_name).or_default().insert(ordinal);
+    }
+    for (entry_name, ordinals) in positions {
+        let contiguous = ordinals
+            .iter()
+            .copied()
+            .max()
+            .and_then(|maximum| maximum.checked_add(1))
+            .and_then(|count| usize::try_from(count).ok())
+            == Some(ordinals.len());
+        if !contiguous {
+            findings.push(finding(
+                Check::NativeLinks,
+                format!(
+                    "Inventor Protein logical-record positions are not contiguous for {entry_name:?}"
+                ),
+                None,
+            ));
+        }
     }
 }
 

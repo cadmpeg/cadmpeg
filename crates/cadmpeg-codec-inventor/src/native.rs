@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Current Inventor native namespace version.
-pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 10;
+pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 11;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct VersionTupleRecord {
@@ -143,8 +143,16 @@ pub(crate) struct ProteinEntryRecord {
 pub(crate) struct ProteinAssetRecord {
     pub(crate) id: String,
     pub(crate) entry_name: String,
-    pub(crate) ordinal: u32,
+    pub(crate) ordinal: u64,
     pub(crate) asset: cadmpeg_protein::DecodedRecord,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct ProteinRejectionRecord {
+    pub(crate) id: String,
+    pub(crate) entry_name: String,
+    pub(crate) ordinal: u64,
+    pub(crate) detail: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

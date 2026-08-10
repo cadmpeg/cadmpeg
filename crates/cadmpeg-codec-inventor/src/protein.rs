@@ -30,6 +30,7 @@ pub(crate) struct ProteinEnvelope<'a> {
 pub(crate) struct ProteinInstanceRecords {
     pub(crate) entry_name: String,
     pub(crate) records: Vec<cadmpeg_protein::DecodedRecord>,
+    pub(crate) rejected: Vec<cadmpeg_protein::RejectedRecord>,
 }
 
 pub(crate) fn parse<'a>(
@@ -140,9 +141,11 @@ fn decode_instances_from(
         .into_iter()
         .map(|entry| {
             let instance = archive.open(ctx, entry)?;
+            let outcome = cadmpeg_protein::decode_detailed(payload.window(), instance.window())?;
             Ok(ProteinInstanceRecords {
                 entry_name: entry.name.clone(),
-                records: cadmpeg_protein::decode(payload.window(), instance.window())?,
+                records: outcome.records,
+                rejected: outcome.rejected,
             })
         })
         .collect()
@@ -238,6 +241,39 @@ mod tests {
             assert_eq!(instances[0].records.len(), 1);
             assert_eq!(instances[0].records[0].schema, "SimpleSchema");
             assert_eq!(instances[0].records[0].guid, "asset-guid");
+            assert!(instances[0].rejected.is_empty());
+        });
+    }
+
+    #[test]
+    fn inventor_package_retains_rejected_instance_positions() {
+        let schema = br#"<Schema><UID val="SimpleSchema"/><String id="comment"/></Schema>"#;
+        let mut valid = Vec::new();
+        for value in ["SimpleSchema", "asset-guid", "Simple", ""] {
+            push_lp(&mut valid, value);
+        }
+        push_lp(&mut valid, &"x".repeat(160));
+        let mut instance = paged_instance(&valid);
+        let malformed = paged_instance(&[0xff; 160]);
+        instance.extend_from_slice(&malformed[16..]);
+        let zip = zip_entries(&[
+            ("Schemas/SimpleSchema.xml", schema),
+            ("AssetData/InstanceProperties.bin", &instance),
+        ]);
+        let mut bytes = (zip.len() as u32).to_le_bytes().to_vec();
+        bytes.extend_from_slice(&zip);
+        with_stream(&bytes, |ctx, root| {
+            let ParsedProtein::Package {
+                archive, payload, ..
+            } = parse_stream(ctx, root).expect("synthetic Protein package parses")
+            else {
+                panic!("package state")
+            };
+            let instances =
+                decode_instances_from(ctx, &archive, payload).expect("instances decode");
+            assert_eq!(instances[0].records.len(), 1);
+            assert_eq!(instances[0].rejected.len(), 1);
+            assert_eq!(instances[0].rejected[0].ordinal, 1);
         });
     }
 

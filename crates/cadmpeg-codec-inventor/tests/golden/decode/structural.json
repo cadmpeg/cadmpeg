@@ -91,6 +91,7 @@
           ],
           "protein_assets": [],
           "protein_entries": [],
+          "protein_rejections": [],
           "revisions": [],
           "rse_records": [],
           "segment_bulk": [],
@@ -131,7 +132,7 @@
           "vertex_ownerships": [],
           "wire_topologies": []
         },
-        "version": 10
+        "version": 11
       }
     },
     "source": {
@@ -164,6 +165,7 @@
       "protein_appearances": 0,
       "protein_assets": 0,
       "protein_entries": 0,
+      "protein_rejections": 0,
       "rse_databases": 0,
       "rse_meta_types": 0,
       "rse_records": 0,

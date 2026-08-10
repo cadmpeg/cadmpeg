@@ -25,10 +25,11 @@ use crate::native::{
     ActiveCarrierRecord, ActiveCarrierRecordState, DatabaseIssueRecord, DatabaseRecord,
     ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord, PropertyRecord,
     PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, ProteinAssetRecord,
-    ProteinEntryRecord, ProteinRecord, ProteinRecordState, RevisionRecord, RseRecordRecord,
-    SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
-    SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UfrxRecord,
-    UfrxRecordState, UnpairedSegmentRecord, VersionTupleRecord, INVENTOR_NATIVE_VERSION,
+    ProteinEntryRecord, ProteinRecord, ProteinRecordState, ProteinRejectionRecord, RevisionRecord,
+    RseRecordRecord, SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord,
+    SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord,
+    StructuralIssueRecord, UfrxRecord, UfrxRecordState, UnpairedSegmentRecord, VersionTupleRecord,
+    INVENTOR_NATIVE_VERSION,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
@@ -248,18 +249,33 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     let protein_assets = protein_instances
         .iter()
         .flat_map(|instance| {
+            instance.records.iter().map(|asset| ProteinAssetRecord {
+                id: format!(
+                    "inventor:protein:asset#{}-{}",
+                    sha256_hex(instance.entry_name.as_bytes()),
+                    asset.ordinal
+                ),
+                entry_name: instance.entry_name.clone(),
+                ordinal: asset.ordinal,
+                asset: asset.clone(),
+            })
+        })
+        .collect::<Vec<_>>();
+    let protein_rejections = protein_instances
+        .iter()
+        .flat_map(|instance| {
             instance
-                .records
+                .rejected
                 .iter()
-                .enumerate()
-                .map(|(ordinal, asset)| ProteinAssetRecord {
+                .map(|rejected| ProteinRejectionRecord {
                     id: format!(
-                        "inventor:protein:asset#{}-{ordinal}",
-                        sha256_hex(instance.entry_name.as_bytes())
+                        "inventor:protein:rejection#{}-{}",
+                        sha256_hex(instance.entry_name.as_bytes()),
+                        rejected.ordinal
                     ),
                     entry_name: instance.entry_name.clone(),
-                    ordinal: ordinal as u32,
-                    asset: asset.clone(),
+                    ordinal: rejected.ordinal,
+                    detail: rejected.detail.clone(),
                 })
         })
         .collect::<Vec<_>>();
@@ -827,6 +843,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .saturating_add(1)
             .saturating_add(protein_entries.len())
             .saturating_add(protein_assets.len())
+            .saturating_add(protein_rejections.len())
             .saturating_add(1)
             .saturating_add(external_references.len())
             .saturating_add(unpaired_segments.len())
@@ -848,6 +865,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     namespace.set_arena("protein", std::slice::from_ref(&protein))?;
     namespace.set_arena("protein_entries", &protein_entries)?;
     namespace.set_arena("protein_assets", &protein_assets)?;
+    namespace.set_arena("protein_rejections", &protein_rejections)?;
     namespace.set_arena("ufrx", std::slice::from_ref(&ufrx))?;
     namespace.set_arena("external_references", &external_references)?;
     namespace.set_arena("segment_pairs", &segment_pairs)?;
@@ -1018,16 +1036,27 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                         LossKind::MaterialNotTransferred,
                         format!("The Protein asset catalog could not be decoded: {detail}"),
                     ));
-                } else if !ir.model.appearances.is_empty() {
-                    losses.push(LossNote::new(
-                        LossKind::MaterialNotTransferred,
-                        "The Protein appearance catalog is decoded without a typed topology assignment.",
-                    ));
                 } else {
-                    losses.push(LossNote::new(
-                        LossKind::MaterialNotTransferred,
-                        "The Protein package contains no decoded appearance assets.",
-                    ));
+                    if !protein_rejections.is_empty() {
+                        losses.push(LossNote::new(
+                            LossKind::MaterialNotTransferred,
+                            format!(
+                                "Rejected {} malformed Protein asset record(s); later framed records remain decoded.",
+                                protein_rejections.len()
+                            ),
+                        ));
+                    }
+                    if ir.model.appearances.is_empty() {
+                        losses.push(LossNote::new(
+                            LossKind::MaterialNotTransferred,
+                            "The Protein package contains no decoded appearance assets.",
+                        ));
+                    } else {
+                        losses.push(LossNote::new(
+                            LossKind::MaterialNotTransferred,
+                            "The Protein appearance catalog is decoded without a typed topology assignment.",
+                        ));
+                    }
                 }
                 if !material_catalog.duplicate_guids.is_empty() {
                     losses.push(LossNote::new(
@@ -1151,6 +1180,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 ("preview_assets".into(), preview_asset_count),
                 ("protein_entries".into(), protein_entries.len()),
                 ("protein_assets".into(), protein_assets.len()),
+                ("protein_rejections".into(), protein_rejections.len()),
                 ("protein_appearances".into(), protein_appearance_count),
                 ("external_references".into(), external_references.len()),
                 (

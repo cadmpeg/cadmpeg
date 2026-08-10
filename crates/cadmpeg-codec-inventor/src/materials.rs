@@ -40,7 +40,7 @@ pub(crate) fn project_catalog(instances: &[ProteinInstanceRecords]) -> MaterialC
         .collect::<BTreeMap<_, _>>();
     let mut appearances = Vec::new();
     for (instance_ordinal, instance) in instances.iter().enumerate() {
-        for (record_ordinal, record) in instance.records.iter().enumerate() {
+        for record in &instance.records {
             if matches!(
                 record.schema.as_str(),
                 "UnifiedBitmapSchema" | "BumpMapSchema"
@@ -76,7 +76,8 @@ pub(crate) fn project_catalog(instances: &[ProteinInstanceRecords]) -> MaterialC
             .find_map(|id| color_property(record, id));
             appearances.push(Appearance {
                 id: AppearanceId(format!(
-                    "inventor:protein:appearance#{instance_ordinal}-{record_ordinal}"
+                    "inventor:protein:appearance#{instance_ordinal}-{}",
+                    record.ordinal
                 )),
                 name: Some(record.base.clone()),
                 asset_guid: Some(record.guid.clone()),
@@ -245,6 +246,7 @@ mod tests {
     #[test]
     fn catalog_projects_assets_and_refuses_ambiguous_texture_guids() {
         let color = DecodedRecord {
+            ordinal: 0,
             schema: "GenericSchema".into(),
             guid: "appearance".into(),
             base: "Blue".into(),
@@ -258,6 +260,7 @@ mod tests {
             )]),
         };
         let texture = || DecodedRecord {
+            ordinal: 1,
             schema: "UnifiedBitmapSchema".into(),
             guid: "duplicate-texture".into(),
             base: "Texture".into(),
@@ -267,6 +270,7 @@ mod tests {
         let instances = [ProteinInstanceRecords {
             entry_name: "AssetData/InstanceProperties.bin".into(),
             records: vec![color, texture(), texture()],
+            rejected: Vec::new(),
         }];
         let catalog = project_catalog(&instances);
 
