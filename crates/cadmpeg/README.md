@@ -232,9 +232,9 @@ exit status 1 count the same `error` and `blocking` findings.
 
 `query` projects one named view from a JSON artifact without `jq`: it reads a
 command report, a decoded CADIR document, or a `<stem>.fidelity.json` decode
-sidecar, detects
-which one it was given, and prints the view. Aggregate views print
-tab-separated rows with a header; `item` prints pretty-printed JSON records.
+sidecar, detects which one it was given, and prints the view. Aggregate views
+print tab-separated rows with a header; `item` prints pretty-printed JSON
+records.
 
 ```sh
 cadmpeg validate bracket.f3d -o report.json
@@ -244,6 +244,7 @@ cadmpeg query coverage report.json     # decode coverage counts
 cadmpeg query counts bracket.cadir.json  # per-arena entity counts; alias: arenas
 cadmpeg query item bracket.cadir.json model.faces FACE_ID  # one record; alias: record
 cadmpeg query summary report.json      # artifact kind and section counts
+cadmpeg query schema model.features    # the arena's record type (no FILE)
 ```
 
 `counts` on a CADIR document lists arena lengths for `model` and every
@@ -254,7 +255,13 @@ cadmpeg query summary report.json      # artifact kind and section counts
 suffix, accepts several IDs in one call, and with no ID prints the first
 record (`--head N` for the first N). Follow `links` and run `item` again to
 join. `--fields a,b.c` projects those paths as TSV (projection only — no
-`--where`). An empty or not-run section is not an error: the header prints, a
+`--where`). `schema` is the one view that takes no file: it prints the IR's
+compile-time record type for a model arena — every field, whether it is
+required, and every variant of a tagged union — or, bare, every model arena
+and its element type (`sidecar` prints the decode-sidecar shape). Which
+arenas a document actually has still comes from `counts`; native arena
+records are codec-owned, so `schema` refuses them and names `item` instead.
+An empty or not-run section is not an error: the header prints, a
 note goes to standard error, and the exit status stays `0`. A view the
 artifact kind can never carry exits `2` and names the command that produces
 the right artifact. `--json` wraps the projection in the versioned envelope,

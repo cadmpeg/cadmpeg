@@ -42,13 +42,13 @@ pub struct ItemArgs {
 
 /// Where the requested arena lives in the document.
 #[derive(Debug, Clone)]
-enum ArenaTarget {
+pub(crate) enum ArenaTarget {
     Model { arena: String },
     Native { codec: String, arena: String },
 }
 
 impl ArenaTarget {
-    fn parse(spec: &str) -> Result<Self> {
+    pub(crate) fn parse(spec: &str) -> Result<Self> {
         if !spec.contains('.') {
             return Ok(Self::Model {
                 arena: spec.to_owned(),

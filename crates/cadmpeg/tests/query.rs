@@ -799,3 +799,106 @@ fn item_round_trips_counts_dotted_name_on_unit_cube() {
         .success()
         .stdout(predicate::str::contains(&face_id));
 }
+
+#[test]
+fn schema_lists_model_arenas_with_element_types() {
+    let output = cadmpeg().args(["query", "schema"]).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.starts_with("arena\telement\trequired\n"), "{stdout}");
+    assert!(stdout.contains("model.faces\tFace\tyes"), "{stdout}");
+    assert!(
+        stdout.contains("model.assembly_joints\tAssemblyJoint\tno"),
+        "{stdout}"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("query schema sidecar"), "{stderr}");
+}
+
+#[test]
+fn schema_projects_feature_fields_with_tagged_union_inventory() {
+    let output = cadmpeg()
+        .args(["query", "schema", "model.features"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.starts_with("field\ttype\trequired\tdescription\n"),
+        "{stdout}"
+    );
+    // The measured trap: the discriminator of a feature's definition is
+    // `.definition.definition`, and the schema view names the tag key.
+    assert!(
+        stdout.contains("definition\tFeatureDefinition (tagged by definition,"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("extrude"), "{stdout}");
+    // Optionality is the other measured trap: these fields are absent-as-null.
+    assert!(stdout.contains("suppressed\tboolean?\tno"), "{stdout}");
+    assert!(stdout.contains("outputs\tarray<BodyId>\tno"), "{stdout}");
+    assert!(stdout.contains("id\tFeatureId\tyes"), "{stdout}");
+
+    // Bare shorthand is byte-identical to the dotted name.
+    let bare = cadmpeg()
+        .args(["query", "schema", "features"])
+        .output()
+        .unwrap();
+    assert_eq!(output.stdout, bare.stdout);
+}
+
+#[test]
+fn schema_teaches_on_native_file_and_unknown_arguments() {
+    let native = cadmpeg()
+        .args(["query", "schema", "native.creo.rows"])
+        .output()
+        .unwrap();
+    assert_eq!(native.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&native.stderr);
+    assert!(stderr.contains("query item"), "{stderr}");
+
+    let file = cadmpeg()
+        .args(["query", "schema", "doc.json"])
+        .output()
+        .unwrap();
+    assert_eq!(file.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&file.stderr);
+    assert!(
+        stderr.contains("takes an arena name, not a file"),
+        "{stderr}"
+    );
+
+    let unknown = cadmpeg()
+        .args(["query", "schema", "model.bogus"])
+        .output()
+        .unwrap();
+    assert_eq!(unknown.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&unknown.stderr);
+    assert!(stderr.contains("the IR defines:"), "{stderr}");
+    assert!(stderr.contains("faces"), "{stderr}");
+}
+
+#[test]
+fn schema_sidecar_and_json_envelope() {
+    let sidecar = cadmpeg()
+        .args(["query", "schema", "sidecar"])
+        .output()
+        .unwrap();
+    assert!(sidecar.status.success());
+    let stdout = String::from_utf8_lossy(&sidecar.stdout);
+    assert!(stdout.contains("fidelity\tSourceFidelity\tyes"), "{stdout}");
+    assert!(stdout.contains("ir_sha256\tstring\tyes"), "{stdout}");
+
+    let json = cadmpeg()
+        .args(["query", "schema", "--json", "model.faces"])
+        .output()
+        .unwrap();
+    assert!(json.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(value["command"], "query schema");
+    assert_eq!(value["schema"]["element"], "Face");
+    assert!(value["schema"]["defs"]
+        .as_object()
+        .unwrap()
+        .contains_key("FaceId"));
+}

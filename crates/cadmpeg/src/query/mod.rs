@@ -10,6 +10,7 @@
 //! view's help states which artifact kinds it accepts.
 
 mod item;
+mod schema;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -24,6 +25,7 @@ use serde::{Deserialize, Deserializer};
 use crate::commands::CLI_SCHEMA_VERSION;
 
 pub use item::ItemArgs;
+pub use schema::SchemaArgs;
 
 /// One named projection over a cadmpeg JSON artifact.
 #[derive(Debug, Subcommand)]
@@ -57,6 +59,19 @@ pub enum QueryView {
     /// in strings → `\t`/`\n`). Alias: `record` (also `get`).
     #[command(visible_alias = "record", alias = "get")]
     Item(ItemArgs),
+    /// The IR schema of one model arena's records (no FILE — compile time).
+    ///
+    /// Unlike the other views this takes no file: it prints what this
+    /// binary's IR types allow — every field of an arena's element type,
+    /// which fields are optional, and every variant of a tagged union
+    /// (`FaceSelection`'s `value` is absent, a string, an array, or an
+    /// object depending on `kind`; the discriminator of a feature's
+    /// `definition` is `.definition.definition`). Bare `query schema`
+    /// lists every model arena and its element type; `sidecar` prints the
+    /// `<stem>.fidelity.json` decode-sidecar shape. Which arenas a given
+    /// document actually has still comes from `query counts FILE`; native
+    /// arena records are codec-owned — fetch one with `query item` instead.
+    Schema(SchemaArgs),
 }
 
 /// Input selection and output format for one query view.
@@ -78,6 +93,7 @@ impl QueryView {
             | Self::Losses(args)
             | Self::Counts(args) => args,
             Self::Item(_) => unreachable!("item uses ItemArgs"),
+            Self::Schema(_) => unreachable!("schema uses SchemaArgs"),
         }
     }
 }
@@ -264,6 +280,9 @@ pub fn run(view: &QueryView) -> Result<()> {
     if let QueryView::Item(args) = view {
         return item::run(args);
     }
+    if let QueryView::Schema(args) = view {
+        return schema::run(args);
+    }
     let args = view.args();
     let bytes = read_input(&args.file)?;
     let artifact = detect(&bytes, &args.file)?;
@@ -276,7 +295,7 @@ pub fn run(view: &QueryView) -> Result<()> {
         QueryView::Findings(args) => findings(&artifact, args),
         QueryView::Losses(args) => losses(&artifact, args),
         QueryView::Counts(args) => counts(&artifact, args),
-        QueryView::Item(_) => unreachable!("handled above"),
+        QueryView::Item(_) | QueryView::Schema(_) => unreachable!("handled above"),
     }
 }
 
