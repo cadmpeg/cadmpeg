@@ -50,24 +50,80 @@ fn direction(
     sequence: u32,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-    global: &Global,
-) -> Option<Vector3> {
-    let entry = entries.get(&sequence).copied()?;
+) -> Result<Vector3, String> {
+    let entry = entries
+        .get(&sequence)
+        .copied()
+        .ok_or_else(|| format!("points to missing Directory entry D{sequence}"))?;
     if entry.entity_type != 123 || entry.form != 0 {
-        return None;
+        return Err(format!(
+            "points to type {} form {} at D{sequence}, not type 123 form 0",
+            entry.entity_type, entry.form
+        ));
     }
-    let record = records.get(&sequence).copied()?;
-    let vector = Vector3::new(record.number(1)?, record.number(2)?, record.number(3)?);
-    let transform = resolve_transform(
-        entry.transform,
-        entries,
-        records,
-        global.length_factor_mm(),
-        global.real_precision(),
-        &mut BTreeSet::new(),
-    )
-    .ok()?;
-    normalized(transform.vector(vector))
+    if !entry.status.is_physically_dependent() {
+        return Err(format!(
+            "points to D{sequence}, which is not physically dependent"
+        ));
+    }
+    if entry.transform != 0 {
+        return Err(format!(
+            "points to D{sequence}, which has a prohibited transformation"
+        ));
+    }
+    let record = records
+        .get(&sequence)
+        .copied()
+        .ok_or_else(|| format!("points to D{sequence}, whose Parameter Data record is missing"))?;
+    let components = [record.number(1), record.number(2), record.number(3)];
+    let [Some(x), Some(y), Some(z)] = components else {
+        return Err(format!(
+            "points to D{sequence}, whose direction components are not numeric"
+        ));
+    };
+    normalized(Vector3::new(x, y, z))
+        .ok_or_else(|| format!("points to D{sequence}, whose direction is zero or non-finite"))
+}
+
+fn required_direction(
+    record: &ParameterRecord,
+    index: usize,
+    role: &str,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> Result<Vector3, String> {
+    let sequence = pointer(record, index)
+        .ok_or_else(|| format!("{role} pointer is missing, even, or non-integer"))?;
+    direction(sequence, entries, records).map_err(|message| format!("{role} {message}"))
+}
+
+fn transformed_direction(
+    record: &ParameterRecord,
+    index: usize,
+    role: &str,
+    transform: Affine,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> Result<Vector3, String> {
+    let direction = required_direction(record, index, role, entries, records)?;
+    normalized(transform.vector(direction))
+        .ok_or_else(|| format!("{role} collapses under the surface transformation"))
+}
+
+fn form_reference_direction(
+    form: i64,
+    record: &ParameterRecord,
+    index: usize,
+    role: &str,
+    transform: Affine,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> Result<Option<Vector3>, String> {
+    if form == 0 {
+        Ok(None)
+    } else {
+        transformed_direction(record, index, role, transform, entries, records).map(Some)
+    }
 }
 
 fn reference_direction(axis: Vector3, candidate: Option<Vector3>) -> Option<Vector3> {
@@ -144,18 +200,35 @@ pub(super) fn project(
         let location = transform.point(location);
         let result = match entry.entity_type {
             190 => {
-                let Some(axis) = pointer(record, 2)
-                    .and_then(|sequence| direction(sequence, &entries, &records, global))
-                    .and_then(|axis| normalized(transform.vector(axis)))
-                else {
-                    losses.push(entity_loss(entry, "plane normal direction is missing"));
-                    continue;
+                let axis = match transformed_direction(
+                    record,
+                    2,
+                    "plane normal",
+                    transform,
+                    &entries,
+                    &records,
+                ) {
+                    Ok(axis) => axis,
+                    Err(message) => {
+                        losses.push(entity_loss(entry, message));
+                        continue;
+                    }
                 };
-                let candidate = (entry.form == 1)
-                    .then(|| pointer(record, 3))
-                    .flatten()
-                    .and_then(|sequence| direction(sequence, &entries, &records, global))
-                    .map(|direction| transform.vector(direction));
+                let candidate = match form_reference_direction(
+                    entry.form,
+                    record,
+                    3,
+                    "plane reference direction",
+                    transform,
+                    &entries,
+                    &records,
+                ) {
+                    Ok(candidate) => candidate,
+                    Err(message) => {
+                        losses.push(entity_loss(entry, message));
+                        continue;
+                    }
+                };
                 let Some(u_axis) = reference_direction(axis, candidate) else {
                     losses.push(entity_loss(
                         entry,
@@ -170,12 +243,19 @@ pub(super) fn project(
                 }
             }
             192 => {
-                let Some(axis) = pointer(record, 2)
-                    .and_then(|sequence| direction(sequence, &entries, &records, global))
-                    .and_then(|axis| normalized(transform.vector(axis)))
-                else {
-                    losses.push(entity_loss(entry, "cylinder axis direction is missing"));
-                    continue;
+                let axis = match transformed_direction(
+                    record,
+                    2,
+                    "cylinder axis",
+                    transform,
+                    &entries,
+                    &records,
+                ) {
+                    Ok(axis) => axis,
+                    Err(message) => {
+                        losses.push(entity_loss(entry, message));
+                        continue;
+                    }
                 };
                 let Some(radius) = record
                     .number(3)
@@ -188,11 +268,21 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                let candidate = (entry.form == 1)
-                    .then(|| pointer(record, 4))
-                    .flatten()
-                    .and_then(|sequence| direction(sequence, &entries, &records, global))
-                    .map(|direction| transform.vector(direction));
+                let candidate = match form_reference_direction(
+                    entry.form,
+                    record,
+                    4,
+                    "cylinder reference direction",
+                    transform,
+                    &entries,
+                    &records,
+                ) {
+                    Ok(candidate) => candidate,
+                    Err(message) => {
+                        losses.push(entity_loss(entry, message));
+                        continue;
+                    }
+                };
                 let Some(ref_direction) = reference_direction(axis, candidate) else {
                     losses.push(entity_loss(
                         entry,
@@ -208,12 +298,19 @@ pub(super) fn project(
                 }
             }
             194 => {
-                let Some(axis) = pointer(record, 2)
-                    .and_then(|sequence| direction(sequence, &entries, &records, global))
-                    .and_then(|axis| normalized(transform.vector(axis)))
-                else {
-                    losses.push(entity_loss(entry, "cone axis direction is missing"));
-                    continue;
+                let axis = match transformed_direction(
+                    record,
+                    2,
+                    "cone axis",
+                    transform,
+                    &entries,
+                    &records,
+                ) {
+                    Ok(axis) => axis,
+                    Err(message) => {
+                        losses.push(entity_loss(entry, message));
+                        continue;
+                    }
                 };
                 let Some(radius) = record
                     .number(3)
@@ -232,11 +329,21 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                let candidate = (entry.form == 1)
-                    .then(|| pointer(record, 5))
-                    .flatten()
-                    .and_then(|sequence| direction(sequence, &entries, &records, global))
-                    .map(|direction| transform.vector(direction));
+                let candidate = match form_reference_direction(
+                    entry.form,
+                    record,
+                    5,
+                    "cone reference direction",
+                    transform,
+                    &entries,
+                    &records,
+                ) {
+                    Ok(candidate) => candidate,
+                    Err(message) => {
+                        losses.push(entity_loss(entry, message));
+                        continue;
+                    }
+                };
                 let Some(ref_direction) = reference_direction(axis, candidate) else {
                     losses.push(entity_loss(
                         entry,
@@ -266,21 +373,33 @@ pub(super) fn project(
                     continue;
                 };
                 let axis = if entry.form == 1 {
-                    pointer(record, 3)
-                        .and_then(|sequence| direction(sequence, &entries, &records, global))
-                        .and_then(|axis| normalized(transform.vector(axis)))
+                    transformed_direction(record, 3, "sphere axis", transform, &entries, &records)
                 } else {
                     normalized(transform.vector(Vector3::new(0.0, 0.0, 1.0)))
+                        .ok_or_else(|| "sphere axis collapses under its transformation".to_owned())
                 };
-                let Some(axis) = axis else {
-                    losses.push(entity_loss(entry, "sphere axis direction is missing"));
-                    continue;
+                let axis = match axis {
+                    Ok(axis) => axis,
+                    Err(message) => {
+                        losses.push(entity_loss(entry, message));
+                        continue;
+                    }
                 };
-                let candidate = (entry.form == 1)
-                    .then(|| pointer(record, 4))
-                    .flatten()
-                    .and_then(|sequence| direction(sequence, &entries, &records, global))
-                    .map(|direction| transform.vector(direction));
+                let candidate = match form_reference_direction(
+                    entry.form,
+                    record,
+                    4,
+                    "sphere reference direction",
+                    transform,
+                    &entries,
+                    &records,
+                ) {
+                    Ok(candidate) => candidate,
+                    Err(message) => {
+                        losses.push(entity_loss(entry, message));
+                        continue;
+                    }
+                };
                 let Some(ref_direction) = reference_direction(axis, candidate) else {
                     losses.push(entity_loss(
                         entry,
@@ -296,12 +415,19 @@ pub(super) fn project(
                 }
             }
             198 => {
-                let Some(axis) = pointer(record, 2)
-                    .and_then(|sequence| direction(sequence, &entries, &records, global))
-                    .and_then(|axis| normalized(transform.vector(axis)))
-                else {
-                    losses.push(entity_loss(entry, "torus axis direction is missing"));
-                    continue;
+                let axis = match transformed_direction(
+                    record,
+                    2,
+                    "torus axis",
+                    transform,
+                    &entries,
+                    &records,
+                ) {
+                    Ok(axis) => axis,
+                    Err(message) => {
+                        losses.push(entity_loss(entry, message));
+                        continue;
+                    }
                 };
                 let radii = [record.number(3), record.number(4)];
                 let [Some(major_radius), Some(minor_radius)] = radii else {
@@ -320,11 +446,21 @@ pub(super) fn project(
                     ));
                     continue;
                 }
-                let candidate = (entry.form == 1)
-                    .then(|| pointer(record, 5))
-                    .flatten()
-                    .and_then(|sequence| direction(sequence, &entries, &records, global))
-                    .map(|direction| transform.vector(direction));
+                let candidate = match form_reference_direction(
+                    entry.form,
+                    record,
+                    5,
+                    "torus reference direction",
+                    transform,
+                    &entries,
+                    &records,
+                ) {
+                    Ok(candidate) => candidate,
+                    Err(message) => {
+                        losses.push(entity_loss(entry, message));
+                        continue;
+                    }
+                };
                 let Some(ref_direction) = reference_direction(axis, candidate) else {
                     losses.push(entity_loss(
                         entry,

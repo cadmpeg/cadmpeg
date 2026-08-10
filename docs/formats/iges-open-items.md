@@ -120,18 +120,6 @@ from a conformant file.
 
 ## 5. Surfaces and topology
 
-### TP-05. A Form 1 reference direction that fails to resolve is treated as absent
-
-**Question.** What does a Form 1 analytic surface whose declared reference direction does not resolve mean?
-
-**Known.** `analytic_surfaces.rs:192-203`, and the same shape at `:155-166`, `:236-247`, `:280-291`, `:324-335`, collapse every failure of the declared pointer — omitted field, even sequence, dangling target, wrong type, non-numeric Type 123 parameters, unresolvable transform — into `None`, which `reference_direction` (`:72-77`) then treats as "the direction was absent" and replaces with a derived frame. The surface is marked `decoded` and no loss is recorded.
-
-**Conflict.** `iges.md` "Geometry" sanctions a derived frame for a missing reference direction. A Form 1 record that declares one and fails to deliver it is a different condition.
-
-**Note.** The downstream pcurve agreement tests compose the pcurve with the surface, so a wrong seam cannot reach a trimmed face. The result is a loss reported against the Type 144 rather than the surface, which sends the investigation to the wrong entity.
-
-**Need.** We need the two conditions separated, and the loss attributed to the entity that holds the defect.
-
 ### TP-06. Type 180 Form 1 requires a direct Type 186 operand
 
 **Question.** Does "contains a Manifold Solid B-rep operand" apply to direct operands or to the complete subtree?

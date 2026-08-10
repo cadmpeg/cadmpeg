@@ -2906,6 +2906,53 @@ fn pointer_defined_surface_file(entity_type: i64, form: i64) -> Vec<u8> {
     bytes
 }
 
+fn pointer_defined_surface_with_reference(
+    entity_type: i64,
+    reference_pointer: &str,
+    reference_type: i64,
+    reference_status: &'static str,
+    reference_parameters: &str,
+) -> Vec<u8> {
+    let surface_parameters = match entity_type {
+        190 => format!("190,1,3,{reference_pointer};"),
+        192 => format!("192,1,3,2,{reference_pointer};"),
+        194 => format!("194,1,3,2,30,{reference_pointer};"),
+        196 => format!("196,1,2,3,{reference_pointer};"),
+        198 => format!("198,1,3,4,1,{reference_pointer};"),
+        _ => unreachable!(),
+    };
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "LOCATION".into(),
+            status: "00010000",
+            parameters: "116,1,2,3,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 123,
+            form: 0,
+            label: "AXIS".into(),
+            status: "00010000",
+            parameters: "123,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: reference_type,
+            form: 0,
+            label: "REFDIR".into(),
+            status: reference_status,
+            parameters: reference_parameters.into(),
+        },
+        OwnedTestEntity {
+            entity_type,
+            form: 1,
+            label: "SURFACE".into(),
+            status: "00000000",
+            parameters: surface_parameters,
+        },
+    ])
+}
+
 fn trimmed_plane_file() -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
@@ -9578,6 +9625,115 @@ fn decode_projects_all_pointer_defined_analytic_surface_forms() {
             assert!(validation.is_ok(), "{:#?}", validation.findings);
         }
     }
+}
+
+#[test]
+fn decode_rejects_unresolved_form_one_analytic_surface_references() {
+    for entity_type in [190, 192, 194, 196, 198] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(pointer_defined_surface_with_reference(
+                    entity_type,
+                    "",
+                    123,
+                    "00010000",
+                    "123,1,0,0;",
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert!(result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .all(|surface| surface.id.0 != "iges:model:surface#D7"));
+        assert!(result.report.losses.iter().any(|loss| {
+            loss.message
+                .contains(&format!("IGES entity type {entity_type} form 1"))
+                && loss
+                    .message
+                    .contains("reference direction pointer is missing")
+        }));
+    }
+
+    for (pointer, reference_type, status, parameters, expected) in [
+        (
+            "9",
+            123,
+            "00010000",
+            "123,1,0,0;",
+            "missing Directory entry D9",
+        ),
+        (
+            "5",
+            110,
+            "00010000",
+            "110,0,0,0,1,0,0;",
+            "not type 123 form 0",
+        ),
+        (
+            "5",
+            123,
+            "00010000",
+            "123,1HX,0,0;",
+            "components are not numeric",
+        ),
+        (
+            "5",
+            123,
+            "00000000",
+            "123,1,0,0;",
+            "not physically dependent",
+        ),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(pointer_defined_surface_with_reference(
+                    192,
+                    pointer,
+                    reference_type,
+                    status,
+                    parameters,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert!(result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .all(|surface| surface.id.0 != "iges:model:surface#D7"));
+        assert!(result.report.losses.iter().any(|loss| {
+            loss.message.contains("IGES entity type 192 form 1") && loss.message.contains(expected)
+        }));
+    }
+
+    let mut transformed_reference =
+        pointer_defined_surface_with_reference(192, "5", 123, "00010000", "123,1,0,0;");
+    let reference_marker = transformed_reference
+        .windows(8)
+        .position(|window| window == b"D      5")
+        .unwrap();
+    transformed_reference[reference_marker - 24..reference_marker - 16]
+        .copy_from_slice(b"       9");
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(transformed_reference),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .all(|surface| surface.id.0 != "iges:model:surface#D7"));
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.message.contains("IGES entity type 192 form 1")
+            && loss.message.contains("prohibited transformation")
+    }));
 }
 
 #[test]
