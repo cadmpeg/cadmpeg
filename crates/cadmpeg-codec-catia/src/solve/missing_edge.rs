@@ -2,13 +2,9 @@
 //!
 //! Recovers unmatched edge-row placements against serialized face coverage.
 
-#[cfg(test)]
-use crate::families::standard::fbb::largest_fbb_run;
-#[cfg(test)]
-use crate::families::standard::fbb::parse_fbb_edge_tables;
 use crate::families::standard::fbb::{
-    boundary_cycles, parse_edge_tables, parse_standard_edge_tables, parse_trim_chain,
-    parse_vertex_table, selected_standard_run,
+    boundary_cycles, largest_fbb_run, parse_edge_tables, parse_fbb_edge_tables,
+    parse_standard_edge_tables, parse_trim_chain, parse_vertex_table, selected_standard_run,
 };
 use crate::families::standard::topology::{incidence_cycles, EdgeRow, TrimRecord};
 #[cfg(test)]
@@ -44,7 +40,6 @@ pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]
         .collect()
 }
 
-#[cfg(test)]
 pub(crate) fn fbb_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     let (_, _, after_faces) = largest_fbb_run(bytes)?;
     let (edge_rows, scopes, _, _) = parse_fbb_edge_tables(bytes, after_faces)?;
@@ -66,13 +61,20 @@ pub(crate) fn fbb_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
         .collect()
 }
 
+/// Select the endpoint-identity grammar belonging to the detected spine
+/// family. Standard rows use row-local endpoint ports; FBB-only rows use
+/// table-scoped complete-boundary handles.
+pub(crate) fn edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+    standard_edge_port_identities(bytes).or_else(|| fbb_edge_port_identities(bytes))
+}
+
 /// Collapse physical edge endpoints through every exact trim-mesh occurrence.
 /// The returned component identifiers are compact and stable within this
 /// result; they are not coordinate-row indices.
 #[must_use]
 pub fn standard_mesh_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     let analysis = standard_mesh_analysis(bytes)?;
-    let local_ports = standard_edge_port_identities(bytes)?;
+    let local_ports = edge_port_identities(bytes)?;
     mesh_edge_ports(&analysis, &local_ports)
 }
 
@@ -621,7 +623,7 @@ impl StandardMeshBoundaryContext {
             return None;
         }
         let coverage = mesh_face_coverage(&analysis, edge_faces)?;
-        let local_ports = standard_edge_port_identities(bytes)?;
+        let local_ports = edge_port_identities(bytes)?;
         let edge_ports = mesh_edge_ports(&analysis, &local_ports)?;
         let edge_runs = mesh_edge_runs(&analysis)?;
         let cycle_lengths = analysis

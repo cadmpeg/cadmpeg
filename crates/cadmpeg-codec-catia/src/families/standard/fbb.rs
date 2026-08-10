@@ -43,6 +43,13 @@ pub(crate) fn standard_edge_count(bytes: &[u8]) -> Option<usize> {
     parse_standard_edge_tables(bytes, after_faces).map(|(rows, _)| rows.len())
 }
 
+/// Number of physical edge rows in the width-selected FBB-only tables.
+#[must_use]
+pub(crate) fn fbb_only_edge_count(bytes: &[u8]) -> Option<usize> {
+    let (_, _, after_faces) = largest_fbb_run(bytes)?;
+    parse_fbb_edge_tables(bytes, after_faces).map(|(rows, _, _, _)| rows.len())
+}
+
 /// RGBA display color for each positional standard face row.
 #[must_use]
 pub fn standard_face_colors(bytes: &[u8]) -> Option<Vec<[u8; 4]>> {
@@ -83,6 +90,15 @@ pub fn standard_face_frame_vectors(bytes: &[u8]) -> Vec<Option<[f64; 3]>> {
 pub(crate) fn standard_vertex_points(bytes: &[u8]) -> Option<Vec<[f64; 3]>> {
     let (_, _, after_faces) = selected_standard_run(bytes)?;
     let (_, vertex_header) = parse_standard_edge_tables(bytes, after_faces)?;
+    parse_vertex_table(bytes, vertex_header)
+}
+
+/// Coordinates from the counted vertex table following a complete FBB-only
+/// edge-table walk.
+#[must_use]
+pub(crate) fn fbb_only_vertex_points(bytes: &[u8]) -> Option<Vec<[f64; 3]>> {
+    let (_, _, after_faces) = largest_fbb_run(bytes)?;
+    let (_, _, vertex_header, _) = parse_fbb_edge_tables(bytes, after_faces)?;
     parse_vertex_table(bytes, vertex_header)
 }
 
@@ -377,7 +393,8 @@ pub(crate) fn parse_fbb_edge_tables_width(
             return None;
         }
         let kind = *bytes.get(position + 1)?;
-        if !matches!(kind, 1 | 2) {
+        let expected_kind = u8::try_from(table_count + 1).ok()?;
+        if kind != expected_kind {
             return None;
         }
         position += 2;

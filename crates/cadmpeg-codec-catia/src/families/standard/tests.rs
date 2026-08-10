@@ -6680,7 +6680,7 @@ mod record_decoders {
     use crate::families::standard::records::{StandardFaceBounds, StandardSurfaceRecord};
     use crate::tests::{
         a8_freeform_curve_stream, a8_surface_stream, append_b5_record, b5_closed_triangle_stream,
-        le_f32, le_f64, standard_quad_topology_stream,
+        fbb_only_quad_topology_stream, le_f32, le_f64, standard_quad_topology_stream,
     };
 
     #[test]
@@ -6997,6 +6997,43 @@ mod record_decoders {
             crate::solve::missing_edge::standard_mesh_edge_runs(&bytes).expect("u24 edge runs");
         assert_eq!(runs.len(), 8);
         assert!(runs.iter().all(|run| run.segment_count == 1));
+    }
+
+    #[test]
+    fn fbb_only_topology_uses_complete_boundary_runs_and_scoped_ports() {
+        let bytes = fbb_only_quad_topology_stream();
+        assert_eq!(
+            crate::families::standard::fbb::fbb_only_edge_count(&bytes),
+            Some(4)
+        );
+        assert_eq!(
+            crate::families::standard::fbb::fbb_only_vertex_points(&bytes)
+                .expect("counted FBB-only vertices")
+                .len(),
+            4
+        );
+        let topology = crate::families::standard::topology::parse_fbb(&bytes)
+            .expect("valid FBB-only topology");
+        assert_eq!(topology.face_count(), 1);
+        assert_eq!(topology.edge_rows().len(), 4);
+        assert!(topology.edge_rows().iter().all(|row| {
+            row.boundary_layout
+                == crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun
+        }));
+        let ports = crate::solve::missing_edge::standard_mesh_edge_ports(&bytes)
+            .expect("FBB-only mesh port quotient");
+        assert_eq!(ports, vec![[0, 1], [1, 2], [2, 3], [3, 0]]);
+        let topology =
+            crate::families::standard::topology::parse_fbb_with_native_vertices(&bytes, &ports)
+                .expect("FBB-only native endpoint quotient");
+        assert_eq!(topology.logical_vertex_count(), 4);
+        assert_eq!(
+            topology.edge_vertices().expect("FBB-only edge endpoints"),
+            ports
+                .into_iter()
+                .map(|pair| pair.map(|identity| identity as usize))
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]

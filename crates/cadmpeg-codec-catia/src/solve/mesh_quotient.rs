@@ -25,10 +25,10 @@ use crate::solve::matching::{
 #[cfg(test)]
 use crate::solve::missing_edge::standard_mesh_boundary_assignments;
 use crate::solve::missing_edge::{
-    same_unordered_pair, standard_edge_port_identities,
-    standard_mesh_boundary_assignments_from_context, standard_mesh_boundary_domains_from_context,
-    MeshBoundaryEdgeCandidate, MeshDeferredFaceBoundary, MeshFaceBoundaryAssignment,
-    MeshFaceBoundaryDomain, StandardMeshBoundaryContext,
+    edge_port_identities, same_unordered_pair, standard_mesh_boundary_assignments_from_context,
+    standard_mesh_boundary_domains_from_context, MeshBoundaryEdgeCandidate,
+    MeshDeferredFaceBoundary, MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
+    StandardMeshBoundaryContext,
 };
 use crate::solve::UnionFind;
 use std::cell::{Cell, RefCell};
@@ -6553,7 +6553,7 @@ pub fn parse_standard_mesh_endpoint_candidates(
     deduplicate_mesh_quotient_assignments(&mut assignments);
     // Standard-row occurrence direction is a face-quotient choice. Complete
     // FBB tables retain their scoped handle equalities in these local ports.
-    let port_identities = standard_edge_port_identities(bytes)?;
+    let port_identities = edge_port_identities(bytes)?;
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     resolve_standard_mesh_endpoint_candidates(
         &edge_rows,
@@ -6889,7 +6889,7 @@ where
         )?;
         // Do not pre-apply raw trim-run direction: standard-row endpoints are
         // oriented only when a complete face-boundary quotient is selected.
-        let port_identities = standard_edge_port_identities(bytes)?;
+        let port_identities = edge_port_identities(bytes)?;
         Some((
             face_count,
             edge_rows,
