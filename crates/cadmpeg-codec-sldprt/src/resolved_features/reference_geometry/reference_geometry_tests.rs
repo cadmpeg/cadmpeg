@@ -948,6 +948,34 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
 }
 
 #[test]
+fn intersecting_reference_axis_pair_completes_legacy_triad() {
+    let frames = [
+        Some((Point3::new(0.0, 85.0, 0.0), Vector3::new(1.0, 0.0, 0.0))),
+        None,
+        Some((Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, -1.0, 0.0))),
+    ];
+
+    assert_eq!(
+        super::complete_reference_axis_triad(frames),
+        Some((
+            1,
+            (Point3::new(0.0, 85.0, 0.0), Vector3::new(0.0, 0.0, -1.0),),
+        ))
+    );
+}
+
+#[test]
+fn skew_reference_axes_do_not_complete_legacy_triad() {
+    let frames = [
+        Some((Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))),
+        None,
+        Some((Point3::new(0.0, 1.0, 1.0), Vector3::new(0.0, 1.0, 0.0))),
+    ];
+
+    assert_eq!(super::complete_reference_axis_triad(frames), None);
+}
+
+#[test]
 fn fixed_reference_plane_uses_all_three_stored_basis_vectors() {
     let mut frame = [0; FIXED_REFERENCE_PLANE_FRAME_LEN];
     for (offset, value) in [

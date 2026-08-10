@@ -1633,6 +1633,125 @@ pub(crate) fn enrich_history_reference_axes(
             format!("{},{},{}", frame.1.x, frame.1.y, frame.1.z),
         );
     }
+
+    for history in histories {
+        let completions = legacy_reference_axis_triads(&history.features)
+            .into_iter()
+            .filter_map(|(indices, _)| {
+                let frames = indices.map(|index| {
+                    let feature = &history.features[index];
+                    Some((
+                        crate::history::parse_point3_mm(feature.properties.get("Origin")?)?,
+                        crate::history::parse_vector3(feature.properties.get("Direction")?)?,
+                    ))
+                });
+                let (missing, frame) = complete_reference_axis_triad(frames)?;
+                Some((indices[missing], frame))
+            })
+            .collect::<Vec<_>>();
+        for (index, (origin, direction)) in completions {
+            let feature = &mut history.features[index];
+            feature.properties.insert(
+                "Origin".into(),
+                format!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
+            );
+            feature.properties.insert(
+                "Direction".into(),
+                format!("{},{},{}", direction.x, direction.y, direction.z),
+            );
+        }
+    }
+}
+
+pub(super) fn complete_reference_axis_triad(
+    frames: [Option<(Point3, Vector3)>; 3],
+) -> Option<(usize, (Point3, Vector3))> {
+    const ANGULAR_TOLERANCE: f64 = 1.0e-9;
+    const POSITION_TOLERANCE_MM: f64 = 1.0e-8;
+
+    let missing = frames.iter().position(Option::is_none)?;
+    if frames.iter().filter(|frame| frame.is_none()).count() != 1 {
+        return None;
+    }
+    let present = (0..3)
+        .filter_map(|index| frames[index].map(|frame| (index, frame)))
+        .collect::<Vec<_>>();
+    let [(_, (first_origin, first_direction)), (_, (second_origin, second_direction))] =
+        present.as_slice()
+    else {
+        return None;
+    };
+    let normalize = |direction: Vector3| {
+        let length = direction.norm();
+        (length.is_finite() && length > 1.0e-12).then(|| {
+            Vector3::new(
+                direction.x / length,
+                direction.y / length,
+                direction.z / length,
+            )
+        })
+    };
+    let dot =
+        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    let cross = |left: Vector3, right: Vector3| {
+        Vector3::new(
+            left.y * right.z - left.z * right.y,
+            left.z * right.x - left.x * right.z,
+            left.x * right.y - left.y * right.x,
+        )
+    };
+    let first_direction = normalize(*first_direction)?;
+    let second_direction = normalize(*second_direction)?;
+    if dot(first_direction, second_direction).abs() > ANGULAR_TOLERANCE {
+        return None;
+    }
+    let displacement = Vector3::new(
+        second_origin.x - first_origin.x,
+        second_origin.y - first_origin.y,
+        second_origin.z - first_origin.z,
+    );
+    let first_point = Point3::new(
+        first_origin.x + first_direction.x * dot(displacement, first_direction),
+        first_origin.y + first_direction.y * dot(displacement, first_direction),
+        first_origin.z + first_direction.z * dot(displacement, first_direction),
+    );
+    let second_point = Point3::new(
+        second_origin.x - second_direction.x * dot(displacement, second_direction),
+        second_origin.y - second_direction.y * dot(displacement, second_direction),
+        second_origin.z - second_direction.z * dot(displacement, second_direction),
+    );
+    let separation = Vector3::new(
+        first_point.x - second_point.x,
+        first_point.y - second_point.y,
+        first_point.z - second_point.z,
+    );
+    let scale = [
+        first_point.x,
+        first_point.y,
+        first_point.z,
+        second_point.x,
+        second_point.y,
+        second_point.z,
+    ]
+    .into_iter()
+    .map(f64::abs)
+    .fold(1.0_f64, f64::max);
+    if separation.norm() > POSITION_TOLERANCE_MM * scale {
+        return None;
+    }
+    let origin = Point3::new(
+        (first_point.x + second_point.x) * 0.5,
+        (first_point.y + second_point.y) * 0.5,
+        (first_point.z + second_point.z) * 0.5,
+    );
+    let directions = frames.map(|frame| frame.and_then(|(_, direction)| normalize(direction)));
+    let direction = match missing {
+        0 => cross(directions[2]?, directions[1]?),
+        1 => cross(directions[0]?, directions[2]?),
+        2 => cross(directions[1]?, directions[0]?),
+        _ => return None,
+    };
+    Some((missing, (origin, normalize(direction)?)))
 }
 
 pub(super) fn explicit_reference_axis_frame(payload: &[u8]) -> Option<(Point3, Vector3)> {
