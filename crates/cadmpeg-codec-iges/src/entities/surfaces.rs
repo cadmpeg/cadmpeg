@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Analytic and free-form surface projection.
 
-use super::geometry::{entity_loss, resolve_transform, source_object};
+use super::geometry::{declared_unit_vector, entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
 use cadmpeg_ir::geometry::{
     derive_reference_direction, Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralSurface,
-    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    ProceduralSurfaceDefinition, SplineSurfaceParameters, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -133,68 +133,52 @@ fn angular_basis(start: f64, end: f64) -> Option<AngularBasis> {
     Some(AngularBasis { knots, controls })
 }
 
-fn offset_analytic(
-    geometry: &SurfaceGeometry,
-    indicator: Vector3,
-    distance: f64,
-) -> Option<(SurfaceGeometry, f64)> {
-    let (normal, solved) = match geometry {
+fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceGeometry> {
+    match geometry {
         SurfaceGeometry::Plane {
             origin,
             normal,
             u_axis,
-        } => (
-            *normal,
-            SurfaceGeometry::Plane {
-                origin: add_point_vector(*origin, scale(*normal, distance)),
-                normal: *normal,
-                u_axis: *u_axis,
-            },
-        ),
+        } => Some(SurfaceGeometry::Plane {
+            origin: add_point_vector(*origin, scale(*normal, distance)),
+            normal: *normal,
+            u_axis: *u_axis,
+        }),
         SurfaceGeometry::Cylinder {
             origin,
             axis,
             ref_direction,
             radius,
-        } => (
-            *ref_direction,
-            SurfaceGeometry::Cylinder {
-                origin: *origin,
-                axis: *axis,
-                ref_direction: *ref_direction,
-                radius: radius + distance,
-            },
-        ),
+        } => Some(SurfaceGeometry::Cylinder {
+            origin: *origin,
+            axis: *axis,
+            ref_direction: *ref_direction,
+            radius: radius + distance,
+        }),
         SurfaceGeometry::Sphere {
             center,
             axis,
             ref_direction,
             radius,
-        } => (
-            *ref_direction,
-            SurfaceGeometry::Sphere {
-                center: *center,
-                axis: *axis,
-                ref_direction: *ref_direction,
-                radius: radius + distance,
-            },
-        ),
+        } => Some(SurfaceGeometry::Sphere {
+            center: *center,
+            axis: *axis,
+            ref_direction: *ref_direction,
+            radius: radius + distance,
+        }),
         SurfaceGeometry::Torus {
             center,
             axis,
             ref_direction,
             major_radius,
             minor_radius,
-        } => (
-            *ref_direction,
-            SurfaceGeometry::Torus {
-                center: *center,
-                axis: *axis,
-                ref_direction: *ref_direction,
-                major_radius: *major_radius,
-                minor_radius: minor_radius + distance,
-            },
-        ),
+        } => Some(SurfaceGeometry::Torus {
+            center: *center,
+            axis: *axis,
+            ref_direction: *ref_direction,
+            major_radius: *major_radius,
+            minor_radius: minor_radius + distance,
+        }),
         SurfaceGeometry::Cone {
             origin,
             axis,
@@ -202,35 +186,71 @@ fn offset_analytic(
             radius,
             ratio,
             half_angle,
-        } if *ratio == 1.0 => {
-            let normal = Vector3::new(
-                half_angle.cos() * ref_direction.x - half_angle.sin() * axis.x,
-                half_angle.cos() * ref_direction.y - half_angle.sin() * axis.y,
-                half_angle.cos() * ref_direction.z - half_angle.sin() * axis.z,
-            );
-            (
-                normal,
-                SurfaceGeometry::Cone {
-                    origin: add_point_vector(*origin, scale(*axis, -distance * half_angle.sin())),
-                    axis: *axis,
-                    ref_direction: *ref_direction,
-                    radius: radius + distance * half_angle.cos(),
-                    ratio: *ratio,
-                    half_angle: *half_angle,
-                },
-            )
-        }
+        } if *ratio == 1.0 => Some(SurfaceGeometry::Cone {
+            origin: add_point_vector(*origin, scale(*axis, -distance * half_angle.sin())),
+            axis: *axis,
+            ref_direction: *ref_direction,
+            radius: radius + distance * half_angle.cos(),
+            ratio: *ratio,
+            half_angle: *half_angle,
+        }),
         SurfaceGeometry::Cone { .. }
         | SurfaceGeometry::Nurbs(_)
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Polygonal { .. }
         | SurfaceGeometry::Transformed { .. }
-        | SurfaceGeometry::Unknown { .. } => return None,
+        | SurfaceGeometry::Unknown { .. } => None,
+    }
+}
+
+fn indicator_normal(ir: &CadIr, surface: &SurfaceId) -> Option<Vector3> {
+    let parameters = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.surface == *surface)
+        .and_then(|procedural| procedural.record_bounds)
+        .and_then(|bounds| match bounds {
+            [Some(u0), Some(u1), Some(v0), Some(v1)] => Some([u0.midpoint(u1), v0.midpoint(v1)]),
+            _ => None,
+        })
+        .unwrap_or([0.0, 0.0]);
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let partials = cadmpeg_ir::eval::model_surface_partials_by_id(
+        &index,
+        surface,
+        parameters[0],
+        parameters[1],
+    )?;
+    normalized(cross(partials.du, partials.dv))
+}
+
+fn indicator_orientation(
+    record: &ParameterRecord,
+    indicator: Vector3,
+    normal: Vector3,
+    global: &Global,
+) -> Option<f64> {
+    let precision = global.real_precision();
+    let values = [indicator.x, indicator.y, indicator.z];
+    let contains = |candidate: Vector3| {
+        [candidate.x, candidate.y, candidate.z]
+            .into_iter()
+            .enumerate()
+            .all(|(offset, component)| {
+                super::geometry::DeclaredInterval::around(
+                    values[offset],
+                    record.number_uncertainty(offset + 1, values[offset], precision),
+                )
+                .contains(component)
+            })
     };
-    if dot(normal, indicator) >= 0.0 {
-        Some((solved, distance))
+    if contains(normal) {
+        Some(1.0)
+    } else if contains(scale(normal, -1.0)) {
+        Some(-1.0)
     } else {
-        offset_analytic(geometry, scale(indicator, -1.0), -distance)
+        None
     }
 }
 
@@ -263,10 +283,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 108 && matches!(entry.form, -1..=1))
     {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -327,6 +344,7 @@ pub(super) fn project(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         ) {
             Ok(transform) => transform,
@@ -487,9 +505,14 @@ pub(super) fn project(
                 second: CurveId(format!("iges:model:curve#D{second_sequence}")),
             },
             cache_fit_tolerance: None,
-            record_bounds: None,
+            record_bounds: Some([
+                Some(first_interval[0]),
+                Some(first_interval[1]),
+                Some(second_interval[0]),
+                Some(second_interval[1]),
+            ]),
         });
-        let _ = (first_interval, second_interval, developable_flag);
+        let _ = developable_flag;
         decoded.insert(entry.sequence);
     }
 
@@ -498,10 +521,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 122 && entry.form == 0)
     {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -600,7 +620,7 @@ pub(super) fn project(
                 revision_form: None,
             },
             cache_fit_tolerance: None,
-            record_bounds: None,
+            record_bounds: Some([Some(interval[0]), Some(interval[1]), None, None]),
         });
         decoded.insert(entry.sequence);
     }
@@ -610,10 +630,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 120 && entry.form == 0)
     {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -655,6 +672,7 @@ pub(super) fn project(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         ) {
             Ok(transform) => transform,
@@ -753,7 +771,10 @@ pub(super) fn project(
                 control_points,
                 weights: Some(weights),
                 u_periodic: generatrix.periodic,
-                v_periodic: (end_angle - start_angle - std::f64::consts::TAU).abs() <= 1.0e-12,
+                v_periodic: super::curve_conversion::angularly_equal(
+                    end_angle - start_angle,
+                    std::f64::consts::TAU,
+                ),
             }),
             source_object: Some(source_object(entry)),
         });
@@ -807,7 +828,12 @@ pub(super) fn project(
                     revision_form: None,
                 },
                 cache_fit_tolerance: None,
-                record_bounds: None,
+                record_bounds: Some([
+                    Some(parameter_interval[0]),
+                    Some(parameter_interval[1]),
+                    None,
+                    None,
+                ]),
             });
         }
         decoded.insert(entry.sequence);
@@ -818,10 +844,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 128 && (0..=9).contains(&entry.form))
     {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -976,29 +999,56 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "surface parameter ranges are missing"));
             continue;
         };
-        let range_is_bounded = |[u_start, u_end, v_start, v_end]: [f64; 4]| {
-            u_start <= u_end
-                && v_start <= v_end
-                && u_start >= u_knots[u_degree_usize]
-                && u_end <= u_knots[u_count]
-                && v_start >= v_knots[v_degree_usize]
-                && v_end <= v_knots[v_count]
-        };
-        let standard_ranges = [ranges[0], ranges[1], ranges[2], ranges[3]];
-        // Keep a bounded compatibility path for producers that place V0 before U1.
-        let alternate_ranges = [ranges[0], ranges[2], ranges[1], ranges[3]];
-        if !range_is_bounded(standard_ranges) && !range_is_bounded(alternate_ranges) {
+        let precision = global.real_precision();
+        let clamp_range =
+            |start_index: usize, values: [f64; 2], domain: [f64; 2]| -> Option<[f64; 2]> {
+                let mut clamped = values;
+                for (offset, bound) in clamped.iter_mut().enumerate() {
+                    let uncertainty =
+                        record.number_uncertainty(start_index + offset, *bound, precision);
+                    if *bound < domain[0]
+                        && super::geometry::DeclaredInterval::around(*bound, uncertainty)
+                            .contains(domain[0])
+                    {
+                        *bound = domain[0];
+                    } else if *bound > domain[1]
+                        && super::geometry::DeclaredInterval::around(*bound, uncertainty)
+                            .contains(domain[1])
+                    {
+                        *bound = domain[1];
+                    }
+                }
+                (clamped[0] < clamped[1] && clamped[0] >= domain[0] && clamped[1] <= domain[1])
+                    .then_some(clamped)
+            };
+        let Some(u_range) = clamp_range(
+            range_start,
+            [ranges[0], ranges[1]],
+            [u_knots[u_degree_usize], u_knots[u_count]],
+        ) else {
             losses.push(entity_loss(
                 entry,
-                "surface parameter ranges lie outside their knot domains",
+                "u parameter range is empty or lies outside its knot domain",
             ));
             continue;
-        }
+        };
+        let Some(v_range) = clamp_range(
+            range_start + 2,
+            [ranges[2], ranges[3]],
+            [v_knots[v_degree_usize], v_knots[v_count]],
+        ) else {
+            losses.push(entity_loss(
+                entry,
+                "v parameter range is empty or lies outside its knot domain",
+            ));
+            continue;
+        };
         let transform = match resolve_transform(
             entry.transform,
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         ) {
             Ok(transform) => transform,
@@ -1022,8 +1072,9 @@ pub(super) fn project(
                 }
             }
         }
+        let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
         ir.model.surfaces.push(Surface {
-            id: SurfaceId(format!("iges:model:surface#D{}", entry.sequence)),
+            id: surface_id.clone(),
             geometry: SurfaceGeometry::Nurbs(NurbsSurface {
                 u_degree,
                 v_degree,
@@ -1038,6 +1089,24 @@ pub(super) fn project(
             }),
             source_object: Some(source_object(entry)),
         });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
+            surface: surface_id,
+            definition: ProceduralSurfaceDefinition::Exact {
+                parameters: SplineSurfaceParameters::OrderedRanges {
+                    ranges: [u_range, v_range],
+                },
+                extension: 0,
+                revision_form: None,
+            },
+            cache_fit_tolerance: None,
+            record_bounds: Some([
+                Some(u_range[0]),
+                Some(u_range[1]),
+                Some(v_range[0]),
+                Some(v_range[1]),
+            ]),
+        });
         decoded.insert(entry.sequence);
     }
 
@@ -1046,10 +1115,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 140 && entry.form == 0)
     {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1060,11 +1126,11 @@ pub(super) fn project(
             continue;
         };
         let indicator = Vector3::new(x, y, z);
-        let indicator_norm = indicator.norm();
-        if !indicator_norm.is_finite() || (indicator_norm - 1.0).abs() > 1.0e-10 {
+        if !declared_unit_vector(record, 1, indicator, global.real_precision()) {
             losses.push(entity_loss(entry, "offset indicator is not a unit vector"));
             continue;
         }
+        let indicator = normalized(indicator).expect("validated nonzero finite offset indicator");
         let Some(distance) = record
             .number(4)
             .filter(|value| value.is_finite() && *value != 0.0)
@@ -1097,9 +1163,22 @@ pub(super) fn project(
             continue;
         };
         let distance = distance * factor;
-        let Some((geometry, signed_distance)) =
-            offset_analytic(&support.geometry, indicator, distance)
-        else {
+        let Some(normal) = indicator_normal(ir, &support_id) else {
+            losses.push(entity_loss(
+                entry,
+                "support normal cannot be evaluated at the offset-indicator parameters",
+            ));
+            continue;
+        };
+        let Some(orientation) = indicator_orientation(record, indicator, normal, global) else {
+            losses.push(entity_loss(
+                entry,
+                "offset indicator is not the support normal at the designated parameters",
+            ));
+            continue;
+        };
+        let signed_distance = distance * orientation;
+        let Some(geometry) = offset_analytic(&support.geometry, signed_distance) else {
             losses.push(entity_loss(
                 entry,
                 "support surface has no exact analytic offset carrier",

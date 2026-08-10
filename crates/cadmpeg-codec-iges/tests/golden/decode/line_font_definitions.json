@@ -1648,7 +1648,7 @@
               "id": "iges:presentation:display-attributes#D7",
               "level_definition": null,
               "level_number": 0,
-              "line_font_definition": "iges:entity:directory#5",
+              "line_font_definition": "iges:presentation:line-font#D5",
               "line_font_number": -5,
               "line_weight_mm": null,
               "line_weight_number": 0,
@@ -1949,7 +1949,9 @@
               "level": 0,
               "line_font": 1,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#1"
+              ],
               "parameter_bytes": [
                 51,
                 48,
@@ -2063,7 +2065,16 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-308-form-0",
+                  "kind": "parameter",
+                  "parameter_index": 2,
+                  "raw_pointer": 1,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#1"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -2614,9 +2625,11 @@
           "procedural_solids": [],
           "product_occurrence_expansion": [
             {
+              "depth_limit": 64,
               "emitted": 0,
               "id": "iges:product:occurrence-expansion#state",
-              "limit": 100,
+              "issues": [],
+              "output_limit": 100000,
               "truncated": false
             }
           ],
@@ -2690,8 +2703,36 @@
       "parameter_records=4",
       "parameter_tokens=24",
       "external_references=0",
-      "references.resolved=1"
-    ]
+      "references.resolved=2"
+    ],
+    "transfer_ledger": {
+      "entries": [
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D1",
+          "target": "iges:entity:directory#1"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D3",
+          "target": "iges:entity:directory#3"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D5",
+          "target": "iges:entity:directory#5"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D7",
+          "target": "iges:entity:directory#7"
+        }
+      ]
+    }
   },
   "source_fidelity": {
     "annotations": {},

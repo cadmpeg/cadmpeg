@@ -1307,7 +1307,9 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#1"
+              ],
               "parameter_bytes": [
                 52,
                 50,
@@ -1494,7 +1496,16 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-320-form-0",
+                  "kind": "parameter",
+                  "parameter_index": 1,
+                  "raw_pointer": 1,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#1"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -1586,9 +1597,11 @@
           "procedural_solids": [],
           "product_occurrence_expansion": [
             {
+              "depth_limit": 64,
               "emitted": 1,
               "id": "iges:product:occurrence-expansion#state",
-              "limit": 100,
+              "issues": [],
+              "output_limit": 100000,
               "truncated": false
             }
           ],
@@ -1696,8 +1709,25 @@
       "entity.420.form.0=1",
       "parameter_records=2",
       "parameter_tokens=24",
-      "external_references=0"
-    ]
+      "external_references=0",
+      "references.resolved=1"
+    ],
+    "transfer_ledger": {
+      "entries": [
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D1",
+          "target": "iges:entity:directory#1"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D3",
+          "target": "iges:entity:directory#3"
+        }
+      ]
+    }
   },
   "source_fidelity": {
     "annotations": {},

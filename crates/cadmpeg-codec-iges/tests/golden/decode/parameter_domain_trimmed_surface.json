@@ -27,8 +27,7 @@
           "loops": [],
           "sense": "forward",
           "shell": "iges:model:shell#D3",
-          "surface": "iges:model:surface#D1",
-          "tolerance": 0.001
+          "surface": "iges:model:surface#D1"
         }
       ],
       "features": [],
@@ -41,7 +40,35 @@
       "presentation_documents": [],
       "presentation_layers": [],
       "procedural_curves": [],
-      "procedural_surfaces": [],
+      "procedural_surfaces": [
+        {
+          "definition": {
+            "extension": 0,
+            "kind": "exact",
+            "parameters": {
+              "kind": "ordered_ranges",
+              "ranges": [
+                [
+                  0.0,
+                  1.0
+                ],
+                [
+                  0.0,
+                  1.0
+                ]
+              ]
+            }
+          },
+          "id": "iges:model:procedural-surface#D1",
+          "record_bounds": [
+            0.0,
+            1.0,
+            0.0,
+            1.0
+          ],
+          "surface": "iges:model:surface#D1"
+        }
+      ],
       "product_definitions": [],
       "regions": [
         {
@@ -1955,9 +1982,11 @@
           "procedural_solids": [],
           "product_occurrence_expansion": [
             {
+              "depth_limit": 64,
               "emitted": 0,
               "id": "iges:product:occurrence-expansion#state",
-              "limit": 100,
+              "issues": [],
+              "output_limit": 100000,
               "truncated": false
             }
           ],
@@ -2015,7 +2044,23 @@
       "parameter_records=2",
       "parameter_tokens=43",
       "external_references=0"
-    ]
+    ],
+    "transfer_ledger": {
+      "entries": [
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D1",
+          "target": "iges:entity:directory#1"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D3",
+          "target": "iges:entity:directory#3"
+        }
+      ]
+    }
   },
   "source_fidelity": {
     "annotations": {},

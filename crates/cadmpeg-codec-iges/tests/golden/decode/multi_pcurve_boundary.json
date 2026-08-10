@@ -178,13 +178,14 @@
         },
         {
           "curve": "iges:model:curve#D3",
-          "end": "iges:model:vertex#D3-end",
+          "end": "iges:model:vertex#D3-start",
           "id": "iges:model:edge#D3",
           "param_range": [
             0.0,
             4.0
           ],
-          "start": "iges:model:vertex#D3-start"
+          "start": "iges:model:vertex#D3-start",
+          "tolerance": 0.001
         },
         {
           "curve": "iges:model:curve#D5",
@@ -234,7 +235,6 @@
       "parameters": [],
       "pcurves": [
         {
-          "fit_tolerance": 0.001,
           "geometry": {
             "control_points": [
               {
@@ -263,7 +263,6 @@
           ]
         },
         {
-          "fit_tolerance": 0.001,
           "geometry": {
             "control_points": [
               {
@@ -296,14 +295,6 @@
       "points": [
         {
           "id": "iges:model:point#D11:0:0",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D3-end",
           "position": {
             "x": 0.0,
             "y": 0.0,
@@ -437,12 +428,9 @@
           "tolerance": 0.001
         },
         {
-          "id": "iges:model:vertex#D3-end",
-          "point": "iges:model:point#D3-end"
-        },
-        {
           "id": "iges:model:vertex#D3-start",
-          "point": "iges:model:point#D3-start"
+          "point": "iges:model:point#D3-start",
+          "tolerance": 0.001
         },
         {
           "id": "iges:model:vertex#D5-end",
@@ -4290,9 +4278,11 @@
           "procedural_solids": [],
           "product_occurrence_expansion": [
             {
+              "depth_limit": 64,
               "emitted": 0,
               "id": "iges:product:occurrence-expansion#state",
-              "limit": 100,
+              "issues": [],
+              "output_limit": 100000,
               "truncated": false
             }
           ],
@@ -4353,7 +4343,47 @@
       "parameter_records=6",
       "parameter_tokens=89",
       "external_references=0"
-    ]
+    ],
+    "transfer_ledger": {
+      "entries": [
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D1",
+          "target": "iges:entity:directory#1"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D3",
+          "target": "iges:entity:directory#3"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D5",
+          "target": "iges:entity:directory#5"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D7",
+          "target": "iges:entity:directory#7"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D9",
+          "target": "iges:entity:directory#9"
+        },
+        {
+          "disposition": "retained",
+          "note": "native record retained; semantic projection emitted",
+          "source": "D11",
+          "target": "iges:entity:directory#11"
+        }
+      ]
+    }
   },
   "source_fidelity": {
     "annotations": {},
