@@ -7629,6 +7629,14 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
     );
+    let projected_len = entities.len();
+    project_relation_point_geometry(
+        &mut entities,
+        &[],
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&lane),
+    );
+    assert_eq!(entities.len(), projected_len);
     assert!(entities.iter().any(|entity| {
         entity.construction
             && entity.native_ref.as_deref() == Some("relation-point")

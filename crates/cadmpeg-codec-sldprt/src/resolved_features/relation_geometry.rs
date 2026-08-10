@@ -140,7 +140,8 @@ pub(crate) fn project_relation_point_geometry(
         for marker in &lane.sketch_entities {
             let qualified_point = point_operands.contains(marker.id.as_str());
             let has_existing_point = entities.iter().any(|entity| {
-                entity.native_ref.as_deref() == Some(marker.id.as_str())
+                (entity.native_ref.as_deref() == Some(marker.id.as_str())
+                    || entity.geometry_ref.as_deref() == Some(marker.id.as_str()))
                     && matches!(entity.geometry, SketchGeometry::Point { .. })
             });
             if !referenced.contains(marker.id.as_str())
