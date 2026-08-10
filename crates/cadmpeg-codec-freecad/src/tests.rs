@@ -6175,12 +6175,13 @@ fn repeated_shape_roots_have_distinct_occurrence_identity() {
 <ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape">
 <Part ElementMap="1.0" file="Shape.brp"/>
 <ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap>
-<ElementMap2 count="3">
+<ElementMap2 count="4">
 1 PostfixCount 0 MapCount 1
 ElementMap 1 1 2
-Edge ChildCount 0 NameCount 2
+Edge ChildCount 0 NameCount 3
 0
 ;EdgeStable.0.a 0
+;DeletedEdgeStable.0.a 0
 Vertex ChildCount 0 NameCount 3
 0
 ;VertexStable1.0.a 0

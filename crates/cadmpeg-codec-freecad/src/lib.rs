@@ -832,13 +832,6 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     ));
                 }
             }
-            if name.topology_ids.is_empty() {
-                findings.push(finding(
-                    Check::NativeLinks,
-                    format!("{} has an unbound persistent element name", map.id),
-                    Some(map.id.clone()),
-                ));
-            }
             if name
                 .topology_ids
                 .iter()
