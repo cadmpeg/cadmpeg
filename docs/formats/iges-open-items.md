@@ -172,16 +172,6 @@ from a conformant file.
 
 **Need.** We need each row to name the arena of the entity the fixture exists to exercise, and a test that compares the table with the matrix `destination` column.
 
-### EV-05. The power-basis conversion is exercised on linear data only
-
-**Question.** Is the Type 112 and Type 114 power-basis to Bezier conversion correct?
-
-**Known.** `power_to_bezier` (`splines.rs:36-44`) and the tensor-product `patch_bezier` (`splines.rs:46-65`) carry every cubic constant. The three fixtures that reach them (`tests.rs:1352-1357`, `:1392-1407`) declare spline type 3 and set every quadratic and cubic coefficient to zero. The curve fixture is `x = t, y = 0, z = 0` and the surface fixture is the identity plane, asserted at `(1.5) -> (1.5, 0, 0)` and `(0.25, 0.75) -> (0.25, 0.75, 0)`.
-
-**Note.** A wrong constant in the `c` or `d` term, a dropped `d·w³` term, a global-versus-local breakpoint width, a y-or-z coefficient block read from the x offset, and every `u^i v^j` cross term of the tensor product all give the same result on this data. The two goldens freeze the output of the same degenerate inputs, so they cannot detect a wrong rule.
-
-**Need.** We need a fixture whose cubic and cross terms are nonzero, with evaluation points computed from the power-basis definition.
-
 ### EV-06. Nine property forms are asserted through a copied form number
 
 **Question.** Do the Type 406 Forms 28 through 36 typed fields decode correctly?
