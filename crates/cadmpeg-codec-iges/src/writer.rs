@@ -4034,9 +4034,9 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
             edge.id
         ))
     })?;
-    if range.iter().any(|value| !value.is_finite()) || range[0] > range[1] {
+    if range.iter().any(|value| !value.is_finite()) || range[0] >= range[1] {
         return Err(CodecError::Malformed(format!(
-            "IGES edge {} has an invalid parameter range",
+            "IGES edge {} requires a finite non-zero parameter span",
             edge.id
         )));
     }
@@ -4172,9 +4172,13 @@ fn curve_entity(geometry: &CurveGeometry, span: Option<&CurveSpan>) -> Result<En
                 ));
             }
             let y_axis = axis.cross(reference);
-            let end = effective_arc_end(range, true)?;
+            validate_arc_sweep(range)?;
             let start_xy = [radius * range[0].cos(), radius * range[0].sin()];
-            let end_xy = [radius * end.cos(), radius * end.sin()];
+            let end_xy = if is_full_arc(span) {
+                start_xy
+            } else {
+                [radius * range[1].cos(), radius * range[1].sin()]
+            };
             Ok(Entity {
                 type_code: 100,
                 form: 0,
@@ -4209,9 +4213,13 @@ fn curve_entity(geometry: &CurveGeometry, span: Option<&CurveSpan>) -> Result<En
                 ));
             }
             let y_axis = axis.cross(major);
-            let end = effective_arc_end(range, true)?;
+            validate_arc_sweep(range)?;
             let start_xy = [major_radius * range[0].cos(), minor_radius * range[0].sin()];
-            let end_xy = [major_radius * end.cos(), minor_radius * end.sin()];
+            let end_xy = if is_full_arc(span) {
+                start_xy
+            } else {
+                [major_radius * range[1].cos(), minor_radius * range[1].sin()]
+            };
             Ok(Entity {
                 type_code: 104,
                 form: 0,
@@ -4679,18 +4687,19 @@ fn placement(
     })
 }
 
-fn effective_arc_end(range: [f64; 2], closed: bool) -> Result<f64, CodecError> {
+fn validate_arc_sweep(range: [f64; 2]) -> Result<(), CodecError> {
     let sweep = range[1] - range[0];
-    if !(0.0..=TAU + 1.0e-10).contains(&sweep) {
+    if !(0.0..=TAU + 1.0e-10).contains(&sweep) || sweep == 0.0 {
         return Err(CodecError::NotImplemented(
-            "IGES conic writer requires an ordered span no larger than one revolution".into(),
+            "IGES conic writer requires a non-zero ordered span no larger than one revolution"
+                .into(),
         ));
     }
-    if closed && sweep <= 1.0e-14 {
-        Ok(range[0] + TAU)
-    } else {
-        Ok(range[1])
-    }
+    Ok(())
+}
+
+fn is_full_arc(span: Option<&CurveSpan>) -> bool {
+    span.is_none_or(|span| span.start == span.end)
 }
 
 fn parabola_point(focal_distance: f64, parameter: f64) -> Result<[f64; 2], CodecError> {
@@ -5213,6 +5222,42 @@ mod tests {
         let error = parameter_fragments(parameters.as_bytes())
             .expect_err("a token wider than the data area must fail");
         assert!(error.to_string().contains("token exceeds 64 bytes"));
+    }
+
+    #[test]
+    fn generated_full_circle_has_lexically_identical_endpoints() {
+        let geometry = CurveGeometry::Circle {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        let entity = curve_entity(&geometry, None).expect("full circle is writable");
+        let parameters = String::from_utf8(entity.parameters).expect("parameters are ASCII");
+        let values = parameters
+            .trim_end_matches(';')
+            .split(',')
+            .collect::<Vec<_>>();
+        assert_eq!(&values[4..=5], &values[6..=7]);
+    }
+
+    #[test]
+    fn generated_circle_refuses_a_zero_length_edge_span() {
+        let geometry = CurveGeometry::Circle {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        let span = CurveSpan {
+            range: [0.5, 0.5],
+            start: Point3::new(0.0, 0.0, 0.0),
+            end: Point3::new(0.0, 0.0, 0.0),
+        };
+        let error = curve_entity(&geometry, Some(&span))
+            .err()
+            .expect("zero-length span must not become a full revolution");
+        assert!(error.to_string().contains("non-zero ordered span"));
     }
 
     #[test]

@@ -124,16 +124,6 @@ from a conformant file.
 
 ## 7. Write path
 
-### WR-09. A zero-length span on a closed curve becomes a full revolution
-
-**Question.** What does a parameter range whose start equals its end mean on output?
-
-**Known.** `writer.rs:4611-4623` gives `range[0] + TAU` when the curve is closed and the sweep is at most 1e-14. `edge_span` (`writer.rs:3957-4006`) refuses `range[0] > range[1]` only, so a degenerate zero-length edge reaches this path and is written as a complete circle whose two vertices are the same point. Re-reading that file trips the edge consistency rule at `iges.md` "Topology" and discards the topology candidate.
-
-**Note.** In the ordinary full-circle case the terminate point is computed at `TAU`, where `sin(TAU)` is -2.449e-16, so the start and terminate coordinates are not byte-identical. This codec's reader was relaxed to tolerate that (`f20d17e65`). A strict receiver reads a nearly-closed arc.
-
-**Need.** We need the encoding of a degenerate span, and byte-identical endpoints for a closed curve.
-
 ### WR-10. Fixed protocol constants with no IR source
 
 **Question.** What are the correct `PREF`, creation-method, and hierarchy values for generated records?
