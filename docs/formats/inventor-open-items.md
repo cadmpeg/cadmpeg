@@ -68,13 +68,13 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 
 ## 4. Materials and design intent
 
-### MA-01. Appearance assignment records
+### MA-01. Face appearance assignment records
 
-**Question.** Which `PmApp`, `FBAttribute`, or B-rep fields bind a Protein asset GUID to a body or face, and what precedence applies?
+**Question.** Which `PmGraphics`, `FBAttribute`, or B-rep fields bind a Protein asset GUID or direct color to a face, and what precedence applies against the `PmApp` document default?
 
-**Known.** Protein defines an asset catalog. A catalog entry alone is not an assignment.
+**Known.** The `PmApp` document-default record selects one rendering-style record by a carrier-local one-based record reference. The rendering style stores the Protein asset GUID and asset-library identifier. Their unique catalog join supplies the default appearance for every part body. A catalog entry alone is not an assignment.
 
-**Need.** We must transfer body and face colors without assigning the sole compatible asset globally.
+**Need.** We must establish the face owner join and precedence before emitting face overrides.
 
 ### DE-01. Design record graph
 

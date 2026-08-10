@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Current Inventor native namespace version.
-pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 15;
+pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct VersionTupleRecord {
@@ -308,6 +308,59 @@ pub(crate) struct AssemblyPlacementRecord {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AssemblyRecordIssueRecord {
+    pub(crate) id: String,
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
+    pub(crate) detail: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct PmAppDefaultStyleRecord {
+    pub(crate) id: String,
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
+    pub(crate) segment_version_major: u8,
+    pub(crate) header_value: u32,
+    pub(crate) header_id: u16,
+    pub(crate) material_reference: u32,
+    pub(crate) rendering_style_reference: u32,
+    pub(crate) related_references: [u32; 7],
+    pub(crate) state: u8,
+    pub(crate) terminal_reference: u32,
+    pub(crate) suffix_len: u64,
+    pub(crate) suffix_sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct PmAppRenderingStyleRecord {
+    pub(crate) id: String,
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
+    pub(crate) segment_version_major: u8,
+    pub(crate) header_value: u32,
+    pub(crate) header_id: u16,
+    pub(crate) state: u8,
+    pub(crate) flags: u16,
+    pub(crate) values: [u16; 2],
+    pub(crate) default_state: u32,
+    pub(crate) value: u32,
+    pub(crate) name_reference: u32,
+    pub(crate) name: String,
+    pub(crate) comment: String,
+    pub(crate) long_name: String,
+    pub(crate) style_state: Option<u16>,
+    pub(crate) style_label: Option<String>,
+    pub(crate) asset_guid: Option<String>,
+    pub(crate) material_id: Option<String>,
+    pub(crate) asset_library_id: Option<String>,
+    pub(crate) style_values: Option<[u16; 2]>,
+    pub(crate) guid: Option<String>,
+    pub(crate) suffix_len: u64,
+    pub(crate) suffix_sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct PresentationRecordIssueRecord {
     pub(crate) id: String,
     pub(crate) segment_token: String,
     pub(crate) record_ordinal: u32,

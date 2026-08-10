@@ -79,6 +79,9 @@
           "mesh_surface_sentinels": [],
           "meta_sections": [],
           "meta_types": [],
+          "pm_app_default_styles": [],
+          "pm_app_rendering_styles": [],
+          "presentation_record_issues": [],
           "properties": [],
           "property_sections": [],
           "property_set_issues": [],
@@ -142,7 +145,7 @@
           "vertex_ownerships": [],
           "wire_topologies": []
         },
-        "version": 15
+        "version": 16
       }
     },
     "source": {
@@ -166,6 +169,7 @@
     "container_only": false,
     "coverage": {
       "active_kernel_carriers": 0,
+      "appearance_bindings_transferred": 0,
       "asm_unknown_records": 0,
       "asm_unknown_surface_faces": 0,
       "assembly_occurrences": 0,
@@ -174,6 +178,9 @@
       "assembly_record_issues": 0,
       "embedded_references": 0,
       "external_references": 0,
+      "pm_app_default_styles": 0,
+      "pm_app_rendering_styles": 0,
+      "presentation_record_issues": 0,
       "preview_assets": 0,
       "properties": 0,
       "property_sets": 0,

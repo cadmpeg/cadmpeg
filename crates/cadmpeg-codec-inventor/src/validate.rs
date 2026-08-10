@@ -9,6 +9,7 @@ use crate::native::{
     ActiveCarrierRecord, ActiveCarrierRecordState, AssemblyOccurrenceRecord,
     AssemblyPlacementRecord, AssemblyRecordIssueRecord, DatabaseIssueRecord, DatabaseRecord,
     EmbeddedReferenceRecord, ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord,
+    PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PresentationRecordIssueRecord,
     PropertyRecord, PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord,
     ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRecordState,
     ProteinRejectionRecord, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
@@ -35,6 +36,9 @@ const ARENAS: &[&str] = &[
     "meta_types",
     "mesh_surface_sentinels",
     "properties",
+    "pm_app_default_styles",
+    "pm_app_rendering_styles",
+    "presentation_record_issues",
     "property_sections",
     "property_set_issues",
     "property_sets",
@@ -138,6 +142,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_protein_record_coverage(&data, &mut findings);
     validate_ufrx(&data, &mut findings);
     validate_assembly(ir, &data, &mut findings);
+    validate_presentation(&data, &mut findings);
     for issue in &data.structural_issues {
         findings.push(finding(
             Check::NativeLinks,
@@ -153,6 +158,91 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         ));
     }
     findings
+}
+
+fn validate_presentation(data: &NativeData, findings: &mut Vec<Finding>) {
+    unique(
+        findings,
+        data.pm_app_default_styles
+            .iter()
+            .map(|record| record.id.as_str()),
+        "PmApp default-style id",
+    );
+    unique(
+        findings,
+        data.pm_app_rendering_styles
+            .iter()
+            .map(|record| record.id.as_str()),
+        "PmApp rendering-style id",
+    );
+    unique(
+        findings,
+        data.pm_app_default_styles
+            .iter()
+            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        "PmApp default-style record key",
+    );
+    unique(
+        findings,
+        data.pm_app_rendering_styles
+            .iter()
+            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        "PmApp rendering-style record key",
+    );
+
+    let raw_records = data
+        .records
+        .iter()
+        .map(|record| {
+            (
+                (record.token.as_str(), record.ordinal),
+                record.type_id.as_str(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let rendering_keys = data
+        .pm_app_rendering_styles
+        .iter()
+        .map(|record| (record.segment_token.as_str(), record.record_ordinal))
+        .collect::<HashSet<_>>();
+    for record in &data.pm_app_default_styles {
+        let key = (record.segment_token.as_str(), record.record_ordinal);
+        if raw_records.get(&key) != Some(&"cdecfb11d1116b250008ebbb21eddc09") {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmApp default style does not resolve to its RSe record".into(),
+                Some(record.id.clone()),
+            ));
+        }
+        let target = record
+            .rendering_style_reference
+            .checked_sub(1)
+            .map(|ordinal| (record.segment_token.as_str(), ordinal));
+        if target.is_some_and(|target| !rendering_keys.contains(&target)) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmApp default rendering-style reference does not resolve".into(),
+                Some(record.id.clone()),
+            ));
+        }
+    }
+    for record in &data.pm_app_rendering_styles {
+        let key = (record.segment_token.as_str(), record.record_ordinal);
+        if raw_records.get(&key) != Some(&"6fd85967d2113878600094b70b02ecb0") {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmApp rendering style does not resolve to its RSe record".into(),
+                Some(record.id.clone()),
+            ));
+        }
+    }
+    for issue in &data.presentation_record_issues {
+        findings.push(finding(
+            Check::NativeLinks,
+            format!("Inventor PmApp record: {}", issue.detail),
+            Some(issue.id.clone()),
+        ));
+    }
 }
 
 fn validate_active_carrier(data: &NativeData, findings: &mut Vec<Finding>) {
@@ -260,6 +350,9 @@ struct NativeData {
     assembly_occurrences: Vec<AssemblyOccurrenceRecord>,
     assembly_placements: Vec<AssemblyPlacementRecord>,
     assembly_record_issues: Vec<AssemblyRecordIssueRecord>,
+    pm_app_default_styles: Vec<PmAppDefaultStyleRecord>,
+    pm_app_rendering_styles: Vec<PmAppRenderingStyleRecord>,
+    presentation_record_issues: Vec<PresentationRecordIssueRecord>,
     active_carrier: Vec<ActiveCarrierRecord>,
     unknowns: Vec<NativeUnknownRecord>,
 }
@@ -300,6 +393,9 @@ impl NativeData {
             assembly_occurrences: namespace.arena_as("assembly_occurrences")?,
             assembly_placements: namespace.arena_as("assembly_placements")?,
             assembly_record_issues: namespace.arena_as("assembly_record_issues")?,
+            pm_app_default_styles: namespace.arena_as("pm_app_default_styles")?,
+            pm_app_rendering_styles: namespace.arena_as("pm_app_rendering_styles")?,
+            presentation_record_issues: namespace.arena_as("presentation_record_issues")?,
             active_carrier: namespace.arena_as("active_carrier")?,
             unknowns: namespace.arena_as("unknowns")?,
         })

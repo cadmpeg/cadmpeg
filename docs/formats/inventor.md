@@ -123,6 +123,41 @@ A `UFRxDoc` occurrence joins its external prototype through `file_reference_id` 
 
 Inventor placement translations use centimetres. Neutral occurrence translations use millimetres, so the first three elements in matrix column 3 are multiplied by 10. The remaining matrix coefficients are unchanged. External-reference state bit `0x2000` marks its occurrence as suppressed. A suppressed occurrence has `visible = false`; when it has no graphics placement, its neutral transform is identity. An active occurrence without a finite affine graphics placement is not transferred and produces an assembly-placement loss.
 
-## 10. Document kind
+## 10. Part appearance assignments
+
+A `PmApp` record with type identifier `cdecfb11d1116b250008ebbb21eddc09` stores the document-default style references. For segment major versions above 19, its 55-byte payload contains:
+
+```text
+header_value u32
+header_id u16
+material_reference u32
+rendering_style_reference u32
+related_references u32[7]
+state u8
+terminal_reference u32
+padding bytes[8] = 0
+```
+
+Record references use bit 31 as a reference qualifier and bits 0 through 30 as a one-based record index. The referenced RSe record ordinal is the index minus one. A zero index is null.
+
+A `PmApp` record with type identifier `6fd85967d2113878600094b70b02ecb0` stores one rendering style. For segment major versions above 23, its fixed prefix contains:
+
+```text
+header_value u32
+header_id u16
+state u8
+flags u16
+padding u16 = 0
+values u16[2]
+default_state u32
+value u32
+name_reference u32
+```
+
+The prefix is followed by a u32-counted UTF-16LE name and a u32-counted UTF-16LE long name. Segment major versions above 16 then store a u16 style state, four u32-counted UTF-16LE strings, two u16 style values, and a 16-byte mixed-endian GUID. The four strings are the style label, Protein asset GUID, Protein material identifier, and Protein asset-library identifier. The remaining rendering fields are a retained suffix.
+
+The document-default rendering style is the rendering-style record selected by the default-style record's one-based reference in the same `PmApp` segment. Its Protein asset GUID and asset-library identifier resolve one unique appearance catalog entry. That appearance is the document default for every transferred part body. A missing, null, cross-carrier, or ambiguous reference does not produce an appearance binding.
+
+## 11. Document kind
 
 `Pm*` segment families identify a part document. `Am*` segment families identify an assembly document. A document that contains both families has the distinct `mixed_part_assembly` kind. Property metadata can identify a part, assembly, drawing, or presentation only when segment-family evidence does not already identify the kind.

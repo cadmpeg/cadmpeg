@@ -25,6 +25,7 @@ use crate::native::{
     ActiveCarrierRecord, ActiveCarrierRecordState, AssemblyOccurrenceRecord,
     AssemblyPlacementRecord, AssemblyRecordIssueRecord, DatabaseIssueRecord, DatabaseRecord,
     EmbeddedReferenceRecord, ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord,
+    PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PresentationRecordIssueRecord,
     PropertyRecord, PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord,
     ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRecordState,
     ProteinRejectionRecord, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
@@ -45,6 +46,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     };
     let container = InventorContainer::open(ctx, root, purpose)?;
     let assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
+    let presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
     let mut ir = CadIr::empty(Units::default());
     let mut attributes = BTreeMap::new();
     attributes.insert(
@@ -994,6 +996,80 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             detail: issue.detail.clone(),
         })
         .collect::<Vec<_>>();
+    let pm_app_default_styles = presentation_inventory
+        .default_styles
+        .iter()
+        .map(|style| {
+            let (suffix_len, suffix_sha256) = crate::presentation::suffix_fields(style.suffix);
+            PmAppDefaultStyleRecord {
+                id: format!(
+                    "inventor:presentation:default-style#{}-{}",
+                    style.segment_token, style.record_ordinal
+                ),
+                segment_token: style.segment_token.clone(),
+                record_ordinal: style.record_ordinal,
+                segment_version_major: style.segment_version_major,
+                header_value: style.header_value,
+                header_id: style.header_id,
+                material_reference: style.material_reference,
+                rendering_style_reference: style.rendering_style_reference,
+                related_references: style.related_references,
+                state: style.state,
+                terminal_reference: style.terminal_reference,
+                suffix_len,
+                suffix_sha256,
+            }
+        })
+        .collect::<Vec<_>>();
+    let pm_app_rendering_styles = presentation_inventory
+        .rendering_styles
+        .iter()
+        .map(|style| {
+            let (suffix_len, suffix_sha256) = crate::presentation::suffix_fields(style.suffix);
+            PmAppRenderingStyleRecord {
+                id: format!(
+                    "inventor:presentation:rendering-style#{}-{}",
+                    style.segment_token, style.record_ordinal
+                ),
+                segment_token: style.segment_token.clone(),
+                record_ordinal: style.record_ordinal,
+                segment_version_major: style.segment_version_major,
+                header_value: style.header_value,
+                header_id: style.header_id,
+                state: style.state,
+                flags: style.flags,
+                values: style.values,
+                default_state: style.default_state,
+                value: style.value,
+                name_reference: style.name_reference,
+                name: style.name.clone(),
+                comment: style.comment.clone(),
+                long_name: style.long_name.clone(),
+                style_state: style.style_state,
+                style_label: style.style_label.clone(),
+                asset_guid: style.asset_guid.clone(),
+                material_id: style.material_id.clone(),
+                asset_library_id: style.asset_library_id.clone(),
+                style_values: style.style_values,
+                guid: style.guid.clone(),
+                suffix_len,
+                suffix_sha256,
+            }
+        })
+        .collect::<Vec<_>>();
+    let presentation_record_issues = presentation_inventory
+        .issues
+        .iter()
+        .map(|issue| PresentationRecordIssueRecord {
+            id: format!(
+                "inventor:presentation:record-issue#{}-{}",
+                issue.segment_token, issue.record_ordinal
+            ),
+            segment_token: issue.segment_token.clone(),
+            record_ordinal: issue.record_ordinal,
+            detail: issue.detail.clone(),
+        })
+        .collect::<Vec<_>>();
     let assembly_projection = crate::assembly::project_occurrences(
         &ufrx_occurrences,
         &external_references,
@@ -1033,6 +1109,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .saturating_add(assembly_occurrences.len())
             .saturating_add(assembly_placements.len())
             .saturating_add(assembly_record_issues.len())
+            .saturating_add(pm_app_default_styles.len())
+            .saturating_add(pm_app_rendering_styles.len())
+            .saturating_add(presentation_record_issues.len())
             .saturating_add(unpaired_segments.len())
             .saturating_add(1) as u64,
         "retain Inventor native structural records",
@@ -1061,6 +1140,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     namespace.set_arena("assembly_occurrences", &assembly_occurrences)?;
     namespace.set_arena("assembly_placements", &assembly_placements)?;
     namespace.set_arena("assembly_record_issues", &assembly_record_issues)?;
+    namespace.set_arena("pm_app_default_styles", &pm_app_default_styles)?;
+    namespace.set_arena("pm_app_rendering_styles", &pm_app_rendering_styles)?;
+    namespace.set_arena("presentation_record_issues", &presentation_record_issues)?;
     namespace.set_arena("segment_pairs", &segment_pairs)?;
     namespace.set_arena("segment_meta", &segment_meta)?;
     namespace.set_arena("meta_sections", &meta_sections)?;
@@ -1125,6 +1207,18 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         geometry_failure =
             Some("the active kernel carrier decoded no surfaces, points, or faces".into());
     }
+    let body_ids = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect::<Vec<_>>();
+    let presentation_projection = crate::presentation::project_default_bindings(
+        &presentation_inventory,
+        &ir.model.appearances,
+        &body_ids,
+    );
+    ir.model.appearance_bindings = presentation_projection.bindings;
     let mut losses = Vec::new();
     if ctx.container_only() {
         losses.push(LossNote::new(
@@ -1203,6 +1297,15 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 ),
             ));
         }
+        if !presentation_record_issues.is_empty() {
+            losses.push(LossNote::new(
+                LossKind::DecodeDiagnostic,
+                format!(
+                    "{} typed Inventor presentation record(s) are malformed or outside the implemented branch.",
+                    presentation_record_issues.len()
+                ),
+            ));
+        }
         if !container.rse.unpaired_metadata.is_empty() || !container.rse.unpaired_bulk.is_empty() {
             losses.push(LossNote::new(
                 LossKind::DecodeDiagnostic,
@@ -1253,10 +1356,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                             LossKind::MaterialNotTransferred,
                             "The Protein package contains no decoded appearance assets.",
                         ));
-                    } else {
+                    } else if presentation_projection.unresolved_defaults != 0 {
                         losses.push(LossNote::new(
                             LossKind::MaterialNotTransferred,
-                            "The Protein appearance catalog is decoded without a typed topology assignment.",
+                            format!(
+                                "Could not resolve {} PmApp document-default appearance assignment(s).",
+                                presentation_projection.unresolved_defaults
+                            ),
                         ));
                     }
                 }
@@ -1363,6 +1469,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     source_fidelity.finalize();
     let asm_unknown_record_count = ir.native_unknowns("inventor")?.len();
     let protein_appearance_count = ir.model.appearances.len();
+    let appearance_binding_count = ir.model.appearance_bindings.len();
     let transferred_occurrence_count = ir.model.occurrences.len();
     Ok(DecodeResult::new(
         ir,
@@ -1389,6 +1496,19 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 ("protein_assets".into(), protein_assets.len()),
                 ("protein_rejections".into(), protein_rejections.len()),
                 ("protein_appearances".into(), protein_appearance_count),
+                (
+                    "appearance_bindings_transferred".into(),
+                    appearance_binding_count,
+                ),
+                ("pm_app_default_styles".into(), pm_app_default_styles.len()),
+                (
+                    "pm_app_rendering_styles".into(),
+                    pm_app_rendering_styles.len(),
+                ),
+                (
+                    "presentation_record_issues".into(),
+                    presentation_record_issues.len(),
+                ),
                 ("external_references".into(), external_references.len()),
                 ("embedded_references".into(), embedded_references.len()),
                 ("ufrx_model_states".into(), ufrx_model_states.len()),

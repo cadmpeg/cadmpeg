@@ -84,6 +84,37 @@ Spec §8 · layout: byte offsets · size: 4 B
 | 0 | 2 | `schema` | `u16` | little | spec | a u16 schema |
 | 2 | 2 | `section_version_count` | `u16` | little | spec | a u16 section-version count |
 
+## `pm_app_default_style_current`
+
+Spec §10 · layout: byte offsets · size: 55 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | header_value u32 |
+| 4 | 2 | `header_id` | `u16` | little | spec | header_id u16 |
+| 6 | 4 | `material_reference` | `u32` | little | spec | material_reference u32 |
+| 10 | 4 | `rendering_style_reference` | `u32` | little | spec | rendering_style_reference u32 |
+| 14 | 28 | `related_references` | `u32[7]` | little | spec | related_references u32[7] |
+| 42 | 1 | `state` | `u8` | little | spec | state u8 |
+| 43 | 4 | `terminal_reference` | `u32` | little | spec | terminal_reference u32 |
+| 47 | 8 | `padding` | `bytes[8]` | little | spec | padding bytes[8] = 0 |
+
+## `pm_app_rendering_style_current_prefix`
+
+Spec §10 · layout: byte offsets · size: 27 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | header_value u32 |
+| 4 | 2 | `header_id` | `u16` | little | spec | header_id u16 |
+| 6 | 1 | `state` | `u8` | little | spec | state u8 |
+| 7 | 2 | `flags` | `u16` | little | spec | flags u16 |
+| 9 | 2 | `padding` | `u16` | little | spec | padding u16 = 0 |
+| 11 | 4 | `values` | `u16[2]` | little | spec | values u16[2] |
+| 15 | 4 | `default_state` | `u32` | little | spec | default_state u32 |
+| 19 | 4 | `value` | `u32` | little | spec | value u32 |
+| 23 | 4 | `name_reference` | `u32` | little | spec | name_reference u32 |
+
 ## `ufrx_occurrence_prefix`
 
 Spec §8 · layout: byte offsets · size: 20 B
