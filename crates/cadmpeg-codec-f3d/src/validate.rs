@@ -1101,10 +1101,9 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
         }
         let source_ordinal = timeline_ordinals.entry(segment).or_default();
         for entity_id in &design_type.entity_ids {
-            let valid_type = design_type.version
-                == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSION
-                && design_type.module == records::DESIGN_MODULE_FUSION
-                && class_tag.as_deref().is_some_and(valid_dynamic_class_tag);
+            let valid_type =
+                crate::design::decode::meta::is_supported_feature_timeline_type(design_type)
+                    && class_tag.as_deref().is_some_and(valid_dynamic_class_tag);
             let Some(class_tag) = class_tag.clone() else {
                 continue;
             };

@@ -14,7 +14,19 @@ use crate::records::{DesignFeatureTimeline, SegmentType, DESIGN_MODULE_FUSION};
 /// Stable Design type identity of the record that owns the ordered feature
 /// scope list.
 pub(crate) const FEATURE_TIMELINE_TYPE_GUID: &str = "2F4C1849-1A5A-4F6C-A086-8DD445CBF94B";
-pub(crate) const FEATURE_TIMELINE_TYPE_VERSION: u32 = 3;
+pub(crate) const FEATURE_TIMELINE_BASE_TYPE_GUID: &str = "98542EB9-A4F2-4137-A808-DBB5B3CD6159";
+pub(crate) const FEATURE_TIMELINE_TYPE_VERSIONS: [u32; 2] = [2, 3];
+
+/// Whether a type-table row has the exact registration metadata of a supported
+/// feature-timeline frame.
+pub(crate) fn is_supported_feature_timeline_type(design_type: &SegmentType) -> bool {
+    FEATURE_TIMELINE_TYPE_VERSIONS.contains(&design_type.version)
+        && design_type.module == DESIGN_MODULE_FUSION
+        && design_type
+            .base_type_guid
+            .as_deref()
+            .is_some_and(|base| base.eq_ignore_ascii_case(FEATURE_TIMELINE_BASE_TYPE_GUID))
+}
 
 /// Decode the type table of every Design `MetaStream` entry.
 pub fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, CodecError> {
@@ -256,19 +268,36 @@ pub(crate) fn stream_types_by_class_tag<'a>(
         .collect()
 }
 
-fn local_reference(reference: &Reference) -> Option<u64> {
-    (reference.segment.is_none() && reference.link_name.is_none()).then_some(reference.target?)
+fn local_reference(
+    reference: &Reference,
+    type_guids_by_entity: &HashMap<u64, Vec<&str>>,
+) -> Option<u64> {
+    if reference.segment.is_some() || reference.link_name.is_some() {
+        return None;
+    }
+    let target = reference.target?;
+    if let Some(inline_type_guid) = &reference.inline_type_guid {
+        let registered_type_guids = type_guids_by_entity.get(&target)?;
+        if !registered_type_guids
+            .iter()
+            .any(|registered| registered.eq_ignore_ascii_case(inline_type_guid))
+        {
+            return None;
+        }
+    }
+    Some(target)
 }
 
 fn parse_feature_timeline_record(
     bytes: &[u8],
     stream: &str,
-    start: usize,
-    end: usize,
+    frame: std::ops::Range<usize>,
     expected_class_tag: &str,
     expected_entity_id: u64,
     source_ordinal: u32,
+    type_guids_by_entity: &HashMap<u64, Vec<&str>>,
 ) -> Option<DesignFeatureTimeline> {
+    let (start, end) = (frame.start, frame.end);
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
     if class_tag != expected_class_tag || u64_at(bytes, after_tag)? != expected_entity_id {
         return None;
@@ -285,7 +314,8 @@ fn parse_feature_timeline_record(
 
     let mut at = payload.checked_add(2)?;
     let context_reference_offset = at.checked_add(1)?;
-    let context_record_index = local_reference(&take_reference(bytes, &mut at)?)?;
+    let context_record_index =
+        local_reference(&take_reference(bytes, &mut at)?, type_guids_by_entity)?;
     if context_record_index == 0 {
         return None;
     }
@@ -300,7 +330,7 @@ fn parse_feature_timeline_record(
     let mut unique = HashSet::with_capacity(count);
     for _ in 0..count {
         let target_offset = at.checked_add(1)?;
-        let target = local_reference(&take_reference(bytes, &mut at)?)?;
+        let target = local_reference(&take_reference(bytes, &mut at)?, type_guids_by_entity)?;
         if target == 0 || !unique.insert(target) {
             return None;
         }
@@ -350,12 +380,20 @@ pub fn decode_feature_timelines(
         if timeline_types.is_empty() {
             continue;
         }
-        if timeline_types.iter().any(|(_, design_type)| {
-            design_type.version != FEATURE_TIMELINE_TYPE_VERSION
-                || design_type.module != DESIGN_MODULE_FUSION
-        }) {
+        if timeline_types
+            .iter()
+            .any(|(_, design_type)| !FEATURE_TIMELINE_TYPE_VERSIONS.contains(&design_type.version))
+        {
             return Err(CodecError::NotImplemented(
                 "unsupported Design feature-timeline record version".into(),
+            ));
+        }
+        if timeline_types
+            .iter()
+            .any(|(_, design_type)| !is_supported_feature_timeline_type(design_type))
+        {
+            return Err(CodecError::Malformed(
+                "Design feature-timeline type has incompatible registration metadata".into(),
             ));
         }
         if meta
@@ -373,6 +411,15 @@ pub fn decode_feature_timelines(
             .expect("filtered MetaStream entry has the expected basename");
         let bulk_name = format!("{prefix}BulkStream.dat");
         let bytes = scan.entry_bytes(&bulk_name)?;
+        let mut type_guids_by_entity = HashMap::<u64, Vec<&str>>::new();
+        for design_type in &meta.types {
+            for entity_id in &design_type.entity_ids {
+                type_guids_by_entity
+                    .entry(*entity_id)
+                    .or_default()
+                    .push(&design_type.type_guid);
+            }
+        }
         let mut source_ordinal = 0_u32;
         for (type_ordinal, design_type) in timeline_types {
             let expected_class_tag = u32::try_from(type_ordinal)
@@ -422,11 +469,11 @@ pub fn decode_feature_timelines(
                 let timeline = parse_feature_timeline_record(
                     bytes,
                     &bulk_name,
-                    start,
-                    end,
+                    start..end,
                     &expected_class_tag,
                     *entity_id,
                     entity_source_ordinal,
+                    &type_guids_by_entity,
                 )
                 .ok_or_else(|| {
                     CodecError::Malformed(

@@ -10009,7 +10009,9 @@ fn design_type_table_attributes_each_entry_to_its_own_type() {
 }
 
 #[test]
-fn design_feature_timeline_decodes_variable_width_local_references() {
+fn design_feature_timeline_versions_share_variable_width_local_references() {
+    const INLINE_TYPE_GUID: &str = "11111111-2222-3333-4444-555555555555";
+
     fn lp_ascii(out: &mut Vec<u8>, value: &str) {
         out.extend_from_slice(&(value.len() as u32).to_le_bytes());
         out.extend_from_slice(value.as_bytes());
@@ -10018,7 +10020,7 @@ fn design_feature_timeline_decodes_variable_width_local_references() {
         out.push(1);
         out.extend_from_slice(&target.to_le_bytes());
         if inline_type {
-            lp_ascii(out, "11111111-2222-3333-4444-555555555555");
+            lp_ascii(out, INLINE_TYPE_GUID);
         }
         out.extend_from_slice(&[0, 0]);
     }
@@ -10044,54 +10046,111 @@ fn design_feature_timeline_decodes_variable_width_local_references() {
     bulk.extend_from_slice(&2_u32.to_le_bytes());
     local_reference(&mut bulk, 101, false);
     local_reference(&mut bulk, 102, true);
-    let meta = design_metastream_with_records(
+    for version in crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSIONS {
+        let meta = design_metastream_with_records(
+            &[
+                (
+                    crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID,
+                    crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID,
+                    version,
+                    "Fusion",
+                    &[35],
+                ),
+                (INLINE_TYPE_GUID, "", 0, "Fusion", &[17, 101, 102]),
+            ],
+            &[(35, 0)],
+        );
+        let decoded = with_scan(&archive(&meta, &bulk), |scan| {
+            crate::design::decode::meta::decode_feature_timelines(scan)
+        })
+        .expect("exact feature timeline");
+        let [timeline] = decoded.as_slice() else {
+            panic!("expected one timeline record");
+        };
+        assert_eq!(timeline.record_index, 35);
+        assert_eq!(timeline.context_record_index, 17);
+        assert_eq!(timeline.item_record_indices, [101, 102]);
+        assert_eq!(timeline.frame_length, bulk.len() as u64);
+        assert_eq!(
+            timeline.item_record_index_offsets.len(),
+            timeline.item_record_indices.len()
+        );
+        for (record_index, offset) in timeline
+            .item_record_indices
+            .iter()
+            .zip(&timeline.item_record_index_offsets)
+        {
+            assert_eq!(
+                u64::from_le_bytes(
+                    bulk[*offset as usize..*offset as usize + 8]
+                        .try_into()
+                        .expect("timeline target")
+                ),
+                *record_index
+            );
+        }
+
+        let mut duplicate = bulk.clone();
+        let second_offset = timeline.item_record_index_offsets[1] as usize;
+        duplicate[second_offset..second_offset + 8].copy_from_slice(&101_u64.to_le_bytes());
+        let error = with_scan(&archive(&meta, &duplicate), |scan| {
+            crate::design::decode::meta::decode_feature_timelines(scan)
+        })
+        .expect_err("duplicate timeline items must be rejected");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+
+        let mut mismatched_inline_type = bulk.clone();
+        let inline_type_at = mismatched_inline_type
+            .windows(INLINE_TYPE_GUID.len())
+            .position(|window| window == INLINE_TYPE_GUID.as_bytes())
+            .expect("inline type GUID");
+        mismatched_inline_type[inline_type_at] = b'2';
+        let error = with_scan(&archive(&meta, &mismatched_inline_type), |scan| {
+            crate::design::decode::meta::decode_feature_timelines(scan)
+        })
+        .expect_err("an inline type GUID must match the target registration");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+
+    let unsupported_meta = design_metastream_with_records(
         &[(
             crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID,
-            "",
-            crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSION,
+            crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID,
+            4,
             "Fusion",
             &[35],
         )],
         &[(35, 0)],
     );
-    let decoded = with_scan(&archive(&meta, &bulk), |scan| {
+    let error = with_scan(&archive(&unsupported_meta, &bulk), |scan| {
         crate::design::decode::meta::decode_feature_timelines(scan)
     })
-    .expect("exact feature timeline");
-    let [timeline] = decoded.as_slice() else {
-        panic!("expected one timeline record");
-    };
-    assert_eq!(timeline.record_index, 35);
-    assert_eq!(timeline.context_record_index, 17);
-    assert_eq!(timeline.item_record_indices, [101, 102]);
-    assert_eq!(timeline.frame_length, bulk.len() as u64);
-    assert_eq!(
-        timeline.item_record_index_offsets.len(),
-        timeline.item_record_indices.len()
-    );
-    for (record_index, offset) in timeline
-        .item_record_indices
-        .iter()
-        .zip(&timeline.item_record_index_offsets)
-    {
-        assert_eq!(
-            u64::from_le_bytes(
-                bulk[*offset as usize..*offset as usize + 8]
-                    .try_into()
-                    .expect("timeline target")
-            ),
-            *record_index
-        );
-    }
+    .expect_err("an unsupported timeline version must not use a known frame speculatively");
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 
-    let mut duplicate = bulk.clone();
-    let second_offset = timeline.item_record_index_offsets[1] as usize;
-    duplicate[second_offset..second_offset + 8].copy_from_slice(&101_u64.to_le_bytes());
-    let error = with_scan(&archive(&meta, &duplicate), |scan| {
-        crate::design::decode::meta::decode_feature_timelines(scan)
-    })
-    .expect_err("duplicate timeline items must be rejected");
-    assert!(error.to_string().contains("does not match its exact frame"));
+    for (base_type_guid, module) in [
+        ("22222222-3333-4444-5555-666666666666", "Fusion"),
+        (
+            crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID,
+            "Other",
+        ),
+    ] {
+        let incompatible_meta = design_metastream_with_records(
+            &[(
+                crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID,
+                base_type_guid,
+                crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSIONS[1],
+                module,
+                &[35],
+            )],
+            &[(35, 0)],
+        );
+        let error = with_scan(&archive(&incompatible_meta, &bulk), |scan| {
+            crate::design::decode::meta::decode_feature_timelines(scan)
+        })
+        .expect_err("incompatible timeline registration metadata must be rejected");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
 }
 
 #[test]
@@ -10204,10 +10263,13 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         byte_offset: 0,
         type_guid: type_guid.into(),
         type_guid_offset: 4,
-        base_type_guid: None,
-        base_type_guid_offset: None,
+        base_type_guid: (type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID)
+            .then(|| crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID.into()),
+        base_type_guid_offset: (type_guid
+            == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID)
+            .then_some(8),
         version: if type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID {
-            crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSION
+            crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSIONS[1]
         } else {
             1
         },
