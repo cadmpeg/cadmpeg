@@ -1241,14 +1241,19 @@ def normalize_strings(value, replacements: Sequence[tuple[str, str]]):
 def load_json_command(
     command: Sequence[str], timeout: float
 ) -> tuple[int, object | None]:
-    result = subprocess.run(
-        list(command),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        timeout=timeout,
-        check=False,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            list(command),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout,
+            check=False,
+            text=True,
+        )
+    except subprocess.TimeoutExpired:
+        return 124, None
+    except OSError:
+        return 127, None
     try:
         return result.returncode, json.loads(result.stdout)
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -1430,8 +1435,14 @@ def process(args: argparse.Namespace) -> dict:
         if args.compare:
             try:
                 parity.append(compare_carriers(path, evidence, Path(args.cadmpeg), args.timeout))
-            except (OSError, subprocess.SubprocessError) as error:
-                parity.append({"source_ordinal": evidence.ordinal, "state": "error", "detail": str(error)})
+            except (OSError, subprocess.SubprocessError):
+                parity.append(
+                    {
+                        "source_ordinal": evidence.ordinal,
+                        "state": "error",
+                        "detail": "temporary comparison operation failed",
+                    }
+                )
         documents.append(evidence.as_json())
     envelope_counts: dict[str, int] = {}
     for document in documents:
