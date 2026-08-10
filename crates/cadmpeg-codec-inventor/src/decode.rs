@@ -17,14 +17,17 @@ use cadmpeg_ir::SourceFidelity;
 
 use crate::container::{ContainerPurpose, InventorContainer};
 use crate::database::{RevisionPayload, VersionTuple};
+use crate::external_reference::UfrxState;
 use crate::native::{
-    DatabaseIssueRecord, DatabaseRecord, PropertyRecord, PropertySectionRecord,
-    PropertySetIssueRecord, PropertySetRecord, RevisionRecord, SegmentBulkIssueRecord,
-    SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
-    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UnpairedSegmentRecord,
+    DatabaseIssueRecord, DatabaseRecord, ExternalReferenceRecord, PropertyRecord,
+    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, ProteinEntryRecord,
+    ProteinRecord, ProteinRecordState, RevisionRecord, SegmentBulkIssueRecord, SegmentBulkRecord,
+    SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord,
+    StorageBandRecord, StructuralIssueRecord, UfrxRecord, UfrxRecordState, UnpairedSegmentRecord,
     VersionTupleRecord, INVENTOR_NATIVE_VERSION,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
+use crate::protein::ProteinState;
 use crate::rse::{DocumentKind, ParsedState, SegmentBulkState, SegmentMetaState};
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
@@ -54,7 +57,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             PropertySetState::Malformed(detail) => {
                 property_set_issues.push(PropertySetIssueRecord {
                     id: format!(
-                        "inventor:property-set-issue:{}",
+                        "inventor:property:set-issue#{}",
                         descriptor.stream.directory_id()
                     ),
                     path: descriptor.path.clone(),
@@ -64,7 +67,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             }
             PropertySetState::Parsed(property_set) => {
                 property_sets.push(PropertySetRecord {
-                    id: format!("inventor:property-set:{}", descriptor.stream.directory_id()),
+                    id: format!("inventor:property:set#{}", descriptor.stream.directory_id()),
                     path: descriptor.path.clone(),
                     directory_id: descriptor.stream.directory_id(),
                     version: property_set.version,
@@ -81,7 +84,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                     if !identity_matches {
                         property_set_issues.push(PropertySetIssueRecord {
                             id: format!(
-                                "inventor:property-set-identity:{}:{section_ordinal}",
+                                "inventor:property:set-identity#{}-{section_ordinal}",
                                 descriptor.stream.directory_id()
                             ),
                             path: descriptor.path.clone(),
@@ -91,7 +94,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                     }
                     property_sections.push(PropertySectionRecord {
                         id: format!(
-                            "inventor:property-section:{}:{section_ordinal}",
+                            "inventor:property:section#{}-{section_ordinal}",
                             descriptor.stream.directory_id()
                         ),
                         set_path: descriptor.path.clone(),
@@ -111,7 +114,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                                 .map(str::to_owned)
                         });
                         let native_id = format!(
-                            "inventor:property:{}:{section_ordinal}:{}",
+                            "inventor:property:value#{}-{section_ordinal}-{}",
                             descriptor.stream.directory_id(),
                             property.id
                         );
@@ -132,7 +135,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                                 )?;
                                 ir.model.assets.push(Asset {
                                     id: AssetId(format!(
-                                        "inventor:asset:preview:{}",
+                                        "inventor:document:asset#preview-{}",
                                         ir.model.assets.len()
                                     )),
                                     name: Some("document preview".into()),
@@ -160,6 +163,142 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             }
         }
     }
+    let (protein, protein_entries) = match &container.protein {
+        ProteinState::Absent => (
+            ProteinRecord {
+                id: "inventor:protein:state#root".into(),
+                state: ProteinRecordState::Absent,
+                directory_id: None,
+                declared_len: None,
+                entry_count: 0,
+                detail: None,
+            },
+            Vec::new(),
+        ),
+        ProteinState::Empty { stream } => (
+            ProteinRecord {
+                id: "inventor:protein:state#root".into(),
+                state: ProteinRecordState::Empty,
+                directory_id: Some(stream.directory_id()),
+                declared_len: Some(0),
+                entry_count: 0,
+                detail: None,
+            },
+            Vec::new(),
+        ),
+        ProteinState::Malformed { stream, detail } => (
+            ProteinRecord {
+                id: "inventor:protein:state#root".into(),
+                state: ProteinRecordState::Malformed,
+                directory_id: Some(stream.directory_id()),
+                declared_len: None,
+                entry_count: 0,
+                detail: Some(detail.clone()),
+            },
+            Vec::new(),
+        ),
+        ProteinState::Package(package) => {
+            let entries = package
+                .archive
+                .entries()
+                .iter()
+                .enumerate()
+                .map(|(ordinal, entry)| ProteinEntryRecord {
+                    id: format!("inventor:protein:entry#{ordinal}"),
+                    ordinal: ordinal as u32,
+                    name: entry.name.clone(),
+                    compression: entry.compression.label().into(),
+                    crc32: entry.crc32,
+                    compressed_size: entry.compressed_size,
+                    uncompressed_size: entry.uncompressed_size,
+                })
+                .collect::<Vec<_>>();
+            (
+                ProteinRecord {
+                    id: "inventor:protein:state#root".into(),
+                    state: ProteinRecordState::Package,
+                    directory_id: Some(package.stream.directory_id()),
+                    declared_len: Some(package.declared_len),
+                    entry_count: entries.len() as u64,
+                    detail: None,
+                },
+                entries,
+            )
+        }
+    };
+    let (ufrx, external_references) = match &container.ufrx {
+        UfrxState::Absent => (
+            UfrxRecord {
+                id: "inventor:ufrx:state#root".into(),
+                state: UfrxRecordState::Absent,
+                directory_id: None,
+                schema: None,
+                section_versions: Vec::new(),
+                original_file_name: None,
+                caption: None,
+                reference_count: 0,
+                tail_len: 0,
+                tail_sha256: None,
+                detail: None,
+            },
+            Vec::new(),
+        ),
+        UfrxState::Malformed { stream, detail } => (
+            UfrxRecord {
+                id: "inventor:ufrx:state#root".into(),
+                state: UfrxRecordState::Malformed,
+                directory_id: Some(stream.directory_id()),
+                schema: None,
+                section_versions: Vec::new(),
+                original_file_name: None,
+                caption: None,
+                reference_count: 0,
+                tail_len: 0,
+                tail_sha256: None,
+                detail: Some(detail.clone()),
+            },
+            Vec::new(),
+        ),
+        UfrxState::Parsed(document) => {
+            let references = document
+                .references
+                .iter()
+                .enumerate()
+                .map(|(ordinal, reference)| ExternalReferenceRecord {
+                    id: format!("inventor:ufrx:external-reference#{ordinal}"),
+                    ordinal: ordinal as u32,
+                    path: reference.path.clone(),
+                    library_id: reference.library_id,
+                    library_name: reference.library_name.clone(),
+                    display_name: reference.display_name.clone(),
+                    state_groups: reference.state_groups.clone(),
+                    state: reference.state,
+                    document_id: hex(&reference.document_id),
+                    database_id: hex(&reference.database_id),
+                    reference_id: reference.reference_id,
+                    occurrence_count: reference.occurrence_count,
+                    version: reference.version,
+                    flags: reference.flags,
+                })
+                .collect::<Vec<_>>();
+            (
+                UfrxRecord {
+                    id: "inventor:ufrx:state#root".into(),
+                    state: UfrxRecordState::ParsedPrefix,
+                    directory_id: Some(document.stream.directory_id()),
+                    schema: Some(document.schema),
+                    section_versions: document.section_versions.clone(),
+                    original_file_name: Some(document.original_file_name.clone()),
+                    caption: Some(document.caption.clone()),
+                    reference_count: references.len() as u64,
+                    tail_len: document.unparsed_tail.window().len() as u64,
+                    tail_sha256: Some(sha256_hex(document.unparsed_tail.window())),
+                    detail: None,
+                },
+                references,
+            )
+        }
+    };
     if let DocumentKind::Unknown(_) = document_kind {
         if let Some(property_kind) = metadata.document_kind.take() {
             document_kind = property_kind;
@@ -173,7 +312,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     });
     if matches!(document_kind, DocumentKind::Part | DocumentKind::Assembly) {
         ir.model.product_definitions.push(ProductDefinition {
-            id: ProductDefinitionId("inventor:product:root".into()),
+            id: ProductDefinitionId("inventor:document:product#root".into()),
             kind: ProductDefinitionKind::Part,
             source_name: metadata.title.clone(),
             label: metadata.title.clone(),
@@ -181,7 +320,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             part_number: metadata.part_number.clone(),
             bom_properties: metadata.bom_properties.clone(),
             bodies: Vec::new(),
-            native_ref: Some("inventor:rse:document".into()),
+            native_ref: None,
         });
     }
     let storage_bands = container
@@ -189,7 +328,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         .databases
         .iter()
         .map(|database| StorageBandRecord {
-            id: format!("inventor:rse:database:v{}", database.band.value()),
+            id: format!("inventor:rse:storage-band#v{}", database.band.value()),
             band: database.band.value(),
             database_directory_id: database.stream.directory_id(),
         })
@@ -203,7 +342,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 return None;
             };
             Some(DatabaseRecord {
-                id: format!("inventor:rse:database-record:v{}", descriptor.band.value()),
+                id: format!("inventor:rse:database#v{}", descriptor.band.value()),
                 band: descriptor.band.value(),
                 database_id: hex(&database.id),
                 schema: database.schema.value(),
@@ -224,7 +363,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 return None;
             };
             Some(DatabaseIssueRecord {
-                id: format!("inventor:rse:database-issue:v{}", descriptor.band.value()),
+                id: format!("inventor:rse:database-issue#v{}", descriptor.band.value()),
                 band: descriptor.band.value(),
                 detail: detail.clone(),
             })
@@ -236,7 +375,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .iter()
             .enumerate()
             .map(|(ordinal, entry)| SegmentRegistryRecord {
-                id: format!("inventor:rse:registry:{ordinal}"),
+                id: format!("inventor:rse:registry-entry#{ordinal}"),
                 ordinal: ordinal as u32,
                 display_name: entry.display_name.clone(),
                 segment_id: hex(&entry.segment_id),
@@ -254,7 +393,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .iter()
             .enumerate()
             .map(|(ordinal, entry)| RevisionRecord {
-                id: format!("inventor:rse:revision:{ordinal}"),
+                id: format!("inventor:rse:revision#{ordinal}"),
                 ordinal: ordinal as u32,
                 revision_id: hex(&entry.id),
                 flags: entry.flags,
@@ -283,7 +422,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .enumerate()
             .map(move |(ordinal, detail)| StructuralIssueRecord {
                 id: format!(
-                    "inventor:rse:structural-issue:segment:{}:{ordinal}",
+                    "inventor:rse:structural-issue#segment-{}-{ordinal}",
                     segment.pair.token.as_str()
                 ),
                 scope: format!("segment:{}", segment.pair.token.as_str()),
@@ -295,7 +434,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         .segments
         .iter()
         .map(|segment| SegmentPairRecord {
-            id: format!("inventor:rse:segment:{}", segment.pair.token.as_str()),
+            id: format!("inventor:rse:segment#{}", segment.pair.token.as_str()),
             token: segment.pair.token.as_str().into(),
             metadata_directory_id: segment.pair.metadata.directory_id(),
             bulk_directory_id: segment.pair.bulk.directory_id(),
@@ -310,7 +449,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 return None;
             };
             Some(SegmentMetaRecord {
-                id: format!("inventor:rse:segment-meta:{}", segment.pair.token.as_str()),
+                id: format!("inventor:rse:segment-meta#{}", segment.pair.token.as_str()),
                 token: segment.pair.token.as_str().into(),
                 version: meta.version.value(),
                 kind: segment.kind.label().into(),
@@ -341,7 +480,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             };
             Some(SegmentMetaIssueRecord {
                 id: format!(
-                    "inventor:rse:segment-meta-issue:{}",
+                    "inventor:rse:segment-meta-issue#{}",
                     segment.pair.token.as_str()
                 ),
                 token: segment.pair.token.as_str().into(),
@@ -362,7 +501,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 .expanded
                 .expect("decode-purpose container expands every framed bulk stream");
             Some(SegmentBulkRecord {
-                id: format!("inventor:rse:segment-bulk:{}", segment.pair.token.as_str()),
+                id: format!("inventor:rse:segment-bulk#{}", segment.pair.token.as_str()),
                 token: segment.pair.token.as_str().into(),
                 prefix: hex(&bulk.prefix),
                 form: bulk.form.value(),
@@ -383,7 +522,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             };
             Some(SegmentBulkIssueRecord {
                 id: format!(
-                    "inventor:rse:segment-bulk-issue:{}",
+                    "inventor:rse:segment-bulk-issue#{}",
                     segment.pair.token.as_str()
                 ),
                 token: segment.pair.token.as_str().into(),
@@ -396,7 +535,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         .unpaired_metadata
         .iter()
         .map(|token| UnpairedSegmentRecord {
-            id: format!("inventor:rse:unpaired-metadata:{}", token.as_str()),
+            id: format!("inventor:rse:unpaired-metadata#{}", token.as_str()),
             token: token.as_str().into(),
             missing_member: "bulk".into(),
         })
@@ -406,7 +545,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 .unpaired_bulk
                 .iter()
                 .map(|token| UnpairedSegmentRecord {
-                    id: format!("inventor:rse:unpaired-bulk:{}", token.as_str()),
+                    id: format!("inventor:rse:unpaired-bulk#{}", token.as_str()),
                     token: token.as_str().into(),
                     missing_member: "metadata".into(),
                 }),
@@ -429,6 +568,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .saturating_add(property_sections.len())
             .saturating_add(properties.len())
             .saturating_add(property_set_issues.len())
+            .saturating_add(1)
+            .saturating_add(protein_entries.len())
+            .saturating_add(1)
+            .saturating_add(external_references.len())
             .saturating_add(unpaired_segments.len()) as u64,
         "retain Inventor native structural records",
     )?;
@@ -444,6 +587,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     namespace.set_arena("property_sections", &property_sections)?;
     namespace.set_arena("properties", &properties)?;
     namespace.set_arena("property_set_issues", &property_set_issues)?;
+    namespace.set_arena("protein", std::slice::from_ref(&protein))?;
+    namespace.set_arena("protein_entries", &protein_entries)?;
+    namespace.set_arena("ufrx", std::slice::from_ref(&ufrx))?;
+    namespace.set_arena("external_references", &external_references)?;
     namespace.set_arena("segment_pairs", &segment_pairs)?;
     namespace.set_arena("segment_meta", &segment_meta)?;
     namespace.set_arena("segment_meta_issues", &segment_meta_issues)?;
@@ -520,6 +667,35 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             ),
         ));
     }
+    match &container.protein {
+        ProteinState::Package(_) => losses.push(LossNote::new(
+            LossKind::MaterialNotTransferred,
+            "The Protein package inventory is retained without material or appearance binding.",
+        )),
+        ProteinState::Malformed { .. } => losses.push(LossNote::new(
+            LossKind::DecodeDiagnostic,
+            "The Inventor Protein stream is malformed.",
+        )),
+        ProteinState::Absent | ProteinState::Empty { .. } => {}
+    }
+    match &container.ufrx {
+        UfrxState::Malformed { .. } => losses.push(LossNote::new(
+            LossKind::DecodeDiagnostic,
+            "The UFRxDoc external-reference table is malformed or outside the implemented schema.",
+        )),
+        UfrxState::Parsed(_) if matches!(document_kind, DocumentKind::Assembly) => {
+            if !external_references.is_empty() {
+                losses.push(LossNote::new(
+                    LossKind::AssemblyComponentsExternal,
+                    format!(
+                        "Retained {} unresolved external component reference(s).",
+                        external_references.len()
+                    ),
+                ));
+            }
+        }
+        UfrxState::Absent | UfrxState::Parsed(_) => {}
+    }
     ctx.charge_entities(ir.model.entity_count() as u64, "admit Inventor entities")?;
     let preview_asset_count = ir.model.assets.len();
     Ok(DecodeResult::new(
@@ -541,6 +717,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 ("property_sets".into(), property_sets.len()),
                 ("properties".into(), properties.len()),
                 ("preview_assets".into(), preview_asset_count),
+                ("protein_entries".into(), protein_entries.len()),
+                ("external_references".into(), external_references.len()),
             ]),
             losses,
             notes: Vec::new(),
@@ -561,7 +739,7 @@ fn version_record(version: VersionTuple) -> VersionTupleRecord {
 
 fn structural_issue(scope: &str, detail: &str) -> StructuralIssueRecord {
     StructuralIssueRecord {
-        id: format!("inventor:rse:structural-issue:{scope}"),
+        id: format!("inventor:rse:structural-issue#{scope}"),
         scope: scope.into(),
         detail: detail.into(),
     }

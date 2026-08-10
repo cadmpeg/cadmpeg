@@ -261,6 +261,7 @@ dependencies = [
  "flate2",
  "schemars",
  "serde",
+ "zip",
 ]
 
 [[package]]

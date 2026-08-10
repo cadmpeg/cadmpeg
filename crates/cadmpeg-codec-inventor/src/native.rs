@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Current Inventor native namespace version.
-pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 3;
+pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct VersionTupleRecord {
@@ -107,6 +107,77 @@ pub(crate) struct PropertySetIssueRecord {
     pub(crate) path: String,
     pub(crate) directory_id: u32,
     pub(crate) detail: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct ProteinRecord {
+    pub(crate) id: String,
+    pub(crate) state: ProteinRecordState,
+    pub(crate) directory_id: Option<u32>,
+    pub(crate) declared_len: Option<u32>,
+    pub(crate) entry_count: u64,
+    pub(crate) detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ProteinRecordState {
+    Absent,
+    Empty,
+    Package,
+    Malformed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct ProteinEntryRecord {
+    pub(crate) id: String,
+    pub(crate) ordinal: u32,
+    pub(crate) name: String,
+    pub(crate) compression: String,
+    pub(crate) crc32: u32,
+    pub(crate) compressed_size: u64,
+    pub(crate) uncompressed_size: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct UfrxRecord {
+    pub(crate) id: String,
+    pub(crate) state: UfrxRecordState,
+    pub(crate) directory_id: Option<u32>,
+    pub(crate) schema: Option<u16>,
+    pub(crate) section_versions: Vec<u16>,
+    pub(crate) original_file_name: Option<String>,
+    pub(crate) caption: Option<String>,
+    pub(crate) reference_count: u64,
+    pub(crate) tail_len: u64,
+    pub(crate) tail_sha256: Option<String>,
+    pub(crate) detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum UfrxRecordState {
+    Absent,
+    ParsedPrefix,
+    Malformed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct ExternalReferenceRecord {
+    pub(crate) id: String,
+    pub(crate) ordinal: u32,
+    pub(crate) path: String,
+    pub(crate) library_id: i32,
+    pub(crate) library_name: String,
+    pub(crate) display_name: String,
+    pub(crate) state_groups: Vec<[u16; 3]>,
+    pub(crate) state: [u16; 2],
+    pub(crate) document_id: String,
+    pub(crate) database_id: String,
+    pub(crate) reference_id: u32,
+    pub(crate) occurrence_count: u32,
+    pub(crate) version: u32,
+    pub(crate) flags: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

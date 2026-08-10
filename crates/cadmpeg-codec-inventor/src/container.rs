@@ -5,7 +5,9 @@ use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
 
+use crate::external_reference::{parse as parse_ufrx, UfrxState};
 use crate::property_set::{inventory as property_set_inventory, PropertySetDescriptor};
+use crate::protein::{parse as parse_protein, ProteinState};
 use crate::rse::{database_band, direct_rse_child, RseInventory, SegmentMetaState};
 use crate::rse::{BulkReadMode, SegmentBulkState};
 
@@ -29,6 +31,8 @@ pub(crate) struct InventorContainer<'a> {
     pub(crate) snapshot: CompoundSnapshot<'a>,
     pub(crate) rse: RseInventory<'a>,
     pub(crate) property_sets: Vec<PropertySetDescriptor<'a>>,
+    pub(crate) protein: ProteinState<'a>,
+    pub(crate) ufrx: UfrxState<'a>,
 }
 
 impl<'a> InventorContainer<'a> {
@@ -48,10 +52,14 @@ impl<'a> InventorContainer<'a> {
         }
         let rse = RseInventory::build(ctx, &snapshot, purpose.bulk_mode());
         let property_sets = property_set_inventory(ctx, &snapshot)?;
+        let protein = parse_protein(ctx, &snapshot)?;
+        let ufrx = parse_ufrx(ctx, &snapshot)?;
         Ok(Self {
             snapshot,
             rse,
             property_sets,
+            protein,
+            ufrx,
         })
     }
 

@@ -51,6 +51,11 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         .losses
         .iter()
         .any(|loss| loss.code == LossKind::GeometryNotTransferred));
+    let native_findings = crate::validate_native(&decoded.ir);
+    assert_eq!(native_findings.len(), 1, "{native_findings:#?}");
+    assert!(native_findings[0]
+        .message
+        .contains("do not select one registry grammar"));
     assert_eq!(
         decoded
             .ir
@@ -58,7 +63,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
             .namespace("inventor")
             .expect("Inventor native namespace exists")
             .version,
-        3
+        5
     );
 
     let options = DecodeOptions {

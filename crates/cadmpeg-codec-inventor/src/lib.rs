@@ -7,8 +7,10 @@
 mod container;
 mod database;
 mod decode;
+mod external_reference;
 mod native;
 mod property_set;
+mod protein;
 mod rse;
 mod validate;
 
