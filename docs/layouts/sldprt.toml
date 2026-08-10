@@ -328,7 +328,7 @@ section = "5"
 anchor = "A `00 51` header is `flags u32 BE`, `attr u16 BE`, `seq u32 BE`, and `disc u16 BE`."
 size = 12
 endianness = "big"
-note = "Body-relative, after the two-byte family tag. An optional `ff` byte can occur between the `00 51` tag and `flags`; it shifts every following field by one byte. Slot values follow at +12 with a slot count keyed by `(schema, disc, flo)` that the spec does not enumerate."
+note = "Body-relative, after the two-byte family tag. An optional `ff` byte can occur between the `00 51` tag and `flags`; it shifts every following field by one byte. Slot values follow at +12 with the schema, disc, and flo count table in specification section 5."
 
 [[record.field]]
 name = "flags"
@@ -5442,7 +5442,7 @@ anchor = "Slot values `0` and `1` are sentinels."
 
 [[not_applicable]]
 area = "Inline record framing (§10)"
-reason = "Framing arithmetic rather than a fixed-offset record: the zero byte after a prefixed triple run self-delimits that form, while `end = pos + 14 + 2*slot_count` for a bare record. The bare slot-count table is an open item, not a stated layout."
+reason = "Framing arithmetic rather than a fixed-offset record: the zero byte after a prefixed triple run self-delimits that form, while `end = pos + 14 + 2*slot_count` for a bare record. Specification section 5 gives the supported schema, disc, and flo slot-count table."
 section = "10"
 anchor = "For a prefixed subrecord, `body[14] == 0x01`, each slot is `[01][hi][lo]`, and the first byte after the slot run is `00`"
 

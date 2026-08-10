@@ -89,19 +89,71 @@ impl EntityRecord {
     }
 }
 
-fn slot_count(disc: u16, flo: u8) -> Option<usize> {
+fn slot_count(schema: &str, disc: u16, flo: u8) -> Option<usize> {
+    let revision = schema.split('_').nth(2)?.parse::<u32>().ok()?;
+    if !matches!(
+        revision,
+        17_106
+            | 18_106
+            | 19_008
+            | 20_000
+            | 25_001
+            | 26_105
+            | 28_002
+            | 28_101
+            | 30_000
+            | 31_001
+            | 31_100
+            | 32_001
+            | 33_103
+            | 34_101
+            | 35_102
+            | 36_001
+    ) {
+        return None;
+    }
+    if !matches!(
+        disc,
+        0x0004
+            | 0x000c
+            | 0x000e
+            | 0x000f
+            | 0x0010
+            | 0x0011
+            | 0x0012
+            | 0x0013
+            | 0x0014
+            | 0x0015
+            | 0x0016
+            | 0x0017
+            | 0x0018
+            | 0x0019
+            | 0x001a
+            | 0x001b
+            | 0x001c
+            | 0x001d
+            | 0x001e
+            | 0x001f
+            | 0x0020
+            | 0x0021
+            | 0x0022
+            | 0x0023
+            | 0x0024
+            | 0x0025
+            | 0x0026
+            | 0x0027
+            | 0x0028
+            | 0x002a
+            | 0x002c
+            | 0x002e
+    ) {
+        return None;
+    }
     match (disc, flo) {
-        (0x0018 | 0x0025 | 0x0020, 1) => Some(6),
-        (0x001d | 0x001e, 2) => Some(7),
-        (0x0020 | 0x0027 | 0x0024, 4) => Some(9),
         (0x0026, 3) => Some(6),
-        (
-            0x0004 | 0x000c | 0x000e | 0x000f | 0x0010 | 0x0011 | 0x0012 | 0x0013 | 0x0014 | 0x0015
-            | 0x0016 | 0x0017 | 0x0018 | 0x0019 | 0x001a | 0x001b | 0x001c | 0x001d | 0x001e
-            | 0x001f | 0x0020 | 0x0021 | 0x0022 | 0x0023 | 0x0024 | 0x0025 | 0x0026 | 0x0027
-            | 0x0028 | 0x002a | 0x002c | 0x002e,
-            1 | 2 | 4,
-        ) => Some(6),
+        (_, 1) => Some(6),
+        (_, 2) => Some(7),
+        (_, 4) => Some(9),
         _ => None,
     }
 }
@@ -127,7 +179,7 @@ fn refs(body: &[u8], at: usize, count: usize, prefixed: bool) -> Option<(Vec<u16
     Some((refs, at.checked_add(count.checked_mul(2)?)?))
 }
 
-fn scan_entities(body: &[u8], prefixed: bool) -> Vec<EntityRecord> {
+fn scan_entities(body: &[u8], schema: &str, prefixed: bool) -> Vec<EntityRecord> {
     let mut out = Vec::new();
     for off in 0..body.len().saturating_sub(25) {
         if body.get(off..off + 2) != Some(&[0x00, 0x51]) {
@@ -156,7 +208,7 @@ fn scan_entities(body: &[u8], prefixed: bool) -> Vec<EntityRecord> {
         let count = if prefixed {
             0
         } else {
-            let Some(count) = slot_count(disc, flo) else {
+            let Some(count) = slot_count(schema, disc, flo) else {
                 continue;
             };
             count
@@ -301,16 +353,16 @@ fn current_linked_color(candidates: &[FramedColor]) -> Option<FramedColor> {
         .then_some(first)
 }
 
-pub fn scan(body: &[u8]) -> Facts {
-    scan_with_framing(body, false)
+pub fn scan(body: &[u8], schema: &str) -> Facts {
+    scan_with_framing(body, schema, false)
 }
 
-pub fn scan_deltas(body: &[u8]) -> Facts {
-    scan_with_framing(body, true)
+pub fn scan_deltas(body: &[u8], schema: &str) -> Facts {
+    scan_with_framing(body, schema, true)
 }
 
-fn scan_with_framing(body: &[u8], prefixed: bool) -> Facts {
-    let entities = scan_entities(body, prefixed);
+fn scan_with_framing(body: &[u8], schema: &str, prefixed: bool) -> Facts {
+    let entities = scan_entities(body, schema, prefixed);
     let entity_attrs = entities.iter().map(|record| record.attr).collect();
     let class_roots = class_root_attrs(body, &entity_attrs);
     let linked_colors = linked_colors(body, &entities);
@@ -393,11 +445,11 @@ fn scan_with_framing(body: &[u8], prefixed: bool) -> Facts {
 /// Deltas entity records are ordered after partition records. Equal-sequence
 /// records therefore select the deltas framing while references can still
 /// resolve to unchanged partition records.
-pub fn scan_final_bridge_selector(streams: &[(&[u8], bool)]) -> Option<HashSet<u16>> {
+pub fn scan_final_bridge_selector(streams: &[(&[u8], &str, bool)]) -> Option<HashSet<u16>> {
     let mut entities = Vec::new();
     let mut has_deltas_body_root = false;
-    for (body, is_deltas) in streams {
-        let scanned = scan_entities(body, *is_deltas);
+    for (body, schema, is_deltas) in streams {
+        let scanned = scan_entities(body, schema, *is_deltas);
         has_deltas_body_root |= *is_deltas && scanned.iter().any(is_explicit_body_root);
         entities.extend(scanned);
     }
@@ -2996,9 +3048,23 @@ fn reachable_refs(by_attr: &HashMap<u16, &EntityRecord>, root: &EntityRecord) ->
 mod tests {
     use super::*;
 
+    const TEST_SCHEMA: &str = "SCH_SW_33103_11000";
+
     fn bare_entity(attr: u16, seq: u32, disc: u16, refs: [u16; 6]) -> Vec<u8> {
         let mut bytes = vec![0, 0x51];
         bytes.extend_from_slice(&1_u32.to_be_bytes());
+        bytes.extend_from_slice(&attr.to_be_bytes());
+        bytes.extend_from_slice(&seq.to_be_bytes());
+        bytes.extend_from_slice(&disc.to_be_bytes());
+        for reference in refs {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
+        bytes
+    }
+
+    fn bare_entity_slots(attr: u16, seq: u32, disc: u16, flo: u8, refs: &[u16]) -> Vec<u8> {
+        let mut bytes = vec![0, 0x51];
+        bytes.extend_from_slice(&u32::from(flo).to_be_bytes());
         bytes.extend_from_slice(&attr.to_be_bytes());
         bytes.extend_from_slice(&seq.to_be_bytes());
         bytes.extend_from_slice(&disc.to_be_bytes());
@@ -4105,7 +4171,7 @@ mod tests {
         bytes.extend_from_slice(&[0xaa, 0xbb]);
         bytes.extend(color(900, [0.25, 0.5, 0.75], false));
 
-        let facts = scan(&bytes);
+        let facts = scan(&bytes, TEST_SCHEMA);
 
         assert!(facts.face_colors.is_empty());
         assert_eq!(facts.unresolved_face_colors, 0);
@@ -4116,7 +4182,7 @@ mod tests {
         let mut bytes = prefixed_entity(700, 4, 0x15, [0, 0, 0, 0, 0, 900]);
         bytes.extend(color(900, [0.25, 0.5, 0.75], true));
 
-        let facts = scan_deltas(&bytes);
+        let facts = scan_deltas(&bytes, TEST_SCHEMA);
 
         assert_eq!(facts.face_colors.len(), 1);
         assert_eq!(facts.face_colors[0].face_attr, 700);
@@ -4129,7 +4195,7 @@ mod tests {
         let mut bytes = bare_entity(700, 1, 0x15, [0, 0, 0, 0, 0, 900]);
         bytes.extend(color(901, [0.25, 0.5, 0.75], false));
 
-        let facts = scan(&bytes);
+        let facts = scan(&bytes, TEST_SCHEMA);
 
         assert!(facts.face_colors.is_empty());
         assert_eq!(facts.unresolved_face_colors, 0);
@@ -4141,7 +4207,7 @@ mod tests {
         bytes.extend(bare_entity(701, 2, 0x15, [0, 0, 0, 0, 700, 901]));
         bytes.extend(color(900, [0.25, 0.5, 0.75], false));
 
-        let facts = scan(&bytes);
+        let facts = scan(&bytes, TEST_SCHEMA);
 
         assert_eq!(facts.face_colors.len(), 1);
         assert_eq!(facts.face_colors[0].face_attr, 700);
@@ -4155,7 +4221,7 @@ mod tests {
         bytes.extend(color(900, [0.25, 0.5, 0.75], false));
         bytes.extend(color(901, [0.75, 0.5, 0.25], false));
 
-        let facts = scan(&bytes);
+        let facts = scan(&bytes, TEST_SCHEMA);
 
         assert_eq!(facts.face_colors.len(), 2);
         assert!(facts
@@ -4181,7 +4247,7 @@ mod tests {
             bare.extend(reference.to_be_bytes());
         }
         bare.extend([0; 16]);
-        assert!(scan_entities(&bare, false).is_empty());
+        assert!(scan_entities(&bare, TEST_SCHEMA, false).is_empty());
 
         let mut prefixed = header;
         for reference in 2u16..=8 {
@@ -4191,9 +4257,27 @@ mod tests {
         prefixed.push(0);
         prefixed.extend([0; 16]);
         assert_eq!(
-            scan_entities(&prefixed, true)[0].refs,
+            scan_entities(&prefixed, "SCH_UNKNOWN_99999", true)[0].refs,
             (2u16..=8).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn bare_entity_slot_counts_use_schema_disc_and_flo() {
+        let seven = bare_entity_slots(700, 1, 0x16, 2, &[2, 3, 4, 5, 6, 7, 8]);
+        let nine = bare_entity_slots(701, 2, 0x1a, 4, &[9, 10, 11, 12, 13, 14, 15, 16, 17]);
+        let mut bytes = seven.clone();
+        bytes.extend_from_slice(&nine);
+        bytes.extend([0; 16]);
+
+        let records = scan_entities(&bytes, "SCH_2400201_20000_13006", false);
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].refs.len(), 7);
+        assert_eq!(records[0].end, seven.len());
+        assert_eq!(records[1].refs.len(), 9);
+        assert_eq!(records[1].end, seven.len() + nine.len());
+        assert!(scan_entities(&bytes, "SCH_UNKNOWN_99999_13006", false).is_empty());
+        assert_eq!(slot_count(TEST_SCHEMA, 0x26, 3), Some(6));
     }
 
     #[test]

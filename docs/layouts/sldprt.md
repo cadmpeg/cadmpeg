@@ -126,7 +126,7 @@ Unstated regions:
 
 Spec §5 · layout: byte offsets · size: 12 B
 
-Body-relative, after the two-byte family tag. An optional `ff` byte can occur between the `00 51` tag and `flags`; it shifts every following field by one byte. Slot values follow at +12 with a slot count keyed by `(schema, disc, flo)` that the spec does not enumerate.
+Body-relative, after the two-byte family tag. An optional `ff` byte can occur between the `00 51` tag and `flags`; it shifts every following field by one byte. Slot values follow at +12 with the schema, disc, and flo count table in specification section 5.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -1490,5 +1490,5 @@ Cross-checked against code:
 | ---- | ---- | ------ |
 | ResolvedFeatures sketch and feature-input markers (§2) | §2 | The remaining marker layouts are about 125 distinct records, each one prose paragraph stating marker-relative offsets for a specific record length. The fixed-offset layouts above cover the currently tabulated profile, sketch-input, and reference-plane forms; the remaining paragraphs are transcribable in principle and can be added incrementally. |
 | Body records (§6) | §6 | Apart from the class-root directory, §6 states slot-reference graphs and population invariants over about thirty named disc layouts. Those layouts state no byte offsets; their slot values are reached through the §5 common header and the §10 framing arithmetic. |
-| Inline record framing (§10) | §10 | Framing arithmetic rather than a fixed-offset record: the zero byte after a prefixed triple run self-delimits that form, while `end = pos + 14 + 2*slot_count` for a bare record. The bare slot-count table is an open item, not a stated layout. |
+| Inline record framing (§10) | §10 | Framing arithmetic rather than a fixed-offset record: the zero byte after a prefixed triple run self-delimits that form, while `end = pos + 14 + 2*slot_count` for a bare record. Specification section 5 gives the supported schema, disc, and flo slot-count table. |
 | Compound File Binary directory entry (§1) | §1 | The spec states the 128-byte entry size and names the fields but states no offset for any of them; the layout is the external CFB specification, not a cadmpeg finding. |

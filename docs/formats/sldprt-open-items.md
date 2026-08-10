@@ -96,13 +96,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What fixed slot count does each bare inline entity family outside the canonical face families use in each Parasolid schema?
 
-**Known.** `sldprt.md` §5 "Top-level entity families include" defines the common entity header. `sldprt.md` §10 "Bare inline `00 51` subrecords use a fixed slot count" defines bare record boundaries. A prefixed record is self-delimiting because its `[01][hi][lo]` slot run ends at the first `00` byte.
+**Known.** `sldprt.md` §5 "Top-level entity families include" defines the common entity header. `sldprt.md` §5 "Bare entity framing is defined for schema revisions" defines the supported schema revisions, disc families, and six-, seven-, and nine-slot forms. `sldprt.md` §10 "Bare inline `00 51` subrecords use a fixed slot count" defines bare record boundaries. A prefixed record is self-delimiting because its `[01][hi][lo]` slot run ends at the first `00` byte.
 
 **Need.** We must know each bare slot count to find bare record boundaries without treating payload bytes as delimiters.
 
-The decoder uses an explicit `(disc, flo) -> slot count` table for the bare entity families consumed by its body-layout recognizers. A family absent from that table remains unresolved. Prefixed records do not use the table because their zero terminator frames the reference run.
-
-**Note.** The table has no schema dimension. A wrong bare count changes every reference the layout recognizers chain through.
+The decoder uses the schema revision and an explicit `(disc, flo) -> slot count` table for the bare entity families consumed by its body-layout recognizers. An unlisted schema revision or family remains unresolved. Prefixed records do not use the table because their zero terminator frames the reference run.
 
 The attribute scanner accepts only the exact supported family names followed immediately by a `00 50` definition. It accepts only the list widths that the supported family grammars define: one, or five through seven. A name or list must fit in the remaining stream bytes. Name, definition, and list nodes must be nonsentinel. Duplicate definition and list identities must be byte-equivalent; the decoder withholds a conflicting identity. An instance becomes a relation only when its target survives as an emitted face or an explicit body.
 

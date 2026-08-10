@@ -18,5 +18,5 @@ pub fn topology(data: &[u8]) {
 
 /// Exercise entity record scanning.
 pub fn entity(data: &[u8]) {
-    let _ = crate::brep::entity::scan(data);
+    let _ = crate::brep::entity::scan(data, "SCH_SW_33103_11000");
 }

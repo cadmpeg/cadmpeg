@@ -697,7 +697,11 @@ fn surface_sense(marker: u8, orientation_reversed: bool) -> Sense {
 ///
 /// `stream` names the provenance stream recorded in [`Brep::annotations`].
 pub fn decode(payload: &[u8], header: &StreamHeader, stream: &str) -> Brep {
-    decode_body(&payload[header.body_offset.min(payload.len())..], stream)
+    decode_body(
+        &payload[header.body_offset.min(payload.len())..],
+        &header.schema,
+        stream,
+    )
 }
 
 /// Decode related partition and deltas streams as one record source.
@@ -717,7 +721,7 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
         .map(|(payload, header)| {
             let body = &payload[header.body_offset.min(payload.len())..];
             let is_deltas = header.description.to_ascii_lowercase().contains("deltas");
-            (body, is_deltas)
+            (body, header.schema.as_str(), is_deltas)
         })
         .collect::<Vec<_>>();
     let final_state_refs = entity::scan_final_bridge_selector(&entity_streams);
@@ -732,9 +736,9 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
             topology::scan_with_curve_attrs(body, &curve_attrs)
         };
         let mut scanned_facts = if is_deltas {
-            entity::scan_deltas(body)
+            entity::scan_deltas(body, &header.schema)
         } else {
-            entity::scan(body)
+            entity::scan(body, &header.schema)
         };
         for color in &mut scanned_facts.face_colors {
             color.stream_order = stream_order;
@@ -788,11 +792,11 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
     decode_graph(&carriers, &tables, facts, stream)
 }
 
-fn decode_body(body: &[u8], stream: &str) -> Brep {
+fn decode_body(body: &[u8], schema: &str, stream: &str) -> Brep {
     let carriers = scan_carriers(body);
     let curve_attrs = carriers.curve_attrs();
     let t = topology::scan_with_curve_attrs(body, &curve_attrs);
-    let entity_facts = entity::scan(body);
+    let entity_facts = entity::scan(body, schema);
     decode_graph(&carriers, &t, entity_facts, stream)
 }
 
@@ -4895,7 +4899,7 @@ mod tests {
 
     #[test]
     fn geometry_free_stream_does_not_report_synthetic_body_grouping() {
-        let decoded = super::decode_body(&[], "empty");
+        let decoded = super::decode_body(&[], "", "empty");
 
         assert!(decoded.faces.is_empty());
         assert!(!decoded.stats.synthetic_body_grouping);

@@ -932,6 +932,8 @@ Top-level entity families include `00 51` entities, `00 52` wrappers and contain
 
 `flo` is the low byte of `flags`. An optional `ff` byte can occur between the `00 51` tag and `flags`; it shifts every following field by one byte. Entity-family bodies have fixed slot counts keyed by `(schema, disc, flo)`, so `00 51` and `00 52` byte values inside slots are data rather than record delimiters.
 
+Bare entity framing is defined for schema revisions `17106`, `18106`, `19008`, `20000`, `25001`, `26105`, `28002`, `28101`, `30000`, `31001`, `31100`, `32001`, `33103`, `34101`, `35102`, and `36001`. The schema revision is the third underscore-delimited field of the `SCH_<modeller>_<schema>_<format>` token. For disc values `04`, `0c`, `0e..28`, `2a`, `2c`, and `2e`, `flo=1` has six u16 BE slots, `flo=2` has seven slots, and `flo=4` has nine slots. Disc `26` with `flo=3` has six slots. An unlisted schema revision, disc, or `flo` does not frame a bare entity record. A prefixed record remains self-delimiting and does not use this table.
+
 Face records use these families:
 
 | Family       | Record invariant                                      |

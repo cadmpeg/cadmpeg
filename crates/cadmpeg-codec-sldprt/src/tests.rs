@@ -1031,6 +1031,13 @@ fn bridge_owned(attr: u16, loop_attr: u16, surface_attr: u16, owner: u16) -> Vec
 }
 
 fn entity51(flags: u32, attr: u16, disc: u16, slots: &[u16]) -> Vec<u8> {
+    let slot_count = match flags as u8 {
+        1 | 3 => 6,
+        2 => 7,
+        4 => 9,
+        flo => panic!("unsupported synthetic entity flo {flo}"),
+    };
+    assert!(slots.len() <= slot_count, "too many synthetic entity slots");
     let mut b = vec![0x00, 0x51];
     be32(&mut b, flags);
     be16(&mut b, attr);
@@ -1038,6 +1045,9 @@ fn entity51(flags: u32, attr: u16, disc: u16, slots: &[u16]) -> Vec<u8> {
     be16(&mut b, disc);
     for slot in slots {
         be16(&mut b, *slot);
+    }
+    for _ in slots.len()..slot_count {
+        be16(&mut b, 1);
     }
     b
 }
@@ -6802,7 +6812,7 @@ fn partition_topology_wins_when_deltas_reuse_a_bridge_identity() {
 fn decode_reports_and_withholds_faces_without_body_membership() {
     let mut body = owned_triangle(0, 700, 0.0);
     body.extend(owned_triangle(200, 701, 2.0));
-    body.extend(entity51(2, 500, 0x0017, &[10, 0, 0, 0, 0, 0]));
+    body.extend(entity51(2, 500, 0x0017, &[10, 0, 0, 0, 0, 0, 1]));
     let result = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
@@ -6823,12 +6833,12 @@ fn decode_reports_and_withholds_faces_without_body_membership() {
 #[test]
 fn class_root_index_selects_complete_cluster_body_relation() {
     let mut body = class_root_index(&[5, 32, 36, 500, 510, 520, 700, 701]);
-    body.extend(entity51(2, 5, 0x0004, &[3, 32, 1, 1, 1, 1]));
-    body.extend(entity51(2, 32, 0x000f, &[3, 36, 5, 1, 1, 1]));
-    body.extend(entity51(2, 36, 0x0011, &[3, 1, 32, 1, 1, 1]));
-    body.extend(entity51(2, 500, 0x001a, &[510, 1, 1, 1, 1, 1]));
-    body.extend(entity51(2, 510, 0x0016, &[520, 1, 1, 1, 1, 1]));
-    body.extend(entity51(2, 520, 0x0020, &[1, 1, 700, 520, 1, 1]));
+    body.extend(entity51(2, 5, 0x0004, &[3, 32, 1, 1, 1, 1, 1]));
+    body.extend(entity51(2, 32, 0x000f, &[3, 36, 5, 1, 1, 1, 1]));
+    body.extend(entity51(2, 36, 0x0011, &[3, 1, 32, 1, 1, 1, 1]));
+    body.extend(entity51(2, 500, 0x001a, &[510, 1, 1, 1, 1, 1, 1]));
+    body.extend(entity51(2, 510, 0x0016, &[520, 1, 1, 1, 1, 1, 1]));
+    body.extend(entity51(2, 520, 0x0020, &[1, 1, 700, 520, 1, 1, 1]));
     body.extend(entity51(1, 700, 0x0014, &[10, 1, 1, 1, 1, 1]));
     body.extend(entity51(1, 701, 0x0014, &[210, 1, 1, 1, 1, 1]));
     body.extend(owned_triangle(0, 700, 0.0));
@@ -6855,9 +6865,9 @@ fn class_root_index_selects_complete_cluster_body_relation() {
 #[test]
 fn class_root_body_relation_selects_missing_deltas_face() {
     let mut partition = class_root_index(&[5, 32, 36, 700]);
-    partition.extend(entity51(2, 5, 0x0004, &[3, 32, 1, 1, 1, 1]));
-    partition.extend(entity51(2, 32, 0x000f, &[3, 36, 5, 1, 1, 1]));
-    partition.extend(entity51(2, 36, 0x0011, &[3, 1, 32, 1, 1, 1]));
+    partition.extend(entity51(2, 5, 0x0004, &[3, 32, 1, 1, 1, 1, 1]));
+    partition.extend(entity51(2, 32, 0x000f, &[3, 36, 5, 1, 1, 1, 1]));
+    partition.extend(entity51(2, 36, 0x0011, &[3, 1, 32, 1, 1, 1, 1]));
     partition.extend(entity51(1, 700, 0x0014, &[10, 1, 1, 1, 1, 1]));
     partition.extend(owned_triangle(0, 700, 0.0));
 
