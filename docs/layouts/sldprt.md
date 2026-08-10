@@ -1125,6 +1125,49 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser selects the complete standard or extended suffix and returns its exact end offset.
 
+## `coordinate_system_component_path_prefix`
+
+Spec §2 · layout: byte offsets · size: 110 B
+
+The counted compact component path starts immediately after this prefix. Its byte length depends on its typed entries and separators.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 73 | `common_prefix_and_source` | `bytes[73]` | little | spec | has the same 69-byte prefix and nonzero source ID as the fixed component-point records |
+| 73 | 7 | `sentinel` | `bytes[7]` | little | spec | Record +73 stores seven `ff` bytes |
+| 80 | 4 | `path_entry_count` | `u32` | little | spec | Record +80 stores a positive u32 LE path-entry count |
+| 84 | 4 | `path_kind` | `bytes[4]` | little | spec | +84 stores `00 02 00 00` |
+| 88 | 4 | `zero_before_marker` | `u32` | little | spec | +88 stores four zero bytes |
+| 92 | 16 | `component_marker` | `bytes[16]` | little | spec | +92 stores the duplicated compact component marker |
+| 108 | 2 | `zero_before_path` | `u16` | little | spec | +108 stores two zero bytes |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs` — The owning component-path parser requires one complete counted interpretation and returns its exact end.
+
+## `coordinate_system_component_path_suffix`
+
+Spec §2 · layout: byte offsets · size: 86 B
+
+Path-end-relative. An optional eight-byte terminal null slot precedes this suffix and is not part of its size.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 14 | `zero_header` | `bytes[14]` | little | spec | fourteen zero bytes |
+| 14 | 4 | `one` | `u32` | little | spec | u32 LE `1` |
+| 18 | 4 | `zero_before_object` | `u32` | little | spec | four zero bytes |
+| 22 | 4 | `object_id` | `u32` | little | spec | a nonzero non-sentinel u32 LE object ID |
+| 26 | 12 | `zero_before_handles` | `bytes[12]` | little | spec | and twelve zero bytes precede the solved suffix |
+| 38 | 8 | `handles` | `bytes[8]` | little | spec | stores `c7 cf ff ff c7 cf ff ff` |
+| 46 | 4 | `zero_before_generation` | `u32` | little | spec | u32 zero |
+| 50 | 4 | `generation` | `u32` | little | spec | the shared nonzero non-sentinel generation word |
+| 54 | 8 | `zero_before_origin` | `bytes[8]` | little | spec | eight zero bytes |
+| 62 | 24 | `origin` | `f64[3]` | little | spec | three finite f64 LE origin coordinates in metres |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser validates the path-relative trailer and returns the exact solved-suffix end.
+
 ## `coordinate_system_line_axis`
 
 Spec §2 · layout: byte offsets · size: 113 B

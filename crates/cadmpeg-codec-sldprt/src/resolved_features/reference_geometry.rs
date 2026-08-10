@@ -6,7 +6,7 @@ use super::curves::{
     REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
 };
 use super::scalars::feature_object_name;
-use super::selections::component_face_reference_in_record;
+use super::selections::{compact_component_path_end_at, component_face_reference_in_record};
 use super::{CLASS_MARKER, NAME_MARKER};
 use crate::classification::{
     classify, native_object_class, principal_plane_with_siblings, FeatureClass, NativeClassKind,
@@ -775,8 +775,14 @@ fn coordinate_system_origin(record: &[u8]) -> Option<(Point3, u32, usize)> {
                 return None;
             }
             let source = u32::from_le_bytes(record.get(prefix + 69..prefix + 73)?.try_into().ok()?);
+            if source == 0 {
+                return None;
+            }
+            if let Some(candidate) = coordinate_system_component_path_origin(record, prefix) {
+                return Some(candidate);
+            }
             let stamp = u32::from_le_bytes(record.get(prefix + 73..prefix + 77)?.try_into().ok()?);
-            if source == 0 || stamp == 0 || stamp == u32::MAX {
+            if stamp == 0 || stamp == u32::MAX {
                 return None;
             }
             let (object, generation, origin_offset, record_len) = if record
@@ -838,6 +844,53 @@ fn coordinate_system_origin(record: &[u8]) -> Option<(Point3, u32, usize)> {
         return None;
     };
     Some(*candidate)
+}
+
+fn coordinate_system_component_path_origin(
+    record: &[u8],
+    prefix: usize,
+) -> Option<(Point3, u32, usize)> {
+    const HANDLES: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
+    const NULL_SLOT: &[u8] = &[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0];
+    let marker = prefix.checked_add(92)?;
+    if record.get(prefix + 73..prefix + 80)? != [0xff; 7] {
+        return None;
+    }
+    let path_end = compact_component_path_end_at(record, marker)?;
+    let trailer = if record.get(path_end..path_end + NULL_SLOT.len()) == Some(NULL_SLOT) {
+        path_end + NULL_SLOT.len()
+    } else {
+        path_end
+    };
+    if record.get(trailer..trailer + 14)? != [0; 14]
+        || record.get(trailer + 14..trailer + 18)? != 1u32.to_le_bytes()
+        || record.get(trailer + 18..trailer + 22)? != [0; 4]
+        || record.get(trailer + 26..trailer + 38)? != [0; 12]
+    {
+        return None;
+    }
+    let object = u32::from_le_bytes(record.get(trailer + 22..trailer + 26)?.try_into().ok()?);
+    let handles = trailer.checked_add(38)?;
+    if matches!(object, 0 | u32::MAX)
+        || record.get(handles..handles + 8)? != HANDLES
+        || record.get(handles + 8..handles + 12)? != [0; 4]
+        || record.get(handles + 16..handles + 24)? != [0; 8]
+    {
+        return None;
+    }
+    let generation = u32::from_le_bytes(record.get(handles + 12..handles + 16)?.try_into().ok()?);
+    if matches!(generation, 0 | u32::MAX) {
+        return None;
+    }
+    Some((
+        Point3::new(
+            finite_f64(record, handles + 24)? * 1000.0,
+            finite_f64(record, handles + 32)? * 1000.0,
+            finite_f64(record, handles + 40)? * 1000.0,
+        ),
+        generation,
+        handles.checked_add(48)?,
+    ))
 }
 
 fn coordinate_system_line_axes(

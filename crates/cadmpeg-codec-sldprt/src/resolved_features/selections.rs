@@ -1533,6 +1533,35 @@ pub(crate) fn compact_edge_component_path_at(
     compact_edge_component_path(payload, marker, count).map(|(components, _)| components)
 }
 
+pub(super) fn compact_component_path_end_at(payload: &[u8], marker: usize) -> Option<usize> {
+    let count_start = marker.checked_sub(12)?;
+    let kind_start = marker.checked_sub(8)?;
+    if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
+        || payload.get(kind_start..kind_start + 4)? != [0x00, 0x02, 0x00, 0x00]
+        || payload.get(marker + 16..marker + 18)? != [0, 0]
+    {
+        return None;
+    }
+    let count = usize::try_from(u32::from_le_bytes(
+        payload.get(count_start..count_start + 4)?.try_into().ok()?,
+    ))
+    .ok()
+    .filter(|count| (1..=64).contains(count))?;
+    let candidates = distinct_candidates(
+        [
+            compact_wide_component_path(payload, marker + 18, count),
+            compact_heterogeneous_component_path(payload, marker + 18, count),
+            compact_sparse_component_path(payload, marker + 18, count),
+        ]
+        .into_iter()
+        .flatten(),
+    );
+    let [(_, end)] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*end)
+}
+
 fn compact_edge_component_path(
     payload: &[u8],
     marker: usize,
