@@ -12,8 +12,8 @@ use crate::native::{
     ProteinEntryRecord, ProteinRecord, ProteinRecordState, ProteinRejectionRecord, RevisionRecord,
     RseRecordRecord, SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord,
     SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord,
-    StructuralIssueRecord, UfrxRecord, UfrxRecordState, UnpairedSegmentRecord,
-    INVENTOR_NATIVE_VERSION,
+    StructuralIssueRecord, UfrxModelStateRecord, UfrxRecord, UfrxRecordState,
+    UnpairedSegmentRecord, INVENTOR_NATIVE_VERSION,
 };
 
 const ARENAS: &[&str] = &[
@@ -51,6 +51,7 @@ const ARENAS: &[&str] = &[
     "tolerant_vertex_tails",
     "transform_hints",
     "ufrx",
+    "ufrx_model_states",
     "unknowns",
     "unpaired_segments",
     "vertex_ownerships",
@@ -244,6 +245,7 @@ struct NativeData {
     protein_entries: Vec<ProteinEntryRecord>,
     protein_rejections: Vec<ProteinRejectionRecord>,
     ufrx: Vec<UfrxRecord>,
+    ufrx_model_states: Vec<UfrxModelStateRecord>,
     external_references: Vec<ExternalReferenceRecord>,
     active_carrier: Vec<ActiveCarrierRecord>,
     unknowns: Vec<NativeUnknownRecord>,
@@ -278,6 +280,7 @@ impl NativeData {
             protein_entries: namespace.arena_as("protein_entries")?,
             protein_rejections: namespace.arena_as("protein_rejections")?,
             ufrx: namespace.arena_as("ufrx")?,
+            ufrx_model_states: namespace.arena_as("ufrx_model_states")?,
             external_references: namespace.arena_as("external_references")?,
             active_carrier: namespace.arena_as("active_carrier")?,
             unknowns: namespace.arena_as("unknowns")?,
@@ -835,6 +838,11 @@ fn validate_ufrx(data: &NativeData, findings: &mut Vec<Finding>) {
     );
     unique(
         findings,
+        data.ufrx_model_states.iter().map(|record| record.ordinal),
+        "UFRxDoc model-state ordinal",
+    );
+    unique(
+        findings,
         data.external_references
             .iter()
             .map(|record| record.reference_id),
@@ -845,38 +853,49 @@ fn validate_ufrx(data: &NativeData, findings: &mut Vec<Finding>) {
         UfrxRecordState::Absent => {
             record.directory_id.is_none()
                 && record.schema.is_none()
+                && record.representation.is_none()
+                && record.model_state_count == 0
                 && record.reference_count == 0
                 && record.detail.is_none()
+                && data.ufrx_model_states.is_empty()
                 && data.external_references.is_empty()
         }
         UfrxRecordState::ParsedPrefix => {
             record.directory_id.is_some()
                 && record
                     .schema
-                    .is_some_and(|schema| (11..=14).contains(&schema))
+                    .is_some_and(|schema| (11..=15).contains(&schema))
                 && record.section_versions.len() >= 5
                 && record.original_file_name.is_some()
                 && record.caption.is_some()
+                && record.model_state_count == data.ufrx_model_states.len() as u64
+                && (record.schema == Some(15)) == record.representation.is_some()
                 && record.reference_count == data.external_references.len() as u64
                 && record.tail_sha256.is_some()
                 && record.detail.is_none()
         }
-        UfrxRecordState::UnsupportedSchema => {
+        UfrxRecordState::Unsupported => {
             record.directory_id.is_some()
                 && record.schema.is_some()
                 && !record.section_versions.is_empty()
                 && record.original_file_name.is_none()
                 && record.caption.is_none()
+                && record.representation.is_none()
+                && record.model_state_count == 0
                 && record.reference_count == 0
                 && record.tail_sha256.is_some()
                 && record.detail.is_some()
+                && data.ufrx_model_states.is_empty()
                 && data.external_references.is_empty()
         }
         UfrxRecordState::Malformed => {
             record.directory_id.is_some()
                 && record.schema.is_none()
+                && record.representation.is_none()
+                && record.model_state_count == 0
                 && record.reference_count == 0
                 && record.detail.is_some()
+                && data.ufrx_model_states.is_empty()
                 && data.external_references.is_empty()
         }
     };
@@ -896,6 +915,31 @@ fn validate_ufrx(data: &NativeData, findings: &mut Vec<Finding>) {
             ),
             Some(record.id.clone()),
         ));
+    }
+    for (expected, state) in data.ufrx_model_states.iter().enumerate() {
+        if state.ordinal as usize != expected
+            || state.name.is_empty()
+            || state.suffix_len != 77
+            || state.suffix_sha256.len() != 64
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor UFRxDoc model-state framing is inconsistent".into(),
+                Some(state.id.clone()),
+            ));
+        }
+    }
+    if let Some(representation) = &record.representation {
+        if representation.active_representation.is_empty()
+            || representation.active_representation_kind.is_empty()
+            || representation.active_model_state.is_empty()
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor UFRxDoc representation state is inconsistent".into(),
+                Some(record.id.clone()),
+            ));
+        }
     }
     for reference in &data.external_references {
         if reference.path.is_empty()

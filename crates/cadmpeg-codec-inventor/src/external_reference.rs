@@ -29,8 +29,40 @@ pub(crate) struct UfrxDocument<'a> {
     pub(crate) section_versions: Vec<u16>,
     pub(crate) original_file_name: String,
     pub(crate) caption: String,
+    pub(crate) representation: Option<UfrxRepresentationState>,
+    pub(crate) model_states: Vec<UfrxModelState<'a>>,
     pub(crate) references: Vec<InventorExternalReference>,
     pub(crate) unparsed_tail: View<'a>,
+}
+
+#[derive(Debug)]
+pub(crate) struct UfrxModelState<'a> {
+    pub(crate) prefix: u8,
+    pub(crate) name: String,
+    pub(crate) state: [u16; 2],
+    pub(crate) prefix_count: u32,
+    pub(crate) parameters: Vec<UfrxModelStateParameter>,
+    pub(crate) suffix: View<'a>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UfrxRepresentationState {
+    pub(crate) prefix: u16,
+    pub(crate) active_representation: String,
+    pub(crate) active_representation_kind: String,
+    pub(crate) secondary_active_lod_state: [u16; 2],
+    pub(crate) active_model_state: String,
+    pub(crate) active_model_state_state: [u16; 2],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UfrxModelStateParameter {
+    pub(crate) name: String,
+    pub(crate) tag: u8,
+    pub(crate) kind: u16,
+    pub(crate) state: u16,
+    pub(crate) value: String,
+    pub(crate) trailer: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +96,8 @@ pub(crate) fn parse<'a>(
             section_versions: document.section_versions,
             original_file_name: document.original_file_name,
             caption: document.caption,
+            representation: document.representation,
+            model_states: document.model_states,
             references: document.references,
             unparsed_tail: document.unparsed_tail,
         }),
@@ -77,10 +111,25 @@ pub(crate) fn parse<'a>(
                 detail,
             }
         }
-        Err(error) => UfrxState::Malformed {
-            stream: stream.id(),
-            detail: error.to_string(),
-        },
+        Err(error) => {
+            let (schema, section_versions) = parse_schema_table(ctx, source)?;
+            if schema == 15 {
+                UfrxState::Unsupported {
+                    stream: stream.id(),
+                    schema,
+                    section_versions,
+                    source,
+                    detail: format!(
+                        "UFRxDoc schema 15 header/model-state branch is not implemented: {error}"
+                    ),
+                }
+            } else {
+                UfrxState::Malformed {
+                    stream: stream.id(),
+                    detail: error.to_string(),
+                }
+            }
+        }
     })
 }
 
@@ -89,6 +138,8 @@ struct ParsedUfrx<'a> {
     section_versions: Vec<u16>,
     original_file_name: String,
     caption: String,
+    representation: Option<UfrxRepresentationState>,
+    model_states: Vec<UfrxModelState<'a>>,
     references: Vec<InventorExternalReference>,
     unparsed_tail: View<'a>,
 }
@@ -99,7 +150,7 @@ fn parse_stream<'a>(
 ) -> Result<ParsedUfrx<'a>, CodecError> {
     let mut cursor = Cursor::new(source.window());
     let schema = cursor.u16("schema")?;
-    if !(11..=14).contains(&schema) {
+    if !(11..=15).contains(&schema) {
         return Err(CodecError::NotImplemented(format!(
             "UFRxDoc schema {schema} is not implemented"
         )));
@@ -149,13 +200,31 @@ fn parse_stream<'a>(
         cursor.utf16(ctx, "header pair value", 65_536)?;
     }
     cursor.take(4, "active LOD state")?;
-    if section_versions[2] >= 12 {
-        cursor.utf16(ctx, "active design view", 65_536)?;
-    }
-    if section_versions[2] >= 7 {
-        cursor.take(4, "secondary active LOD state")?;
-    }
-    cursor.u16("header version flags")?;
+    let representation = if schema == 15 {
+        Some(UfrxRepresentationState {
+            prefix: cursor.u16("schema 15 representation prefix")?,
+            active_representation: cursor.utf16(ctx, "active representation", 65_536)?,
+            active_representation_kind: cursor.utf16(ctx, "active representation kind", 65_536)?,
+            secondary_active_lod_state: [
+                cursor.u16("secondary active LOD state")?,
+                cursor.u16("secondary active LOD state")?,
+            ],
+            active_model_state: cursor.utf16(ctx, "active model state", 65_536)?,
+            active_model_state_state: [
+                cursor.u16("active model-state state")?,
+                cursor.u16("active model-state state")?,
+            ],
+        })
+    } else {
+        if section_versions[2] >= 12 {
+            cursor.utf16(ctx, "active design view", 65_536)?;
+        }
+        if section_versions[2] >= 7 {
+            cursor.take(4, "secondary active LOD state")?;
+        }
+        cursor.u16("header version flags")?;
+        None
+    };
     cursor.u32("highest occurrence id")?;
     cursor.u16("next LOD id")?;
     let invariant = cursor.u16("header invariant")?;
@@ -171,11 +240,15 @@ fn parse_stream<'a>(
     }
 
     let lod_count = cursor.count32("LOD count", 65_536)?;
-    if lod_count != 0 {
+    let model_states = if schema == 15 {
+        parse_model_states(ctx, source, &mut cursor, lod_count)?
+    } else if lod_count != 0 {
         return Err(CodecError::NotImplemented(format!(
             "UFRxDoc contains {lod_count} unframed LOD records"
         )));
-    }
+    } else {
+        Vec::new()
+    };
 
     let reference_count = cursor.count32("external-reference count", 1_000_000)?;
     let caption = cursor.utf16(ctx, "external-reference caption", 65_536)?;
@@ -241,9 +314,65 @@ fn parse_stream<'a>(
         section_versions,
         original_file_name,
         caption,
+        representation,
+        model_states,
         references,
         unparsed_tail,
     })
+}
+
+fn parse_model_states<'a>(
+    ctx: &DecodeContext<'a>,
+    source: View<'a>,
+    cursor: &mut Cursor<'_>,
+    count: usize,
+) -> Result<Vec<UfrxModelState<'a>>, CodecError> {
+    ctx.charge_collection_items(count as u64, "admit UFRxDoc model states")?;
+    let mut states = Vec::with_capacity(count);
+    for _ in 0..count {
+        let prefix = cursor.u8("model-state prefix")?;
+        let name = cursor.utf16(ctx, "model-state name", 65_536)?;
+        let state = [
+            cursor.u16("model-state state")?,
+            cursor.u16("model-state state")?,
+        ];
+        let prefix_count = cursor.u32("model-state prefix count")?;
+        let parameter_count = cursor.count32("model-state parameter count", 1_000_000)?;
+        ctx.charge_collection_items(
+            parameter_count as u64,
+            "admit UFRxDoc model-state parameters",
+        )?;
+        let mut parameters = Vec::with_capacity(parameter_count);
+        for _ in 0..parameter_count {
+            parameters.push(UfrxModelStateParameter {
+                name: cursor.utf16(ctx, "model-state parameter name", 65_536)?,
+                tag: cursor.u8("model-state parameter tag")?,
+                kind: cursor.u16("model-state parameter kind")?,
+                state: cursor.u16("model-state parameter state")?,
+                value: cursor.utf16(ctx, "model-state parameter value", 65_536)?,
+                trailer: cursor.u16("model-state parameter trailer")?,
+            });
+        }
+        let suffix_start = cursor.position;
+        cursor.take(77, "model-state suffix")?;
+        let suffix = source
+            .child(
+                source.start() + suffix_start,
+                source.start() + cursor.position,
+            )
+            .ok_or_else(|| {
+                CodecError::Malformed("UFRxDoc model-state suffix range is invalid".into())
+            })?;
+        states.push(UfrxModelState {
+            prefix,
+            name,
+            state,
+            prefix_count,
+            parameters,
+            suffix,
+        });
+    }
+    Ok(states)
 }
 
 fn parse_schema_table(
@@ -336,7 +465,7 @@ impl<'a> Cursor<'a> {
             .map_err(|_| CodecError::Malformed(format!("UFRxDoc {field} is too large")))?;
         if value > maximum {
             return Err(CodecError::Malformed(format!(
-                "UFRxDoc {field} at offset {offset} exceeds {maximum}"
+                "UFRxDoc {field} value {value} at offset {offset} exceeds {maximum}"
             )));
         }
         Ok(value)
@@ -371,25 +500,44 @@ mod tests {
 
     #[test]
     fn supported_schemas_frame_external_references_and_retain_the_tail() {
-        for schema in 11..=14 {
+        for schema in 11..=15 {
             let (bytes, _) = fixture(schema);
             let arena = DecodeArena::new();
             let (ctx, root) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
                     .expect("synthetic UFRxDoc fits policy");
-            let document = parse_stream(&ctx, root).expect("synthetic UFRxDoc parses");
+            let document = parse_stream(&ctx, root)
+                .unwrap_or_else(|error| panic!("synthetic UFRxDoc schema {schema}: {error}"));
             assert_eq!(document.schema, schema);
             assert_eq!(document.original_file_name, "synthetic.ipt");
             assert_eq!(document.references.len(), 1);
             assert_eq!(document.references[0].path, "relative/component.ipt");
             assert_eq!(document.references[0].occurrence_count, 2);
+            if schema == 15 {
+                let representation = document
+                    .representation
+                    .as_ref()
+                    .expect("schema 15 representation state");
+                assert_eq!(representation.active_model_state, "Master");
+                assert_eq!(representation.active_representation, "Default");
+                assert_eq!(representation.active_representation_kind, "DesignView");
+                assert_eq!(document.model_states.len(), 1);
+                assert_eq!(document.model_states[0].prefix, 0);
+                assert_eq!(document.model_states[0].name, "Master");
+                assert_eq!(document.model_states[0].parameters[0].name, "width");
+                assert_eq!(document.model_states[0].parameters[0].value, "12.5");
+                assert_eq!(document.model_states[0].suffix.window(), &[0x5a; 77]);
+            } else {
+                assert!(document.representation.is_none());
+                assert!(document.model_states.is_empty());
+            }
             assert_eq!(document.unparsed_tail.window(), b"tail");
         }
     }
 
     #[test]
     fn unsupported_schema_is_rejected() {
-        let (bytes, _) = fixture(15);
+        let (bytes, _) = fixture(16);
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic UFRxDoc fits policy");
@@ -412,8 +560,8 @@ mod tests {
     fn fixture(schema: u16) -> (Vec<u8>, usize) {
         let mut bytes = Vec::new();
         push_u16(&mut bytes, schema);
-        push_u16(&mut bytes, 23);
-        let header_section_version = 12;
+        push_u16(&mut bytes, if schema == 15 { 27 } else { 23 });
+        let header_section_version = if schema == 15 { 15 } else { 12 };
         for value in [
             31,
             19,
@@ -441,6 +589,11 @@ mod tests {
         ] {
             push_u16(&mut bytes, value);
         }
+        if schema == 15 {
+            for _ in 0..4 {
+                push_u16(&mut bytes, 0);
+            }
+        }
         bytes.extend_from_slice(&[0; 32]);
         push_utf16(&mut bytes, "comment");
         bytes.extend_from_slice(&[0; 32]);
@@ -452,9 +605,18 @@ mod tests {
         push_u32(&mut bytes, 0);
         push_u32(&mut bytes, 0);
         bytes.extend_from_slice(&[0; 4]);
-        push_utf16(&mut bytes, "Default");
-        bytes.extend_from_slice(&[0; 4]);
-        push_u16(&mut bytes, 0);
+        if schema == 15 {
+            push_u16(&mut bytes, 0);
+            push_utf16(&mut bytes, "Default");
+            push_utf16(&mut bytes, "DesignView");
+            bytes.extend_from_slice(&[0; 4]);
+            push_utf16(&mut bytes, "Master");
+            bytes.extend_from_slice(&[0; 4]);
+        } else {
+            push_utf16(&mut bytes, "Default");
+            bytes.extend_from_slice(&[0; 4]);
+            push_u16(&mut bytes, 0);
+        }
         push_u32(&mut bytes, 3);
         push_u16(&mut bytes, 0);
         let invariant_offset = bytes.len();
@@ -464,7 +626,24 @@ mod tests {
         if header_section_version >= 13 {
             bytes.extend_from_slice(&[0; 32]);
         }
-        push_u32(&mut bytes, 0);
+        if schema == 15 {
+            push_u32(&mut bytes, 1);
+            bytes.push(0);
+            push_utf16(&mut bytes, "Master");
+            push_u16(&mut bytes, 2);
+            push_u16(&mut bytes, 0);
+            push_u32(&mut bytes, 0);
+            push_u32(&mut bytes, 1);
+            push_utf16(&mut bytes, "width");
+            bytes.push(2);
+            push_u16(&mut bytes, 0x48);
+            push_u16(&mut bytes, 1);
+            push_utf16(&mut bytes, "12.5");
+            push_u16(&mut bytes, 0);
+            bytes.extend_from_slice(&[0x5a; 77]);
+        } else {
+            push_u32(&mut bytes, 0);
+        }
         push_u32(&mut bytes, 1);
         push_utf16(&mut bytes, "References");
         push_u32(&mut bytes, 0);

@@ -28,7 +28,8 @@ use crate::native::{
     ProteinEntryRecord, ProteinRecord, ProteinRecordState, ProteinRejectionRecord, RevisionRecord,
     RseRecordRecord, SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord,
     SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord,
-    StructuralIssueRecord, UfrxRecord, UfrxRecordState, UnpairedSegmentRecord, VersionTupleRecord,
+    StructuralIssueRecord, UfrxModelStateParameterRecord, UfrxModelStateRecord, UfrxRecord,
+    UfrxRecordState, UfrxRepresentationRecord, UnpairedSegmentRecord, VersionTupleRecord,
     INVENTOR_NATIVE_VERSION,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
@@ -280,7 +281,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         })
         .collect::<Vec<_>>();
     ir.model.appearances = material_catalog.appearances;
-    let (ufrx, external_references) = match &container.ufrx {
+    let (ufrx, ufrx_model_states, external_references) = match &container.ufrx {
         UfrxState::Absent => (
             UfrxRecord {
                 id: "inventor:ufrx:state#root".into(),
@@ -290,11 +291,14 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 section_versions: Vec::new(),
                 original_file_name: None,
                 caption: None,
+                representation: None,
+                model_state_count: 0,
                 reference_count: 0,
                 tail_len: 0,
                 tail_sha256: None,
                 detail: None,
             },
+            Vec::new(),
             Vec::new(),
         ),
         UfrxState::Malformed { stream, detail } => (
@@ -306,11 +310,14 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 section_versions: Vec::new(),
                 original_file_name: None,
                 caption: None,
+                representation: None,
+                model_state_count: 0,
                 reference_count: 0,
                 tail_len: 0,
                 tail_sha256: None,
                 detail: Some(detail.clone()),
             },
+            Vec::new(),
             Vec::new(),
         ),
         UfrxState::Unsupported {
@@ -322,20 +329,50 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         } => (
             UfrxRecord {
                 id: "inventor:ufrx:state#root".into(),
-                state: UfrxRecordState::UnsupportedSchema,
+                state: UfrxRecordState::Unsupported,
                 directory_id: Some(stream.directory_id()),
                 schema: Some(*schema),
                 section_versions: section_versions.clone(),
                 original_file_name: None,
                 caption: None,
+                representation: None,
+                model_state_count: 0,
                 reference_count: 0,
                 tail_len: source.window().len() as u64,
                 tail_sha256: Some(sha256_hex(source.window())),
                 detail: Some(detail.clone()),
             },
             Vec::new(),
+            Vec::new(),
         ),
         UfrxState::Parsed(document) => {
+            let model_states = document
+                .model_states
+                .iter()
+                .enumerate()
+                .map(|(ordinal, state)| UfrxModelStateRecord {
+                    id: format!("inventor:ufrx:model-state#{ordinal}"),
+                    ordinal: ordinal as u32,
+                    prefix: state.prefix,
+                    name: state.name.clone(),
+                    state: state.state,
+                    prefix_count: state.prefix_count,
+                    parameters: state
+                        .parameters
+                        .iter()
+                        .map(|parameter| UfrxModelStateParameterRecord {
+                            name: parameter.name.clone(),
+                            tag: parameter.tag,
+                            kind: parameter.kind,
+                            state: parameter.state,
+                            value: parameter.value.clone(),
+                            trailer: parameter.trailer,
+                        })
+                        .collect(),
+                    suffix_len: state.suffix.window().len() as u64,
+                    suffix_sha256: sha256_hex(state.suffix.window()),
+                })
+                .collect::<Vec<_>>();
             let references = document
                 .references
                 .iter()
@@ -366,11 +403,23 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                     section_versions: document.section_versions.clone(),
                     original_file_name: Some(document.original_file_name.clone()),
                     caption: Some(document.caption.clone()),
+                    representation: document.representation.as_ref().map(|state| {
+                        UfrxRepresentationRecord {
+                            prefix: state.prefix,
+                            active_representation: state.active_representation.clone(),
+                            active_representation_kind: state.active_representation_kind.clone(),
+                            secondary_active_lod_state: state.secondary_active_lod_state,
+                            active_model_state: state.active_model_state.clone(),
+                            active_model_state_state: state.active_model_state_state,
+                        }
+                    }),
+                    model_state_count: model_states.len() as u64,
                     reference_count: references.len() as u64,
                     tail_len: document.unparsed_tail.window().len() as u64,
                     tail_sha256: Some(sha256_hex(document.unparsed_tail.window())),
                     detail: None,
                 },
+                model_states,
                 references,
             )
         }
@@ -389,7 +438,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     if matches!(document_kind, DocumentKind::Part | DocumentKind::Assembly) {
         ir.model.product_definitions.push(ProductDefinition {
             id: ProductDefinitionId("inventor:document:product#root".into()),
-            kind: ProductDefinitionKind::Part,
+            kind: if document_kind == DocumentKind::Assembly {
+                ProductDefinitionKind::LinkGroup
+            } else {
+                ProductDefinitionKind::Part
+            },
             source_name: metadata.title.clone(),
             label: metadata.title.clone(),
             description: metadata.description.clone(),
@@ -845,6 +898,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .saturating_add(protein_assets.len())
             .saturating_add(protein_rejections.len())
             .saturating_add(1)
+            .saturating_add(ufrx_model_states.len())
             .saturating_add(external_references.len())
             .saturating_add(unpaired_segments.len())
             .saturating_add(1) as u64,
@@ -867,6 +921,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     namespace.set_arena("protein_assets", &protein_assets)?;
     namespace.set_arena("protein_rejections", &protein_rejections)?;
     namespace.set_arena("ufrx", std::slice::from_ref(&ufrx))?;
+    namespace.set_arena("ufrx_model_states", &ufrx_model_states)?;
     namespace.set_arena("external_references", &external_references)?;
     namespace.set_arena("segment_pairs", &segment_pairs)?;
     namespace.set_arena("segment_meta", &segment_meta)?;
@@ -1075,40 +1130,47 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             ProteinState::Absent | ProteinState::Empty { .. } => {}
         }
         match &container.ufrx {
-        UfrxState::Malformed { .. } => losses.push(LossNote::new(
-            LossKind::DecodeDiagnostic,
-            "The UFRxDoc external-reference table is malformed.",
-        )),
-        UfrxState::Unsupported { schema, .. } => losses.push(LossNote::new(
-            LossKind::AssemblyComponentsExternal,
-            format!(
-                "Retained UFRxDoc schema {schema} without external-reference or occurrence transfer."
-            ),
-        )),
-        UfrxState::Parsed(_) if matches!(document_kind, DocumentKind::Assembly) => {
-            if !external_references.is_empty() {
+            UfrxState::Malformed { .. } => losses.push(LossNote::new(
+                LossKind::DecodeDiagnostic,
+                "The UFRxDoc external-reference table is malformed.",
+            )),
+            UfrxState::Unsupported { schema, .. } => {
+                let kind = if matches!(document_kind, DocumentKind::Assembly) {
+                    LossKind::AssemblyComponentsExternal
+                } else {
+                    LossKind::RecordNotTyped
+                };
                 losses.push(LossNote::new(
-                    LossKind::AssemblyComponentsExternal,
+                    kind,
                     format!(
-                        "Retained {} unresolved external component reference(s).",
-                        external_references.len()
+                        "Retained unsupported UFRxDoc schema {schema} header branch without semantic transfer."
                     ),
                 ));
             }
-            let unplaced_occurrences = external_references
-                .iter()
-                .map(|reference| u64::from(reference.occurrence_count))
-                .sum::<u64>();
-            if unplaced_occurrences != 0 {
-                losses.push(LossNote::new(
-                    LossKind::AssemblyPlacementsNotTransferred,
-                    format!(
-                        "The external-reference table declares {unplaced_occurrences} occurrence placement(s), but it does not contain occurrence identities or transforms."
-                    ),
-                ));
+            UfrxState::Parsed(_) if matches!(document_kind, DocumentKind::Assembly) => {
+                if !external_references.is_empty() {
+                    losses.push(LossNote::new(
+                        LossKind::AssemblyComponentsExternal,
+                        format!(
+                            "Retained {} unresolved external component reference(s).",
+                            external_references.len()
+                        ),
+                    ));
+                }
+                let unplaced_occurrences = external_references
+                    .iter()
+                    .map(|reference| u64::from(reference.occurrence_count))
+                    .sum::<u64>();
+                if unplaced_occurrences != 0 {
+                    losses.push(LossNote::new(
+                        LossKind::AssemblyPlacementsNotTransferred,
+                        format!(
+                            "The external-reference table declares {unplaced_occurrences} occurrence placement(s), but it does not contain occurrence identities or transforms."
+                        ),
+                    ));
+                }
             }
-        }
-        UfrxState::Absent | UfrxState::Parsed(_) => {}
+            UfrxState::Absent | UfrxState::Parsed(_) => {}
         }
     }
     let preview_asset_count = ir.model.assets.len();
@@ -1183,6 +1245,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 ("protein_rejections".into(), protein_rejections.len()),
                 ("protein_appearances".into(), protein_appearance_count),
                 ("external_references".into(), external_references.len()),
+                ("ufrx_model_states".into(), ufrx_model_states.len()),
                 (
                     "active_kernel_carriers".into(),
                     usize::from(matches!(

@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Current Inventor native namespace version.
-pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 11;
+pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 12;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct VersionTupleRecord {
@@ -164,10 +164,45 @@ pub(crate) struct UfrxRecord {
     pub(crate) section_versions: Vec<u16>,
     pub(crate) original_file_name: Option<String>,
     pub(crate) caption: Option<String>,
+    pub(crate) representation: Option<UfrxRepresentationRecord>,
+    pub(crate) model_state_count: u64,
     pub(crate) reference_count: u64,
     pub(crate) tail_len: u64,
     pub(crate) tail_sha256: Option<String>,
     pub(crate) detail: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct UfrxRepresentationRecord {
+    pub(crate) prefix: u16,
+    pub(crate) active_representation: String,
+    pub(crate) active_representation_kind: String,
+    pub(crate) secondary_active_lod_state: [u16; 2],
+    pub(crate) active_model_state: String,
+    pub(crate) active_model_state_state: [u16; 2],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct UfrxModelStateRecord {
+    pub(crate) id: String,
+    pub(crate) ordinal: u32,
+    pub(crate) prefix: u8,
+    pub(crate) name: String,
+    pub(crate) state: [u16; 2],
+    pub(crate) prefix_count: u32,
+    pub(crate) parameters: Vec<UfrxModelStateParameterRecord>,
+    pub(crate) suffix_len: u64,
+    pub(crate) suffix_sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct UfrxModelStateParameterRecord {
+    pub(crate) name: String,
+    pub(crate) tag: u8,
+    pub(crate) kind: u16,
+    pub(crate) state: u16,
+    pub(crate) value: String,
+    pub(crate) trailer: u16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -175,7 +210,7 @@ pub(crate) struct UfrxRecord {
 pub(crate) enum UfrxRecordState {
     Absent,
     ParsedPrefix,
-    UnsupportedSchema,
+    Unsupported,
     Malformed,
 }
 
