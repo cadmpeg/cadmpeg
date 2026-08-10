@@ -5956,6 +5956,63 @@ fn parameter_domain_trimmed_surface_file(trimmed_surface_parameters: &str) -> Ve
     ])
 }
 
+fn independent_boundary_entities_file(include_failing_owner: bool) -> Vec<u8> {
+    let mut entities = vec![
+        OwnedTestEntity {
+            entity_type: 108,
+            form: 0,
+            label: "PLANE".into(),
+            status: "00010000",
+            parameters: "108,0,0,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 63,
+            label: "MODEL".into(),
+            status: "00010000",
+            parameters: "106,1,5,0,0,0,1,0,1,1,0,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 63,
+            label: "PCURVE".into(),
+            status: "00010500",
+            parameters: "106,1,5,0,0,0,1,0,1,1,0,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 142,
+            form: 0,
+            label: "CURVSRF".into(),
+            status: "00000000",
+            parameters: "142,0,1,5,3,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 141,
+            form: 0,
+            label: "BOUNDARY".into(),
+            status: "00000000",
+            parameters: "141,1,0,1,1,3,1,1,5;".into(),
+        },
+    ];
+    if include_failing_owner {
+        entities.push(OwnedTestEntity {
+            entity_type: 108,
+            form: 0,
+            label: "PLANE2".into(),
+            status: "00010000",
+            parameters: "108,0,0,1,0,0,0,0,0,0;".into(),
+        });
+        entities.push(OwnedTestEntity {
+            entity_type: 144,
+            form: 0,
+            label: "TRIMMED".into(),
+            status: "00000000",
+            parameters: "144,11,1,0,7;".into(),
+        });
+    }
+    owned_test_file(&entities)
+}
+
 fn asymmetric_parameter_domain_surface_file() -> Vec<u8> {
     owned_test_file(&[OwnedTestEntity {
         entity_type: 128,
@@ -6110,6 +6167,38 @@ fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
         loop_.boundary_role,
         cadmpeg_ir::topology::LoopBoundaryRole::Inner
     );
+}
+
+#[test]
+fn decode_accepts_independent_boundary_entities() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(independent_boundary_entities_file(false)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_does_not_blame_a_boundary_for_its_owning_surface_failure() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(independent_boundary_entities_file(true)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.report.losses.len(), 1, "{:#?}", result.report.losses);
+    assert!(result.report.losses[0]
+        .message
+        .contains("IGES entity type 144 form 0"));
+    assert!(result.report.losses[0]
+        .message
+        .contains("boundary definition names a different support surface"));
 }
 
 #[test]

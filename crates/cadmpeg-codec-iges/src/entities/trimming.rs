@@ -286,6 +286,7 @@ pub(super) fn project(
                 }],
             },
         );
+        decoded.insert(entry.sequence);
     }
 
     for entry in directory
@@ -389,6 +390,7 @@ pub(super) fn project(
         }
         if valid {
             boundaries.insert(entry.sequence, BoundaryDefinition { surface, segments });
+            decoded.insert(entry.sequence);
         }
     }
 
@@ -547,7 +549,6 @@ pub(super) fn project(
         let shell_id = ShellId(format!("iges:model:shell#{stem}"));
         let face_id = FaceId(format!("iges:model:face#{stem}"));
         let mut loop_ids = Vec::new();
-        let mut consumed = Vec::new();
         let mut face_tolerance = 0.0_f64;
         for (boundary_index, sequence) in boundary_sequences.iter().copied().enumerate() {
             let Some(boundary) = boundaries.get(&sequence).cloned() else {
@@ -762,7 +763,6 @@ pub(super) fn project(
                 vertex_uses: Vec::new(),
             });
             loop_ids.push(loop_id);
-            consumed.push(sequence);
         }
         if !valid {
             continue;
@@ -807,19 +807,6 @@ pub(super) fn project(
             continue;
         }
         decoded.insert(entry.sequence);
-        decoded.extend(consumed);
-    }
-
-    for sequence in boundaries
-        .keys()
-        .filter(|sequence| !decoded.contains(sequence))
-    {
-        if let Some(entry) = entries.get(sequence).copied() {
-            losses.push(entity_loss(
-                entry,
-                "boundary definition is not consumed by a projected trimmed surface",
-            ));
-        }
     }
 
     TrimmingProjection {

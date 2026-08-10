@@ -120,14 +120,6 @@ from a conformant file.
 
 ## 5. Surfaces and topology
 
-### TP-08. Independent Type 141 and Type 142 entities are reported as losses
-
-**Question.** Must every boundary entity be consumed by a trimmed surface?
-
-**Known.** `trimming.rs:786-796` emits a loss for every Type 141 and Type 142 that no projected trimmed surface consumed. A Type 142 Curve on a Parametric Surface is a legal independent entity. The same loop also emits a second loss for boundaries whose owning Type 143 or Type 144 already recorded one.
-
-**Need.** The loss count includes entities that decoded correctly. We need the rule for an unconsumed boundary entity.
-
 ## 6. Product structure, annotation, and presentation
 
 ### PS-01. Parameter defaults are honored at selected token indices only
