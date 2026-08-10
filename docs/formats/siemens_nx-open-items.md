@@ -252,7 +252,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does a deltas stream that holds more than one body sequence select the current revision of each body?
 
-**Known.** `siemens_nx.md` §7.2 "BODY (`00 0c`) records delimit body revisions. The record prefix is" defines the revision prefix, the monotonic `node_id` counter, and the rule that the final validated BODY envelope begins the current revision. `siemens_nx.md` §9.2 "A deltas-stream BODY record with type `00 0c` and xmt `3` delimits a body snapshot. Its `node_id` is a monotonic revision counter" states that a `node_id` reset begins another interleaved body sequence.
+**Known.** `siemens_nx.md` §7.2 "BODY (`00 0c`) records delimit body revisions. The record prefix is" defines the revision prefix, the monotonic `node_id` counter, and the rule that the final validated BODY envelope begins the current revision. `siemens_nx.md` §9.2 "A deltas-stream BODY record with type `00 0c` and xmt `3` delimits a body" states that a `node_id` reset begins another interleaved body sequence.
 
 **Conflict.** The two rules disagree when a stream holds interleaved sequences. The §7.2 rule takes the last envelope in the stream, which belongs to one sequence, so the current-revision records of every other sequence fall before that offset and merge as historical. The decoder applies the §7.2 rule and never reads `node_id` for sequencing. The §9.2 `xmt == 3` delimiter is also not enforced. We must reconcile the two sections, or state that paired partition and deltas streams hold exactly one body sequence.
 
@@ -302,7 +302,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each B-spline form code mean?
 
-**Known.** `siemens_nx.md` §9.3 "A type-126 B-surface descriptor stores U and V degrees, pole counts, form codes, distinc" names the form-code field. `siemens_nx.md` §9.3 "The B-spline form code does not determine whether a control grid is rational. The contro" excludes one interpretation. No section assigns a meaning to a form-code value.
+**Known.** `siemens_nx.md` §9.3 "A type-126 B-surface descriptor stores U/V periodic logical flags" names the descriptor fields and assigns the former form-code positions as knot types. `siemens_nx.md` §9.3 "The B-spline knot type does not determine whether a control grid is rational or periodic." excludes one interpretation. The specification does not provide independent evidence for the value meanings.
 
 **Need.** We must know the meaning of each code. The decoder admits the codes `1`, `4`, `5`, and `6`, and transfers the single code `6` as the periodic flag of the surface, curve, or pcurve. A periodic carrier whose code is not `6` transfers as open, so its seam trims as a boundary. Periodicity also gates the offset-surface cache relation, so a wrong flag admits or discards that relation.
 
@@ -312,7 +312,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which test separates a direct large-index fixed record from an escaped record when the byte after the type is `ff`?
 
-**Known.** `siemens_nx.md` §5.1 "Any fixed record may place an envelope escape byte `ff` between its type and xmt fields." states that the complete family field grammar disambiguates the two readings. `siemens_nx.md` §4.2 "Status-framed fixed records use a status byte in `0..=1` after each encoded reference. A" requires that exactly one reading ends before a recognized node type.
+**Known.** `siemens_nx.md` §5.1 "Any fixed record may place an envelope escape byte `ff` between its type and xmt" states that the complete family field grammar disambiguates the two readings. `siemens_nx.md` §4.2 "Status-framed fixed records use a status byte in `0..=1` after each encoded reference." requires that exactly one reading ends before a recognized node type.
 
 **Conflict.** The decoder applies neither test. `Graph::parse` in `crates/cadmpeg-codec-nx/src/topology.rs` builds both readings, filters each by family framing, and then prefers the escaped reading on a quality tie. The quality function scores only SHELL records and returns zero for every other kind, so the escaped reading always wins for FACE, LOOP, EDGE, FIN, VERTEX, and POINT. A direct record whose remainder byte is `ff` is then indexed under a different identity, and every reference that names it fails to resolve. The same comparison decides which of two records with equal type and identity keeps the graph slot, and it discards the other without reporting a loss. The family-framing filter that the specification names as the disambiguator tests only SHELL, FACE, LOOP, EDGE, FIN, VERTEX, and POINT records, and admits every other kind unconditionally. For BODY and REGION the stated rule therefore selects nothing, and the reading comes from candidate order.
 
@@ -412,7 +412,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does a primary feature body field that resolves to an offset-store block identify a segment body-image object-index pair?
 
-**Known.** `siemens_nx.md` §2 "A partition or plain cached-body wrapper word begins" and `siemens_nx.md` §2 "A primary feature body field whose operation does not select an offset-store" define segment body-image tuples and prohibit a relation based only on equal integer values across namespaces. They also define primary-body fields and body selection.
+**Known.** `siemens_nx.md` §2 "A partition or plain cached-body wrapper word begins" and `siemens_nx.md` §2 "A primary feature body field in the object namespace reuses a segment body" define segment body-image tuples and prohibit a relation based only on equal integer values across namespaces. They also define primary-body fields and body selection.
 
 **Need.** We must know the cross-store relation to attach the feature output and lineage to the correct body image.
 
@@ -614,7 +614,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which serialized field establishes the construction order of feature-history operations, inside one record area and between record areas?
 
-**Known.** `siemens_nx.md` §7.1 "Within one feature-history record area, operation records are stored in reverse" and `siemens_nx.md` §7.1 "Neutral feature ordinals and dependency precedence reverse the operation order" define the reversed order inside one area and the serialized order between areas. Neutral feature ordinals, dependency precedence, body lineage, and terminal-body selection all derive their order from that reversal. An operation label carries a name, four object-index lanes, and a source offset. It carries no sequence number, no timestamp, and no predecessor reference.
+**Known.** `siemens_nx.md` §7.1 "Within one feature-history record area, operation records are stored in reverse" and `siemens_nx.md` §7.1 "Neutral feature ordinals and dependency precedence order labels by descending" define the reversed order inside one area and the serialized order between areas. Neutral feature ordinals, dependency precedence, body lineage, and terminal-body selection all derive their order from that reversal. An operation label carries a name, four object-index lanes, and a source offset. It carries no sequence number, no timestamp, and no predecessor reference.
 
 **Need.** We must know the field to order operations when one record area holds records of more than one construction generation, or when the serialized area order is not the construction order. Record order is the only current witness, so a file that stores areas or records in another order gives a reversed history with no diagnostic.
 
@@ -636,7 +636,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `siemens_nx.md` §7.2 "`RMFastLoad` stores the active object-id set alongside the partition and deltas body records." defines the membership table, the shared FACE, EDGE, and VERTEX identity space, independent per-image assignment, and the rule that an image without active membership is retained unless another image has a decisive membership assignment. It does not define decisive.
 
-**Need.** We must know the condition to select the active bodies. The decoder supplies its own: it keeps each image whose matched fraction is above `0.10`, and it discards every other image when the best image has at least five times the matched count of the next image. Both numbers are absent from the format model. The selection deletes the other bodies and their complete topology and geometry from the model, so a wrong threshold removes a current body permanently. The exact feature-history rule runs only when this condition declines, so the thresholds take precedence over it.
+**Need.** We must know the condition to select the active bodies. The current decoder retains every image whose complete nonempty FACE, EDGE, and VERTEX node-ID set is a subset of the active set, but the format does not establish whether that subset relation is decisive, whether active IDs may be stale or unioned, or how multiple matching images should be handled. The selection deletes other bodies and their complete topology and geometry from the model, so an unsupported membership rule removes a current body permanently. The exact feature-history rule runs only when this condition declines, so membership semantics take precedence over it.
 
 **Note.** `crates/cadmpeg-codec-nx/src/decode.rs:1905-1945` selects every body whose complete nonempty topology-ID set is a subset of the active set. The subset rule, active-set authority, and union/stale behavior are not independently evidenced by a real NX file; the regression fixtures construct the sets consumed by the rule. The item is reopened.
 
