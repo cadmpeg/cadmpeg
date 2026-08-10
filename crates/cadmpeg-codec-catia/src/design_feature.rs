@@ -18,6 +18,8 @@ pub(crate) struct DesignFeatureTransfer {
     pub(crate) native_operation_records: HashSet<String>,
     pub(crate) native_operation_definition_value_count: usize,
     pub(crate) native_operation_definition_chain_value_count: usize,
+    pub(crate) native_operation_definition_value_records: HashSet<String>,
+    pub(crate) native_operation_definition_chain_value_records: HashSet<String>,
     pub(crate) principal_plane_records: HashSet<String>,
     pub(crate) sketch_owner_records: HashSet<String>,
 }
@@ -27,6 +29,8 @@ impl DesignFeatureTransfer {
         self.principal_plane_records
             .union(&self.sketch_owner_records)
             .chain(self.native_operation_records.iter())
+            .chain(self.native_operation_definition_value_records.iter())
+            .chain(self.native_operation_definition_chain_value_records.iter())
             .cloned()
             .collect()
     }
@@ -605,13 +609,18 @@ fn transfer_native_operation(
 ) {
     let object = candidate.object;
     let kind = candidate.kind.to_string();
-    let (properties, definition_value_count, definition_chain_value_count) =
-        native_operation_definition_properties(
-            object,
-            entities,
-            design_objects,
-            native_operation_object_ids,
-        );
+    let (
+        properties,
+        definition_value_count,
+        definition_chain_value_count,
+        definition_value_records,
+        definition_chain_value_records,
+    ) = native_operation_definition_properties(
+        object,
+        entities,
+        design_objects,
+        native_operation_object_ids,
+    );
     let feature_id = FeatureId(neutral_history_id(&object.id, "feature"));
     ir.model.features.push(Feature {
         id: feature_id.clone(),
@@ -638,6 +647,12 @@ fn transfer_native_operation(
         .insert(candidate.owner_record.id.clone());
     transfer.native_operation_definition_value_count += definition_value_count;
     transfer.native_operation_definition_chain_value_count += definition_chain_value_count;
+    transfer
+        .native_operation_definition_value_records
+        .extend(definition_value_records);
+    transfer
+        .native_operation_definition_chain_value_records
+        .extend(definition_chain_value_records);
 }
 
 /// Retain complete definition-bound values on the exact native operation
@@ -652,10 +667,18 @@ fn native_operation_definition_properties(
     entities: &HashMap<&str, &CatiaEntityRecord>,
     design_objects: &HashMap<&str, &CatiaDesignObject>,
     native_operation_object_ids: &HashSet<&str>,
-) -> (BTreeMap<String, String>, usize, usize) {
+) -> (
+    BTreeMap<String, String>,
+    usize,
+    usize,
+    HashSet<String>,
+    HashSet<String>,
+) {
     let mut properties = BTreeMap::new();
     let mut definition_value_count = 0;
     let mut definition_chain_value_count = 0;
+    let mut definition_value_records = HashSet::new();
+    let mut definition_chain_value_records = HashSet::new();
 
     let owned_objects = design_objects
         .values()
@@ -684,6 +707,7 @@ fn native_operation_definition_properties(
     });
     for (ordinal, entity) in definition_values.into_iter().enumerate() {
         definition_value_count += 1;
+        definition_value_records.insert(entity.object_record.clone());
         let prefix = format!("catia_definition_value_{ordinal}");
         properties.insert(format!("{prefix}_entity"), entity.id.clone());
         let value = entity
@@ -723,6 +747,7 @@ fn native_operation_definition_properties(
     });
     for (ordinal, entity) in definition_chain_values.into_iter().enumerate() {
         definition_chain_value_count += 1;
+        definition_chain_value_records.insert(entity.object_record.clone());
         let prefix = format!("catia_definition_chain_value_{ordinal}");
         properties.insert(format!("{prefix}_entity"), entity.id.clone());
         let value = entity
@@ -746,6 +771,8 @@ fn native_operation_definition_properties(
         properties,
         definition_value_count,
         definition_chain_value_count,
+        definition_value_records,
+        definition_chain_value_records,
     )
 }
 
@@ -1500,7 +1527,8 @@ mod tests {
         operation
             .definition_values
             .push("definition-entity".to_string());
-        let mut definition_entity = entity_record("definition-entity", "operation-record", 20, 1);
+        operation.fields.push("definition-record".to_string());
+        let mut definition_entity = entity_record("definition-entity", "definition-record", 20, 1);
         definition_entity.definition_value = Some(CatiaDefinitionValue {
             definition: CatiaEntitySchemaValue {
                 offset: 4,
@@ -1527,14 +1555,24 @@ mod tests {
                 outer_container: None,
                 catalog_byte_offset: None,
                 catalog: None,
-                records: vec![object_record(
-                    "operation-record",
-                    None,
-                    Some(1),
-                    None,
-                    Some("Prism_ThickThin1"),
-                    Some("operation-entry"),
-                )],
+                records: vec![
+                    object_record(
+                        "operation-record",
+                        None,
+                        Some(1),
+                        None,
+                        Some("Prism_ThickThin1"),
+                        Some("operation-entry"),
+                    ),
+                    object_record(
+                        "definition-record",
+                        Some("operation-object"),
+                        Some(1),
+                        Some(1),
+                        None,
+                        None,
+                    ),
+                ],
             }],
             entity_records: vec![definition_entity],
             ..CatiaNative::default()
@@ -1598,6 +1636,17 @@ mod tests {
             ])
         );
         assert_eq!(transfer.native_operation_definition_value_count, 1);
+        assert_eq!(
+            transfer.native_operation_definition_value_records,
+            HashSet::from(["definition-record".to_string()])
+        );
+        assert_eq!(
+            transfer.consumed_records(),
+            HashSet::from([
+                "operation-record".to_string(),
+                "definition-record".to_string()
+            ])
+        );
     }
 
     #[test]
@@ -1613,7 +1662,9 @@ mod tests {
         operation
             .definition_chain_values
             .push("definition-chain-entity".to_string());
-        let mut chain_entity = entity_record("definition-chain-entity", "operation-record", 20, 1);
+        operation.fields.push("definition-chain-record".to_string());
+        let mut chain_entity =
+            entity_record("definition-chain-entity", "definition-chain-record", 20, 1);
         chain_entity.definition_chain_value = Some(CatiaDefinitionChainValue {
             selector: CatiaEntitySchemaValue {
                 offset: 4,
@@ -1644,14 +1695,24 @@ mod tests {
                 outer_container: None,
                 catalog_byte_offset: None,
                 catalog: None,
-                records: vec![object_record(
-                    "operation-record",
-                    None,
-                    Some(1),
-                    None,
-                    Some("Prism_ThickThin1"),
-                    Some("operation-entry"),
-                )],
+                records: vec![
+                    object_record(
+                        "operation-record",
+                        None,
+                        Some(1),
+                        None,
+                        Some("Prism_ThickThin1"),
+                        Some("operation-entry"),
+                    ),
+                    object_record(
+                        "definition-chain-record",
+                        Some("operation-object"),
+                        Some(1),
+                        Some(1),
+                        None,
+                        None,
+                    ),
+                ],
             }],
             entity_records: vec![chain_entity],
             ..CatiaNative::default()
@@ -1721,6 +1782,17 @@ mod tests {
             ])
         );
         assert_eq!(transfer.native_operation_definition_chain_value_count, 1);
+        assert_eq!(
+            transfer.native_operation_definition_chain_value_records,
+            HashSet::from(["definition-chain-record".to_string()])
+        );
+        assert_eq!(
+            transfer.consumed_records(),
+            HashSet::from([
+                "operation-record".to_string(),
+                "definition-chain-record".to_string()
+            ])
+        );
     }
 
     #[test]
