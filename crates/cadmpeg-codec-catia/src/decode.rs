@@ -921,6 +921,29 @@ fn finish_decode(
         .iter()
         .filter(|record| record.relation_program_instance.is_some())
         .count();
+    let relation_program_output_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter(|instance| instance.output_entity.is_some())
+        .count();
+    let resolved_relation_program_output_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|instance| instance.output_entity.as_ref())
+        .filter(|output| output.entity.is_some())
+        .count();
+    let null_relation_program_output_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.relation_program_instance.as_ref())
+        .filter_map(|instance| instance.output_entity.as_ref())
+        .filter(|output| output.is_null)
+        .count();
+    let unresolved_relation_program_output_count = relation_program_output_count
+        - resolved_relation_program_output_count
+        - null_relation_program_output_count;
     let relation_program_reference_incidence_count = native
         .entity_records
         .iter()
@@ -2408,6 +2431,22 @@ fn finish_decode(
         (
             "decoded_relation_program_instance_count".to_string(),
             relation_program_instance_count,
+        ),
+        (
+            "decoded_relation_program_output_count".to_string(),
+            relation_program_output_count,
+        ),
+        (
+            "decoded_resolved_relation_program_output_count".to_string(),
+            resolved_relation_program_output_count,
+        ),
+        (
+            "decoded_null_relation_program_output_count".to_string(),
+            null_relation_program_output_count,
+        ),
+        (
+            "unresolved_relation_program_output_count".to_string(),
+            unresolved_relation_program_output_count,
         ),
         (
             "decoded_relation_program_reference_incidence_count".to_string(),

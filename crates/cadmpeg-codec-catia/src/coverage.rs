@@ -183,6 +183,8 @@ pub(crate) const DECODED_NULL_REFERENCE_SIGNATURE_ENTITY_COUNT: CoverageKey =
     CoverageKey("decoded_null_reference_signature_entity_count");
 pub(crate) const DECODED_NULL_RELATION_PROGRAM_INSTANCE_COUNT: CoverageKey =
     CoverageKey("decoded_null_relation_program_instance_count");
+pub(crate) const DECODED_NULL_RELATION_PROGRAM_OUTPUT_COUNT: CoverageKey =
+    CoverageKey("decoded_null_relation_program_output_count");
 pub(crate) const DECODED_NULL_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT: CoverageKey =
     CoverageKey("decoded_null_relation_program_reference_incidence_count");
 pub(crate) const DECODED_NULL_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT: CoverageKey =
@@ -231,6 +233,8 @@ pub(crate) const DECODED_RELATION_EXPRESSION_PROGRAM_INSTANCE_COUNT: CoverageKey
     CoverageKey("decoded_relation_expression_program_instance_count");
 pub(crate) const DECODED_RELATION_PROGRAM_INSTANCE_COUNT: CoverageKey =
     CoverageKey("decoded_relation_program_instance_count");
+pub(crate) const DECODED_RELATION_PROGRAM_OUTPUT_COUNT: CoverageKey =
+    CoverageKey("decoded_relation_program_output_count");
 pub(crate) const DECODED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT: CoverageKey =
     CoverageKey("decoded_relation_program_parameter_dependency_count");
 pub(crate) const DECODED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT: CoverageKey =
@@ -259,6 +263,8 @@ pub(crate) const DECODED_RESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT: Coverag
     CoverageKey("decoded_resolved_relation_program_input_instance_count");
 pub(crate) const DECODED_RESOLVED_RELATION_PROGRAM_INSTANCE_COUNT: CoverageKey =
     CoverageKey("decoded_resolved_relation_program_instance_count");
+pub(crate) const DECODED_RESOLVED_RELATION_PROGRAM_OUTPUT_COUNT: CoverageKey =
+    CoverageKey("decoded_resolved_relation_program_output_count");
 pub(crate) const DECODED_RESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT: CoverageKey =
     CoverageKey("decoded_resolved_relation_program_reference_incidence_count");
 pub(crate) const DECODED_RESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT: CoverageKey =
@@ -574,6 +580,8 @@ pub(crate) const UNRESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT: CoverageKey =
     CoverageKey("unresolved_relation_program_input_instance_count");
 pub(crate) const UNRESOLVED_RELATION_PROGRAM_INSTANCE_COUNT: CoverageKey =
     CoverageKey("unresolved_relation_program_instance_count");
+pub(crate) const UNRESOLVED_RELATION_PROGRAM_OUTPUT_COUNT: CoverageKey =
+    CoverageKey("unresolved_relation_program_output_count");
 pub(crate) const UNRESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT: CoverageKey =
     CoverageKey("unresolved_relation_program_parameter_dependency_count");
 pub(crate) const UNRESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT: CoverageKey =
@@ -675,6 +683,7 @@ pub(crate) const ALL: &[CoverageKey] = &[
     DECODED_NULL_OBJECT_RECORD_REFERENCE_COUNT,
     DECODED_NULL_REFERENCE_SIGNATURE_ENTITY_COUNT,
     DECODED_NULL_RELATION_PROGRAM_INSTANCE_COUNT,
+    DECODED_NULL_RELATION_PROGRAM_OUTPUT_COUNT,
     DECODED_NULL_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT,
     DECODED_NULL_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT,
     DECODED_NUMERIC_ENTITY_VALUE_PACKET_COUNT,
@@ -699,6 +708,7 @@ pub(crate) const ALL: &[CoverageKey] = &[
     DECODED_RELATION_EXPRESSION_COUNT,
     DECODED_RELATION_EXPRESSION_PROGRAM_INSTANCE_COUNT,
     DECODED_RELATION_PROGRAM_INSTANCE_COUNT,
+    DECODED_RELATION_PROGRAM_OUTPUT_COUNT,
     DECODED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT,
     DECODED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT,
     DECODED_RESOLVED_CONFIGURATION_ENTITY_REFERENCE_COUNT,
@@ -713,6 +723,7 @@ pub(crate) const ALL: &[CoverageKey] = &[
     DECODED_RESOLVED_RELATION_PROGRAM_INPUT_COUNT,
     DECODED_RESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT,
     DECODED_RESOLVED_RELATION_PROGRAM_INSTANCE_COUNT,
+    DECODED_RESOLVED_RELATION_PROGRAM_OUTPUT_COUNT,
     DECODED_RESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT,
     DECODED_RESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT,
     DECODED_SCALAR_ENTITY_SUFFIX_VALUE_COUNT,
@@ -868,6 +879,7 @@ pub(crate) const ALL: &[CoverageKey] = &[
     UNRESOLVED_OBJECT_RECORD_REFERENCE_COUNT,
     UNRESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT,
     UNRESOLVED_RELATION_PROGRAM_INSTANCE_COUNT,
+    UNRESOLVED_RELATION_PROGRAM_OUTPUT_COUNT,
     UNRESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT,
     UNRESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT,
     UNRESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT,

@@ -35,28 +35,28 @@ pub(crate) fn transfer_parameters(
         &mut conflicting_inputs,
     );
     let mut programs = Vec::<FormulaProgramCandidate>::new();
-    let formula_definition_counts = native
-        .entity_records
-        .iter()
-        .filter(|entity| {
-            graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
-        })
-        .filter_map(|entity| {
-            entity
-                .formula_relation
-                .as_ref()?
-                .output_entity
-                .reference
-                .entity
-                .as_deref()
-        })
-        .fold(
-            HashMap::<ParameterId, usize>::new(),
-            |mut counts, parameter| {
-                *counts.entry(neutral_parameter_id(parameter)).or_default() += 1;
-                counts
-            },
-        );
+    let mut formula_definition_counts = HashMap::<ParameterId, usize>::new();
+    for entity in native.entity_records.iter().filter(|entity| {
+        graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
+    }) {
+        let outputs = entity
+            .formula_relation
+            .as_ref()
+            .and_then(|relation| relation.output_entity.reference.entity.as_deref())
+            .into_iter()
+            .chain(
+                entity
+                    .relation_program_instance
+                    .as_ref()
+                    .and_then(|instance| instance.output_entity.as_ref())
+                    .and_then(|output| output.entity.as_deref()),
+            );
+        for output in outputs {
+            *formula_definition_counts
+                .entry(neutral_parameter_id(output))
+                .or_default() += 1;
+        }
+    }
     let legacy_scope = match graph_scope {
         None => LegacyModelingScope::Unbounded,
         Some(scope) => native
@@ -264,7 +264,7 @@ pub(crate) fn transfer_parameters(
                             let parameter_type = canonical_parameter_type(&signature.result_type)
                                 .expect("typed evaluation requires a supported type");
                             programs.push(FormulaProgramCandidate {
-                                formula_entity: formula_entity.id.clone(),
+                                relation_entity: formula_entity.id.clone(),
                                 expression_entity: expression_entity.id.clone(),
                                 output: output_id.clone(),
                                 inputs: dependencies.clone(),
@@ -301,41 +301,54 @@ pub(crate) fn transfer_parameters(
             }
         }
 
-        for mut candidate in transferred {
-            match candidates.get(&candidate.parameter.id) {
-                Some(existing) if !formula_parameter_candidates_agree(existing, &candidate) => {
-                    match (existing.formula_output, candidate.formula_output) {
-                        (true, true) => {}
-                        (true, false) => {
-                            conflicting_inputs.insert(candidate.parameter.id);
-                        }
-                        (false, true) => {
-                            conflicting_inputs.insert(candidate.parameter.id.clone());
-                            candidates.insert(candidate.parameter.id.clone(), candidate);
-                        }
-                        (false, false) => {
-                            conflicting_inputs.insert(candidate.parameter.id);
-                        }
-                    }
-                }
-                Some(existing) if !existing.formula_output && candidate.formula_output => {
-                    candidate.input_fallback =
-                        Some((existing.parameter.clone(), existing.parameter_type));
-                    candidates.insert(candidate.parameter.id.clone(), candidate);
-                }
-                Some(existing) if existing.formula_output && !candidate.formula_output => {
-                    candidates
-                        .get_mut(&candidate.parameter.id)
-                        .expect("candidate exists")
-                        .input_fallback
-                        .get_or_insert((candidate.parameter, candidate.parameter_type));
-                }
-                Some(_) => {}
-                None => {
-                    candidates.insert(candidate.parameter.id.clone(), candidate);
-                }
-            }
+        for candidate in transferred {
+            merge_formula_parameter_candidate(&mut candidates, &mut conflicting_inputs, candidate);
         }
+    }
+
+    for relation_entity in native.entity_records.iter().filter(|entity| {
+        graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
+    }) {
+        let Some(instance) = relation_entity.relation_program_instance.as_ref() else {
+            continue;
+        };
+        let Some(output_entity) = instance
+            .output_entity
+            .as_ref()
+            .and_then(|output| output.entity.as_deref())
+            .and_then(|output| entities.get(output))
+        else {
+            continue;
+        };
+        let Some(expression_entity) = instance
+            .relation_expression
+            .as_deref()
+            .and_then(|expression| entities.get(expression))
+        else {
+            continue;
+        };
+        let Some(expression) = &expression_entity.relation_expression else {
+            continue;
+        };
+        let Some(signature) = &expression.signature else {
+            continue;
+        };
+        let Some(inputs) = instance.inputs.as_ref() else {
+            continue;
+        };
+        let Some((program, candidate)) = relation_program_output_candidate(
+            relation_entity,
+            expression_entity,
+            output_entity,
+            expression,
+            signature,
+            inputs,
+            &entities,
+        ) else {
+            continue;
+        };
+        programs.push(program);
+        merge_formula_parameter_candidate(&mut candidates, &mut conflicting_inputs, candidate);
     }
 
     for id in &conflicting_inputs {
@@ -438,7 +451,7 @@ pub(crate) fn transfer_parameters(
                 .iter()
                 .all(|input| candidates.contains_key(input))
         {
-            consumed_entity_records.insert(program.formula_entity);
+            consumed_entity_records.insert(program.relation_entity);
             consumed_entity_records.insert(program.expression_entity);
         }
     }
@@ -1188,11 +1201,171 @@ fn typed_entity_parameter_candidate_for_source(
 }
 
 struct FormulaProgramCandidate {
-    formula_entity: String,
+    relation_entity: String,
     expression_entity: String,
     output: ParameterId,
     inputs: Vec<ParameterId>,
     input_parameters: Vec<(DesignParameter, &'static str)>,
+}
+
+fn merge_formula_parameter_candidate(
+    candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate>,
+    conflicting_inputs: &mut BTreeSet<ParameterId>,
+    mut candidate: FormulaParameterCandidate,
+) {
+    match candidates.get(&candidate.parameter.id) {
+        Some(existing) if !formula_parameter_candidates_agree(existing, &candidate) => {
+            match (existing.formula_output, candidate.formula_output) {
+                (true, true) => {}
+                (true, false) => {
+                    conflicting_inputs.insert(candidate.parameter.id);
+                }
+                (false, true) => {
+                    conflicting_inputs.insert(candidate.parameter.id.clone());
+                    candidates.insert(candidate.parameter.id.clone(), candidate);
+                }
+                (false, false) => {
+                    conflicting_inputs.insert(candidate.parameter.id);
+                }
+            }
+        }
+        Some(existing) if !existing.formula_output && candidate.formula_output => {
+            candidate.input_fallback = Some((existing.parameter.clone(), existing.parameter_type));
+            candidates.insert(candidate.parameter.id.clone(), candidate);
+        }
+        Some(existing) if existing.formula_output && !candidate.formula_output => {
+            candidates
+                .get_mut(&candidate.parameter.id)
+                .expect("candidate exists")
+                .input_fallback
+                .get_or_insert((candidate.parameter, candidate.parameter_type));
+        }
+        Some(_) => {}
+        None => {
+            candidates.insert(candidate.parameter.id.clone(), candidate);
+        }
+    }
+}
+
+fn relation_program_output_candidate(
+    relation_entity: &crate::native::CatiaEntityRecord,
+    expression_entity: &crate::native::CatiaEntityRecord,
+    output_entity: &crate::native::CatiaEntityRecord,
+    expression: &crate::native::CatiaRelationExpression,
+    signature: &crate::native::CatiaRelationTypeSignature,
+    inputs: &[crate::native::CatiaRelationProgramInput],
+    entities: &HashMap<&str, &crate::native::CatiaEntityRecord>,
+) -> Option<(FormulaProgramCandidate, FormulaParameterCandidate)> {
+    if inputs.len() != signature.inputs.len()
+        || inputs
+            .iter()
+            .zip(&signature.inputs)
+            .any(|(input, declared)| {
+                input.parameter != declared.parameter || input.value_type != declared.input_type
+            })
+    {
+        return None;
+    }
+
+    let mut dependencies = Vec::with_capacity(inputs.len());
+    let mut input_parameters = Vec::with_capacity(inputs.len());
+    let mut expression_bindings = BTreeMap::new();
+    let mut type_bindings = BTreeMap::new();
+    let mut all_inputs_complete = true;
+    for input in inputs {
+        let input_entity = input
+            .entity
+            .entity
+            .as_deref()
+            .and_then(|id| entities.get(id))?;
+        let candidate =
+            typed_entity_parameter_candidate_for_source(input_entity, &input.value_type)?;
+        if dependencies.contains(&candidate.parameter.id) {
+            return None;
+        }
+        dependencies.push(candidate.parameter.id.clone());
+        type_bindings.insert(
+            input.parameter.as_str(),
+            static_formula_value(candidate.parameter_type)?,
+        );
+        match candidate.parameter.value.as_ref() {
+            Some(value) => {
+                expression_bindings.insert(
+                    input.parameter.as_str(),
+                    EvaluatedFormulaValue::from_parameter_value(value),
+                );
+            }
+            None => all_inputs_complete = false,
+        }
+        input_parameters.push((candidate.parameter, candidate.parameter_type));
+    }
+
+    let type_checked_expression =
+        evaluate_formula_expression_with_mode(&expression.expression.value, &type_bindings, false)
+            .filter(|value| value.satisfies_source_type(&signature.result_type));
+    let evaluated_expression = all_inputs_complete
+        .then(|| evaluate_formula_expression(&expression.expression.value, &expression_bindings))
+        .flatten()
+        .filter(|value| value.satisfies_source_type(&signature.result_type));
+    (if all_inputs_complete {
+        evaluated_expression.as_ref()
+    } else {
+        type_checked_expression.as_ref()
+    })?;
+    let output_value = output_entity.parameter_value.as_ref()?;
+    let output_id = neutral_parameter_id(&output_entity.id);
+    if dependencies.contains(&output_id) {
+        return None;
+    }
+    let value = typed_parameter_evaluation(&signature.result_type, &output_value.evaluation)?;
+    let accepted = match &value {
+        TypedParameterEvaluation::Unset => true,
+        TypedParameterEvaluation::Value(value) => {
+            evaluated_expression.as_ref().is_some_and(|evaluated| {
+                evaluated.agrees_with(&TypedParameterEvaluation::Value(value.clone()))
+            })
+        }
+    };
+    if !accepted {
+        return None;
+    }
+    let parameter_type = canonical_parameter_type(&signature.result_type)
+        .expect("typed evaluation requires a supported type");
+    let candidate = FormulaParameterCandidate {
+        parameter: DesignParameter {
+            id: output_id.clone(),
+            owner: None,
+            ordinal: 0,
+            name: output_value.name.value.clone(),
+            expression: expression.expression.value.clone(),
+            display: None,
+            value: match value {
+                TypedParameterEvaluation::Unset => None,
+                TypedParameterEvaluation::Value(value) => Some(value),
+            },
+            dependencies: dependencies.clone(),
+            properties: parameter_properties(
+                parameter_type,
+                Some(output_value.binding.value.as_str()),
+            ),
+            pmi: None,
+            native_ref: Some(output_entity.id.clone()),
+        },
+        parameter_type,
+        formula_output: true,
+        input_fallback: None,
+        source_order: output_entity.byte_offset,
+    };
+    Some((
+        FormulaProgramCandidate {
+            relation_entity: relation_entity.id.clone(),
+            expression_entity: expression_entity.id.clone(),
+            output: output_id,
+            inputs: dependencies,
+            input_parameters,
+        },
+        candidate,
+    ))
 }
 
 fn formula_parameter_candidates_agree(

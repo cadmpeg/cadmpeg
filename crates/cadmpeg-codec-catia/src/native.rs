@@ -25,7 +25,7 @@ use crate::value_block;
 use crate::wire::records::ConsolidatedRecord;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 270;
+pub const CATIA_NATIVE_VERSION: u32 = 271;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -152,6 +152,9 @@ pub(crate) const CATIA_REFERENCE_SIGNATURE_SCHEMA_VERSION: u32 = 268;
 /// Native schema version assigning canonical identities to graph-derived arenas.
 #[cfg(test)]
 pub(crate) const CATIA_DERIVED_NATIVE_ID_VERSION: u32 = 269;
+/// Native schema version assigning the framing-specific `paramout` result slot.
+#[cfg(test)]
+pub(crate) const CATIA_RELATION_PROGRAM_OUTPUT_VERSION: u32 = 271;
 #[cfg(test)]
 const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
 #[cfg(test)]
@@ -1734,6 +1737,14 @@ pub struct CatiaRelationProgramInstance {
     /// Complete declared inputs in signature order; absent when any binding is incomplete.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inputs: Option<Vec<CatiaRelationProgramInput>>,
+    /// Result entity selected by the framing-specific `paramout` slot.
+    ///
+    /// Lead-`12` selects its `ref(h)` context slot and lead-`54` selects its
+    /// trailing `d` slot. The slot is a result only when its resolved class is
+    /// `paramout`; the ordinary context and trailing incidences remain
+    /// available in their dedicated fields.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_entity: Option<CatiaEntityReference>,
     /// Same-graph incidence carried by the `ref(h)` slot of a lead-`12` frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lead12_context_entity: Option<CatiaEntityReference>,
@@ -3647,6 +3658,12 @@ fn relation_program_instance(
             })
         })
         .collect::<Option<Vec<_>>>()?;
+    let output_entity = match framing {
+        CatiaRelationProgramInstanceFraming::Lead12 => lead12_context_entity.as_ref(),
+        CatiaRelationProgramInstanceFraming::Lead54 => lead54_trailing_entity.as_ref(),
+    }
+    .filter(|reference| reference.class_name.as_deref() == Some("paramout"))
+    .cloned();
     Some(CatiaRelationProgramInstance {
         framing,
         program_entity: entity_reference(
@@ -3667,6 +3684,7 @@ fn relation_program_instance(
         relation_expression: selected_expression.map(|expression| expression.entity.clone()),
         parameter_dependencies,
         inputs,
+        output_entity,
         lead12_context_entity,
         lead54_trailing_entity,
     })
@@ -10677,6 +10695,7 @@ impl CatiaNative {
             || namespace.version < CATIA_RELATION_PROGRAM_REFERENCE_INCIDENCE_VERSION
             || namespace.version < CATIA_RELATION_PROGRAM_DEPENDENCY_VERSION
             || namespace.version < CATIA_RELATION_PROGRAM_INPUT_VERSION
+            || namespace.version < CATIA_RELATION_PROGRAM_OUTPUT_VERSION
             || namespace.version < CATIA_RELATION_DEPENDENCY_OFFSET_VERSION
             || namespace.version < CATIA_RELATION_REFERENCE_OFFSET_VERSION
             || namespace.version < CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION

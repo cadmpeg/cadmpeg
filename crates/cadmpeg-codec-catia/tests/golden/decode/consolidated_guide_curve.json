@@ -295,7 +295,7 @@
           "zero_entity_support_runs": [],
           "zero_entity_vertex_incidences": []
         },
-        "version": 270
+        "version": 271
       }
     },
     "source": {
@@ -469,6 +469,7 @@
       "decoded_null_object_record_reference_count": 0,
       "decoded_null_reference_signature_entity_count": 0,
       "decoded_null_relation_program_instance_count": 0,
+      "decoded_null_relation_program_output_count": 0,
       "decoded_null_relation_program_reference_incidence_count": 0,
       "decoded_null_relation_program_repeated_reference_count": 0,
       "decoded_numeric_entity_value_packet_count": 0,
@@ -497,6 +498,7 @@
       "decoded_relation_expression_count": 0,
       "decoded_relation_expression_program_instance_count": 0,
       "decoded_relation_program_instance_count": 0,
+      "decoded_relation_program_output_count": 0,
       "decoded_relation_program_parameter_dependency_count": 0,
       "decoded_relation_program_reference_incidence_count": 0,
       "decoded_repeated_reference_schema_selection_count": 0,
@@ -514,6 +516,7 @@
       "decoded_resolved_relation_program_input_count": 0,
       "decoded_resolved_relation_program_input_instance_count": 0,
       "decoded_resolved_relation_program_instance_count": 0,
+      "decoded_resolved_relation_program_output_count": 0,
       "decoded_resolved_relation_program_parameter_dependency_count": 0,
       "decoded_resolved_relation_program_reference_incidence_count": 0,
       "decoded_resolved_relation_program_repeated_reference_count": 0,
@@ -688,6 +691,7 @@
       "unresolved_object_record_reference_count": 0,
       "unresolved_relation_program_input_instance_count": 0,
       "unresolved_relation_program_instance_count": 0,
+      "unresolved_relation_program_output_count": 0,
       "unresolved_relation_program_parameter_dependency_count": 0,
       "unresolved_relation_program_reference_incidence_count": 0,
       "unresolved_relation_program_repeated_reference_count": 0,
