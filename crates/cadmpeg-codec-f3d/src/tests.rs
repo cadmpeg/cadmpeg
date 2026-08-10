@@ -12678,7 +12678,7 @@ fn asm_header_parses_documented_fields() {
 /// stay in it.
 #[test]
 fn asm_header_flag_bits_one_to_seven_hold_the_format_revision() {
-    let header = |flags: u64| asm_header::AsmHeader {
+    let header = |flags: u64| cadmpeg_asm::kernel_header::KernelHeader {
         width: 8,
         save_format_version: Some(22500),
         record_count: None,

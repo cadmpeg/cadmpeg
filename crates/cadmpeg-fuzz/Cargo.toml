@@ -195,6 +195,13 @@ bench = false
 
 # F3D parser targets
 [[bin]]
+name = "acis_header"
+path = "fuzz_targets/acis_header.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "f3d_asm_header"
 path = "fuzz_targets/f3d_asm_header.rs"
 test = false

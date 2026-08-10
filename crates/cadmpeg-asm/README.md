@@ -1,10 +1,9 @@
 # cadmpeg-asm
 
-`cadmpeg-asm` parses Autodesk Shape Manager binary model streams. It reads
-`BinaryFile4` and `BinaryFile8` headers, frames SAB token streams, locates the
-boundary between solved records and construction history, and reports byte
-locations for payload fields. Format codecs import its `asm_header` and `sab`
-modules directly.
+`cadmpeg-asm` parses Autodesk Shape Manager and admitted Spatial ACIS binary
+model streams. It reads ASM `BinaryFile4`/`BinaryFile8` and ACIS 217/218
+headers, frames SAB token streams, locates the boundary between solved records
+and construction history, and reports byte locations for payload fields.
 
 ## Install
 
@@ -12,14 +11,19 @@ modules directly.
 cargo add cadmpeg-asm
 ```
 
-## Parse ASM headers
+## Parse kernel headers
 
 `asm_header::has_asm_magic` recognizes the 15-byte `ASM BinaryFile4` and
-`ASM BinaryFile8` prefixes. `asm_header::parse` returns an [`AsmHeader`][header]
+`ASM BinaryFile8` prefixes. `asm_header::parse` returns a [`KernelHeader`][header]
 with `width`, `save_format_version`, `record_count`, `entity_count`, `flags`,
 product strings, and tolerance fields that the input provides. A missing magic
-returns `None`; a recognized but incomplete header returns an `AsmHeader` with
+returns `None`; a recognized but incomplete header returns a `KernelHeader` with
 unavailable fields set to `None`.
+
+`acis_header::has_acis_magic` recognizes `ACIS BinaryFile`.
+`acis_header::parse` admits its 32-bit header and returns the same
+`KernelHeader` metadata. ACIS save-format majors 217 and 218 use this parser;
+callers keep other save-format bands outside their decode envelope.
 
 `BinaryFile4` stores the save-format version, record count, entity count, and
 flags as little-endian `u32` words at offsets 15, 19, 23, and 27. Its string
@@ -31,11 +35,11 @@ little-endian `f64` values. The values populate `product_family`,
 `product_version`, `save_date`, `scale`, `linear` (`resabs`), and `angular`
 (`resnor`).
 
-`AsmHeader::save_format_major` and `save_format_minor` split the encoded
+`KernelHeader::save_format_major` and `save_format_minor` split the encoded
 save-format version, where `100 * major + minor` is the stored value.
-`AsmHeader::has_history_partition` reads [`HISTORY_PARTITION_FLAG`][history]
+`KernelHeader::has_history_partition` reads [`HISTORY_PARTITION_FLAG`][history]
 from `flags`. [`FORMAT_REVISION_FLAGS`][revision] identifies bits 1 through 7;
-`AsmHeader::format_revision` reads them. `AsmHeader::unassigned_flags` preserves
+`KernelHeader::format_revision` reads them. `KernelHeader::unassigned_flags` preserves
 the remaining flag bits.
 
 `asm_header::record_stream_start` returns the byte after the fixed words, the
@@ -131,10 +135,10 @@ Requires Rust 1.88 or later. Licensed under Apache-2.0.
 [architecture]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/architecture.md
 [docs]: https://docs.rs/cadmpeg-asm
 [frame-error]: https://docs.rs/cadmpeg-asm/latest/cadmpeg_asm/sab/struct.FrameError.html
-[header]: https://docs.rs/cadmpeg-asm/latest/cadmpeg_asm/asm_header/struct.AsmHeader.html
-[history]: https://docs.rs/cadmpeg-asm/latest/cadmpeg_asm/asm_header/constant.HISTORY_PARTITION_FLAG.html
+[header]: https://docs.rs/cadmpeg-asm/latest/cadmpeg_asm/kernel_header/struct.KernelHeader.html
+[history]: https://docs.rs/cadmpeg-asm/latest/cadmpeg_asm/kernel_header/constant.HISTORY_PARTITION_FLAG.html
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md
 [record]: https://docs.rs/cadmpeg-asm/latest/cadmpeg_asm/sab/struct.Record.html
-[revision]: https://docs.rs/cadmpeg-asm/latest/cadmpeg_asm/asm_header/constant.FORMAT_REVISION_FLAGS.html
+[revision]: https://docs.rs/cadmpeg-asm/latest/cadmpeg_asm/kernel_header/constant.FORMAT_REVISION_FLAGS.html
 [repo]: https://github.com/cadmpeg/cadmpeg
 [token]: https://docs.rs/cadmpeg-asm/latest/cadmpeg_asm/sab/enum.Token.html

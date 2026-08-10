@@ -4,10 +4,11 @@
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
-use cadmpeg_asm::asm_header;
 use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
 use cadmpeg_asm::ids::IdFormat;
+use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::sab;
+use cadmpeg_asm::{acis_header, asm_header};
 
 use crate::rse::{
     DocumentKind, RecordFrameState, SegmentBulkState, SegmentDescriptor, SegmentKind,
@@ -58,33 +59,57 @@ pub(crate) enum ActiveCarrierState<'a> {
     Unavailable(String),
 }
 
-pub(crate) struct DecodedAsmCarrier {
-    pub(crate) header: asm_header::AsmHeader,
+pub(crate) struct DecodedKernelCarrier {
+    pub(crate) header: KernelHeader,
     pub(crate) brep: AsmBrep,
 }
 
-pub(crate) fn decode_asm_carrier(
+pub(crate) fn decode_kernel_carrier(
     ctx: &DecodeContext<'_>,
     carrier: &ActiveCarrier<'_>,
-) -> Result<DecodedAsmCarrier, CodecError> {
-    if carrier.family != KernelFamily::Asm {
-        return Err(CodecError::Malformed(
-            "Inventor active carrier is not ASM".into(),
-        ));
-    }
+) -> Result<DecodedKernelCarrier, CodecError> {
     let bytes = carrier.bytes.window();
-    let header = asm_header::parse(bytes).ok_or_else(|| {
-        CodecError::Malformed("Inventor ASM carrier has no parseable header".into())
-    })?;
+    let (header, start, solved_limit) = match carrier.family {
+        KernelFamily::Asm => (
+            asm_header::parse(bytes).ok_or_else(|| {
+                CodecError::Malformed("Inventor ASM carrier has no parseable header".into())
+            })?,
+            asm_header::record_stream_start(bytes).ok_or_else(|| {
+                CodecError::Malformed("Inventor ASM carrier has no record stream".into())
+            })?,
+            asm_header::solved_record_limit(bytes),
+        ),
+        KernelFamily::Acis => {
+            let header = acis_header::parse(bytes).ok_or_else(|| {
+                CodecError::Malformed("Inventor ACIS carrier has no parseable header".into())
+            })?;
+            if !matches!(header.save_format_major(), Some(217 | 218)) {
+                return Err(CodecError::NotImplemented(format!(
+                    "Inventor ACIS save-format band {:?} is not implemented",
+                    header.save_format_major()
+                )));
+            }
+            (
+                header,
+                acis_header::record_stream_start(bytes).ok_or_else(|| {
+                    CodecError::Malformed("Inventor ACIS carrier has no record stream".into())
+                })?,
+                acis_header::solved_record_limit(bytes),
+            )
+        }
+    };
     let width = usize::from(header.width);
-    let start = asm_header::record_stream_start(bytes)
-        .ok_or_else(|| CodecError::Malformed("Inventor ASM carrier has no record stream".into()))?;
-    let records = match asm_header::solved_record_limit(bytes) {
+    let records = match solved_limit {
         Some(limit) => sab::frame(bytes, start, limit, width),
         None => sab::frame_history(bytes, start, bytes.len(), width),
     }
-    .map_err(|error| CodecError::Malformed(format!("Inventor ASM framing failed: {error}")))?;
-    ctx.charge_collection_items(records.len() as u64, "frame Inventor ASM records")?;
+    .map_err(|error| {
+        CodecError::Malformed(format!(
+            "Inventor {} SAB framing failed: {error}",
+            carrier.family.label()
+        ))
+    })?;
+    ctx.charge_collection_items(records.len() as u64, "frame Inventor kernel records")?;
     let stream = format!(
         "RSeStorage/B{}:record:{}",
         carrier.segment_token, carrier.record_ordinal
@@ -97,7 +122,7 @@ pub(crate) fn decode_asm_carrier(
         IdFormat("inventor"),
         DecodePurpose::Model,
     );
-    Ok(DecodedAsmCarrier { header, brep })
+    Ok(DecodedKernelCarrier { header, brep })
 }
 
 pub(crate) fn select_active_carrier<'a>(
@@ -306,10 +331,28 @@ mod tests {
         let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic carrier fits policy");
         let carrier = parse_carrier(view, "token", 7, 100, 23).expect("carrier parses");
-        let decoded = decode_asm_carrier(&ctx, &carrier).expect("ASM carrier decodes");
+        let decoded = decode_kernel_carrier(&ctx, &carrier).expect("ASM carrier decodes");
 
         assert_eq!(decoded.header.width, 4);
         assert_eq!(decoded.header.save_format_version, Some(700));
+        assert_eq!(decoded.header.product_family.as_deref(), Some("Inventor"));
+        assert!(decoded.brep.bodies.is_empty());
+        assert!(decoded.brep.unknowns.is_empty());
+    }
+
+    #[test]
+    fn acis_carrier_uses_32_bit_header_and_shared_decoder() {
+        let acis = empty_acis_fixture();
+        let bytes = carrier_fixture(&acis, 17);
+        let arena = DecodeArena::new();
+        let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic carrier fits policy");
+        let carrier = parse_carrier(view, "token", 7, 100, 17).expect("carrier parses");
+        let decoded = decode_kernel_carrier(&ctx, &carrier).expect("ACIS carrier decodes");
+
+        assert_eq!(carrier.family, KernelFamily::Acis);
+        assert_eq!(decoded.header.width, 4);
+        assert_eq!(decoded.header.save_format_version, Some(21_800));
         assert_eq!(decoded.header.product_family.as_deref(), Some("Inventor"));
         assert!(decoded.brep.bodies.is_empty());
         assert!(decoded.brep.unknowns.is_empty());
@@ -340,6 +383,23 @@ mod tests {
         bytes.extend_from_slice(&0_u32.to_le_bytes());
         bytes.extend_from_slice(&0_u32.to_le_bytes());
         for value in ["Inventor", "ASM test", "2000-01-01"] {
+            bytes.push(0x07);
+            bytes.push(value.len() as u8);
+            bytes.extend_from_slice(value.as_bytes());
+        }
+        for value in [1.0_f64, 1.0e-6, 1.0e-10] {
+            bytes.push(0x06);
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes
+    }
+
+    fn empty_acis_fixture() -> Vec<u8> {
+        let mut bytes = b"ACIS BinaryFile".to_vec();
+        for value in [21_800_u32, 0, 0, 0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in ["Inventor", "ASM 218 test", "2000-01-01"] {
             bytes.push(0x07);
             bytes.push(value.len() as u8);
             bytes.extend_from_slice(value.as_bytes());

@@ -20,7 +20,7 @@
 //! is typed by lexical form alone: every field stays one token, so record
 //! indexing and reference resolution hold for every record.
 
-use crate::asm_header::AsmHeader;
+use crate::kernel_header::KernelHeader;
 use crate::sab::{Record, Token};
 
 /// The stream branch, from the terminator line ([`asm.md` §7]).
@@ -59,13 +59,13 @@ pub struct TextHeader {
 }
 
 impl TextHeader {
-    /// The header as an [`AsmHeader`] for the shared decode path.
+    /// The header as a [`KernelHeader`] for the shared decode path.
     ///
     /// `scale` is reported as `10.0`: [`parse`] converts length-bearing values
     /// into the centimetre convention, so the decoders see the same unit a
     /// binary stream carries.
-    pub fn as_asm_header(&self) -> AsmHeader {
-        AsmHeader {
+    pub fn as_kernel_header(&self) -> KernelHeader {
+        KernelHeader {
             width: 8,
             save_format_version: Some(self.save_format_version),
             record_count: Some(self.record_count),
@@ -1436,7 +1436,7 @@ mod tests {
     #[test]
     fn header_conversion_reports_the_centimetre_convention() {
         let stream = parse(&asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n")).expect("stream");
-        let header = stream.header.as_asm_header();
+        let header = stream.header.as_kernel_header();
         assert_eq!(header.save_format_version, Some(23200));
         assert_eq!(header.entity_count, Some(2));
         assert_eq!(header.flags, Some(2));

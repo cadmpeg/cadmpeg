@@ -5,12 +5,30 @@ use std::fs;
 use std::path::Path;
 
 fn main() {
+    generate_acis_header_seed();
     generate_f3d_submodule_seeds();
     generate_sldprt_submodule_seeds();
     generate_catia_submodule_seeds();
     generate_creo_submodule_seeds();
     generate_nx_submodule_seeds();
     println!("All sub-module seeds generated.");
+}
+
+fn generate_acis_header_seed() {
+    let mut header = b"ACIS BinaryFile".to_vec();
+    for value in [21_800_u32, 0, 0, 0] {
+        header.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in ["Synthetic", "ACIS 218", "2000-01-01"] {
+        header.push(0x07);
+        header.push(u8::try_from(value.len()).expect("short synthetic string"));
+        header.extend_from_slice(value.as_bytes());
+    }
+    for value in [1.0_f64, 1.0e-6, 1.0e-10] {
+        header.push(0x06);
+        header.extend_from_slice(&value.to_le_bytes());
+    }
+    write_seed("seeds/acis_header", "minimal", &header);
 }
 
 fn write_seed(dir: &str, name: &str, data: &[u8]) {

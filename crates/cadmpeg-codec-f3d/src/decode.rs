@@ -1332,7 +1332,7 @@ fn try_decode_text_model(
         // Facts for the report and source attributes. The header carries the
         // stream's own unit; the decoded token values are already in the
         // centimetre convention.
-        let mut header = stream.header.as_asm_header();
+        let mut header = stream.header.as_kernel_header();
         header.scale = Some(stream.header.scale);
         parts.push((
             BrepFacts {

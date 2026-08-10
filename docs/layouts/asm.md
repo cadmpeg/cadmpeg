@@ -7,7 +7,7 @@
 Source of truth: [`docs/formats/asm.md`](../../docs/formats/asm.md).
 Table source: `docs/layouts/asm.toml`.
 
-Covers the two ASM stream headers (§1), the SAB tag inventory (§2.1), the
+Covers the two ASM stream headers and ACIS 217/218 header (§1), the SAB tag inventory (§2.1), the
 fixed-size ASM topology records (§5.2, §5.3), and the analytic geometry
 carriers (§6.2, §6.3) as ordered token slots. Procedural spline carriers are
 variable-length token graphs and are listed under "Not tabulated".
@@ -78,6 +78,24 @@ Fixed prefix only; the string region begins at byte 31.
 Cross-checked against code:
 
 - `docs/formats/asm.md` — The declared 31-byte size is the spec's own stated start of the string region.
+
+## `acisheader_binaryfile4`
+
+Spec §1 · layout: byte offsets · size: 31 B
+
+Fixed 32-bit ACIS prefix; the tagged string region begins at byte 31.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 15 | `magic` | `bytes[15]` | little | spec | `0..15` \| magic `ACIS BinaryFile` |
+| 15 | 4 | `save_format_version` | `u32` | little | spec | `15..19` \| little-endian u32 ACIS save-format version (`major * 100 + minor`) |
+| 19 | 4 | `record_count` | `u32` | little | spec | `19..23` \| little-endian u32 record count (`0` when unwritten) |
+| 23 | 4 | `entity_count` | `u32` | little | spec | `23..27` \| little-endian u32 entity count |
+| 27 | 4 | `flags` | `u32` | little | spec | `27..31` \| little-endian u32 flags; bit 0 is set iff the stream carries a history partition (§3) |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-asm/src/acis_header.rs` — The ACIS parser uses the declared 31-byte fixed prefix.
 
 ## `body`
 

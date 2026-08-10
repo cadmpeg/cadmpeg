@@ -263,7 +263,7 @@ pub fn decode_text(
     Brep::from_asm(decode_with_header(
         &stream.records,
         bytes,
-        Some(stream.header.as_asm_header()),
+        Some(stream.header.as_kernel_header()),
         entry,
         format,
         DecodePurpose::Model,

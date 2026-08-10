@@ -1,4 +1,4 @@
-# Autodesk ShapeManager (ASM) stream: Format Specification
+# ASM and ACIS kernel stream: Format Specification
 
 > **License:** This document is released under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/). Attribute to the cadmpeg project.
 
@@ -6,7 +6,7 @@
 
 Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/asm.md`](../layouts/asm.md), generated from `docs/layouts/asm.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
 
-An ASM stream is the Autodesk ShapeManager serialization of one B-rep model: a binary header, a table of framed records, and an optional construction-history partition. ASM and Spatial ACIS are two branches of one serialization family, and a stream identifies its branch: an ASM stream ends with `End-of-ASM-data` and carries Autodesk product strings with year-keyed versions, while an ACIS stream ends with `End-of-ACIS-data` and carries release-keyed versions. This document specifies the ASM branch. Fusion `.f3d` containers carry these streams in the binary and text encodings named in [`f3d.md`](f3d.md) §2.
+An ASM or Spatial ACIS stream serializes one B-rep model as a header, a table of framed records, and an optional construction-history partition. The stream identifies its branch through its binary magic or text terminator. Fusion `.f3d` containers carry ASM streams in the binary and text encodings named in [`f3d.md`](f3d.md) §2. Inventor part carriers can contain the ASM binary branch or the ACIS 217/218 binary branch.
 
 ## 1. ASM binary header
 
@@ -35,6 +35,18 @@ The string region begins at byte 47.
 | `27..31` | little-endian u32 flags; bit 0 is set iff the stream carries a history partition (§3) |
 
 The string region begins at byte 31.
+
+ACIS 217 and 218 binary streams use this 31-byte fixed prefix:
+
+| Bytes    | Meaning                                                                                |
+| -------- | -------------------------------------------------------------------------------------- |
+| `0..15`  | magic `ACIS BinaryFile`                                                                |
+| `15..19` | little-endian u32 ACIS save-format version (`major * 100 + minor`)                     |
+| `19..23` | little-endian u32 record count (`0` when unwritten)                                    |
+| `23..27` | little-endian u32 entity count                                                         |
+| `27..31` | little-endian u32 flags; bit 0 is set iff the stream carries a history partition (§3) |
+
+The ACIS string region begins at byte 31. Its three strings, three tolerance values, 32-bit SAB tags, RecordTable indexing, and solved/history boundary use the grammar below.
 
 In both widths the remaining header is a sequence rather than a fixed-offset structure:
 
@@ -98,7 +110,7 @@ The `asmheader` row participates in RecordTable indexing; the first following en
 
 ### 2.3 Version/product gates
 
-Non-ASM (pure ACIS) and SpaceClaim SAB streams use version-gated padding absent from ASM streams: attribute records skip 18 bytes when `ver > 15.0 && !ASM`; topology records skip bytes when `ver > 10.0 && !ASM` and `ver > 6.0`; SpaceClaim uses a `%`-delimited string interning scheme. The byte layouts in §§5–6 apply to ASM streams.
+Other pure ACIS and SpaceClaim SAB envelopes use separate version-gated record layouts and string interning. The byte layouts in §§5–6 apply to ASM streams and the ACIS 217/218 Inventor carrier envelope. Other ACIS save-format bands are not admitted by this grammar.
 
 ---
 
@@ -132,6 +144,8 @@ The class lineage is `Begin-of-ASM-History-Data`; `history_stream` is the second
 ```
 
 `stream_size == stream_size_duplicate`.
+
+An ACIS 217/218 history partition begins directly with the first exact `delta_state` record. The record framer establishes the preceding solved-record boundary; identifier bytes inside payload strings do not select it.
 
 ### 3.2 `delta_state` records
 

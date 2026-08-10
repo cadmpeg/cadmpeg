@@ -38,14 +38,6 @@ This document lists unknown Inventor byte semantics. [inventor.md](inventor.md) 
 
 **Need.** We must select active and historical carriers without appending all geometry.
 
-### KE-02. Binary ACIS records
-
-**Question.** What binary ACIS record grammar applies after the `ACIS BinaryFile` header?
-
-**Known.** The Inventor record envelope and exact carrier range are defined.
-
-**Need.** The grammar belongs in `cadmpeg-asm` so direct and embedded decode use one implementation.
-
 ## 3. Product structure
 
 ### AS-01. Local prototypes and parent records

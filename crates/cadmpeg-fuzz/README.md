@@ -65,6 +65,7 @@ F3D native writing and replay:
 
 Focused parser coverage:
 
+- Kernel: `acis_header`
 - F3D: `f3d_asm_header`, `f3d_sab_frame`, `f3d_nurbs_surfaces`,
   `f3d_nurbs_curves`, `f3d_nurbs_pcurves`
 - SolidWorks: `sldprt_parasolid`, `sldprt_container_scan`, `sldprt_entity`,

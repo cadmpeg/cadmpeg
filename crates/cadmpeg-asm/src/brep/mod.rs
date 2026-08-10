@@ -560,7 +560,7 @@ pub fn decode_with_purpose(
 pub fn decode_with_header(
     records: &[Record],
     bytes: &[u8],
-    header: Option<crate::asm_header::AsmHeader>,
+    header: Option<crate::kernel_header::KernelHeader>,
     stream: &str,
     format: IdFormat<'_>,
     purpose: DecodePurpose,
@@ -577,7 +577,7 @@ pub fn decode_with_header(
     );
     let save_format_major = header
         .as_ref()
-        .and_then(crate::asm_header::AsmHeader::save_format_major);
+        .and_then(crate::kernel_header::KernelHeader::save_format_major);
     let saved_entity_limit = header
         .as_ref()
         .and_then(|header| header.entity_count)

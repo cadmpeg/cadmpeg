@@ -190,8 +190,6 @@
     "coverage": {
       "active_kernel_carriers": 0,
       "appearance_bindings_transferred": 0,
-      "asm_unknown_records": 0,
-      "asm_unknown_surface_faces": 0,
       "assembly_occurrences": 0,
       "assembly_occurrences_transferred": 0,
       "assembly_placements": 0,
@@ -202,6 +200,8 @@
       "external_references": 0,
       "face_color_appearances": 0,
       "feature_record_issues": 0,
+      "kernel_unknown_records": 0,
+      "kernel_unknown_surface_faces": 0,
       "pm_app_default_styles": 0,
       "pm_app_rendering_styles": 0,
       "pm_dc_directions": 0,
