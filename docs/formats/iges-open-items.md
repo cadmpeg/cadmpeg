@@ -124,18 +124,6 @@ from a conformant file.
 
 ## 7. Write path
 
-### WR-08. Real numbers are written in fixed notation
-
-**Question.** What number format must a generated file use?
-
-**Known.** `writer.rs:4905-4911` gives `format!("{value:.17}")`, which is 17 digits after the decimal point and never an exponent. Values below about 5e-18 flush to a literal decimal zero. A NURBS weight of 1e-20 passes the `weight <= 0.0` guard at `writer.rs:4310` and is written as zero, so the receiver divides by zero at that pole. Every value of magnitude 1 or more costs 19 or more bytes.
-
-**Note.** The realistic exposure is narrow. Model coordinates in millimetres and normalized knot vectors stay inside the round-tripping range.
-
-**Note.** `entity.parameters.chunks(64)` (`writer.rs:4818`) splits Parameter Data mid-token, so a long real can straddle a card boundary. `iges.md` "Global section" sanctions this for Global Hollerith values. Whether IGES permits it for Parameter Data reals is not verified, and many translators break records at a delimiter.
-
-**Need.** We need the number format and the card-splitting rule for Parameter Data.
-
 ### WR-09. A zero-length span on a closed curve becomes a full revolution
 
 **Question.** What does a parameter range whose start equals its end mean on output?

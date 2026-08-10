@@ -4813,7 +4813,7 @@ fn encode_file(
     let generation_timestamp = generation_timestamp(SystemTime::now())?;
     let maximum_coordinate = generated_maximum_coordinate(entities);
     let global = format!(
-        "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H{},{},{},6Hauthor,7Hcadmpeg,{},0,0H,0H;",
+        "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,0H,1.0,2,2HMM,1,1.0,15H{},{},{},6Hauthor,7Hcadmpeg,{},0,0H,0H;",
         generation_timestamp,
         number(minimum_resolution),
         number(maximum_coordinate),
@@ -4864,7 +4864,8 @@ fn encode_file(
             .and_then(|value| value.checked_mul(2))
             .and_then(|value| value.checked_add(1))
             .ok_or_else(|| CodecError::Malformed("IGES directory sequence overflows".into()))?;
-        let parameter_count = entity.parameters.len().div_ceil(64);
+        let fragments = parameter_fragments(&entity.parameters)?;
+        let parameter_count = fragments.len();
         let parameter_count = u32::try_from(parameter_count)
             .map_err(|_| CodecError::Malformed("IGES parameter count overflows".into()))?;
         directory.push(directory_card(
@@ -4895,7 +4896,7 @@ fn encode_file(
             ],
             directory_sequence + 1,
         )?);
-        for chunk in entity.parameters.chunks(64) {
+        for chunk in fragments {
             parameters.push(parameter_card(
                 chunk,
                 directory_sequence,
@@ -4953,7 +4954,13 @@ fn generated_entity_coordinate_bound(entity: &Entity) -> Option<f64> {
         .parameters
         .split(|byte| matches!(byte, b',' | b';'))
         .filter(|token| !token.is_empty())
-        .map(|token| std::str::from_utf8(token).ok()?.parse::<f64>().ok())
+        .map(|token| {
+            std::str::from_utf8(token)
+                .ok()?
+                .replace(['D', 'd'], "E")
+                .parse::<f64>()
+                .ok()
+        })
         .collect::<Option<Vec<_>>>()?;
     let coordinates: &[f64] = match entity.type_code {
         110 => values.get(1..=6)?,
@@ -5039,6 +5046,26 @@ fn parameter_card(
     card(&payload, b'P', sequence)
 }
 
+fn parameter_fragments(parameters: &[u8]) -> Result<Vec<&[u8]>, CodecError> {
+    let mut fragments = Vec::new();
+    let mut remainder = parameters;
+    while remainder.len() > 64 {
+        let split = remainder[..64]
+            .iter()
+            .rposition(|byte| matches!(byte, b',' | b';'))
+            .map(|index| index + 1)
+            .ok_or_else(|| {
+                CodecError::Malformed("IGES generated Parameter Data token exceeds 64 bytes".into())
+            })?;
+        fragments.push(&remainder[..split]);
+        remainder = &remainder[split..];
+    }
+    if !remainder.is_empty() {
+        fragments.push(remainder);
+    }
+    Ok(fragments)
+}
+
 fn card(data: &[u8], section: u8, sequence: u32) -> Result<Vec<u8>, CodecError> {
     let width = 72;
     if data.len() > width {
@@ -5059,7 +5086,7 @@ fn number(value: f64) -> String {
     if value == 0.0 {
         "0".into()
     } else {
-        format!("{value:.17}")
+        format!("{value:.16e}").replace('e', "D")
     }
 }
 
@@ -5143,6 +5170,49 @@ mod tests {
         )
         .expect_err("material skew must not be silently changed");
         assert!(error.to_string().contains("exceeds the frame repair bound"));
+    }
+
+    #[test]
+    fn generated_reals_round_trip_at_f64_precision() {
+        for value in [
+            f64::MIN_POSITIVE,
+            f64::from_bits(1),
+            1.0e-20,
+            -std::f64::consts::PI,
+            1.0,
+            f64::MAX,
+        ] {
+            let encoded = number(value);
+            assert!(encoded.contains('D'), "{value}: {encoded}");
+            let decoded = encoded
+                .replace('D', "E")
+                .parse::<f64>()
+                .expect("generated real must parse");
+            assert_eq!(decoded.to_bits(), value.to_bits(), "{value}: {encoded}");
+        }
+        assert_eq!(number(0.0), "0");
+        assert_eq!(number(-0.0), "0");
+    }
+
+    #[test]
+    fn generated_parameter_cards_end_at_delimiters() {
+        let token = number(f64::MAX);
+        let parameters = format!("128,{token},{token},{token},{token};");
+        let fragments = parameter_fragments(parameters.as_bytes())
+            .expect("ordinary generated real tokens fit one card");
+        assert!(fragments.len() > 1);
+        assert!(fragments
+            .iter()
+            .all(|fragment| fragment.len() <= 64 && matches!(fragment.last(), Some(b',' | b';'))));
+        assert_eq!(fragments.concat(), parameters.as_bytes());
+    }
+
+    #[test]
+    fn generated_parameter_token_wider_than_a_card_is_refused() {
+        let parameters = format!("{};", "1".repeat(65));
+        let error = parameter_fragments(parameters.as_bytes())
+            .expect_err("a token wider than the data area must fail");
+        assert!(error.to_string().contains("token exceeds 64 bytes"));
     }
 
     #[test]
