@@ -12651,6 +12651,24 @@ fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
             &DecodeOptions::default(),
         )
         .unwrap();
+    let source_region = &decoded.ir.model.regions[0];
+    assert_eq!(source_region.shells.len(), 2);
+    assert!(decoded
+        .ir
+        .model
+        .shells
+        .iter()
+        .find(|shell| Some(&shell.id) == source_region.void_shells().next())
+        .unwrap()
+        .faces
+        .iter()
+        .all(|face_id| decoded
+            .ir
+            .model
+            .faces
+            .iter()
+            .find(|face| face.id == *face_id)
+            .is_some_and(|face| face.sense == Sense::Reversed)));
     let plan = IgesCodec
         .plan(EncodeInput {
             ir: &decoded.ir,

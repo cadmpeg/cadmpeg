@@ -124,16 +124,6 @@ from a conformant file.
 
 ## 7. Write path
 
-### WR-03. The Type 186 outer shell is the first shell by position
-
-**Question.** Which shell of a region is the exterior shell?
-
-**Known.** `writer.rs:1396-1404` writes `shell_indices[0]` as the Type 186 `SHELL` argument and every other index as a void. `Region.shells` is documented as "Boundary shells (typically one outer, plus voids)" (`cadmpeg-ir/src/topology.rs:97`), which is not an ordering invariant. `validate_brep_topology` (`writer.rs:469-498`) tests ownership and non-emptiness and never tests containment or orientation.
-
-**Note.** A decoder that materializes shells in identity order can present a cavity first. The file then declares the cavity as the outer boundary and the skin as a void, which is an inside-out solid.
-
-**Need.** We need the exterior shell identified from geometry or from a declared field, not from list position.
-
 ### WR-04. Global fields are a fixed string
 
 **Question.** Which Global values must a generated file compute from the model?

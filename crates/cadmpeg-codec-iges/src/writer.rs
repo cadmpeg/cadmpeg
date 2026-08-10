@@ -1353,7 +1353,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
             face_indices.insert(face_id.as_str().to_owned(), index);
         }
 
-        let mut shell_indices = Vec::new();
+        let mut shell_indices = BTreeMap::new();
         for shell in &shells {
             let mut parameters = format!("514,{}", shell.faces.len());
             for face_id in &shell.faces {
@@ -1389,16 +1389,26 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                 parameters: parameters.into_bytes(),
                 transform: None,
             });
-            shell_indices.push(index);
+            shell_indices.insert(shell.id.as_str(), index);
         }
         if body.kind == BodyKind::Solid {
+            let exterior_shell = region.exterior_shell().ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "IGES solid region {} has no exterior shell",
+                    region.id
+                ))
+            })?;
             let mut parameters = format!(
                 "186,{},1,{}",
-                reference_marker(shell_indices[0]),
-                shell_indices.len() - 1
+                reference_marker(shell_indices[exterior_shell.as_str()]),
+                region.void_shells().count()
             );
-            for shell_index in shell_indices.iter().skip(1) {
-                let _ = write!(parameters, ",{},1", reference_marker(*shell_index));
+            for void_shell in region.void_shells() {
+                let _ = write!(
+                    parameters,
+                    ",{},1",
+                    reference_marker(shell_indices[void_shell.as_str()])
+                );
             }
             parameters.push(';');
             entities.push(Entity {

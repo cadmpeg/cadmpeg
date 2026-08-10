@@ -190,7 +190,7 @@ Type 316 Form 0 defines one or more distinct fundamental or supplementary unit t
 
 ## Topology
 
-Manifold solid B-rep entities preserve source vertex, edge, loop, face, shell, and solid identity. Edge uses reference shared edge identity; loop orientation and face same-sense fields determine coedge and face orientation. Void shells remain distinct from the exterior shell.
+Manifold solid B-rep entities preserve source vertex, edge, loop, face, shell, and solid identity. Edge uses reference shared edge identity; loop orientation and face same-sense fields determine coedge and face orientation. A solid region's ordered shell list stores the exterior shell first and every void shell afterward. Type 186 writes the first shell as `SHELL` and the remaining shells as its ordered void list.
 
 Every use of one Edge List item in a shell belongs to one cyclic radial ring. A closed Form 1 shell requires exactly two opposite-sense uses per edge. An open Form 2 shell preserves one, two, or more uses without imposing the closed-manifold cardinality rule; rings with more than two uses represent explicit non-manifold sharing.
 
