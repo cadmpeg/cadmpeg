@@ -4716,6 +4716,13 @@ fn view_forms_file() -> Vec<u8> {
             status: "00000000",
             parameters: "410,2,1.5,0,0,1,0,0,0,0,0,10,0,1,0,5,-2,2,-1,1,3,-5,5;".into(),
         },
+        OwnedTestEntity {
+            entity_type: 410,
+            form: 1,
+            label: "SCALE".into(),
+            status: "00000000",
+            parameters: "410,3,1,0,0,1E-200,0,0,0,0,0,10,0,1E-200,0,5,-2,2,-1,1,0,0,0;".into(),
+        },
     ])
 }
 
@@ -8023,7 +8030,7 @@ fn decode_types_orthographic_and_perspective_views() {
         )
         .unwrap();
     let views = &result.ir.native.namespace("iges").unwrap().arenas["views"];
-    assert_eq!(views.len(), 2);
+    assert_eq!(views.len(), 3);
     assert_eq!(views[0].fields()["projection"], "orthographic_parallel");
     assert!(views[0].fields()["scale"].is_null());
     assert_eq!(
@@ -8038,6 +8045,8 @@ fn decode_types_orthographic_and_perspective_views() {
     assert_eq!(views[1].fields()["center_of_projection"][2], 10.0);
     assert_eq!(views[1].fields()["clipping_window"][0], -2.0);
     assert_eq!(views[1].fields()["depth_clipping"], 3);
+    assert_eq!(views[2].fields()["view_plane_normal"][2], 1.0e-200);
+    assert_eq!(views[2].fields()["view_up"][1], 1.0e-200);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

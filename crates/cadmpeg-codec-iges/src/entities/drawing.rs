@@ -20,8 +20,20 @@ fn finite_vector(record: &ParameterRecord, start: usize) -> Option<[f64; 3]> {
         .then_some(values)
 }
 
-fn norm_squared(vector: [f64; 3]) -> f64 {
-    vector.iter().map(|value| value * value).sum()
+fn has_in_plane_component(normal: [f64; 3], up: [f64; 3]) -> bool {
+    let normal_scale = normal.iter().map(|value| value.abs()).fold(0.0, f64::max);
+    let up_scale = up.iter().map(|value| value.abs()).fold(0.0, f64::max);
+    if normal_scale == 0.0 || up_scale == 0.0 {
+        return false;
+    }
+    let normal = normal.map(|value| value / normal_scale);
+    let up = up.map(|value| value / up_scale);
+    let cross = [
+        normal[1] * up[2] - normal[2] * up[1],
+        normal[2] * up[0] - normal[0] * up[2],
+        normal[0] * up[1] - normal[1] * up[0],
+    ];
+    cross.iter().any(|value| *value != 0.0)
 }
 
 pub(super) fn project(
@@ -178,12 +190,9 @@ pub(super) fn project(
             let reference = finite_vector(record, 6);
             let center = finite_vector(record, 9);
             let up = finite_vector(record, 12);
-            let vectors_valid = normal.zip(up).is_some_and(|(normal, up)| {
-                let normal_norm = norm_squared(normal);
-                let up_norm = norm_squared(up);
-                let dot = (0..3).map(|index| normal[index] * up[index]).sum::<f64>();
-                normal_norm > 0.0 && up_norm > 0.0 && up_norm - dot * dot / normal_norm > 1.0e-20
-            });
+            let vectors_valid = normal
+                .zip(up)
+                .is_some_and(|(normal, up)| has_in_plane_component(normal, up));
             let window_valid = (15..=19)
                 .all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite))
                 && record
@@ -399,5 +408,26 @@ pub(super) fn project(
         handled,
         decoded,
         losses,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::has_in_plane_component;
+
+    #[test]
+    fn view_up_component_test_is_scale_invariant() {
+        assert!(has_in_plane_component(
+            [0.0, 0.0, 1.0e-200],
+            [0.0, 1.0e-200, 0.0]
+        ));
+        assert!(has_in_plane_component(
+            [1.0e200, 0.0, 0.0],
+            [1.0e200, 1.0e184, 0.0]
+        ));
+        assert!(!has_in_plane_component(
+            [1.0e200, 0.0, 0.0],
+            [1.0e200, 0.0, 0.0]
+        ));
     }
 }

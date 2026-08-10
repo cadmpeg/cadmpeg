@@ -122,16 +122,6 @@ from a conformant file.
 
 ## 6. Product structure, annotation, and presentation
 
-### PS-03. The perspective-view up-vector test uses an absolute epsilon
-
-**Question.** What makes a view-up vector have a nonzero component in the view plane?
-
-**Known.** `iges.md` "Views and drawings" gives the rule qualitatively. `drawing.rs:182-187` implements it as `up_norm - dot * dot / normal_norm > 1.0e-20`, an absolute threshold on a squared magnitude. IGES does not require view direction vectors to be unit length, so the tested quantity scales with the square of the input magnitudes.
-
-**Note.** A view whose vectors are scaled to 1e-11 is exactly perpendicular and is refused. A degenerate view whose vectors are scaled to 1e6 passes with a relative perpendicularity of 1e-32. No fixture exercises a non-unit view basis.
-
-**Need.** We need a scale-invariant test, or the magnitude range that producers give.
-
 ### PS-04. Enumerated value tables exist only in the source
 
 **Question.** What are the admitted Type 316 unit values, Type 230 pattern codes, and Type 322 attribute-list classifications?
