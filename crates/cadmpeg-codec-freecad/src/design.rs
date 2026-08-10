@@ -735,7 +735,12 @@ fn append_spreadsheet(
         ));
         cell_ids.push(id.clone());
         if let Some(range) = merged_range(cell)? {
-            merged_ranges.push(range);
+            if !merged_ranges
+                .iter()
+                .any(|existing| range_contains_address(existing, &range.start))
+            {
+                merged_ranges.push(range);
+            }
         }
         parameters.push(DesignParameter {
             id,
@@ -865,19 +870,9 @@ fn merged_range(cell: roxmltree::Node<'_, '_>) -> Result<Option<SpreadsheetRange
 }
 
 fn offset_cell_address(address: &str, rows: u32, columns: u32) -> Option<String> {
-    let split = address.find(|character: char| character.is_ascii_digit())?;
-    let mut column = address[..split].bytes().try_fold(0_u32, |value, byte| {
-        byte.is_ascii_uppercase().then(|| {
-            value
-                .checked_mul(26)?
-                .checked_add(u32::from(byte - b'A' + 1))
-        })?
-    })?;
-    let row = address[split..].parse::<u32>().ok()?.checked_add(rows)?;
+    let (row, mut column) = cell_address(address)?;
+    let row = row.checked_add(rows)?;
     column = column.checked_add(columns)?;
-    if row == 0 || column == 0 {
-        return None;
-    }
     let mut label = Vec::new();
     while column > 0 {
         column -= 1;
@@ -886,6 +881,35 @@ fn offset_cell_address(address: &str, rows: u32, columns: u32) -> Option<String>
     }
     label.reverse();
     Some(format!("{}{row}", String::from_utf8(label).ok()?))
+}
+
+fn cell_address(address: &str) -> Option<(u32, u32)> {
+    let split = address.find(|character: char| character.is_ascii_digit())?;
+    let column = address[..split].bytes().try_fold(0_u32, |value, byte| {
+        byte.is_ascii_uppercase().then(|| {
+            value
+                .checked_mul(26)?
+                .checked_add(u32::from(byte - b'A' + 1))
+        })?
+    })?;
+    let row = address[split..].parse::<u32>().ok()?;
+    if row == 0 || column == 0 {
+        return None;
+    }
+    Some((row, column))
+}
+
+fn range_contains_address(range: &SpreadsheetRange, address: &str) -> bool {
+    let Some((row, column)) = cell_address(address) else {
+        return false;
+    };
+    let Some((start_row, start_column)) = cell_address(&range.start) else {
+        return false;
+    };
+    let Some((end_row, end_column)) = cell_address(&range.end) else {
+        return false;
+    };
+    (start_row..=end_row).contains(&row) && (start_column..=end_column).contains(&column)
 }
 
 fn append_operation_parameters(
@@ -5038,6 +5062,19 @@ mod profile_tests {
             let document = roxmltree::Document::parse(xml).expect("cell XML");
             assert_eq!(merged_range(document.root_element()).unwrap(), None);
         }
+    }
+
+    #[test]
+    fn detects_cells_covered_by_a_merged_range() {
+        let range = SpreadsheetRange {
+            start: "A1".into(),
+            end: "I2".into(),
+        };
+
+        assert!(range_contains_address(&range, "B1"));
+        assert!(range_contains_address(&range, "I2"));
+        assert!(!range_contains_address(&range, "J1"));
+        assert!(!range_contains_address(&range, "A3"));
     }
 
     fn entity(id: &str, geometry: SketchGeometry) -> SketchEntity {
