@@ -1065,9 +1065,14 @@ fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
 
 /// Reads a mesh element count bounded by the codec-local `cap`.
 ///
-/// Does not apply a remaining-bytes floor: `vertex_count` may address
-/// zlib-compressed data downstream, so `count * element_size` can exceed
-/// `reader.remaining()`.
+/// Unlike the identically named `count` helpers in `brep`, `curves`,
+/// `history`, and `morph`, this intentionally omits the
+/// `checked_count_bytes` remaining-bytes floor. Mesh element counts do not
+/// gate an immediate contiguous run of input: `vertex_count` addresses vertex
+/// data that may arrive zlib-compressed downstream (so `count * element_size`
+/// legitimately exceeds `reader.remaining()`), and `face_count` is floored at
+/// consumption by `reader.take(bytes)` in `read_faces`. Count-driven
+/// reservations are bounded by codec-local caps or the consumed byte count.
 fn count(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryError> {
     let value = reader.i32()?;
     if value < 0 || value as usize > cap {
@@ -1076,7 +1081,10 @@ fn count(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryEr
     Ok(value as usize)
 }
 
-/// Reads an unsigned mesh count bounded by `cap` (same unfloored contract as [`count`]).
+/// Reads an unsigned mesh count bounded by `cap`, sharing the deliberately
+/// unfloored contract documented on [`count`]: the `cap` bound does not floor
+/// the value against remaining input, so callers must consume it through
+/// a budget-charged allocator.
 fn checked_u32(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryError> {
     let value = reader.u32()? as usize;
     if value > cap {
@@ -1289,8 +1297,13 @@ mod tests {
 
     #[test]
     fn dropped_compressed_buffer_keeps_its_document_budget_charge() {
-        // Wrong stored CRC after a successful inflate: budget must still charge
-        // the retained arena bytes.
+        // A well-formed zlib buffer with a wrong stored CRC: it inflates into
+        // the append-only arena (retention is permanent), passes its size check,
+        // then fails its CRC check and is dropped. The document budget must keep
+        // counting the retained bytes — refunding is exactly what let a hostile
+        // document ratchet arena memory past the cap while `used` fell to zero.
+        // With the cap set to one buffer, a second such buffer is refused before
+        // it can inflate.
         let mut bytes = buffer(&[1, 2, 3, 4], 1);
         bytes[4..8].copy_from_slice(&0_u32.to_le_bytes());
         let mut document_budget = MeshBudget::with_limit(4);
@@ -1599,7 +1612,11 @@ mod tests {
 
     #[test]
     fn nested_compressed_buffer_inflates_from_a_child_window() {
-        // Compressed buffer nested inside an outer anonymous chunk.
+        // A compressed mesh buffer wrapped inside an outer anonymous chunk, read
+        // through a child reader positioned at the nested body — the same shape
+        // as the double-vertex sub-chunk. The expander must take its source from
+        // `root.child(nested_body)`, several levels below the root, and inflate
+        // it correctly.
         let inner = buffer(&[9, 8, 7, 6], 1);
         let bytes = chunk(&inner);
         with_expand(&bytes, |expand| {
@@ -1624,7 +1641,11 @@ mod tests {
 
     #[test]
     fn cumulative_compressed_expansion_trips_the_platform_decompression_ceiling() {
-        // Two 3-byte expansions under a 4-byte cumulative decompression ceiling.
+        // Two compressed buffers, each three bytes, decompressed under a shared
+        // platform context whose cumulative decompression ceiling is four bytes.
+        // The first expansion fits; the second pushes the cumulative total to six
+        // and is refused. The refusal fuses the context, so a swallowed
+        // `ResourceLimit` still aborts the decode at `finish`.
         let first = buffer(&[1, 2, 3], 1);
         let second = buffer(&[4, 5, 6], 1);
         let mut data = first.clone();

@@ -405,6 +405,11 @@ mod tests {
     const LINUX_CONE_V: f64 = 1.802_581_857_082_682;
     const WINDOWS_CONE_V: f64 = 1.802_581_857_082_681_5;
 
+    // The comparator's own semantics are covered by `crate::compare`. What
+    // follows covers only what `snapshots_agree` adds on top: the byte-equal
+    // fast path, parsing both sides, and the line-diff fallback for text that is
+    // not JSON.
+
     #[test]
     fn byte_identical_text_agrees_without_parsing() {
         assert!(snapshots_agree("not json at all\n", "not json at all\n").is_ok());

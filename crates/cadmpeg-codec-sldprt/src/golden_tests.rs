@@ -318,6 +318,16 @@ fn golden_output_is_deterministic() {
 
 /// Every fixture survives a decode and comes back byte for byte through the
 /// verbatim-replay path.
+///
+/// This covers container fidelity and nothing about the writer: on this path the
+/// encoder copies the retained source image and no writer code runs.
+/// [`cadmpeg_ir::roundtrip::verbatim_replay_holds`] asserts the path as well as
+/// the bytes, so the day a fixture stops replaying, this fails rather than
+/// quietly changing what it measures.
+///
+/// The comparison target is the fixture on disk. A stored copy of each expected
+/// output would be byte-identical to its own input and would read as writer
+/// evidence while carrying none.
 #[test]
 fn fixtures_replay_verbatim() {
     for (name, bytes) in harness().fixture_inputs() {
@@ -377,12 +387,22 @@ fn fixtures_survive_the_semantic_write_path() {
 }
 
 /// How far the mutation lane moves an extrusion depth, in millimetres.
+///
+/// Far enough that the tolerant comparator cannot mistake a dropped edit for
+/// last-place disagreement.
 const MUTATION_MM: f64 = 3.0;
 
 /// Every statement of a one-sided blind extrusion depth in `ir`.
 ///
-/// Edit both the feature definition and each configuration's evaluated state;
-/// moving only the feature leaves the document inconsistent.
+/// A blind depth is the plainest dimensional edit this codec has: one number a
+/// user types into a feature dialog, carried by the neutral feature arena and by
+/// a retained history record at once, which is what makes the write interesting.
+///
+/// The document states it in two places, and an edit means both: the feature's
+/// own definition, and each configuration's evaluated state for that feature.
+/// Moving only the first leaves the document self-inconsistent, and the writer
+/// then re-derives the configuration state from the feature and the output
+/// disagrees with the input for a reason that is not a lost edit.
 fn blind_extrude_lengths(ir: &mut cadmpeg_ir::CadIr) -> Vec<&mut Length> {
     fn depth(definition: &mut FeatureDefinition) -> Option<&mut Length> {
         let FeatureDefinition::Extrude {
@@ -412,6 +432,34 @@ fn blind_extrude_lengths(ir: &mut cadmpeg_ir::CadIr) -> Vec<&mut Length> {
 }
 
 /// An edited extrusion depth survives the semantic write path.
+///
+/// [`fixtures_survive_the_semantic_write_path`] removes the document baseline and
+/// leaves the document itself alone. `prepare_features_for_write` then finds the
+/// per-lane `sldprt_neutral_feature_local_sha256` baseline still present and still
+/// matching and returns on its unchanged-baseline branch, so `sync_neutral_features`
+/// — the pass that carries a neutral feature edit into the retained history
+/// records — is not reached from the fixture corpus at all. Editing a depth is
+/// what reaches it: the neutral feature hash moves, the native history hash does
+/// not, and the write runs the synchronization.
+///
+/// # What this asserts, and what it cannot
+///
+/// It asserts that the edit comes back: every place the document states the depth
+/// states the edited value after the write. It also asserts that no B-rep arena
+/// changed size, so a face or edge lost during the rewrite still fails here.
+///
+/// It does not compare the written document as a whole, because the written
+/// B-rep is not the retained one. `retained_partition` replays the source
+/// Parasolid payload only while `brep_local_sha256` still matches, and that digest
+/// covers the whole `model` rather than the B-rep arenas its name refers to. A
+/// depth edit touches no B-rep entity and still moves it, so the writer discards
+/// the retained payload and re-authors the geometry from neutral IR, minting fresh
+/// Parasolid entity tags in a different order. The geometry survives; the tags and
+/// the arena order do not. Rank-normalizing them the way [`byte_positions`]
+/// normalizes container offsets would not rescue the comparison, because the
+/// re-authored tags do not preserve the original relative order either — and a
+/// normalization wide enough to absorb that would also absorb a writer that
+/// dropped a record, which is the thing this suite must not do.
 #[test]
 fn an_edited_depth_survives_the_semantic_write_path() {
     let mut edited_count = 0usize;

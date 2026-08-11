@@ -1626,8 +1626,12 @@ fn try_decode_geometry(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    // Extract the native model once before body selection; both selection and
-    // annotation attachment read it.
+    // Extract the native model once, before body selection: terminal-feature
+    // body selection and annotation attachment both read it, and extraction is
+    // pure, so building it here avoids re-parsing the same container/stream
+    // bytes for the seven feature/segment families body selection consumes.
+    // This moves extraction slightly earlier on the geometry path — the RFC's
+    // accepted memory-high-water cost.
     let model =
         crate::native::NativeModel::extract(ctx, root, &scan.container, &scan.streams, &parsed);
     let mut active_body_selection = select_active_body(&mut ir, &body_node_ids, &rmfastload_ids);

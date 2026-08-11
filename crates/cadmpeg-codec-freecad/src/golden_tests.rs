@@ -109,9 +109,22 @@ fn decode_snapshot(bytes: &[u8]) -> String {
 /// archive bytes: the entry names in write order, and the length and digest of
 /// each entry's decompressed payload.
 ///
-/// An `FCStd` file is a ZIP; pinning compressed bytes couples the golden to the
-/// deflate implementation. The decompressed payloads are what this codec authors.
-/// Determinism still requires two encodes in one process to agree bit for bit.
+/// An `FCStd` file is a ZIP, and a ZIP's bytes are a function of the deflate
+/// implementation as much as of the content. Pinning them makes a `miniz_oxide`
+/// release read as codec drift, which is a false positive this harness cannot
+/// distinguish from a real one. The decompressed payloads are what this codec
+/// authors, so they are what the golden holds. Perturbing every libm
+/// transcendental by one unit in the last place leaves all 11 fixtures' payloads
+/// bit-identical, so these digests need no tolerance — unlike the numbers in the
+/// `decode` branch.
+///
+/// The compressed bytes are still held to something: the archive is produced
+/// twice in this process and the two must agree bit for bit, which is what
+/// catches map ordering and embedded timestamps. Reproducibility across
+/// compression-library versions is not this codec's contract.
+///
+/// An encode error is frozen too: refusing to write is contract-relevant
+/// behavior, so this never panics on codec output.
 ///
 /// # Panics
 ///

@@ -269,7 +269,8 @@ mod tests {
         assert_eq!(replayed, serde_json::from_str::<Value>(TEXT).unwrap());
     }
 
-    /// A compact re-emit reproduces the source text byte for byte.
+    /// A compact re-emit reproduces the source text byte for byte, which is
+    /// what makes the stored record text a fixed point of serialization.
     #[test]
     fn compact_emission_reproduces_the_source_text() {
         let mut out = Vec::new();

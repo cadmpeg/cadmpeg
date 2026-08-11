@@ -168,8 +168,14 @@ impl RhinoLossCode {
     }
 
     /// The shared cross-codec category this loss reports under.
+    ///
+    /// Matched exhaustively on purpose: see the module documentation.
     const fn shared_code(self) -> LossKind {
         match self {
+            // `ReferenceMember*` stay diagnostics rather than
+            // `ReferenceGraphNotClosed` so that an unresolvable member UUID
+            // keeps its current strict-mode handling: `ReferenceGraphNotClosed`
+            // carries a `Warning` strict floor and would newly reject.
             Self::ContainerScanDiagnostic
             | Self::ContainerInstanceDefinitionDegraded
             | Self::ObjectFramingUndecodable
@@ -226,7 +232,7 @@ mod tests {
     use super::RhinoLossCode;
     use std::collections::BTreeSet;
 
-    /// Stable string form of every code, pinned. A
+    /// Value-level golden: the stable string form of every code, pinned. A
     /// diff here is an intentional contract change to a gating identifier.
     #[test]
     fn code_strings_are_pinned() {

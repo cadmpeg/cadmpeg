@@ -504,6 +504,9 @@ mod tests {
         ir
     }
 
+    /// An ordinary source attribute that moved is a difference. Before this was
+    /// compared, a `program_version` or `object_count` change between two
+    /// documents was invisible.
     #[test]
     fn a_source_attribute_difference_is_a_difference() {
         let left = with_source(&[("program_version", "1.0"), ("object_count", "3")]);
