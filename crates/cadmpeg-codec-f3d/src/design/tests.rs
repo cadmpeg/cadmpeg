@@ -20814,6 +20814,17 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&selection),
         &[],
         &[],
+        &crate::design::profile_select::SketchCurveSelectionResolution {
+            scopes: &[],
+            groups: &[],
+            operands: &[],
+            placements: &[],
+            curve_identities: &[],
+            sketches: &[],
+            sketch_entities: &[],
+            spatial_sketches: &[],
+            spatial_sketch_entities: &[],
+        },
         crate::design::profile_select::ExtrudeProfileResolution {
             entities: &[],
             spatial_sketches: &[],
