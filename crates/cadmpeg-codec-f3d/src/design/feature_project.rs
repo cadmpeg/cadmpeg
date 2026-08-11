@@ -1444,32 +1444,21 @@ pub fn project_parameter_design_with_edge_identities(
     }
     features.sort_by_key(|feature| feature.id.clone());
 
-    let unresolved_owner_parameter_ids = native
-        .iter()
-        .filter_map(|parameter| {
-            let owner_record_index = parameter.owner_record_index?;
-            let stream = native_stream(&parameter.id).unwrap_or(ids::DEFAULT_STREAM);
-            let owner_is_bound = owners_by_index
-                .get(&(stream, owner_record_index))
-                .is_some_and(|owner| scope_ids.contains_key(&(stream, owner.scope_record_index)));
-            (!owner_is_bound).then(|| neutral_parameter_id(parameter))
-        })
-        .collect::<HashSet<_>>();
     let mut parameters = native
         .iter()
         .map(|parameter| {
+            let stream = native_stream(&parameter.id).unwrap_or(ids::DEFAULT_STREAM);
+            let native_owner = parameter
+                .owner_record_index
+                .and_then(|record_index| owners_by_index.get(&(stream, record_index)));
+            let owner =
+                native_owner.and_then(|owner| scope_ids.get(&(stream, owner.scope_record_index)));
             let mut properties = BTreeMap::new();
             if parameter.kind != DesignParameterKind::User {
                 properties.insert("source_kind".into(), parameter.source_kind.clone());
             }
-            if unresolved_owner_parameter_ids.contains(&neutral_parameter_id(parameter)) {
-                properties.insert(
-                    "owner_record_index".into(),
-                    parameter
-                        .owner_record_index
-                        .expect("unresolved owner id has an owner record")
-                        .to_string(),
-                );
+            if let (Some(owner_record_index), None) = (parameter.owner_record_index, owner) {
+                properties.insert("owner_record_index".into(), owner_record_index.to_string());
             }
             let value = match parameter.unit.as_deref() {
                 Some(unit) if design_length_unit(unit) => Some(ParameterValue::Length(Length(
@@ -1490,30 +1479,10 @@ pub fn project_parameter_design_with_edge_identities(
             };
             NeutralParameter {
                 id: neutral_parameter_id(parameter),
-                owner: parameter
-                    .owner_record_index
-                    .and_then(|owner| {
-                        owners_by_index.get(&(
-                            native_stream(&parameter.id).unwrap_or(ids::DEFAULT_STREAM),
-                            owner,
-                        ))
-                    })
-                    .and_then(|owner| {
-                        scope_ids.get(&(
-                            native_stream(&owner.id).unwrap_or(ids::DEFAULT_STREAM),
-                            owner.scope_record_index,
-                        ))
-                    })
-                    .cloned(),
-                ordinal: parameter
-                    .owner_record_index
-                    .and_then(|owner| {
-                        owners_by_index.get(&(
-                            native_stream(&parameter.id).unwrap_or(ids::DEFAULT_STREAM),
-                            owner,
-                        ))
-                    })
-                    .map_or(parameter.source_ordinal, |owner| owner.local_ordinal),
+                owner: owner.cloned(),
+                ordinal: owner
+                    .zip(native_owner)
+                    .map_or(parameter.source_ordinal, |(_, owner)| owner.local_ordinal),
                 name: parameter.name.clone(),
                 expression: parameter.expression.clone(),
                 display: if parameter.source_kind.contains("Diameter Dimension") {
@@ -1573,7 +1542,7 @@ pub fn project_parameter_design_with_edge_identities(
     for parameter in &mut parameters {
         let scope = parameter_scopes[&parameter.id];
         let consumer_owner = parameter.owner.clone();
-        if unresolved_owner_parameter_ids.contains(&parameter.id) {
+        if parameter.properties.contains_key("owner_record_index") {
             continue;
         }
         let mut seen = HashSet::new();

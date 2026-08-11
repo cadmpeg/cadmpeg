@@ -20259,6 +20259,7 @@ fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
     .unwrap();
     parameter.id = "f3d:native:parameter#45".into();
     parameter.record_index = 45;
+    parameter.source_ordinal = 17;
     let mut owner = parse_parameter_owner(&parameter_owner_frame()).unwrap();
     owner.id = "f3d:native:parameter-owner#44".into();
 
@@ -20269,6 +20270,7 @@ fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
         panic!("expected the parameter to remain in the neutral model");
     };
     assert_eq!(parameter.owner, None);
+    assert_eq!(parameter.ordinal, 17);
     assert_eq!(
         parameter
             .properties
