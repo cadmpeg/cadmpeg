@@ -22406,15 +22406,7 @@ fn counterbore_dimensions(
     ir: &CadIr,
     feature_id: u32,
 ) -> Option<(f64, f64, f64)> {
-    let tables = scan
-        .features
-        .entity_tables
-        .iter()
-        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
-        .collect::<Vec<_>>();
-    let [table] = tables.as_slice() else {
-        return None;
-    };
+    let table = counterbore_entity_table(scan, feature_id)?;
     let generated_cylinders = table
         .surface_ids
         .iter()
@@ -22446,14 +22438,30 @@ fn counterbore_dimensions(
             Some(radius)
         })
         .collect::<Vec<_>>();
-    counterbore_dimension_values(
+    let dimension_tables = || {
         scan.features
             .definitions
             .iter()
             .filter(|definition| definition.id == 911)
-            .filter_map(|definition| definition.dimensions.as_ref()),
-        &generated_radii,
-    )
+            .filter_map(|definition| definition.dimensions.as_ref())
+    };
+    counterbore_dimension_values(dimension_tables(), &generated_radii).or_else(|| {
+        let source_spans = counterbore_cylinder_sources(scan, feature_id)?
+            .into_iter()
+            .map(|ids| {
+                let [first_id, second_id] = ids.as_slice() else {
+                    return None;
+                };
+                let envelope = |id: &u32| {
+                    let row = crate::surface::unique_surface_row(&scan.surfaces.rows, *id)?;
+                    unique_surface_parameter_record(scan, row)?
+                        .type24_terminal_corner_envelope(row.type_byte)
+                };
+                paired_corner_envelope_axis_spans(envelope(first_id)?, envelope(second_id)?)
+            })
+            .collect::<Option<Vec<_>>>()?;
+        counterbore_envelope_dimension_values(dimension_tables(), &source_spans)
+    })
 }
 
 fn counterbore_dimension_values<'a>(
@@ -22511,6 +22519,105 @@ fn counterbore_dimension_values<'a>(
         .then_some(first)
 }
 
+fn counterbore_envelope_dimension_values<'a>(
+    tables: impl Iterator<Item = &'a crate::feature::FeatureDimensionTable>,
+    source_spans: &[[[Option<f64>; 2]; 3]],
+) -> Option<(f64, f64, f64)> {
+    let [first_source, second_source] = source_spans else {
+        return None;
+    };
+    let cylinder_diameter_matches = |diameter: f64, spans: [[Option<f64>; 2]; 3]| {
+        (0..3)
+            .filter(|axis| {
+                spans[*axis]
+                    .into_iter()
+                    .flatten()
+                    .any(|span| approximately_equal(span, diameter))
+            })
+            .count()
+            == 2
+    };
+    let counterbore_matches = |diameter: f64, depth: f64, spans: [[Option<f64>; 2]; 3]| {
+        let diameter_axes = (0..3)
+            .filter(|axis| {
+                spans[*axis]
+                    .into_iter()
+                    .flatten()
+                    .any(|span| approximately_equal(span, diameter))
+            })
+            .collect::<Vec<_>>();
+        let [first_axis, second_axis] = diameter_axes.as_slice() else {
+            return false;
+        };
+        (0..3)
+            .find(|axis| axis != first_axis && axis != second_axis)
+            .is_some_and(|axis| {
+                spans[axis]
+                    .into_iter()
+                    .flatten()
+                    .any(|span| approximately_equal(span, depth))
+            })
+    };
+    let candidates = tables
+        .filter(|table| {
+            feature_dimension_table_complete(table) && matches!(table.rows.len(), 4 | 5)
+        })
+        .filter_map(|table| {
+            let value = |external_id, dimension_type, unit| {
+                let rows = table
+                    .rows
+                    .iter()
+                    .filter(|row| {
+                        row.external_id == external_id
+                            && row.dimension_type == dimension_type
+                            && row.value_unit == unit
+                    })
+                    .collect::<Vec<_>>();
+                let [row] = rows.as_slice() else {
+                    return None;
+                };
+                row.value.filter(|value| value.is_finite())
+            };
+            let counterbore_depth = value(0, 1, crate::feature::DimensionUnit::Millimeters)?;
+            let bore_radius = value(1, 2, crate::feature::DimensionUnit::Millimeters)?;
+            let counterbore_radius = value(3, 2, crate::feature::DimensionUnit::Millimeters)?;
+            value(4, 2, crate::feature::DimensionUnit::Millimeters)?;
+            let drill_point_angle = value(2, 10, crate::feature::DimensionUnit::Radians);
+            ((table.rows.len() == 4 && drill_point_angle.is_none())
+                || (table.rows.len() == 5
+                    && drill_point_angle
+                        .is_some_and(|angle| angle > 0.0 && angle < std::f64::consts::PI)))
+            .then_some(())?;
+            (counterbore_depth > 0.0 && bore_radius > 0.0 && counterbore_radius > bore_radius)
+                .then_some(())?;
+            let bore_diameter = 2.0 * bore_radius;
+            let counterbore_diameter = 2.0 * counterbore_radius;
+            let source_assignment = [
+                cylinder_diameter_matches(bore_diameter, *first_source)
+                    && counterbore_matches(counterbore_diameter, counterbore_depth, *second_source),
+                cylinder_diameter_matches(bore_diameter, *second_source)
+                    && counterbore_matches(counterbore_diameter, counterbore_depth, *first_source),
+            ];
+            (source_assignment
+                .into_iter()
+                .filter(|matches| *matches)
+                .count()
+                == 1)
+                .then_some((bore_diameter, counterbore_diameter, counterbore_depth))
+        })
+        .collect::<Vec<_>>();
+    let first = *candidates.first()?;
+    candidates
+        .iter()
+        .all(|candidate| {
+            [candidate.0, candidate.1, candidate.2]
+                .into_iter()
+                .zip([first.0, first.1, first.2])
+                .all(|(candidate, first)| approximately_equal(candidate, first))
+        })
+        .then_some(first)
+}
+
 fn counterbore_patch_geometries(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -22541,15 +22648,7 @@ fn counterbore_patch_geometries(
 }
 
 fn counterbore_cylinder_sources(scan: &ContainerScan, feature_id: u32) -> Option<Vec<Vec<u32>>> {
-    let tables = scan
-        .features
-        .entity_tables
-        .iter()
-        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
-        .collect::<Vec<_>>();
-    let [table] = tables.as_slice() else {
-        return None;
-    };
+    let table = counterbore_entity_table(scan, feature_id)?;
     let mut cylinders_by_source = BTreeMap::<u32, Vec<u32>>::new();
     for entry in table.entries.iter().filter(|entry| entry.class_id == 200) {
         if !table.surface_ids.contains(&entry.entity_id) {
@@ -22574,6 +22673,34 @@ fn counterbore_cylinder_sources(scan: &ContainerScan, feature_id: u32) -> Option
             .cloned()
             .collect(),
     )
+}
+
+fn counterbore_entity_table<'a>(
+    scan: &'a ContainerScan<'_>,
+    feature_id: u32,
+) -> Option<&'a crate::feature::FeatureEntityTable> {
+    let tables = scan
+        .features
+        .entity_tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
+        .filter(|table| {
+            table.entries.iter().any(|entry| {
+                entry.class_id == 200
+                    && entry.source_entity_id.is_some()
+                    && table.surface_ids.contains(&entry.entity_id)
+                    && crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id)
+                        .is_some_and(|row| {
+                            row.feature_id == feature_id
+                                && row.kind == crate::surface::SurfaceKind::Cylinder
+                        })
+            })
+        })
+        .collect::<Vec<_>>();
+    let [table] = tables.as_slice() else {
+        return None;
+    };
+    Some(*table)
 }
 
 fn counterbore_axis_placement(

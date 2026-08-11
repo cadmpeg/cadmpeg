@@ -246,6 +246,12 @@ fixtures, claims above L1 remain unproven.
   common radial diameter and one common blind-depth span supplies the other
   radial coordinate when the patches share exactly one normalized bound and
   their two non-shared bounds differ by the bore diameter.
+- Class-911 counterbore recipes bind complete four- or five-row depth,
+  bore-radius, and counterbore-radius tuples when the two source cylinder pairs
+  uniquely match the two diameters on two axes and the counterbore depth on the
+  remaining axis. The fifth row is the drill-point angle. Nonmatching
+  document-level replays and class-29 tables without materialized source
+  cylinders do not participate.
 - Fill boundaries use the unique feature-bound section transform when present
   and otherwise the unique feature-owned section definition. The sketch
   identity remains available when its placement or profile geometry is

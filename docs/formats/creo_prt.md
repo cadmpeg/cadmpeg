@@ -2851,22 +2851,43 @@ counterbore radius. IDs `0`, `1`, and `3` have dimension type `2`; ID `2` has
 dimension type `1`. Bore and counterbore diameters are twice their stored
 radii. A replay supplies neutral hole dimensions only when its ID-3 radius
 equals a generated larger-cylinder radius for that hole and all matching
-replays agree. A counterbore-form hole with this complete dimensional tuple has
-a resolved counterbore entry; otherwise the identified counterbore form remains
+replays agree.
+
+A complete envelope-bound counterbore table assigns external ID `0` to the
+counterbore depth, ID `1` to the bore radius, ID `3` to the counterbore radius,
+and ID `4` to the placement distance. These four rows have millimetre units. ID
+`0` has dimension type `1`; IDs `1`, `3`, and `4` have dimension type `2`. An
+optional fifth row assigns external ID `2` to the included drill-point angle,
+with dimension type `10` and radian units. The depth and radii are positive, the
+ID-3 radius is larger than the ID-1 radius, and a present included angle is
+strictly between zero and π. Each of the two cylinder source groups has two
+type-24 terminal corner envelopes. One group has the ID-1 diameter as a common
+or adjacent-union span on exactly two axes. The other has the ID-3 diameter on
+exactly two axes and the ID-0 depth on the remaining axis. The source assignment
+must be unique. Exactly one class-29 entity table contains materialized
+source-bound cylinders. Additional class-29 tables without materialized
+source-bound cylinders do not participate. Tables whose dimensions do not match
+the patch spans do not participate, and all participating tables supply one
+equal diameter and depth tuple. ID `4` does not participate in this envelope
+binding.
+
+A counterbore-form hole with a complete bound dimensional tuple has a resolved
+counterbore entry; otherwise the identified counterbore form remains
 unresolved. The two source-entity cylinder pairs are coaxial. The pair whose
-materialized carrier radius equals ID `3` uses the counterbore cylinder; the
-other pair uses the same origin, axis, and reference direction with radius ID
-`0`. When both patches of the ID-3 cylinder have the same complete carrier,
-that carrier supplies the hole's unoriented axis placement. This carrier
-derivation does not assign an axial trim, entry position, or hole direction.
+materialized carrier radius equals the dimension-assigned counterbore radius
+uses the counterbore cylinder; the other pair uses the same origin, axis, and
+reference direction with the dimension-assigned bore radius. When both patches
+of the counterbore cylinder have the same complete carrier, that carrier
+supplies the hole's unoriented axis placement. This carrier derivation does not
+assign an axial trim, entry position, or hole direction.
 When both patches of each cylinder pair have one type-0 circular
-boundary on the same axis-normal plane, the two equal ID-3 circles define the
-counterbore entry and the two equal ID-0 circles define the bore exit. The
-ID-3 circle center is the entry position. The normalized vector from the ID-3
-center to the ID-0 center is the hole direction, and the center distance is
-the full blind span. The circles must have their dimension-assigned radii,
-their axes must be parallel to the span, and the counterbore depth must not
-exceed the full span.
+boundary on the same axis-normal plane, the two equal counterbore-radius circles
+define the counterbore entry and the two equal bore-radius circles define the
+bore exit. The counterbore circle center is the entry position. The normalized
+vector from the counterbore center to the bore center is the hole direction,
+and the center distance is the full blind span. The circles must have their
+dimension-assigned radii, their axes must be parallel to the span, and the
+counterbore depth must not exceed the full span.
 
 A cylinder patch may end with two scalar coordinate pairs separated by
 `00 0c 98`, followed by orientation scalar `-1`. The pairs are opposite

@@ -2538,7 +2538,28 @@ fn counterbore_sources_require_materialized_table_membership() {
         offset: 0,
     };
     let mut scan = crate::container::scan_bytes(Vec::new());
+    let duplicate_productive_table = table.clone();
     scan.features.entity_tables.push(table);
+    scan.features
+        .entity_tables
+        .push(crate::feature::FeatureEntityTable {
+            feature_id: Some(9),
+            table_class_id: 29,
+            entry_ids: vec![99],
+            entries: vec![crate::feature::FeatureEntityTableEntry {
+                entity_id: 99,
+                class_id: 0,
+                source_entity_id: None,
+                related_entity_id: None,
+                related_entity_state: None,
+                prefixed: true,
+                offset: 1,
+                end_offset: 2,
+            }],
+            surface_ids: Vec::new(),
+            non_surface_entity_ids: vec![99],
+            offset: 1,
+        });
     scan.surfaces
         .rows
         .extend([row(11), row(12), row(15), row(16)]);
@@ -2547,6 +2568,8 @@ fn counterbore_sources_require_materialized_table_membership() {
         counterbore_cylinder_sources(&scan, 9),
         Some(vec![vec![15, 16]])
     );
+    scan.features.entity_tables.push(duplicate_productive_table);
+    assert!(counterbore_cylinder_sources(&scan, 9).is_none());
 }
 
 #[test]
@@ -2595,6 +2618,101 @@ fn counterbore_dimensions_require_complete_agreeing_radius_anchored_tables() {
         counterbore_dimension_values([&first, &conflicting].into_iter(), &[0.3125]),
         None
     );
+}
+
+#[test]
+fn counterbore_envelope_dimensions_accept_optional_drill_angle() {
+    let table = |counterbore_depth: f64| crate::feature::FeatureDimensionTable {
+        declared_count: 5,
+        entity_ref: Some(88),
+        rows: [
+            (
+                0,
+                1,
+                counterbore_depth,
+                crate::feature::DimensionUnit::Millimeters,
+            ),
+            (1, 2, 20.0, crate::feature::DimensionUnit::Millimeters),
+            (
+                2,
+                10,
+                118.0_f64.to_radians(),
+                crate::feature::DimensionUnit::Radians,
+            ),
+            (3, 2, 60.0, crate::feature::DimensionUnit::Millimeters),
+            (4, 2, -295.661, crate::feature::DimensionUnit::Millimeters),
+        ]
+        .into_iter()
+        .map(
+            |(external_id, dimension_type, value, value_unit)| crate::feature::FeatureDimension {
+                dimension_type,
+                value: Some(value),
+                value_body: Vec::new(),
+                unresolved_value_token: None,
+                value_unit,
+                direction_byte: 0,
+                auxiliary_value: Some(0.0),
+                auxiliary_body: Vec::new(),
+                external_id,
+                references: None,
+                offset: 0,
+            },
+        )
+        .collect(),
+        offset: 0,
+    };
+    let bore_spans = [[Some(40.0), None], [Some(49.0), None], [None, Some(40.0)]];
+    let counterbore_spans = [[Some(120.0), None], [Some(8.0), None], [None, Some(120.0)]];
+    let first = table(8.0);
+    assert_eq!(
+        counterbore_envelope_dimension_values(
+            std::iter::once(&first),
+            &[bore_spans, counterbore_spans],
+        ),
+        Some((40.0, 120.0, 8.0))
+    );
+    assert_eq!(
+        counterbore_envelope_dimension_values(
+            std::iter::once(&first),
+            &[counterbore_spans, bore_spans],
+        ),
+        Some((40.0, 120.0, 8.0))
+    );
+    let mut without_drill_angle = table(8.0);
+    without_drill_angle.declared_count = 4;
+    without_drill_angle.rows.retain(|row| row.external_id != 2);
+    assert_eq!(
+        counterbore_envelope_dimension_values(
+            std::iter::once(&without_drill_angle),
+            &[bore_spans, counterbore_spans],
+        ),
+        Some((40.0, 120.0, 8.0))
+    );
+    let mut invalid_drill_angle = table(8.0);
+    invalid_drill_angle
+        .rows
+        .iter_mut()
+        .find(|row| row.external_id == 2)
+        .expect("the five-row test table has a drill-angle row")
+        .value = Some(std::f64::consts::PI);
+    assert!(counterbore_envelope_dimension_values(
+        std::iter::once(&invalid_drill_angle),
+        &[bore_spans, counterbore_spans],
+    )
+    .is_none());
+    let conflicting = table(9.0);
+    assert_eq!(
+        counterbore_envelope_dimension_values(
+            [&first, &conflicting].into_iter(),
+            &[bore_spans, counterbore_spans],
+        ),
+        Some((40.0, 120.0, 8.0))
+    );
+    assert!(counterbore_envelope_dimension_values(
+        std::iter::once(&conflicting),
+        &[bore_spans, counterbore_spans],
+    )
+    .is_none());
 }
 
 #[test]
