@@ -9890,7 +9890,31 @@ fn scan_decodes_active_principal_unit() {
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let scan = container::scan_bytes(data);
 
-    assert_eq!(scan.framing.principal_unit.as_deref(), Some("mmNs"));
+    assert_eq!(
+        scan.framing
+            .principal_unit
+            .map(crate::legacy::PrincipalUnitSystem::token)
+            .as_deref(),
+        Some("mmNs")
+    );
+}
+
+#[test]
+fn legacy_principal_unit_sets_the_source_length_scale() {
+    let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
+        @principal_sys_units 25 10\n2 25 Inch lbm Second (Pro/E Default)\n\
+        #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("legacy unit decode");
+    let source = result.ir.source.as_ref().expect("source metadata");
+    assert_eq!(source.attributes["principal_unit"], "inLbmS");
+    assert_eq!(source.attributes["source_length_scale_mm"], "25.4");
+    assert_eq!(
+        result.report.coverage["decoded_legacy_principal_unit_count"],
+        1
+    );
 }
 
 #[test]

@@ -99,7 +99,9 @@ fixtures, claims above L1 remain unproven.
   banner-relative named-section extents; monolithic framing markers are not
   exposed as sections. Attribute declarations, locally resolved depth/value
   rows, and immediate `$` continuations are structurally enumerated without
-  copying their raw payload bytes.
+  copying their raw payload bytes. A unique legacy type-10
+  `principal_sys_units` scalar transfers the active length system and its
+  canonical millimeter scale.
 - Compressed `THMB_IMG_MAIN` payloads expand to the JPEG marker before preview
   detection and retain the JPEG bytes as a derived native record.
 - Axis-aligned coaxial cone-cylinder intersections transfer the unique circle

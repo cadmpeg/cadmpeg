@@ -35743,7 +35743,18 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
         attributes.insert("crv_array_count".to_string(), c.to_string());
     }
     if let Some(unit) = &scan.framing.principal_unit {
-        attributes.insert("principal_unit".to_string(), unit.clone());
+        attributes.insert("principal_unit".to_string(), unit.token());
+        if scan.framing.layout == crate::container::Layout::LegacyAscii {
+            if let Some(scale) = unit.length_scale_mm() {
+                attributes.insert("source_length_scale_mm".to_string(), scale.to_string());
+            }
+        }
+    }
+    if scan.framing.layout == crate::container::Layout::LegacyAscii {
+        coverage.insert(
+            "decoded_legacy_principal_unit_count".to_string(),
+            usize::from(scan.framing.principal_unit.is_some()),
+        );
     }
     coverage.insert(
         "decoded_surface_row_count".to_string(),

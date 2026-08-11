@@ -257,8 +257,8 @@ pub struct FramingScan<'a> {
     /// Visible-geometry namespace census, when a `VisibGeom` section was found.
     pub census: GeomCensus,
     /// Active Creo principal coordinate unit system, when its selector is
-    /// present. Both currently defined systems store model lengths in mm.
-    pub principal_unit: Option<String>,
+    /// present and unambiguous.
+    pub principal_unit: Option<legacy::PrincipalUnitSystem>,
     /// Configuration driver-table pointer from `FamilyInf`.
     pub family_table: Option<FamilyTableRecord>,
     /// Declared `Geomlists.n_bodies` cardinality, when present.
@@ -980,12 +980,12 @@ fn geom_census(data: &[u8], sections: &[Section]) -> GeomCensus {
 
 /// Decode the active unit-system selector. `51` is millimeter-Newton-Second
 /// and `55` is millimeter-Kilogram-Second; both use millimeters for lengths.
-fn principal_unit(data: &[u8]) -> Option<String> {
+fn binary_principal_unit(data: &[u8]) -> Option<legacy::PrincipalUnitSystem> {
     let start = find(data, PRINCIPAL_UNIT_ID, 0)? + PRINCIPAL_UNIT_ID.len();
     match *data.get(start)? {
-        51 => Some("mmNs".to_string()),
-        55 => Some("mmKs".to_string()),
-        value => Some(format!("unknown:{value}")),
+        51 => Some(legacy::PrincipalUnitSystem::MillimeterNewtonSecond),
+        55 => Some(legacy::PrincipalUnitSystem::MillimeterKilogramSecond),
+        value => Some(legacy::PrincipalUnitSystem::UnknownBinarySelector(value)),
     }
 }
 
@@ -2140,7 +2140,12 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     };
     let model_geometry_sections = model_geometry_sections(&data, &sections);
     let census = geom_census(&data, &sections);
-    let principal_unit = principal_unit(&data);
+    let principal_unit = binary_principal_unit(&data).or_else(|| {
+        legacy_ascii
+            .as_ref()?
+            .persistence
+            .principal_unit_system(&data)
+    });
     let family_table = family_table(&data, &sections);
     let nonvisible_geometry_sections = sections
         .iter()

@@ -4,6 +4,44 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
+const PRINCIPAL_UNIT_NAME: &str = "principal_sys_units";
+const MILLIMETER_NEWTON_SECOND: &[u8] = b"millimeter Newton Second (mmNs)";
+const INCH_POUND_MASS_SECOND: &[u8] = b"Inch lbm Second (Pro/E Default)";
+
+/// Active coordinate-unit system selected by a model-level persistence field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrincipalUnitSystem {
+    /// Millimeter, Newton, second.
+    MillimeterNewtonSecond,
+    /// Millimeter, kilogram, second.
+    MillimeterKilogramSecond,
+    /// Inch, pound mass, second.
+    InchPoundMassSecond,
+    /// A binary selector whose unit definition is not known.
+    UnknownBinarySelector(u8),
+}
+
+impl PrincipalUnitSystem {
+    /// Stable source-metadata token.
+    pub fn token(self) -> String {
+        match self {
+            Self::MillimeterNewtonSecond => "mmNs".to_string(),
+            Self::MillimeterKilogramSecond => "mmKs".to_string(),
+            Self::InchPoundMassSecond => "inLbmS".to_string(),
+            Self::UnknownBinarySelector(value) => format!("unknown:{value}"),
+        }
+    }
+
+    /// Scale from stored coordinate lengths to canonical millimeters.
+    pub const fn length_scale_mm(self) -> Option<f64> {
+        match self {
+            Self::MillimeterNewtonSecond | Self::MillimeterKilogramSecond => Some(1.0),
+            Self::InchPoundMassSecond => Some(25.4),
+            Self::UnknownBinarySelector(_) => None,
+        }
+    }
+}
+
 /// One unique `@<name> <id> <type-code>` declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttributeDeclaration {
@@ -93,6 +131,39 @@ impl Persistence {
             .iter()
             .map(|scope| scope.conflicting_declaration_count)
             .sum()
+    }
+
+    /// Resolve one unambiguous legacy principal-unit string.
+    pub fn principal_unit_system(&self, data: &[u8]) -> Option<PrincipalUnitSystem> {
+        let mut candidate = None;
+        for scope in &self.scopes {
+            for declaration in scope
+                .declarations
+                .iter()
+                .filter(|declaration| declaration.name == PRINCIPAL_UNIT_NAME)
+            {
+                for value in scope
+                    .values
+                    .iter()
+                    .filter(|value| value.attribute_id == declaration.id)
+                {
+                    if candidate.is_some()
+                        || declaration.type_code != 10
+                        || value.continuation_count != 0
+                    {
+                        return None;
+                    }
+                    candidate = match data.get(value.payload.clone())? {
+                        MILLIMETER_NEWTON_SECOND => {
+                            Some(PrincipalUnitSystem::MillimeterNewtonSecond)
+                        }
+                        INCH_POUND_MASS_SECOND => Some(PrincipalUnitSystem::InchPoundMassSecond),
+                        _ => return None,
+                    };
+                }
+            }
+        }
+        candidate
     }
 }
 
@@ -286,6 +357,40 @@ mod tests {
         assert_eq!(persistence.declaration_count(), 2);
         assert_eq!(persistence.value_count(), 2);
         assert_eq!(persistence.conflicting_declaration_count(), 0);
+    }
+
+    #[test]
+    fn principal_unit_requires_one_complete_known_type_10_scalar() {
+        let millimeter = b"@principal_sys_units 25 10\n2 25 millimeter Newton Second (mmNs)\n";
+        let persistence = scan(millimeter, std::iter::once(0..millimeter.len()));
+        assert_eq!(
+            persistence.principal_unit_system(millimeter),
+            Some(PrincipalUnitSystem::MillimeterNewtonSecond)
+        );
+        assert_eq!(
+            persistence
+                .principal_unit_system(millimeter)
+                .and_then(PrincipalUnitSystem::length_scale_mm),
+            Some(1.0)
+        );
+
+        let inch = b"@principal_sys_units 25 10\n2 25 Inch lbm Second (Pro/E Default)\n";
+        let persistence = scan(inch, std::iter::once(0..inch.len()));
+        assert_eq!(
+            persistence.principal_unit_system(inch),
+            Some(PrincipalUnitSystem::InchPoundMassSecond)
+        );
+        assert_eq!(
+            persistence
+                .principal_unit_system(inch)
+                .and_then(PrincipalUnitSystem::length_scale_mm),
+            Some(25.4)
+        );
+
+        let mut repeated = millimeter.to_vec();
+        repeated.extend_from_slice(millimeter);
+        let persistence = scan(&repeated, std::iter::once(0..repeated.len()));
+        assert_eq!(persistence.principal_unit_system(&repeated), None);
     }
 
     #[test]

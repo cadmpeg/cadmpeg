@@ -160,6 +160,13 @@ layout. Section cardinality is descriptive and does not select a layout.
 |  `51` | millimeter-Newton-Second (`mmNs`)   |
 |  `55` | millimeter-Kilogram-Second (`mmKs`) |
 
+In legacy ASCII persistence, the unique type-10 `principal_sys_units` scalar
+identifies the active system. `millimeter Newton Second (mmNs)` stores lengths
+in millimeters. `Inch lbm Second (Pro/E Default)` stores lengths in inches, so
+lengths are multiplied by `25.4` for canonical millimeters. An absent,
+repeated, differently typed, continued, or unrecognized scalar does not select
+a coordinate unit system.
+
 Unit-definition records can include inactive units. `history_scale` is a version/history array and does not scale coordinates.
 
 ## 2. PSB primitive encoding

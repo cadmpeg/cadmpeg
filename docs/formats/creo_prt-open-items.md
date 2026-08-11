@@ -828,7 +828,10 @@ product-release banner forms, and its monolithic and named-section forms. The
 named-section directory defines banner-relative offsets and stored extents.
 Attribute declarations and value rows use section-local identifiers; an
 immediately following `$` row continues a value payload.
+The unique type-10 `principal_sys_units` scalar selects either millimeter or
+inch coordinate lengths; inch lengths scale by `25.4` to canonical
+millimeters.
 
-**Need.** We must know each attribute type code, payload grammar, graph join,
-and non-attribute section grammar to transfer legacy persistence beyond
-container structure.
+**Need.** We must know the remaining attribute type codes, payload grammars,
+geometry and design-history graph joins, and non-attribute section grammar to
+transfer the rest of legacy persistence.
