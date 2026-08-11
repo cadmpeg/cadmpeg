@@ -2881,11 +2881,11 @@ fn standard_limit_curve_point_parameter(
         );
     }
     parameters.sort_by(|left, right| left.1.total_cmp(&right.1));
-    let &(parameter, distance) = parameters.first()?;
-    let ambiguous = parameters.iter().skip(1).any(|&(other, other_distance)| {
-        (other - parameter).abs() > parameter_tolerance
-            && (other_distance - distance).abs() <= tolerance * 1e-8
-    });
+    let &(parameter, _) = parameters.first()?;
+    let ambiguous = parameters
+        .iter()
+        .skip(1)
+        .any(|&(other, _)| (other - parameter).abs() > parameter_tolerance);
     (!ambiguous).then_some(parameter)
 }
 
@@ -7155,9 +7155,9 @@ mod route_tests {
         retry_rejected_mesh_solution, standard_circle_endpoint_candidates,
         standard_circle_param_range, standard_curve_branch_assignment_is_ranked,
         standard_curve_branch_candidates_after_partial_assignment, standard_curve_branch_groups,
-        standard_limit_curve_bindings, standard_native_support_endpoint_pair,
-        standard_object_evidence_from_streams, standard_pcurve_geometry,
-        standard_plane_normals_from_face_frames, standard_spline_line,
+        standard_limit_curve_bindings, standard_limit_curve_point_parameter,
+        standard_native_support_endpoint_pair, standard_object_evidence_from_streams,
+        standard_pcurve_geometry, standard_plane_normals_from_face_frames, standard_spline_line,
         standard_successor_endpoint_pairs, standard_successor_endpoint_points,
         standard_surface_evidence, unique_native_identity_points, witness_arc_end,
         StandardEdgeSupport, StandardSurfaceProcedure,
@@ -7746,6 +7746,27 @@ mod route_tests {
         };
         assert_eq!(
             standard_native_support_endpoint_pair(&disagreeing, &points, &[0, 1], None),
+            None
+        );
+    }
+
+    #[test]
+    fn limit_curve_point_binding_rejects_separated_occurrences_with_unequal_residuals() {
+        let line_span = |offset: f64| {
+            (0..6)
+                .map(|index| Point3::new(-1.0 + 0.4 * f64::from(index) + offset, 0.0, 0.0))
+                .collect::<Vec<_>>()
+        };
+        let curve = NurbsCurve {
+            degree: 5,
+            knots: [vec![0.0; 6], vec![0.5; 6], vec![1.0; 6]].concat(),
+            control_points: [line_span(0.0), line_span(1e-3)].concat(),
+            weights: None,
+            periodic: false,
+        };
+
+        assert_eq!(
+            standard_limit_curve_point_parameter(&curve, Point3::new(0.0, 0.0, 0.0), 2e-3),
             None
         );
     }

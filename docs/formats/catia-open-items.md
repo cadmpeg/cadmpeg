@@ -214,7 +214,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How do operation fields, definition-bound values, and structurally owned operand objects form one feature instance?
 
-**Known.** `catia.md` §7.3 "All `7C09` records in one graph carrying the same `owner_ref`" defines each incidence independently. Paired entity tables admit opaque childless object records and preserve their complete bodies, but do not assign roles inside those bodies. A complete two-definition value chain with a supported second role transfers one typed parameter, but it does not assign that parameter to an operation role. An operation-named field class or field vocabulary does not assign feature identity, operands, outputs, or replay order. An exact separator-form owner declaration for an admitted operation class, with matching class entry, owner entity, and structural owner, establishes one opaque feature identity and its source order; it does not assign the operation's semantic inputs.
+**Known.** `catia.md` §7.3 "All `7C09` records in one graph carrying the same `owner_ref`" defines each incidence independently. Paired entity tables admit opaque childless object records and preserve their complete bodies, but do not assign roles inside those bodies. A complete two-definition value chain with a supported second role transfers one typed parameter, but it does not assign that parameter to an operation role. Operation-named field records can share one class identity across several structural owner groups. A `Hole` class cohort contains one empty self-classified record plus list, atom-vector, mixed, or empty records under other owners. The shared class identity does not establish whether the cohort is a schema object, one feature instance, or a field program reused by multiple instances. An operation-named field class or field vocabulary does not assign feature identity, operands, outputs, or replay order. An exact separator-form owner declaration for an admitted operation class, with matching class entry, owner entity, and structural owner, establishes one opaque feature identity and its source order; it does not assign the operation's semantic inputs.
 
 **Need.** We must know the operation-specific binding that transfers profiles, directions, extents, outputs, and regeneration dependencies for each admitted feature family.
 
@@ -452,11 +452,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which parameter occurrence on a standard degree-5 limit curve names a serialized endpoint when more than one parameter is within the point tolerance?
 
-**Known.** `standard_limit_curve_point_parameter` collects parameter candidates within the endpoint tolerance and sorts them by residual. It rejects only candidates with a separated parameter and nearly identical residual; otherwise it returns the smallest-residual candidate.
+**Known.** `catia.md` §5.8 "A standard spline edge with two distinct adjacent face carriers" requires every within-tolerance candidate for one endpoint to occupy one parameter-tolerance cluster. The decoder rejects any separated occurrence, independent of residual ordering.
 
-**Need.** We must know the endpoint-occurrence identity or reject competing parameter candidates before binding a limit-curve interval.
-
-**Note.** Added by the 2026-08-10 hostile sweep. At `crates/cadmpeg-codec-catia/src/families/standard/decode.rs:2783-2830`, unequal residuals select the nearest candidate. If one curve passes within tolerance at two separated parameters, reordering or changing the curve shape can change the selected endpoint parameter while the discarded occurrence remains geometrically valid. Later endpoint-pair uniqueness does not recover the discarded parameter. The specification requires unique endpoint parameters, but the code does not enforce that invariant. Confidence: medium-high.
+**Need.** We must know the endpoint-occurrence identity to bind a curve that has separated candidates instead of retaining it natively.
 
 ## 4. Object stream
 
