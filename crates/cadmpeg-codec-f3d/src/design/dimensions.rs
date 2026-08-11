@@ -402,15 +402,6 @@ fn project_all_dimension_constraints(
                     .copied()
             })
             .collect::<Option<Vec<_>>>()?;
-        if let Some(definition) = radial_locus_dimension_definition(
-            &locus_entities,
-            entities,
-            &parameter.source_kind,
-            parameter.evaluated_value,
-            &parameter_id,
-        ) {
-            return Some(definition);
-        }
         if parameter.source_kind.starts_with("Angular Dimension") {
             let indices = group
                 .loci
@@ -430,6 +421,15 @@ fn project_all_dimension_constraints(
             if let Some(definition) = exact_counted_dimension_relation(&locus_entities) {
                 return Some(definition);
             }
+        }
+        if let Some(definition) = radial_locus_dimension_definition(
+            &locus_entities,
+            entities,
+            &parameter.source_kind,
+            parameter.evaluated_value,
+            &parameter_id,
+        ) {
+            return Some(definition);
         }
         if parameter.source_kind.starts_with("Linear Dimension") {
             if group.state == 0x20 && group.unknown_constraint_bits == 0 {
@@ -4721,6 +4721,21 @@ fn reflected_geometry_matches(
                 && sketch_points_close(reflected_end, *second_end)
                 || sketch_points_close(reflected_start, *second_end)
                     && sketch_points_close(reflected_end, *second_start)
+        }
+        (
+            SketchGeometry::Circle {
+                center: first_center,
+                radius: first_radius,
+            },
+            SketchGeometry::Circle {
+                center: second_center,
+                radius: second_radius,
+            },
+        ) => {
+            let radius_scale = 1.0 + first_radius.0.abs().max(second_radius.0.abs());
+            (first_radius.0 - second_radius.0).abs() <= 1.0e-9 * radius_scale
+                && reflect_point(*first_center, *axis_start, *axis_end)
+                    .is_some_and(|reflected| sketch_points_close(reflected, *second_center))
         }
         _ => false,
     }

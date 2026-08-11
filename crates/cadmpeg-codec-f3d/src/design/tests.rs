@@ -16115,6 +16115,56 @@ fn three_member_symmetry_states_project_unique_reflection_axis() {
 }
 
 #[test]
+fn counted_dimension_groups_resolve_full_circle_symmetry() {
+    let entity = |id: &str, geometry: SketchGeometry| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: SketchId("generated:sketch#0".into()),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry,
+    };
+    let first = entity(
+        "generated:circle#first",
+        SketchGeometry::Circle {
+            center: Point2::new(-3.0, 2.0),
+            radius: Length(1.5),
+        },
+    );
+    let axis = entity(
+        "generated:line#axis",
+        SketchGeometry::Line {
+            start: Point2::new(0.0, -1.0),
+            end: Point2::new(0.0, 4.0),
+        },
+    );
+    let second = entity(
+        "generated:circle#second",
+        SketchGeometry::Circle {
+            center: Point2::new(3.0, 2.0),
+            radius: Length(1.5),
+        },
+    );
+
+    assert!(matches!(
+        exact_counted_dimension_relation(&[&first, &axis, &second]),
+        Some(SketchConstraintDefinition::Symmetric {
+            first: SketchLocus::Entity(ref first_id),
+            second: SketchLocus::Entity(ref second_id),
+            axis: ref axis_id,
+        }) if first_id == &first.id && second_id == &second.id && axis_id == &axis.id
+    ));
+
+    let mut mismatched = second.clone();
+    mismatched.geometry = SketchGeometry::Circle {
+        center: Point2::new(3.0, 2.0),
+        radius: Length(2.0),
+    };
+    assert!(exact_counted_dimension_relation(&[&first, &axis, &mismatched]).is_none());
+}
+
+#[test]
 fn coincident_relation_projects_one_unique_shared_locus_per_member() {
     let entity = |id: &str, geometry: SketchGeometry| cadmpeg_ir::sketches::SketchEntity {
         id: SketchEntityId(id.into()),

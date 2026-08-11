@@ -2476,8 +2476,9 @@ pub(crate) const CURRENT_SKETCH_CIRCULAR_TYPE: (&str, u32, &str) =
 pub(crate) const CURRENT_SKETCH_NURBS_TYPE: (&str, u32, &str) =
     ("D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B", 3, "MSketch");
 
-const SKETCH_LINE_TYPES: [(&str, u32, &str); 5] = [
+const SKETCH_LINE_TYPES: [(&str, u32, &str); 6] = [
     CURRENT_SKETCH_LINE_TYPE,
+    ("DCA267ED-D615-4934-B64F-AD805E8003E2", 1, "Geometry"),
     ("EA3B930A-3383-4AD3-BE25-4B2814EA3985", 0, "Geometry"),
     ("AE42BAB6-643F-4169-A33C-529C8E0A4D84", 0, "Geometry"),
     ("F279874A-17AB-43DA-BF8E-80259802D06E", 0, "Geometry"),
@@ -4223,6 +4224,10 @@ mod curve_class_tests {
         assert_eq!(
             SketchCurveClass::of(SKETCH_TEXT_FRAME_LINE_TYPE_GUID, 0, "MSketch"),
             Some(SketchCurveClass::TextFrameLine)
+        );
+        assert_eq!(
+            SketchCurveClass::of(SKETCH_LINE_TYPES[0].0, 0, "Geometry"),
+            None
         );
         assert_eq!(
             SketchCurveClass::of(SKETCH_LINE_TYPES[0].0, 3, "Geometry"),
