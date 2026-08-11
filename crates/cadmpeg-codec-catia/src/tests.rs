@@ -15094,23 +15094,9 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
         decoded
             .report
             .coverage_count(crate::coverage::TRANSFERRED_CONFIGURATION_COUNT),
-        1
+        0
     );
-    let [transferred] = decoded.ir.model.configurations.as_slice() else {
-        panic!("one transferred configuration identity")
-    };
-    assert_eq!(transferred.ordinal, 0);
-    assert_eq!(transferred.name, cadmpeg_ir::ConfigurationName::Unresolved);
-    assert_eq!(
-        transferred.active,
-        cadmpeg_ir::ConfigurationActivation::Unresolved
-    );
-    assert!(transferred.source_index.is_none());
-    assert!(transferred.bodies.is_unresolved());
-    assert_eq!(
-        transferred.native_ref.as_deref(),
-        Some(native.entity_records[0].id.as_str())
-    );
+    assert!(decoded.ir.model.configurations.is_empty());
 }
 
 #[test]

@@ -22,7 +22,6 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Annotations, SourceFidelity};
 
 use crate::assemble::{build_container_report, build_metadata_ir};
-use crate::configuration;
 use crate::container::{self, ContainerScan};
 use crate::design_feature;
 use crate::entity_table;
@@ -109,8 +108,6 @@ fn finish_decode(
         .collect::<HashSet<_>>();
     let design_feature_transfer =
         design_feature::transfer_design_features(&mut ir, &native, modeling_graph_scope.as_ref());
-    let configuration_transfer =
-        configuration::transfer(&mut ir, &native, modeling_graph_scope.as_ref());
     let transferred_native_sketch_entity_records = sketch::transfer_native_sketch_entities(
         &mut ir,
         &native,
@@ -1594,11 +1591,6 @@ fn finish_decode(
         .collect::<HashSet<_>>();
     let transferred_design_records = transferred_formula_design_records
         .union(&transferred_design_feature_records)
-        .chain(
-            configuration_transfer
-                .consumed_object_records
-                .intersection(&structurally_owned_records),
-        )
         .chain(transferred_native_sketch_entity_records.intersection(&structurally_owned_records))
         .chain(transferred_constraint_range_records.intersection(&structurally_owned_records))
         .cloned()

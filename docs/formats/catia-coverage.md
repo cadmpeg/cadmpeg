@@ -272,10 +272,8 @@ current scores require those matrices and representative fixtures.
   partitions resolved, terminal-null, and unresolved terminals, partitions
   their ordered links from links whose order remains unresolved, and counts
   source-ordered chains, intervening entities, and complete `Configuration`
-  records among those entities. Each unambiguous complete `Configuration`
-  record in modeling scope transfers one neutral configuration identity in
-  entity-record source order. Its display name, active state, source slot,
-  bodies, parameters, and feature states remain unresolved.
+  records among those entities. These records do not count as transferred
+  neutral configurations.
 - A separator-form owner declaration with the exact class `Sketch` transfers
   one sketch identity and one unresolved sketch history node. The transfer
   does not assign placement, geometry, profiles, or constraints. A `PRTSketch`
