@@ -1046,6 +1046,30 @@ pub(crate) fn bind_feature_body_selections(
                     }
                 };
             } else {
+                let tool_record_indices = operation
+                    .tools
+                    .iter()
+                    .map(|tool| tool.record_index)
+                    .collect::<Vec<_>>();
+                if let Some(tool_slots) = combine_recipe_family_tool_slots(
+                    stream,
+                    scope.record_index,
+                    &tool_record_indices,
+                    previous_state_id,
+                    body,
+                    body_recipe_operands,
+                    inputs.construction_recipes,
+                ) {
+                    *tools = BodySelection::HistoricalUnorderedSet {
+                        state: input_state,
+                        bodies: tool_slots
+                            .into_iter()
+                            .map(|slot| crate::ids::history_input_body_id(&prefix, slot))
+                            .collect(),
+                        native: native_tools,
+                    };
+                    continue;
+                }
                 let dependency_sets = feature
                     .dependencies
                     .iter()
@@ -1170,6 +1194,115 @@ fn pattern_combine_tool_slots(
     let mut tool_bodies = pattern_bodies.clone();
     tool_bodies.remove(&target_body).then_some(())?;
     (tool_bodies.len() == native_tool_count).then(|| tool_bodies.into_iter().collect())
+}
+
+fn combine_recipe_family_tool_slots(
+    stream: &str,
+    scope_record_index: u32,
+    tool_record_indices: &[u32],
+    previous_state_id: i64,
+    target_body: i64,
+    operands: &[crate::records::DesignBodyRecipeOperand],
+    recipes: &[crate::records::ConstructionRecipe],
+) -> Option<Vec<i64>> {
+    type FamilyKey = (String, String, u64, u32, String);
+    type FamilyMember = (u32, Option<i64>, BTreeSet<i64>);
+
+    if tool_record_indices.is_empty()
+        || tool_record_indices.iter().collect::<HashSet<_>>().len() != tool_record_indices.len()
+    {
+        return None;
+    }
+    let mut recipes_by_id = HashMap::<&str, Option<&crate::records::ConstructionRecipe>>::new();
+    for recipe in recipes.iter().filter(|recipe| {
+        recipe.kind == crate::records::ConstructionRecipeKind::Body
+            && crate::ids::native_stream(&recipe.id) == Some(stream)
+    }) {
+        recipes_by_id
+            .entry(recipe.id.as_str())
+            .and_modify(|recipe| *recipe = None)
+            .or_insert(Some(recipe));
+    }
+    let mut families = BTreeMap::<FamilyKey, Vec<FamilyMember>>::new();
+    for record_index in tool_record_indices {
+        let mut matching = operands.iter().filter(|operand| {
+            crate::ids::native_stream(&operand.id) == Some(stream)
+                && operand.scope_record_index == scope_record_index
+                && matches!(
+                    operand.owner,
+                    crate::records::DesignBodyRecipeOperandOwner::ScopeReference { .. }
+                )
+                && operand.record_index == *record_index
+        });
+        let operand = matching.next()?;
+        if matching.next().is_some() || operand.references.len() != 1 {
+            return None;
+        }
+        let recipe = recipes_by_id
+            .get(operand.recipe_id.as_str())
+            .and_then(|recipe| *recipe)?;
+        let design_id = recipe.design_id.clone()?;
+        let selector = recipe.design_selector?.value;
+        if selector == 0 {
+            return None;
+        }
+        let resolved = match (operand.resolved_body_state_id, operand.resolved_body_slot) {
+            (Some(state), Some(body)) if state == previous_state_id => Some(body),
+            (None, None) => None,
+            _ => return None,
+        };
+        let reference = &operand.references[0];
+        let key = (
+            operand.asset_id.clone(),
+            operand.context_id.clone(),
+            reference.design_reference,
+            reference.form,
+            design_id,
+        );
+        families.entry(key).or_default().push((
+            selector,
+            resolved,
+            reference.preceding_body_slots.iter().copied().collect(),
+        ));
+    }
+
+    let mut selected = BTreeSet::new();
+    for family in families.into_values() {
+        let exact = family
+            .iter()
+            .filter_map(|(_, body, _)| *body)
+            .collect::<BTreeSet<_>>();
+        if family.iter().all(|(_, body, _)| body.is_some()) {
+            if exact.len() != family.len() {
+                return None;
+            }
+            selected.extend(exact);
+            continue;
+        }
+        let selectors = family
+            .iter()
+            .map(|(selector, _, _)| *selector)
+            .collect::<BTreeSet<_>>();
+        let expected_selectors = (1..=u32::try_from(family.len()).ok()?).collect::<BTreeSet<_>>();
+        if selectors != expected_selectors {
+            return None;
+        }
+        let mut candidate_sets = family
+            .iter()
+            .map(|(_, _, candidates)| candidates)
+            .filter(|candidates| !candidates.is_empty());
+        let candidates = candidate_sets.next()?.clone();
+        if candidates.len() != family.len()
+            || candidates.contains(&target_body)
+            || !exact.is_subset(&candidates)
+            || candidate_sets.any(|other| other != &candidates)
+        {
+            return None;
+        }
+        selected.extend(candidates);
+    }
+    (selected.len() == tool_record_indices.len() && !selected.contains(&target_body))
+        .then(|| selected.into_iter().collect())
 }
 
 fn combine_external_local_tools(
@@ -10543,6 +10676,121 @@ mod tests {
             Some(2)
         );
         assert_eq!(historical_body_slot("f3d:brep:entity#2"), None);
+    }
+
+    #[test]
+    fn combine_recipe_family_proves_unordered_generated_tools() {
+        use crate::records::{
+            ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector,
+            DesignBodyRecipeOperand, DesignBodyRecipeOperandOwner, DesignBodyRecipeReference,
+        };
+
+        let stream = "f3d:Design/BulkStream.dat";
+        let recipe = |record_index, design_id: &str, selector| ConstructionRecipe {
+            id: format!("{stream}:construction-recipe#{record_index}"),
+            byte_offset: 0,
+            record_index_offset: None,
+            kind: ConstructionRecipeKind::Body,
+            design_id: Some(design_id.into()),
+            design_id_offset: None,
+            design_selector: Some(ConstructionRecipeSelector {
+                value: selector,
+                byte_offset: 0,
+            }),
+            recipe_index: 0,
+            record_index: 0,
+        };
+        let recipes = [
+            recipe(101, "exact", 6),
+            recipe(102, "family", 3),
+            recipe(103, "family", 1),
+            recipe(104, "family", 2),
+        ];
+        let operand =
+            |record_index, recipe: &ConstructionRecipe, body: Option<i64>, candidates: &[i64]| {
+                DesignBodyRecipeOperand {
+                    id: format!("{stream}:design-body-recipe-operand#{record_index}"),
+                    scope_record_index: 10,
+                    owner: DesignBodyRecipeOperandOwner::ScopeReference {
+                        scope_reference_ordinal: record_index,
+                    },
+                    record_index,
+                    byte_offset: 0,
+                    class_tag: "389".into(),
+                    asset_id: "asset".into(),
+                    asset_id_offset: 0,
+                    context_id: "context".into(),
+                    context_id_offset: 0,
+                    references: vec![DesignBodyRecipeReference {
+                        design_reference: if recipe.design_id.as_deref() == Some("family") {
+                            413
+                        } else {
+                            409
+                        },
+                        design_reference_offset: 0,
+                        form: 3,
+                        form_offset: 0,
+                        candidate_faces: Vec::new(),
+                        preceding_candidate_faces: Vec::new(),
+                        preceding_body_slots: candidates.to_vec(),
+                    }],
+                    nested_record_index: 0,
+                    nested_record_index_offset: 0,
+                    recipe_id: recipe.id.clone(),
+                    resolved_face_slot: None,
+                    resolved_body_state_id: body.map(|_| 317),
+                    resolved_body_slot: body,
+                    resolved_body_face_slots: Vec::new(),
+                    next_record_index: 0,
+                    next_byte_offset: 0,
+                }
+            };
+        let family = [6, 7, 8];
+        let mut operands = vec![
+            operand(1, &recipes[0], Some(5), &[]),
+            operand(2, &recipes[1], None, &[]),
+            operand(3, &recipes[2], None, &family),
+            operand(4, &recipes[3], None, &[]),
+        ];
+
+        assert_eq!(
+            combine_recipe_family_tool_slots(
+                stream,
+                10,
+                &[1, 2, 3, 4],
+                317,
+                1,
+                &operands,
+                &recipes,
+            ),
+            Some(vec![5, 6, 7, 8])
+        );
+
+        operands[1].references[0].preceding_body_slots = vec![6, 7, 9];
+        assert!(combine_recipe_family_tool_slots(
+            stream,
+            10,
+            &[1, 2, 3, 4],
+            317,
+            1,
+            &operands,
+            &recipes,
+        )
+        .is_none());
+
+        operands[1].references[0].preceding_body_slots.clear();
+        let mut duplicate_selector = recipes.clone();
+        duplicate_selector[1].design_selector = duplicate_selector[2].design_selector;
+        assert!(combine_recipe_family_tool_slots(
+            stream,
+            10,
+            &[1, 2, 3, 4],
+            317,
+            1,
+            &operands,
+            &duplicate_selector,
+        )
+        .is_none());
     }
 
     #[test]
