@@ -2359,111 +2359,28 @@ fn complementary_drilled_hole_envelopes_define_axis_placement() {
 }
 
 #[test]
-fn clipped_drilled_hole_envelopes_use_a_common_support_plane() {
+fn one_sided_drilled_hole_envelopes_define_the_missing_radial_coordinate() {
     let corners = [
-        [[-5.0, -14.0, -30.0], [5.0, 20.0, 0.0]],
+        [[-5.0, -15.0, -30.0], [5.0, 20.0, 0.0]],
         [[-5.0, -25.0, -30.0], [5.0, 20.0, 0.0]],
     ];
-    let support = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 2.0, 0.0),
-        normal: Vector3::new(0.0, 1.0, 0.0),
-        u_axis: Vector3::new(0.0, 0.0, 1.0),
-    };
     assert_eq!(
-        drilled_hole_placement_from_supported_corner_envelopes(corners, 10.0, 30.0, &support,),
-        Some((Point3::new(0.0, 2.0, -30.0), Vector3::new(0.0, 0.0, 1.0)))
+        drilled_hole_placement_from_corner_envelopes(corners, 10.0, 30.0),
+        Some((Point3::new(0.0, -20.0, -30.0), Vector3::new(0.0, 0.0, 1.0)))
+    );
+    let common_lower_bound = [
+        [[-5.0, -20.0, -30.0], [5.0, 25.0, 0.0]],
+        [[-5.0, -20.0, -30.0], [5.0, 15.0, 0.0]],
+    ];
+    assert_eq!(
+        drilled_hole_placement_from_corner_envelopes(common_lower_bound, 10.0, 30.0),
+        Some((Point3::new(0.0, 20.0, -30.0), Vector3::new(0.0, 0.0, 1.0)))
     );
 
-    let wrong_support = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(1.0, 0.0, 0.0),
-        u_axis: Vector3::new(0.0, 1.0, 0.0),
-    };
-    assert!(drilled_hole_placement_from_supported_corner_envelopes(
-        corners,
-        10.0,
-        30.0,
-        &wrong_support,
-    )
-    .is_none());
-    let non_finite_support = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, f64::NAN, 0.0),
-        normal: Vector3::new(0.0, 1.0, 0.0),
-        u_axis: Vector3::new(0.0, 0.0, 1.0),
-    };
-    assert!(drilled_hole_placement_from_supported_corner_envelopes(
-        corners,
-        10.0,
-        30.0,
-        &non_finite_support,
-    )
-    .is_none());
-}
-
-#[test]
-fn drilled_hole_cylinder_pair_requires_one_common_support_plane() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
-    let surface_row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
-        id,
-        type_byte: kind.canonical_type_byte(),
-        kind,
-        feature_id: 7,
-        reversed: false,
-        boundary_type: 0,
-        next_surface: 0,
-        offset: id as usize,
-    };
-    scan.surfaces.rows.extend([
-        surface_row(10, crate::surface::SurfaceKind::Cylinder),
-        surface_row(11, crate::surface::SurfaceKind::Cylinder),
-        surface_row(12, crate::surface::SurfaceKind::Plane),
-    ]);
-    let edge = |id, cylinder| crate::curve::CurveTopologyRow {
-        id,
-        type_byte: 0,
-        feature_id: 7,
-        directions: [1, 0xf6],
-        faces: [cylinder, 12],
-        next_edges: [id, id],
-        offset: id as usize,
-    };
-    scan.curves
-        .topology_rows
-        .extend([edge(20, 10), edge(21, 11)]);
-    let plane = SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 2.0, 0.0),
-        normal: Vector3::new(0.0, 1.0, 0.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    };
-    let mut ir = CadIr::empty(Units::default());
-    ir.model.surfaces.push(Surface {
-        id: SurfaceId("creo:visibgeom:surface#12".to_string()),
-        geometry: plane.clone(),
-        source_object: None,
-    });
-
-    assert_eq!(
-        simple_drilled_hole_common_support_plane(&scan, &ir, 7, [10, 11]),
-        Some(&plane)
-    );
-    scan.curves.topology_rows[1].feature_id = 8;
-    assert!(simple_drilled_hole_common_support_plane(&scan, &ir, 7, [10, 11]).is_none());
-    scan.curves.topology_rows[1].feature_id = 7;
-    scan.surfaces
-        .rows
-        .push(surface_row(13, crate::surface::SurfaceKind::Plane));
-    scan.curves
-        .topology_rows
-        .extend([edge(22, 10), edge(23, 11)]);
-    for edge in &mut scan.curves.topology_rows[2..] {
-        edge.faces[1] = 13;
-    }
-    ir.model.surfaces.push(Surface {
-        id: SurfaceId("creo:visibgeom:surface#13".to_string()),
-        geometry: plane,
-        source_object: None,
-    });
-    assert!(simple_drilled_hole_common_support_plane(&scan, &ir, 7, [10, 11]).is_none());
+    let wrong_diameter = [corners[0], [[-5.0, -26.0, -30.0], [5.0, 20.0, 0.0]]];
+    assert!(drilled_hole_placement_from_corner_envelopes(wrong_diameter, 10.0, 30.0).is_none());
+    let no_common_bound = [corners[0], [[-5.0, -25.0, -30.0], [5.0, 19.0, 0.0]]];
+    assert!(drilled_hole_placement_from_corner_envelopes(no_common_bound, 10.0, 30.0).is_none());
 }
 
 #[test]

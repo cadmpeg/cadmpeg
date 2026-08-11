@@ -2821,16 +2821,15 @@ two raw corner pairs have the same signed depth delta. Their first axial
 coordinate is the hole entry coordinate, the radial union midpoint is the hole
 axis position, and the sign of the depth delta is the hole direction.
 
-A clipped cylinder-patch pair can omit the diameter bounds on one radial axis.
-The blind depth remains the unique common span, the two raw corner pairs have
-the same signed depth delta, and the other radial axis has one common span equal
-to the bore diameter. Each cylinder row then meets the same unique plane row
-through a type-0 topology row owned by the hole feature. The transferred plane
-normal aligns exactly with the radial axis whose diameter bounds are omitted.
-The plane origin coordinate on that axis is the missing hole-axis coordinate.
-The midpoint of the common diameter span supplies the other radial coordinate;
-the first axial coordinate and signed depth delta supply the entry coordinate
-and direction as in the complete envelope form.
+A one-sided cylinder-patch pair shares exactly one normalized bound on a radial
+axis. Its two non-shared bounds differ by the bore diameter. The midpoint of
+those non-shared bounds is the hole-axis coordinate on that radial axis. The
+other radial axis has one common span equal to the bore diameter and supplies
+its midpoint. The blind depth remains the unique common axial span, and the two
+raw corner pairs have the same signed depth delta. Their first axial coordinate
+and signed delta supply the hole entry coordinate and direction as in the
+complementary form. Pairs whose non-shared bounds do not differ by the bore
+diameter do not supply placement.
 
 When the cylinder envelope is available, complete three-row class-911 tables
 whose diameter and depth do not match it do not participate in template

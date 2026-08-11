@@ -20727,7 +20727,7 @@ fn schema_feature_definition(
             drilled_table
                 .zip(drilled_dimensions)
                 .and_then(|(table, (diameter, _, depth))| {
-                    simple_drilled_hole_placement(scan, ir, table, diameter, depth)
+                    simple_drilled_hole_placement(scan, table, diameter, depth)
                 });
         let placement = feature_outline_planes(scan, feature_id).and_then(hole_placement);
         let compact_cylinder_id = compact_simple_hole_cylinder_id(
@@ -22041,14 +22041,14 @@ fn simple_drilled_hole_envelope_spans(
     scan: &ContainerScan,
     table: &crate::feature::FeatureEntityTable,
 ) -> Option<[[Option<f64>; 2]; 3]> {
-    let [(_, first), (_, second)] = simple_drilled_hole_corner_envelopes(scan, table)?;
+    let [first, second] = simple_drilled_hole_corner_envelopes(scan, table)?;
     paired_corner_envelope_axis_spans(first, second)
 }
 
 fn simple_drilled_hole_corner_envelopes(
     scan: &ContainerScan,
     table: &crate::feature::FeatureEntityTable,
-) -> Option<[(u32, [[f64; 3]; 2]); 2]> {
+) -> Option<[[[f64; 3]; 2]; 2]> {
     let feature_id = table.feature_id?;
     let envelopes = table
         .surface_ids
@@ -22059,11 +22059,8 @@ fn simple_drilled_hole_corner_envelopes(
                 .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
         })
         .map(|row| {
-            Some((
-                row.id,
-                unique_surface_parameter_record(scan, row)?
-                    .type24_terminal_corner_envelope(row.type_byte)?,
-            ))
+            unique_surface_parameter_record(scan, row)?
+                .type24_terminal_corner_envelope(row.type_byte)
         })
         .collect::<Option<Vec<_>>>()?;
     let [first, second] = envelopes.as_slice() else {
@@ -22074,23 +22071,12 @@ fn simple_drilled_hole_corner_envelopes(
 
 fn simple_drilled_hole_placement(
     scan: &ContainerScan,
-    ir: &CadIr,
     table: &crate::feature::FeatureEntityTable,
     diameter: f64,
     depth: f64,
 ) -> Option<(Point3, Vector3)> {
-    let [(first_id, first), (second_id, second)] =
-        simple_drilled_hole_corner_envelopes(scan, table)?;
-    let corners = [first, second];
-    drilled_hole_placement_from_corner_envelopes(corners, diameter, depth).or_else(|| {
-        let plane = simple_drilled_hole_common_support_plane(
-            scan,
-            ir,
-            table.feature_id?,
-            [first_id, second_id],
-        )?;
-        drilled_hole_placement_from_supported_corner_envelopes(corners, diameter, depth, plane)
-    })
+    let corners = simple_drilled_hole_corner_envelopes(scan, table)?;
+    drilled_hole_placement_from_corner_envelopes(corners, diameter, depth)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -22230,117 +22216,58 @@ fn drilled_hole_placement_from_corner_envelopes(
             drilled_hole_layout_span(&layout, radial_axis),
         )
     });
-    ((radial_forms[0].0 && radial_forms[1].1) || (radial_forms[0].1 && radial_forms[1].0))
-        .then_some(())?;
-    radial_forms
-        .iter()
-        .all(|(_, _, radial_span)| drilled_hole_layout_close(&layout, *radial_span, diameter))
-        .then_some(())?;
-    let radial_coordinates = layout.radial.map(|radial_axis| {
-        f64::midpoint(
-            layout.intervals[0][radial_axis][0].min(layout.intervals[1][radial_axis][0]),
-            layout.intervals[0][radial_axis][1].max(layout.intervals[1][radial_axis][1]),
-        )
-    });
-    Some(drilled_hole_layout_placement(&layout, radial_coordinates))
-}
-
-fn simple_drilled_hole_common_support_plane<'a>(
-    scan: &ContainerScan,
-    ir: &'a CadIr,
-    feature_id: u32,
-    cylinder_ids: [u32; 2],
-) -> Option<&'a SurfaceGeometry> {
-    let rows = scan
-        .surfaces
-        .rows
-        .iter()
-        .map(|row| (row.id, row))
-        .collect::<BTreeMap<_, _>>();
-    let mut support_planes = cylinder_ids.map(|id| (id, BTreeSet::new()));
-    for edge in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
-        if edge.feature_id != feature_id || edge.type_byte != 0 {
-            continue;
-        }
-        for (cylinder_id, planes) in &mut support_planes {
-            let other = match edge.faces {
-                [left, right] if left == *cylinder_id => right,
-                [left, right] if right == *cylinder_id => left,
-                _ => continue,
-            };
-            if rows
-                .get(&other)
-                .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
-            {
-                planes.insert(other);
-            }
-        }
+    let complementary =
+        (radial_forms[0].0 && radial_forms[1].1) || (radial_forms[0].1 && radial_forms[1].0);
+    if complementary
+        && radial_forms
+            .iter()
+            .all(|(_, _, span)| drilled_hole_layout_close(&layout, *span, diameter))
+    {
+        let radial_coordinates = layout.radial.map(|radial_axis| {
+            f64::midpoint(
+                layout.intervals[0][radial_axis][0].min(layout.intervals[1][radial_axis][0]),
+                layout.intervals[0][radial_axis][1].max(layout.intervals[1][radial_axis][1]),
+            )
+        });
+        return Some(drilled_hole_layout_placement(&layout, radial_coordinates));
     }
-    let [(_, first), (_, second)] = support_planes;
-    let common = first.intersection(&second).copied().collect::<Vec<_>>();
-    let [plane_id] = common.as_slice() else {
-        return None;
-    };
-    let id = SurfaceId(format!("creo:visibgeom:surface#{plane_id}"));
-    ir.model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == id)
-        .map(|surface| &surface.geometry)
-}
 
-fn drilled_hole_placement_from_supported_corner_envelopes(
-    corners: [[[f64; 3]; 2]; 2],
-    diameter: f64,
-    depth: f64,
-    support: &SurfaceGeometry,
-) -> Option<(Point3, Vector3)> {
-    let layout = drilled_hole_envelope_layout(corners, diameter, depth)?;
-    let SurfaceGeometry::Plane { origin, normal, .. } = support else {
-        return None;
+    let nonshared_bounds = layout.radial.map(|radial_axis| {
+        let intervals = layout.intervals.map(|patch| patch[radial_axis]);
+        match (
+            drilled_hole_layout_close(&layout, intervals[0][0], intervals[1][0]),
+            drilled_hole_layout_close(&layout, intervals[0][1], intervals[1][1]),
+        ) {
+            (true, false) => Some([intervals[0][1], intervals[1][1]]),
+            (false, true) => Some([intervals[0][0], intervals[1][0]]),
+            _ => None,
+        }
+    });
+    let common_diameter = layout.radial.map(|radial_axis| {
+        drilled_hole_layout_shared(&layout, radial_axis)
+            && drilled_hole_layout_close(
+                &layout,
+                drilled_hole_layout_span(&layout, radial_axis),
+                diameter,
+            )
+    });
+    let (clipped_index, [first, second]) = match (common_diameter, nonshared_bounds) {
+        ([true, false], [None, Some(bounds)]) => (1, bounds),
+        ([false, true], [Some(bounds), None]) => (0, bounds),
+        _ => return None,
     };
-    let normal = normalized([normal.x, normal.y, normal.z])?;
-    let support_axes = (0..3)
-        .filter(|axis| {
-            normal[*axis].abs() >= 1.0 - 1e-9
-                && (0..3).all(|other| other == *axis || normal[other].abs() <= 1e-9)
-        })
-        .collect::<Vec<_>>();
-    let [support_axis] = support_axes.as_slice() else {
-        return None;
-    };
-    (*support_axis != layout.axis).then_some(())?;
-    let proven_radial = layout
-        .radial
-        .into_iter()
-        .filter(|radial_axis| {
-            *radial_axis != *support_axis
-                && drilled_hole_layout_shared(&layout, *radial_axis)
-                && drilled_hole_layout_close(
-                    &layout,
-                    drilled_hole_layout_span(&layout, *radial_axis),
-                    diameter,
-                )
-        })
-        .collect::<Vec<_>>();
-    let [proven_radial] = proven_radial.as_slice() else {
-        return None;
-    };
-    let support_coordinate = [origin.x, origin.y, origin.z][*support_axis];
-    support_coordinate.is_finite().then_some(())?;
-    let mut radial_coordinates = [0.0; 2];
-    for (index, radial_axis) in layout.radial.into_iter().enumerate() {
-        radial_coordinates[index] = if radial_axis == *proven_radial {
+    drilled_hole_layout_close(&layout, (first - second).abs(), diameter).then_some(())?;
+    let radial_coordinates = std::array::from_fn(|index| {
+        let radial_axis = layout.radial[index];
+        if index == clipped_index {
+            f64::midpoint(first, second)
+        } else {
             f64::midpoint(
                 layout.intervals[0][radial_axis][0],
                 layout.intervals[0][radial_axis][1],
             )
-        } else if radial_axis == *support_axis {
-            support_coordinate
-        } else {
-            return None;
-        };
-    }
+        }
+    });
     Some(drilled_hole_layout_placement(&layout, radial_coordinates))
 }
 

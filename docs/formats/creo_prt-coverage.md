@@ -241,11 +241,10 @@ fixtures, claims above L1 remain unproven.
   recipe groups, and exact `f7 17` compound-close trailers terminate the
   corner frame. Complementary half-cylinder envelopes with one common radial
   diameter, one adjacent-union radial diameter, and one common blind-depth span
-  supply the hole position and signed direction. A clipped pair with one common
-  radial diameter and one common blind-depth span uses the unique common
-  feature-owned type-0 support plane when its transferred normal aligns with
-  the omitted radial axis; the plane coordinate supplies the missing position
-  component.
+  supply the hole position and signed direction. A one-sided pair with one
+  common radial diameter and one common blind-depth span supplies the other
+  radial coordinate when the patches share exactly one normalized bound and
+  their two non-shared bounds differ by the bore diameter.
 - Fill boundaries use the unique feature-bound section transform when present
   and otherwise the unique feature-owned section definition. The sketch
   identity remains available when its placement or profile geometry is
