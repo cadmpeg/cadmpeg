@@ -3,12 +3,6 @@
 //!
 //! An export whose report carries no losses must decode back to an IR that
 //! [`cadmpeg_ir::diff`] reports as empty against the pre-write document.
-//!
-//! Prefer `fidelity: None` (semantic synthesis). On this fixture set that path
-//! always records losses (`PreservedSourceUnavailable` and native passthrough
-//! warnings), so the retained-fidelity no-loss path — usually
-//! [`WritePath::VerbatimReplay`] — is what keeps the invariant non-vacuous.
-//! Refusals and lossy semantic exports stay pinned by the encode golden.
 
 use std::io::Cursor;
 
@@ -65,8 +59,6 @@ fn lossless_exports_round_trip_to_identical_ir() {
         else {
             continue;
         };
-        // Semantic path first (plan). Fall back to retained fidelity so the
-        // invariant stays non-vacuous on this fixture set.
         if try_lossless_round_trip(&stem, &decoded.ir, &decoded.ir, None)
             || try_lossless_round_trip(
                 &stem,

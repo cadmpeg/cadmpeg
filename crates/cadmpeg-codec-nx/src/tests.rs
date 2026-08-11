@@ -4,14 +4,8 @@
 //! byte image whose bytes exercise the real SPLMSSTR container parse, the
 //! Parasolid zlib extraction/classification, and the analytic geometry decode,
 //! and fail if the code regresses.
-//!
-//! JT codec primitives live in `jt` / `jt_topology`. OM wire parsers live in
-//! `om`. Feature-completeness predicates live in `decode`.
 #![allow(clippy::unwrap_used)]
-#![allow(
-    clippy::default_trait_access,
-    reason = "Test fixtures use type-inferred defaults for compact record construction."
-)]
+#![allow(clippy::default_trait_access)]
 
 use std::io::Cursor;
 
@@ -9719,10 +9713,7 @@ mod golden {
 
     use super::*;
 
-    /// Every arena name production writes via the native catalogue, extracted
-    /// mechanically. This is the coverage denominator; `arena_coverage_is_a_subset`
-    /// fails if production introduces an arena name this list does not know, which
-    /// keeps the denominator honest as the code evolves.
+    /// Arena names the native catalogue can emit; coverage denominator.
     const KNOWN_ARENAS: &[&str] = &[
         "class_definitions",
         "configuration_attribute_uses",
@@ -9956,17 +9947,10 @@ mod golden {
         "string_values",
     ];
 
-    /// A floor on distinct arenas the golden fixtures collectively populate.
-    /// Frozen from the generated snapshots; if a refactor drops an arena from
-    /// every fixture, `arena_coverage_meets_floor` fails. Raise it (never lower
-    /// it) when new covering fixtures are added.
+    /// Minimum distinct arenas the golden fixtures must collectively populate.
     const ARENA_COVERAGE_FLOOR: usize = 122;
 
-    /// Build the covering fixture set: `(golden name, full `.prt` bytes)`. Each
-    /// stream builder is wrapped exactly as its originating white-box test wraps
-    /// it (`prt_with_partition` for a lone partition, `prt_with_streams` for a
-    /// partition paired with an equal-schema deltas stream, `prt_with_named_payloads`
-    /// for an OM record area), so the bytes exercise the real decode path.
+    /// Covering fixture set as `(golden name, full `.prt` bytes)`.
     fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
         let mut f: Vec<(&'static str, Vec<u8>)> = Vec::new();
 

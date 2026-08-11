@@ -186,10 +186,7 @@ where
         .iter()
         .filter_map(|(id, before)| {
             let after = right.get(id)?;
-            // Exact equality is the fast path and skips serializing the pair.
-            // Anything else goes to the tolerant field comparison, which decides
-            // whether the entity moved at all: an empty field list means every
-            // difference was below the tolerance.
+            // Empty differing_fields means every difference was below tolerance.
             if *before == *after {
                 return None;
             }

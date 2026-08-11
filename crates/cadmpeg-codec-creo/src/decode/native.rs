@@ -2,11 +2,9 @@
 //! Native-arena emission layer for the `creo` namespace.
 //!
 //! `build_ir` preserves each undecoded source structure as a typed record and
-//! publishes it into a source-format namespace. Every publish is the same three
-//! steps: attach per-record provenance annotations, bump the namespace schema
-//! version, and serialize the records under a stable arena key. This module owns
-//! that path so the ~60 emission sites route through one audited helper instead
-//! of one hand-copied block each.
+//! publishes it into a source-format namespace. Every publish attaches
+//! per-record provenance annotations, bumps the namespace schema version, and
+//! serializes the records under a stable arena key.
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -15,17 +13,12 @@ use cadmpeg_ir::Exactness;
 use serde::Serialize;
 
 /// Schema version stamped on the `creo` namespace whenever any arena is stored.
-///
-/// A single constant so the emission layer never disagrees with itself about the
-/// namespace version, which the sldprt sibling crate mirrors with its own const.
 const CREO_NATIVE_VERSION: u32 = 1;
 
-/// Every native arena key `build_ir` and `attach_expanded_sections` may populate.
+/// Native arena keys `build_ir` and `attach_expanded_sections` may populate.
 ///
-/// The audit surface for the emission layer: [`store_arena`] asserts the key it
-/// is handed appears here, so registering a new arena is a one-line addition and
-/// a stray key is caught in debug builds. Order is documentation only; arenas are
-/// sorted by identity at store time.
+/// [`store_arena`] asserts the key appears here. Order is documentation only;
+/// arenas are sorted by identity at store time.
 const CREO_ARENAS: &[&str] = &[
     "expanded_sections",
     "double_xar_tables",
@@ -162,16 +155,9 @@ where
 
 /// Emit an arena whose provenance comes entirely from each record's own fields.
 ///
-/// Most arenas annotate one note per record from a record identity, a source
-/// stream, and a source offset, all read off the record itself, under an
-/// arena-wide tag and exactness. This is that case: `id`, `stream`, and `offset`
-/// select the fields, and the remaining arguments are the per-arena constants.
 /// Sites whose provenance is not a function of the record alone stay on
 /// [`emit_arena`].
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Each argument is one axis of per-arena variation."
-)]
+#[expect(clippy::too_many_arguments)]
 pub(super) fn emit_uniform<T: Serialize>(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,

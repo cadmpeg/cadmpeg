@@ -402,7 +402,7 @@ fn check_anchor(
     }
 }
 
-#[allow(clippy::too_many_lines)] // One rule per block; splitting hides the checklist.
+#[allow(clippy::too_many_lines)]
 fn validate(ctx: &mut Context, path: &Path, file: &LayoutFile) -> Vec<String> {
     let mut errors = Vec::new();
     let where_file = path.file_name().unwrap().to_string_lossy().to_string();

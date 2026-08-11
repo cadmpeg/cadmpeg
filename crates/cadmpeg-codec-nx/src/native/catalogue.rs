@@ -5,9 +5,6 @@
 //! tag, exactness, and `note` fn. Note-bearing row order is the annotation
 //! emission order; `phase` splits semantic islands for [`super::attach`].
 //! Stream choice (`nx:container` vs `nx:s{ordinal}`) lives in the `note` fn.
-//!
-//! This module is the IR-write boundary for native catalogue rows; domain
-//! modules and `model.rs` do not reference `cadmpeg_ir`.
 
 use serde::Serialize;
 

@@ -19292,10 +19292,7 @@ fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
     );
 }
 
-#[allow(
-    clippy::large_stack_arrays,
-    reason = "This dependency fixture keeps the scope records inline to show their source order."
-)]
+#[allow(clippy::large_stack_arrays)]
 #[test]
 fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
     let parameter = |owner, record_index, expression: &str, name: &str| {
@@ -22482,10 +22479,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ));
 }
 
-#[allow(
-    clippy::large_stack_arrays,
-    reason = "This projection fixture keeps the scope records inline to show dependency order."
-)]
+#[allow(clippy::large_stack_arrays)]
 #[test]
 fn parameter_expressions_project_feature_dependencies() {
     let parameter = |owner_record_index, record_index, name: &str, expression: &str| {
@@ -24413,10 +24407,7 @@ fn assembly_operand_frame_fixture(scope_record_index: u32) -> Vec<u8> {
     bytes
 }
 
-#[allow(
-    clippy::large_stack_arrays,
-    reason = "This pattern fixture keeps the decoded scope records inline for frame assertions."
-)]
+#[allow(clippy::large_stack_arrays)]
 #[test]
 fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     fn append_header(bytes: &mut Vec<u8>, record_index: u32) {

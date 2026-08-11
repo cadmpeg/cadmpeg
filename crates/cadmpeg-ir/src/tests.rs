@@ -6356,9 +6356,8 @@ fn reference_images_require_valid_assets_and_plane_placements() {
     }));
 }
 
-/// Normalize the way the codecs did before the digest streamed: copy the whole
-/// document, order it, drop the recorded digest and the retained source image,
-/// and hash the serialized string.
+/// Copy the document, finalize order, drop the recorded digest and retained
+/// source image, and hash the serialized string.
 fn cloned_local_digest(ir: &CadIr, format: &str, source_image_id: &str) -> String {
     let mut normalized = ir.clone();
     normalized.finalize();

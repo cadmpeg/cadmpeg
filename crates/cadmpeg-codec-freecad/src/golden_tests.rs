@@ -10,9 +10,6 @@
 //! `tests/golden/decode/` pins the decoded document: the IR, the decode
 //! report's losses, and source fidelity. A feature-typing or loss-accounting
 //! change moves the decode branch; inspect cannot see it.
-//!
-//! [`cadmpeg_core::golden`] holds the shared harness; this module supplies only
-//! this codec's branches.
 
 use std::collections::BTreeSet;
 use std::io::Cursor;

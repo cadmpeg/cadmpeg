@@ -21232,8 +21232,6 @@ fn generated_revision_compound_loft_rejects_present_parameters_without_a_curve()
             ProceduralSurfaceDefinition::RevisionCompoundLoft { .. }
         )));
 
-    // The writer refuses the same state rather than emitting bytes no reader
-    // can recover the curve from.
     let legal = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh(&synthetic_revision_surface_smbh(

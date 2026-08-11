@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IR-writing attachment of the native object model.
-//!
-//! Sole IR-mutation surface inside `native/`: walks [`NativeModel`], emits
-//! source annotations, serializes arenas, and attaches semantic islands.
-//! Domain modules, `model.rs`, and `catalogue.rs` never write IR.
 
 use std::collections::{BTreeMap, BTreeSet};
 

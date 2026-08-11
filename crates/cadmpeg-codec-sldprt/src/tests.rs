@@ -11180,10 +11180,6 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
     assert_eq!(depth.dependencies, vec![width.id.clone()]);
     assert_eq!(depth.value, Some(ParameterValue::Length(Length(8.0))));
 
-    // Edit both arenas so the write path enters `sync_neutral_features` (which
-    // checks the retained tree-node role) and `sync_neutral_parameters` (which
-    // recomputes dependency edges against the global-owner set) instead of the
-    // unchanged-baseline short circuits.
     let extrusion = decoded
         .ir
         .model
@@ -14022,10 +14018,6 @@ fn semantic_writer_round_trips_extrusion_with_unrecognized_end_condition() {
         }
     ));
 
-    // The retained record still spells the draft angle as authored; only the
-    // neutral write path canonicalizes it to radians. Asserting both spellings
-    // proves this round trip reached `sync_neutral_features` instead of the
-    // unchanged-baseline short circuit.
     assert_eq!(
         sldprt_native(&decoded.ir).feature_histories[0].features[0].parameters["Draft"],
         "3deg"

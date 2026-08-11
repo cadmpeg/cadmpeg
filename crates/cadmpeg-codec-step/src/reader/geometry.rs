@@ -3772,10 +3772,7 @@ fn nurbs_pcurve(
     })
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "The recursive STEP curve resolver needs each dimension-specific entity table and its cycle guard."
-)]
+#[allow(clippy::too_many_arguments)]
 fn decode_pcurve_geometry(
     id: u64,
     exchange: &Exchange,

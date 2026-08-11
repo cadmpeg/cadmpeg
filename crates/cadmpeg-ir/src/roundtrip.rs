@@ -10,8 +10,6 @@
 //! - [`semantic_roundtrip`] — baseline removed; copy must not happen.
 //! - [`mutation_roundtrip`] — baseline kept, one value edited; asserts the
 //!   named write path and that the edit survives.
-//!
-//! Lives here because it drives [`Encoder`]; `cadmpeg-core` cannot name that.
 
 use cadmpeg_core::CodecError;
 

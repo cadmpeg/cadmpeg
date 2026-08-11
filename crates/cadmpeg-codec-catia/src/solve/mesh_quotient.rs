@@ -1378,10 +1378,7 @@ impl MeshQuotient {
         }
     }
 
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "Coordinate-root closure receives independent topology arenas and monotonic result flags."
-    )]
+    #[allow(clippy::too_many_arguments)]
     fn close_coordinate_roots_with_incidence(
         &mut self,
         point_count: usize,

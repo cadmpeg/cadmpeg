@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::items_after_test_module,
-    reason = "Feature projection helpers are grouped by operation after their focused form tests."
-)]
+#![allow(clippy::items_after_test_module)]
 //! Project parameter-design features and dispatch per feature family.
 
 use crate::bytes::lp_utf16_bounded;

@@ -4464,9 +4464,7 @@ fn bind_ordered_standard_curve_branches_for_group(
 }
 
 /// Apply the ranked-family phases to one branch group without materializing a
-/// full candidate matrix for every group. The focused helper above is kept for
-/// the standalone tests and for the general all-edge binding path; the mesh
-/// solver supplies one group at a time and only needs the line/B-spline phases.
+/// full candidate matrix for every group.
 fn bind_standard_curve_branch_group(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     candidates: &mut [Vec<[usize; 2]>],
