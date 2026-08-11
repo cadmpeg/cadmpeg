@@ -725,6 +725,47 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
 }
 
 #[test]
+fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
+    let mut profile = native_history().features.remove(0);
+    profile.parameters = [
+        ("a".into(), "6".into()),
+        ("b".into(), "<MOD-DIAM>6.4".into()),
+        ("c".into(), "<MOD-DIAM>13.2".into()),
+        ("d".into(), "90°".into()),
+    ]
+    .into_iter()
+    .collect();
+    let sketch = SketchId("profile".into());
+    let entities = |terminal| {
+        [
+            profile_line(&sketch, 0, Point2::new(0.0, 6.6), Point2::new(-3.4, 3.2)),
+            profile_line(
+                &sketch,
+                1,
+                Point2::new(-3.4, 3.2),
+                Point2::new(terminal, 3.2),
+            ),
+        ]
+    };
+
+    for terminal in [-6.0, -6.001] {
+        let construction = profiled_hole_construction(&profile, &sketch, &entities(terminal))
+            .expect("exact profile");
+        assert_eq!(construction.diameter, Length(6.4));
+        assert_eq!(construction.extent, Termination::ThroughAll);
+        assert_eq!(
+            construction.kind,
+            HoleKind::Countersink {
+                diameter: Length(13.2),
+                angle: Angle(std::f64::consts::FRAC_PI_2),
+            }
+        );
+        assert_eq!(construction.bottom, None);
+    }
+    assert!(profiled_hole_construction(&profile, &sketch, &entities(-6.002)).is_none());
+}
+
+#[test]
 fn incomplete_axial_profile_does_not_assign_dimension_roles() {
     let mut profile = native_history().features.remove(0);
     profile.parameters = [

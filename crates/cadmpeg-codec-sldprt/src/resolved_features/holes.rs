@@ -544,6 +544,7 @@ struct ProfiledHoleConstruction {
 }
 
 const DISPLAY_DIMENSION_TOLERANCE_MM: f64 = 1.0e-5;
+const GENERATED_PROFILE_TERMINAL_OVERRUN_MM: f64 = 0.001;
 
 fn profiled_hole_construction(
     profile: &crate::records::Feature,
@@ -744,6 +745,33 @@ fn profiled_hole_construction(
                 let [depth] = lengths.as_slice() else {
                     continue;
                 };
+                if let [sink_angle] = angles.as_slice() {
+                    let setback = (entry_radius - bore_radius) / (sink_angle / 2.0).tan();
+                    if !setback.is_finite() {
+                        continue;
+                    }
+                    let entry = point(0.0, entry_radius);
+                    let bore_start = point(-setback, bore_radius);
+                    let bore_end = point(-depth, bore_radius);
+                    let overrun_bore_end =
+                        point(-depth - GENERATED_PROFILE_TERMINAL_OVERRUN_MM, bore_radius);
+                    if has_line(entry, bore_start)
+                        && (has_line(bore_start, bore_end)
+                            || has_line(bore_start, overrun_bore_end))
+                    {
+                        return Some(ProfiledHoleConstruction {
+                            diameter: Length(*diameter),
+                            extent: Termination::ThroughAll,
+                            kind: HoleKind::Countersink {
+                                diameter: Length(*entry_diameter),
+                                angle: Angle(*sink_angle),
+                            },
+                            bottom: None,
+                            taper_angle: None,
+                        });
+                    }
+                    continue;
+                }
                 let [first_angle, second_angle] = angles.as_slice() else {
                     continue;
                 };
