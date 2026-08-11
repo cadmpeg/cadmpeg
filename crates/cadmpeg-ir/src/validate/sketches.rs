@@ -117,6 +117,7 @@ fn sketch_curve_offset_matches(
     source: &SketchGeometry,
     result: &SketchGeometry,
     expected: f64,
+    linear_tolerance: f64,
 ) -> bool {
     if let (
         SketchGeometry::Arc {
@@ -172,6 +173,14 @@ fn sketch_curve_offset_matches(
             && (source_center.v - result_center.v).abs() <= 1.0e-9 * scale
             && (source_sweep.signum() * (source_radius.0 - result_radius.0) - expected).abs()
                 <= 1.0e-9 * scale;
+    }
+
+    if let Some(distance) =
+        crate::eval::fitted_nurbs_offset_frame_distance(source, result, linear_tolerance)
+    {
+        let scale = 1.0 + distance.abs().max(expected.abs());
+        return expected.is_finite()
+            && (distance - expected).abs() <= linear_tolerance.max(1.0e-9 * scale);
     }
 
     let (
@@ -1648,7 +1657,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         } else {
                             distance.0
                         };
-                        sketch_curve_offset_matches(source, result, expected)
+                        sketch_curve_offset_matches(source, result, expected, ir.tolerances.linear)
                     });
                 if !valid {
                     finding(
@@ -1886,11 +1895,17 @@ mod tests {
         let trimmed_result = arc(5.0, 0.1, 1.4);
         let disjoint_result = arc(5.0, std::f64::consts::PI, 3.0 * std::f64::consts::FRAC_PI_2);
 
-        assert!(sketch_curve_offset_matches(&source, &trimmed_result, -3.0,));
+        assert!(sketch_curve_offset_matches(
+            &source,
+            &trimmed_result,
+            -3.0,
+            1.0e-6,
+        ));
         assert!(!sketch_curve_offset_matches(
             &source,
             &disjoint_result,
             -3.0,
+            1.0e-6,
         ));
     }
 }

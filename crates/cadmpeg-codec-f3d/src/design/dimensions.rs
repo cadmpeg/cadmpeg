@@ -470,6 +470,7 @@ fn project_all_dimension_constraints(
                     &group.return_members,
                     &entities_by_record,
                     &secondary_ids,
+                    linear_tolerance,
                 )?;
                 let Definition::Offset {
                     distance,
@@ -4485,6 +4486,7 @@ pub(crate) fn exact_counted_offset(
     return_members: &[u32],
     entities: &HashMap<u32, &cadmpeg_ir::sketches::SketchEntity>,
     secondary_ids: &HashMap<u32, u64>,
+    linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::features::Length;
     use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchOffsetPair};
@@ -4539,7 +4541,13 @@ pub(crate) fn exact_counted_offset(
         }
         let source = entities.get(source_record_index)?;
         let result = entities.get(result_record_index)?;
-        let distance = sketch_curve_offset(&source.geometry, &result.geometry)?;
+        let distance = sketch_curve_offset(&source.geometry, &result.geometry).or_else(|| {
+            cadmpeg_ir::eval::fitted_nurbs_offset_frame_distance(
+                &source.geometry,
+                &result.geometry,
+                linear_tolerance,
+            )
+        })?;
         if distance.abs() <= 1.0e-9 {
             return None;
         }

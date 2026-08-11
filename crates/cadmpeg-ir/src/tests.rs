@@ -789,6 +789,151 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
 }
 
 #[test]
+fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
+    use crate::features::Length;
+    use crate::math::{Point2, Point3, Vector3};
+    use crate::sketches::{
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+        SketchEntityId, SketchGeometry, SketchId, SketchOffsetPair,
+    };
+
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    let sketch = SketchId("synthetic:test:sketch#nurbs-offset".into());
+    ir.model.sketches.push(Sketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        placement: crate::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        profiles: Vec::new(),
+        native_ref: None,
+    });
+    let source = SketchEntityId("synthetic:test:nurbs#source".into());
+    let result = SketchEntityId("synthetic:test:nurbs#result".into());
+    let result_start = Point2::new(-1.2, 1.6);
+    let result_end = Point2::new(10.0 + 2.0 / 5.0_f64.sqrt(), 4.0 / 5.0_f64.sqrt());
+    ir.model.sketch_entities.extend([
+        SketchEntity {
+            id: source.clone(),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Nurbs {
+                degree: 2,
+                knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                control_points: vec![
+                    Point2::new(0.0, 0.0),
+                    Point2::new(4.0, 3.0),
+                    Point2::new(10.0, 0.0),
+                ],
+                weights: None,
+                periodic: false,
+            },
+        },
+        SketchEntity {
+            id: result.clone(),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Nurbs {
+                degree: 3,
+                knots: vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+                control_points: vec![
+                    result_start,
+                    Point2::new(result_start.u + 2.0, result_start.v + 1.5),
+                    Point2::new(result_end.u - 3.0, result_end.v + 1.5),
+                    result_end,
+                ],
+                weights: None,
+                periodic: false,
+            },
+        },
+    ]);
+    let constraint = SketchConstraintId("synthetic:test:constraint#nurbs-offset".into());
+    ir.model.sketch_constraints.push(SketchConstraint {
+        id: constraint.clone(),
+        sketch,
+        definition: SketchConstraintDefinition::Offset {
+            pairs: vec![SketchOffsetPair {
+                source: source.clone(),
+                result: result.clone(),
+                source_reversed: false,
+            }],
+            distance: Length(2.0),
+            parameter: None,
+            parameter_factor: None,
+        },
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: None,
+    });
+    ir.finalize();
+    let source_ordinal = ir
+        .model
+        .sketch_entities
+        .iter()
+        .position(|entity| entity.id == source)
+        .expect("source entity");
+    let result_ordinal = ir
+        .model
+        .sketch_entities
+        .iter()
+        .position(|entity| entity.id == result)
+        .expect("result entity");
+    let offset_mismatch = |report: &crate::report::ValidationReport| {
+        report.findings.iter().any(|finding| {
+            finding.entity.as_deref() == Some(constraint.0.as_str())
+                && finding
+                    .message
+                    .contains("offset pair does not match its oriented distance")
+        })
+    };
+    assert!(!offset_mismatch(&validate(&ir, Vec::new())));
+
+    {
+        let SketchGeometry::Nurbs { control_points, .. } =
+            &mut ir.model.sketch_entities[result_ordinal].geometry
+        else {
+            unreachable!("test result is a NURBS")
+        };
+        control_points.reverse();
+    }
+    let reversed_distance = crate::eval::fitted_nurbs_offset_frame_distance(
+        &ir.model.sketch_entities[source_ordinal].geometry,
+        &ir.model.sketch_entities[result_ordinal].geometry,
+        ir.tolerances.linear,
+    )
+    .expect("reversed fitted offset frame");
+    assert!(
+        (reversed_distance - 2.0).abs() <= 1.0e-9,
+        "reversed fitted offset distance {reversed_distance}"
+    );
+    assert!(!offset_mismatch(&validate(&ir, Vec::new())));
+    let SketchGeometry::Nurbs { control_points, .. } =
+        &mut ir.model.sketch_entities[result_ordinal].geometry
+    else {
+        unreachable!("test result is a NURBS")
+    };
+    control_points.reverse();
+    control_points.last_mut().expect("result endpoint").u += 0.01;
+    assert!(offset_mismatch(&validate(&ir, Vec::new())));
+}
+
+#[test]
 fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
     use crate::features::{Length, ParameterId};
     use crate::math::{Point2, Point3, Vector3};

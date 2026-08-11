@@ -1721,6 +1721,162 @@ pub fn nurbs_pcurve_uv(
         .map(|differential| differential.point)
 }
 
+/// Return the signed endpoint-frame offset between two fitted sketch NURBS.
+///
+/// Both curves must be nonperiodic and clamped. Their corresponding endpoint
+/// tangents must be parallel, and both result endpoints must have the same
+/// normal displacement from the source. The result curve can have the opposite
+/// stored traversal and can use a different degree or knot vector. This checks
+/// the boundary-frame invariant of a fitted offset relation; it does not assert
+/// pointwise equality between independently fitted interior parameterizations.
+pub fn fitted_nurbs_offset_frame_distance(
+    source: &crate::sketches::SketchGeometry,
+    result: &crate::sketches::SketchGeometry,
+    linear_tolerance: f64,
+) -> Option<f64> {
+    use crate::sketches::SketchGeometry;
+
+    if !linear_tolerance.is_finite() || linear_tolerance < 0.0 {
+        return None;
+    }
+    let (
+        SketchGeometry::Nurbs {
+            degree: source_degree,
+            knots: source_knots,
+            control_points: source_points,
+            weights: source_weights,
+            periodic: false,
+        },
+        SketchGeometry::Nurbs {
+            degree: result_degree,
+            knots: result_knots,
+            control_points: result_points,
+            weights: result_weights,
+            periodic: false,
+        },
+    ) = (source, result)
+    else {
+        return None;
+    };
+    let source_frames = clamped_nurbs_pcurve_endpoint_frames(
+        *source_degree,
+        source_knots,
+        source_points,
+        source_weights.as_deref(),
+    )?;
+    let result_frames = clamped_nurbs_pcurve_endpoint_frames(
+        *result_degree,
+        result_knots,
+        result_points,
+        result_weights.as_deref(),
+    )?;
+    let same = fitted_nurbs_offset_candidate(source_frames, result_frames, linear_tolerance);
+    let reversed = fitted_nurbs_offset_candidate(
+        source_frames,
+        [
+            (
+                result_frames[1].0,
+                Point2::new(-result_frames[1].1.u, -result_frames[1].1.v),
+            ),
+            (
+                result_frames[0].0,
+                Point2::new(-result_frames[0].1.u, -result_frames[0].1.v),
+            ),
+        ],
+        linear_tolerance,
+    );
+    match (same, reversed) {
+        (Some(distance), None) | (None, Some(distance)) => Some(distance),
+        _ => None,
+    }
+}
+
+fn clamped_nurbs_pcurve_endpoint_frames(
+    degree: u32,
+    knots: &[f64],
+    control_points: &[Point2],
+    weights: Option<&[f64]>,
+) -> Option<[(Point2, Point2); 2]> {
+    let [lower, upper] = nurbs_pcurve_parameter_domain(degree, knots, control_points.len())?;
+    let degree = usize::try_from(degree).ok()?;
+    if degree == 0
+        || control_points.len() < 2
+        || knots.iter().take(degree + 1).any(|knot| *knot != lower)
+        || knots
+            .iter()
+            .skip(control_points.len())
+            .take(degree + 1)
+            .any(|knot| *knot != upper)
+        || weights.is_some_and(|weights| {
+            weights.len() != control_points.len()
+                || weights
+                    .iter()
+                    .any(|weight| !weight.is_finite() || *weight <= 0.0)
+        })
+    {
+        return None;
+    }
+    let start = control_points[0];
+    let end = *control_points.last()?;
+    let start_tangent = control_points
+        .iter()
+        .skip(1)
+        .map(|point| Point2::new(point.u - start.u, point.v - start.v))
+        .find(|tangent| tangent.u.hypot(tangent.v) > 1.0e-12)?;
+    let end_tangent = control_points
+        .iter()
+        .rev()
+        .skip(1)
+        .map(|point| Point2::new(end.u - point.u, end.v - point.v))
+        .find(|tangent| tangent.u.hypot(tangent.v) > 1.0e-12)?;
+    Some([(start, start_tangent), (end, end_tangent)])
+}
+
+fn fitted_nurbs_offset_candidate(
+    source: [(Point2, Point2); 2],
+    result: [(Point2, Point2); 2],
+    linear_tolerance: f64,
+) -> Option<f64> {
+    let mut distances = [0.0; 2];
+    for ordinal in 0..2 {
+        let (source_point, source_tangent) = source[ordinal];
+        let (result_point, result_tangent) = result[ordinal];
+        let source_length = source_tangent.u.hypot(source_tangent.v);
+        let result_length = result_tangent.u.hypot(result_tangent.v);
+        if source_length <= 1.0e-12 || result_length <= 1.0e-12 {
+            return None;
+        }
+        let parallel_error =
+            (source_tangent.u * result_tangent.v - source_tangent.v * result_tangent.u).abs()
+                / (source_length * result_length);
+        if parallel_error > 1.0e-9 {
+            return None;
+        }
+        let offset = Point2::new(
+            result_point.u - source_point.u,
+            result_point.v - source_point.v,
+        );
+        let tangential =
+            (offset.u * source_tangent.u + offset.v * source_tangent.v) / source_length;
+        let coordinate_scale = 1.0
+            + source_point
+                .u
+                .abs()
+                .max(source_point.v.abs())
+                .max(result_point.u.abs())
+                .max(result_point.v.abs());
+        if tangential.abs() > linear_tolerance.max(1.0e-9 * coordinate_scale) {
+            return None;
+        }
+        distances[ordinal] =
+            (-source_tangent.v * offset.u + source_tangent.u * offset.v) / source_length;
+    }
+    let scale = 1.0 + distances[0].abs().max(distances[1].abs());
+    ((distances[0] - distances[1]).abs() <= linear_tolerance.max(1.0e-9 * scale)
+        && distances[0].abs() > linear_tolerance.max(1.0e-9))
+    .then_some((distances[0] + distances[1]) * 0.5)
+}
+
 struct PcurveDifferential {
     point: Point2,
     tangent: Option<Point2>,

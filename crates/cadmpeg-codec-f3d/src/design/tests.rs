@@ -17773,6 +17773,7 @@ fn counted_offset_return_run_pairs_sources_and_results() {
         &[1, 4, 2, 3],
         &entities,
         &HashMap::new(),
+        1.0e-6,
     )
     .expect("counted offset graph");
     let SketchConstraintDefinition::Offset {
@@ -17819,6 +17820,7 @@ fn counted_offset_accepts_primary_to_generated_identity_partition() {
             &[1, 2],
             &entities,
             &secondary_ids,
+            1.0e-6,
         ),
         Some(SketchConstraintDefinition::Offset {
             pairs,
@@ -17831,7 +17833,90 @@ fn counted_offset_accepts_primary_to_generated_identity_partition() {
     ));
 
     let ambiguous_ids = HashMap::from([(1, 0), (2, 0)]);
-    assert!(exact_counted_offset(&[(1, 4), (2, 1)], &[1, 2], &entities, &ambiguous_ids,).is_none());
+    assert!(exact_counted_offset(
+        &[(1, 4), (2, 1)],
+        &[1, 2],
+        &entities,
+        &ambiguous_ids,
+        1.0e-6,
+    )
+    .is_none());
+}
+
+#[test]
+fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
+    let entity = |id: &str, degree, knots, control_points| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: SketchId("generated:sketch#0".into()),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights: None,
+            periodic: false,
+        },
+    };
+    let source = entity(
+        "generated:nurbs#source",
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(4.0, 3.0),
+            Point2::new(10.0, 0.0),
+        ],
+    );
+    let result_start = Point2::new(-1.2, 1.6);
+    let result_end = Point2::new(10.0 + 2.0 / 5.0_f64.sqrt(), 4.0 / 5.0_f64.sqrt());
+    let result = entity(
+        "generated:nurbs#result",
+        3,
+        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        vec![
+            result_start,
+            Point2::new(result_start.u + 2.0, result_start.v + 1.5),
+            Point2::new(result_end.u - 3.0, result_end.v + 1.5),
+            result_end,
+        ],
+    );
+    let entities = HashMap::from([(1, &source), (2, &result)]);
+    assert!(matches!(
+        exact_counted_offset(
+            &[(1, 3), (2, 0)],
+            &[1, 2],
+            &entities,
+            &HashMap::new(),
+            1.0e-6,
+        ),
+        Some(SketchConstraintDefinition::Offset {
+            pairs,
+            distance: Length(distance),
+            ..
+        }) if pairs.as_slice() == [cadmpeg_ir::sketches::SketchOffsetPair {
+            source: source.id.clone(),
+            result: result.id.clone(),
+            source_reversed: false,
+        }] && (distance - 2.0).abs() <= 1.0e-9
+    ));
+
+    let mut skewed = result;
+    let SketchGeometry::Nurbs { control_points, .. } = &mut skewed.geometry else {
+        unreachable!("test result is a NURBS")
+    };
+    control_points.last_mut().expect("result endpoint").u += 0.01;
+    let entities = HashMap::from([(1, &source), (2, &skewed)]);
+    assert!(exact_counted_offset(
+        &[(1, 3), (2, 0)],
+        &[1, 2],
+        &entities,
+        &HashMap::new(),
+        1.0e-6,
+    )
+    .is_none());
 }
 
 #[test]
@@ -17860,8 +17945,14 @@ fn counted_offset_accepts_trimmed_concentric_arcs() {
     };
     let entities = HashMap::from([(1, &source), (2, &result)]);
 
-    let definition = exact_counted_offset(&[(1, 7), (2, 0)], &[1, 2], &entities, &HashMap::new())
-        .expect("concentric arc offset");
+    let definition = exact_counted_offset(
+        &[(1, 7), (2, 0)],
+        &[1, 2],
+        &entities,
+        &HashMap::new(),
+        1.0e-6,
+    )
+    .expect("concentric arc offset");
     assert!(matches!(
         definition,
         SketchConstraintDefinition::Offset {
@@ -17883,9 +17974,14 @@ fn counted_offset_accepts_trimmed_concentric_arcs() {
         end_angle: Angle(3.0 * std::f64::consts::FRAC_PI_2),
     };
     let entities = HashMap::from([(1, &source), (2, &mismatched)]);
-    assert!(
-        exact_counted_offset(&[(1, 7), (2, 0)], &[1, 2], &entities, &HashMap::new(),).is_none()
-    );
+    assert!(exact_counted_offset(
+        &[(1, 7), (2, 0)],
+        &[1, 2],
+        &entities,
+        &HashMap::new(),
+        1.0e-6,
+    )
+    .is_none());
 }
 
 #[test]
