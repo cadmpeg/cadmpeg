@@ -428,6 +428,9 @@ fn feature_family_tokens_are_localized() {
     assert!(crate::design::decode::operands::has_edge_recipe_operands(
         "SurfacePatch"
     ));
+    assert!(crate::design::decode::operands::has_edge_recipe_operands(
+        "WorkPoint"
+    ));
     assert_eq!(
         design_feature_family("SurfaceRuled"),
         Some(DesignFeatureFamily::SurfaceRuled)
@@ -12687,8 +12690,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     header(&mut bytes, *b"408", 101);
     header(&mut bytes, *b"414", 102);
     let recipe_record_at = header(&mut bytes, *b"423", 103);
-    // A recipe prefix can contain header-shaped scalar bytes. Only the exact
-    // N+4 record closes the N through N+3 operand envelope.
+    // A recipe prefix can contain header-shaped scalar bytes. The consumer's
+    // exact closing index, not the first header-like run, closes the envelope.
     header(&mut bytes, *b"122", 0);
     let recipe_name_at = bytes.len() + 4;
     bytes.extend_from_slice(&16u32.to_le_bytes());
@@ -12802,6 +12805,18 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(edge_operand.recipe_record_byte_offset, recipe_record_at);
     assert_eq!(edge_operand.recipe_id, recipe.id);
     assert_eq!(edge_operand.resolved_edge_slot, None);
+    bytes[next_at as usize + 7..next_at as usize + 11].copy_from_slice(&105u32.to_le_bytes());
+    let mut work_point_scope = scope.clone();
+    work_point_scope.kind = "WorkPoint".into();
+    let work_point_operand = parse_edge_operand(
+        &bytes,
+        &work_point_scope,
+        0,
+        &record,
+        std::slice::from_ref(&recipe),
+    )
+    .expect("WorkPoint edge recipe operand");
+    assert_eq!(work_point_operand.next_record_index, 105);
     edge_operand.terminal_reference_edge_slots = vec![vec![17], vec![18, 19]];
     assert_eq!(
         crate::design::edge_resolve::edge_operand_reference_edge_sets(&edge_operand),

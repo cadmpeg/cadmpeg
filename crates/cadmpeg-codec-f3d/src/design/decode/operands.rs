@@ -68,6 +68,15 @@ pub fn decode_edge_operands(
                 member_indices.extend(edge_record_indices.iter().copied());
             }
         }
+        if let Some(construction) = &scope.work_point_construction {
+            member_indices.extend(
+                construction
+                    .rule
+                    .inputs()
+                    .iter()
+                    .map(|input| input.record_index),
+            );
+        }
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
@@ -115,7 +124,7 @@ pub(crate) fn has_edge_recipe_operands(kind: &str) -> bool {
                 | DesignFeatureFamily::SurfaceOffset
                 | DesignFeatureFamily::SurfaceRuled
         )
-    ) || matches!(kind, "EdgeFlange" | "Hem")
+    ) || matches!(kind, "EdgeFlange" | "Hem" | "WorkPoint")
 }
 
 /// Decode persistent selection identities named by Fillet and Chamfer groups.
@@ -2916,10 +2925,11 @@ pub(crate) fn parse_edge_operand(
         offsets.push(offset);
         position = offset.checked_add(11)?;
     }
+    let next_record_delta = if scope.kind == "WorkPoint" { 5 } else { 4 };
     offsets.push(next_indexed_record_offset_with_index(
         bytes,
         position,
-        header.record_index.checked_add(4)?,
+        header.record_index.checked_add(next_record_delta)?,
     )?);
     let mut indexed = Vec::with_capacity(offsets.len());
     for offset in &offsets {
@@ -2930,7 +2940,7 @@ pub(crate) fn parse_edge_operand(
     let next_one = header.record_index.checked_add(1)?;
     let next_two = header.record_index.checked_add(2)?;
     let recipe_record_index = header.record_index.checked_add(3)?;
-    let next_record_index = header.record_index.checked_add(4)?;
+    let next_record_index = header.record_index.checked_add(next_record_delta)?;
     if indexed[0].1 != header.record_index
         || indexed[1].1 != next_one
         || indexed[2].1 != next_two
