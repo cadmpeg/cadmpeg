@@ -255,11 +255,12 @@ current scores require those matrices and representative fixtures.
   native operand. The transfer assigns no neutral sketch entity, locus,
   parameter, driving state, or dimensional role; exact selector, framing,
   evaluation, and opcode-offset properties remain available on the constraint.
-  Exact `Configuration` records retain the first reference's payload-relative
-  byte offset, selected value-schema ordinal, entry, and name, and retain the
-  second reference as an independently resolved, terminal-null, or unresolved
-  same-graph entity identity with its payload-relative byte offset and selected
-  object class when present. Exact `configrow` successor links retain their
+  Exact schema-configuration `Configuration` records retain the first
+  reference's payload-relative byte offset, selected value-schema ordinal,
+  entry, and name, and retain the second reference as an independently resolved,
+  terminal-null, or unresolved same-graph entity identity with its
+  payload-relative byte offset and selected object class when present. Exact
+  `configrow` successor links retain their
   class and successor identities and the successor atom's payload-relative byte
   offset.
   Coverage partitions schema references, resolved, terminal-null, and
@@ -271,9 +272,9 @@ current scores require those matrices and representative fixtures.
   row-to-successor identity intervals. Coverage
   partitions resolved, terminal-null, and unresolved terminals, partitions
   their ordered links from links whose order remains unresolved, and counts
-  source-ordered chains, intervening entities, and complete `Configuration`
-  records among those entities. These records do not count as transferred
-  neutral configurations.
+  source-ordered chains, intervening entities, and complete
+  schema-configuration `Configuration` records among those entities. These
+  records do not count as transferred neutral configurations.
 - A separator-form owner declaration with the exact class `Sketch` transfers
   one sketch identity and one unresolved sketch history node. The transfer
   does not assign placement, geometry, profiles, or constraints. A `PRTSketch`

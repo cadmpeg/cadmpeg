@@ -30,11 +30,11 @@ use crate::formula;
 use crate::native::{CatiaNative, CatiaObjectGraph};
 use crate::sketch;
 
-fn configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usize) {
+fn schema_configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usize) {
     (
-        native.configuration_row_chains.len(),
+        native.schema_configuration_row_chains.len(),
         native
-            .configuration_row_chains
+            .schema_configuration_row_chains
             .iter()
             .map(|chain| chain.links.len())
             .sum(),
@@ -1163,95 +1163,98 @@ fn finish_decode(
             - resolved_relation_program_parameter_dependency_count;
     let other_relation_program_instance_count =
         resolved_relation_program_instance_count - relation_expression_instance_count;
-    let configuration_record_count = native
+    let schema_configuration_record_count = native
         .entity_records
         .iter()
-        .filter(|record| record.configuration_record.is_some())
+        .filter(|record| record.schema_configuration_record.is_some())
         .count();
-    let resolved_configuration_reference_count = native
+    let resolved_schema_configuration_reference_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.configuration_record.as_ref())
+        .filter_map(|record| record.schema_configuration_record.as_ref())
         .filter(|record| record.entity_reference.reference.entity.is_some())
         .count();
-    let null_configuration_reference_count = native
+    let null_schema_configuration_reference_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.configuration_record.as_ref())
+        .filter_map(|record| record.schema_configuration_record.as_ref())
         .filter(|record| record.entity_reference.reference.is_null)
         .count();
-    let unresolved_configuration_reference_count = configuration_record_count
-        - resolved_configuration_reference_count
-        - null_configuration_reference_count;
-    let classified_configuration_entity_reference_count = native
+    let unresolved_schema_configuration_reference_count = schema_configuration_record_count
+        - resolved_schema_configuration_reference_count
+        - null_schema_configuration_reference_count;
+    let classified_schema_configuration_entity_reference_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.configuration_record.as_ref())
+        .filter_map(|record| record.schema_configuration_record.as_ref())
         .filter(|record| record.entity_reference.reference.class_name.is_some())
         .count();
-    let configuration_row_link_count = native
+    let schema_configuration_row_link_count = native
         .entity_records
         .iter()
-        .filter(|record| record.configuration_row_link.is_some())
+        .filter(|record| record.schema_configuration_row_link.is_some())
         .count();
-    let resolved_configuration_row_class_count = native
+    let resolved_schema_configuration_row_class_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.configuration_row_link.as_ref())
+        .filter_map(|record| record.schema_configuration_row_link.as_ref())
         .filter(|link| link.class_reference.entity.is_some())
         .count();
-    let null_configuration_row_class_count = native
+    let null_schema_configuration_row_class_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.configuration_row_link.as_ref())
+        .filter_map(|record| record.schema_configuration_row_link.as_ref())
         .filter(|link| link.class_reference.is_null)
         .count();
-    let resolved_configuration_row_successor_count = native
+    let resolved_schema_configuration_row_successor_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.configuration_row_link.as_ref())
+        .filter_map(|record| record.schema_configuration_row_link.as_ref())
         .filter(|link| link.successor.entity.is_some())
         .count();
-    let null_configuration_row_successor_count = native
+    let null_schema_configuration_row_successor_count = native
         .entity_records
         .iter()
-        .filter_map(|record| record.configuration_row_link.as_ref())
+        .filter_map(|record| record.schema_configuration_row_link.as_ref())
         .filter(|link| link.successor.is_null)
         .count();
-    let (complete_configuration_row_chain_count, ordered_configuration_row_link_count) =
-        configuration_row_chain_coverage(&native);
-    let unordered_configuration_row_link_count =
-        configuration_row_link_count - ordered_configuration_row_link_count;
-    let resolved_configuration_row_chain_terminal_count = native
-        .configuration_row_chains
+    let (
+        complete_schema_configuration_row_chain_count,
+        ordered_schema_configuration_row_link_count,
+    ) = schema_configuration_row_chain_coverage(&native);
+    let unordered_schema_configuration_row_link_count =
+        schema_configuration_row_link_count - ordered_schema_configuration_row_link_count;
+    let resolved_schema_configuration_row_chain_terminal_count = native
+        .schema_configuration_row_chains
         .iter()
         .filter_map(|chain| chain.links.last())
         .filter(|link| link.successor.entity.is_some())
         .count();
-    let null_configuration_row_chain_terminal_count = native
-        .configuration_row_chains
+    let null_schema_configuration_row_chain_terminal_count = native
+        .schema_configuration_row_chains
         .iter()
         .filter_map(|chain| chain.links.last())
         .filter(|link| link.successor.is_null)
         .count();
-    let unresolved_configuration_row_chain_terminal_count = complete_configuration_row_chain_count
-        - resolved_configuration_row_chain_terminal_count
-        - null_configuration_row_chain_terminal_count;
-    let classified_configuration_row_chain_terminal_count = native
-        .configuration_row_chains
+    let unresolved_schema_configuration_row_chain_terminal_count =
+        complete_schema_configuration_row_chain_count
+            - resolved_schema_configuration_row_chain_terminal_count
+            - null_schema_configuration_row_chain_terminal_count;
+    let classified_schema_configuration_row_chain_terminal_count = native
+        .schema_configuration_row_chains
         .iter()
         .filter_map(|chain| chain.links.last())
         .filter(|link| link.successor.class_name.is_some())
         .count();
-    let configuration_row_intervening_entity_count = native
-        .configuration_row_chains
+    let schema_configuration_row_intervening_entity_count = native
+        .schema_configuration_row_chains
         .iter()
         .flat_map(|chain| &chain.links)
         .filter_map(|link| link.intervening_entities.as_ref())
         .flatten()
         .count();
-    let configuration_row_source_interval_chain_count = native
-        .configuration_row_chains
+    let schema_configuration_row_source_interval_chain_count = native
+        .schema_configuration_row_chains
         .iter()
         .filter(|chain| {
             chain
@@ -1260,20 +1263,20 @@ fn finish_decode(
                 .all(|link| link.intervening_entities.is_some())
         })
         .count();
-    let configuration_entities = native
+    let schema_configuration_entities = native
         .entity_records
         .iter()
-        .filter(|entity| entity.configuration_record.is_some())
+        .filter(|entity| entity.schema_configuration_record.is_some())
         .map(|entity| entity.id.as_str())
         .collect::<HashSet<_>>();
-    let configuration_row_intervening_configuration_count = native
-        .configuration_row_chains
+    let schema_configuration_row_intervening_schema_configuration_count = native
+        .schema_configuration_row_chains
         .iter()
         .flat_map(|chain| &chain.links)
         .filter_map(|link| link.intervening_entities.as_ref())
         .flatten()
         .filter_map(|reference| reference.entity.as_deref())
-        .filter(|entity| configuration_entities.contains(entity))
+        .filter(|entity| schema_configuration_entities.contains(entity))
         .count();
     let formula_referenced_relation_expressions = native
         .entity_records
@@ -2611,109 +2614,110 @@ fn finish_decode(
             ambiguous_relation_program_parameter_dependency_count,
         ),
         (
-            "decoded_configuration_record_count".to_string(),
-            configuration_record_count,
+            "decoded_schema_configuration_record_count".to_string(),
+            schema_configuration_record_count,
         ),
         (
-            "decoded_configuration_schema_reference_count".to_string(),
-            configuration_record_count,
+            "decoded_schema_configuration_selector_count".to_string(),
+            schema_configuration_record_count,
         ),
         (
-            "decoded_resolved_configuration_entity_reference_count".to_string(),
-            resolved_configuration_reference_count,
+            "decoded_resolved_schema_configuration_entity_reference_count".to_string(),
+            resolved_schema_configuration_reference_count,
         ),
         (
-            "decoded_null_configuration_entity_reference_count".to_string(),
-            null_configuration_reference_count,
+            "decoded_null_schema_configuration_entity_reference_count".to_string(),
+            null_schema_configuration_reference_count,
         ),
         (
-            "unresolved_configuration_entity_reference_count".to_string(),
-            unresolved_configuration_reference_count,
+            "unresolved_schema_configuration_entity_reference_count".to_string(),
+            unresolved_schema_configuration_reference_count,
         ),
         (
-            "decoded_classified_configuration_entity_reference_count".to_string(),
-            classified_configuration_entity_reference_count,
+            "decoded_classified_schema_configuration_entity_reference_count".to_string(),
+            classified_schema_configuration_entity_reference_count,
         ),
         (
-            "unclassified_configuration_entity_reference_count".to_string(),
-            configuration_record_count - classified_configuration_entity_reference_count,
+            "unclassified_schema_configuration_entity_reference_count".to_string(),
+            schema_configuration_record_count
+                - classified_schema_configuration_entity_reference_count,
         ),
         (
-            "decoded_configuration_row_link_count".to_string(),
-            configuration_row_link_count,
+            "decoded_schema_configuration_row_link_count".to_string(),
+            schema_configuration_row_link_count,
         ),
         (
-            "decoded_resolved_configuration_row_class_count".to_string(),
-            resolved_configuration_row_class_count,
+            "decoded_resolved_schema_configuration_row_class_count".to_string(),
+            resolved_schema_configuration_row_class_count,
         ),
         (
-            "decoded_null_configuration_row_class_count".to_string(),
-            null_configuration_row_class_count,
+            "decoded_null_schema_configuration_row_class_count".to_string(),
+            null_schema_configuration_row_class_count,
         ),
         (
-            "unresolved_configuration_row_class_count".to_string(),
-            configuration_row_link_count
-                - resolved_configuration_row_class_count
-                - null_configuration_row_class_count,
+            "unresolved_schema_configuration_row_class_count".to_string(),
+            schema_configuration_row_link_count
+                - resolved_schema_configuration_row_class_count
+                - null_schema_configuration_row_class_count,
         ),
         (
-            "decoded_resolved_configuration_row_successor_count".to_string(),
-            resolved_configuration_row_successor_count,
+            "decoded_resolved_schema_configuration_row_successor_count".to_string(),
+            resolved_schema_configuration_row_successor_count,
         ),
         (
-            "decoded_null_configuration_row_successor_count".to_string(),
-            null_configuration_row_successor_count,
+            "decoded_null_schema_configuration_row_successor_count".to_string(),
+            null_schema_configuration_row_successor_count,
         ),
         (
-            "unresolved_configuration_row_successor_count".to_string(),
-            configuration_row_link_count
-                - resolved_configuration_row_successor_count
-                - null_configuration_row_successor_count,
+            "unresolved_schema_configuration_row_successor_count".to_string(),
+            schema_configuration_row_link_count
+                - resolved_schema_configuration_row_successor_count
+                - null_schema_configuration_row_successor_count,
         ),
         (
-            "decoded_complete_configuration_row_chain_count".to_string(),
-            complete_configuration_row_chain_count,
+            "decoded_complete_schema_configuration_row_chain_count".to_string(),
+            complete_schema_configuration_row_chain_count,
         ),
         (
-            "decoded_ordered_configuration_row_link_count".to_string(),
-            ordered_configuration_row_link_count,
+            "decoded_ordered_schema_configuration_row_link_count".to_string(),
+            ordered_schema_configuration_row_link_count,
         ),
         (
-            "decoded_resolved_configuration_row_chain_terminal_count".to_string(),
-            resolved_configuration_row_chain_terminal_count,
+            "decoded_resolved_schema_configuration_row_chain_terminal_count".to_string(),
+            resolved_schema_configuration_row_chain_terminal_count,
         ),
         (
-            "decoded_null_configuration_row_chain_terminal_count".to_string(),
-            null_configuration_row_chain_terminal_count,
+            "decoded_null_schema_configuration_row_chain_terminal_count".to_string(),
+            null_schema_configuration_row_chain_terminal_count,
         ),
         (
-            "unresolved_configuration_row_chain_terminal_count".to_string(),
-            unresolved_configuration_row_chain_terminal_count,
+            "unresolved_schema_configuration_row_chain_terminal_count".to_string(),
+            unresolved_schema_configuration_row_chain_terminal_count,
         ),
         (
-            "decoded_classified_configuration_row_chain_terminal_count".to_string(),
-            classified_configuration_row_chain_terminal_count,
+            "decoded_classified_schema_configuration_row_chain_terminal_count".to_string(),
+            classified_schema_configuration_row_chain_terminal_count,
         ),
         (
-            "unclassified_configuration_row_chain_terminal_count".to_string(),
-            complete_configuration_row_chain_count
-                - classified_configuration_row_chain_terminal_count,
+            "unclassified_schema_configuration_row_chain_terminal_count".to_string(),
+            complete_schema_configuration_row_chain_count
+                - classified_schema_configuration_row_chain_terminal_count,
         ),
         (
-            "unresolved_configuration_row_order_count".to_string(),
-            unordered_configuration_row_link_count,
+            "unresolved_schema_configuration_row_order_count".to_string(),
+            unordered_schema_configuration_row_link_count,
         ),
         (
-            "decoded_configuration_row_intervening_entity_count".to_string(),
-            configuration_row_intervening_entity_count,
+            "decoded_schema_configuration_row_intervening_entity_count".to_string(),
+            schema_configuration_row_intervening_entity_count,
         ),
         (
-            "decoded_configuration_row_source_interval_chain_count".to_string(),
-            configuration_row_source_interval_chain_count,
+            "decoded_schema_configuration_row_source_interval_chain_count".to_string(),
+            schema_configuration_row_source_interval_chain_count,
         ),
         (
-            "decoded_configuration_row_intervening_configuration_count".to_string(),
-            configuration_row_intervening_configuration_count,
+            "decoded_schema_configuration_row_intervening_schema_configuration_count".to_string(),
+            schema_configuration_row_intervening_schema_configuration_count,
         ),
         (
             "decoded_instanced_relation_expression_count".to_string(),
@@ -3265,7 +3269,7 @@ fn finish_decode(
             code: cadmpeg_ir::report::LossKind::FeatureHistoryRetained,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), including {unassigned_owner_slot_count} with an explicit literal unassigned owner slot, {object_record_reference_count} payload reference(s), comprising {resolved_object_record_reference_count} resolved, {null_object_record_reference_count} terminal-null, and {unresolved_object_record_reference_count} unresolved identities, {entity_value_field_count} entity-value field(s), {entity_value_schema_selection_count} entity-value schema selection(s), {numeric_entity_value_pair_count} complete numeric entity-value pair(s), {reference_signature_count} complete reference-signature packet(s) containing {reference_signature_token_count} descriptor token(s) and selecting {resolved_reference_signature_entity_count} resolved, {null_reference_signature_entity_count} terminal-null, and {unresolved_reference_signature_entity_count} unresolved entity incidences, including {classified_reference_signature_entity_count} with a resolved class, {numeric_entity_value_packet_count} embedded numeric entity-value packet(s), {compact_entity_value_packet_count} compact value packet(s), {layout_entity_value_packet_count} layout-bearing value packet(s), {escaped_word_entity_suffix_count} escaped-word entity suffix(es), {token_8149_entity_suffix_count} standalone 8149 suffix token(s), {fixed_fe_f6_entity_suffix_count} fixed FE-F6 suffix frame(s), {paged_atom_state_01_entity_suffix_count} paged-atom state-01 suffix(es), {scalar_entity_suffix_value_count} scalar entity-suffix value(s), {unset_entity_suffix_value_count} unset entity-suffix value(s), {atom_entity_suffix_value_count} atom entity-suffix value(s), {separator_entity_suffix_value_count} separator entity-suffix value(s), {schema_selected_atom_entity_suffix_value_count} schema-selected atom value(s), {schema_selected_evaluation_entity_suffix_value_count} schema-selected evaluation(s), {schema_selected_control_entity_suffix_value_count} schema-selected control value(s), {schema_selected_separator_entity_suffix_value_count} schema-selected separator(s), {schema_selected_schema_entity_suffix_value_count} schema-selected schema value(s), {schema_selected_entity_suffix_value_count} suffix value(s) with resolved schema selectors, {wide_prefix_entity_suffix_value_count} suffix value(s) with multi-byte prefix atoms, {control_entity_suffix_value_count} direct control entity-suffix value(s), comprising {control_e8_entity_suffix_value_count} E8 and {control_e9_entity_suffix_value_count} E9 state(s), {relation_expression_count} complete relation expression(s), {relation_program_instance_count} complete compound relation-program instance(s), comprising {lead12_relation_program_instance_count} lead-12 and {lead54_relation_program_instance_count} lead-54 frames, {resolved_relation_program_instance_count} resolved and {unresolved_relation_program_instance_count} unresolved program identities, with {resolved_relation_program_repeated_reference_count} resolved and {unresolved_relation_program_repeated_reference_count} unresolved repeated-reference identities, {resolved_lead12_relation_program_context_entity_count} resolved and {unresolved_lead12_relation_program_context_entity_count} unresolved lead-12 context identities, and {resolved_lead54_relation_program_trailing_entity_count} resolved and {unresolved_lead54_relation_program_trailing_entity_count} unresolved lead-54 trailing identities; {relation_expression_instance_count} select relation-expression programs, {other_relation_program_instance_count} select other resolved entities, and those relation-expression instances select {instanced_relation_expression_count} distinct expression entity or entities and retain {relation_program_parameter_dependency_count} parameter symbol occurrence(s), comprising {resolved_relation_program_parameter_dependency_count} uniquely resolved and {unresolved_relation_program_parameter_dependency_count} unresolved, including {ambiguous_relation_program_parameter_dependency_count} with multiple candidates; {typed_relation_program_instance_count} typed program instance(s) comprise {resolved_relation_program_input_instance_count} with complete ordered inputs and {unresolved_relation_program_input_instance_count} with incomplete input binding, retaining {resolved_relation_program_input_count} resolved input occurrence(s) selecting {distinct_relation_program_input_entity_count} distinct entity identity or identities; {configuration_record_count} complete Configuration record(s) retain {resolved_configuration_reference_count} resolved, {null_configuration_reference_count} terminal-null, and {unresolved_configuration_reference_count} unresolved reference identities; {configuration_row_link_count} complete configrow link(s) retain {resolved_configuration_row_class_count} resolved and {null_configuration_row_class_count} terminal-null class identities plus {resolved_configuration_row_successor_count} resolved and {null_configuration_row_successor_count} terminal-null successor identities, with {ordered_configuration_row_link_count} row link(s) in {complete_configuration_row_chain_count} complete chain(s), comprising {resolved_configuration_row_chain_terminal_count} resolved, {null_configuration_row_chain_terminal_count} terminal-null, and {unresolved_configuration_row_chain_terminal_count} unresolved terminals; {configuration_row_source_interval_chain_count} source-ordered chain(s) retain {configuration_row_intervening_entity_count} entity or entities from the open intervals between rows and successors, including {configuration_row_intervening_configuration_count} complete Configuration record(s), while {unordered_configuration_row_link_count} row link(s) have unresolved order; {parameter_value_count} complete named parameter value(s), {constraint_range_count} complete constraint-range value(s), comprising {dimension_constraint_range_count} dimension and {complex_constraint_range_count} complex-constraint range(s), with {evaluated_constraint_range_count} finite evaluation(s) and {unset_constraint_range_count} unset evaluation(s), {definition_value_count} definition-bound suffix value(s), including {owned_definition_value_count} assigned to design objects and {unowned_definition_value_count} without a resolved owner, {definition_chain_evaluation_count} two-definition chain evaluation(s), comprising {evaluated_definition_chain_count} finite and {unset_definition_chain_count} unset value(s), with {structurally_owned_definition_chain_evaluation_count} structurally owned and {unowned_definition_chain_evaluation_count} without a resolved structural owner; {unassigned_definition_chain_value_count} chain value(s), including {unassigned_definition_chain_evaluation_count} evaluation(s), occupy explicit literal unassigned owner slots; {formula_relation_count} complete formula relation(s), comprising {resolved_formula_output_count} resolved, {null_formula_output_count} terminal-null, and {unresolved_formula_output_count} unresolved output identities, {formula_parameter_dependency_count} formula parameter symbol occurrence(s), comprising {resolved_formula_parameter_dependency_count} uniquely resolved and {unresolved_formula_parameter_dependency_count} unresolved, including {ambiguous_formula_parameter_dependency_count} with multiple candidates, {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_relation_count} exact outbound design-field relation occurrence(s), including {design_same_object_relation_count} within one design object, {design_reflexive_field_relation_count} reflexive field occurrence(s), and {design_unowned_field_relation_count} to fields without owner groups; {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; {} typed parameter(s), including {} selected through complete relation-program inputs, {} exact formula, expression, or parameter field record(s), and {} exact principal-plane field record(s) transferred, while {unresolved_object_record_count} modeling-scope field record(s) across {unresolved_design_object_count} design object(s), neutral features with unresolved semantics, other parameters, sketch placement, geometry, profiles, constraints, configurations, and re-derivable history remain unresolved; {} sketch identity record(s) transfer.",
+                "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), including {unassigned_owner_slot_count} with an explicit literal unassigned owner slot, {object_record_reference_count} payload reference(s), comprising {resolved_object_record_reference_count} resolved, {null_object_record_reference_count} terminal-null, and {unresolved_object_record_reference_count} unresolved identities, {entity_value_field_count} entity-value field(s), {entity_value_schema_selection_count} entity-value schema selection(s), {numeric_entity_value_pair_count} complete numeric entity-value pair(s), {reference_signature_count} complete reference-signature packet(s) containing {reference_signature_token_count} descriptor token(s) and selecting {resolved_reference_signature_entity_count} resolved, {null_reference_signature_entity_count} terminal-null, and {unresolved_reference_signature_entity_count} unresolved entity incidences, including {classified_reference_signature_entity_count} with a resolved class, {numeric_entity_value_packet_count} embedded numeric entity-value packet(s), {compact_entity_value_packet_count} compact value packet(s), {layout_entity_value_packet_count} layout-bearing value packet(s), {escaped_word_entity_suffix_count} escaped-word entity suffix(es), {token_8149_entity_suffix_count} standalone 8149 suffix token(s), {fixed_fe_f6_entity_suffix_count} fixed FE-F6 suffix frame(s), {paged_atom_state_01_entity_suffix_count} paged-atom state-01 suffix(es), {scalar_entity_suffix_value_count} scalar entity-suffix value(s), {unset_entity_suffix_value_count} unset entity-suffix value(s), {atom_entity_suffix_value_count} atom entity-suffix value(s), {separator_entity_suffix_value_count} separator entity-suffix value(s), {schema_selected_atom_entity_suffix_value_count} schema-selected atom value(s), {schema_selected_evaluation_entity_suffix_value_count} schema-selected evaluation(s), {schema_selected_control_entity_suffix_value_count} schema-selected control value(s), {schema_selected_separator_entity_suffix_value_count} schema-selected separator(s), {schema_selected_schema_entity_suffix_value_count} schema-selected schema value(s), {schema_selected_entity_suffix_value_count} suffix value(s) with resolved schema selectors, {wide_prefix_entity_suffix_value_count} suffix value(s) with multi-byte prefix atoms, {control_entity_suffix_value_count} direct control entity-suffix value(s), comprising {control_e8_entity_suffix_value_count} E8 and {control_e9_entity_suffix_value_count} E9 state(s), {relation_expression_count} complete relation expression(s), {relation_program_instance_count} complete compound relation-program instance(s), comprising {lead12_relation_program_instance_count} lead-12 and {lead54_relation_program_instance_count} lead-54 frames, {resolved_relation_program_instance_count} resolved and {unresolved_relation_program_instance_count} unresolved program identities, with {resolved_relation_program_repeated_reference_count} resolved and {unresolved_relation_program_repeated_reference_count} unresolved repeated-reference identities, {resolved_lead12_relation_program_context_entity_count} resolved and {unresolved_lead12_relation_program_context_entity_count} unresolved lead-12 context identities, and {resolved_lead54_relation_program_trailing_entity_count} resolved and {unresolved_lead54_relation_program_trailing_entity_count} unresolved lead-54 trailing identities; {relation_expression_instance_count} select relation-expression programs, {other_relation_program_instance_count} select other resolved entities, and those relation-expression instances select {instanced_relation_expression_count} distinct expression entity or entities and retain {relation_program_parameter_dependency_count} parameter symbol occurrence(s), comprising {resolved_relation_program_parameter_dependency_count} uniquely resolved and {unresolved_relation_program_parameter_dependency_count} unresolved, including {ambiguous_relation_program_parameter_dependency_count} with multiple candidates; {typed_relation_program_instance_count} typed program instance(s) comprise {resolved_relation_program_input_instance_count} with complete ordered inputs and {unresolved_relation_program_input_instance_count} with incomplete input binding, retaining {resolved_relation_program_input_count} resolved input occurrence(s) selecting {distinct_relation_program_input_entity_count} distinct entity identity or identities; {schema_configuration_record_count} complete schema-configuration Configuration record(s) retain {resolved_schema_configuration_reference_count} resolved, {null_schema_configuration_reference_count} terminal-null, and {unresolved_schema_configuration_reference_count} unresolved reference identities; {schema_configuration_row_link_count} complete configrow link(s) retain {resolved_schema_configuration_row_class_count} resolved and {null_schema_configuration_row_class_count} terminal-null class identities plus {resolved_schema_configuration_row_successor_count} resolved and {null_schema_configuration_row_successor_count} terminal-null successor identities, with {ordered_schema_configuration_row_link_count} row link(s) in {complete_schema_configuration_row_chain_count} complete chain(s), comprising {resolved_schema_configuration_row_chain_terminal_count} resolved, {null_schema_configuration_row_chain_terminal_count} terminal-null, and {unresolved_schema_configuration_row_chain_terminal_count} unresolved terminals; {schema_configuration_row_source_interval_chain_count} source-ordered chain(s) retain {schema_configuration_row_intervening_entity_count} entity or entities from the open intervals between rows and successors, including {schema_configuration_row_intervening_schema_configuration_count} complete schema-configuration Configuration record(s), while {unordered_schema_configuration_row_link_count} row link(s) have unresolved order; {parameter_value_count} complete named parameter value(s), {constraint_range_count} complete constraint-range value(s), comprising {dimension_constraint_range_count} dimension and {complex_constraint_range_count} complex-constraint range(s), with {evaluated_constraint_range_count} finite evaluation(s) and {unset_constraint_range_count} unset evaluation(s), {definition_value_count} definition-bound suffix value(s), including {owned_definition_value_count} assigned to design objects and {unowned_definition_value_count} without a resolved owner, {definition_chain_evaluation_count} two-definition chain evaluation(s), comprising {evaluated_definition_chain_count} finite and {unset_definition_chain_count} unset value(s), with {structurally_owned_definition_chain_evaluation_count} structurally owned and {unowned_definition_chain_evaluation_count} without a resolved structural owner; {unassigned_definition_chain_value_count} chain value(s), including {unassigned_definition_chain_evaluation_count} evaluation(s), occupy explicit literal unassigned owner slots; {formula_relation_count} complete formula relation(s), comprising {resolved_formula_output_count} resolved, {null_formula_output_count} terminal-null, and {unresolved_formula_output_count} unresolved output identities, {formula_parameter_dependency_count} formula parameter symbol occurrence(s), comprising {resolved_formula_parameter_dependency_count} uniquely resolved and {unresolved_formula_parameter_dependency_count} unresolved, including {ambiguous_formula_parameter_dependency_count} with multiple candidates, {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_relation_count} exact outbound design-field relation occurrence(s), including {design_same_object_relation_count} within one design object, {design_reflexive_field_relation_count} reflexive field occurrence(s), and {design_unowned_field_relation_count} to fields without owner groups; {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; {} typed parameter(s), including {} selected through complete relation-program inputs, {} exact formula, expression, or parameter field record(s), and {} exact principal-plane field record(s) transferred, while {unresolved_object_record_count} modeling-scope field record(s) across {unresolved_design_object_count} design object(s), neutral features with unresolved semantics, other parameters, sketch placement, geometry, profiles, constraints, configurations, and re-derivable history remain unresolved; {} sketch identity record(s) transfer.",
                 native.design_objects.len(),
                 formula_transfer.typed_parameter_count,
                 formula_transfer.relation_program_parameter_count,

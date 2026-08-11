@@ -2949,7 +2949,7 @@ fn standard_catpart_with_configuration_incidences(
     file
 }
 
-fn standard_catpart_with_configuration_row_chain() -> Vec<u8> {
+fn standard_catpart_with_schema_configuration_row_chain() -> Vec<u8> {
     let row_payload = |successor: u32| {
         let mut payload = vec![0x80];
         payload.extend_from_slice(&250_u32.to_le_bytes());
@@ -14928,13 +14928,13 @@ fn native_load_rederives_relation_program_paramout_outputs_from_older_namespaces
 }
 
 #[test]
-fn configuration_productions_retain_exact_same_graph_incidence() {
+fn schema_configuration_productions_retain_exact_same_graph_incidence() {
     let file = standard_catpart_with_configuration_incidences(8, 5, 7);
     let native = crate::native::CatiaNative::decode(&file);
     let configuration = native.entity_records[0]
-        .configuration_record
+        .schema_configuration_record
         .as_ref()
-        .expect("complete Configuration production");
+        .expect("complete schema-configuration production");
     assert_eq!(configuration.schema_ordinal, 8);
     assert_eq!(configuration.schema_name, "Boolean");
     assert_eq!(configuration.schema_payload_offset, 0);
@@ -14953,7 +14953,7 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
         Some("Configuration")
     );
     let row = native.entity_records[1]
-        .configuration_row_link
+        .schema_configuration_row_link
         .as_ref()
         .expect("complete configrow production");
     assert_eq!(row.class_reference.entity_id, 6);
@@ -14969,8 +14969,8 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
         Some(native.entity_records[2].id.as_str())
     );
     assert_eq!(row.successor.class_name.as_deref(), Some("body"));
-    assert_eq!(native.configuration_row_chains.len(), 1);
-    let chain = &native.configuration_row_chains[0];
+    assert_eq!(native.schema_configuration_row_chains.len(), 1);
+    let chain = &native.schema_configuration_row_chains[0];
     assert_eq!(chain.object_graph, native.entity_records[1].object_graph);
     let graph_key = chain
         .object_graph
@@ -14979,7 +14979,7 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
         .1;
     assert_eq!(
         chain.id,
-        format!("catia:outer:configuration-row-chain#{graph_key}:6")
+        format!("catia:outer:schema-configuration-row-chain#{graph_key}:6")
     );
     assert_eq!(chain.links.len(), 1);
     assert_eq!(chain.links[0].row, row.class_reference);
@@ -15000,8 +15000,12 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
         Some(native.entity_records[1].id.as_str())
     );
     assert_eq!(chain.links[0].successor, row.successor);
-    assert!(native.entity_records[2].configuration_record.is_none());
-    assert!(native.entity_records[2].configuration_row_link.is_none());
+    assert!(native.entity_records[2]
+        .schema_configuration_record
+        .is_none());
+    assert!(native.entity_records[2]
+        .schema_configuration_row_link
+        .is_none());
 
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
@@ -15009,85 +15013,85 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
     assert_eq!(
         decoded
             .report
-            .coverage_count(crate::coverage::DECODED_CONFIGURATION_RECORD_COUNT),
+            .coverage_count(crate::coverage::DECODED_SCHEMA_CONFIGURATION_RECORD_COUNT),
         1
     );
     assert_eq!(
         decoded
             .report
-            .coverage_count(crate::coverage::DECODED_CONFIGURATION_SCHEMA_REFERENCE_COUNT),
+            .coverage_count(crate::coverage::DECODED_SCHEMA_CONFIGURATION_SELECTOR_COUNT),
         1
     );
     assert_eq!(
-        decoded
-            .report
-            .coverage_count(crate::coverage::DECODED_RESOLVED_CONFIGURATION_ENTITY_REFERENCE_COUNT),
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_RESOLVED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report
-            .coverage_count(crate::coverage::UNRESOLVED_CONFIGURATION_ENTITY_REFERENCE_COUNT),
+        decoded.report.coverage_count(
+            crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT
+        ),
         0
     );
     assert_eq!(
         decoded.report.coverage_count(
-            crate::coverage::DECODED_CLASSIFIED_CONFIGURATION_ENTITY_REFERENCE_COUNT
+            crate::coverage::DECODED_CLASSIFIED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT
         ),
         1
     );
     assert_eq!(
-        decoded
-            .report
-            .coverage_count(crate::coverage::UNCLASSIFIED_CONFIGURATION_ENTITY_REFERENCE_COUNT),
+        decoded.report.coverage_count(
+            crate::coverage::UNCLASSIFIED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT
+        ),
         0
     );
     assert_eq!(
         decoded
             .report
-            .coverage_count(crate::coverage::DECODED_CONFIGURATION_ROW_LINK_COUNT),
+            .coverage_count(crate::coverage::DECODED_SCHEMA_CONFIGURATION_ROW_LINK_COUNT),
         1
     );
     assert_eq!(
         decoded
             .report
-            .coverage_count(crate::coverage::DECODED_RESOLVED_CONFIGURATION_ROW_CLASS_COUNT),
-        1
-    );
-    assert_eq!(
-        decoded
-            .report
-            .coverage_count(crate::coverage::DECODED_RESOLVED_CONFIGURATION_ROW_SUCCESSOR_COUNT),
-        1
-    );
-    assert_eq!(
-        decoded
-            .report
-            .coverage_count(crate::coverage::DECODED_COMPLETE_CONFIGURATION_ROW_CHAIN_COUNT),
-        1
-    );
-    assert_eq!(
-        decoded
-            .report
-            .coverage_count(crate::coverage::DECODED_ORDERED_CONFIGURATION_ROW_LINK_COUNT),
+            .coverage_count(crate::coverage::DECODED_RESOLVED_SCHEMA_CONFIGURATION_ROW_CLASS_COUNT),
         1
     );
     assert_eq!(
         decoded.report.coverage_count(
-            crate::coverage::DECODED_RESOLVED_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT
-        ),
-        1
-    );
-    assert_eq!(
-        decoded.report.coverage_count(
-            crate::coverage::DECODED_CLASSIFIED_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT
+            crate::coverage::DECODED_RESOLVED_SCHEMA_CONFIGURATION_ROW_SUCCESSOR_COUNT
         ),
         1
     );
     assert_eq!(
         decoded
             .report
-            .coverage_count(crate::coverage::UNRESOLVED_CONFIGURATION_ROW_ORDER_COUNT),
+            .coverage_count(crate::coverage::DECODED_COMPLETE_SCHEMA_CONFIGURATION_ROW_CHAIN_COUNT),
+        1
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ORDERED_SCHEMA_CONFIGURATION_ROW_LINK_COUNT),
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_RESOLVED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT
+        ),
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_CLASSIFIED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT
+        ),
+        1
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_ORDER_COUNT),
         0
     );
     assert_eq!(
@@ -15100,11 +15104,11 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
 }
 
 #[test]
-fn configuration_row_chain_retains_complete_source_order() {
+fn schema_configuration_row_chain_retains_complete_source_order() {
     let native =
-        crate::native::CatiaNative::decode(&standard_catpart_with_configuration_row_chain());
-    assert_eq!(native.configuration_row_chains.len(), 1);
-    let chain = &native.configuration_row_chains[0];
+        crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
+    assert_eq!(native.schema_configuration_row_chains.len(), 1);
+    let chain = &native.schema_configuration_row_chains[0];
     assert_eq!(chain.links[0].row.entity_id, 5);
     assert_eq!(
         chain
@@ -15155,37 +15159,37 @@ fn configuration_row_chain_retains_complete_source_order() {
 
     let decoded = CatiaCodec
         .decode(
-            &mut Cursor::new(standard_catpart_with_configuration_row_chain()),
+            &mut Cursor::new(standard_catpart_with_schema_configuration_row_chain()),
             &DecodeOptions::default(),
         )
         .expect("decode configuration row intervals");
     assert_eq!(
-        decoded
-            .report
-            .coverage_count(crate::coverage::DECODED_CONFIGURATION_ROW_INTERVENING_ENTITY_COUNT),
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_SCHEMA_CONFIGURATION_ROW_INTERVENING_ENTITY_COUNT
+        ),
         3
     );
     assert_eq!(
         decoded.report.coverage_count(
-            crate::coverage::DECODED_CONFIGURATION_ROW_INTERVENING_CONFIGURATION_COUNT
+            crate::coverage::DECODED_SCHEMA_CONFIGURATION_ROW_INTERVENING_SCHEMA_CONFIGURATION_COUNT
         ),
         0
     );
 }
 
 #[test]
-fn configuration_productions_preserve_unresolved_identities() {
+fn schema_configuration_productions_preserve_unresolved_identities() {
     let native = crate::native::CatiaNative::decode(
         &standard_catpart_with_configuration_incidences(8, 15, 16),
     );
     let configuration = native.entity_records[0]
-        .configuration_record
+        .schema_configuration_record
         .as_ref()
-        .expect("complete Configuration production");
+        .expect("complete schema-configuration production");
     assert_eq!(configuration.schema_name, "Boolean");
     assert!(configuration.entity_reference.reference.entity.is_none());
     let row = native.entity_records[1]
-        .configuration_row_link
+        .schema_configuration_row_link
         .as_ref()
         .expect("complete configrow production");
     assert!(row.successor.entity.is_none());
@@ -15194,7 +15198,7 @@ fn configuration_productions_preserve_unresolved_identities() {
         &standard_catpart_with_configuration_incidences(14, 15, 16),
     );
     assert!(mismatched_schema.entity_records[0]
-        .configuration_record
+        .schema_configuration_record
         .is_none());
 
     let mut malformed = standard_catpart_with_configuration_incidences(8, 15, 16);
@@ -15208,62 +15212,62 @@ fn configuration_productions_preserve_unresolved_identities() {
     assert!(malformed
         .entity_records
         .iter()
-        .all(|entity| entity.configuration_row_link.is_none()));
+        .all(|entity| entity.schema_configuration_row_link.is_none()));
 
     let cyclic_file = standard_catpart_with_configuration_incidences(8, 15, 6);
     let cyclic_native = crate::native::CatiaNative::decode(&cyclic_file);
-    assert!(cyclic_native.configuration_row_chains.is_empty());
+    assert!(cyclic_native.schema_configuration_row_chains.is_empty());
     let cyclic = CatiaCodec
         .decode(&mut Cursor::new(cyclic_file), &DecodeOptions::default())
         .expect("decode cyclic configuration row");
     assert_eq!(
         cyclic
             .report
-            .coverage_count(crate::coverage::DECODED_COMPLETE_CONFIGURATION_ROW_CHAIN_COUNT),
+            .coverage_count(crate::coverage::DECODED_COMPLETE_SCHEMA_CONFIGURATION_ROW_CHAIN_COUNT),
         0
     );
     assert_eq!(
         cyclic
             .report
-            .coverage_count(crate::coverage::DECODED_ORDERED_CONFIGURATION_ROW_LINK_COUNT),
+            .coverage_count(crate::coverage::DECODED_ORDERED_SCHEMA_CONFIGURATION_ROW_LINK_COUNT),
         0
     );
     assert_eq!(
         cyclic
             .report
-            .coverage_count(crate::coverage::UNRESOLVED_CONFIGURATION_ROW_ORDER_COUNT),
+            .coverage_count(crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_ORDER_COUNT),
         1
     );
 
     let descending = crate::native::CatiaNative::decode(
         &standard_catpart_with_configuration_incidences(8, 15, 5),
     );
-    assert_eq!(descending.configuration_row_chains.len(), 1);
-    assert!(descending.configuration_row_chains[0].links[0]
+    assert_eq!(descending.schema_configuration_row_chains.len(), 1);
+    assert!(descending.schema_configuration_row_chains[0].links[0]
         .intervening_entities
         .is_none());
 }
 
 #[test]
-fn configuration_productions_distinguish_terminal_null_identities() {
+fn schema_configuration_productions_distinguish_terminal_null_identities() {
     let file = standard_catpart_with_configuration_incidences(8, 8, 8);
     let native = crate::native::CatiaNative::decode(&file);
     let configuration = native.entity_records[0]
-        .configuration_record
+        .schema_configuration_record
         .as_ref()
-        .expect("complete Configuration production");
+        .expect("complete schema-configuration production");
     assert!(configuration.entity_reference.reference.is_null);
     assert!(configuration.entity_reference.reference.entity.is_none());
     let row = native.entity_records[1]
-        .configuration_row_link
+        .schema_configuration_row_link
         .as_ref()
         .expect("complete configrow production");
     assert!(!row.class_reference.is_null);
     assert!(row.successor.is_null);
     assert!(row.successor.entity.is_none());
-    assert_eq!(native.configuration_row_chains.len(), 1);
+    assert_eq!(native.schema_configuration_row_chains.len(), 1);
     assert!(
-        native.configuration_row_chains[0].links[0]
+        native.schema_configuration_row_chains[0].links[0]
             .successor
             .is_null
     );
@@ -15272,51 +15276,51 @@ fn configuration_productions_distinguish_terminal_null_identities() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode terminal-null configuration incidences");
     assert_eq!(
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_NULL_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT
+        ),
+        1
+    );
+    assert_eq!(
+        decoded.report.coverage_count(
+            crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT
+        ),
+        0
+    );
+    assert_eq!(
         decoded
             .report
-            .coverage_count(crate::coverage::DECODED_NULL_CONFIGURATION_ENTITY_REFERENCE_COUNT),
+            .coverage_count(crate::coverage::DECODED_NULL_SCHEMA_CONFIGURATION_ROW_CLASS_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_CLASS_COUNT),
+        0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_NULL_SCHEMA_CONFIGURATION_ROW_SUCCESSOR_COUNT),
         1
     );
     assert_eq!(
         decoded
             .report
-            .coverage_count(crate::coverage::UNRESOLVED_CONFIGURATION_ENTITY_REFERENCE_COUNT),
+            .coverage_count(crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_SUCCESSOR_COUNT),
         0
     );
     assert_eq!(
-        decoded
-            .report
-            .coverage_count(crate::coverage::DECODED_NULL_CONFIGURATION_ROW_CLASS_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded
-            .report
-            .coverage_count(crate::coverage::UNRESOLVED_CONFIGURATION_ROW_CLASS_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded
-            .report
-            .coverage_count(crate::coverage::DECODED_NULL_CONFIGURATION_ROW_SUCCESSOR_COUNT),
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_NULL_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report
-            .coverage_count(crate::coverage::UNRESOLVED_CONFIGURATION_ROW_SUCCESSOR_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded
-            .report
-            .coverage_count(crate::coverage::DECODED_NULL_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT),
-        1
-    );
-    assert_eq!(
-        decoded
-            .report
-            .coverage_count(crate::coverage::UNRESOLVED_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT),
+        decoded.report.coverage_count(
+            crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT
+        ),
         0
     );
 }
@@ -15326,11 +15330,74 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     let native = crate::native::CatiaNative::decode(
         &standard_catpart_with_configuration_incidences(8, 5, 7),
     );
+    let mut legacy_named = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut legacy_named)
+        .expect("store schema-configuration namespace");
+    let entity = legacy_named
+        .arenas
+        .get_mut("entity_records")
+        .expect("stored entity records")
+        .first_mut()
+        .expect("stored schema-configuration entity");
+    let mut fields = entity.fields_mut();
+    let configuration = fields
+        .remove("schema_configuration_record")
+        .expect("stored schema-configuration record");
+    fields.insert("configuration_record".to_string(), configuration);
+    drop(fields);
+    let row_entity = legacy_named
+        .arenas
+        .get_mut("entity_records")
+        .expect("stored entity records")
+        .get_mut(1)
+        .expect("stored schema-configuration-row entity");
+    let mut fields = row_entity.fields_mut();
+    let row_link = fields
+        .remove("schema_configuration_row_link")
+        .expect("stored schema-configuration-row link");
+    fields.insert("configuration_row_link".to_string(), row_link);
+    drop(fields);
+    let row_chains = legacy_named
+        .arenas
+        .remove("schema_configuration_row_chains")
+        .expect("stored schema-configuration-row chains");
+    legacy_named
+        .arenas
+        .insert("configuration_row_chains".to_string(), row_chains);
+    legacy_named.version = crate::native::CATIA_NATIVE_VERSION - 1;
+    let chain = legacy_named
+        .arenas
+        .get_mut("configuration_row_chains")
+        .expect("stored legacy-named schema-configuration-row chains")
+        .first_mut()
+        .expect("stored legacy-named schema-configuration-row chain");
+    let legacy_id = chain.id().replace(
+        ":schema-configuration-row-chain#",
+        ":configuration-row-chain#",
+    );
+    let fields = chain.fields();
+    *chain = cadmpeg_ir::NativeRecord::new(legacy_id, fields);
+    let loaded = crate::native::CatiaNative::load(&legacy_named)
+        .expect("load legacy-named schema-configuration incidences");
+    assert_eq!(
+        loaded.entity_records[0].schema_configuration_record,
+        native.entity_records[0].schema_configuration_record
+    );
+    assert_eq!(
+        loaded.entity_records[1].schema_configuration_row_link,
+        native.entity_records[1].schema_configuration_row_link
+    );
+    assert_eq!(
+        loaded.schema_configuration_row_chains,
+        native.schema_configuration_row_chains
+    );
+
     let mut older = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut older)
         .expect("store configuration namespace");
-    older.version = crate::native::CATIA_CONFIGURATION_SCHEMA_REFERENCE_VERSION - 1;
+    older.version = crate::native::CATIA_SCHEMA_CONFIGURATION_REFERENCE_VERSION - 1;
     for entity in older
         .arenas
         .get_mut("entity_records")
@@ -15338,23 +15405,23 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     {
         let id = entity.id().to_owned();
         let mut fields = entity.fields();
-        fields.remove("configuration_record");
-        fields.remove("configuration_row_link");
+        fields.remove("schema_configuration_record");
+        fields.remove("schema_configuration_row_link");
         *entity = cadmpeg_ir::NativeRecord::new(id, fields);
     }
     let migrated =
         crate::native::CatiaNative::load(&older).expect("migrate configuration incidences");
     assert_eq!(
-        migrated.entity_records[0].configuration_record,
-        native.entity_records[0].configuration_record
+        migrated.entity_records[0].schema_configuration_record,
+        native.entity_records[0].schema_configuration_record
     );
     assert_eq!(
-        migrated.entity_records[1].configuration_row_link,
-        native.entity_records[1].configuration_row_link
+        migrated.entity_records[1].schema_configuration_row_link,
+        native.entity_records[1].schema_configuration_row_link
     );
     assert_eq!(
-        migrated.configuration_row_chains,
-        native.configuration_row_chains
+        migrated.schema_configuration_row_chains,
+        native.schema_configuration_row_chains
     );
 
     let mut version_250 = cadmpeg_ir::NativeNamespace::default();
@@ -15367,8 +15434,8 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         .expect("stored entity records");
     let mut stored_fields = entities[0].fields_mut();
     let configuration = stored_fields
-        .get_mut("configuration_record")
-        .expect("stored configuration record")
+        .get_mut("schema_configuration_record")
+        .expect("stored schema-configuration record")
         .as_object_mut()
         .expect("stored configuration object");
     configuration.remove("schema_payload_offset");
@@ -15380,67 +15447,67 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     drop(stored_fields);
     entities[1]
         .fields()
-        .get_mut("configuration_row_link")
-        .expect("stored configuration-row link")
+        .get_mut("schema_configuration_row_link")
+        .expect("stored schema-configuration-row link")
         .as_object_mut()
-        .expect("stored configuration-row object")
+        .expect("stored schema-configuration-row object")
         .remove("successor_payload_offset");
     version_250.version = crate::native::CATIA_CONFIGURATION_PAYLOAD_OFFSET_VERSION - 1;
     let migrated = crate::native::CatiaNative::load(&version_250)
         .expect("migrate configuration payload offsets");
     assert_eq!(
-        migrated.entity_records[0].configuration_record,
-        native.entity_records[0].configuration_record
+        migrated.entity_records[0].schema_configuration_record,
+        native.entity_records[0].schema_configuration_record
     );
     assert_eq!(
-        migrated.entity_records[1].configuration_row_link,
-        native.entity_records[1].configuration_row_link
+        migrated.entity_records[1].schema_configuration_row_link,
+        native.entity_records[1].schema_configuration_row_link
     );
 
     let interval_native =
-        crate::native::CatiaNative::decode(&standard_catpart_with_configuration_row_chain());
+        crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
     let mut older = cadmpeg_ir::NativeNamespace::default();
     interval_native
         .store(&mut older)
         .expect("store pre-interval configuration namespace");
-    older.version = crate::native::CATIA_CONFIGURATION_ROW_INTERVAL_VERSION - 1;
+    older.version = crate::native::CATIA_SCHEMA_CONFIGURATION_ROW_INTERVAL_VERSION - 1;
     for chain in older
         .arenas
-        .get_mut("configuration_row_chains")
-        .expect("stored configuration-row chains")
+        .get_mut("schema_configuration_row_chains")
+        .expect("stored schema-configuration-row chains")
     {
         let id = chain.id().to_owned();
         let mut fields = chain.fields();
         for link in fields
             .get_mut("links")
-            .expect("stored configuration-row links")
+            .expect("stored schema-configuration-row links")
             .as_array_mut()
-            .expect("stored configuration-row links")
+            .expect("stored schema-configuration-row links")
         {
             link.as_object_mut()
-                .expect("stored configuration-row link")
+                .expect("stored schema-configuration-row link")
                 .remove("intervening_entities");
         }
         *chain = cadmpeg_ir::NativeRecord::new(id, fields);
     }
     let migrated = crate::native::CatiaNative::load(&older)
-        .expect("migrate configuration-row successor intervals");
+        .expect("migrate schema-configuration-row successor intervals");
     assert_eq!(
-        migrated.configuration_row_chains,
-        interval_native.configuration_row_chains
+        migrated.schema_configuration_row_chains,
+        interval_native.schema_configuration_row_chains
     );
 
     let mut older = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut older)
         .expect("store pre-chain configuration namespace");
-    older.version = crate::native::CATIA_CONFIGURATION_ROW_CHAIN_VERSION - 1;
-    older.arenas.remove("configuration_row_chains");
+    older.version = crate::native::CATIA_SCHEMA_CONFIGURATION_ROW_CHAIN_VERSION - 1;
+    older.arenas.remove("schema_configuration_row_chains");
     let migrated =
-        crate::native::CatiaNative::load(&older).expect("migrate configuration-row chains");
+        crate::native::CatiaNative::load(&older).expect("migrate schema-configuration-row chains");
     assert_eq!(
-        migrated.configuration_row_chains,
-        native.configuration_row_chains
+        migrated.schema_configuration_row_chains,
+        native.schema_configuration_row_chains
     );
 
     let mut version_254 = cadmpeg_ir::NativeNamespace::default();
@@ -15449,20 +15516,20 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         .expect("store pre-link-incidence configuration namespace");
     for chain in version_254
         .arenas
-        .get_mut("configuration_row_chains")
-        .expect("stored configuration-row chains")
+        .get_mut("schema_configuration_row_chains")
+        .expect("stored schema-configuration-row chains")
     {
         let id = chain.id().to_owned();
         let mut fields = chain.fields();
         fields.remove("links");
         *chain = cadmpeg_ir::NativeRecord::new(id, fields);
     }
-    version_254.version = crate::native::CATIA_CONFIGURATION_ROW_LINK_INCIDENCE_VERSION - 1;
+    version_254.version = crate::native::CATIA_SCHEMA_CONFIGURATION_ROW_LINK_INCIDENCE_VERSION - 1;
     let migrated = crate::native::CatiaNative::load(&version_254)
-        .expect("migrate configuration-row link incidences");
+        .expect("migrate schema-configuration-row link incidences");
     assert_eq!(
-        migrated.configuration_row_chains,
-        native.configuration_row_chains
+        migrated.schema_configuration_row_chains,
+        native.schema_configuration_row_chains
     );
 
     let mut expected_nulls = crate::native::CatiaNative::decode(
@@ -15470,16 +15537,16 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     );
     let mut stale_nulls = expected_nulls.clone();
     let configuration = stale_nulls.entity_records[0]
-        .configuration_record
+        .schema_configuration_record
         .as_mut()
-        .expect("complete Configuration production");
+        .expect("complete schema-configuration production");
     configuration.entity_reference.reference.is_null = false;
     let row = stale_nulls.entity_records[1]
-        .configuration_row_link
+        .schema_configuration_row_link
         .as_mut()
         .expect("complete configrow production");
     row.successor.is_null = false;
-    stale_nulls.configuration_row_chains[0].links[0]
+    stale_nulls.schema_configuration_row_chains[0].links[0]
         .successor
         .is_null = false;
     let mut version_239 = cadmpeg_ir::NativeNamespace::default();
@@ -15493,7 +15560,7 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     assert_eq!(migrated, expected_nulls);
 
     let mut malformed_chain = native.clone();
-    malformed_chain.configuration_row_chains[0].links[0]
+    malformed_chain.schema_configuration_row_chains[0].links[0]
         .successor
         .entity_id = 6;
     let mut current = cadmpeg_ir::NativeNamespace::default();
@@ -15506,7 +15573,8 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     ));
 
     let mut malformed_chain_offset = native.clone();
-    malformed_chain_offset.configuration_row_chains[0].links[0].successor_payload_offset += 1;
+    malformed_chain_offset.schema_configuration_row_chains[0].links[0].successor_payload_offset +=
+        1;
     let mut current = cadmpeg_ir::NativeNamespace::default();
     malformed_chain_offset
         .store(&mut current)
@@ -15518,13 +15586,13 @@ fn native_load_migrates_and_validates_configuration_incidences() {
 
     let mut malformed_offsets = native.clone();
     let configuration = malformed_offsets.entity_records[0]
-        .configuration_record
+        .schema_configuration_record
         .as_mut()
-        .expect("decoded configuration record");
+        .expect("decoded schema-configuration record");
     configuration.schema_payload_offset += 1;
     configuration.entity_reference.payload_offset += 1;
     malformed_offsets.entity_records[1]
-        .configuration_row_link
+        .schema_configuration_row_link
         .as_mut()
         .expect("decoded configrow link")
         .successor_payload_offset += 1;
@@ -15538,7 +15606,7 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     ));
 
     let mut malformed_intervals = interval_native;
-    malformed_intervals.configuration_row_chains[0].links[0]
+    malformed_intervals.schema_configuration_row_chains[0].links[0]
         .intervening_entities
         .as_mut()
         .expect("source-ordered row interval")[0]
@@ -15546,7 +15614,7 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     let mut current = cadmpeg_ir::NativeNamespace::default();
     malformed_intervals
         .store(&mut current)
-        .expect("store malformed configuration-row intervals");
+        .expect("store malformed schema-configuration-row intervals");
     assert!(matches!(
         crate::native::CatiaNative::load(&current),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
@@ -15554,7 +15622,7 @@ fn native_load_migrates_and_validates_configuration_incidences() {
 
     let mut malformed = native;
     malformed.entity_records[1]
-        .configuration_row_link
+        .schema_configuration_row_link
         .as_mut()
         .expect("decoded configrow link")
         .successor

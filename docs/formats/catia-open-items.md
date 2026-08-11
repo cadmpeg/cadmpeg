@@ -160,19 +160,19 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DI-13. Active configuration state
 
-**Question.** Which field selects the active configuration state?
+**Question.** Which production defines document design configurations, and which field selects the active state?
 
-**Known.** `catia.md` §7.3 "A self-defining configuration record is" and `catia.md` §7.3 "A configuration-row link is" defines `Configuration` records, `configrow` successor chains, selected value schemas, and the source-ordered open intervals between rows. These incidences do not assign active state.
+**Known.** `catia.md` §7.3 "A self-defining schema-configuration record is" and `catia.md` §7.3 "A schema-configuration-row link is" defines schema-local `Configuration` records, `configrow` successor chains, selected value schemas, and the source-ordered open intervals between rows. These productions do not define document design configurations or assign active state.
 
-**Need.** We must know the selector to transfer the active configuration.
+**Need.** We must identify the document design-configuration production before we can transfer configuration identities or active state.
 
-### DI-14. Configuration row semantics
+### DI-14. Schema-configuration row semantics
 
 **Question.** What does each entity in an open `configrow`-to-successor interval represent?
 
 **Known.** Complete successor chains fix row order. The decoder retains each intervening entity in source order.
 
-**Need.** We must know these roles to assign row names, parameter overrides, body membership, and feature replay order.
+**Need.** We must know these schema-local roles. They do not assign document configuration names, parameter overrides, body membership, or feature replay order.
 
 ### DI-15. Sketch instance binding
 

@@ -15,10 +15,6 @@ pub(crate) const CLASSIFIED_DESIGN_OBJECT_COUNT: CoverageKey =
     CoverageKey("classified_design_object_count");
 pub(crate) const DECODED_ATOM_ENTITY_SUFFIX_VALUE_COUNT: CoverageKey =
     CoverageKey("decoded_atom_entity_suffix_value_count");
-pub(crate) const DECODED_CLASSIFIED_CONFIGURATION_ENTITY_REFERENCE_COUNT: CoverageKey =
-    CoverageKey("decoded_classified_configuration_entity_reference_count");
-pub(crate) const DECODED_CLASSIFIED_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT: CoverageKey =
-    CoverageKey("decoded_classified_configuration_row_chain_terminal_count");
 pub(crate) const DECODED_CLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT: CoverageKey =
     CoverageKey("decoded_classified_constraint_range_source_entity_count");
 pub(crate) const DECODED_CLASSIFIED_FORMULA_EXPRESSION_ENTITY_COUNT: CoverageKey =
@@ -33,20 +29,14 @@ pub(crate) const DECODED_CLASSIFIED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT: 
     CoverageKey("decoded_classified_relation_program_reference_incidence_count");
 pub(crate) const DECODED_CLASSIFIED_RELATION_PROGRAM_REPEATED_ENTITY_COUNT: CoverageKey =
     CoverageKey("decoded_classified_relation_program_repeated_entity_count");
-pub(crate) const DECODED_COMPLETE_CONFIGURATION_ROW_CHAIN_COUNT: CoverageKey =
-    CoverageKey("decoded_complete_configuration_row_chain_count");
+pub(crate) const DECODED_CLASSIFIED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT: CoverageKey =
+    CoverageKey("decoded_classified_schema_configuration_entity_reference_count");
+pub(crate) const DECODED_CLASSIFIED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT: CoverageKey =
+    CoverageKey("decoded_classified_schema_configuration_row_chain_terminal_count");
+pub(crate) const DECODED_COMPLETE_SCHEMA_CONFIGURATION_ROW_CHAIN_COUNT: CoverageKey =
+    CoverageKey("decoded_complete_schema_configuration_row_chain_count");
 pub(crate) const DECODED_COMPLEX_CONSTRAINT_RANGE_COUNT: CoverageKey =
     CoverageKey("decoded_complex_constraint_range_count");
-pub(crate) const DECODED_CONFIGURATION_RECORD_COUNT: CoverageKey =
-    CoverageKey("decoded_configuration_record_count");
-pub(crate) const DECODED_CONFIGURATION_ROW_INTERVENING_CONFIGURATION_COUNT: CoverageKey =
-    CoverageKey("decoded_configuration_row_intervening_configuration_count");
-pub(crate) const DECODED_CONFIGURATION_ROW_INTERVENING_ENTITY_COUNT: CoverageKey =
-    CoverageKey("decoded_configuration_row_intervening_entity_count");
-pub(crate) const DECODED_CONFIGURATION_ROW_LINK_COUNT: CoverageKey =
-    CoverageKey("decoded_configuration_row_link_count");
-pub(crate) const DECODED_CONFIGURATION_SCHEMA_REFERENCE_COUNT: CoverageKey =
-    CoverageKey("decoded_configuration_schema_reference_count");
 pub(crate) const DECODED_CONSOLIDATED_CONE_FACE_COUNT: CoverageKey =
     CoverageKey("decoded_consolidated_cone_face_count");
 pub(crate) const DECODED_CONSOLIDATED_CONE_FACE_PARAMETER_POINT_COUNT: CoverageKey =
@@ -169,14 +159,6 @@ pub(crate) const DECODED_LEGACY_TEXT_FIELD_COUNT: CoverageKey =
     CoverageKey("decoded_legacy_text_field_count");
 pub(crate) const DECODED_MULTI_MEMBER_REFERENCE_SIGNATURE_COHORT_COUNT: CoverageKey =
     CoverageKey("decoded_multi_member_reference_signature_cohort_count");
-pub(crate) const DECODED_NULL_CONFIGURATION_ENTITY_REFERENCE_COUNT: CoverageKey =
-    CoverageKey("decoded_null_configuration_entity_reference_count");
-pub(crate) const DECODED_NULL_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT: CoverageKey =
-    CoverageKey("decoded_null_configuration_row_chain_terminal_count");
-pub(crate) const DECODED_NULL_CONFIGURATION_ROW_CLASS_COUNT: CoverageKey =
-    CoverageKey("decoded_null_configuration_row_class_count");
-pub(crate) const DECODED_NULL_CONFIGURATION_ROW_SUCCESSOR_COUNT: CoverageKey =
-    CoverageKey("decoded_null_configuration_row_successor_count");
 pub(crate) const DECODED_NULL_FORMULA_OUTPUT_COUNT: CoverageKey =
     CoverageKey("decoded_null_formula_output_count");
 pub(crate) const DECODED_NULL_OBJECT_RECORD_REFERENCE_COUNT: CoverageKey =
@@ -191,6 +173,14 @@ pub(crate) const DECODED_NULL_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT: Covera
     CoverageKey("decoded_null_relation_program_reference_incidence_count");
 pub(crate) const DECODED_NULL_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT: CoverageKey =
     CoverageKey("decoded_null_relation_program_repeated_reference_count");
+pub(crate) const DECODED_NULL_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT: CoverageKey =
+    CoverageKey("decoded_null_schema_configuration_entity_reference_count");
+pub(crate) const DECODED_NULL_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT: CoverageKey =
+    CoverageKey("decoded_null_schema_configuration_row_chain_terminal_count");
+pub(crate) const DECODED_NULL_SCHEMA_CONFIGURATION_ROW_CLASS_COUNT: CoverageKey =
+    CoverageKey("decoded_null_schema_configuration_row_class_count");
+pub(crate) const DECODED_NULL_SCHEMA_CONFIGURATION_ROW_SUCCESSOR_COUNT: CoverageKey =
+    CoverageKey("decoded_null_schema_configuration_row_successor_count");
 pub(crate) const DECODED_NUMERIC_ENTITY_VALUE_PACKET_COUNT: CoverageKey =
     CoverageKey("decoded_numeric_entity_value_packet_count");
 pub(crate) const DECODED_NUMERIC_ENTITY_VALUE_PAIR_COUNT: CoverageKey =
@@ -201,8 +191,8 @@ pub(crate) const DECODED_OBJECT_RECORD_COUNT: CoverageKey =
     CoverageKey("decoded_object_record_count");
 pub(crate) const DECODED_OPENED_BOOLEAN_PARSER_VERSION_RELATION_EXPRESSION_COUNT: CoverageKey =
     CoverageKey("decoded_opened_boolean_parser_version_relation_expression_count");
-pub(crate) const DECODED_ORDERED_CONFIGURATION_ROW_LINK_COUNT: CoverageKey =
-    CoverageKey("decoded_ordered_configuration_row_link_count");
+pub(crate) const DECODED_ORDERED_SCHEMA_CONFIGURATION_ROW_LINK_COUNT: CoverageKey =
+    CoverageKey("decoded_ordered_schema_configuration_row_link_count");
 pub(crate) const DECODED_OTHER_LEAD12_RELATION_PROGRAM_CONTEXT_CLASS_COUNT: CoverageKey =
     CoverageKey("decoded_other_lead12_relation_program_context_class_count");
 pub(crate) const DECODED_OTHER_RELATION_PROGRAM_INSTANCE_COUNT: CoverageKey =
@@ -241,14 +231,6 @@ pub(crate) const DECODED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT: CoverageKe
     CoverageKey("decoded_relation_program_parameter_dependency_count");
 pub(crate) const DECODED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT: CoverageKey =
     CoverageKey("decoded_relation_program_reference_incidence_count");
-pub(crate) const DECODED_RESOLVED_CONFIGURATION_ENTITY_REFERENCE_COUNT: CoverageKey =
-    CoverageKey("decoded_resolved_configuration_entity_reference_count");
-pub(crate) const DECODED_RESOLVED_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT: CoverageKey =
-    CoverageKey("decoded_resolved_configuration_row_chain_terminal_count");
-pub(crate) const DECODED_RESOLVED_CONFIGURATION_ROW_CLASS_COUNT: CoverageKey =
-    CoverageKey("decoded_resolved_configuration_row_class_count");
-pub(crate) const DECODED_RESOLVED_CONFIGURATION_ROW_SUCCESSOR_COUNT: CoverageKey =
-    CoverageKey("decoded_resolved_configuration_row_successor_count");
 pub(crate) const DECODED_RESOLVED_FORMULA_OUTPUT_COUNT: CoverageKey =
     CoverageKey("decoded_resolved_formula_output_count");
 pub(crate) const DECODED_RESOLVED_FORMULA_PARAMETER_DEPENDENCY_COUNT: CoverageKey =
@@ -271,8 +253,27 @@ pub(crate) const DECODED_RESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT: Co
     CoverageKey("decoded_resolved_relation_program_reference_incidence_count");
 pub(crate) const DECODED_RESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT: CoverageKey =
     CoverageKey("decoded_resolved_relation_program_repeated_reference_count");
+pub(crate) const DECODED_RESOLVED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT: CoverageKey =
+    CoverageKey("decoded_resolved_schema_configuration_entity_reference_count");
+pub(crate) const DECODED_RESOLVED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT: CoverageKey =
+    CoverageKey("decoded_resolved_schema_configuration_row_chain_terminal_count");
+pub(crate) const DECODED_RESOLVED_SCHEMA_CONFIGURATION_ROW_CLASS_COUNT: CoverageKey =
+    CoverageKey("decoded_resolved_schema_configuration_row_class_count");
+pub(crate) const DECODED_RESOLVED_SCHEMA_CONFIGURATION_ROW_SUCCESSOR_COUNT: CoverageKey =
+    CoverageKey("decoded_resolved_schema_configuration_row_successor_count");
 pub(crate) const DECODED_SCALAR_ENTITY_SUFFIX_VALUE_COUNT: CoverageKey =
     CoverageKey("decoded_scalar_entity_suffix_value_count");
+pub(crate) const DECODED_SCHEMA_CONFIGURATION_RECORD_COUNT: CoverageKey =
+    CoverageKey("decoded_schema_configuration_record_count");
+pub(crate) const DECODED_SCHEMA_CONFIGURATION_ROW_INTERVENING_ENTITY_COUNT: CoverageKey =
+    CoverageKey("decoded_schema_configuration_row_intervening_entity_count");
+pub(crate) const DECODED_SCHEMA_CONFIGURATION_ROW_INTERVENING_SCHEMA_CONFIGURATION_COUNT:
+    CoverageKey =
+    CoverageKey("decoded_schema_configuration_row_intervening_schema_configuration_count");
+pub(crate) const DECODED_SCHEMA_CONFIGURATION_ROW_LINK_COUNT: CoverageKey =
+    CoverageKey("decoded_schema_configuration_row_link_count");
+pub(crate) const DECODED_SCHEMA_CONFIGURATION_SELECTOR_COUNT: CoverageKey =
+    CoverageKey("decoded_schema_configuration_selector_count");
 pub(crate) const DECODED_SCHEMA_SELECTED_ATOM_ENTITY_SUFFIX_VALUE_COUNT: CoverageKey =
     CoverageKey("decoded_schema_selected_atom_entity_suffix_value_count");
 pub(crate) const DECODED_SCHEMA_SELECTED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT: CoverageKey =
@@ -526,8 +527,6 @@ pub(crate) const TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT: CoverageKey =
     CoverageKey("typed_unresolved_object_stream_face_count");
 pub(crate) const TYPED_UNRESOLVED_OBJECT_STREAM_LOOP_COUNT: CoverageKey =
     CoverageKey("typed_unresolved_object_stream_loop_count");
-pub(crate) const UNCLASSIFIED_CONFIGURATION_ENTITY_REFERENCE_COUNT: CoverageKey =
-    CoverageKey("unclassified_configuration_entity_reference_count");
 pub(crate) const UNCLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT: CoverageKey =
     CoverageKey("unclassified_constraint_range_source_entity_count");
 pub(crate) const UNCLASSIFIED_FORMULA_EXPRESSION_ENTITY_COUNT: CoverageKey =
@@ -542,20 +541,12 @@ pub(crate) const UNCLASSIFIED_RELATION_PROGRAM_ENTITY_COUNT: CoverageKey =
     CoverageKey("unclassified_relation_program_entity_count");
 pub(crate) const UNCLASSIFIED_RELATION_PROGRAM_REPEATED_ENTITY_COUNT: CoverageKey =
     CoverageKey("unclassified_relation_program_repeated_entity_count");
+pub(crate) const UNCLASSIFIED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT: CoverageKey =
+    CoverageKey("unclassified_schema_configuration_entity_reference_count");
 pub(crate) const UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT: CoverageKey =
     CoverageKey("uniquely_referenced_constraint_range_count");
 pub(crate) const UNREFERENCED_CONSTRAINT_RANGE_COUNT: CoverageKey =
     CoverageKey("unreferenced_constraint_range_count");
-pub(crate) const UNRESOLVED_CONFIGURATION_ENTITY_REFERENCE_COUNT: CoverageKey =
-    CoverageKey("unresolved_configuration_entity_reference_count");
-pub(crate) const UNRESOLVED_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT: CoverageKey =
-    CoverageKey("unresolved_configuration_row_chain_terminal_count");
-pub(crate) const UNRESOLVED_CONFIGURATION_ROW_CLASS_COUNT: CoverageKey =
-    CoverageKey("unresolved_configuration_row_class_count");
-pub(crate) const UNRESOLVED_CONFIGURATION_ROW_ORDER_COUNT: CoverageKey =
-    CoverageKey("unresolved_configuration_row_order_count");
-pub(crate) const UNRESOLVED_CONFIGURATION_ROW_SUCCESSOR_COUNT: CoverageKey =
-    CoverageKey("unresolved_configuration_row_successor_count");
 pub(crate) const UNRESOLVED_CONSOLIDATED_EDGE_RUN_COUNT: CoverageKey =
     CoverageKey("unresolved_consolidated_edge_run_count");
 pub(crate) const UNRESOLVED_DEFINITION_CHAIN_EVALUATION_OWNER_COUNT: CoverageKey =
@@ -590,6 +581,16 @@ pub(crate) const UNRESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT: Coverage
     CoverageKey("unresolved_relation_program_reference_incidence_count");
 pub(crate) const UNRESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT: CoverageKey =
     CoverageKey("unresolved_relation_program_repeated_reference_count");
+pub(crate) const UNRESOLVED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT: CoverageKey =
+    CoverageKey("unresolved_schema_configuration_entity_reference_count");
+pub(crate) const UNRESOLVED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT: CoverageKey =
+    CoverageKey("unresolved_schema_configuration_row_chain_terminal_count");
+pub(crate) const UNRESOLVED_SCHEMA_CONFIGURATION_ROW_CLASS_COUNT: CoverageKey =
+    CoverageKey("unresolved_schema_configuration_row_class_count");
+pub(crate) const UNRESOLVED_SCHEMA_CONFIGURATION_ROW_ORDER_COUNT: CoverageKey =
+    CoverageKey("unresolved_schema_configuration_row_order_count");
+pub(crate) const UNRESOLVED_SCHEMA_CONFIGURATION_ROW_SUCCESSOR_COUNT: CoverageKey =
+    CoverageKey("unresolved_schema_configuration_row_successor_count");
 pub(crate) const UNRESOLVED_STORAGE_RECORD_COUNT: CoverageKey =
     CoverageKey("unresolved_storage_record_count");
 pub(crate) const UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT: CoverageKey =
@@ -601,8 +602,6 @@ pub(crate) const ALL: &[CoverageKey] = &[
     ATTEMPTED_STANDARD_TOPOLOGY_COUNT,
     CLASSIFIED_DESIGN_OBJECT_COUNT,
     DECODED_ATOM_ENTITY_SUFFIX_VALUE_COUNT,
-    DECODED_CLASSIFIED_CONFIGURATION_ENTITY_REFERENCE_COUNT,
-    DECODED_CLASSIFIED_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT,
     DECODED_CLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT,
     DECODED_CLASSIFIED_FORMULA_EXPRESSION_ENTITY_COUNT,
     DECODED_CLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT,
@@ -610,13 +609,10 @@ pub(crate) const ALL: &[CoverageKey] = &[
     DECODED_CLASSIFIED_RELATION_PROGRAM_ENTITY_COUNT,
     DECODED_CLASSIFIED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT,
     DECODED_CLASSIFIED_RELATION_PROGRAM_REPEATED_ENTITY_COUNT,
-    DECODED_COMPLETE_CONFIGURATION_ROW_CHAIN_COUNT,
+    DECODED_CLASSIFIED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT,
+    DECODED_CLASSIFIED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT,
+    DECODED_COMPLETE_SCHEMA_CONFIGURATION_ROW_CHAIN_COUNT,
     DECODED_COMPLEX_CONSTRAINT_RANGE_COUNT,
-    DECODED_CONFIGURATION_RECORD_COUNT,
-    DECODED_CONFIGURATION_ROW_INTERVENING_CONFIGURATION_COUNT,
-    DECODED_CONFIGURATION_ROW_INTERVENING_ENTITY_COUNT,
-    DECODED_CONFIGURATION_ROW_LINK_COUNT,
-    DECODED_CONFIGURATION_SCHEMA_REFERENCE_COUNT,
     DECODED_CONSOLIDATED_CONE_FACE_COUNT,
     DECODED_CONSOLIDATED_CONE_FACE_PARAMETER_POINT_COUNT,
     DECODED_CONSOLIDATED_EDGE_RUN_COUNT,
@@ -678,10 +674,6 @@ pub(crate) const ALL: &[CoverageKey] = &[
     DECODED_LEGACY_SYNCHRONOUS_STATE_COUNT,
     DECODED_LEGACY_TEXT_FIELD_COUNT,
     DECODED_MULTI_MEMBER_REFERENCE_SIGNATURE_COHORT_COUNT,
-    DECODED_NULL_CONFIGURATION_ENTITY_REFERENCE_COUNT,
-    DECODED_NULL_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT,
-    DECODED_NULL_CONFIGURATION_ROW_CLASS_COUNT,
-    DECODED_NULL_CONFIGURATION_ROW_SUCCESSOR_COUNT,
     DECODED_NULL_FORMULA_OUTPUT_COUNT,
     DECODED_NULL_OBJECT_RECORD_REFERENCE_COUNT,
     DECODED_NULL_REFERENCE_SIGNATURE_ENTITY_COUNT,
@@ -689,12 +681,16 @@ pub(crate) const ALL: &[CoverageKey] = &[
     DECODED_NULL_RELATION_PROGRAM_OUTPUT_COUNT,
     DECODED_NULL_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT,
     DECODED_NULL_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT,
+    DECODED_NULL_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT,
+    DECODED_NULL_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT,
+    DECODED_NULL_SCHEMA_CONFIGURATION_ROW_CLASS_COUNT,
+    DECODED_NULL_SCHEMA_CONFIGURATION_ROW_SUCCESSOR_COUNT,
     DECODED_NUMERIC_ENTITY_VALUE_PACKET_COUNT,
     DECODED_NUMERIC_ENTITY_VALUE_PAIR_COUNT,
     DECODED_OBJECT_GRAPH_COUNT,
     DECODED_OBJECT_RECORD_COUNT,
     DECODED_OPENED_BOOLEAN_PARSER_VERSION_RELATION_EXPRESSION_COUNT,
-    DECODED_ORDERED_CONFIGURATION_ROW_LINK_COUNT,
+    DECODED_ORDERED_SCHEMA_CONFIGURATION_ROW_LINK_COUNT,
     DECODED_OTHER_LEAD12_RELATION_PROGRAM_CONTEXT_CLASS_COUNT,
     DECODED_OTHER_RELATION_PROGRAM_INSTANCE_COUNT,
     DECODED_OWNED_DEFINITION_VALUE_COUNT,
@@ -714,10 +710,6 @@ pub(crate) const ALL: &[CoverageKey] = &[
     DECODED_RELATION_PROGRAM_OUTPUT_COUNT,
     DECODED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT,
     DECODED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT,
-    DECODED_RESOLVED_CONFIGURATION_ENTITY_REFERENCE_COUNT,
-    DECODED_RESOLVED_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT,
-    DECODED_RESOLVED_CONFIGURATION_ROW_CLASS_COUNT,
-    DECODED_RESOLVED_CONFIGURATION_ROW_SUCCESSOR_COUNT,
     DECODED_RESOLVED_FORMULA_OUTPUT_COUNT,
     DECODED_RESOLVED_FORMULA_PARAMETER_DEPENDENCY_COUNT,
     DECODED_RESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT,
@@ -729,7 +721,16 @@ pub(crate) const ALL: &[CoverageKey] = &[
     DECODED_RESOLVED_RELATION_PROGRAM_OUTPUT_COUNT,
     DECODED_RESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT,
     DECODED_RESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT,
+    DECODED_RESOLVED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT,
+    DECODED_RESOLVED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT,
+    DECODED_RESOLVED_SCHEMA_CONFIGURATION_ROW_CLASS_COUNT,
+    DECODED_RESOLVED_SCHEMA_CONFIGURATION_ROW_SUCCESSOR_COUNT,
     DECODED_SCALAR_ENTITY_SUFFIX_VALUE_COUNT,
+    DECODED_SCHEMA_CONFIGURATION_RECORD_COUNT,
+    DECODED_SCHEMA_CONFIGURATION_ROW_INTERVENING_ENTITY_COUNT,
+    DECODED_SCHEMA_CONFIGURATION_ROW_INTERVENING_SCHEMA_CONFIGURATION_COUNT,
+    DECODED_SCHEMA_CONFIGURATION_ROW_LINK_COUNT,
+    DECODED_SCHEMA_CONFIGURATION_SELECTOR_COUNT,
     DECODED_SCHEMA_SELECTED_ATOM_ENTITY_SUFFIX_VALUE_COUNT,
     DECODED_SCHEMA_SELECTED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT,
     DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT,
@@ -854,7 +855,6 @@ pub(crate) const ALL: &[CoverageKey] = &[
     TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_04_COUNT,
     TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT,
     TYPED_UNRESOLVED_OBJECT_STREAM_LOOP_COUNT,
-    UNCLASSIFIED_CONFIGURATION_ENTITY_REFERENCE_COUNT,
     UNCLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT,
     UNCLASSIFIED_FORMULA_EXPRESSION_ENTITY_COUNT,
     UNCLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT,
@@ -862,13 +862,9 @@ pub(crate) const ALL: &[CoverageKey] = &[
     UNCLASSIFIED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT,
     UNCLASSIFIED_RELATION_PROGRAM_ENTITY_COUNT,
     UNCLASSIFIED_RELATION_PROGRAM_REPEATED_ENTITY_COUNT,
+    UNCLASSIFIED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT,
     UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT,
     UNREFERENCED_CONSTRAINT_RANGE_COUNT,
-    UNRESOLVED_CONFIGURATION_ENTITY_REFERENCE_COUNT,
-    UNRESOLVED_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT,
-    UNRESOLVED_CONFIGURATION_ROW_CLASS_COUNT,
-    UNRESOLVED_CONFIGURATION_ROW_ORDER_COUNT,
-    UNRESOLVED_CONFIGURATION_ROW_SUCCESSOR_COUNT,
     UNRESOLVED_CONSOLIDATED_EDGE_RUN_COUNT,
     UNRESOLVED_DEFINITION_CHAIN_EVALUATION_OWNER_COUNT,
     UNRESOLVED_DEFINITION_CHAIN_VALUE_OWNER_COUNT,
@@ -886,6 +882,11 @@ pub(crate) const ALL: &[CoverageKey] = &[
     UNRESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT,
     UNRESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT,
     UNRESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT,
+    UNRESOLVED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT,
+    UNRESOLVED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT,
+    UNRESOLVED_SCHEMA_CONFIGURATION_ROW_CLASS_COUNT,
+    UNRESOLVED_SCHEMA_CONFIGURATION_ROW_ORDER_COUNT,
+    UNRESOLVED_SCHEMA_CONFIGURATION_ROW_SUCCESSOR_COUNT,
     UNRESOLVED_STORAGE_RECORD_COUNT,
     UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT,
 ];
