@@ -1086,10 +1086,6 @@ pub(crate) fn project(
     };
     use std::collections::BTreeMap;
 
-    // The family token is the codec's exact typing of the decoded record. 3DM
-    // stores class UUIDs rather than runtime class names, so this is the most
-    // specific runtime type the archive supports; it keeps the radius/diameter
-    // distinction that `DimensionDisplay` used to carry.
     let (runtime_type, value) = match dimension.definition {
         Definition::Linear { .. } => ("linear_dimension", dimension.measurement),
         Definition::Angular { .. } => ("angular_dimension", dimension.measurement),
@@ -1326,12 +1322,8 @@ pub(crate) fn project(
         })
         .filter(|point| point.iter().all(|value| value.is_finite()));
 
-    // `dimstyle_id` names a presentation record that `presentation::install`
-    // adds after candidate validation, and `detail_measured` names a layout
-    // detail this codec does not type, so neither target can be proven to
-    // resolve here. An unresolvable `target` is a hard `ReferentialIntegrity`
-    // error, so a nil UUID becomes an explicit null reference and a non-nil one
-    // is charged and left in `parameters` as the raw UUID.
+    // `dimstyle_id` / `detail_measured` are not resolved here; nil → null
+    // reference, non-nil → charged and left as the raw UUID in `parameters`.
     let mut references = BTreeMap::new();
     let mut unresolved = Vec::new();
     let mut reference = |role: &str, id: Option<Uuid>, code: RhinoLossCode| match id {

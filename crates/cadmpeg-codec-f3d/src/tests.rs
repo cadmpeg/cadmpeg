@@ -276,11 +276,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     let mut round_trip = cadmpeg_ir::NativeNamespace::default();
     typed.store(&mut round_trip).unwrap();
     assert_eq!(typed, crate::native::F3dNative::load(&round_trip).unwrap());
-    // Storing what was loaded reproduces the stored arenas exactly, including
-    // the construction-history tree that `load` grafts across five arenas and
-    // `store` splits apart again. `f3z` merging depends on it: it appends a
-    // member's stored records onto the root's rather than routing the merged
-    // population through the typed form.
+    // Typed load/store must preserve arena bytes; `f3z` merge appends stored records.
     for name in crate::native::F3D_ARENA_NAMES {
         assert_eq!(
             round_trip.arenas.get(*name),
@@ -16143,9 +16139,7 @@ fn decode_succeeds_when_geometry_present() {
 fn decode_keeps_face_on_unknown_surface() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
-    // Rename the plane record so the face rests on a carrier this codec does not
-    // decode. The face must now be KEPT — topology intact — with an
-    // unknown-geometry surface linking to the preserved record bytes.
+    // Rename the plane record so the face rests on an undecoded carrier.
     let mut smbh = synthetic_geometry_smbh();
     let needle = b"\x0e\x05plane";
     let pos = smbh
@@ -16182,7 +16176,6 @@ fn decode_keeps_face_on_unknown_surface() {
         "the linked unknown record is present in the arena"
     );
 
-    // The loss note is a Warning now (topology transferred), not an Error.
     let note = result
         .report
         .losses
@@ -21241,8 +21234,6 @@ fn generated_revision_compound_loft_rejects_present_parameters_without_a_curve()
             ProceduralSurfaceDefinition::RevisionCompoundLoft { .. }
         )));
 
-    // The writer refuses the same state rather than emitting bytes no reader
-    // can recover the curve from.
     let legal = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh(&synthetic_revision_surface_smbh(

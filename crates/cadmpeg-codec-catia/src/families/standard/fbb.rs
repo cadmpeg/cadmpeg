@@ -508,9 +508,6 @@ pub(crate) fn selected_standard_run(bytes: &[u8]) -> Option<(usize, usize, usize
     let ranges = crate::container::fbb_run_ranges(bytes);
     if let [range] = ranges.as_slice() {
         // A single marker run has no competing population to disambiguate.
-        // Keep the historical marker-only fallback here; the readers that
-        // need a complete source-closed topology still validate the edge,
-        // vertex, trim, and reconstruction stages independently.
         return Some((range.start, range.len() / 8, range.end));
     }
     let groups = standard_fbb_groups(bytes);
@@ -896,10 +893,7 @@ pub(crate) fn parse_trim_record_layout(
         stored_count.checked_mul(width)?
     };
     let end = handle_offset.checked_add(byte_count)?;
-    // The complete handle span is the format-defined resource bound. The
-    // caller already owns the input slice, so a second fixed count ceiling
-    // would reject a valid packet without limiting the bytes that can be
-    // inspected.
+    // The complete handle span is the format-defined resource bound.
     bytes.get(handle_offset..end)?;
     Some(TrimRecordLayout {
         kind,

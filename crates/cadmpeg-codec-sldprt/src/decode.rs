@@ -2450,10 +2450,8 @@ fn build_geometry_ir(
         );
     }
     native.store(ir.native.namespace_mut("sldprt"))?;
-    // The baseline has to describe native-backed configuration state only, so
-    // it is stamped before the read-side snapshot is fabricated. Stamping after
-    // would bake fabricated state into a hash the write path compares against a
-    // projection that can only ever re-derive the native-backed part.
+    // Stamp before fabricating the read-side snapshot so the baseline excludes
+    // synthesized configuration state.
     stamp_configuration_baseline(&mut ir);
     snapshot_active_configuration(&mut ir);
     let mut unknowns = brep.unknowns;
@@ -3470,10 +3468,7 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
     let configuration = &mut ir.model.configurations[configuration_index];
     configuration.parameter_values = parameter_values;
     configuration.feature_states = feature_states;
-    // This design state is a read-side presentation of model-level state, not
-    // configuration-local data the native records carry. Naming the
-    // configuration it was fabricated on lets the write path tell it apart from
-    // state that came out of a feature-input lane.
+    // Mark synthesized configuration snapshots for the write path.
     let id = configuration.id.0.clone();
     if let Some(source) = &mut ir.source {
         source
