@@ -582,6 +582,10 @@ fn enrich_implicit_nominals(
                 DimensionKind::Radius,
                 radius_from_applied_geometry(entity, &feature_index).map(ImplicitNominal::Exact),
             ),
+            "GdtLength" => (
+                DimensionKind::Size,
+                length_from_applied_geometry(entity, &feature_index).map(ImplicitNominal::Exact),
+            ),
             _ => continue,
         };
         let Some(source) = source else {
@@ -661,6 +665,15 @@ fn radius_from_applied_geometry(
 ) -> Option<f64> {
     measurement_from_applied_geometry(annotation, |id| {
         radius_for_feature(id, feature_index, &mut BTreeSet::new(), 0)
+    })
+}
+
+fn length_from_applied_geometry(
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+) -> Option<f64> {
+    measurement_from_applied_geometry(annotation, |id| {
+        length_for_feature(id, feature_index, &mut BTreeSet::new(), 0)
     })
 }
 
@@ -834,6 +847,24 @@ fn radius_for_feature(
                 .and_then(finite_positive),
             "GdtCylinder" => nominal_radius(feature, "NomCylinder"),
             "GdtSphere" => nominal_radius(feature, "NomSphere"),
+            _ => None,
+        },
+    )
+}
+
+fn length_for_feature(
+    id: &str,
+    feature_index: &BTreeMap<&str, &Entity>,
+    visited: &mut BTreeSet<String>,
+    depth: usize,
+) -> Option<f64> {
+    measurement_for_feature(
+        id,
+        feature_index,
+        visited,
+        depth,
+        |feature| match short_class(&feature.class) {
+            "GdtCompoundClosedSlot3D" => nominal_measurement(feature, "NomClosedSlot", "Length"),
             _ => None,
         },
     )
@@ -1766,7 +1797,7 @@ mod tests {
     }
 
     #[test]
-    fn semantic_slot_width_resolves_exact_nominal() {
+    fn semantic_slot_dimensions_resolve_exact_nominals() {
         let mut root = semantic_root();
         root.features
             .references
@@ -1779,6 +1810,18 @@ mod tests {
                 "GeoOpenSlot",
                 "Width",
                 12.7,
+            ));
+        root.features
+            .references
+            .push(reference("FL", "GdtCompoundClosedSlot3D"));
+        root.features
+            .entities
+            .push(feature_with_nominal_measurement(
+                "GdtCompoundClosedSlot3D",
+                "NomClosedSlot",
+                "GeoClosedSlot",
+                "Length",
+                38.1,
             ));
         let mut width = entity("GdtWidth");
         width.strings.insert("ObjectName".into(), "Width 1".into());
@@ -1795,6 +1838,19 @@ mod tests {
             .references
             .push(reference("A50", "GdtWidth"));
         root.annotations.entities.push(width);
+        let mut length = entity("GdtLength");
+        length
+            .strings
+            .insert("ObjectName".into(), "Length 1".into());
+        length.doubles.insert("Nominal".into(), 0.0);
+        length
+            .features
+            .references
+            .push(reference("FL", "GdtCompoundClosedSlot3D"));
+        root.annotations
+            .references
+            .push(reference("A60", "GdtLength"));
+        root.annotations.entities.push(length);
 
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
@@ -1820,6 +1876,16 @@ mod tests {
         assert!(upper_deviation
             .as_ref()
             .is_some_and(|value| approximately_equal(value.value, 0.2)));
+        let length = annotations
+            .iter()
+            .find(|annotation| annotation.name.as_deref() == Some("Length 1"))
+            .expect("length annotation");
+        let PmiDefinition::Dimension { nominal, .. } = &length.definition else {
+            panic!("dimension definition");
+        };
+        assert!(nominal
+            .as_ref()
+            .is_some_and(|value| approximately_equal(value.value, 38.1)));
     }
 
     #[test]

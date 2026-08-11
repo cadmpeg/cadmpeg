@@ -937,6 +937,10 @@ applied semantic geometry. `GdtFillet` uses its `Radius` field,
 Feature references use the same recursive traversal, and all reachable radius
 contributors must agree.
 
+An omitted `GdtLength.Nominal` applied to a `GdtCompoundClosedSlot3D` is the
+positive millimetre `NomClosedSlot.Length`. Feature references use the same
+recursive traversal, and all reachable length contributors must agree.
+
 The geometric-tolerance classes map by their suffix: `GdtStraightness`,
 `GdtFlatness`, `GdtRoundness`, `GdtCircularity`, `GdtCylindricity`,
 `GdtCoaxiality`, `GdtLineProfile`, `GdtSurfaceProfile`,

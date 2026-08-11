@@ -536,7 +536,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Known.** `sldprt.md` §2.1 defines zero as an omitted nominal sentinel. It defines diameter and depth nominal recovery from the rendered literal, declared decimal places, pattern or compound-feature traversal, and cylindrical or spherical nominal geometry. The rendered literal, not the unrounded geometry, supplies the labeled value. It defines width from the named width field of open-slot and closed-slot nominal geometry, and radius from the named radius field of fillet, cylindrical, or spherical nominal geometry. Plane pairs and countersinks carry other geometric objects.
 
-**Need.** We must derive length, location, counterbore, countersink-diameter, and angular nominals without treating the zero sentinel as a measured dimension.
+**Need.** We must derive location, counterbore, countersink-diameter, and angular nominals without treating the zero sentinel as a measured dimension.
 
 ## 6. Write-path evidence
 
