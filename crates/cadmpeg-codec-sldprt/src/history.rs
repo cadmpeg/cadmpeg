@@ -3484,6 +3484,24 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn base_body_class_projects_stored_geometry_independently_of_display_name() {
+        let mut base_body = feature("base-body", Some("18"), 0);
+        base_body.kind = "Localized imported body".into();
+        base_body.input_class = Some("moBaseBody_c".into());
+
+        assert_eq!(
+            project_definition(
+                &base_body,
+                &HashMap::new(),
+                &HashMap::new(),
+                &HashMap::new(),
+                std::slice::from_ref(&base_body),
+            ),
+            FeatureDefinition::StoredGeometry
+        );
+    }
+
+    #[test]
     fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         let profile = |roles: &[(&str, &str)]| {
             let mut profile = feature("profile", Some("7"), 0);
@@ -7269,6 +7287,9 @@ fn project_definition(
     features_by_source: &HashMap<&str, &Feature>,
     history_features: &[Feature],
 ) -> FeatureDefinition {
+    if feature.input_class.as_deref() == Some("moBaseBody_c") {
+        return FeatureDefinition::StoredGeometry;
+    }
     if let Some(role) = feature_tree_node_role(feature, history_features) {
         return FeatureDefinition::TreeNode {
             role,

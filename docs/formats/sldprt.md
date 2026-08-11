@@ -625,6 +625,8 @@ An `moCompReferenceCurve_c` child identifies the sweep cross-section independent
 
 A `moCombineBodies_c` object is a body-Boolean feature independently of whether its Keywords element carries `Operation`, `Target`, or `Tools` attributes. Compact operation and component-path carriers supply absent attributes independently.
 
+An `moBaseBody_c` feature is stored body geometry. Its display name and Keywords `Type` value do not identify the construction. The feature's resolved output-body scope identifies the stored geometry that enters the subsequent history.
+
 A Keywords `Draft` element is a face-draft operation. `Direction` is the pull direction, the `Angle` dimension is the draft angle, and `Outward` is the outward flag of a neutral-plane draft. An absent or non-angular `Angle` dimension leaves the angle unresolved. An absent or non-Boolean `Outward` value leaves the outward operand of a neutral-plane draft unresolved. The `Faces` and `NeutralPlane` selections, the pull direction, and the retained angle and outward values remain independently meaningful.
 
 A Draft feature-input interval uses the lane-scoped `moPlaneRef_w` token for its neutral plane and drafted faces. Each plane-reference prefix has this fixed layout before its variable component path:
