@@ -5,6 +5,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::cursor::Cursor;
+use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::ids::PmiId;
 use cadmpeg_ir::pmi::{
     DatumReference, DimensionKind, GeometricToleranceKind, PmiAnnotation, PmiDefinition,
@@ -38,6 +39,7 @@ struct RelatedObject {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 struct Entity {
+    offset: usize,
     class: String,
     strings: BTreeMap<String, String>,
     integers: BTreeMap<String, i32>,
@@ -48,12 +50,39 @@ struct Entity {
 }
 
 /// Decode the unique GDT-analysis root carried by a SWIFT schema stream.
-pub(crate) fn annotations(scan: &ContainerScan<'_>) -> Vec<PmiAnnotation> {
-    scan_root(scan).map_or_else(Vec::new, |root| project(&root))
+pub(crate) fn annotations(
+    scan: &ContainerScan<'_>,
+    annotations: &mut Annotations,
+) -> Vec<PmiAnnotation> {
+    let Some((stream, root)) = scan_root(scan) else {
+        return Vec::new();
+    };
+    let projected = project(&root);
+    for (reference, entity) in root
+        .annotations
+        .references
+        .iter()
+        .zip(&root.annotations.entities)
+    {
+        let prefix = pmi_id(&reference.id).0;
+        for annotation in projected.iter().filter(|annotation| {
+            annotation.id.0 == prefix || annotation.id.0.starts_with(&format!("{prefix}:"))
+        }) {
+            crate::annotations::note(
+                annotations,
+                annotation.id.0.clone(),
+                stream.clone(),
+                entity.offset as u64,
+                "swift_gdt_analysis",
+                cadmpeg_ir::Exactness::ByteExact,
+            );
+        }
+    }
+    projected
 }
 
 pub(crate) fn unsupported_annotation_classes(scan: &ContainerScan<'_>) -> BTreeMap<String, usize> {
-    let Some(root) = scan_root(scan) else {
+    let Some((_, root)) = scan_root(scan) else {
         return if has_root_marker(scan) {
             BTreeMap::from([("GdtAnalysisGraphUnresolved".into(), 1)])
         } else {
@@ -96,7 +125,7 @@ fn has_root_marker(scan: &ContainerScan<'_>) -> bool {
     })
 }
 
-fn scan_root(scan: &ContainerScan<'_>) -> Option<Entity> {
+fn scan_root(scan: &ContainerScan<'_>) -> Option<(String, Entity)> {
     let mut roots = scan
         .sections()
         .filter(|section| {
@@ -104,7 +133,9 @@ fn scan_root(scan: &ContainerScan<'_>) -> Option<Entity> {
                 .name()
                 .is_some_and(|name| name.starts_with("SWIFT/") && name.contains("Schema"))
         })
-        .filter_map(|section| parse_unique_root(section.payload()));
+        .filter_map(|section| {
+            parse_unique_root(section.payload()).map(|root| (section.display_name(), root))
+        });
     let root = roots.next()?;
     roots.next().is_none().then_some(root)
 }
@@ -131,6 +162,7 @@ fn parse_unique_root(payload: &[u8]) -> Option<Entity> {
 }
 
 fn parse_entity(cursor: &mut Cursor<'_>, depth: usize) -> Option<Entity> {
+    let offset = cursor.position();
     if depth >= MAX_DEPTH || pstr(cursor)? != "Entity" {
         return None;
     }
@@ -138,6 +170,7 @@ fn parse_entity(cursor: &mut Cursor<'_>, depth: usize) -> Option<Entity> {
     let _assembly = pstr(cursor)?;
     let _version = cursor.u32_le()?;
     let mut entity = Entity {
+        offset,
         class,
         ..Entity::default()
     };

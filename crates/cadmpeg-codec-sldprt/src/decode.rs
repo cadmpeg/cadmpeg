@@ -2106,7 +2106,7 @@ fn build_geometry_ir(
         &mut supplemental_config_lanes,
     );
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations);
-    ir.model.pmi = crate::swift::annotations(scan);
+    ir.model.pmi = crate::swift::annotations(scan, &mut annotations);
     project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
     crate::resolved_features::operations::bind_extrusion_operations(
         &mut ir.model.features,
@@ -2997,7 +2997,7 @@ fn build_metadata_ir(
         &mut supplemental_config_lanes,
     );
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations);
-    ir.model.pmi = crate::swift::annotations(scan);
+    ir.model.pmi = crate::swift::annotations(scan, &mut annotations);
     let (sketches, sketch_entities, sketch_constraints) =
         crate::resolved_features::sketch_projection::sketches(scan, &mut annotations);
     let mut model_attributes = crate::metadata::attributes(scan, &mut annotations);
