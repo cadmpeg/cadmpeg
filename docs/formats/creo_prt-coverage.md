@@ -101,7 +101,9 @@ fixtures, claims above L1 remain unproven.
   rows, and immediate `$` continuations are structurally enumerated without
   copying their raw payload bytes. A unique legacy type-10
   `principal_sys_units` scalar transfers the active length system and its
-  canonical millimeter scale.
+  canonical millimeter scale. Complete finite type-2 scalars and dimensioned
+  run-length arrays transfer as exact typed native records without expanding
+  repeated elements.
 - Compressed `THMB_IMG_MAIN` payloads expand to the JPEG marker before preview
   detection and retain the JPEG bytes as a derived native record.
 - Axis-aligned coaxial cone-cylinder intersections transfer the unique circle

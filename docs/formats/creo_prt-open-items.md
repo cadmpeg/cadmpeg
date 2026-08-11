@@ -831,7 +831,10 @@ immediately following `$` row continues a value payload.
 The unique type-10 `principal_sys_units` scalar selects either millimeter or
 inch coordinate lengths; inch lengths scale by `25.4` to canonical
 millimeters.
+Type 2 selects finite IEEE-754 binary64 scalars and dimensioned run-length
+arrays with the compact hexadecimal grammar in `creo_prt.md` §1.
 
-**Need.** We must know the remaining attribute type codes, payload grammars,
-geometry and design-history graph joins, and non-attribute section grammar to
-transfer the rest of legacy persistence.
+**Need.** We must know the remaining attribute type codes and payload grammars,
+the semantic axis order of multidimensional type-2 arrays, geometry and
+design-history graph joins, and non-attribute section grammar to transfer the
+rest of legacy persistence.

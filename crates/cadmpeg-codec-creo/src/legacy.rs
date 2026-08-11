@@ -4,6 +4,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
+use serde::{Serialize, Serializer};
+
 const PRINCIPAL_UNIT_NAME: &str = "principal_sys_units";
 const MILLIMETER_NEWTON_SECOND: &[u8] = b"millimeter Newton Second (mmNs)";
 const INCH_POUND_MASS_SECOND: &[u8] = b"Inch lbm Second (Pro/E Default)";
@@ -40,6 +42,82 @@ impl PrincipalUnitSystem {
             Self::UnknownBinarySelector(_) => None,
         }
     }
+}
+
+/// One finite legacy type-2 real, stored by its exact IEEE-754 bits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Real(u64);
+
+impl Real {
+    /// Numeric value represented by the stored bits.
+    pub fn value(self) -> f64 {
+        f64::from_bits(self.0)
+    }
+}
+
+impl Serialize for Real {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_f64(self.value())
+    }
+}
+
+/// One run in a type-2 real array.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RealRun {
+    /// Number of consecutive array elements carrying `value`.
+    pub count: u32,
+    /// Element value.
+    pub value: Real,
+}
+
+/// Complete semantic payload of one legacy type-2 value row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "form", rename_all = "snake_case")]
+pub enum RealPayload {
+    /// One scalar real.
+    Scalar {
+        /// Scalar value.
+        value: Real,
+    },
+    /// A complete multidimensional array, retained as source runs.
+    Array {
+        /// Array extents from outermost to innermost dimension.
+        dimensions: Vec<u32>,
+        /// Ordered source runs whose count sum equals the extent product.
+        runs: Vec<RealRun>,
+    },
+}
+
+impl RealPayload {
+    /// Number of logical scalar elements represented by this payload.
+    pub fn element_count(&self) -> u64 {
+        match self {
+            Self::Scalar { .. } => 1,
+            Self::Array { runs, .. } => runs.iter().map(|run| u64::from(run.count)).sum(),
+        }
+    }
+}
+
+/// One completely decoded legacy type-2 attribute value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RealRecord {
+    /// Globally unique native record identity.
+    pub id: String,
+    /// Declared attribute name.
+    pub name: String,
+    /// Scope-local declaration identifier.
+    pub attribute_id: u32,
+    /// Byte offset of the owning attribute-ID scope.
+    pub scope_offset: usize,
+    /// Object-tree nesting depth of the scalar or array header.
+    pub depth: u32,
+    /// Complete typed value.
+    pub payload: RealPayload,
+    /// Byte offset of the scalar row or array header.
+    pub offset: usize,
 }
 
 /// One unique `@<name> <id> <type-code>` declaration.
@@ -92,6 +170,10 @@ pub struct Scope {
 pub struct Persistence {
     /// Outer persistence scope followed by each named ASCII section scope.
     pub scopes: Vec<Scope>,
+    /// Complete finite type-2 scalar and array values in source order.
+    pub real_values: Vec<RealRecord>,
+    /// Type-2 value rows not represented by a complete scalar or owning array.
+    pub unresolved_real_value_count: usize,
 }
 
 impl Persistence {
@@ -215,6 +297,175 @@ fn decimal(bytes: &[u8], mut offset: usize) -> Option<(u32, usize)> {
     (offset > start).then_some((value, offset))
 }
 
+fn compact_real(bytes: &[u8]) -> Option<Real> {
+    let (digits, repeat_last) = bytes
+        .strip_suffix(b"R")
+        .map_or((bytes, false), |digits| (digits, true));
+    if digits.is_empty()
+        || digits.len() > 16
+        || !digits
+            .iter()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_lowercase())
+    {
+        return None;
+    }
+    let digits = std::str::from_utf8(digits).ok()?;
+    let mut bits = u64::from_str_radix(digits, 16).ok()?;
+    let fill = if repeat_last { bits & 0x0f } else { 0 };
+    for _ in digits.len()..16 {
+        bits = bits.checked_shl(4)? | fill;
+    }
+    f64::from_bits(bits).is_finite().then_some(Real(bits))
+}
+
+fn array_dimensions(bytes: &[u8]) -> Option<Vec<u32>> {
+    let mut dimensions = Vec::new();
+    let mut cursor = 0;
+    while bytes.get(cursor) == Some(&b'[') {
+        let (dimension, after_dimension) = decimal(bytes, cursor + 1)?;
+        if dimension == 0 || bytes.get(after_dimension) != Some(&b']') {
+            return None;
+        }
+        dimensions.push(dimension);
+        cursor = after_dimension + 1;
+    }
+    (!dimensions.is_empty() && cursor == bytes.len()).then_some(dimensions)
+}
+
+fn real_run(bytes: &[u8]) -> Option<RealRun> {
+    if let Some(star) = bytes.iter().position(|byte| *byte == b'*') {
+        let (count, after_count) = decimal(bytes, 0)?;
+        if count == 0 || after_count != star {
+            return None;
+        }
+        Some(RealRun {
+            count,
+            value: compact_real(bytes.get(star + 1..)?)?,
+        })
+    } else {
+        Some(RealRun {
+            count: 1,
+            value: compact_real(bytes)?,
+        })
+    }
+}
+
+fn continuation_real_runs(bytes: &[u8]) -> Option<Vec<RealRun>> {
+    let mut runs = Vec::new();
+    for row in bytes.split(|byte| *byte == b'\n') {
+        let row = row.strip_suffix(b"\r").unwrap_or(row);
+        let row = row.strip_prefix(b"$")?;
+        let mut tokens = row.split(|byte| *byte == b',').peekable();
+        while let Some(token) = tokens.next() {
+            if token.is_empty() {
+                if tokens.peek().is_some() {
+                    return None;
+                }
+                continue;
+            }
+            runs.push(real_run(token)?);
+        }
+    }
+    Some(runs)
+}
+
+fn real_records(data: &[u8], scopes: &[Scope]) -> (Vec<RealRecord>, usize) {
+    let mut records = Vec::new();
+    let mut unresolved = 0usize;
+    for scope in scopes {
+        let declarations = scope
+            .declarations
+            .iter()
+            .map(|declaration| (declaration.id, declaration))
+            .collect::<BTreeMap<_, _>>();
+        let mut index = 0;
+        while let Some(value) = scope.values.get(index) {
+            let Some(declaration) = declarations
+                .get(&value.attribute_id)
+                .filter(|declaration| declaration.type_code == 2)
+            else {
+                index += 1;
+                continue;
+            };
+            let Some(payload_bytes) = data.get(value.payload.clone()) else {
+                unresolved += 1;
+                index += 1;
+                continue;
+            };
+            let (payload, next_index) = if let Some(dimensions) = array_dimensions(payload_bytes) {
+                let mut next_index = index + 1;
+                let runs = if let Some(range) = &value.continuation_rows {
+                    let Some(bytes) = data.get(range.clone()) else {
+                        unresolved += 1;
+                        index += 1;
+                        continue;
+                    };
+                    let Some(runs) = continuation_real_runs(bytes) else {
+                        unresolved += 1;
+                        index += 1;
+                        continue;
+                    };
+                    runs
+                } else if dimensions.as_slice() == [1] {
+                    let mut runs = Vec::new();
+                    while let Some(child) = scope.values.get(next_index).filter(|child| {
+                        child.attribute_id == value.attribute_id
+                            && child.depth == value.depth.saturating_add(1)
+                    }) {
+                        let Some(bytes) = data.get(child.payload.clone()) else {
+                            break;
+                        };
+                        let Some(run) = (child.continuation_count == 0)
+                            .then(|| real_run(bytes))
+                            .flatten()
+                        else {
+                            break;
+                        };
+                        runs.push(run);
+                        next_index += 1;
+                    }
+                    runs
+                } else {
+                    Vec::new()
+                };
+                let expected = dimensions.iter().try_fold(1u64, |count, dimension| {
+                    count.checked_mul(u64::from(*dimension))
+                });
+                let actual = runs
+                    .iter()
+                    .try_fold(0u64, |count, run| count.checked_add(u64::from(run.count)));
+                if expected.is_none() || expected != actual {
+                    unresolved += next_index - index;
+                    index = next_index;
+                    continue;
+                }
+                (RealPayload::Array { dimensions, runs }, next_index)
+            } else {
+                let Some(real) = (value.continuation_count == 0)
+                    .then(|| compact_real(payload_bytes))
+                    .flatten()
+                else {
+                    unresolved += 1;
+                    index += 1;
+                    continue;
+                };
+                (RealPayload::Scalar { value: real }, index + 1)
+            };
+            records.push(RealRecord {
+                id: format!("creo:legacy_ascii:real#{}", value.offset),
+                name: declaration.name.clone(),
+                attribute_id: value.attribute_id,
+                scope_offset: scope.range.start,
+                depth: value.depth,
+                payload,
+                offset: value.offset,
+            });
+            index = next_index;
+        }
+    }
+    (records, unresolved)
+}
+
 fn value(line: &[u8], line_offset: usize) -> Option<AttributeValue> {
     let (depth, after_depth) = decimal(line, 0)?;
     if line.get(after_depth) != Some(&b' ') {
@@ -306,12 +557,16 @@ fn scan_scope(data: &[u8], range: Range<usize>) -> Scope {
 
 /// Scan independently scoped legacy ASCII record extents.
 pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) -> Persistence {
+    let scopes = ranges
+        .into_iter()
+        .filter(|range| range.start < range.end && range.start < data.len())
+        .map(|range| scan_scope(data, range))
+        .collect::<Vec<_>>();
+    let (real_values, unresolved_real_value_count) = real_records(data, &scopes);
     Persistence {
-        scopes: ranges
-            .into_iter()
-            .filter(|range| range.start < range.end && range.start < data.len())
-            .map(|range| scan_scope(data, range))
-            .collect(),
+        scopes,
+        real_values,
+        unresolved_real_value_count,
     }
 }
 
@@ -357,6 +612,8 @@ mod tests {
         assert_eq!(persistence.declaration_count(), 2);
         assert_eq!(persistence.value_count(), 2);
         assert_eq!(persistence.conflicting_declaration_count(), 0);
+        assert_eq!(persistence.real_values.len(), 1);
+        assert_eq!(persistence.real_values[0].scope_offset, second);
     }
 
     #[test]
@@ -391,6 +648,72 @@ mod tests {
         repeated.extend_from_slice(millimeter);
         let persistence = scan(&repeated, std::iter::once(0..repeated.len()));
         assert_eq!(persistence.principal_unit_system(&repeated), None);
+    }
+
+    #[test]
+    fn type_2_reals_decode_compact_bits_runs_and_child_rows() {
+        let data = b"@scalar 1 2\n0 1 3FF\n\
+            @scale 2 2\n0 2 40396R\n\
+            @matrix 3 2\n0 3 [2][2]\n$3FF,2*0,\n$3FF\n\
+            @single 4 2\n0 4 [1]\n1 4 400\n";
+        let persistence = scan(data, std::iter::once(0..data.len()));
+
+        assert_eq!(persistence.real_values.len(), 4);
+        assert_eq!(persistence.unresolved_real_value_count, 0);
+        assert_eq!(
+            persistence.real_values[0].payload,
+            RealPayload::Scalar {
+                value: Real(1.0f64.to_bits())
+            }
+        );
+        assert_eq!(
+            persistence.real_values[1].payload,
+            RealPayload::Scalar {
+                value: Real(25.4f64.to_bits())
+            }
+        );
+        assert_eq!(
+            persistence.real_values[2].payload,
+            RealPayload::Array {
+                dimensions: vec![2, 2],
+                runs: vec![
+                    RealRun {
+                        count: 1,
+                        value: Real(1.0f64.to_bits()),
+                    },
+                    RealRun {
+                        count: 2,
+                        value: Real(0.0f64.to_bits()),
+                    },
+                    RealRun {
+                        count: 1,
+                        value: Real(1.0f64.to_bits()),
+                    },
+                ],
+            }
+        );
+        assert_eq!(persistence.real_values[2].payload.element_count(), 4);
+        assert_eq!(
+            persistence.real_values[3].payload,
+            RealPayload::Array {
+                dimensions: vec![1],
+                runs: vec![RealRun {
+                    count: 1,
+                    value: Real(2.0f64.to_bits()),
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn type_2_reals_withhold_incomplete_or_nonfinite_values() {
+        let data = b"@short 1 2\n0 1 [3]\n$2*0\n\
+            @lower 2 2\n0 2 3ff\n\
+            @infinite 3 2\n0 3 7FF\n";
+        let persistence = scan(data, std::iter::once(0..data.len()));
+
+        assert!(persistence.real_values.is_empty());
+        assert_eq!(persistence.unresolved_real_value_count, 3);
     }
 
     #[test]

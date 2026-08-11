@@ -32717,11 +32717,47 @@ struct BuiltIr {
     coverage: BTreeMap<String, usize>,
 }
 
+fn emit_legacy_arenas(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> Result<(), CodecError> {
+    let Some(legacy) = &scan.framing.legacy_ascii else {
+        return Ok(());
+    };
+    emit_arena(
+        ir,
+        annotations,
+        "legacy_real_values",
+        &legacy.persistence.real_values,
+        |annotations, record| {
+            let stream = scan
+                .framing
+                .sections
+                .iter()
+                .find(|section| {
+                    record.offset >= section.offset
+                        && record.offset < section.offset.saturating_add(section.length)
+                })
+                .map_or("legacy_ascii", |section| section.name.as_str());
+            annotate(
+                annotations,
+                &record.id,
+                stream,
+                record.offset as u64,
+                "legacy_type_2_real",
+                Exactness::ByteExact,
+            );
+        },
+    )
+}
+
 fn build_container_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     let (meta, coverage) = source_meta(scan);
     ir.source = Some(meta);
+    emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
     let unknowns = preserve_passthrough_sections(scan, &mut annotations);
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
     Ok(BuiltIr {
@@ -32816,6 +32852,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let mut annotations = AnnotationBuilder::new();
     let (meta, mut coverage) = source_meta(scan);
     ir.source = Some(meta);
+    emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
     let unknowns = preserve_passthrough_sections(scan, &mut annotations);
     emit_reference_arenas(scan, &mut ir, &mut annotations)?;
     let line3d_id_counts =
@@ -35755,6 +35792,46 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
             "decoded_legacy_principal_unit_count".to_string(),
             usize::from(scan.framing.principal_unit.is_some()),
         );
+        if let Some(legacy) = &scan.framing.legacy_ascii {
+            coverage.insert(
+                "decoded_legacy_real_scalar_count".to_string(),
+                legacy
+                    .persistence
+                    .real_values
+                    .iter()
+                    .filter(|record| {
+                        matches!(record.payload, crate::legacy::RealPayload::Scalar { .. })
+                    })
+                    .count(),
+            );
+            coverage.insert(
+                "decoded_legacy_real_array_count".to_string(),
+                legacy
+                    .persistence
+                    .real_values
+                    .iter()
+                    .filter(|record| {
+                        matches!(record.payload, crate::legacy::RealPayload::Array { .. })
+                    })
+                    .count(),
+            );
+            coverage.insert(
+                "decoded_legacy_real_element_count".to_string(),
+                legacy
+                    .persistence
+                    .real_values
+                    .iter()
+                    .fold(0usize, |count, record| {
+                        count.saturating_add(
+                            usize::try_from(record.payload.element_count()).unwrap_or(usize::MAX),
+                        )
+                    }),
+            );
+            coverage.insert(
+                "unresolved_legacy_real_value_count".to_string(),
+                legacy.persistence.unresolved_real_value_count,
+            );
+        }
     }
     coverage.insert(
         "decoded_surface_row_count".to_string(),
@@ -36523,6 +36600,19 @@ fn build_report(
         ),
         provenance: None,
     });
+
+    let unresolved_legacy_reals = count("unresolved_legacy_real_value_count");
+    if unresolved_legacy_reals != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_legacy_reals} legacy type-2 value row(s) did not form a complete \
+                 finite scalar or dimension-complete real array."
+            ),
+            provenance: None,
+        });
+    }
 
     // The core prototype-vs-instance limitation.
     losses.push(LossNote {

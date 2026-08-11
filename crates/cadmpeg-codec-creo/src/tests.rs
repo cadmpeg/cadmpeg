@@ -9903,6 +9903,7 @@ fn scan_decodes_active_principal_unit() {
 fn legacy_principal_unit_sets_the_source_length_scale() {
     let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
         @principal_sys_units 25 10\n2 25 Inch lbm Second (Pro/E Default)\n\
+        @rel_accuracy 26 2\n2 26 3FF\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
 
     let result = CreoCodec
@@ -9915,6 +9916,49 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
         result.report.coverage["decoded_legacy_principal_unit_count"],
         1
     );
+    assert_eq!(
+        result.report.coverage["decoded_legacy_real_scalar_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["decoded_legacy_real_element_count"],
+        1
+    );
+    let reals = &result
+        .ir
+        .native
+        .namespace("creo")
+        .expect("Creo namespace")
+        .arenas["legacy_real_values"];
+    assert_eq!(reals.len(), 1);
+    assert_eq!(
+        reals[0].field("name"),
+        Some(serde_json::json!("rel_accuracy"))
+    );
+    assert_eq!(
+        reals[0].field("payload"),
+        Some(serde_json::json!({"form": "scalar", "value": 1.0}))
+    );
+}
+
+#[test]
+fn incomplete_legacy_real_array_is_reported() {
+    let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
+        @values 7 2\n0 7 [2]\n$0\n\
+        #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("legacy incomplete-array decode");
+    assert_eq!(
+        result.report.coverage["unresolved_legacy_real_value_count"],
+        1
+    );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.code == cadmpeg_ir::report::LossKind::RecordNotTyped));
 }
 
 #[test]

@@ -76,6 +76,21 @@ as its payload. A `$` row continues the immediately preceding value row; a
 identifiers can be reused in another scope. Named sections with a byte payload
 that does not begin with an attribute declaration do not use this line grammar.
 
+A type-2 scalar payload is one through sixteen uppercase hexadecimal digits.
+The digits are the most-significant nibbles of an IEEE-754 binary64 bit word.
+Missing low nibbles are zero. A terminal `R` instead repeats the last written
+nibble through the low end of the word. Thus `3FF` is `3FF0000000000000` and
+`40396R` is `4039666666666666`. Only finite decoded values are semantic reals.
+
+A type-2 array header is one or more positive decimal extents written as
+`[d0][d1]...`. Immediately following `$` rows store its linear element sequence
+as comma-separated compact-real tokens. A token `n*H` repeats compact real `H`
+`n` times. A terminal comma before the line break adds no element. The sum of
+run counts must equal the product of the extents. A one-element `[1]` array can
+instead store its compact-real token in the immediately following value row at
+depth one greater and with the same attribute identifier. An incomplete array
+does not produce a typed value.
+
 A body-section header is `#<name>\n`. The first header follows the TOC's
 newline. Later headers follow either the text delimiter `#\n` or the PSB
 compound-close byte `f1`. An `f1 #<name>\n` boundary is a section boundary only
