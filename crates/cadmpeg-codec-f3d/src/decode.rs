@@ -319,6 +319,45 @@ fn edge_selection_is_resolved(selection: &cadmpeg_ir::features::EdgeSelection) -
     }
 }
 
+fn datum_plane_reference_is_resolved(
+    reference: &cadmpeg_ir::features::DatumPlaneReference,
+) -> bool {
+    match reference {
+        cadmpeg_ir::features::DatumPlaneReference::Feature(_) => true,
+        cadmpeg_ir::features::DatumPlaneReference::Face { face, .. } => {
+            face_selection_is_resolved(face)
+        }
+    }
+}
+
+fn datum_point_construction_is_resolved(
+    construction: &cadmpeg_ir::features::DatumPointConstruction,
+) -> bool {
+    use cadmpeg_ir::features::{DatumPointConstruction, VertexSelection};
+
+    match construction {
+        DatumPointConstruction::CircleCenter { edge } => edge_selection_is_resolved(edge),
+        DatumPointConstruction::TwoEdgeIntersection { edges } => {
+            edges.iter().all(edge_selection_is_resolved)
+        }
+        DatumPointConstruction::ThreePlaneIntersection { planes } => {
+            planes.iter().all(datum_plane_reference_is_resolved)
+        }
+        DatumPointConstruction::Vertex { vertex } => matches!(
+            vertex,
+            VertexSelection::Generated { .. } | VertexSelection::Historical { .. }
+        ),
+        DatumPointConstruction::EdgePlaneIntersection { edge, plane } => {
+            edge_selection_is_resolved(edge) && datum_plane_reference_is_resolved(plane)
+        }
+        DatumPointConstruction::DistanceOnEdge { edge, fraction } => {
+            edge_selection_is_resolved(edge)
+                && fraction.is_finite()
+                && (0.0..=1.0).contains(fraction)
+        }
+    }
+}
+
 fn body_selection_is_resolved(selection: &cadmpeg_ir::features::BodySelection) -> bool {
     use cadmpeg_ir::features::BodySelection;
 
@@ -502,6 +541,9 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Sketch { space, sketch } => {
             *space == SketchSpace::Unresolved || sketch.is_none()
         }
+        FeatureDefinition::DatumPoint { construction, .. } => construction
+            .as_deref()
+            .is_none_or(|construction| !datum_point_construction_is_resolved(construction)),
         FeatureDefinition::SpatialSketch { sketch } => sketch.is_none(),
         FeatureDefinition::SketchBlockDefinition { sketch } => sketch.is_none(),
         FeatureDefinition::SketchBlockInstance { block, .. } => block.is_none(),
@@ -1199,6 +1241,36 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                     )
                 }) {
                     gaps.path_selections += 1;
+                }
+            }
+            FeatureDefinition::DatumPoint {
+                construction: Some(construction),
+                ..
+            } => {
+                use cadmpeg_ir::features::{DatumPlaneReference, DatumPointConstruction};
+
+                let mut plane = |reference: &DatumPlaneReference| {
+                    if let DatumPlaneReference::Face { face, .. } = reference {
+                        face_selection(face);
+                    }
+                };
+                match construction.as_ref() {
+                    DatumPointConstruction::CircleCenter { edge }
+                    | DatumPointConstruction::DistanceOnEdge { edge, .. } => edge_selection(edge),
+                    DatumPointConstruction::TwoEdgeIntersection { edges } => {
+                        edges.iter().for_each(&mut edge_selection);
+                    }
+                    DatumPointConstruction::ThreePlaneIntersection { planes } => {
+                        planes.iter().for_each(&mut plane);
+                    }
+                    DatumPointConstruction::Vertex { .. } => {}
+                    DatumPointConstruction::EdgePlaneIntersection {
+                        edge,
+                        plane: reference,
+                    } => {
+                        edge_selection(edge);
+                        plane(reference);
+                    }
                 }
             }
             FeatureDefinition::FilledSurface {
@@ -5229,6 +5301,39 @@ mod tests {
         assert!(feature_definition_is_incomplete(&hem(
             serde_json::json!({"kind": "native", "value": "native:edges"}),
         )));
+    }
+
+    #[test]
+    fn datum_point_completeness_requires_a_resolved_construction_rule() {
+        let definition = |construction: Option<serde_json::Value>| {
+            let mut value = serde_json::json!({
+                "definition": "datum_point",
+                "position": {"x": 1.0, "y": 2.0, "z": 3.0}
+            });
+            if let Some(construction) = construction {
+                value
+                    .as_object_mut()
+                    .expect("DatumPoint object")
+                    .insert("construction".into(), construction);
+            }
+            serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
+                .expect("DatumPoint definition")
+        };
+
+        assert!(!feature_definition_is_incomplete(&definition(Some(
+            serde_json::json!({
+                "kind": "circle_center",
+                "edge": {"kind": "edges", "value": ["edge:1"]}
+            }),
+        ))));
+        assert!(feature_definition_is_incomplete(&definition(None)));
+        assert!(feature_definition_is_incomplete(&definition(Some(
+            serde_json::json!({
+                "kind": "distance_on_edge",
+                "edge": {"kind": "native", "value": "native:edge"},
+                "fraction": 0.5
+            }),
+        ))));
     }
 
     #[test]
