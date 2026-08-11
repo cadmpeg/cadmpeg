@@ -565,7 +565,7 @@ mod tests {
 
     use crate::design_feature::DesignFeatureTransfer;
     use crate::native::{
-        CatiaConstraintRangeFraming, CatiaConstraintRangeIncomingReference, CatiaEntityEvaluation,
+        CatiaConstraintRangeFraming, CatiaEntityEvaluation, CatiaEntityIncomingReference,
         CatiaEntitySchemaValue, CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecordReference,
         CatiaObjectRecordReferenceSource,
     };
@@ -703,17 +703,15 @@ mod tests {
                 .as_mut()
                 .expect("constraint range")
                 .incoming_storage_references
-                .push(
-                    crate::native::CatiaConstraintRangeIncomingStorageReference {
-                        object_record: "source-record".to_string(),
-                        source_entity: Some(crate::native::CatiaEntityReference {
-                            entity_id: 11,
-                            is_null: false,
-                            entity: Some("catia:outer:entity-record#source".to_string()),
-                            class_name: Some("ConstraintField".to_string()),
-                        }),
-                    },
-                );
+                .push(crate::native::CatiaEntityIncomingStorageReference {
+                    object_record: "source-record".to_string(),
+                    source_entity: Some(crate::native::CatiaEntityReference {
+                        entity_id: 11,
+                        is_null: false,
+                        entity: Some("catia:outer:entity-record#source".to_string()),
+                        class_name: Some("ConstraintField".to_string()),
+                    }),
+                });
             source_record.storage_ref = Some(10);
         } else {
             range_entity
@@ -721,7 +719,7 @@ mod tests {
                 .as_mut()
                 .expect("constraint range")
                 .incoming_references
-                .push(CatiaConstraintRangeIncomingReference {
+                .push(CatiaEntityIncomingReference {
                     object_record: "source-record".to_string(),
                     source_entity: Some(crate::native::CatiaEntityReference {
                         entity_id: 11,

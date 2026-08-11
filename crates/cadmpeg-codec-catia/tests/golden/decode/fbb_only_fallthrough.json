@@ -175,7 +175,7 @@
           "zero_entity_support_runs": [],
           "zero_entity_vertex_incidences": []
         },
-        "version": 273
+        "version": 274
       }
     },
     "source": {
@@ -226,6 +226,7 @@
       "decoded_classified_formula_expression_entity_count": 0,
       "decoded_classified_formula_output_entity_count": 0,
       "decoded_classified_formula_parameter_dependency_candidate_count": 0,
+      "decoded_classified_range_interval_source_entity_count": 0,
       "decoded_classified_reference_signature_entity_count": 0,
       "decoded_classified_relation_program_entity_count": 0,
       "decoded_classified_relation_program_reference_incidence_count": 0,
@@ -364,6 +365,9 @@
       "decoded_program_referenced_relation_expression_count": 0,
       "decoded_range_interval_count": 0,
       "decoded_range_interval_finite_slot_count": 0,
+      "decoded_range_interval_incoming_payload_reference_count": 0,
+      "decoded_range_interval_incoming_reference_count": 0,
+      "decoded_range_interval_incoming_storage_reference_count": 0,
       "decoded_range_interval_no_slot_count": 0,
       "decoded_range_interval_unset_slot_count": 0,
       "decoded_reference_signature_cohort_count": 0,
@@ -472,6 +476,7 @@
       "modeling_object_graph_count": 0,
       "modeling_object_record_count": 0,
       "multiply_referenced_constraint_range_count": 0,
+      "multiply_referenced_range_interval_count": 0,
       "partially_resolved_consolidated_edge_run_count": 0,
       "refined_consolidated_analytic_surface_count": 0,
       "resolved_consolidated_revolution_seam_curve_count": 0,
@@ -548,14 +553,17 @@
       "unclassified_formula_output_entity_count": 0,
       "unclassified_formula_parameter_dependency_candidate_count": 0,
       "unclassified_lead12_relation_program_context_entity_count": 0,
+      "unclassified_range_interval_source_entity_count": 0,
       "unclassified_relation_program_entity_count": 0,
       "unclassified_relation_program_reference_incidence_count": 0,
       "unclassified_relation_program_repeated_entity_count": 0,
       "unclassified_schema_configuration_entity_reference_count": 0,
       "unclassified_schema_configuration_row_chain_terminal_count": 0,
       "uniquely_referenced_constraint_range_count": 0,
+      "uniquely_referenced_range_interval_count": 0,
       "unmatched_design_parallel_reference_row_count": 0,
       "unreferenced_constraint_range_count": 0,
+      "unreferenced_range_interval_count": 0,
       "unresolved_appearance_packet_count": 0,
       "unresolved_consolidated_edge_run_count": 0,
       "unresolved_definition_chain_evaluation_owner_count": 0,

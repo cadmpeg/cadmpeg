@@ -17,6 +17,8 @@ pub(crate) const DECODED_ATOM_ENTITY_SUFFIX_VALUE_COUNT: CoverageKey =
     CoverageKey("decoded_atom_entity_suffix_value_count");
 pub(crate) const DECODED_CLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT: CoverageKey =
     CoverageKey("decoded_classified_constraint_range_source_entity_count");
+pub(crate) const DECODED_CLASSIFIED_RANGE_INTERVAL_SOURCE_ENTITY_COUNT: CoverageKey =
+    CoverageKey("decoded_classified_range_interval_source_entity_count");
 pub(crate) const DECODED_CLASSIFIED_FORMULA_EXPRESSION_ENTITY_COUNT: CoverageKey =
     CoverageKey("decoded_classified_formula_expression_entity_count");
 pub(crate) const DECODED_CLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT: CoverageKey =
@@ -207,6 +209,12 @@ pub(crate) const DECODED_RANGE_INTERVAL_COUNT: CoverageKey =
     CoverageKey("decoded_range_interval_count");
 pub(crate) const DECODED_RANGE_INTERVAL_FINITE_SLOT_COUNT: CoverageKey =
     CoverageKey("decoded_range_interval_finite_slot_count");
+pub(crate) const DECODED_RANGE_INTERVAL_INCOMING_PAYLOAD_REFERENCE_COUNT: CoverageKey =
+    CoverageKey("decoded_range_interval_incoming_payload_reference_count");
+pub(crate) const DECODED_RANGE_INTERVAL_INCOMING_REFERENCE_COUNT: CoverageKey =
+    CoverageKey("decoded_range_interval_incoming_reference_count");
+pub(crate) const DECODED_RANGE_INTERVAL_INCOMING_STORAGE_REFERENCE_COUNT: CoverageKey =
+    CoverageKey("decoded_range_interval_incoming_storage_reference_count");
 pub(crate) const DECODED_RANGE_INTERVAL_NO_SLOT_COUNT: CoverageKey =
     CoverageKey("decoded_range_interval_no_slot_count");
 pub(crate) const DECODED_RANGE_INTERVAL_UNSET_SLOT_COUNT: CoverageKey =
@@ -388,6 +396,8 @@ pub(crate) const MODELING_OBJECT_RECORD_COUNT: CoverageKey =
     CoverageKey("modeling_object_record_count");
 pub(crate) const MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT: CoverageKey =
     CoverageKey("multiply_referenced_constraint_range_count");
+pub(crate) const MULTIPLY_REFERENCED_RANGE_INTERVAL_COUNT: CoverageKey =
+    CoverageKey("multiply_referenced_range_interval_count");
 pub(crate) const PARTIALLY_RESOLVED_CONSOLIDATED_EDGE_RUN_COUNT: CoverageKey =
     CoverageKey("partially_resolved_consolidated_edge_run_count");
 pub(crate) const REFINED_CONSOLIDATED_ANALYTIC_SURFACE_COUNT: CoverageKey =
@@ -537,6 +547,8 @@ pub(crate) const TYPED_UNRESOLVED_OBJECT_STREAM_LOOP_COUNT: CoverageKey =
     CoverageKey("typed_unresolved_object_stream_loop_count");
 pub(crate) const UNCLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT: CoverageKey =
     CoverageKey("unclassified_constraint_range_source_entity_count");
+pub(crate) const UNCLASSIFIED_RANGE_INTERVAL_SOURCE_ENTITY_COUNT: CoverageKey =
+    CoverageKey("unclassified_range_interval_source_entity_count");
 pub(crate) const UNCLASSIFIED_FORMULA_EXPRESSION_ENTITY_COUNT: CoverageKey =
     CoverageKey("unclassified_formula_expression_entity_count");
 pub(crate) const UNCLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT: CoverageKey =
@@ -553,8 +565,12 @@ pub(crate) const UNCLASSIFIED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT: Cover
     CoverageKey("unclassified_schema_configuration_entity_reference_count");
 pub(crate) const UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT: CoverageKey =
     CoverageKey("uniquely_referenced_constraint_range_count");
+pub(crate) const UNIQUELY_REFERENCED_RANGE_INTERVAL_COUNT: CoverageKey =
+    CoverageKey("uniquely_referenced_range_interval_count");
 pub(crate) const UNREFERENCED_CONSTRAINT_RANGE_COUNT: CoverageKey =
     CoverageKey("unreferenced_constraint_range_count");
+pub(crate) const UNREFERENCED_RANGE_INTERVAL_COUNT: CoverageKey =
+    CoverageKey("unreferenced_range_interval_count");
 pub(crate) const UNRESOLVED_CONSOLIDATED_EDGE_RUN_COUNT: CoverageKey =
     CoverageKey("unresolved_consolidated_edge_run_count");
 pub(crate) const UNRESOLVED_DEFINITION_CHAIN_EVALUATION_OWNER_COUNT: CoverageKey =
@@ -611,6 +627,7 @@ pub(crate) const ALL: &[CoverageKey] = &[
     CLASSIFIED_DESIGN_OBJECT_COUNT,
     DECODED_ATOM_ENTITY_SUFFIX_VALUE_COUNT,
     DECODED_CLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT,
+    DECODED_CLASSIFIED_RANGE_INTERVAL_SOURCE_ENTITY_COUNT,
     DECODED_CLASSIFIED_FORMULA_EXPRESSION_ENTITY_COUNT,
     DECODED_CLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT,
     DECODED_CLASSIFIED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT,
@@ -706,6 +723,9 @@ pub(crate) const ALL: &[CoverageKey] = &[
     DECODED_PROGRAM_REFERENCED_RELATION_EXPRESSION_COUNT,
     DECODED_RANGE_INTERVAL_COUNT,
     DECODED_RANGE_INTERVAL_FINITE_SLOT_COUNT,
+    DECODED_RANGE_INTERVAL_INCOMING_PAYLOAD_REFERENCE_COUNT,
+    DECODED_RANGE_INTERVAL_INCOMING_REFERENCE_COUNT,
+    DECODED_RANGE_INTERVAL_INCOMING_STORAGE_REFERENCE_COUNT,
     DECODED_RANGE_INTERVAL_NO_SLOT_COUNT,
     DECODED_RANGE_INTERVAL_UNSET_SLOT_COUNT,
     DECODED_REFERENCE_SIGNATURE_COHORT_COUNT,
@@ -794,6 +814,7 @@ pub(crate) const ALL: &[CoverageKey] = &[
     MODELING_OBJECT_GRAPH_COUNT,
     MODELING_OBJECT_RECORD_COUNT,
     MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT,
+    MULTIPLY_REFERENCED_RANGE_INTERVAL_COUNT,
     PARTIALLY_RESOLVED_CONSOLIDATED_EDGE_RUN_COUNT,
     REFINED_CONSOLIDATED_ANALYTIC_SURFACE_COUNT,
     RESOLVED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT,
@@ -868,6 +889,7 @@ pub(crate) const ALL: &[CoverageKey] = &[
     TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT,
     TYPED_UNRESOLVED_OBJECT_STREAM_LOOP_COUNT,
     UNCLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT,
+    UNCLASSIFIED_RANGE_INTERVAL_SOURCE_ENTITY_COUNT,
     UNCLASSIFIED_FORMULA_EXPRESSION_ENTITY_COUNT,
     UNCLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT,
     UNCLASSIFIED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT,
@@ -876,7 +898,9 @@ pub(crate) const ALL: &[CoverageKey] = &[
     UNCLASSIFIED_RELATION_PROGRAM_REPEATED_ENTITY_COUNT,
     UNCLASSIFIED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT,
     UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT,
+    UNIQUELY_REFERENCED_RANGE_INTERVAL_COUNT,
     UNREFERENCED_CONSTRAINT_RANGE_COUNT,
+    UNREFERENCED_RANGE_INTERVAL_COUNT,
     UNRESOLVED_CONSOLIDATED_EDGE_RUN_COUNT,
     UNRESOLVED_DEFINITION_CHAIN_EVALUATION_OWNER_COUNT,
     UNRESOLVED_DEFINITION_CHAIN_VALUE_OWNER_COUNT,

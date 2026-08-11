@@ -80,6 +80,50 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     finish_decode(ctx, &scan, ir, report, annotations, unknowns, false)
 }
 
+#[derive(Default)]
+struct IncomingEntityIncidenceCounts {
+    total: usize,
+    payload: usize,
+    storage: usize,
+    classified: usize,
+    zero: usize,
+    one: usize,
+    multiple: usize,
+}
+
+fn incoming_entity_incidence_counts<'a>(
+    incidences: impl Iterator<
+        Item = (
+            &'a [crate::native::CatiaEntityIncomingReference],
+            &'a [crate::native::CatiaEntityIncomingStorageReference],
+        ),
+    >,
+) -> IncomingEntityIncidenceCounts {
+    let mut counts = IncomingEntityIncidenceCounts::default();
+    for (payload_references, storage_references) in incidences {
+        let payload_count = payload_references.len();
+        let storage_count = storage_references.len();
+        let total = payload_count + storage_count;
+        counts.total += total;
+        counts.payload += payload_count;
+        counts.storage += storage_count;
+        counts.classified += payload_references
+            .iter()
+            .filter_map(|reference| reference.source_entity.as_ref())
+            .chain(
+                storage_references
+                    .iter()
+                    .filter_map(|reference| reference.source_entity.as_ref()),
+            )
+            .filter(|entity| entity.class_name.is_some())
+            .count();
+        counts.zero += usize::from(total == 0);
+        counts.one += usize::from(total == 1);
+        counts.multiple += usize::from(total > 1);
+    }
+    counts
+}
+
 fn finish_decode(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -780,67 +824,46 @@ fn finish_decode(
                 (total + 1, dimensions, complex, evaluated, unset)
             },
         );
-    let (
-        constraint_range_incoming_reference_count,
-        constraint_range_incoming_payload_reference_count,
-        constraint_range_incoming_storage_reference_count,
-        unreferenced_constraint_range_count,
-        uniquely_referenced_constraint_range_count,
-        multiply_referenced_constraint_range_count,
-    ) = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.constraint_range.as_ref())
-        .map(|range| {
-            (
-                range.incoming_references.len(),
-                range.incoming_storage_references.len(),
-            )
-        })
-        .fold(
-            (0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
-            |(references, payload, storage, zero, one, multiple),
-             (payload_count, storage_count)| {
-                let count = payload_count + storage_count;
-                match count {
-                    0 => (references, payload, storage, zero + 1, one, multiple),
-                    1 => (
-                        references + 1,
-                        payload + payload_count,
-                        storage + storage_count,
-                        zero,
-                        one + 1,
-                        multiple,
-                    ),
-                    _ => (
-                        references + count,
-                        payload + payload_count,
-                        storage + storage_count,
-                        zero,
-                        one,
-                        multiple + 1,
-                    ),
-                }
-            },
-        );
-    let classified_constraint_range_source_entity_count = native
-        .entity_records
-        .iter()
-        .filter_map(|record| record.constraint_range.as_ref())
-        .flat_map(|range| {
-            range
-                .incoming_references
-                .iter()
-                .filter_map(|reference| reference.source_entity.as_ref())
-                .chain(
-                    range
-                        .incoming_storage_references
-                        .iter()
-                        .filter_map(|reference| reference.source_entity.as_ref()),
+    let IncomingEntityIncidenceCounts {
+        total: constraint_range_incoming_reference_count,
+        payload: constraint_range_incoming_payload_reference_count,
+        storage: constraint_range_incoming_storage_reference_count,
+        classified: classified_constraint_range_source_entity_count,
+        zero: unreferenced_constraint_range_count,
+        one: uniquely_referenced_constraint_range_count,
+        multiple: multiply_referenced_constraint_range_count,
+    } = incoming_entity_incidence_counts(
+        native
+            .entity_records
+            .iter()
+            .filter_map(|record| record.constraint_range.as_ref())
+            .map(|range| {
+                (
+                    range.incoming_references.as_slice(),
+                    range.incoming_storage_references.as_slice(),
                 )
-        })
-        .filter(|entity| entity.class_name.is_some())
-        .count();
+            }),
+    );
+    let IncomingEntityIncidenceCounts {
+        total: range_interval_incoming_reference_count,
+        payload: range_interval_incoming_payload_reference_count,
+        storage: range_interval_incoming_storage_reference_count,
+        classified: classified_range_interval_source_entity_count,
+        zero: unreferenced_range_interval_count,
+        one: uniquely_referenced_range_interval_count,
+        multiple: multiply_referenced_range_interval_count,
+    } = incoming_entity_incidence_counts(
+        native
+            .entity_records
+            .iter()
+            .filter_map(|record| record.range_interval.as_ref())
+            .map(|range| {
+                (
+                    range.incoming_references.as_slice(),
+                    range.incoming_storage_references.as_slice(),
+                )
+            }),
+    );
     let definition_value_count = native
         .entity_records
         .iter()
@@ -2781,6 +2804,38 @@ fn finish_decode(
         (
             "decoded_range_interval_unset_slot_count".to_string(),
             range_interval_unset_slot_count,
+        ),
+        (
+            "decoded_range_interval_incoming_reference_count".to_string(),
+            range_interval_incoming_reference_count,
+        ),
+        (
+            "decoded_range_interval_incoming_payload_reference_count".to_string(),
+            range_interval_incoming_payload_reference_count,
+        ),
+        (
+            "decoded_range_interval_incoming_storage_reference_count".to_string(),
+            range_interval_incoming_storage_reference_count,
+        ),
+        (
+            "decoded_classified_range_interval_source_entity_count".to_string(),
+            classified_range_interval_source_entity_count,
+        ),
+        (
+            "unclassified_range_interval_source_entity_count".to_string(),
+            range_interval_incoming_reference_count - classified_range_interval_source_entity_count,
+        ),
+        (
+            "unreferenced_range_interval_count".to_string(),
+            unreferenced_range_interval_count,
+        ),
+        (
+            "uniquely_referenced_range_interval_count".to_string(),
+            uniquely_referenced_range_interval_count,
+        ),
+        (
+            "multiply_referenced_range_interval_count".to_string(),
+            multiply_referenced_range_interval_count,
         ),
         (
             "decoded_constraint_range_count".to_string(),

@@ -242,7 +242,10 @@ current scores require those matrices and representative fixtures.
   complete schema-selected `Range` intervals independently of constraint roles.
   It counts no-slot productions and finite and unset interval slots separately.
   The native interval retains the exact prefix form, nullable lower and upper
-  slots, scalar bits, and payload-relative offsets.
+  slots, scalar bits, payload-relative offsets, incoming payload references,
+  and incoming object-head storage selectors. Coverage partitions payload and
+  storage incidences, classified and unclassified source entities, and
+  intervals with zero, one, or multiple total incoming incidences.
   Constraint-range coverage retains
   every exact incoming payload-reference occurrence with its source object,
   paired source entity identity and class when present, payload offset, and

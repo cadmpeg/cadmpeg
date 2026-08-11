@@ -16315,7 +16315,9 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .contains_key("unresolved_constraint_range_owner_count"));
 
     let referenced_file = |reference_count: usize, storage_reference: bool| {
-        let value = [0x32, 4, 0, 0, 0, 0x32, 5, 0, 0, 0, 0xfe];
+        let value = [
+            0x32, 4, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x07, 0x37, 0x81, 0xfe, 0x32, 5, 0, 0, 0, 0xfe,
+        ];
         let mut range_entity = entity_table_record_with_definition_and_value(1, &[0x01], &value);
         range_entity[6] = 2;
         range_entity.extend_from_slice(&suffix);
@@ -16360,6 +16362,15 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .as_ref()
         .expect("complete referenced constraint range")
         .incoming_references;
+    assert_eq!(
+        unique_native.entity_records[0]
+            .range_interval
+            .as_ref()
+            .expect("complete referenced range interval")
+            .incoming_references
+            .as_slice(),
+        incoming.as_slice()
+    );
     assert_eq!(incoming.len(), 1);
     assert_eq!(
         incoming[0].object_record,
@@ -16426,6 +16437,18 @@ fn native_namespace_types_dimension_constraint_ranges() {
             .coverage_count(crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         0
     );
+    assert_eq!(
+        uniquely_referenced
+            .report
+            .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_INCOMING_REFERENCE_COUNT),
+        1
+    );
+    assert_eq!(
+        uniquely_referenced
+            .report
+            .coverage_count(crate::coverage::UNIQUELY_REFERENCED_RANGE_INTERVAL_COUNT),
+        1
+    );
 
     let storage_file = referenced_file(0, true);
     let storage_native = crate::native::CatiaNative::decode(&storage_file);
@@ -16434,6 +16457,15 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .as_ref()
         .expect("complete storage-referenced constraint range")
         .incoming_storage_references;
+    assert_eq!(
+        storage_native.entity_records[0]
+            .range_interval
+            .as_ref()
+            .expect("complete storage-referenced range interval")
+            .incoming_storage_references
+            .as_slice(),
+        incoming_storage.as_slice()
+    );
     assert_eq!(incoming_storage.len(), 1);
     assert_eq!(
         incoming_storage[0].object_record,
@@ -16553,6 +16585,12 @@ fn native_namespace_types_dimension_constraint_ranges() {
             .coverage_count(crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT),
         1
     );
+    assert_eq!(
+        multiply_referenced
+            .report
+            .coverage_count(crate::coverage::MULTIPLY_REFERENCED_RANGE_INTERVAL_COUNT),
+        1
+    );
 
     let mut malformed = native;
     malformed.entity_records[0]
@@ -16603,6 +16641,22 @@ fn native_namespace_types_dimension_constraint_ranges() {
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
+    let mut malformed = unique_native.clone();
+    malformed.entity_records[0]
+        .range_interval
+        .as_mut()
+        .expect("complete referenced range interval")
+        .incoming_references[0]
+        .payload_offset += 1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed
+        .store(&mut namespace)
+        .expect("store malformed range-interval incidence");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
     let mut malformed = storage_native.clone();
     malformed.entity_records[0]
         .constraint_range
@@ -16641,6 +16695,33 @@ fn native_namespace_types_dimension_constraint_ranges() {
             .constraint_range
             .as_ref()
             .expect("migrated constraint range")
+            .incoming_references
+            .len(),
+        1
+    );
+
+    let mut stored = cadmpeg_ir::NativeNamespace::default();
+    unique_native
+        .store(&mut stored)
+        .expect("store older range-interval incidence namespace");
+    stored.version = crate::native::CATIA_RANGE_INTERVAL_INCIDENCE_VERSION - 1;
+    stored
+        .arenas
+        .get_mut("entity_records")
+        .expect("stored entity records")[0]
+        .fields()
+        .get_mut("range_interval")
+        .expect("stored range interval")
+        .as_object_mut()
+        .expect("stored range-interval object")
+        .remove("incoming_references");
+    let migrated =
+        crate::native::CatiaNative::load(&stored).expect("migrate range-interval incidence");
+    assert_eq!(
+        migrated.entity_records[0]
+            .range_interval
+            .as_ref()
+            .expect("migrated range interval")
             .incoming_references
             .len(),
         1
