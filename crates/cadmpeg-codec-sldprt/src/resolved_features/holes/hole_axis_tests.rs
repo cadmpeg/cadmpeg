@@ -736,21 +736,23 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
     .into_iter()
     .collect();
     let sketch = SketchId("profile".into());
-    let entities = |terminal| {
+    let entities = |terminal, mirror_wall: bool| {
+        let wall_radius = if mirror_wall { -3.2 } else { 3.2 };
         [
             profile_line(&sketch, 0, Point2::new(0.0, 6.6), Point2::new(-3.4, 3.2)),
             profile_line(
                 &sketch,
                 1,
-                Point2::new(-3.4, 3.2),
-                Point2::new(terminal, 3.2),
+                Point2::new(-3.4, wall_radius),
+                Point2::new(terminal, wall_radius),
             ),
         ]
     };
 
-    for terminal in [-6.0, -6.001] {
-        let construction = profiled_hole_construction(&profile, &sketch, &entities(terminal))
-            .expect("exact profile");
+    for (terminal, mirror_wall) in [(-6.0, false), (-6.001, true)] {
+        let construction =
+            profiled_hole_construction(&profile, &sketch, &entities(terminal, mirror_wall))
+                .expect("exact profile");
         assert_eq!(construction.diameter, Length(6.4));
         assert_eq!(construction.extent, Termination::ThroughAll);
         assert_eq!(
@@ -762,7 +764,7 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
         );
         assert_eq!(construction.bottom, None);
     }
-    assert!(profiled_hole_construction(&profile, &sketch, &entities(-6.002)).is_none());
+    assert!(profiled_hole_construction(&profile, &sketch, &entities(-6.002, true)).is_none());
 }
 
 #[test]

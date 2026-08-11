@@ -755,9 +755,15 @@ fn profiled_hole_construction(
                     let bore_end = point(-depth, bore_radius);
                     let overrun_bore_end =
                         point(-depth - GENERATED_PROFILE_TERMINAL_OVERRUN_MM, bore_radius);
+                    let mirrored_bore_start = point(-setback, -bore_radius);
+                    let mirrored_bore_end = point(-depth, -bore_radius);
+                    let mirrored_overrun_bore_end =
+                        point(-depth - GENERATED_PROFILE_TERMINAL_OVERRUN_MM, -bore_radius);
                     if has_line(entry, bore_start)
                         && (has_line(bore_start, bore_end)
-                            || has_line(bore_start, overrun_bore_end))
+                            || has_line(bore_start, overrun_bore_end)
+                            || has_line(mirrored_bore_start, mirrored_bore_end)
+                            || has_line(mirrored_bore_start, mirrored_overrun_bore_end))
                     {
                         return Some(ProfiledHoleConstruction {
                             diameter: Length(*diameter),
