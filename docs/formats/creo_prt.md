@@ -2390,6 +2390,9 @@ inherits its count from the preceding class-`946` row in the same feature
 stream when its `f8 <count>` opener is omitted. A named row supplies the same
 state through `geoms_affected`, `edgs_affected`, and `qlts_affected`.
 `Extrude <decimal-ordinal>` identifies an extrusion operation.
+`Intersect <decimal-ordinal>` with exactly one feature-owned class-`29` entity
+table containing materialized surfaces identifies a section-shape operation
+that creates curves at the intersections of two selected shape sets.
 `Boundary Blend <decimal-ordinal>` identifies a boundary-surface operation.
 `Protrusion` identifies a linear extrusion operation; absent section operands
 leave its profile, direction, and extent unresolved without changing its family.

@@ -429,10 +429,11 @@ fixtures, claims above L1 remain unproven.
    boundaries, support faces, continuity, and merge controls. Knit-surface
    coverage partitions unresolved faces, entity merging, and solid creation.
    Thicken coverage partitions unresolved faces, thickness, and side. Any
-   incomplete surface construction raises a decode loss note. Pattern coverage
-   partitions unresolved seed selections and transform operands. Analytic
-   helices whose axis remains source-native are counted separately. Either
-   condition raises a decode loss note.
+   incomplete surface construction raises a decode loss note. Section-shape
+   coverage counts operations and operations with unresolved input shape sets.
+   Pattern coverage partitions unresolved seed selections and transform
+   operands. Analytic helices whose axis remains source-native are counted
+   separately. Each incomplete construction raises a decode loss note.
 4. Validate semantic fingerprints for units, placements, carrier parameters,
    connected topology, feature order, dependencies, sketches, constraints,
    dimensions, expressions, and configuration state. The coverage map counts

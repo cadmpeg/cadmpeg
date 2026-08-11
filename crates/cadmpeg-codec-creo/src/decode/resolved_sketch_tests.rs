@@ -2,6 +2,42 @@ use super::*;
 use cadmpeg_ir::topology::Body;
 
 #[test]
+fn numbered_intersect_name_identifies_section_shape_feature() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    assert_eq!(
+        surface_intersect_feature_definition(&scan, 50, "Intersect 1"),
+        None
+    );
+    scan.features
+        .entity_tables
+        .push(crate::feature::FeatureEntityTable {
+            feature_id: Some(50),
+            table_class_id: 29,
+            entry_ids: vec![61, 75],
+            entries: Vec::new(),
+            surface_ids: vec![61, 75],
+            non_surface_entity_ids: Vec::new(),
+            offset: 0,
+        });
+    assert_eq!(
+        surface_intersect_feature_definition(&scan, 50, "Intersect 1"),
+        Some(IrFeatureDefinition::SectionShape {
+            first: BodySelection::Unresolved,
+            second: BodySelection::Unresolved,
+            approximate: None,
+        })
+    );
+    assert_eq!(
+        surface_intersect_feature_definition(&scan, 50, "Intersect"),
+        None
+    );
+    assert_eq!(
+        surface_intersect_feature_definition(&scan, 50, "Intersect copy"),
+        None
+    );
+}
+
+#[test]
 fn equal_distance_chamfer_setback_uses_nearest_forward_parallel_support() {
     let cone = |origin, axis| ConeEquation {
         origin,

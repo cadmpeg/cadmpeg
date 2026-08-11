@@ -18,13 +18,13 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent,
-    ExtrudeSide, ExtrudeStart, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId, FeatureResultTopology, FeatureSourceContent, FeatureTreeNodeRole,
-    GeneratedEdgeRef, GeneratedFaceRef, HoleBottom, HoleForm, HoleKind, Length, ParameterId,
-    ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec,
-    RevolutionAxis, RevolutionConstruction, RevolveExtent, SurfaceBoundary, SurfaceContinuity,
-    Termination, ThickenSide, VertexSelection,
+    Angle, BodySelection, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection,
+    ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection, Feature,
+    FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId, FeatureResultTopology,
+    FeatureSourceContent, FeatureTreeNodeRole, GeneratedEdgeRef, GeneratedFaceRef, HoleBottom,
+    HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm, PatternKind,
+    ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction, RevolveExtent,
+    SurfaceBoundary, SurfaceContinuity, Termination, ThickenSide, VertexSelection,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -21490,6 +21490,9 @@ fn named_feature_definition(
     if numbered_feature_name_has_family(kind, "Merge") {
         return Some(knit_surface_feature_definition(scan, feature_id));
     }
+    if let Some(definition) = surface_intersect_feature_definition(scan, feature_id, kind) {
+        return Some(definition);
+    }
     if let Some(definition) = reference_named_feature_definition(kind) {
         return Some(definition);
     }
@@ -21652,6 +21655,26 @@ fn unresolved_extrude_extent() -> ExtrudeExtent {
             offset: None,
         },
     }
+}
+
+fn surface_intersect_feature_definition(
+    scan: &ContainerScan,
+    feature_id: u32,
+    kind: &str,
+) -> Option<IrFeatureDefinition> {
+    numbered_feature_name_has_family(kind, "Intersect").then_some(())?;
+    let mut surface_tables = scan.features.entity_tables.iter().filter(|table| {
+        table.feature_id == Some(feature_id)
+            && table.table_class_id == 29
+            && !table.surface_ids.is_empty()
+    });
+    surface_tables.next()?;
+    surface_tables.next().is_none().then_some(())?;
+    Some(IrFeatureDefinition::SectionShape {
+        first: BodySelection::Unresolved,
+        second: BodySelection::Unresolved,
+        approximate: None,
+    })
 }
 
 fn reference_named_feature_definition(kind: &str) -> Option<IrFeatureDefinition> {
@@ -32878,6 +32901,13 @@ fn face_selection_has_unresolved_operands(selection: &FaceSelection) -> bool {
     )
 }
 
+fn body_selection_has_unresolved_operands(selection: &BodySelection) -> bool {
+    matches!(
+        selection,
+        BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_)
+    )
+}
+
 fn edge_selection_has_unresolved_operands(selection: &EdgeSelection) -> bool {
     matches!(
         selection,
@@ -35064,6 +35094,8 @@ fn collect_feature_coverage(
     let mut unresolved_thicken_faces_feature_count = 0;
     let mut unresolved_thicken_thickness_feature_count = 0;
     let mut unresolved_thicken_side_feature_count = 0;
+    let mut section_shape_feature_count = 0;
+    let mut incomplete_section_shape_feature_count = 0;
     let mut pattern_feature_count = 0;
     let mut incomplete_pattern_feature_count = 0;
     let mut unresolved_pattern_seed_feature_count = 0;
@@ -35385,6 +35417,13 @@ fn collect_feature_coverage(
                 incomplete_thicken_feature_count +=
                     usize::from(unresolved_faces || unresolved_thickness || unresolved_side);
             }
+            IrFeatureDefinition::SectionShape { first, second, .. } => {
+                section_shape_feature_count += 1;
+                incomplete_section_shape_feature_count += usize::from(
+                    body_selection_has_unresolved_operands(first)
+                        || body_selection_has_unresolved_operands(second),
+                );
+            }
             IrFeatureDefinition::Pattern { seeds, pattern } => {
                 pattern_feature_count += 1;
                 let unresolved_seeds = seeds.is_empty()
@@ -35429,8 +35468,9 @@ fn collect_feature_coverage(
     let incomplete_surface_operation_feature_count = incomplete_filled_surface_feature_count
         + incomplete_knit_surface_feature_count
         + incomplete_thicken_feature_count;
-    let incomplete_other_construction_feature_count =
-        incomplete_pattern_feature_count + native_axis_helix_feature_count;
+    let incomplete_other_construction_feature_count = incomplete_section_shape_feature_count
+        + incomplete_pattern_feature_count
+        + native_axis_helix_feature_count;
     coverage.insert(
         "transferred_feature_count".to_string(),
         ir.model.features.len(),
@@ -35746,6 +35786,14 @@ fn collect_feature_coverage(
     coverage.insert(
         "transferred_incomplete_other_construction_feature_count".to_string(),
         incomplete_other_construction_feature_count,
+    );
+    coverage.insert(
+        "transferred_section_shape_feature_count".to_string(),
+        section_shape_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_section_shape_feature_count".to_string(),
+        incomplete_section_shape_feature_count,
     );
     coverage.insert(
         "transferred_pattern_feature_count".to_string(),
@@ -37622,6 +37670,10 @@ fn build_report(
         count("transferred_incomplete_other_construction_feature_count");
     if incomplete_other_constructions != 0 {
         let families = [
+            (
+                "section shape",
+                count("transferred_incomplete_section_shape_feature_count"),
+            ),
             (
                 "pattern",
                 count("transferred_incomplete_pattern_feature_count"),
