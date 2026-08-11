@@ -2479,33 +2479,74 @@ fn marker_pattern_bore_axes(
     surfaces: &[Surface],
     direction: Option<Vector3>,
 ) -> Option<Vec<HolePlacement>> {
-    const QUANTUM: f64 = 1.0e-8;
-    let paired_marker_ids = paired_object_locus_markers(lane, feature)
-        .into_iter()
+    let paired_markers = paired_object_locus_markers(lane, feature);
+    let paired_marker_ids = paired_markers
+        .iter()
         .map(|marker| marker.id.as_str())
         .collect::<HashSet<_>>();
-    let mut marker_loci = lane
-        .sketch_entities
-        .iter()
-        .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
-        .filter(|marker| marker.object_index.is_some())
-        .filter(|marker| {
-            marker.kind == SketchInputKind::LineOrCircle
-                || paired_marker_ids.contains(marker.id.as_str())
+    let reduced_marker_ids = paired_markers
+        .into_iter()
+        .filter(|paired| {
+            if paired.kind != SketchInputKind::Point {
+                return true;
+            }
+            let Some([paired_u, paired_v]) = paired.coordinates_m else {
+                return false;
+            };
+            !lane.sketch_entities.iter().any(|candidate| {
+                candidate.id != paired.id
+                    && candidate.feature_ref.as_deref() == Some(feature)
+                    && candidate.object_index.is_some()
+                    && candidate.coordinates_m.is_some_and(|[u, v]| {
+                        same_dimension_length(paired_u * 1000.0, u * 1000.0)
+                            && same_dimension_length(paired_v * 1000.0, v * 1000.0)
+                    })
+            })
         })
-        .filter_map(|marker| {
-            let [u, v] = marker.coordinates_m?;
-            Some(Point2::new(u * 1000.0, v * 1000.0))
-        })
-        .collect::<Vec<_>>();
-    marker_loci.sort_by(|left, right| {
-        left.u
-            .total_cmp(&right.u)
-            .then_with(|| left.v.total_cmp(&right.v))
-    });
-    marker_loci.dedup_by(|left, right| {
-        same_dimension_length(left.u, right.u) && same_dimension_length(left.v, right.v)
-    });
+        .map(|marker| marker.id.as_str())
+        .collect::<HashSet<_>>();
+    let marker_loci = |paired: &HashSet<&str>| {
+        let mut loci = lane
+            .sketch_entities
+            .iter()
+            .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
+            .filter(|marker| marker.object_index.is_some())
+            .filter(|marker| {
+                marker.kind == SketchInputKind::LineOrCircle || paired.contains(marker.id.as_str())
+            })
+            .filter_map(|marker| {
+                let [u, v] = marker.coordinates_m?;
+                Some(Point2::new(u * 1000.0, v * 1000.0))
+            })
+            .collect::<Vec<_>>();
+        loci.sort_by(|left, right| {
+            left.u
+                .total_cmp(&right.u)
+                .then_with(|| left.v.total_cmp(&right.v))
+        });
+        loci.dedup_by(|left, right| {
+            same_dimension_length(left.u, right.u) && same_dimension_length(left.v, right.v)
+        });
+        loci
+    };
+    let complete_loci = marker_loci(&paired_marker_ids);
+    let reduced_loci = marker_loci(&reduced_marker_ids);
+    match_marker_loci_to_bore_axes(&complete_loci, radius, surfaces, direction).or_else(|| {
+        if reduced_loci == complete_loci {
+            None
+        } else {
+            match_marker_loci_to_bore_axes(&reduced_loci, radius, surfaces, direction)
+        }
+    })
+}
+
+fn match_marker_loci_to_bore_axes(
+    marker_loci: &[Point2],
+    radius: f64,
+    surfaces: &[Surface],
+    direction: Option<Vector3>,
+) -> Option<Vec<HolePlacement>> {
+    const QUANTUM: f64 = 1.0e-8;
     if marker_loci.is_empty() {
         return None;
     }
@@ -2554,38 +2595,22 @@ fn marker_pattern_bore_axes(
         let mut candidates = lines
             .into_iter()
             .filter_map(|(point, surfaces)| {
-                let mut oriented = match direction {
+                let compare_origins = |left: &&(Point3, Vector3), right: &&(Point3, Vector3)| {
+                    left.0
+                        .x
+                        .total_cmp(&right.0.x)
+                        .then_with(|| left.0.y.total_cmp(&right.0.y))
+                        .then_with(|| left.0.z.total_cmp(&right.0.z))
+                };
+                let (origin, axis) = match direction {
                     Some(expected) => surfaces
                         .iter()
-                        .copied()
                         .filter(|(_, axis)| dot(expected, *axis) >= 1.0 - 1.0e-9)
-                        .collect::<Vec<_>>(),
-                    None => {
-                        let (_, first) = surfaces.first().copied()?;
-                        if !surfaces
-                            .iter()
-                            .all(|(_, axis)| dot(*axis, first) >= 1.0 - 1.0e-9)
-                        {
-                            return None;
-                        }
-                        surfaces
-                    }
+                        .min_by(compare_origins)?,
+                    None => surfaces.iter().min_by(compare_origins)?,
                 };
-                oriented.sort_by_key(|(origin, axis)| {
-                    [
-                        origin.x.to_bits(),
-                        origin.y.to_bits(),
-                        origin.z.to_bits(),
-                        axis.x.to_bits(),
-                        axis.y.to_bits(),
-                        axis.z.to_bits(),
-                    ]
-                });
-                oriented.dedup();
-                let [(origin, axis)] = oriented.as_slice() else {
-                    return None;
-                };
-                Some((point, *origin, *axis))
+                let axis = direction.map_or_else(|| canonical_axis(*axis), |_| *axis);
+                Some((point, *origin, axis))
             })
             .collect::<Vec<_>>();
         candidates.sort_unstable_by_key(|(point, _, _)| *point);
@@ -2608,7 +2633,7 @@ fn marker_pattern_bore_axes(
                     Point3::new(x as f64 * QUANTUM, y as f64 * QUANTUM, z as f64 * QUANTUM)
                 })
                 .collect::<Vec<_>>();
-            if !point_sets_are_congruent(&marker_loci, &points) {
+            if !point_sets_are_congruent(marker_loci, &points) {
                 continue;
             }
             let placements = combination

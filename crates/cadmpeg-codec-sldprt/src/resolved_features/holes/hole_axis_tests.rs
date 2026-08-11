@@ -1483,18 +1483,71 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
             SketchInputKind::Point,
             Some([1.0, 1.0]),
         ),
+        marker(
+            "paired-duplicate",
+            5,
+            Some(4),
+            SketchInputKind::Point,
+            Some([1.0, 1.0]),
+        ),
+        marker(
+            "paired-duplicate-origin",
+            6,
+            None,
+            SketchInputKind::Point,
+            Some([0.0, 0.0]),
+        ),
     ];
 
     let paired = paired_object_locus_markers(&lane, "position")
         .into_iter()
         .map(|marker| marker.id.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(paired, ["first", "second"]);
+    assert_eq!(paired, ["first", "second", "paired-duplicate"]);
 
-    let surfaces = vec![cylinder(0, -9.0), cylinder(1, 13.0), cylinder(2, 100.0)];
+    let mut surfaces = vec![cylinder(0, -9.0), cylinder(1, 13.0), cylinder(2, 100.0)];
     let placements = marker_pattern_bore_axes(&lane, "position", 2.0, &surfaces, None)
         .expect("unique congruent pattern");
     assert_eq!(placements.len(), 2);
+
+    let opposite = surfaces[..2]
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(index, mut surface)| {
+            surface.id = SurfaceId(format!("opposite-{index}"));
+            let SurfaceGeometry::Cylinder { origin, axis, .. } = &mut surface.geometry else {
+                unreachable!();
+            };
+            origin.z = 20.0;
+            *axis = Vector3::new(0.0, 0.0, -1.0);
+            surface
+        })
+        .collect::<Vec<_>>();
+    surfaces.extend(opposite);
+    assert_eq!(
+        marker_pattern_bore_axes(&lane, "position", 2.0, &surfaces, None)
+            .expect("unoriented coincident axes")
+            .len(),
+        2
+    );
+
+    surfaces.push(Surface {
+        id: SurfaceId("duplicate-locus-bore".into()),
+        geometry: SurfaceGeometry::Cylinder {
+            origin: Point3::new(1000.0, 1000.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        },
+        source_object: None,
+    });
+    assert_eq!(
+        marker_pattern_bore_axes(&lane, "position", 2.0, &surfaces, None)
+            .expect("complete paired roster takes precedence")
+            .len(),
+        3
+    );
 }
 
 #[test]
