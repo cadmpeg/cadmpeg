@@ -7918,9 +7918,10 @@ fn project_extrude(
     native_by_source: &HashMap<&str, &str>,
     features_by_source: &HashMap<&str, &Feature>,
 ) -> Option<FeatureDefinition> {
-    let legacy_profile = (feature.input_class.is_none()
+    let legacy_history_extrusion = feature.input_class.is_none()
         && feature.xml_tag.eq_ignore_ascii_case("Extrusion")
-        && feature.parameters.len() == 1)
+        && feature.parameters.len() == 1;
+    let legacy_profile = legacy_history_extrusion
         .then(|| {
             let source = feature.source_id.as_deref()?.parse::<i64>().ok()?;
             features_by_source
@@ -7974,7 +7975,6 @@ fn project_extrude(
             offset: None,
         },
     };
-    let legacy_history_extrusion = legacy_profile.is_some();
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
         None if !feature.parameters.contains_key("Depth")
             && !feature.parameters.contains_key("D1")
@@ -17316,7 +17316,7 @@ fn extrude_op(kind: &str) -> Option<BooleanOp> {
         .collect::<Vec<_>>();
     match kind.as_slice() {
         b"bossextrude" => Some(BooleanOp::Join),
-        b"cutextrude" => Some(BooleanOp::Cut),
+        b"cutextrude" | b"cutextrudethin" => Some(BooleanOp::Cut),
         _ => None,
     }
 }

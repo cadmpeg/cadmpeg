@@ -210,6 +210,15 @@ fn scalar_unit_from_feature_parameter(
     feature: &crate::records::Feature,
     name: &str,
 ) -> Option<ScalarUnit> {
+    let normalized_kind = feature
+        .kind
+        .bytes()
+        .filter(u8::is_ascii_alphanumeric)
+        .map(|byte| byte.to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    if matches!(name, "D5" | "D6" | "D7") && normalized_kind.as_slice() == b"cutextrudethin" {
+        return Some(ScalarUnit::Length);
+    }
     if name == "D1"
         && crate::classification::classify(feature)
             == Some(crate::classification::FeatureClass::MoveFace)

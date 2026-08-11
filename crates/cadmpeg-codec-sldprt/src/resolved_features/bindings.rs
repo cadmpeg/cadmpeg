@@ -6,6 +6,7 @@ use super::axes::{
     declared_line_reference_directions, linear_pattern_display_directions,
     typed_linear_pattern_dimensions,
 };
+use super::component_paths::is_dissected_profile_feature;
 use super::endpoints::{
     alternate_current_indexed_curve_endpoint_indices, compact_indexed_curve_endpoint_indices,
     compact_legacy_curve_endpoint_indices, extended_compact_indexed_curve_endpoint_indices,
@@ -771,6 +772,50 @@ pub(crate) fn bind_scalar_operands(
             }
         }
         bind_detached_legacy_sketch_objects(histories, &represented_sketches, lane);
+        let features_by_id = histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .map(|feature| (feature.id.as_str(), feature))
+            .collect::<HashMap<_, _>>();
+        let names_by_id = lane
+            .names
+            .iter()
+            .map(|name| (name.id.as_str(), name.value.as_str()))
+            .collect::<HashMap<_, _>>();
+        for pair in starts.windows(2) {
+            let [(_, parent_id), (child_start, child_id)] = pair else {
+                continue;
+            };
+            let (Some(parent), Some(child)) = (
+                features_by_id.get(parent_id).copied(),
+                features_by_id.get(child_id).copied(),
+            ) else {
+                continue;
+            };
+            if native_object_class(parent.input_class.as_deref().unwrap_or_default()).kind
+                != NativeClassKind::Extrusion
+                && !matches!(parent.xml_tag.as_str(), "Extrusion" | "Cut")
+            {
+                continue;
+            }
+            if !is_dissected_profile_feature(child) {
+                continue;
+            }
+            let child_end = starts
+                .iter()
+                .find(|(offset, _)| offset > child_start)
+                .map_or(u64::MAX, |(offset, _)| *offset);
+            for scalar in lane.scalars.iter_mut().filter(|scalar| {
+                scalar.offset > *child_start
+                    && scalar.offset < child_end
+                    && scalar.feature_ref.as_deref() == Some(*child_id)
+                    && names_by_id
+                        .get(scalar.name.as_str())
+                        .is_some_and(|name| parent.parameters.contains_key(*name))
+            }) {
+                scalar.feature_ref = Some((*parent_id).to_string());
+            }
+        }
         finalize_lane_bindings(histories, lane);
     }
 }
