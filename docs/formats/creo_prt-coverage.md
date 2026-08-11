@@ -251,7 +251,9 @@ fixtures, claims above L1 remain unproven.
   uniquely match the two diameters on two axes and the counterbore depth on the
   remaining axis. The fifth row is the drill-point angle. Nonmatching
   document-level replays and class-29 tables without materialized source
-  cylinders do not participate.
+  cylinders do not participate. Coaxial radial centers and adjacent
+  counterbore and bore intervals supply the entry position, direction, and full
+  blind extent without assigning a placement face.
 - Fill boundaries use the unique feature-bound section transform when present
   and otherwise the unique feature-owned section definition. The sketch
   identity remains available when its placement or profile geometry is

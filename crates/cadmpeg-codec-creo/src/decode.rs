@@ -20793,7 +20793,7 @@ fn schema_feature_definition(
                     },
                     |(entry_surface_id, position, direction, extent)| {
                         (
-                            Some(face_selection(entry_surface_id)),
+                            entry_surface_id.map(face_selection),
                             Some(position),
                             Some(direction),
                             None,
@@ -22758,7 +22758,7 @@ fn counterbore_directed_placement(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
-) -> Option<(u32, Point3, Vector3, Termination)> {
+) -> Option<(Option<u32>, Point3, Vector3, Termination)> {
     let (bore_diameter, counterbore_diameter, counterbore_depth) =
         counterbore_dimensions(scan, ir, feature_id)?;
     let sources = counterbore_cylinder_sources(scan, feature_id)?;
@@ -22770,15 +22770,196 @@ fn counterbore_directed_placement(
     };
     let bore_radius = 0.5 * bore_diameter;
     let counterbore_radius = 0.5 * counterbore_diameter;
-    let ((Some(counterbore), None, None, Some(bore)) | (None, Some(bore), Some(counterbore), None)) = (
+    let boundaries = (
         boundary(first, counterbore_radius),
         boundary(first, bore_radius),
         boundary(second, counterbore_radius),
         boundary(second, bore_radius),
-    ) else {
+    );
+    let boundary_placement = match boundaries {
+        (Some(counterbore), None, None, Some(bore))
+        | (None, Some(bore), Some(counterbore), None) => {
+            counterbore_directed_span(counterbore, bore, counterbore_depth).map(
+                |(face, position, direction, extent)| (Some(face), position, direction, extent),
+            )
+        }
+        _ => None,
+    };
+    boundary_placement.or_else(|| {
+        let source_corners = sources
+            .iter()
+            .map(|ids| {
+                let [first_id, second_id] = ids.as_slice() else {
+                    return None;
+                };
+                let envelope = |id| {
+                    let row = crate::surface::unique_surface_row(&scan.surfaces.rows, id)?;
+                    unique_surface_parameter_record(scan, row)?
+                        .type24_terminal_corner_envelope(row.type_byte)
+                };
+                Some([envelope(*first_id)?, envelope(*second_id)?])
+            })
+            .collect::<Option<Vec<_>>>()?;
+        counterbore_placement_from_corner_envelopes(
+            &source_corners,
+            bore_diameter,
+            counterbore_diameter,
+            counterbore_depth,
+        )
+        .map(|(position, direction, extent)| (None, position, direction, extent))
+    })
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CounterboreEnvelopeLayout {
+    axis: usize,
+    radial: [usize; 2],
+    center: [f64; 3],
+    axial_interval: [f64; 2],
+}
+
+fn counterbore_source_envelope_layout(
+    corners: [[[f64; 3]; 2]; 2],
+    diameter: f64,
+    axial_depth: Option<f64>,
+    scale: f64,
+) -> Option<CounterboreEnvelopeLayout> {
+    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    let intervals = corners.map(|patch| {
+        std::array::from_fn::<_, 3, _>(|axis| {
+            [
+                patch[0][axis].min(patch[1][axis]),
+                patch[0][axis].max(patch[1][axis]),
+            ]
+        })
+    });
+    let shared = |axis: usize| {
+        close(intervals[0][axis][0], intervals[1][axis][0])
+            && close(intervals[0][axis][1], intervals[1][axis][1])
+    };
+    let adjacent = |axis: usize| {
+        close(intervals[0][axis][1], intervals[1][axis][0])
+            || close(intervals[1][axis][1], intervals[0][axis][0])
+    };
+    let union = |axis: usize| {
+        [
+            intervals[0][axis][0].min(intervals[1][axis][0]),
+            intervals[0][axis][1].max(intervals[1][axis][1]),
+        ]
+    };
+    let diameter_axes = (0..3)
+        .filter(|axis| {
+            let union = union(*axis);
+            (shared(*axis) || adjacent(*axis)) && close(union[1] - union[0], diameter)
+        })
+        .collect::<Vec<_>>();
+    let [first_radial, second_radial] = diameter_axes.as_slice() else {
         return None;
     };
-    counterbore_directed_span(counterbore, bore, counterbore_depth)
+    let axis = (0..3).find(|axis| axis != first_radial && axis != second_radial)?;
+    shared(axis).then_some(())?;
+    let axial_interval = intervals[0][axis];
+    let axial_span = axial_interval[1] - axial_interval[0];
+    (axial_span > 0.0 && axial_depth.is_none_or(|depth| close(axial_span, depth))).then_some(())?;
+    let mut center = [0.0; 3];
+    for radial_axis in [*first_radial, *second_radial] {
+        let bounds = union(radial_axis);
+        center[radial_axis] = f64::midpoint(bounds[0], bounds[1]);
+    }
+    Some(CounterboreEnvelopeLayout {
+        axis,
+        radial: [*first_radial, *second_radial],
+        center,
+        axial_interval,
+    })
+}
+
+fn counterbore_placement_from_corner_envelopes(
+    source_corners: &[[[[f64; 3]; 2]; 2]],
+    bore_diameter: f64,
+    counterbore_diameter: f64,
+    counterbore_depth: f64,
+) -> Option<(Point3, Vector3, Termination)> {
+    let [first_source, second_source] = source_corners else {
+        return None;
+    };
+    let scale = source_corners
+        .iter()
+        .flatten()
+        .flatten()
+        .flatten()
+        .chain([&bore_diameter, &counterbore_diameter, &counterbore_depth])
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    source_corners
+        .iter()
+        .flatten()
+        .flatten()
+        .flatten()
+        .all(|value| value.is_finite())
+        .then_some(())?;
+    (bore_diameter > 0.0 && counterbore_diameter > bore_diameter && counterbore_depth > 0.0)
+        .then_some(())?;
+    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    let assignments = [
+        (
+            counterbore_source_envelope_layout(*first_source, bore_diameter, None, scale),
+            counterbore_source_envelope_layout(
+                *second_source,
+                counterbore_diameter,
+                Some(counterbore_depth),
+                scale,
+            ),
+        ),
+        (
+            counterbore_source_envelope_layout(*second_source, bore_diameter, None, scale),
+            counterbore_source_envelope_layout(
+                *first_source,
+                counterbore_diameter,
+                Some(counterbore_depth),
+                scale,
+            ),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(bore, counterbore)| Some((bore?, counterbore?)))
+    .collect::<Vec<_>>();
+    let [(bore, counterbore)] = assignments.as_slice() else {
+        return None;
+    };
+    (bore.axis == counterbore.axis && bore.radial == counterbore.radial).then_some(())?;
+    bore.radial
+        .iter()
+        .all(|axis| close(bore.center[*axis], counterbore.center[*axis]))
+        .then_some(())?;
+    let (entry, direction_sign, length) =
+        if close(counterbore.axial_interval[1], bore.axial_interval[0]) {
+            (
+                counterbore.axial_interval[0],
+                1.0,
+                bore.axial_interval[1] - counterbore.axial_interval[0],
+            )
+        } else if close(bore.axial_interval[1], counterbore.axial_interval[0]) {
+            (
+                counterbore.axial_interval[1],
+                -1.0,
+                counterbore.axial_interval[1] - bore.axial_interval[0],
+            )
+        } else {
+            return None;
+        };
+    (length > counterbore_depth && length.is_finite()).then_some(())?;
+    let mut position = counterbore.center;
+    position[counterbore.axis] = entry;
+    let mut direction = [0.0; 3];
+    direction[counterbore.axis] = direction_sign;
+    Some((
+        Point3::new(position[0], position[1], position[2]),
+        Vector3::new(direction[0], direction[1], direction[2]),
+        Termination::Blind {
+            length: Length(length),
+        },
+    ))
 }
 
 fn counterbore_directed_span(

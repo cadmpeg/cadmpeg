@@ -2801,6 +2801,74 @@ fn counterbore_boundary_circles_define_the_directed_full_span() {
 }
 
 #[test]
+fn counterbore_corner_envelopes_define_the_directed_stepped_span() {
+    let bore = [
+        [[-20.0, -32.0, -160.0], [20.0, 17.0, -140.0]],
+        [[-20.0, -32.0, -140.0], [20.0, 17.0, -120.0]],
+    ];
+    let counterbore = [
+        [[-60.0, -40.0, -200.0], [60.0, -32.0, -140.0]],
+        [[-60.0, -40.0, -140.0], [60.0, -32.0, -80.0]],
+    ];
+    let expected = Some((
+        Point3::new(0.0, -40.0, -140.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        Termination::Blind {
+            length: Length(57.0),
+        },
+    ));
+    assert_eq!(
+        counterbore_placement_from_corner_envelopes(&[bore, counterbore], 40.0, 120.0, 8.0),
+        expected
+    );
+    assert_eq!(
+        counterbore_placement_from_corner_envelopes(&[counterbore, bore], 40.0, 120.0, 8.0),
+        expected
+    );
+
+    let reverse_bore = [
+        [[225.0, 174.0, -211.0], [257.0, 226.0, -185.0]],
+        [[225.0, 174.0, -185.0], [257.0, 226.0, -159.0]],
+    ];
+    let reverse_counterbore = [
+        [[257.0, 150.0, -235.0], [265.0, 250.0, -185.0]],
+        [[257.0, 150.0, -185.0], [265.0, 250.0, -135.0]],
+    ];
+    assert_eq!(
+        counterbore_placement_from_corner_envelopes(
+            &[reverse_bore, reverse_counterbore],
+            52.0,
+            100.0,
+            8.0,
+        ),
+        Some((
+            Point3::new(265.0, 200.0, -185.0),
+            Vector3::new(-1.0, 0.0, 0.0),
+            Termination::Blind {
+                length: Length(40.0),
+            },
+        ))
+    );
+
+    let mut separated_counterbore = counterbore;
+    for patch in &mut separated_counterbore {
+        patch[0][1] -= 1.0;
+        patch[1][1] -= 1.0;
+    }
+    assert!(counterbore_placement_from_corner_envelopes(
+        &[bore, separated_counterbore],
+        40.0,
+        120.0,
+        8.0,
+    )
+    .is_none());
+    assert!(
+        counterbore_placement_from_corner_envelopes(&[bore, counterbore], 40.0, 120.0, 9.0,)
+            .is_none()
+    );
+}
+
+#[test]
 fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,

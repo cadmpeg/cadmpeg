@@ -2871,6 +2871,16 @@ the patch spans do not participate, and all participating tables supply one
 equal diameter and depth tuple. ID `4` does not participate in this envelope
 binding.
 
+The same terminal envelopes supply directed placement when each assigned
+source has its diameter on exactly two axes through common or adjacent-union
+spans. The remaining axis has one common nonzero interval in each source. The
+counterbore interval length equals the counterbore depth. Both sources have the
+same axial axis and equal radial centers, and their axial intervals are exactly
+adjacent. The outer counterbore bound is the entry position. The direction is
+from that bound through the counterbore interval into the bore interval. The
+union of the two axial intervals is the full blind extent. This envelope form
+does not identify a placement face.
+
 A counterbore-form hole with a complete bound dimensional tuple has a resolved
 counterbore entry; otherwise the identified counterbore form remains
 unresolved. The two source-entity cylinder pairs are coaxial. The pair whose
