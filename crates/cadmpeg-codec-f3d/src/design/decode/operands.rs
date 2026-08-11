@@ -24,7 +24,8 @@ use crate::records::{
     DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchProfileOperand,
     DesignSketchProfileRegion, DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection,
     DesignSurfaceOffsetSupport, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
-    DesignTopologyRecipeTriplet, LostEdgeReference, PersistentSubentityTag, SketchCurveIdentity,
+    DesignTopologyRecipeTriplet, DesignWorkPointInputCarrier, DesignWorkPointPlaneSelection,
+    DesignWorkPointVertexRecipe, LostEdgeReference, PersistentSubentityTag, SketchCurveIdentity,
     SketchPoint, SketchRelationOperand,
 };
 use cadmpeg_core::le::{f64_at, i32_at, u32_at, u64_at as read_u64};
@@ -105,6 +106,119 @@ pub fn decode_edge_operands(
     }
     out.sort_by_key(|operand| operand.id.clone());
     Ok(out)
+}
+
+/// Bind each `WorkPoint` input to its exact edge, vertex, or `WorkPlane` carrier.
+pub fn bind_work_point_input_carriers(
+    scan: &ContainerScan,
+    scopes: &mut [DesignParameterScope],
+    headers: &[DesignRecordHeader],
+    recipes: &[ConstructionRecipe],
+    edge_operands: &[DesignEdgeOperand],
+) -> Result<(), CodecError> {
+    let headers = headers
+        .iter()
+        .filter_map(|header| {
+            Some((
+                (native_stream(&header.id)?.to_owned(), header.record_index),
+                header,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let work_planes = scopes
+        .iter()
+        .filter(|scope| scope.kind == "WorkPlane")
+        .filter_map(|scope| {
+            Some((
+                (
+                    native_stream(&scope.id)?.to_owned(),
+                    scope.record_index.checked_sub(1)?,
+                ),
+                scope.record_index,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+
+    for scope in scopes.iter_mut().filter(|scope| scope.kind == "WorkPoint") {
+        let Some(stream) = native_stream(&scope.id).map(str::to_owned) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            scan.is_design_stream(entry, role::BULKSTREAM)
+                && stream == ids::native_scope(&entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let scope_record_index = scope.record_index;
+        let Some(construction) = &mut scope.work_point_construction else {
+            continue;
+        };
+        for input in construction.rule.inputs_mut() {
+            let edge_matches = edge_operands
+                .iter()
+                .filter(|operand| {
+                    native_stream(&operand.id) == Some(stream.as_str())
+                        && operand.scope_record_index == scope_record_index
+                        && operand.record_index == input.record_index
+                })
+                .collect::<Vec<_>>();
+            if let [operand] = edge_matches.as_slice() {
+                input.carrier = Some(Box::new(DesignWorkPointInputCarrier::EdgeRecipe {
+                    operand_id: operand.id.clone(),
+                }));
+                continue;
+            }
+            let Some(header) = headers.get(&(stream.clone(), input.record_index)) else {
+                continue;
+            };
+            if let Some(recipe) = parse_work_point_vertex_recipe(bytes, &stream, header, recipes) {
+                input.carrier = Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
+                    recipe,
+                }));
+                continue;
+            }
+            let Some(selection) = parse_entity_selection_frame(
+                bytes,
+                input.record_index,
+                header.byte_offset,
+                &header.class_tag,
+            ) else {
+                continue;
+            };
+            let Ok(primary_identity) = u32::try_from(selection.primary_identity) else {
+                continue;
+            };
+            let Some(work_plane_scope_record_index) = work_planes
+                .get(&(stream.clone(), primary_identity))
+                .copied()
+            else {
+                continue;
+            };
+            if selection.secondary_identity.is_some()
+                || selection.curve_secondary_identity.is_some()
+            {
+                continue;
+            }
+            input.carrier = Some(Box::new(DesignWorkPointInputCarrier::WorkPlane {
+                selection: DesignWorkPointPlaneSelection {
+                    class_tag: header.class_tag.clone(),
+                    asset_id: selection.asset_id,
+                    asset_id_offset: selection.asset_id_offset,
+                    context_id: selection.context_id,
+                    context_id_offset: selection.context_id_offset,
+                    identity_record_index: selection.identity_record_index,
+                    identity_record_offset: selection.identity_record_offset,
+                    primary_identity: selection.primary_identity,
+                    primary_identity_offset: selection.primary_identity_offset,
+                    work_plane_scope_record_index,
+                    next_record_index: selection.next_record_index,
+                    next_byte_offset: selection.next_byte_offset,
+                },
+            }));
+        }
+    }
+    Ok(())
 }
 
 /// Whether a feature family owns edge-recipe operands directly or through a
@@ -2925,10 +3039,42 @@ struct ParsedRecipeOperand {
     next_byte_offset: u64,
 }
 
+/// Parse the exact vertex-recipe envelope used by a `WorkPoint` input.
+pub(crate) fn parse_work_point_vertex_recipe(
+    bytes: &[u8],
+    stream: &str,
+    header: &DesignRecordHeader,
+    recipes: &[ConstructionRecipe],
+) -> Option<DesignWorkPointVertexRecipe> {
+    let parsed = parse_recipe_operand(
+        bytes,
+        stream,
+        header,
+        recipes,
+        ConstructionRecipeKind::Vertex,
+        5,
+    )?;
+    Some(DesignWorkPointVertexRecipe {
+        class_tag: header.class_tag.clone(),
+        paired_byte_offset: parsed.paired_byte_offset,
+        paired_class_tag: parsed.paired_class_tag,
+        recipe_record_index: parsed.recipe_record_index,
+        recipe_record_byte_offset: parsed.recipe_record_byte_offset,
+        recipe_id: parsed.recipe_id,
+        recipe_prefix_offset: parsed.recipe_prefix_offset,
+        recipe_prefix_bytes: parsed.recipe_prefix_bytes,
+        recipe_references: parsed.recipe_references,
+        recipe_program_offset: parsed.recipe_program_offset,
+        recipe_program: parsed.recipe_program,
+        next_record_index: parsed.next_record_index,
+        next_byte_offset: parsed.next_byte_offset,
+    })
+}
+
 /// Parse the indexed-record envelope shared by topology recipe operands.
 fn parse_recipe_operand(
     bytes: &[u8],
-    scope: &DesignParameterScope,
+    stream: &str,
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
     recipe_kind: ConstructionRecipeKind,
@@ -2974,7 +3120,6 @@ fn parse_recipe_operand(
     {
         return None;
     }
-    let stream = native_stream(&scope.id)?;
     let recipe_record_byte_offset = u64::try_from(offsets[3]).ok()?;
     let next_byte_offset = u64::try_from(offsets[4]).ok()?;
     let matches = recipes
@@ -3041,15 +3186,15 @@ pub(crate) fn parse_edge_operand(
     recipes: &[ConstructionRecipe],
 ) -> Option<DesignEdgeOperand> {
     let next_record_delta = if scope.kind == "WorkPoint" { 5 } else { 4 };
+    let stream = native_stream(&scope.id)?;
     let parsed = parse_recipe_operand(
         bytes,
-        scope,
+        stream,
         header,
         recipes,
         ConstructionRecipeKind::Edge,
         next_record_delta,
     )?;
-    let stream = native_stream(&scope.id)?;
     let recipe_structure = edge_recipe_structure(&parsed.recipe_program);
     let surface_patch_recipe_structure = (scope.kind == "SurfacePatch")
         .then(|| {

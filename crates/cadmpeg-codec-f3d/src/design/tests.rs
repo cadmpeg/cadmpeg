@@ -25,7 +25,8 @@ use crate::design::decode::operands::{
     parse_construction_operand_path, parse_construction_operand_transform,
     parse_construction_tracking_path, parse_edge_operand, parse_entity_selection_operand,
     parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
-    parse_sketch_profile, ConstructionOperandGroupParse, FaceRecipeProgramKind,
+    parse_sketch_profile, parse_work_point_vertex_recipe, ConstructionOperandGroupParse,
+    FaceRecipeProgramKind,
 };
 use crate::design::decode::parameters::{
     bind_parameter_companion_payloads, design_parameter_discriminator, parse_design_parameter,
@@ -12817,6 +12818,52 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     )
     .expect("WorkPoint edge recipe operand");
     assert_eq!(work_point_operand.next_record_index, 105);
+
+    let mut vertex_bytes = Vec::new();
+    header(&mut vertex_bytes, *b"369", 200);
+    let vertex_paired_at = header(&mut vertex_bytes, *b"261", 200);
+    header(&mut vertex_bytes, *b"408", 201);
+    header(&mut vertex_bytes, *b"414", 202);
+    let vertex_recipe_record_at = header(&mut vertex_bytes, *b"423", 203);
+    let vertex_recipe_name_at = vertex_bytes.len() + 4;
+    vertex_bytes.extend_from_slice(&18u32.to_le_bytes());
+    vertex_bytes.extend_from_slice(b"vertex_recipe_data");
+    for value in [-1i32, 3, 1, -1, 2, -1, 0, -1, 0, 0] {
+        vertex_bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    let vertex_next_at = header(&mut vertex_bytes, *b"370", 205);
+    let vertex_header = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:record#200".into(),
+        byte_offset: 0,
+        class_tag: "369".into(),
+        record_index: 200,
+    };
+    let vertex_recipe = ConstructionRecipe {
+        id: "f3d:Design/BulkStream.dat:construction-recipe#200".into(),
+        byte_offset: u64::try_from(vertex_recipe_name_at).expect("generated offset fits u64"),
+        record_index_offset: Some(vertex_recipe_record_at + 8),
+        kind: ConstructionRecipeKind::Vertex,
+        design_id: None,
+        design_id_offset: None,
+        design_selector: None,
+        recipe_index: 9,
+        record_index: 303,
+    };
+    let parsed_vertex = parse_work_point_vertex_recipe(
+        &vertex_bytes,
+        crate::ids::native_stream(&scope.id).expect("scope stream"),
+        &vertex_header,
+        std::slice::from_ref(&vertex_recipe),
+    )
+    .expect("WorkPoint vertex recipe operand");
+    assert_eq!(parsed_vertex.paired_byte_offset, vertex_paired_at);
+    assert_eq!(parsed_vertex.recipe_record_index, 203);
+    assert_eq!(parsed_vertex.next_record_index, 205);
+    assert_eq!(parsed_vertex.next_byte_offset, vertex_next_at);
+    assert_eq!(
+        parsed_vertex.recipe_program,
+        [-1, 3, 1, -1, 2, -1, 0, -1, 0, 0]
+    );
     edge_operand.terminal_reference_edge_slots = vec![vec![17], vec![18, 19]];
     assert_eq!(
         crate::design::edge_resolve::edge_operand_reference_edge_sets(&edge_operand),

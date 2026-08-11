@@ -3785,6 +3785,13 @@ fn extend_related_design_records(
         &native.asm_histories,
         &scope_histories,
     );
+    crate::design::decode::operands::bind_work_point_input_carriers(
+        scan,
+        &mut native.design_parameter_scopes,
+        &native.design_record_headers,
+        &native.construction_recipes,
+        &native.design_edge_operands,
+    )?;
     native.design_face_operands = crate::design::decode::operands::decode_face_operands(
         scan,
         &native.design_parameter_scopes,

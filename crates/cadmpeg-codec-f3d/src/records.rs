@@ -1899,13 +1899,102 @@ pub struct DesignWorkAxisConstruction {
 }
 
 /// One source-record reference used by a `WorkPoint` construction rule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignWorkPointInput {
     /// Referenced Design record index.
     pub record_index: u32,
     /// Byte offset of the serialized reference target.
     pub reference_offset: u64,
+    /// Exact source carrier selected by this reference, when decoded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub carrier: Option<Box<DesignWorkPointInputCarrier>>,
+}
+
+/// Exact source carrier selected by one `WorkPoint` construction input.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DesignWorkPointInputCarrier {
+    /// Persistent edge recipe retained in the native edge-operand arena.
+    EdgeRecipe {
+        /// Native `DesignEdgeOperand` identifier.
+        operand_id: String,
+    },
+    /// Persistent vertex recipe carried directly by this `WorkPoint` input.
+    VertexRecipe {
+        /// Exact vertex-recipe envelope.
+        recipe: DesignWorkPointVertexRecipe,
+    },
+    /// Persistent entity selection naming one `WorkPlane` scope.
+    WorkPlane {
+        /// Exact selection envelope and resolved `WorkPlane` scope.
+        selection: DesignWorkPointPlaneSelection,
+    },
+}
+
+/// Exact `vertex_recipe_data` envelope selected by a `WorkPoint` input.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignWorkPointVertexRecipe {
+    /// Source per-file dynamic primary class tag.
+    pub class_tag: String,
+    /// Byte offset of the same-index paired header.
+    pub paired_byte_offset: u64,
+    /// Source per-file dynamic paired class tag.
+    pub paired_class_tag: String,
+    /// Indexed record containing the vertex recipe.
+    pub recipe_record_index: u32,
+    /// Byte offset of the vertex-recipe record header.
+    pub recipe_record_byte_offset: u64,
+    /// Native construction-recipe arena id.
+    pub recipe_id: String,
+    /// Byte offset of the recipe-specific prefix after the indexed header.
+    pub recipe_prefix_offset: u64,
+    /// Complete prefix before the length-prefixed recipe-family name.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
+    pub recipe_prefix_bytes: Vec<u8>,
+    /// Persistent selector/reference entries decoded from the prefix.
+    pub recipe_references: Vec<DesignRecipeReference>,
+    /// Byte offset of the first post-name i32.
+    pub recipe_program_offset: u64,
+    /// Complete post-name i32 program.
+    pub recipe_program: Vec<i32>,
+    /// Identity of the indexed record closing the envelope.
+    pub next_record_index: u32,
+    /// Byte offset of the indexed record closing the envelope.
+    pub next_byte_offset: u64,
+}
+
+/// Exact persistent entity selection naming one `WorkPlane` scope.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignWorkPointPlaneSelection {
+    /// Source per-file dynamic primary class tag.
+    pub class_tag: String,
+    /// Asset UUID qualifying the selection namespace.
+    pub asset_id: String,
+    /// Byte offset of the asset identifier's UTF-16LE code units.
+    pub asset_id_offset: u64,
+    /// UUID of the selection context.
+    pub context_id: String,
+    /// Byte offset of the context UUID's UTF-16LE code units.
+    pub context_id_offset: u64,
+    /// Nested indexed record carrying the persistent identity.
+    pub identity_record_index: u32,
+    /// Byte offset of the nested identity record.
+    pub identity_record_offset: u64,
+    /// Serialized primary identity immediately preceding the `WorkPlane` scope.
+    pub primary_identity: u64,
+    /// Byte offset of the primary identity.
+    pub primary_identity_offset: u64,
+    /// Selected `WorkPlane` scope record index.
+    pub work_plane_scope_record_index: u32,
+    /// Identity of the indexed record closing the selection envelope.
+    pub next_record_index: u32,
+    /// Byte offset of the indexed record closing the selection envelope.
+    pub next_byte_offset: u64,
 }
 
 /// Construction rule and exact input arity carried by a `WorkPoint` point-data record.
@@ -1955,18 +2044,24 @@ pub enum DesignWorkPointRule {
 impl DesignWorkPointRule {
     pub(crate) fn from_serialized(reference_type: u32, inputs: Vec<DesignWorkPointInput>) -> Self {
         match (reference_type, inputs.as_slice()) {
-            (5, [input]) => Self::CircleCenter { input: *input },
+            (5, [input]) => Self::CircleCenter {
+                input: input.clone(),
+            },
             (7, [first, second]) => Self::TwoEdgeIntersection {
-                inputs: [*first, *second],
+                inputs: [first.clone(), second.clone()],
             },
             (8, [first, second, third]) => Self::ThreePlaneIntersection {
-                inputs: [*first, *second, *third],
+                inputs: [first.clone(), second.clone(), third.clone()],
             },
-            (10, [input]) => Self::Vertex { input: *input },
+            (10, [input]) => Self::Vertex {
+                input: input.clone(),
+            },
             (14, [first, second]) => Self::EdgePlaneIntersection {
-                inputs: [*first, *second],
+                inputs: [first.clone(), second.clone()],
             },
-            (20, [input]) => Self::DistanceOnEdge { input: *input },
+            (20, [input]) => Self::DistanceOnEdge {
+                input: input.clone(),
+            },
             _ => Self::Native {
                 reference_type,
                 inputs,
@@ -1996,6 +2091,43 @@ impl DesignWorkPointRule {
             Self::TwoEdgeIntersection { inputs } | Self::EdgePlaneIntersection { inputs } => inputs,
             Self::ThreePlaneIntersection { inputs } => inputs,
             Self::Native { inputs, .. } => inputs,
+        }
+    }
+
+    pub(crate) fn inputs_mut(&mut self) -> &mut [DesignWorkPointInput] {
+        match self {
+            Self::CircleCenter { input }
+            | Self::Vertex { input }
+            | Self::DistanceOnEdge { input } => std::slice::from_mut(input),
+            Self::TwoEdgeIntersection { inputs } | Self::EdgePlaneIntersection { inputs } => inputs,
+            Self::ThreePlaneIntersection { inputs } => inputs,
+            Self::Native { inputs, .. } => inputs,
+        }
+    }
+
+    pub(crate) fn carriers_are_compatible(&self) -> bool {
+        let is_edge = |input: &DesignWorkPointInput| {
+            input.carrier.as_deref().is_none_or(|carrier| {
+                matches!(carrier, DesignWorkPointInputCarrier::EdgeRecipe { .. })
+            })
+        };
+        let is_vertex = |input: &DesignWorkPointInput| {
+            input.carrier.as_deref().is_none_or(|carrier| {
+                matches!(carrier, DesignWorkPointInputCarrier::VertexRecipe { .. })
+            })
+        };
+        let is_plane = |input: &DesignWorkPointInput| {
+            input.carrier.as_deref().is_none_or(|carrier| {
+                matches!(carrier, DesignWorkPointInputCarrier::WorkPlane { .. })
+            })
+        };
+        match self {
+            Self::CircleCenter { input } | Self::DistanceOnEdge { input } => is_edge(input),
+            Self::TwoEdgeIntersection { inputs } => inputs.iter().all(is_edge),
+            Self::ThreePlaneIntersection { inputs } => inputs.iter().all(is_plane),
+            Self::Vertex { input } => is_vertex(input),
+            Self::EdgePlaneIntersection { inputs } => is_edge(&inputs[0]) && is_plane(&inputs[1]),
+            Self::Native { .. } => true,
         }
     }
 }

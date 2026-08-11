@@ -4414,7 +4414,7 @@ pub(crate) fn payload_prologue(bytes: &[u8], at: usize, end: usize) -> Option<us
 const POINT_DATA_TYPE_GUID: &str = "69EE2FA7-BCC7-449E-9CA9-976CEFDFED44";
 
 /// The base class level of a point-data record, read under one record version.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct PointDataLevel {
     /// Byte offset of `point3d`'s first coordinate.
     position_at: usize,
@@ -4469,6 +4469,7 @@ fn point_data_level(
         inputs.push(DesignWorkPointInput {
             record_index: u32::try_from(reference.target?).ok()?,
             reference_offset: u64::try_from(reference_offset).ok()?,
+            carrier: None,
         });
     }
     Some(PointDataLevel {
@@ -4521,15 +4522,18 @@ pub(crate) fn exact_work_point_construction(
             else {
                 continue;
             };
-            let mut levels = stored
+            let levels = stored
                 .map_or_else(|| (0..=3).collect::<Vec<_>>(), |(_, version)| vec![version])
                 .into_iter()
                 .filter_map(|version| point_data_level(bytes, payload_at, paired, version))
-                .collect::<Vec<_>>();
+                .fold(Vec::new(), |mut levels, level| {
+                    if !levels.contains(&level) {
+                        levels.push(level);
+                    }
+                    levels
+                });
             // Agreement is over the levels the fitting versions name, so the
-            // duplicates are removed by value and not only where adjacent.
-            levels.sort_unstable();
-            levels.dedup();
+            // duplicates are removed by value regardless of version order.
             let [level] = levels.as_slice() else {
                 continue;
             };
@@ -7150,7 +7154,7 @@ mod tests {
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignCoilExtent, DesignCoilSelection,
         DesignExtrudeOperation, DesignParameterScope, DesignPathFeatureConstruction,
-        DesignRecordHeader, DesignWorkPointRule,
+        DesignRecordHeader, DesignWorkPointInputCarrier, DesignWorkPointRule,
     };
     use std::collections::HashMap;
 
@@ -7942,6 +7946,25 @@ mod tests {
                 ref inputs,
             } if inputs.len() == 2
         ));
+    }
+
+    #[test]
+    fn work_point_rule_rejects_an_incompatible_input_carrier() {
+        let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 14, 2);
+        let mut frame = exact_work_point_construction(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &HashMap::new(),
+        )
+        .expect("work point frame");
+        assert!(frame.rule.carriers_are_compatible());
+
+        frame.rule.inputs_mut()[1].carrier =
+            Some(Box::new(DesignWorkPointInputCarrier::EdgeRecipe {
+                operand_id: "f3d:native:edge-operand#wrong-role".into(),
+            }));
+        assert!(!frame.rule.carriers_are_compatible());
     }
 
     fn work_point_input_indices(rule: &DesignWorkPointRule) -> Vec<u32> {

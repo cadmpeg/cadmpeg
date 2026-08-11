@@ -2926,6 +2926,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             }
             _ => false,
         };
+        let work_point_link = valid_work_point_construction(ctx, scope, native_stream);
         let valid = scope.class_tag.len() == 3
             && scope.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && scope.paired_class_tag.len() == 3
@@ -3321,6 +3322,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && combine_link
             && thread_link
             && joint_origin_link
+            && work_point_link
             && (scope.kind != "Sketch"
                 || placements_by_scope.contains_key(&(native_stream, scope.record_index)))
             && unique_index;
@@ -3333,6 +3335,135 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             });
         }
     }
+}
+
+fn valid_work_point_construction(
+    ctx: &Ctx,
+    scope: &records::DesignParameterScope,
+    native_stream: &str,
+) -> bool {
+    let Some(construction) = &scope.work_point_construction else {
+        return true;
+    };
+    let native = ctx.native;
+    if scope.kind != "WorkPoint"
+        || !construction.rule.carriers_are_compatible()
+        || construction.point_record_byte_offset >= construction.position_offset
+        || construction.position_offset >= construction.reference_type_offset
+        || !scope
+            .reference_members
+            .contains(&construction.point_record_index)
+        || ctx
+            .records_by_index
+            .get(&(native_stream, construction.point_record_index))
+            .is_none_or(|header| header.byte_offset != construction.point_record_byte_offset)
+    {
+        return false;
+    }
+
+    construction.rule.inputs().iter().all(|input| {
+        let header = ctx
+            .records_by_index
+            .get(&(native_stream, input.record_index));
+        scope.reference_members.contains(&input.record_index)
+            && input.reference_offset > construction.reference_type_offset
+            && header.is_some()
+            && match input.carrier.as_deref() {
+                None => true,
+                Some(records::DesignWorkPointInputCarrier::EdgeRecipe { operand_id }) => {
+                    native.design_edge_operands.iter().any(|operand| {
+                        operand.id == *operand_id
+                            && design_stream(&operand.id) == native_stream
+                            && operand.scope_record_index == scope.record_index
+                            && operand.record_index == input.record_index
+                    })
+                }
+                Some(records::DesignWorkPointInputCarrier::VertexRecipe { recipe: vertex }) => {
+                    let recipe = ctx.recipes_by_id.get(vertex.recipe_id.as_str());
+                    let expected_references =
+                        design::decode::dimension_frames::decode_recipe_references(
+                            &vertex.recipe_prefix_bytes,
+                            vertex.recipe_prefix_offset,
+                        );
+                    let prefix_length = u64::try_from(vertex.recipe_prefix_bytes.len()).ok();
+                    let family_name_length =
+                        u64::try_from(design::construction_recipe_family_name_len(
+                            records::ConstructionRecipeKind::Vertex,
+                        ))
+                        .ok();
+                    let program_byte_length = u64::try_from(vertex.recipe_program.len())
+                        .ok()
+                        .and_then(|length| length.checked_mul(4));
+                    vertex.class_tag.len() == 3
+                        && vertex.class_tag.bytes().all(|byte| byte.is_ascii_digit())
+                        && header.is_some_and(|header| {
+                            header.class_tag == vertex.class_tag
+                                && vertex.paired_byte_offset > header.byte_offset
+                        })
+                        && vertex.paired_class_tag.len() == 3
+                        && vertex
+                            .paired_class_tag
+                            .bytes()
+                            .all(|byte| byte.is_ascii_digit())
+                        && vertex.recipe_record_index == input.record_index.saturating_add(3)
+                        && vertex.next_record_index == input.record_index.saturating_add(5)
+                        && vertex.recipe_prefix_offset
+                            == vertex.recipe_record_byte_offset.saturating_add(11)
+                        && prefix_length.is_some_and(|prefix_length| {
+                            vertex.recipe_prefix_offset.saturating_add(prefix_length)
+                                == recipe
+                                    .map_or(u64::MAX, |recipe| recipe.byte_offset.saturating_sub(4))
+                        })
+                        && vertex.recipe_references == expected_references
+                        && recipe.is_some_and(|recipe| {
+                            design_stream(&recipe.id) == native_stream
+                                && recipe.kind == records::ConstructionRecipeKind::Vertex
+                                && recipe.byte_offset > vertex.recipe_record_byte_offset
+                                && recipe.byte_offset < vertex.next_byte_offset
+                                && family_name_length.is_some_and(|family_name_length| {
+                                    vertex.recipe_program_offset
+                                        == recipe.byte_offset.saturating_add(family_name_length)
+                                })
+                        })
+                        && program_byte_length.is_some_and(|program_byte_length| {
+                            program_byte_length != 0
+                                && vertex
+                                    .recipe_program_offset
+                                    .saturating_add(program_byte_length)
+                                    == vertex.next_byte_offset
+                        })
+                }
+                Some(records::DesignWorkPointInputCarrier::WorkPlane { selection }) => {
+                    valid_design_guid(&selection.asset_id)
+                        && valid_design_guid(&selection.context_id)
+                        && selection.class_tag.len() == 3
+                        && selection
+                            .class_tag
+                            .bytes()
+                            .all(|byte| byte.is_ascii_digit())
+                        && header.is_some_and(|header| {
+                            header.class_tag == selection.class_tag
+                                && selection.asset_id_offset > header.byte_offset
+                        })
+                        && selection.context_id_offset > selection.asset_id_offset
+                        && selection.identity_record_offset > selection.context_id_offset
+                        && selection.identity_record_index == input.record_index.saturating_add(3)
+                        && selection.primary_identity_offset
+                            == selection.identity_record_offset.saturating_add(21)
+                        && selection.next_byte_offset
+                            == selection.identity_record_offset.saturating_add(29)
+                        && u32::try_from(selection.primary_identity)
+                            .ok()
+                            .and_then(|identity| identity.checked_add(1))
+                            == Some(selection.work_plane_scope_record_index)
+                        && native.design_parameter_scopes.iter().any(|plane| {
+                            design_stream(&plane.id) == native_stream
+                                && plane.kind == "WorkPlane"
+                                && plane.record_index == selection.work_plane_scope_record_index
+                        })
+                }
+            }
+    })
 }
 
 fn validate_component_occurrences(ctx: &Ctx, findings: &mut Vec<Finding>) {
