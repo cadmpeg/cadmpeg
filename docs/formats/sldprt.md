@@ -911,11 +911,13 @@ An omitted `GdtDiameter.Nominal` is recoverable from the rendered literal and
 the applied nominal geometry. Feature references traverse direct child feature
 references and `SubFeatures` applied-feature collections recursively. A
 `GdtCylinder` contributes twice `NomCylinder.R`; a `GdtSphere` contributes
-twice `NomSphere.R`. All reachable contributors must agree. The rendered
-literal binds when rounding this geometric diameter in a SolidWorks display
-length unit to `BlockToleranceDecimalPlaces` produces the literal. Conversion
-of every matching literal and unit must produce one millimetre value; multiple
-values leave the nominal absent.
+twice `NomSphere.R`. Reachable diameter contributors agree when their absolute
+difference is at most the greater of `1e-5` millimetres and `1e-9` times their
+largest absolute value or one millimetre. The rendered literal binds when
+rounding this geometric diameter in a SolidWorks display length unit to
+`BlockToleranceDecimalPlaces` produces the literal. Conversion of every
+matching literal and unit must produce one millimetre value; multiple values
+leave the nominal absent.
 
 When no rendered literal binds, the common diameter of all reachable
 contributors supplies the evaluated nominal. This applies to direct features,

@@ -17,6 +17,7 @@ use crate::container::ContainerScan;
 const ROOT_CLASS: &str = "PrizMetrik.GdtAnalysisSupport.GdtPart";
 const ENTITY_TOKEN: &[u8] = b"\x06Entity";
 const MAX_DEPTH: usize = 32;
+const DIAMETER_EQUIVALENCE_MM: f64 = 1.0e-5;
 
 #[derive(Debug, Clone, PartialEq)]
 struct Reference {
@@ -665,9 +666,7 @@ fn diameter_from_applied_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Option<f64> {
-    measurement_from_applied_geometry(annotation, |id| {
-        diameter_for_feature(id, feature_index, &mut BTreeSet::new(), 0)
-    })
+    unique_diameter(&diameter_contributors(annotation, feature_index))
 }
 
 fn diameter_nominal(
@@ -716,10 +715,10 @@ fn hole_diameter_excluding_counterbore(
     let remaining = contributors
         .iter()
         .copied()
-        .filter(|value| !approximately_equal(*value, counterbore_diameter))
+        .filter(|value| !diameters_equivalent(*value, counterbore_diameter))
         .collect::<Vec<_>>();
     (remaining.len() < contributors.len())
-        .then(|| unique_measurement(&remaining))
+        .then(|| unique_diameter(&remaining))
         .flatten()
 }
 
@@ -1132,22 +1131,6 @@ fn rendered_dimension_literals(text: &str) -> Vec<RenderedDimension> {
     values
 }
 
-fn diameter_for_feature(
-    id: &str,
-    feature_index: &BTreeMap<&str, &Entity>,
-    visited: &mut BTreeSet<String>,
-    depth: usize,
-) -> Option<f64> {
-    measurement_for_feature(id, feature_index, visited, depth, |feature| {
-        let radius = match short_class(&feature.class) {
-            "GdtCylinder" => nominal_radius(feature, "NomCylinder"),
-            "GdtSphere" => nominal_radius(feature, "NomSphere"),
-            _ => None,
-        }?;
-        finite_positive(radius * 2.0)
-    })
-}
-
 fn depth_for_feature(
     id: &str,
     feature_index: &BTreeMap<&str, &Entity>,
@@ -1353,6 +1336,18 @@ fn unique_measurement(values: &[f64]) -> Option<f64> {
         .iter()
         .all(|value| approximately_equal(*value, first))
         .then_some(first)
+}
+
+fn unique_diameter(values: &[f64]) -> Option<f64> {
+    let first = *values.first()?;
+    values
+        .iter()
+        .all(|value| diameters_equivalent(*value, first))
+        .then_some(first)
+}
+
+fn diameters_equivalent(left: f64, right: f64) -> bool {
+    approximately_equal(left, right) || (left - right).abs() <= DIAMETER_EQUIVALENCE_MM
 }
 
 fn approximately_equal(left: f64, right: f64) -> bool {
@@ -2197,10 +2192,11 @@ mod tests {
     }
 
     #[test]
-    fn agreeing_pattern_sizes_supply_diameter_without_rendered_text() {
+    fn numerically_equivalent_pattern_sizes_supply_diameter_without_rendered_text() {
         let mut root = semantic_root();
         *root.features.entities.get_mut(1).expect("first cylinder") = cylinder_with_radius(2.5);
-        *root.features.entities.get_mut(2).expect("second cylinder") = cylinder_with_radius(2.5);
+        *root.features.entities.get_mut(2).expect("second cylinder") =
+            cylinder_with_radius(2.500_002_5);
         root.annotations
             .entities
             .get_mut(2)
@@ -2218,6 +2214,12 @@ mod tests {
             panic!("dimension definition");
         };
         assert_eq!(*nominal, Some(length(5.0)));
+    }
+
+    #[test]
+    fn diameter_equivalence_does_not_merge_distinct_sizes() {
+        assert_eq!(unique_diameter(&[10.0, 10.000_005]), Some(10.0));
+        assert_eq!(unique_diameter(&[10.0, 10.000_02]), None);
     }
 
     #[test]
