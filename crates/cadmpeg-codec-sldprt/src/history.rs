@@ -10646,7 +10646,7 @@ fn dimension_display(expression: &str) -> Option<DimensionDisplay> {
     }
 }
 
-fn parse_dimension_display_length(expression: &str) -> Option<f64> {
+pub(crate) fn parse_dimension_display_length(expression: &str) -> Option<f64> {
     let expression = strip_dimension_count(expression.trim());
     let value = strip_diameter_modifier(expression)
         .or_else(|| strip_radius_modifier(expression))

@@ -482,6 +482,11 @@ fn axial_profile_resolves_counterbore_roles() {
     ]
     .into_iter()
     .collect();
+    profile.content = ["a", "b", "c", "d", "e"]
+        .into_iter()
+        .map(|name| crate::records::FeatureContent::Dimension(name.into()))
+        .collect();
+    profile.parameters.insert("display".into(), "101.6".into());
     let sketch = SketchId("profile".into());
     let drill_length = 2.75 / (118_f64.to_radians() / 2.0).tan();
     let entities = [
@@ -1667,7 +1672,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
     });
     let mut histories = [history];
     enrich_history_parameters(&mut histories, [&lane], true);
-    assert_eq!(histories[0].features[1].parameters["depth"], "6.8");
+    assert_eq!(histories[0].features[1].parameters["depth"], "6.8mm");
     enrich_history_hole_constructions(&mut histories, &[lane]);
     assert_eq!(
         histories[0].features[0]

@@ -15,6 +15,16 @@ enum ScalarUnit {
     Angle,
 }
 
+fn scalar_owned_by_feature(
+    scalar: &FeatureInputScalar,
+    feature: &str,
+    start: u64,
+    end: u64,
+) -> bool {
+    scalar.feature_ref.as_deref() == Some(feature)
+        || (scalar.feature_ref.is_none() && scalar.offset > start && scalar.offset < end)
+}
+
 /// Add unambiguous `ResolvedFeatures` length parameters to a projection copy of history.
 pub(crate) fn enrich_history_parameters<'a>(
     histories: &mut [crate::records::FeatureHistory],
@@ -88,7 +98,7 @@ pub(crate) fn enrich_history_parameters<'a>(
             for scalar in lane
                 .scalars
                 .iter()
-                .filter(|scalar| scalar.offset > start && scalar.offset < end)
+                .filter(|scalar| scalar_owned_by_feature(scalar, &feature.id, start, end))
             {
                 let Some(name) = names_by_id.get(scalar.name.as_str()) else {
                     continue;
@@ -170,6 +180,18 @@ pub(crate) fn enrich_history_parameters<'a>(
                 first,
                 feature.parameters.get(&name).map(String::as_str),
             ),
+            ScalarUnit::Length
+                if feature.parameters.get(&name).is_some_and(|expression| {
+                    crate::history::strip_diameter_modifier(expression).is_some()
+                }) =>
+            {
+                crate::history::format_native_scalar(
+                    feature,
+                    &name,
+                    first,
+                    feature.parameters.get(&name).map(String::as_str),
+                )
+            }
             ScalarUnit::Length => crate::history::format_length_mm(first * 1000.0),
             ScalarUnit::Angle => crate::history::format_angle_rad(first),
         };
@@ -198,6 +220,18 @@ fn scalar_unit_from_feature_parameter(
         return Some(ScalarUnit::Length);
     }
     let expression = feature.parameters.get(name)?;
+    let source_sketch_dimension = crate::classification::classify(feature)
+        == Some(crate::classification::FeatureClass::Sketch)
+        && feature.content.iter().any(|content| {
+            matches!(content, crate::records::FeatureContent::Dimension(dimension) if dimension == name)
+        });
+    if source_sketch_dimension {
+        return if crate::history::parse_angle_rad(expression).is_some() {
+            Some(ScalarUnit::Angle)
+        } else {
+            crate::history::parse_dimension_display_length(expression).map(|_| ScalarUnit::Length)
+        };
+    }
     if crate::history::fillet_radius_parameter_has_native_display(feature, name, expression) {
         return Some(ScalarUnit::Length);
     }
@@ -265,7 +299,7 @@ pub(crate) fn sync_changed_feature_scalars(
                     .scalars
                     .iter()
                     .enumerate()
-                    .filter(|(_, scalar)| scalar.offset > start && scalar.offset < end)
+                    .filter(|(_, scalar)| scalar_owned_by_feature(scalar, &feature.id, start, end))
                     .filter(|(_, scalar)| {
                         names_by_id.get(scalar.name.as_str()) == Some(&name.as_str())
                     })

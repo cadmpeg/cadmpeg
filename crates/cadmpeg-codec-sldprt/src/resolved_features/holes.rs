@@ -551,30 +551,46 @@ fn profiled_hole_construction(
     sketch: &SketchId,
     entities: &[SketchEntity],
 ) -> Option<ProfiledHoleConstruction> {
-    let mut diameters = profile
-        .parameters
-        .values()
+    let source_dimensions = profile
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            crate::records::FeatureContent::Dimension(name) => Some(name.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let expressions = if source_dimensions.is_empty() {
+        profile.parameters.values().map(String::as_str).collect()
+    } else {
+        source_dimensions
+            .into_iter()
+            .filter_map(|name| profile.parameters.get(name).map(String::as_str))
+            .collect::<Vec<_>>()
+    };
+    let mut diameters = expressions
+        .iter()
+        .copied()
         .filter_map(|value| crate::history::strip_diameter_modifier(value))
         .filter_map(crate::history::parse_dimension_length_mm)
         .filter(|value| value.is_finite() && *value > 0.0)
         .collect::<Vec<_>>();
-    let mut angles = profile
-        .parameters
-        .values()
-        .filter_map(|value| crate::history::parse_bounded_angle_rad(value))
+    let mut angles = expressions
+        .iter()
+        .copied()
+        .filter_map(crate::history::parse_bounded_angle_rad)
         .collect::<Vec<_>>();
-    let flat_bottom = profile.parameters.values().any(|value| {
+    let flat_bottom = expressions.iter().copied().any(|value| {
         crate::history::parse_angle_rad(value)
             .is_some_and(|angle| (angle - std::f64::consts::PI).abs() <= 1.0e-12)
     });
-    let mut lengths = profile
-        .parameters
-        .values()
+    let mut lengths = expressions
+        .iter()
+        .copied()
         .filter(|value| {
             crate::history::strip_diameter_modifier(value).is_none()
                 && crate::history::parse_bounded_angle_rad(value).is_none()
         })
-        .filter_map(|value| crate::history::parse_dimension_length_mm(value))
+        .filter_map(crate::history::parse_dimension_length_mm)
         .filter(|value| value.is_finite() && *value > 0.0)
         .collect::<Vec<_>>();
     diameters.sort_by(f64::total_cmp);
@@ -861,6 +877,9 @@ pub(crate) fn project_profiled_hole_constructions(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
+    let mut enriched_histories = histories.to_vec();
+    crate::history::enrich_history_parameters_semantic(&mut enriched_histories, lanes);
+    let histories = enriched_histories.as_slice();
     let incomplete = |diameter: &Option<Length>, extent: &Option<Termination>, kind: &HoleKind| {
         diameter.is_none()
             || extent
