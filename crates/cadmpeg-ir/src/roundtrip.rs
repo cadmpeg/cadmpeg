@@ -117,8 +117,7 @@ pub enum SemanticOutcome {
         bytes: Vec<u8>,
     },
     /// The encoder refused. A codec that needs a baseline to write at all
-    /// refuses once the baseline is gone, and that refusal is its contract, not
-    /// a failure to paper over.
+    /// refuses once the baseline is gone; that refusal is its contract.
     Refused {
         /// The refusal. Carried as the error itself so a caller asserts on the
         /// variant rather than on wording.

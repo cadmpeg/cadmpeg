@@ -168,8 +168,6 @@ impl RhinoLossCode {
     }
 
     /// The shared cross-codec category this loss reports under.
-    ///
-    /// Matched exhaustively on purpose: see the module documentation.
     const fn shared_code(self) -> LossKind {
         match self {
             Self::ContainerScanDiagnostic

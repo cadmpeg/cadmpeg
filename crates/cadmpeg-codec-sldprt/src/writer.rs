@@ -325,14 +325,9 @@ fn push_xml_attribute_value(output: &mut String, value: &str) {
 /// Drop the design-state snapshot the decoder fabricates on the active
 /// configuration when the native records carry none.
 ///
-/// That snapshot mirrors model-level features and parameters so a reader sees a
-/// populated configuration, but nothing in the file encodes it: with no
-/// feature-input lane there is no way to write it back. Leaving it in place
-/// makes the write path reason about configuration-local design state that does
-/// not exist, which surfaces as dangling feature-state references once a caller
-/// edits the model, and as phantom native-edit conflicts once a caller edits a
-/// parameter. The decoder re-fabricates it on read-back, so dropping it here
-/// costs nothing observable.
+/// Nothing in the file encodes that snapshot, so it cannot be written back.
+/// Leaving it makes the write path reason about configuration-local state that
+/// does not exist.
 fn drop_synthesized_configuration_snapshot(ir: &mut CadIr) {
     let Some(id) = ir.source.as_ref().and_then(|source| {
         source
@@ -1468,15 +1463,10 @@ fn metadata_source_position(id: &str) -> Option<(u64, u64)> {
     Some((section.parse().ok()?, offset.parse().ok()?))
 }
 
-/// This codec's document attributes, ordered as their records appear in the
-/// source payload rather than by identifier.
+/// This codec's document attributes, ordered by source payload position.
 ///
-/// The arena is sorted by identifier, which orders the records by attribute
-/// name. Writing that order rebuilds the payload with every record at a
-/// different byte offset, and the next decode mints identifiers from those
-/// offsets, so a rewrite that changed nothing would still rename every metadata
-/// attribute. Attributes whose identifier carries no record position keep their
-/// arena order, after the located ones.
+/// Arena order is by identifier name; writing that order would move every
+/// record and rename attributes minted from byte offsets.
 fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribute> {
     let mut attributes = ir
         .model

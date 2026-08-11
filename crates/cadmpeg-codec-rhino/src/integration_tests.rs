@@ -251,10 +251,6 @@ const HATCH_OBJECT_TYPE: i64 = 0x0001_0000;
 const CURVE_OBJECT_TYPE: i64 = 0x0000_0004;
 
 /// A synthesized archive whose two records both reach a native-retention path.
-///
-/// Hatch and polyedge are the cheapest such records: neither needs a resolved
-/// B-rep, and both produce a `FeatureDefinition::Native` feature as their only
-/// carrier of construction state.
 fn native_retention_archive() -> Vec<u8> {
     let hatch = support::object_record(
         HATCH_OBJECT_TYPE,

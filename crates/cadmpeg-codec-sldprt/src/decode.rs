@@ -2450,10 +2450,7 @@ fn build_geometry_ir(
         );
     }
     native.store(ir.native.namespace_mut("sldprt"))?;
-    // The baseline has to describe native-backed configuration state only, so
-    // it is stamped before the read-side snapshot is fabricated. Stamping after
-    // would bake fabricated state into a hash the write path compares against a
-    // projection that can only ever re-derive the native-backed part.
+    // Stamp baseline before fabricating the read-side configuration snapshot.
     stamp_configuration_baseline(&mut ir);
     snapshot_active_configuration(&mut ir);
     let mut unknowns = brep.unknowns;
@@ -3470,10 +3467,8 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
     let configuration = &mut ir.model.configurations[configuration_index];
     configuration.parameter_values = parameter_values;
     configuration.feature_states = feature_states;
-    // This design state is a read-side presentation of model-level state, not
-    // configuration-local data the native records carry. Naming the
-    // configuration it was fabricated on lets the write path tell it apart from
-    // state that came out of a feature-input lane.
+    // Read-side fabricated snapshot of model-level state; tag the configuration
+    // so the write path can distinguish it from feature-input lane state.
     let id = configuration.id.0.clone();
     if let Some(source) = &mut ir.source {
         source
@@ -3770,21 +3765,10 @@ fn stamp_configuration_baseline(ir: &mut CadIr) {
 
 /// Record the sketch baselines the write path compares against.
 ///
-/// Two of the three are machine-local and say so with the `_local_sha256`
-/// suffix: they cover projected neutral sketch geometry, which reaches its
-/// values through `f64::cos` and friends.
-///
-/// `sldprt_native_sketch_sha256` carries no such suffix because it is portable
-/// by construction, not merely portable today. It digests
-/// `SldprtNative::feature_input_lanes`, whose every field is a `String`, an
-/// integer, or retained source bytes, with exactly three exceptions:
-/// `FeatureInputScalar::value`, `SketchInputEntity::state_value`, and
-/// `SketchInputEntity::coordinates_m`. Each of the three is one
-/// `f64::from_le_bytes` of the payload at the byte offset the record stores
-/// beside it, with no arithmetic between the read and the field. Reading an
-/// IEEE 754 bit pattern is exact on every platform, so no libm can move this
-/// digest. Any future enrichment that computes a lane float rather than reading
-/// one makes the digest machine-local and forces the rename.
+/// Neutral sketch and constraint digests use `_local_sha256` (projected
+/// geometry through libm). `sldprt_native_sketch_sha256` has no suffix: it
+/// digests lane fields that are strings, integers, or verbatim `f64` bit
+/// patterns from the payload.
 fn stamp_sketch_baseline(ir: &mut CadIr, native: &crate::native::SldprtNative) {
     let neutral_hash = crate::resolved_features::hashes::sketch_hash(ir);
     let constraint_hash = crate::resolved_features::hashes::constraint_hash(ir);

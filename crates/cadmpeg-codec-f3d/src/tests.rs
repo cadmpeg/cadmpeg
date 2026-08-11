@@ -25449,8 +25449,7 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
     };
-    // The base record is deliberately first. Prefix-only selection would bind
-    // it instead of the revision token carried by the face assignment.
+    // Base record first so prefix-only selection cannot bind it.
     ir.model.appearances.extend([
         appearance("appearance:base", visual_family),
         appearance("appearance:revision", visual_guid),

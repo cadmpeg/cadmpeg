@@ -399,38 +399,9 @@ mod tests {
         ir
     }
 
-    /// Both digest entry points over one fixed document. `document_local_sha256`
-    /// reduces the named format's unknown arena to identities and links and
-    /// drops the retained source image, so it is pinned alongside the plain
-    /// document digest.
-    ///
-    /// # Why two hex literals are pasted here
-    ///
-    /// This repository's rule is that an expectation comes from a specification
-    /// or an approximate comparison, never from a failing run. These two
-    /// literals are the sanctioned exception, and they must be read as such: a
-    /// digest algorithm has no specification outside its own output, so the only
-    /// possible source for the expected value is the algorithm as it stands. The
-    /// values below were captured once, deliberately, from the algorithm being
-    /// pinned.
-    ///
-    /// What this pins is the algorithm, not a correctness property. It says
-    /// nothing about whether either digest covers the right fields; the tests
-    /// above and beside it do that. The document it hashes is built from integer
-    /// and fractional literals only, with no transcendental anywhere in its
-    /// construction, so it is platform-independent by construction and these
-    /// literals hold on glibc, MSVC, and Apple's libm alike.
-    ///
-    /// A failure here means the digest algorithm changed: this function, the
-    /// serialized shape of any hashed type, the unknown reduction, or the
-    /// canonical JSON rendering underneath. Every baseline recorded in every
-    /// existing document is then stale, so every such document loses its
-    /// write-path fast path and takes the no-baseline branch. That is a decision
-    /// to state and accept out loud, never a side effect of an unrelated edit.
-    /// To make it deliberately: change the algorithm, run
-    /// `cargo test -p cadmpeg-ir --lib pins_document_digests` to read the two new
-    /// digests out of the failure, paste them here, and say in the commit body
-    /// that stored baselines are invalidated.
+    /// Pins both digest entry points over one fixed, platform-independent
+    /// document. A failure means the digest algorithm or its serialized inputs
+    /// changed; stored write-path baselines are then stale.
     #[test]
     fn pins_document_digests() {
         let ir = pinned_document();

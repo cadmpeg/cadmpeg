@@ -2,22 +2,17 @@
 //! Golden snapshot harness for `inspect` and `decode` over the committed
 //! fixtures.
 //!
-//! `corpus/freecad_fcstd/fixtures/*.FCStd` are the frozen inputs.
-//! This harness never writes them: a snapshot test can only tell a decoder
-//! change apart from an input change while the inputs hold still, so
-//! regenerating an input destroys the evidence the snapshot exists to carry.
-//! `UPDATE_GOLDEN=1` rewrites `tests/golden/decode/` and
+//! `corpus/freecad_fcstd/fixtures/*.FCStd` are the frozen inputs. This harness
+//! never writes them. `UPDATE_GOLDEN=1` rewrites `tests/golden/decode/` and
 //! `tests/golden/inspect/`, and nothing else.
 //!
 //! `tests/golden/inspect/` pins the container summary and
 //! `tests/golden/decode/` pins the decoded document: the IR, the decode
 //! report's losses, and source fidelity. A feature-typing or loss-accounting
-//! change moves the decode branch and `inspect` cannot see it, because an
-//! inspect summary describes the container, not what was transferred out of it.
+//! change moves the decode branch; inspect cannot see it.
 //!
-//! [`cadmpeg_core::golden`] holds the enumeration, comparison, and
-//! reporting shared with every other codec; this module supplies only this
-//! codec's branches.
+//! [`cadmpeg_core::golden`] holds the shared harness; this module supplies only
+//! this codec's branches.
 
 use std::collections::BTreeSet;
 use std::io::Cursor;
@@ -72,13 +67,7 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 }
 
 /// Serializes one decoded document: the IR, the decode report, and source
-/// fidelity. A decode error is frozen too: refusing a document is
-/// contract-relevant behavior, so this never panics on codec output.
-///
-/// The retained native arenas are pinned by digest rather than by value. Written
-/// out they run to 65MB across these eleven goldens, which no reviewer can read
-/// and which swamps every other change in a diff; a length and a hash still fail
-/// the moment their content moves.
+/// fidelity. A decode error is frozen too. Native arenas are pinned by digest.
 fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {

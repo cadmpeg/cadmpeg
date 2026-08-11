@@ -9297,9 +9297,7 @@ fn base_flange_scope_has_exact_profile_and_thickness_fields() {
 
 #[test]
 fn edge_flange_scope_resolves_every_role_from_its_marked_slot() {
-    // The ordered reference table is in record-index order, so the fixture
-    // deliberately lists the settings record before the edge and aggregate
-    // groups: a reader that assigned roles by table position would mis-bind it.
+    // Settings before edge/aggregate groups; roles come from marked slots, not table position.
     let references = [201, 204, 207, 218, 221, 240, 243, 251, 254];
     let frame = edge_flange_frame(&EdgeFlangeFixture {
         header_shift: 0,
@@ -10415,9 +10413,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
 
 #[test]
 fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
-    // The table deliberately places the groups before the owners so a reader
-    // assigning roles by table position cannot pass, and it is exercised under
-    // both header shifts because the shift is not announced by any member.
+    // Groups before owners; roles come from marked slots under both header shifts.
     let references = [240, 243, 251, 254, 301, 304, 308, 311];
     for header_shift in [0usize, 4] {
         let frame = hem_frame(&HemFixture {
@@ -15584,7 +15580,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         auxiliary_references: Vec::new(),
         auxiliary_reference_offsets: Vec::new(),
         rectangular_counted_reference_count: None,
-        // The first run deliberately disagrees with the semantic order below.
+        // Member run order disagrees with semantic order below.
         members: vec![104, 103],
         resolved_members: Vec::new(),
         member_offsets: Vec::new(),

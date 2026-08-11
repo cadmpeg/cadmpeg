@@ -248,8 +248,7 @@ fn update_requested() -> bool {
 }
 
 /// Whether the caller asked to rewrite the frozen `tests/golden/fixtures/*.f3d`
-/// inputs from the builders. Separate from [`update_requested`] on purpose; see
-/// the module documentation.
+/// inputs from the builders (`UPDATE_GOLDEN_FIXTURES=1`).
 fn fixture_update_requested() -> bool {
     std::env::var_os("UPDATE_GOLDEN_FIXTURES").is_some()
 }
@@ -481,17 +480,9 @@ fn compare_bytes(update: bool, path: &Path, actual: &[u8], failures: &mut Vec<St
     }
 }
 
-/// Serializes the document a generated container decodes to, with every digest
-/// over that container's own bytes elided.
-///
-/// A digest is bit-exact wherever its input is, and the input here is a
-/// container this lane just wrote from values the repository compares
-/// tolerantly. `active_brep_sha256`, for instance, covers the written B-rep
-/// stream, and it moves on a platform whose libm differs while the stream's
-/// contents agree to fourteen significant digits; no tolerance can reconcile a
-/// hash. Eliding costs nothing, because the content each digest covers is
-/// compared directly in the same snapshot. The `_sha256` suffix decides, not a
-/// list of keys, so a new digest is elided without editing this function.
+/// Serializes the document a generated container decodes to, with every
+/// `*_sha256` attribute elided. Those digests cover written bytes that move
+/// under platform libm while the geometry still agrees within tolerance.
 fn generated_container_snapshot(bytes: &[u8]) -> String {
     let mut ir = match decode_result(bytes) {
         Ok(result) => result.ir,

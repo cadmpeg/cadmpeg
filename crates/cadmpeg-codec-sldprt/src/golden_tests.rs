@@ -105,11 +105,8 @@ fn split_key(key: &str) -> (&str, Option<&str>) {
 
 /// The identifier scopes whose key head is a container section ordinal.
 ///
-/// `container::Section::ordinal` supplies the head for every record read out of
-/// a named container section, and these are the scopes that carry one. The
-/// `brep` and `appearance` scopes are deliberately absent: their heads are
-/// Parasolid entity and attribute tags, which live inside a payload the writer
-/// replays unchanged, so they must compare exactly.
+/// `brep` and `appearance` are absent: their heads are Parasolid tags inside
+/// replayed payloads and must compare exactly.
 const SECTION_SCOPED_IDENTIFIERS: [&str; 6] = [
     "sldprt:displaylist:",
     "sldprt:feature-input:",
@@ -120,15 +117,8 @@ const SECTION_SCOPED_IDENTIFIERS: [&str; 6] = [
 ];
 
 /// Every container byte position one identifier carries, as
-/// `(family, position)` pairs sharing a rank space.
-///
-/// This codec mints two of them, and only two:
-///
-/// | component | what it locates | minted at |
-/// | --- | --- | --- |
-/// | key head, in a [`SECTION_SCOPED_IDENTIFIERS`] scope | the marker byte offset of the block the record was read from | `container::Section::ordinal` |
-/// Only the key head is normalized. Every remaining component, including a
-/// metadata record's payload offset, is compared exactly.
+/// `(family, position)` pairs sharing a rank space. Only the section-ordinal
+/// key head is normalized; remaining components compare exactly.
 fn byte_positions(id: &str) -> Vec<(String, u64)> {
     let Some(key) = identifier_key(id) else {
         return Vec::new();
@@ -197,30 +187,10 @@ fn walk_identifiers(value: &mut serde_json::Value, visit: &mut impl FnMut(&str) 
 /// Serializes the neutral document a byte string decodes to, with every
 /// container byte position an identifier carries replaced by its rank.
 ///
-/// # Why the identifiers need normalizing at all
-///
-/// This codec derives an identifier from where in the container it read the
-/// record: see [`byte_positions`] for the two components that hold one and where
-/// each is minted. Repacking the container moves those bytes without changing
-/// what they say — re-deflating one block to five more bytes shifts every later
-/// block — so a rewrite that changed nothing still renames the entities. Their
-/// *order* survives, and that is what the rank captures: two documents agree
-/// here when their records sit in the same relative order, whatever the repack
-/// did to the offsets. A record that moved past another, appeared, or vanished
-/// still fails.
-///
-/// # What is compared and what is not
-///
-/// The neutral model, the units, and the tolerances — the document. Two parts of
-/// the decode describe the *container* the writer just rebuilt rather than the
-/// document it carries, and neither is a claim about the write:
-///
-/// - `ir.native`, which retains that container's records. A rewrite adds the
-///   `Contents/SolidWorks` document envelope whenever the document names an
-///   active configuration and no retained block carries one, because that
-///   envelope is where the container states which configuration is active.
-/// - `ir.source.attributes`, which counts those records and repeats the envelope
-///   fields the writer just materialized.
+/// Identifiers embed container byte offsets, so a repack renames entities
+/// without changing relative order; ranks capture that order. The snapshot
+/// covers the model, units, and tolerances only — not `ir.native` or
+/// `ir.source.attributes`, which describe the rebuilt container.
 fn neutral_document(bytes: &[u8]) -> String {
     let value =
         match SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
@@ -255,13 +225,6 @@ fn normalized_document(ir: &cadmpeg_ir::CadIr) -> serde_json::Value {
 }
 
 /// [`normalize_identifier`] replaces container byte positions and nothing else.
-///
-/// A normalization broad enough to absorb a repack would, if it reached one
-/// component too far, also absorb a writer that dropped a record or renumbered
-/// entities — and [`fixtures_survive_the_semantic_write_path`] would then pass on
-/// a document the writer had changed. This pins the boundary: distinct positions
-/// take distinct ranks, indices survive untouched, and a scope whose head is a
-/// Parasolid tag is left alone.
 #[test]
 fn normalization_replaces_only_container_positions() {
     let ranks = BTreeMap::from([
@@ -484,8 +447,4 @@ fn arena_sizes(ir: &cadmpeg_ir::CadIr) -> [usize; 8] {
 }
 
 /// How many committed fixtures carry a one-sided blind extrusion.
-///
-/// Most of this corpus covers geometry and container structure and holds no
-/// feature history at all, so the lane above is narrow by construction rather
-/// than by omission.
 const FIXTURES_WITH_A_BLIND_DEPTH: usize = 1;
