@@ -5131,7 +5131,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     ));
 
     let mut mirror_history = history.clone();
-    mirror_history.features[1].input_class = Some("moMirrorPattern_c".into());
+    mirror_history.features[1].input_class = Some("moMirrorSolid_c".into());
     mirror_history.features[2].input_class = Some("moDerivedCosmeticThread_c".into());
     let mut mirror_lane = lane.clone();
     mirror_lane.names[2].offset = 150;

@@ -84,7 +84,9 @@ pub(crate) fn bind_pattern_inputs(
                     .and_then(|(offset, _)| usize::try_from(*offset).ok())
                     .unwrap_or(lane.native_payload.len())
             };
-            if feature.input_class.as_deref() == Some("moMirrorPattern_c") {
+            if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+                == NativeClassKind::MirrorPattern
+            {
                 let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
                     continue;
                 };
@@ -509,7 +511,10 @@ pub(crate) fn bind_mirror_surface_planes(
     let mirror_native_refs = histories
         .iter()
         .flat_map(|history| &history.features)
-        .filter(|feature| feature.input_class.as_deref() == Some("moMirrorPattern_c"))
+        .filter(|feature| {
+            native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+                == NativeClassKind::MirrorPattern
+        })
         .map(|feature| feature.id.as_str())
         .collect::<HashSet<_>>();
     let mut faces_by_identity = HashMap::<(u32, u32), Vec<&str>>::new();

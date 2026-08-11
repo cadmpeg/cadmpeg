@@ -88,7 +88,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
             ordinal: 0,
             name: "Mirror".into(),
             kind: "Mirror".into(),
-            input_class: Some("moMirrorPattern_c".into()),
+            input_class: Some("moMirrorSolid_c".into()),
             suppressed: false,
             parameters: BTreeMap::new(),
             dimension_properties: BTreeMap::new(),
