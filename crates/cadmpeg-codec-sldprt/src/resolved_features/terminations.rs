@@ -113,6 +113,11 @@ pub(crate) fn enrich_history_extrusion_terminations(
             let Ok(start) = usize::try_from(*start) else {
                 continue;
             };
+            let end_spec_end = objects[index + 1..]
+                .iter()
+                .find(|(_, next_id)| next_id != feature_id)
+                .and_then(|object| usize::try_from(object.0).ok())
+                .unwrap_or(lane.native_payload.len());
             let mut end_index = index + 1;
             while let Some((_, next_id)) = objects.get(end_index) {
                 if next_id == feature_id {
@@ -140,7 +145,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 .id
                 .rsplit_once('#')
                 .map_or(lane.id.as_str(), |(_, key)| key);
-            let candidates = (start..end.saturating_sub(103))
+            let candidates = (start..end_spec_end.saturating_sub(103))
                 .filter_map(|offset| {
                     if compact_extrusion_blind_at(&lane.native_payload, offset) {
                         let depth_m = lane
@@ -180,9 +185,11 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             depth_m: None,
                         });
                     }
-                    if let Some(reference) =
-                        compact_extrusion_offset_from_face_at(&lane.native_payload, offset, end)
-                    {
+                    if let Some(reference) = compact_extrusion_offset_from_face_at(
+                        &lane.native_payload,
+                        offset,
+                        end_spec_end,
+                    ) {
                         return Some(compact_termination_face_vote(
                             "OffsetFromFace",
                             lane,
@@ -238,7 +245,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             depth_m: None,
                         })
                     } else if let Some((reference, kind)) =
-                        compact_extrusion_to_vertex_at(&lane.native_payload, offset, end)
+                        compact_extrusion_to_vertex_at(&lane.native_payload, offset, end_spec_end)
                     {
                         let prefix = match kind {
                             CompactPointReferenceKind::Point => "point-ref",
@@ -255,13 +262,12 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             second_condition: None,
                         })
                     } else {
-                        compact_extrusion_to_face_at(&lane.native_payload, offset, end).map(
-                            |reference| {
+                        compact_extrusion_to_face_at(&lane.native_payload, offset, end_spec_end)
+                            .map(|reference| {
                                 compact_termination_face_vote(
                                     "ToFace", lane, feature_id, lane_key, reference,
                                 )
-                            },
-                        )
+                            })
                     }
                 })
                 .collect::<Vec<_>>();

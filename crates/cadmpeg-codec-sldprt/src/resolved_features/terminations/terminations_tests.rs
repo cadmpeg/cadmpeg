@@ -1,7 +1,7 @@
 //! Tests for the `terminations` module.
 
-use super::super::selections::selection_vector_tail;
 use super::super::selections::COMPACT_EDGE_VECTOR_MARKER;
+use super::super::selections::{compact_surface_selections, selection_vector_tail};
 use super::*;
 use crate::records::{Feature, FeatureHistory, FeatureInputLane, FeatureInputName};
 use std::collections::BTreeMap;
@@ -274,6 +274,111 @@ fn compact_extrusion_to_face_preserves_an_unparsed_declared_face_child() {
         compact_extrusion_to_face_at(&payload, anchor, payload.len()),
         None
     );
+}
+
+#[test]
+fn extrusion_termination_stops_before_the_following_profile_object() {
+    let mut payload = vec![0; 520];
+    let anchor = 100;
+    payload[anchor..anchor + 2].copy_from_slice(&[0x20, 0x86]);
+    payload[anchor + 4..anchor + 8].copy_from_slice(&1u32.to_le_bytes());
+    payload[anchor + 12..anchor + 16].copy_from_slice(&1u32.to_le_bytes());
+    payload[anchor + 18..anchor + 22].copy_from_slice(&4u32.to_le_bytes());
+    payload[anchor + 30..anchor + 33].copy_from_slice(&[1, 1, 0]);
+    let face_ref = b"\xff\xff\x01\x00\x11\x00moSingleFaceRef_w";
+    let child = anchor + 33;
+    payload[child..child + face_ref.len()].copy_from_slice(face_ref);
+    let body = child + face_ref.len();
+    payload[body..body + 11].copy_from_slice(&[0x31, 0x80, 0x2f, 0x80, 2, 0, 0, 0, 0x40, 0, 0]);
+    for (marker, signature) in [(220usize, 1u8), (400, 2)] {
+        payload[marker - 12..marker - 8].copy_from_slice(&1u32.to_le_bytes());
+        payload[marker - 8..marker - 4].copy_from_slice(&[0, 2, 0, 0]);
+        payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        payload[marker + 18..marker + 22].copy_from_slice(&[0x32, 0x80, 0, 0]);
+        payload[marker + 22..marker + 34].fill(signature);
+        payload[marker + 34..marker + 38].copy_from_slice(&7u32.to_le_bytes());
+    }
+    let feature = |id: &str, source_id: &str, kind: &str, input_class: &str| Feature {
+        id: id.into(),
+        parent: "history".into(),
+        xml_tag: if kind == "Sketch" {
+            "Sketch"
+        } else {
+            "Feature"
+        }
+        .into(),
+        tree_parent: None,
+        source_id: Some(source_id.into()),
+        parent_source_id: None,
+        ordinal: source_id.parse().expect("required invariant"),
+        name: id.into(),
+        kind: kind.into(),
+        input_class: Some(input_class.into()),
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let mut histories = vec![FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![
+            feature("extrusion", "10", "Boss-Extrude", "moICE_c"),
+            feature("profile", "11", "Sketch", "moProfileFeature_c"),
+        ],
+    }];
+    let lane = FeatureInputLane {
+        id: "lane#7".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: Vec::new(),
+        names: vec![
+            FeatureInputName {
+                id: "extrusion-name".into(),
+                parent: "lane#7".into(),
+                ordinal: 0,
+                offset: 10,
+                value: "extrusion".into(),
+                object_id: Some(10),
+            },
+            FeatureInputName {
+                id: "profile-name".into(),
+                parent: "lane#7".into(),
+                ordinal: 1,
+                offset: 300,
+                value: "profile".into(),
+                object_id: Some(11),
+            },
+        ],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    enrich_history_extrusion_terminations(&mut histories, std::slice::from_ref(&lane));
+
+    assert_eq!(
+        histories[0].features[0].properties.get("EndCondition"),
+        Some(&"ToFace".to_string())
+    );
+    assert_eq!(
+        histories[0].features[0].properties.get("Face"),
+        Some(&"sldprt:feature-input:single-face-ref:7:220".to_string())
+    );
+    let selections = compact_surface_selections(&histories, &lane);
+    assert_eq!(selections.len(), 1);
+    assert_eq!(selections[0].offset, 220);
 }
 
 #[test]

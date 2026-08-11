@@ -418,17 +418,14 @@ pub(super) fn compact_surface_selections(
         let Some(start) = usize::try_from(name.offset).ok() else {
             continue;
         };
-        let mut end_index = index + 1;
-        if kind == NativeClassKind::Extrusion
-            && objects.get(end_index).is_some_and(|(_, next)| {
-                native_object_class(next.input_class.as_deref().unwrap_or_default()).kind
-                    == NativeClassKind::ProfileFeature
-            })
-        {
-            end_index += 1;
-        }
-        let end = objects
-            .get(end_index)
+        let next_object = if kind == NativeClassKind::Extrusion {
+            objects[index + 1..]
+                .iter()
+                .find(|(_, next)| next.id != feature.id)
+        } else {
+            objects.get(index + 1)
+        };
+        let end = next_object
             .and_then(|(next, _)| usize::try_from(next.offset).ok())
             .unwrap_or(lane.native_payload.len());
         let candidates = match kind {
