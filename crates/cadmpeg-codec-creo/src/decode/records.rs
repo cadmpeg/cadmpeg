@@ -1846,6 +1846,7 @@ pub(super) fn feature_operation_state_records(
                     .stored_name_prefix
                     .map(|prefix| char::from(prefix).to_string()),
                 recipe: state.recipe.map(crate::feature::FeatureRecipe::name),
+                recipe_conflict: state.recipe_conflict.then_some(true),
                 root_schema_class: state.root_schema_class,
                 parent_feature_id: state.parent_feature_id,
                 offset: state.offset,

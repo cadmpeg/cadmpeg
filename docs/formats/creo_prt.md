@@ -2451,15 +2451,19 @@ Feature rows supply a schema class only when the current-state record does not
 carry one and all rows for that feature agree on one class. Row order does not
 override the current-state class. The current state's recipe and parent
 identifier likewise define the neutral operation family, Boolean effect,
-source tag, parent, and dependency. A differing recipe or parent in an earlier
-stored state remains history and does not veto the current projection.
+source tag, parent, and dependency. Multiple recipe bindings for one feature
+must agree on the recipe, root schema class, and parent identifier.
 
 Within one current-state record, `protextrude` identifies an additive linear
 section sweep, `cutextrude` identifies a subtractive linear section sweep,
 `protrevolve` identifies an additive rotational section sweep, and
 `cutrevolve` identifies a subtractive rotational section sweep. The recipe
 name precedes the `<Kind> id <N>` operation name and applies to that feature
-state.
+state when it is the sole complete recipe name in the bounded record. Multiple
+DEPDB bindings for one feature apply only when their recipe, schema class, and
+parent identifier agree. Conflicting recipe candidates leave the recipe,
+recipe-bound schema class, parent, operation family, and Boolean effect
+unresolved.
 DEPDB stores the same join in
 `f7 <record-ref> <feature-id> <schema-class> f6 <parent-id> <display-name> 00 f6 00 <recipe> 00`.
 The feature identifier owns the operation even when no localized `ID <N>` name

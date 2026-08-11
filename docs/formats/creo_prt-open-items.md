@@ -558,8 +558,6 @@ that assign a dimension value to a dimension-driven solver variable.
 
 **Need.** We must know the recipe discriminator and conflict rule to assign the feature family and Boolean effect.
 
-**Note.** `crates/cadmpeg-codec-creo/src/feature/operations.rs:287-303` falls back to `FEATURE_RECIPES.iter().find_map` when the binding count is not one. It accepts the first name in the static list, not a unique byte-backed candidate. If a record contains two recipe names or two bindings for one feature, the selected recipe can assign the wrong sweep family or Boolean effect.
-
 ### SP-39. Simple-drilled template selection and depth endpoint
 
 **Question.** Which replay identity distinguishes class-911 three-row

@@ -549,6 +549,8 @@ struct CreoFeatureOperationState {
     identifier_keyword: Option<String>,
     stored_name_prefix: Option<String>,
     recipe: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recipe_conflict: Option<bool>,
     root_schema_class: Option<u32>,
     parent_feature_id: Option<u32>,
     offset: usize,
@@ -11985,6 +11987,11 @@ fn feature_recipe_effect(
         .map(crate::feature::FeatureRecipe::effect)
 }
 
+fn feature_recipe_conflicts(scan: &ContainerScan, feature_id: u32) -> bool {
+    current_feature_operation(&scan.features.operations, feature_id)
+        .is_some_and(|operation| operation.recipe_conflict)
+}
+
 fn current_additive_feature_recipe(
     operations: &[crate::feature::FeatureOperation],
     feature_id: u32,
@@ -20961,6 +20968,7 @@ fn schema_feature_definition(
         };
     }
     if schema_class == 917
+        && !feature_recipe_conflicts(scan, feature_id)
         && section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id))
     {
         if let Some(sweep) = circular_sweep_geometry(scan, feature_id) {
@@ -21035,7 +21043,8 @@ fn schema_feature_definition(
         };
     }
     let recipe = feature_recipe(scan, feature_id);
-    if section_sweep_allows_linear_extrusion(schema_class, recipe)
+    if (!feature_recipe_conflicts(scan, feature_id)
+        && section_sweep_allows_linear_extrusion(schema_class, recipe))
         || feature_is_sheet_extrusion(scan, feature_id)
     {
         let transforms = scan
@@ -21364,13 +21373,16 @@ fn feature_is_sheet_extrusion(scan: &ContainerScan, feature_id: u32) -> bool {
 }
 
 fn feature_allows_linear_extrusion(scan: &ContainerScan, feature_id: u32) -> bool {
-    feature_schema_class(scan, feature_id).is_some_and(|schema_class| {
-        section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id))
-    }) || feature_is_sheet_extrusion(scan, feature_id)
+    (!feature_recipe_conflicts(scan, feature_id)
+        && feature_schema_class(scan, feature_id).is_some_and(|schema_class| {
+            section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id))
+        }))
+        || feature_is_sheet_extrusion(scan, feature_id)
 }
 
 fn feature_allows_additive_linear_extrusion(scan: &ContainerScan, feature_id: u32) -> bool {
-    feature_schema_class(scan, feature_id) == Some(917)
+    !feature_recipe_conflicts(scan, feature_id)
+        && feature_schema_class(scan, feature_id) == Some(917)
         && section_sweep_allows_linear_extrusion(917, feature_recipe(scan, feature_id))
         && feature_recipe_effect(scan, feature_id)
             .is_none_or(|effect| effect == crate::feature::FeatureRecipeEffect::Protrude)
@@ -32496,6 +32508,7 @@ fn transfer_circular_sweep_cylinders(
         .iter()
         .filter(|row| {
             row.root_schema_class == Some(917)
+                && !feature_recipe_conflicts(scan, row.feature_id)
                 && section_sweep_allows_linear_extrusion(917, feature_recipe(scan, row.feature_id))
         })
         .map(|row| row.feature_id)

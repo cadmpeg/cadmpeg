@@ -966,6 +966,7 @@ fn operation(feature_id: u32, recipe: Option<FeatureRecipe>, offset: usize) -> F
         identifier_keyword: None,
         stored_name_prefix: None,
         recipe,
+        recipe_conflict: false,
         root_schema_class: None,
         parent_feature_id: None,
         offset,
@@ -3584,14 +3585,21 @@ fn preserves_competing_depdb_recipe_bindings() {
     assert_eq!(states.len(), 2);
     assert_eq!(states[0].feature_id, 8053);
     assert_eq!(states[0].recipe, Some(FeatureRecipe::ProtrudeExtrude));
+    assert!(states[0].recipe_conflict);
     assert_eq!(states[0].root_schema_class, Some(917));
     assert_eq!(states[1].feature_id, 8053);
     assert_eq!(states[1].recipe, Some(FeatureRecipe::CutExtrude));
+    assert!(states[1].recipe_conflict);
     assert_eq!(states[1].root_schema_class, Some(916));
 
     let current = operations(payload);
     assert_eq!(current.len(), 1);
-    assert_eq!(current[0], states[1]);
+    assert_eq!(current[0].feature_id, 8053);
+    assert_eq!(current[0].kind, "Native Feature");
+    assert_eq!(current[0].recipe, None);
+    assert!(current[0].recipe_conflict);
+    assert_eq!(current[0].root_schema_class, None);
+    assert_eq!(current[0].parent_feature_id, None);
 
     let repeated = b"\xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0\
             \xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 2\0\xf6\0protextrude\0";
@@ -3599,6 +3607,58 @@ fn preserves_competing_depdb_recipe_bindings() {
     assert_eq!(repeated_states.len(), 2);
     assert_eq!(repeated_states[0].recipe, repeated_states[1].recipe);
     assert_ne!(repeated_states[0].offset, repeated_states[1].offset);
+    let repeated_current = operations(repeated);
+    assert_eq!(repeated_current.len(), 1);
+    assert_eq!(repeated_current[0].kind, "Extrude");
+    assert_eq!(
+        repeated_current[0].recipe,
+        Some(FeatureRecipe::ProtrudeExtrude)
+    );
+    assert_eq!(repeated_current[0].root_schema_class, Some(917));
+    assert_eq!(repeated_current[0].parent_feature_id, Some(8051));
+}
+
+#[test]
+fn conflicting_bindings_do_not_use_an_inline_recipe_fallback() {
+    let payload = b"\xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0\
+            \xf7\x50\x9f\x75\x83\x94\xf6\x9f\x73Profile 2\0\xf6\0cutextrude\0\
+            \xe3icon\0protextrude\0Extrude id 8053\0";
+
+    let states = operation_states(payload);
+    let display = states
+        .iter()
+        .find(|state| state.display_name_stored)
+        .expect("stored display state");
+    assert_eq!(display.kind, "Extrude");
+    assert_eq!(display.recipe, None);
+    assert!(display.recipe_conflict);
+    assert_eq!(display.root_schema_class, None);
+    assert_eq!(display.parent_feature_id, None);
+
+    let current = operations(payload);
+    let [current] = current.as_slice() else {
+        panic!("one current operation");
+    };
+    assert_eq!(current.kind, "Extrude");
+    assert!(current.display_name_stored);
+    assert_eq!(current.recipe, None);
+    assert!(current.recipe_conflict);
+}
+
+#[test]
+fn leaves_inline_recipe_conflicts_unresolved() {
+    let payload = b"\xe3icon\0protextrude\0cutextrude\0Extrude id 9\0";
+
+    let states = operation_states(payload);
+    let [state] = states.as_slice() else {
+        panic!("one operation state");
+    };
+    assert_eq!(state.feature_id, 9);
+    assert_eq!(state.kind, "Extrude");
+    assert_eq!(state.recipe, None);
+    assert!(state.recipe_conflict);
+    assert_eq!(state.root_schema_class, None);
+    assert_eq!(state.parent_feature_id, None);
 }
 
 #[test]

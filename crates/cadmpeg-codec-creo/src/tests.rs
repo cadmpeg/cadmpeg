@@ -10746,7 +10746,7 @@ fn scan_partitions_multiple_depdb_recipe_rows() {
 }
 
 #[test]
-fn decode_retains_recipe_history_and_projects_the_final_state() {
+fn decode_retains_conflicting_recipe_candidates_without_projecting_one() {
     let depdb = b"\xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0\
         \xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 2\0\xf6\0protrevolve\0"
         .to_vec();
@@ -10755,10 +10755,8 @@ fn decode_retains_recipe_history_and_projects_the_final_state() {
 
     assert_eq!(scan.features.operation_states.len(), 2);
     assert_eq!(scan.features.operations.len(), 1);
-    assert_eq!(
-        scan.features.operations[0].recipe,
-        Some(crate::feature::FeatureRecipe::ProtrudeRevolve)
-    );
+    assert_eq!(scan.features.operations[0].recipe, None);
+    assert!(scan.features.operations[0].recipe_conflict);
     assert_eq!(scan.features.depdb_recipe_rows.len(), 2);
     assert!(scan
         .features
@@ -10783,18 +10781,17 @@ fn decode_retains_recipe_history_and_projects_the_final_state() {
         .features
         .iter()
         .find(|feature| feature.id.as_str() == "creo:model:feature#8053")
-        .expect("revolution feature");
+        .expect("native feature");
+    let operation_states =
+        &result.ir.native.namespace("creo").unwrap().arenas["feature_operation_states"];
+    assert_eq!(operation_states.len(), 2);
+    assert!(operation_states
+        .iter()
+        .all(|state| state.fields()["recipe_conflict"] == true));
     assert!(matches!(
         &feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                profile: None,
-                axis: None,
-                extent: None,
-                ..
-            },
-            op: cadmpeg_ir::features::BooleanOp::NewBody,
-        }
+        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
+            if kind == "Native Feature"
     ));
     assert_eq!(
         feature
@@ -10803,11 +10800,8 @@ fn decode_retains_recipe_history_and_projects_the_final_state() {
             .map(String::as_str),
         Some("917")
     );
-    assert_eq!(
-        feature.source_properties.get("recipe").map(String::as_str),
-        Some("protrevolve")
-    );
-    assert_eq!(feature.source_tag.as_deref(), Some("protrevolve"));
+    assert!(!feature.source_properties.contains_key("recipe"));
+    assert_eq!(feature.source_tag, None);
 }
 
 #[test]
