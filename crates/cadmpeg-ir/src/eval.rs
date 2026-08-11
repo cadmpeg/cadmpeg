@@ -3764,12 +3764,7 @@ pub fn model_surface_point_by_id(
         }
         visiting.push(surface_id.clone());
         let surface = index.surfaces(&surface_id.0)?;
-        let procedural = index
-            .ir()
-            .model
-            .procedural_surfaces
-            .iter()
-            .find(|procedural| procedural.surface == *surface_id);
+        let procedural = index.procedural_surface_for_surface(&surface_id.0);
         let result = match procedural.map(|procedural| &procedural.definition) {
             Some(ProceduralSurfaceDefinition::AxisRevolution {
                 directrix,
@@ -3981,12 +3976,7 @@ fn model_surface_mapping(
     }
     visiting.push(surface.clone());
     let carrier = index.surfaces(&surface.0)?;
-    let procedural = index
-        .ir()
-        .model
-        .procedural_surfaces
-        .iter()
-        .find(|procedural| procedural.surface == *surface);
+    let procedural = index.procedural_surface_for_surface(&surface.0);
     let result = match procedural.map(|procedural| &procedural.definition) {
         Some(ProceduralSurfaceDefinition::AxisRevolution {
             directrix,
