@@ -30,3 +30,4 @@ crates/cadmpeg-fuzz/artifacts/
 .vscode/
 .impeccable/
 *~
+.worktrees
