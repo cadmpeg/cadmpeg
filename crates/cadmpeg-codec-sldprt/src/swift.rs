@@ -69,6 +69,11 @@ enum ImplicitNominal {
         kind: RenderedDimensionKind,
         geometry: f64,
     },
+    RenderedOrExact {
+        kind: RenderedDimensionKind,
+        geometry: f64,
+        exact: f64,
+    },
 }
 
 /// Decode the unique GDT-analysis root carried by a SWIFT schema stream.
@@ -563,15 +568,7 @@ fn enrich_implicit_nominals(
                     }
                 }),
             ),
-            "GdtDepth" => (
-                DimensionKind::Size,
-                depth_from_applied_geometry(entity, &feature_index).map(|geometry| {
-                    ImplicitNominal::Rendered {
-                        kind: RenderedDimensionKind::Depth,
-                        geometry,
-                    }
-                }),
-            ),
+            "GdtDepth" => (DimensionKind::Size, depth_nominal(entity, &feature_index)),
             "GdtWidth" => (
                 DimensionKind::Size,
                 width_from_applied_geometry(entity, &feature_index).map(ImplicitNominal::Exact),
@@ -615,6 +612,20 @@ fn enrich_implicit_nominals(
                 .and_then(|decimal_places| {
                     rendered_nominal(geometry, decimal_places, kind, rendered)
                 }),
+            ImplicitNominal::RenderedOrExact {
+                kind,
+                geometry,
+                exact,
+            } => entity
+                .integers
+                .get("BlockToleranceDecimalPlaces")
+                .copied()
+                .and_then(|value| u32::try_from(value).ok())
+                .filter(|value| *value <= 9)
+                .and_then(|decimal_places| {
+                    rendered_nominal(geometry, decimal_places, kind, rendered)
+                })
+                .or(Some(exact)),
         };
         let Some(nominal) = nominal else {
             continue;
@@ -667,6 +678,65 @@ fn depth_from_applied_geometry(
 ) -> Option<f64> {
     measurement_from_applied_geometry(annotation, |id| {
         depth_for_feature(id, feature_index, &mut BTreeSet::new(), 0)
+    })
+}
+
+fn depth_nominal(
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+) -> Option<ImplicitNominal> {
+    if annotation
+        .integers
+        .get("IsThreadDepth")
+        .is_some_and(|value| *value != 0)
+    {
+        return thread_depth_from_direct_geometry(annotation, feature_index)
+            .map(ImplicitNominal::Exact);
+    }
+    if let Some(exact) = direct_cylinder_depth(annotation, feature_index) {
+        return Some(ImplicitNominal::RenderedOrExact {
+            kind: RenderedDimensionKind::Depth,
+            geometry: exact,
+            exact,
+        });
+    }
+    depth_from_applied_geometry(annotation, feature_index).map(|geometry| {
+        ImplicitNominal::Rendered {
+            kind: RenderedDimensionKind::Depth,
+            geometry,
+        }
+    })
+}
+
+fn direct_cylinder_depth(
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+) -> Option<f64> {
+    measurement_from_direct_features(
+        annotation,
+        feature_index,
+        "GdtCylinder",
+        nominal_cylinder_depth,
+    )
+}
+
+fn thread_depth_from_direct_geometry(
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+) -> Option<f64> {
+    measurement_from_direct_features(annotation, feature_index, "GdtCylinder", |feature| {
+        feature
+            .integers
+            .get("IsThreaded")
+            .is_some_and(|value| *value != 0)
+            .then(|| {
+                feature
+                    .doubles
+                    .get("ThreadDepth")
+                    .copied()
+                    .and_then(finite_positive)
+            })
+            .flatten()
     })
 }
 
@@ -1901,7 +1971,7 @@ mod tests {
     fn rendered_depth_resolves_axial_nominal_planes() {
         let mut root = semantic_root();
         *root.features.entities.get_mut(1).expect("first cylinder") =
-            cylinder_with_radius_and_depth(2.5, 7.62);
+            cylinder_with_radius_and_depth(2.5, 7.625);
         let mut depth = entity("GdtDepth");
         depth.strings.insert("ObjectName".into(), "Depth 1".into());
         depth
@@ -1941,6 +2011,62 @@ mod tests {
         assert!(nominal
             .as_ref()
             .is_some_and(|value| approximately_equal(value.value, 7.62)));
+    }
+
+    #[test]
+    fn direct_and_thread_cylinders_supply_depth_without_rendered_text() {
+        let mut root = semantic_root();
+        *root.features.entities.get_mut(1).expect("direct cylinder") =
+            cylinder_with_radius_and_depth(5.0, 14.2875);
+        let mut depth = entity("GdtDepth");
+        depth.doubles.insert("Nominal".into(), 0.0);
+        depth
+            .features
+            .references
+            .push(reference("F20", "GdtCylinder"));
+        root.annotations
+            .references
+            .push(reference("A50", "GdtDepth"));
+        root.annotations.entities.push(depth);
+
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
+        let PmiDefinition::Dimension { nominal, .. } = &annotations
+            .iter()
+            .find(|annotation| annotation.id == pmi_id("A50"))
+            .expect("direct depth annotation")
+            .definition
+        else {
+            panic!("dimension definition");
+        };
+        assert!(nominal
+            .as_ref()
+            .is_some_and(|value| approximately_equal(value.value, 14.2875)));
+
+        root.annotations
+            .entities
+            .last_mut()
+            .expect("thread-depth annotation")
+            .integers
+            .insert("IsThreadDepth".into(), 1);
+        let cylinder = root
+            .features
+            .entities
+            .get_mut(1)
+            .expect("threaded cylinder");
+        cylinder.integers.insert("IsThreaded".into(), 1);
+        cylinder.doubles.insert("ThreadDepth".into(), 12.0);
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
+        let PmiDefinition::Dimension { nominal, .. } = &annotations
+            .iter()
+            .find(|annotation| annotation.id == pmi_id("A50"))
+            .expect("thread depth annotation")
+            .definition
+        else {
+            panic!("dimension definition");
+        };
+        assert_eq!(*nominal, Some(length(12.0)));
     }
 
     #[test]

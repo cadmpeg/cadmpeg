@@ -921,7 +921,15 @@ An omitted `GdtDepth.Nominal` uses the same rendered-literal binding. Each
 reachable `GdtCylinder` contributes the axial distance from its `NomBottom`
 plane origin to its `NomTop` plane origin. `NomCylinder.I`, `J`, and `K` must
 form a unit vector, and the complete top-to-bottom displacement must be
-parallel to that vector. All reachable cylindrical contributors must agree.
+parallel to that vector. All reachable cylindrical contributors must agree. If
+the annotation also references one direct operation-specific `GdtCylinder`,
+that cylinder's axial distance supplies the nominal when no rendered literal
+binds. A binding rendered literal has precedence because it carries the
+displayed nominal rather than the unrounded evaluated geometry.
+
+A `GdtDepth` with nonzero `IsThreadDepth` uses the positive `ThreadDepth` of
+its direct `GdtCylinder`. The cylinder must have nonzero `IsThreaded`; ordinary
+cylinder depth does not replace the named thread-depth field.
 
 An omitted `GdtWidth.Nominal` is the positive millimetre `Width` field of its
 applied nominal slot geometry. `GdtCompoundWidth` uses
