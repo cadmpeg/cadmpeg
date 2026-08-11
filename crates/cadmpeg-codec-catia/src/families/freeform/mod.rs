@@ -183,6 +183,7 @@ pub(crate) fn append_consolidated_revolutions(
                     revolution.angular_range[0] / revolution.angular_scale,
                     revolution.angular_range[1] / revolution.angular_scale,
                 ],
+                angular_parameter_interval: Some(revolution.angular_range),
                 parameter_interval: Some(revolution.profile_range),
                 transposed: false,
                 revision_form: None,

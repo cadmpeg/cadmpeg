@@ -17487,6 +17487,7 @@ fn transfer_resolved_revolution_surfaces(
                     axis_origin: axis.origin,
                     axis_direction: axis.direction,
                     angular_interval: [0.0, std::f64::consts::TAU],
+                    angular_parameter_interval: None,
                     parameter_interval: [
                         *directrix.knots.first().expect("validated spline knots"),
                         *directrix.knots.last().expect("validated spline knots"),

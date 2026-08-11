@@ -1378,6 +1378,7 @@ pub(crate) fn try_decode_standard(
                         axis_origin: revolution.axis_origin,
                         axis_direction: revolution.axis_direction,
                         angular_interval: revolution.angular_interval,
+                        angular_parameter_interval: Some(revolution.angular_parameter_interval),
                         parameter_interval: Some(revolution.parameter_interval),
                         transposed: false,
                         revision_form: None,

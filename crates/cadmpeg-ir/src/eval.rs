@@ -2761,6 +2761,7 @@ fn model_native_revolution_partials(
     axis_origin: Point3,
     axis_direction: Vector3,
     angular_interval: [f64; 2],
+    angular_parameter_interval: Option<[f64; 2]>,
     parameter_interval: Option<[f64; 2]>,
     transposed: bool,
     u: f64,
@@ -2769,9 +2770,28 @@ fn model_native_revolution_partials(
     if !angular_interval.iter().all(|value| value.is_finite()) {
         return None;
     }
-    let (directrix_parameter, angle) = if transposed { (v, u) } else { (u, v) };
+    let (directrix_parameter, angular_parameter) = if transposed { (v, u) } else { (u, v) };
     let (directrix_parameter, derivative) =
         construction_curve_parameter(index, directrix, directrix_parameter, parameter_interval)?;
+    let (angle, angular_derivative) = angular_parameter_interval.map_or_else(
+        || Some((angular_parameter, 1.0)),
+        |parameter_interval| {
+            let parameter_span = parameter_interval[1] - parameter_interval[0];
+            let angular_span = angular_interval[1] - angular_interval[0];
+            if !parameter_interval.iter().all(|value| value.is_finite())
+                || parameter_span == 0.0
+                || !angular_span.is_finite()
+            {
+                return None;
+            }
+            let angular_derivative = angular_span / parameter_span;
+            Some((
+                (angular_parameter - parameter_interval[0])
+                    .mul_add(angular_derivative, angular_interval[0]),
+                angular_derivative,
+            ))
+        },
+    )?;
     let partials = model_axis_revolution_partials(
         index,
         directrix,
@@ -2784,20 +2804,20 @@ fn model_native_revolution_partials(
     if transposed {
         Some(SurfaceSecondPartials {
             point: partials.point,
-            du: partials.du,
+            du: scale_vector(partials.du, angular_derivative),
             dv: scale_vector(partials.dv, derivative),
-            duu: partials.duu,
-            duv: scale_vector(partials.duv, derivative),
+            duu: scale_vector(partials.duu, angular_derivative * angular_derivative),
+            duv: scale_vector(partials.duv, derivative * angular_derivative),
             dvv: scale_vector(partials.dvv, derivative * derivative),
         })
     } else {
         Some(SurfaceSecondPartials {
             point: partials.point,
             du: scale_vector(partials.dv, derivative),
-            dv: partials.du,
+            dv: scale_vector(partials.du, angular_derivative),
             duu: scale_vector(partials.dvv, derivative * derivative),
-            duv: scale_vector(partials.duv, derivative),
-            dvv: partials.duu,
+            duv: scale_vector(partials.duv, derivative * angular_derivative),
+            dvv: scale_vector(partials.duu, angular_derivative * angular_derivative),
         })
     }
 }
@@ -3716,6 +3736,7 @@ pub fn model_surface_point(
             axis_origin,
             axis_direction,
             angular_interval,
+            angular_parameter_interval,
             parameter_interval,
             transposed,
             ..
@@ -3725,6 +3746,7 @@ pub fn model_surface_point(
             *axis_origin,
             *axis_direction,
             *angular_interval,
+            *angular_parameter_interval,
             *parameter_interval,
             *transposed,
             u,
@@ -3806,6 +3828,7 @@ pub fn model_surface_point_by_id(
                 axis_origin,
                 axis_direction,
                 angular_interval,
+                angular_parameter_interval,
                 parameter_interval,
                 transposed,
                 ..
@@ -3815,6 +3838,7 @@ pub fn model_surface_point_by_id(
                 *axis_origin,
                 *axis_direction,
                 *angular_interval,
+                *angular_parameter_interval,
                 *parameter_interval,
                 *transposed,
                 u,
@@ -4041,6 +4065,7 @@ fn model_surface_mapping(
             axis_origin,
             axis_direction,
             angular_interval,
+            angular_parameter_interval,
             parameter_interval,
             transposed,
             ..
@@ -4051,6 +4076,7 @@ fn model_surface_mapping(
                 *axis_origin,
                 *axis_direction,
                 *angular_interval,
+                *angular_parameter_interval,
                 *parameter_interval,
                 *transposed,
                 u,
@@ -5446,6 +5472,55 @@ mod tests {
         assert!((second_partials.duu.y + 2.0).abs() < 1.0e-12);
         assert!(second_partials.duv.norm() < 1.0e-12);
         assert!(second_partials.dvv.norm() < 1.0e-12);
+    }
+
+    #[test]
+    fn revolution_surface_maps_its_angular_parameter_interval() {
+        let directrix_id = CurveId("mapped-profile".into());
+        let surface_id = SurfaceId("mapped-revolution".into());
+        let mut ir = CadIr::empty(crate::units::Units::default());
+        ir.model.curves.push(Curve {
+            id: directrix_id.clone(),
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(2.0, 0.0, 0.0),
+                direction: Vector3::new(0.0, 0.0, 1.0),
+            },
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId("mapped-revolution-construction".into()),
+            surface: surface_id.clone(),
+            definition: ProceduralSurfaceDefinition::Revolution {
+                directrix: directrix_id,
+                axis_origin: Point3::new(0.0, 0.0, 0.0),
+                axis_direction: Vector3::new(0.0, 0.0, 1.0),
+                angular_interval: [0.0, std::f64::consts::PI],
+                angular_parameter_interval: Some([10.0, 14.0]),
+                parameter_interval: None,
+                transposed: false,
+                revision_form: None,
+            },
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        });
+
+        let index = crate::index::ModelIndex::new(&ir);
+        let partials = model_surface_second_partials_by_id(&index, &surface_id, 1.5, 12.0)
+            .expect("mapped revolution partials");
+        assert!(partials.point.x.abs() < 1.0e-12);
+        assert!((partials.point.y - 2.0).abs() < 1.0e-12);
+        assert!((partials.point.z - 1.5).abs() < 1.0e-12);
+        assert_eq!(partials.du, Vector3::new(0.0, 0.0, 1.0));
+        assert!((partials.dv.x + std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+        assert!(partials.dv.y.abs() < 1.0e-12);
+        assert!(partials.dvv.x.abs() < 1.0e-12);
+        assert!((partials.dvv.y + std::f64::consts::PI.powi(2) / 8.0).abs() < 1.0e-12);
+        assert!(partials.duv.norm() < 1.0e-12);
     }
 
     #[test]

@@ -16740,6 +16740,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
             axis_origin,
             axis_direction,
             angular_interval,
+            angular_parameter_interval,
             parameter_interval,
             transposed,
             revision_form: None,
@@ -16756,6 +16757,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
         );
         assert_eq!(*angular_interval, [0.0, 1.0]);
+        assert_eq!(*angular_parameter_interval, None);
         assert_eq!(*parameter_interval, Some([0.0, 1.0]));
         assert!(!transposed);
         assert!(result

@@ -456,7 +456,9 @@ current scores require those matrices and representative fixtures.
   intervals, and centered periodic arc domains. A revolution transfers only
   when its profile interval equals the referenced profile's complete interval.
   Its exact NURBS cache uses the stored ranges directly rather than deriving a
-  patch from available pcurves.
+  patch from available pcurves. Its neutral revolution construction maps the
+  stored angular surface-parameter interval affinely to the physical radian
+  interval, so the construction and cache share the native chart.
   Consolidated and object-stream tori retain independent active major- and
   minor-angle intervals and their centered full-turn chart domains.
   Object-stream tori additionally require the complete lead, right-handed

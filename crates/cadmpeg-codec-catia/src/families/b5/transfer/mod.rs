@@ -54,6 +54,7 @@ struct RevolutionPlan {
     axis_origin: Point3,
     axis_direction: Vector3,
     angular_interval: [f64; 2],
+    angular_parameter_interval: [f64; 2],
     parameter_interval: [f64; 2],
 }
 
@@ -638,6 +639,8 @@ pub(crate) struct ResolvedRevolutionSurface {
     pub(crate) axis_direction: Vector3,
     /// Angular interval in radians.
     pub(crate) angular_interval: [f64; 2],
+    /// Native angular surface-parameter interval mapped to `angular_interval`.
+    pub(crate) angular_parameter_interval: [f64; 2],
     /// Native profile parameter interval.
     pub(crate) parameter_interval: [f64; 2],
 }
@@ -666,6 +669,7 @@ pub(crate) fn resolved_revolution_surface(
         axis_origin: plan.axis_origin,
         axis_direction: plan.axis_direction,
         angular_interval: plan.angular_interval,
+        angular_parameter_interval: plan.angular_parameter_interval,
         parameter_interval: plan.parameter_interval,
     })
 }
@@ -2232,18 +2236,18 @@ mod tests {
             Some(&profile),
             [0.0, 0.0, 0.0],
             [0.0, 0.0, 1.0],
-            1.0,
-            [[-1.0, 1.0], [0.0, std::f64::consts::PI]],
+            2.0,
+            [[-1.0, 1.0], [0.0, 2.0 * std::f64::consts::PI]],
         )
         .expect("exact revolution cache");
         assert_eq!(plan.parameter_interval, [-1.0, 1.0]);
         assert_eq!(plan.angular_interval, [0.0, std::f64::consts::PI]);
-        let evaluated = surface_point(
-            &SurfaceGeometry::Nurbs(surface),
-            0.5,
-            std::f64::consts::FRAC_PI_2,
-        )
-        .expect("surface point");
+        assert_eq!(
+            plan.angular_parameter_interval,
+            [0.0, 2.0 * std::f64::consts::PI]
+        );
+        let evaluated = surface_point(&SurfaceGeometry::Nurbs(surface), 0.5, std::f64::consts::PI)
+            .expect("surface point");
         assert!(evaluated.x.abs() < 1e-12);
         assert!((evaluated.y - 2.0).abs() < 1e-12);
         assert!((evaluated.z - 0.5).abs() < 1e-12);
@@ -2251,8 +2255,8 @@ mod tests {
             Some(&profile),
             [0.0, 0.0, 0.0],
             [0.0, 0.0, 1.0],
-            1.0,
-            [[-0.5, 1.0], [0.0, std::f64::consts::PI]],
+            2.0,
+            [[-0.5, 1.0], [0.0, 2.0 * std::f64::consts::PI]],
         )
         .is_none());
     }

@@ -941,10 +941,18 @@ fn native_procedural_surface_definition(
             axis_origin,
             axis_direction,
             angular_interval,
+            angular_parameter_interval,
             parameter_interval,
             transposed,
             revision_form,
         } => {
+            if angular_parameter_interval
+                .is_some_and(|parameter_interval| parameter_interval != *angular_interval)
+            {
+                return Err(CodecError::NotImplemented(
+                    "F3D rot_spl_sur cannot encode a distinct angular parameter interval".into(),
+                ));
+            }
             if let Some(form) = revision_form {
                 if form.revision <= 0 {
                     return Err(CodecError::Malformed(
