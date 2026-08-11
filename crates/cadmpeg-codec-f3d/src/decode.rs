@@ -508,23 +508,34 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Pattern { seeds, pattern } => {
             seeds.is_empty() || matches!(pattern, PatternKind::Unresolved { .. })
         }
-        FeatureDefinition::SheetMetalEdgeFlange { height, .. } => matches!(
-            height,
-            cadmpeg_ir::features::SheetMetalFlangeHeight::ToObject {
-                target: cadmpeg_ir::features::SheetMetalFlangeHeightTarget::Native(_),
-                ..
-            }
-        ),
+        FeatureDefinition::SheetMetalBaseFlange { profile, .. } => {
+            !profile_ref_is_resolved(profile)
+        }
+        FeatureDefinition::SheetMetalEdgeFlange { edges, height, .. } => {
+            !edge_selection_is_resolved(edges)
+                || matches!(
+                    height,
+                    cadmpeg_ir::features::SheetMetalFlangeHeight::ToObject {
+                        target: cadmpeg_ir::features::SheetMetalFlangeHeightTarget::Native(_),
+                        ..
+                    }
+                )
+        }
         FeatureDefinition::SheetMetalHem {
-            form, direction, ..
+            edges,
+            form,
+            direction,
+            ..
         } => {
-            matches!(
-                direction,
-                cadmpeg_ir::features::SheetMetalHemDirection::Unresolved
-            ) || matches!(
-                form,
-                cadmpeg_ir::features::SheetMetalHemForm::GapLength { .. }
-            )
+            !edge_selection_is_resolved(edges)
+                || matches!(
+                    direction,
+                    cadmpeg_ir::features::SheetMetalHemDirection::Unresolved
+                )
+                || matches!(
+                    form,
+                    cadmpeg_ir::features::SheetMetalHemForm::GapLength { .. }
+                )
         }
         FeatureDefinition::SplitFace { targets, tool } => {
             !face_selection_is_resolved(targets)
@@ -1237,7 +1248,11 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             }
             FeatureDefinition::CosmeticThread { face, .. } => face_selection(face),
             FeatureDefinition::Decal { faces, .. } => face_selection(faces),
-            FeatureDefinition::SheetMetalHem { edges, .. } => edge_selection(edges),
+            FeatureDefinition::SheetMetalBaseFlange { profile, .. } => {
+                gaps.profile_selections += usize::from(!profile_ref_is_resolved(profile));
+            }
+            FeatureDefinition::SheetMetalEdgeFlange { edges, .. }
+            | FeatureDefinition::SheetMetalHem { edges, .. } => edge_selection(edges),
             FeatureDefinition::MoveFace { faces, .. } => face_selection(faces),
             _ => {}
         }
@@ -5157,6 +5172,62 @@ mod tests {
             FaceSelection::Faces(vec![FaceId("face:support".into())]),
             SurfaceContinuity::Curvature,
             Some(true),
+        )));
+    }
+
+    #[test]
+    fn sheet_metal_completeness_requires_neutral_profiles_and_edges() {
+        let definition = |value| {
+            serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
+                .expect("sheet-metal definition")
+        };
+        let base_flange = |profile| {
+            definition(serde_json::json!({
+                "definition": "sheet_metal_base_flange",
+                "profile": profile,
+                "thickness": 2.5,
+                "side": "forward"
+            }))
+        };
+        let edge_flange = |edges| {
+            definition(serde_json::json!({
+                "definition": "sheet_metal_edge_flange",
+                "edges": edges,
+                "height": {"kind": "distance", "value": 25.0},
+                "angle": std::f64::consts::FRAC_PI_2,
+                "height_datum": "outer_faces",
+                "bend_position": "inside",
+                "width": {"kind": "full_edge"},
+                "bend_radius": 2.5
+            }))
+        };
+        let hem = |edges| {
+            definition(serde_json::json!({
+                "definition": "sheet_metal_hem",
+                "edges": edges,
+                "form": {"kind": "flat", "value": {"length": 10.0}},
+                "direction": "forward",
+                "bend_radius": 2.5
+            }))
+        };
+
+        assert!(!feature_definition_is_incomplete(&base_flange(
+            serde_json::json!({"kind": "sketch", "value": "sketch:1"}),
+        )));
+        assert!(feature_definition_is_incomplete(&base_flange(
+            serde_json::json!({"kind": "native", "value": "native:profile"}),
+        )));
+        assert!(!feature_definition_is_incomplete(&edge_flange(
+            serde_json::json!({"kind": "edges", "value": ["edge:1"]}),
+        )));
+        assert!(feature_definition_is_incomplete(&edge_flange(
+            serde_json::json!({"kind": "native", "value": "native:edges"}),
+        )));
+        assert!(!feature_definition_is_incomplete(&hem(
+            serde_json::json!({"kind": "edges", "value": ["edge:1"]}),
+        )));
+        assert!(feature_definition_is_incomplete(&hem(
+            serde_json::json!({"kind": "native", "value": "native:edges"}),
         )));
     }
 
