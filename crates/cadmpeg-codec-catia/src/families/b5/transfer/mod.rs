@@ -1811,28 +1811,39 @@ mod tests {
 
     #[test]
     fn procedural_support_requires_physical_edge_endpoint_agreement() {
-        let surfaces = BTreeMap::from([(
-            10,
-            SurfacePlan {
-                geometry: SurfaceGeometry::Plane {
-                    origin: Point3::new(0.0, 0.0, 0.0),
-                    normal: Vector3::new(0.0, 0.0, 1.0),
-                    u_axis: Vector3::new(1.0, 0.0, 0.0),
-                },
-                procedure: None,
+        let plane = || SurfacePlan {
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
             },
-        )]);
-        let pcurves = BTreeMap::from([(
-            20,
+            procedure: None,
+        };
+        let surfaces = BTreeMap::from([(10, plane()), (11, plane())]);
+        let pcurves = BTreeMap::from([
             (
-                PcurveGeometry::Line {
-                    origin: Point2::new(0.0, 0.0),
-                    direction: Point2::new(1.0, 0.0),
-                },
-                false,
-                [0.0, 1.0],
+                20,
+                (
+                    PcurveGeometry::Line {
+                        origin: Point2::new(0.0, 0.0),
+                        direction: Point2::new(1.0, 0.0),
+                    },
+                    false,
+                    [0.0, 1.0],
+                ),
             ),
-        )]);
+            (
+                21,
+                (
+                    PcurveGeometry::Line {
+                        origin: Point2::new(1.0, 0.0),
+                        direction: Point2::new(-1.0, 0.0),
+                    },
+                    false,
+                    [0.0, 1.0],
+                ),
+            ),
+        ]);
         let supports = [(10, 20, [0.0, 1.0])];
         assert!(b5_supports_follow_edge(
             &supports,
@@ -1868,6 +1879,29 @@ mod tests {
             &reversed_supports,
             [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
             [1.5e-3; 2],
+            &surfaces,
+            &pcurves,
+        ));
+        let mut tolerance_ambiguous_supports = [(10, 20, [1.0, 0.0])];
+        orient_b5_supports_to_edge(
+            &mut tolerance_ambiguous_supports,
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            [1.01; 2],
+            &surfaces,
+            &pcurves,
+        );
+        assert_eq!(tolerance_ambiguous_supports[0].2, [0.0, 1.0]);
+        let mut oppositely_parameterized_supports = [(10, 20, [0.0, 1.0]), (11, 21, [0.0, 1.0])];
+        orient_b5_supports_to_edge(
+            &mut oppositely_parameterized_supports,
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            [1.01; 2],
+            &surfaces,
+            &pcurves,
+        );
+        assert_eq!(oppositely_parameterized_supports[1].2, [1.0, 0.0]);
+        assert!(b5_supports_agree(
+            &oppositely_parameterized_supports,
             &surfaces,
             &pcurves,
         ));
