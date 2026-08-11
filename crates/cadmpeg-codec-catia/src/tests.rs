@@ -16799,6 +16799,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
 #[test]
 fn native_namespace_types_and_validates_range_intervals_independently_of_constraint_roles() {
     use crate::entity_table::{RangeIntervalPrefix, RangeIntervalSlot};
+    use crate::native::CatiaRangeNominalFraming;
 
     let lower_bits = (-0.2032_f64).to_bits();
     let upper_bits = 0.2032_f64.to_bits();
@@ -16838,6 +16839,10 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
             },
         ])
     );
+    let nominal = range.nominal.as_ref().expect("finite Range nominal");
+    assert_eq!(nominal.framing, CatiaRangeNominalFraming::DCToken81DB);
+    assert_eq!(nominal.bits, nominal_bits);
+    assert_eq!(nominal.evaluation_opcode_offset, 4);
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode range interval");
@@ -16852,6 +16857,12 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
             .report
             .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_NO_SLOT_COUNT),
         0
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_NOMINAL_COUNT),
+        1
     );
     assert_eq!(
         decoded
@@ -16879,6 +16890,12 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
             .report
             .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_NO_SLOT_COUNT),
         1
+    );
+    assert_eq!(
+        no_slot
+            .report
+            .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_NOMINAL_COUNT),
+        0
     );
     let unset = CatiaCodec
         .decode(
@@ -16916,6 +16933,50 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
         migrated.entity_records[0].range_interval,
         Some(range.clone())
     );
+
+    let mut previous_namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut previous_namespace)
+        .expect("store pre-nominal range namespace");
+    previous_namespace.version = crate::native::CATIA_RANGE_NOMINAL_VERSION - 1;
+    previous_namespace
+        .arenas
+        .get_mut("entity_records")
+        .expect("stored entity records")[0]
+        .fields_mut()
+        .get_mut("range_interval")
+        .expect("stored range interval")
+        .as_object_mut()
+        .expect("stored range interval object")
+        .remove("nominal");
+    let migrated =
+        crate::native::CatiaNative::load(&previous_namespace).expect("migrate Range nominal");
+    assert_eq!(
+        migrated.entity_records[0]
+            .range_interval
+            .as_ref()
+            .expect("migrated range interval")
+            .nominal,
+        Some(nominal.clone())
+    );
+
+    let mut malformed_nominal = native.clone();
+    malformed_nominal.entity_records[0]
+        .range_interval
+        .as_mut()
+        .expect("complete range interval")
+        .nominal
+        .as_mut()
+        .expect("finite Range nominal")
+        .bits = 12.0_f64.to_bits();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    malformed_nominal
+        .store(&mut namespace)
+        .expect("store malformed Range nominal");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
 
     let mut malformed = native;
     malformed.entity_records[0]

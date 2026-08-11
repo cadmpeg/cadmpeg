@@ -25,7 +25,10 @@ use crate::value_block;
 use crate::wire::records::ConsolidatedRecord;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 275;
+pub const CATIA_NATIVE_VERSION: u32 = 276;
+/// Native schema version associating exact scalar nominals with `Range` intervals.
+#[cfg(test)]
+pub(crate) const CATIA_RANGE_NOMINAL_VERSION: u32 = 276;
 /// Native schema version admitting the `81 93` entity-suffix value trailer.
 #[cfg(test)]
 pub(crate) const CATIA_SUFFIX_TRAILER_8193_VERSION: u32 = 275;
@@ -1573,12 +1576,38 @@ pub struct CatiaRangeInterval {
     pub range: CatiaEntitySchemaValue,
     /// Complete selected interval framing and nullable slots.
     pub interval: entity_table::RangeInterval,
+    /// Finite nominal carried by an admitted scalar suffix dialect.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nominal: Option<CatiaRangeNominal>,
     /// Exact same-graph payload-reference occurrences selecting this interval.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub incoming_references: Vec<CatiaEntityIncomingReference>,
     /// Exact same-graph object-head storage selectors selecting this interval.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub incoming_storage_references: Vec<CatiaEntityIncomingStorageReference>,
+}
+
+/// Exact scalar-suffix dialect associating a nominal with a `Range` interval.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum CatiaRangeNominalFraming {
+    /// Prefix code `D8` and trailer `81 93`.
+    D8Token8193,
+    /// Prefix code `DC` and trailer `81 DB`.
+    DCToken81DB,
+}
+
+/// One finite nominal associated with a complete `Range` interval.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaRangeNominal {
+    /// Exact scalar-suffix dialect.
+    pub framing: CatiaRangeNominalFraming,
+    /// Exact finite binary64 nominal bits.
+    pub bits: u64,
+    /// Byte offset of `E6` within the record suffix.
+    #[serde(default)]
+    pub evaluation_opcode_offset: u64,
 }
 
 /// Exact framing of one complete constraint-range value.
@@ -3303,6 +3332,7 @@ fn entity_incidences(
 fn range_interval(
     payload: &[u8],
     values: &[CatiaEntityValueSchemaSelection],
+    suffix_value: Option<&CatiaEntitySuffixValue>,
     records: &[CatiaObjectRecord],
     graph_id: &str,
     entity_id: u32,
@@ -3329,8 +3359,34 @@ fn range_interval(
             value: range.name.clone(),
         },
         interval,
+        nominal: range_nominal(suffix_value),
         incoming_references,
         incoming_storage_references,
+    })
+}
+
+fn range_nominal(suffix_value: Option<&CatiaEntitySuffixValue>) -> Option<CatiaRangeNominal> {
+    let suffix = suffix_value?;
+    if suffix.prefix_atoms != [4, 22, 2] || suffix.prefix_atom_widths != [1, 1, 1] {
+        return None;
+    }
+    let framing = match (suffix.prefix_code, suffix.trailer) {
+        (0xd8, CatiaEntitySuffixTrailer::Token8193) => CatiaRangeNominalFraming::D8Token8193,
+        (0xdc, CatiaEntitySuffixTrailer::Token81DB) => CatiaRangeNominalFraming::DCToken81DB,
+        _ => return None,
+    };
+    let CatiaEntitySuffixPayload::Evaluation {
+        opcode_offset,
+        evaluation: CatiaEntityEvaluation::Scalar { bits },
+        encoding: CatiaEntityEvaluationEncoding::Direct,
+    } = suffix.payload
+    else {
+        return None;
+    };
+    Some(CatiaRangeNominal {
+        framing,
+        bits,
+        evaluation_opcode_offset: opcode_offset,
     })
 }
 
@@ -10241,6 +10297,7 @@ impl CatiaNative {
                 entity.range_interval = range_interval(
                     &entity.value_payload,
                     &entity.value_schema_selections,
+                    entity.suffix_value.as_ref(),
                     &graph.records,
                     &graph.id,
                     entity.entity_id,
@@ -10588,17 +10645,6 @@ impl CatiaNative {
                 entity.numeric_pair = entity_table::parse_numeric_pair(&entity.value_payload);
             }
         }
-        if namespace.version < CATIA_RANGE_INTERVAL_INCIDENCE_VERSION {
-            for entity in &mut entity_records {
-                entity.range_interval = range_interval(
-                    &entity.value_payload,
-                    &entity.value_schema_selections,
-                    &records,
-                    &entity.object_graph,
-                    entity.entity_id,
-                );
-            }
-        }
         let row_chain_arena = if namespace
             .arenas
             .contains_key("schema_configuration_row_chains")
@@ -10707,6 +10753,18 @@ impl CatiaNative {
                         entity.suffix_schema_selection.as_ref(),
                     );
                 }
+            }
+        }
+        if namespace.version < CATIA_RANGE_NOMINAL_VERSION {
+            for entity in &mut entity_records {
+                entity.range_interval = range_interval(
+                    &entity.value_payload,
+                    &entity.value_schema_selections,
+                    entity.suffix_value.as_ref(),
+                    &records,
+                    &entity.object_graph,
+                    entity.entity_id,
+                );
             }
         }
         let graph_ids = graphs
@@ -11051,6 +11109,7 @@ impl CatiaNative {
                             != range_interval(
                                 &entity.value_payload,
                                 &entity.value_schema_selections,
+                                entity.suffix_value.as_ref(),
                                 &graph.records,
                                 &graph.id,
                                 entity.entity_id,

@@ -217,6 +217,8 @@ pub(crate) const DECODED_RANGE_INTERVAL_INCOMING_STORAGE_REFERENCE_COUNT: Covera
     CoverageKey("decoded_range_interval_incoming_storage_reference_count");
 pub(crate) const DECODED_RANGE_INTERVAL_NO_SLOT_COUNT: CoverageKey =
     CoverageKey("decoded_range_interval_no_slot_count");
+pub(crate) const DECODED_RANGE_INTERVAL_NOMINAL_COUNT: CoverageKey =
+    CoverageKey("decoded_range_interval_nominal_count");
 pub(crate) const DECODED_RANGE_INTERVAL_UNSET_SLOT_COUNT: CoverageKey =
     CoverageKey("decoded_range_interval_unset_slot_count");
 pub(crate) const DECODED_REFERENCE_SIGNATURE_COHORT_COUNT: CoverageKey =
@@ -727,6 +729,7 @@ pub(crate) const ALL: &[CoverageKey] = &[
     DECODED_RANGE_INTERVAL_INCOMING_REFERENCE_COUNT,
     DECODED_RANGE_INTERVAL_INCOMING_STORAGE_REFERENCE_COUNT,
     DECODED_RANGE_INTERVAL_NO_SLOT_COUNT,
+    DECODED_RANGE_INTERVAL_NOMINAL_COUNT,
     DECODED_RANGE_INTERVAL_UNSET_SLOT_COUNT,
     DECODED_REFERENCE_SIGNATURE_COHORT_COUNT,
     DECODED_REFERENCE_SIGNATURE_COHORT_MEMBER_COUNT,
