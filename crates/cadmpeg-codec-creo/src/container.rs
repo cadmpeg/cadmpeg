@@ -32,6 +32,7 @@ use crate::feature::{
     FeatureLoopRestoreDirection, FeatureOperation, FeatureRecipe, FeatureReferenceName,
     FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow,
 };
+use crate::legacy;
 use crate::placement::{self, FeatureSectionTransform};
 use crate::primdata::{self, PrimitiveScalarArray, PrimitiveTriangleStrip};
 use crate::psb;
@@ -120,6 +121,10 @@ pub struct LegacyAsciiFraming {
     pub product_release: Option<String>,
     /// Byte offset of the `#Pro/ENGINEER` banner and legacy TOC offset base.
     pub banner_offset: usize,
+    /// Byte offset of the header-adjacent `#P_OBJECT` line.
+    pub object_offset: usize,
+    /// Structurally resolved attribute declarations and value rows.
+    pub persistence: legacy::Persistence,
 }
 
 impl Layout {
@@ -646,41 +651,22 @@ fn toc_sections(data: &[u8], header_base: usize) -> Vec<Section> {
     sections
 }
 
-fn ascii_line(data: &[u8], start: usize) -> Option<(&[u8], usize)> {
-    let bytes = data.get(start..)?;
-    let relative_end = bytes.iter().position(|byte| *byte == b'\n');
-    let end = relative_end.map_or(data.len(), |end| start + end);
-    let next = relative_end.map_or(end, |_| end + 1);
-    Some((
-        data[start..end]
-            .strip_suffix(b"\r")
-            .unwrap_or(&data[start..end]),
-        next,
-    ))
-}
-
-fn legacy_declaration_id(line: &[u8], expected_name: &str, expected_type: u8) -> Option<u32> {
-    let line = std::str::from_utf8(line).ok()?;
-    let mut fields = line.split_ascii_whitespace();
-    let name = fields.next()?;
-    let id = fields.next()?.parse().ok()?;
-    let type_code = fields.next()?.parse::<u8>().ok()?;
-    (name == expected_name && type_code == expected_type && fields.next().is_none()).then_some(id)
-}
-
 fn legacy_toc_sections(data: &[u8], banner_offset: usize) -> Vec<Section> {
     const MAX_LEGACY_TOC_ENTRIES: usize = 4096;
 
     let Some(toc_offset) = find(data, b"\n@Toc ", banner_offset).map(|offset| offset + 1) else {
         return Vec::new();
     };
-    let Some((toc_declaration, after_toc_declaration)) = ascii_line(data, toc_offset) else {
+    let Some((toc_declaration, after_toc_declaration)) = legacy::line(data, toc_offset) else {
         return Vec::new();
     };
-    let Some(toc_id) = legacy_declaration_id(toc_declaration, "@Toc", 0) else {
+    let Some(toc_declaration) = legacy::parse_declaration(toc_declaration, toc_offset)
+        .filter(|declaration| declaration.name == "Toc" && declaration.type_code == 0)
+    else {
         return Vec::new();
     };
-    let Some((toc_value, after_toc_value)) = ascii_line(data, after_toc_declaration) else {
+    let toc_id = toc_declaration.id;
+    let Some((toc_value, after_toc_value)) = legacy::line(data, after_toc_declaration) else {
         return Vec::new();
     };
     let Ok(toc_value) = std::str::from_utf8(toc_value) else {
@@ -695,14 +681,17 @@ fn legacy_toc_sections(data: &[u8], banner_offset: usize) -> Vec<Section> {
         return Vec::new();
     }
 
-    let Some((entry_declaration, after_entry_declaration)) = ascii_line(data, after_toc_value)
+    let Some((entry_declaration, after_entry_declaration)) = legacy::line(data, after_toc_value)
     else {
         return Vec::new();
     };
-    let Some(entry_id) = legacy_declaration_id(entry_declaration, "@entry", 10) else {
+    let Some(entry_declaration) = legacy::parse_declaration(entry_declaration, after_toc_value)
+        .filter(|declaration| declaration.name == "entry" && declaration.type_code == 10)
+    else {
         return Vec::new();
     };
-    let Some((entry_array, mut next)) = ascii_line(data, after_entry_declaration) else {
+    let entry_id = entry_declaration.id;
+    let Some((entry_array, mut next)) = legacy::line(data, after_entry_declaration) else {
         return Vec::new();
     };
     let Ok(entry_array) = std::str::from_utf8(entry_array) else {
@@ -729,7 +718,7 @@ fn legacy_toc_sections(data: &[u8], banner_offset: usize) -> Vec<Section> {
 
     let mut sections = Vec::new();
     for _ in 0..count {
-        let Some((entry, after_entry)) = ascii_line(data, next) else {
+        let Some((entry, after_entry)) = legacy::line(data, next) else {
             break;
         };
         next = after_entry;
@@ -895,6 +884,8 @@ fn legacy_ascii_framing(data: &[u8]) -> Option<LegacyAsciiFraming> {
                 schema,
                 product_release: legacy_product_release(&banner[..banner_end]),
                 banner_offset,
+                object_offset: header_end + 1,
+                persistence: legacy::Persistence::default(),
             });
         }
         from = object_end + 1;
@@ -2035,7 +2026,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         .map(|nl| nl + 1);
     let body_start = toc_end.or(header_end).unwrap_or(0);
 
-    let legacy_ascii = legacy_ascii_framing(&data);
+    let mut legacy_ascii = legacy_ascii_framing(&data);
     let sections = legacy_ascii.as_ref().map_or_else(
         || toc_sections(&data, header_end.unwrap_or(0)),
         |legacy| legacy_toc_sections(&data, legacy.banner_offset),
@@ -2045,6 +2036,26 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     } else {
         sections
     };
+    if let Some(framing) = &mut legacy_ascii {
+        let initial_end = sections
+            .first()
+            .map_or(data.len(), |section| section.offset);
+        let mut scopes = Vec::with_capacity(sections.len() + 1);
+        scopes.push(framing.object_offset..initial_end);
+        scopes.extend(sections.iter().filter_map(|section| {
+            let payload_start = section
+                .offset
+                .checked_add(section.raw_name.len().checked_add(2)?)?;
+            legacy::starts_with_declaration(&data, payload_start).then(|| {
+                section.offset
+                    ..section
+                        .offset
+                        .saturating_add(section.length)
+                        .min(data.len())
+            })
+        }));
+        framing.persistence = legacy::scan(&data, scopes);
+    }
     let expanded_sections = expanded_sections(&data, &sections);
     let double_xar_tables = expanded_sections
         .iter()
@@ -2483,10 +2494,24 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     }
     if let Some(legacy) = &scan.framing.legacy_ascii {
         let release = legacy.product_release.as_deref().unwrap_or("unspecified");
+        let continuation_count = legacy.persistence.continuation_count();
         notes.push(format!(
-            "legacy ASCII persistence: schema {}; product release {release}",
-            legacy.schema
+            "legacy ASCII persistence: schema {}; product release {release}; {} attribute \
+             declarations, {} resolved values, {continuation_count} continuation rows in {} scopes",
+            legacy.schema,
+            legacy.persistence.declaration_count(),
+            legacy.persistence.value_count(),
+            legacy.persistence.scopes.len(),
         ));
+        if legacy.persistence.unresolved_value_count() != 0
+            || legacy.persistence.conflicting_declaration_count() != 0
+        {
+            notes.push(format!(
+                "legacy ASCII structural gaps: {} unresolved values, {} conflicting declarations",
+                legacy.persistence.unresolved_value_count(),
+                legacy.persistence.conflicting_declaration_count(),
+            ));
+        }
     }
 
     match (

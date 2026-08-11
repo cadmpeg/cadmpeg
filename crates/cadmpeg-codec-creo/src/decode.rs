@@ -35455,6 +35455,33 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
         if let Some(release) = &legacy.product_release {
             attributes.insert("legacy_ascii_product_release".to_string(), release.clone());
         }
+        attributes.insert(
+            "legacy_ascii_declaration_count".to_string(),
+            legacy.persistence.declaration_count().to_string(),
+        );
+        attributes.insert(
+            "legacy_ascii_scope_count".to_string(),
+            legacy.persistence.scopes.len().to_string(),
+        );
+        attributes.insert(
+            "legacy_ascii_value_count".to_string(),
+            legacy.persistence.value_count().to_string(),
+        );
+        attributes.insert(
+            "legacy_ascii_continuation_count".to_string(),
+            legacy.persistence.continuation_count().to_string(),
+        );
+        attributes.insert(
+            "legacy_ascii_unresolved_value_count".to_string(),
+            legacy.persistence.unresolved_value_count().to_string(),
+        );
+        attributes.insert(
+            "legacy_ascii_conflicting_declaration_count".to_string(),
+            legacy
+                .persistence
+                .conflicting_declaration_count()
+                .to_string(),
+        );
     }
     attributes.insert("file_size".to_string(), scan.framing.data.len().to_string());
     attributes.insert(

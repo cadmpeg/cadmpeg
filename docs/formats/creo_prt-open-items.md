@@ -794,16 +794,20 @@ that assign a dimension value to a dimension-driven solver variable.
 
 **Note.** `crates/cadmpeg-codec-creo/src/primdata.rs:69-95` scans complete arrays in byte order and accepts the first one. If both arrays contain different positions, the first array supplies the strip and the other representation is discarded; the normal-bearing array is ignored when `mv_p_xyz` appears first. No current item records this selection rule.
 
-### PP-13. Legacy ASCII attribute bodies
+### PP-13. Legacy persistence bodies
 
 **Question.** What type and value grammar does each legacy ASCII `@<name>`
 field declaration select, and how do its object references and arrays compose
-the geometry, topology, and design-history graphs?
+the geometry, topology, and design-history graphs? What record grammar applies
+to named legacy sections that do not begin with an attribute declaration?
 
 **Known.** `creo_prt.md` §1 defines the complete legacy ASCII layout
 discriminator, its outer `P_OBJECT` boundary, its decimal schema token, its
 product-release banner forms, and its monolithic and named-section forms. The
 named-section directory defines banner-relative offsets and stored extents.
+Attribute declarations and value rows use section-local identifiers; an
+immediately following `$` row continues a value payload.
 
-**Need.** We must know the attribute grammar and graph joins to transfer legacy
-ASCII payloads beyond container structure.
+**Need.** We must know each attribute type code, payload grammar, graph join,
+and non-attribute section grammar to transfer legacy persistence beyond
+container structure.

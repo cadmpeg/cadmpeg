@@ -10079,7 +10079,7 @@ fn depdb_layout_requires_root_record() {
 #[test]
 fn complete_header_adjacent_p_object_selects_legacy_ascii_layout() {
     let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n\
-        #P_OBJECT 6\n@P_object 1 0\n@value #END_OF_P_OBJECT\n\
+        #P_OBJECT 6\n@P_object 1 0\n0 1 ->\n@value #END_OF_P_OBJECT\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
     let scan = container::scan_bytes(data);
 
@@ -10089,6 +10089,8 @@ fn complete_header_adjacent_p_object_selects_legacy_ascii_layout() {
     let legacy = scan.framing.legacy_ascii.as_ref().expect("legacy framing");
     assert_eq!(legacy.schema, "6");
     assert_eq!(legacy.product_release.as_deref(), Some("H-01-21"));
+    assert_eq!(legacy.persistence.declaration_count(), 1);
+    assert_eq!(legacy.persistence.value_count(), 1);
     assert!(container::summarize(&scan).notes.iter().any(|note| {
         note.contains("legacy ASCII persistence: schema 6; product release H-01-21")
     }));
@@ -10104,7 +10106,7 @@ fn legacy_ascii_toc_is_authoritative_for_named_section_extents() {
         b"#Pro/ENGINEER  TM  Version H-01-21\n@Toc 52 0\n0 52 ->\n\
           @entry 53 10\n1 53 [2]\n",
     );
-    let section = b"#BasicData\nvalue\n#FakeSection\nembedded";
+    let section = b"#BasicData\n@field 1 1\n0 1 4\n#FakeSection\nembedded";
     let row_tail = format!(" {:08x} 0 983####\n2 53 ####\n", section.len());
     let relative_offset =
         data.len() + b"2 53 BasicData ".len() + 8 + row_tail.len() - banner_offset;
@@ -10119,6 +10121,15 @@ fn legacy_ascii_toc_is_authoritative_for_named_section_extents() {
     assert_eq!(scan.framing.sections[0].name, "BasicData");
     assert_eq!(scan.framing.sections[0].offset, section_offset);
     assert_eq!(scan.framing.sections[0].length, section.len());
+    let persistence = &scan
+        .framing
+        .legacy_ascii
+        .as_ref()
+        .expect("legacy framing")
+        .persistence;
+    assert_eq!(persistence.scopes.len(), 2);
+    assert_eq!(persistence.declaration_count(), 3);
+    assert_eq!(persistence.value_count(), 5);
 }
 
 #[test]
@@ -10136,6 +10147,13 @@ fn legacy_release_banner_and_unspecified_banner_preserve_framing_metadata() {
     let source = result.ir.source.as_ref().expect("source metadata");
     assert_eq!(source.attributes["legacy_ascii_schema"], "12");
     assert_eq!(source.attributes["legacy_ascii_product_release"], "16.0");
+    assert_eq!(source.attributes["legacy_ascii_declaration_count"], "0");
+    assert_eq!(source.attributes["legacy_ascii_scope_count"], "1");
+    assert_eq!(source.attributes["legacy_ascii_value_count"], "0");
+    assert_eq!(
+        source.attributes["legacy_ascii_conflicting_declaration_count"],
+        "0"
+    );
 
     let concatenated_release = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Release18.0  All Rights Reserved\n";

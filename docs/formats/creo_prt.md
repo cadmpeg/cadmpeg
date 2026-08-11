@@ -9,9 +9,8 @@ Record offsets, field widths, and endianness are also maintained as a machine-ch
 ## 1. Container
 
 A PSB file begins with an ASCII UGC header. The legacy persistence generation
-uses an ASCII `P_OBJECT` body, either monolithic or followed by named ASCII
-sections. Later generations use a table of contents followed by named binary
-sections.
+uses an ASCII `P_OBJECT` body, either monolithic or followed by named sections.
+Later generations use a table of contents followed by named binary sections.
 
 ```text
 #UGC:2 P ...
@@ -60,6 +59,23 @@ the file. Valid directory entries are authoritative and ordered by their
 computed offsets. A monolithic legacy body has no named sections; its outer
 `END_OF_P_OBJECT` and `END_OF_UGC` markers are framing, not sections.
 
+The outer object and each named ASCII attribute section define independent
+attribute-ID scopes. An ASCII attribute scope contains these line records:
+
+```text
+@<name> <attribute-id> <type-code>
+<depth> <attribute-id> <payload>
+$<continued-payload>
+```
+
+The declaration binds its decimal attribute identifier to a name and decimal
+type code in the current scope. A value row stores a decimal object-tree depth,
+a locally declared attribute identifier, and the remaining bytes of the line
+as its payload. A `$` row continues the immediately preceding value row; a
+`$`-prefixed line in any other context is not a continuation record. Attribute
+identifiers can be reused in another scope. Named sections with a byte payload
+that does not begin with an attribute declaration do not use this line grammar.
+
 A body-section header is `#<name>\n`. The first header follows the TOC's
 newline. Later headers follow either the text delimiter `#\n` or the PSB
 compound-close byte `f1`. An `f1 #<name>\n` boundary is a section boundary only
@@ -107,7 +123,7 @@ PSB does not use the Parasolid neutral-binary encoding. Parasolid terminology ma
 
 | Layout       |            Section count | Geometry representation                                               |
 | ------------ | -----------------------: | --------------------------------------------------------------------- |
-| Legacy ASCII |            0 or multiple | ASCII attribute persistence in one object or undecorated sections.     |
+| Legacy ASCII |            0 or multiple | ASCII attribute persistence, optionally partitioned into named sections. |
 | ND           | approximately 40 or more | Dense PSB rows in `VisibGeom`, including `srf_array` and `crv_array`. |
 | DEPDB        |         approximately 12 | Sparse PSB views and feature/section records.                         |
 
