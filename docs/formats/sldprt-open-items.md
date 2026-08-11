@@ -534,9 +534,9 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** Which nominal-geometry rule applies to each feature-size annotation whose `Nominal` field is zero and whose `Dimension` field is absent?
 
-**Known.** `sldprt.md` §2.1 defines zero as delegation to semantic feature geometry. A cylinder's `NomCylinder.R` supplies its radius and twice that value supplies its diameter. Plane pairs, compound widths, patterns, holes, and countersinks carry different related nominal-geometry objects.
+**Known.** `sldprt.md` §2.1 defines zero as an omitted nominal sentinel. The related `NomCylinder.R` is model geometry and can differ from the labeled nominal after display-unit rounding. Plane pairs, compound widths, patterns, holes, and countersinks carry other geometric objects.
 
-**Need.** We must derive the nominal for every dimension class without treating the zero delegation value as a measured dimension.
+**Need.** We must derive the nominal for every dimension class without treating the zero sentinel as a measured dimension.
 
 ## 6. Write-path evidence
 

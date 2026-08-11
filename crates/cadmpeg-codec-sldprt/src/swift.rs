@@ -2,7 +2,7 @@
 //! Semantic PMI stored in the SWIFT GDT-analysis object graph.
 #![warn(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::cursor::Cursor;
 use cadmpeg_ir::ids::PmiId;
@@ -308,6 +308,7 @@ fn project(root: &Entity) -> Vec<PmiAnnotation> {
         .iter()
         .zip(&root.annotations.entities)
         .collect::<Vec<_>>();
+    let feature_index = feature_index(root);
     let datum_ids = rows
         .iter()
         .filter(|(_, entity)| {
@@ -326,7 +327,7 @@ fn project(root: &Entity) -> Vec<PmiAnnotation> {
         if suppressed(entity) {
             continue;
         }
-        if let Some(annotation) = project_datum(reference, entity) {
+        if let Some(annotation) = project_datum(reference, entity, &feature_index) {
             projected.push(annotation);
         }
     }
@@ -334,7 +335,9 @@ fn project(root: &Entity) -> Vec<PmiAnnotation> {
         if suppressed(entity) || short_class(&entity.class) == "GdtDatum" {
             continue;
         }
-        if let Some((system, mut annotation)) = project_tolerance(reference, entity, &datum_ids) {
+        if let Some((system, mut annotation)) =
+            project_tolerance(reference, entity, &datum_ids, &feature_index)
+        {
             if let Some(system) = system {
                 let PmiDefinition::DatumSystem { references } = &system.definition else {
                     unreachable!("projected datum system definition");
@@ -356,18 +359,24 @@ fn project(root: &Entity) -> Vec<PmiAnnotation> {
             }
             projected.push(annotation);
             if short_class(&entity.class) == "GdtCompositeSurfaceProfile" {
-                if let Some(lower_tier) = project_lower_profile_tier(reference, entity) {
+                if let Some(lower_tier) =
+                    project_lower_profile_tier(reference, entity, &feature_index)
+                {
                     projected.push(lower_tier);
                 }
             }
-        } else if let Some(annotation) = project_dimension(reference, entity) {
+        } else if let Some(annotation) = project_dimension(reference, entity, &feature_index) {
             projected.push(annotation);
         }
     }
     projected
 }
 
-fn project_datum(reference: &Reference, entity: &Entity) -> Option<PmiAnnotation> {
+fn project_datum(
+    reference: &Reference,
+    entity: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+) -> Option<PmiAnnotation> {
     let identification = entity
         .strings
         .get("DatumIdentifier")
@@ -376,7 +385,7 @@ fn project_datum(reference: &Reference, entity: &Entity) -> Option<PmiAnnotation
     (short_class(&entity.class) == "GdtDatum").then(|| PmiAnnotation {
         id: pmi_id(&reference.id),
         name: object_name(entity),
-        targets: targets(entity),
+        targets: targets(entity, feature_index),
         definition: PmiDefinition::Datum { identification },
     })
 }
@@ -385,6 +394,7 @@ fn project_tolerance(
     reference: &Reference,
     entity: &Entity,
     datum_ids: &BTreeMap<&str, PmiId>,
+    feature_index: &BTreeMap<&str, &Entity>,
 ) -> Option<(Option<PmiAnnotation>, PmiAnnotation)> {
     let kind = tolerance_kind(short_class(&entity.class))?;
     let magnitude = finite_nonnegative(entity.doubles.get("Tolerance").copied()?)?;
@@ -405,7 +415,7 @@ fn project_tolerance(
         PmiAnnotation {
             id: pmi_id(&reference.id),
             name: object_name(entity),
-            targets: targets(entity),
+            targets: targets(entity, feature_index),
             definition: PmiDefinition::GeometricTolerance {
                 tolerance: kind,
                 magnitude: length(magnitude),
@@ -419,12 +429,16 @@ fn project_tolerance(
     ))
 }
 
-fn project_lower_profile_tier(reference: &Reference, entity: &Entity) -> Option<PmiAnnotation> {
+fn project_lower_profile_tier(
+    reference: &Reference,
+    entity: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+) -> Option<PmiAnnotation> {
     let magnitude = finite_nonnegative(entity.doubles.get("ToleranceLowerTier").copied()?)?;
     Some(PmiAnnotation {
         id: PmiId(format!("{}:lower-tier", pmi_id(&reference.id).0)),
         name: object_name(entity).map(|name| format!("{name} lower tier")),
-        targets: targets(entity),
+        targets: targets(entity, feature_index),
         definition: PmiDefinition::GeometricTolerance {
             tolerance: GeometricToleranceKind::SurfaceProfile,
             magnitude: length(magnitude),
@@ -437,7 +451,11 @@ fn project_lower_profile_tier(reference: &Reference, entity: &Entity) -> Option<
     })
 }
 
-fn project_dimension(reference: &Reference, entity: &Entity) -> Option<PmiAnnotation> {
+fn project_dimension(
+    reference: &Reference,
+    entity: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+) -> Option<PmiAnnotation> {
     let dimension = dimension_kind(short_class(&entity.class))?;
     let quantity = matches!(dimension, DimensionKind::Angular)
         .then_some(PmiQuantity::Angle)
@@ -449,7 +467,7 @@ fn project_dimension(reference: &Reference, entity: &Entity) -> Option<PmiAnnota
     Some(PmiAnnotation {
         id: pmi_id(&reference.id),
         name: object_name(entity),
-        targets: targets(entity),
+        targets: targets(entity, feature_index),
         definition: PmiDefinition::Dimension {
             dimension,
             nominal: nominal.map(|value| pmi_value(value, quantity)),
@@ -516,15 +534,71 @@ fn unique_related<'a>(entity: &'a Entity, name: &str) -> Option<&'a RelatedObjec
     matches.next().is_none().then_some(object)
 }
 
-fn targets(entity: &Entity) -> Vec<PmiTarget> {
-    entity
-        .features
+fn feature_index(root: &Entity) -> BTreeMap<&str, &Entity> {
+    if root.features.references.len() != root.features.entities.len() {
+        return BTreeMap::new();
+    }
+    root.features
         .references
         .iter()
-        .map(|reference| PmiTarget::ShapeAspect {
-            source_id: reference.id.clone(),
-        })
+        .zip(&root.features.entities)
+        .map(|(reference, entity)| (reference.id.as_str(), entity))
         .collect()
+}
+
+fn targets(entity: &Entity, feature_index: &BTreeMap<&str, &Entity>) -> Vec<PmiTarget> {
+    let mut ids = Vec::new();
+    for reference in &entity.features.references {
+        ids.extend(expanded_feature_ids(&reference.id, feature_index, 0));
+    }
+    let mut seen = BTreeSet::new();
+    ids.into_iter()
+        .filter(|id| seen.insert(id.clone()))
+        .map(|source_id| PmiTarget::ShapeAspect { source_id })
+        .collect()
+}
+
+fn expanded_feature_ids(
+    id: &str,
+    feature_index: &BTreeMap<&str, &Entity>,
+    depth: usize,
+) -> Vec<String> {
+    let Some(feature) = feature_index.get(id) else {
+        return vec![id.to_string()];
+    };
+    if short_class(&feature.class) != "GdtPattern" || depth >= MAX_DEPTH {
+        return vec![id.to_string()];
+    }
+    let Some(subfeatures) = direct_subfeature_ids(feature) else {
+        return vec![id.to_string()];
+    };
+    let mut members = Vec::new();
+    for subfeature in subfeatures {
+        let Some(next_depth) = depth.checked_add(1) else {
+            return vec![id.to_string()];
+        };
+        members.extend(expanded_feature_ids(subfeature, feature_index, next_depth));
+    }
+    if members.is_empty() {
+        vec![id.to_string()]
+    } else {
+        members
+    }
+}
+
+fn direct_subfeature_ids(feature: &Entity) -> Option<Vec<&str>> {
+    let collection = unique_related(feature, "SubFeatures")?;
+    let mut ids = Vec::new();
+    for applied in &collection.entity.related {
+        if !applied.class.ends_with(".GdtAppliedFeature") {
+            return None;
+        }
+        let [reference] = applied.entity.features.references.as_slice() else {
+            return None;
+        };
+        ids.push(reference.id.as_str());
+    }
+    (!ids.is_empty()).then_some(ids)
 }
 
 fn tolerance_modifiers(entity: &Entity) -> Vec<String> {
@@ -747,7 +821,7 @@ mod tests {
         position
             .features
             .references
-            .push(reference("F20", "GdtCylinder"));
+            .push(reference("FP", "GdtPattern"));
         position.related.push(RelatedObject {
             name: "PrimaryDatums".into(),
             class: "PrizMetrik.GdtAnalysis.GdtAppliedDatumCollection".into(),
@@ -763,6 +837,10 @@ mod tests {
         diameter.doubles.insert("PlusTolerance".into(), 0.2);
         diameter.doubles.insert("LowerLimit".into(), 0.0);
         diameter.doubles.insert("UpperLimit".into(), 0.0);
+        diameter
+            .features
+            .references
+            .push(reference("F20", "GdtCylinder"));
 
         let mut angle = entity("GdtAngleBetween");
         angle.integers.insert("Dimension".into(), 1);
@@ -776,6 +854,33 @@ mod tests {
             class: ROOT_CLASS.into(),
             ..Entity::default()
         };
+        let cylinder = entity("GdtCylinder");
+        let second_cylinder = cylinder.clone();
+        let mut subfeatures = entity("GdtAppliedFeatureCollection");
+        for (ordinal, id) in ["F20", "F21"].into_iter().enumerate() {
+            let mut applied = entity("GdtAppliedFeature");
+            applied
+                .features
+                .references
+                .push(reference(id, "GdtCylinder"));
+            subfeatures.related.push(RelatedObject {
+                name: format!("SubFeature{ordinal}"),
+                class: "PrizMetrik.GdtAnalysis.GdtAppliedFeature".into(),
+                entity: applied,
+            });
+        }
+        let mut pattern = entity("GdtPattern");
+        pattern.related.push(RelatedObject {
+            name: "SubFeatures".into(),
+            class: "PrizMetrik.GdtAnalysis.GdtAppliedFeatureCollection".into(),
+            entity: subfeatures,
+        });
+        root.features.references = vec![
+            reference("FP", "GdtPattern"),
+            reference("F20", "GdtCylinder"),
+            reference("F21", "GdtCylinder"),
+        ];
+        root.features.entities = vec![pattern, cylinder, second_cylinder];
         root.annotations.references = vec![
             reference("A10", "GdtDatum"),
             reference("A20", "GdtPosition"),
@@ -890,6 +995,17 @@ mod tests {
             modifiers,
             &["maximum_material_requirement", "projected_zone:4_mm"]
         );
+        assert_eq!(
+            position.targets,
+            [
+                PmiTarget::ShapeAspect {
+                    source_id: "F20".into()
+                },
+                PmiTarget::ShapeAspect {
+                    source_id: "F21".into()
+                }
+            ]
+        );
 
         let system = annotations
             .iter()
@@ -916,7 +1032,7 @@ mod tests {
         else {
             panic!("diameter definition");
         };
-        assert_eq!(*nominal, None, "zero is the implicit-geometry sentinel");
+        assert_eq!(*nominal, None, "zero is an omitted nominal sentinel");
         assert_eq!(*lower_deviation, Some(length(-0.1)));
         assert_eq!(*upper_deviation, Some(length(0.2)));
 

@@ -882,13 +882,19 @@ and annotation rosters reference these part-owned identities. A
 `GdtDatum` annotation. The relation names `PrimaryDatums`, `SecondaryDatums`,
 and `TertiaryDatums` set datum precedence 1, 2, and 3.
 
+A `GdtPattern` owns its ordered members through the `SubFeatures`
+`GdtAppliedFeatureCollection`. Each `SubFeatureN` related object is one
+`GdtAppliedFeature` with one feature reference. An annotation that references
+the pattern applies to these member feature identities in collection order.
+Nested patterns apply the same rule recursively.
+
 GDT-analysis double fields use millimetres for lengths and radians for angles.
 `Tolerance` is the geometric-tolerance magnitude. `Nominal`, `LowerLimit`,
 `UpperLimit`, `MinusTolerance`, and `PlusTolerance` are dimension values. A
 signed `MinusTolerance` is already the lower deviation. A zero `Nominal` on a
-feature-size annotation without the integer field `Dimension` delegates the
-nominal to the referenced semantic feature geometry. `ToleranceLowerTier` is
-the lower segment of a composite surface-profile tolerance.
+feature-size annotation without the integer field `Dimension` is an omitted
+nominal sentinel, not a zero-length dimension. `ToleranceLowerTier` is the
+lower segment of a composite surface-profile tolerance.
 
 The geometric-tolerance classes map by their suffix: `GdtStraightness`,
 `GdtFlatness`, `GdtRoundness`, `GdtCircularity`, `GdtCylindricity`,
