@@ -777,11 +777,6 @@ pub(crate) fn bind_scalar_operands(
             .flat_map(|history| &history.features)
             .map(|feature| (feature.id.as_str(), feature))
             .collect::<HashMap<_, _>>();
-        let names_by_id = lane
-            .names
-            .iter()
-            .map(|name| (name.id.as_str(), name.value.as_str()))
-            .collect::<HashMap<_, _>>();
         for pair in starts.windows(2) {
             let [(_, parent_id), (child_start, child_id)] = pair else {
                 continue;
@@ -809,9 +804,6 @@ pub(crate) fn bind_scalar_operands(
                 scalar.offset > *child_start
                     && scalar.offset < child_end
                     && scalar.feature_ref.as_deref() == Some(*child_id)
-                    && names_by_id
-                        .get(scalar.name.as_str())
-                        .is_some_and(|name| parent.parameters.contains_key(*name))
             }) {
                 scalar.feature_ref = Some((*parent_id).to_string());
             }

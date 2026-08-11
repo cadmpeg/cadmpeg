@@ -3373,7 +3373,7 @@ mod history_reference_tests {
     }
 
     #[test]
-    fn legacy_history_extrusion_uses_preceding_profile_and_sole_depth() {
+    fn legacy_history_extrusion_uses_preceding_profile_and_sole_source_depth() {
         let mut profile = feature("sldprt:history:feature#1:0", Some("9"), 0);
         profile.xml_tag = "Sketch".into();
         profile.kind = "Sketch".into();
@@ -3382,6 +3382,12 @@ mod history_reference_tests {
         extrusion.kind = "localized-boss-kind".into();
         extrusion.input_class = None;
         extrusion.parameters.insert("m".into(), "6.8".into());
+        extrusion.parameters.insert("aux-1".into(), "1.2".into());
+        extrusion.parameters.insert("aux-2".into(), "3.4".into());
+        extrusion.content = vec![
+            FeatureContent::Dimension("m".into()),
+            FeatureContent::Dimension("m".into()),
+        ];
         let history = FeatureHistory {
             id: "history".into(),
             part_name: None,
@@ -7914,9 +7920,20 @@ fn project_extrude(
     native_by_source: &HashMap<&str, &str>,
     features_by_source: &HashMap<&str, &Feature>,
 ) -> Option<FeatureDefinition> {
+    let source_dimensions = feature
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            FeatureContent::Dimension(name) => Some(name.as_str()),
+            _ => None,
+        })
+        .collect::<HashSet<_>>();
+    let source_depth = (source_dimensions.len() == 1)
+        .then(|| source_dimensions.iter().copied().next())
+        .flatten();
     let legacy_history_extrusion = feature.input_class.is_none()
         && feature.xml_tag.eq_ignore_ascii_case("Extrusion")
-        && feature.parameters.len() == 1;
+        && source_depth.is_some();
     let legacy_profile = legacy_history_extrusion
         .then(|| {
             let source = feature.source_id.as_deref()?.parse::<i64>().ok()?;
@@ -7945,6 +7962,15 @@ fn project_extrude(
         let sole = values.next().filter(|_| values.next().is_none())?;
         parse_positive_length_mm(sole)
             .or_else(|| parse_positive_dimension_length_mm(sole))
+            .map(Length)
+    };
+    let legacy_length = || {
+        source_depth
+            .and_then(|name| feature.parameters.get(name))
+            .and_then(|value| {
+                parse_positive_length_mm(value)
+                    .or_else(|| parse_positive_dimension_length_mm(value))
+            })
             .map(Length)
     };
     let length = |name| {
@@ -7978,7 +8004,10 @@ fn project_extrude(
         {
             one_sided(Termination::Unresolved)
         }
-        None | Some("Blind") => match length("Depth").or_else(sole_length) {
+        None | Some("Blind") => match length("Depth")
+            .or_else(|| legacy_history_extrusion.then(legacy_length).flatten())
+            .or_else(sole_length)
+        {
             Some(length) => one_sided(Termination::Blind { length }),
             None => one_sided(Termination::Unresolved),
         },

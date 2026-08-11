@@ -90,6 +90,40 @@ fn fillet_display_placeholder_establishes_length_unit() {
 }
 
 #[test]
+fn thin_cut_native_dimensions_are_lengths() {
+    let feature = crate::records::Feature {
+        id: "feature".into(),
+        parent: "history".into(),
+        xml_tag: "Extrusion".into(),
+        tree_parent: None,
+        source_id: None,
+        parent_source_id: None,
+        ordinal: 0,
+        name: "Thin cut".into(),
+        kind: "Cut-Extrude-Thin".into(),
+        input_class: None,
+        suppressed: false,
+        parameters: BTreeMap::from([
+            ("D5".into(), "0.3".into()),
+            ("D6".into(), "0.1".into()),
+            ("D7".into(), "0.2".into()),
+        ]),
+        dimension_properties: BTreeMap::default(),
+        properties: BTreeMap::default(),
+        text: None,
+        content: Vec::new(),
+    };
+
+    for name in ["D5", "D6", "D7"] {
+        assert_eq!(
+            scalar_unit_from_feature_parameter(&feature, name),
+            Some(ScalarUnit::Length)
+        );
+    }
+    assert_eq!(scalar_unit_from_feature_parameter(&feature, "D8"), None);
+}
+
+#[test]
 fn sketch_source_dimension_establishes_scalar_unit() {
     let feature = crate::records::Feature {
         id: "feature".into(),
