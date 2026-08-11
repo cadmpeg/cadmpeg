@@ -21,7 +21,7 @@ path = "src/main.rs"
 [dependencies]
 cadmpeg-core.workspace = true
 cadmpeg-container.workspace = true
-cadmpeg-ir.workspace = true
+cadmpeg-ir = { workspace = true, features = ["schema"] }
 cadmpeg-codec-f3d.workspace = true
 cadmpeg-codec-inventor.workspace = true
 cadmpeg-codec-freecad.workspace = true
