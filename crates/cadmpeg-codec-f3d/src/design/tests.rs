@@ -13336,6 +13336,18 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     )
     .expect("WorkPoint edge recipe operand");
     assert_eq!(work_point_operand.next_record_index, 105);
+    bytes[next_at as usize + 7..next_at as usize + 11].copy_from_slice(&107u32.to_le_bytes());
+    let mut sweep_scope = scope.clone();
+    sweep_scope.kind = "Sweep".into();
+    let sweep_operand = parse_edge_operand(
+        &bytes,
+        &sweep_scope,
+        0,
+        &record,
+        std::slice::from_ref(&recipe),
+    )
+    .expect("Sweep edge recipe operand");
+    assert_eq!(sweep_operand.next_record_index, 107);
 
     let mut vertex_bytes = Vec::new();
     header(&mut vertex_bytes, *b"369", 200);

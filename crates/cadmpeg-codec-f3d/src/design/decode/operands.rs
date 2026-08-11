@@ -263,6 +263,16 @@ pub(crate) fn has_edge_recipe_operands(kind: &str) -> bool {
     ) || matches!(kind, "EdgeFlange" | "Hem" | "WorkPoint")
 }
 
+/// Indexed-record distance from an edge-recipe primary record to its terminal
+/// record for the owning consumer.
+pub(crate) fn edge_recipe_terminal_delta(kind: &str) -> u32 {
+    match design_feature_family(kind) {
+        Some(DesignFeatureFamily::Sweep) => 7,
+        _ if kind == "WorkPoint" => 5,
+        _ => 4,
+    }
+}
+
 /// Decode persistent selection identities named by Fillet and Chamfer groups.
 pub fn decode_edge_identity_operands(
     scan: &ContainerScan,
@@ -3213,7 +3223,7 @@ pub(crate) fn parse_edge_operand(
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
 ) -> Option<DesignEdgeOperand> {
-    let next_record_delta = if scope.kind == "WorkPoint" { 5 } else { 4 };
+    let next_record_delta = edge_recipe_terminal_delta(&scope.kind);
     let stream = native_stream(&scope.id)?;
     let parsed = parse_recipe_operand(
         bytes,

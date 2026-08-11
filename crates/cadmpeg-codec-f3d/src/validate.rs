@@ -6000,13 +6000,11 @@ fn validate_edge_operands<'a>(
             && operand.paired_byte_offset > operand.byte_offset
             && operand.recipe_record_index == operand.record_index.saturating_add(3)
             && operand.next_record_index
-                == operand.record_index.saturating_add(
-                    if scope.is_some_and(|scope| scope.kind == "WorkPoint") {
-                        5
-                    } else {
-                        4
-                    },
-                )
+                == operand
+                    .record_index
+                    .saturating_add(scope.map_or(4, |scope| {
+                        design::decode::operands::edge_recipe_terminal_delta(&scope.kind)
+                    }))
             && operand.recipe_record_byte_offset > operand.paired_byte_offset
             && operand.next_byte_offset > operand.recipe_record_byte_offset
             && operand.recipe_prefix_offset == operand.recipe_record_byte_offset.saturating_add(11)
