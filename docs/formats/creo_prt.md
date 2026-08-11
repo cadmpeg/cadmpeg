@@ -2794,8 +2794,8 @@ cone rows, one group generates two cylinder rows, and the other two groups
 each generate two rowless face uses. A separate source-zero group contains one
 rowless bottom entry when present and does not participate in the recipe
 groups. A complete three-row class-911 dimension table assigns external ID `0`
-to the bore radius, ID `1` to the included
-drill-point angle, and ID `2` to the blind depth. IDs `0` and `2` have
+to the bore radius, ID `1` to the included drill-point angle, and ID `2` to the
+blind depth. IDs `0` and `2` have
 dimension type `2` and millimetre units. ID `1` has dimension type `10` and
 radian units. The bore radius is positive, the depth is nonzero, and the
 included angle is strictly between zero and π. The neutral bore diameter is
@@ -2806,21 +2806,28 @@ Each materialized cylinder row in this recipe has a type-24 compound-close
 parameter record. The last six scalar slots in the final frame are two
 three-coordinate envelope corners. An entity-reference suffix or exact
 `f7 17` compound-close suffix terminates this frame. Normalize the two endpoint
-values on each axis independently. When the two cylinder rows have equal normalized
-intervals on an axis, their common nonzero interval length is a candidate
-span. When one normalized interval ends where the other starts, the nonzero
-length of their union is a candidate span. A dimension tuple matches the
-generated cylinders when its bore diameter and blind-depth magnitude match
+values on each axis independently. When the two cylinder rows have equal
+normalized intervals on an axis, their common nonzero interval length is a
+candidate span. When one normalized interval ends where the other starts, the
+nonzero length of their union is a candidate span. A dimension tuple matches
+the generated cylinders when its bore diameter and blind-depth magnitude match
 candidate spans on two distinct axes. The matched candidate may be either the
 common span or the adjacent-interval union for its axis.
+
+When the blind depth is the unique common span on one axis, the two remaining
+axes define the bore cross-section only if one has a common diameter span and
+the other has two adjacent intervals whose union has the same diameter. The
+two raw corner pairs have the same signed depth delta. Their first axial
+coordinate is the hole entry coordinate, the radial union midpoint is the hole
+axis position, and the sign of the depth delta is the hole direction.
 
 When the cylinder envelope is available, complete three-row class-911 tables
 whose diameter and depth do not match it do not participate in template
 selection. All participating tables must supply one equal tuple. When the
 envelope is unavailable, every complete three-row class-911 table in the
 document must supply one equal tuple. The recipe transfers as a simple drilled
-hole with that diameter, angle, and blind depth. The dimension tuple does not
-assign the hole axis, entry position, placement face, or depth-to-tip state.
+hole with that diameter, angle, and blind depth. The dimension tuple alone does
+not assign the hole axis, entry position, placement face, or depth-to-tip state.
 Unsourced class-200 entries are admitted only when they are rowless
 non-surface entities; they do not create source section entity groups.
 When a feature owns multiple table-class-29 tables, exactly one table must have

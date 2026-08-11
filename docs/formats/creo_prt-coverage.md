@@ -239,7 +239,9 @@ fixtures, claims above L1 remain unproven.
   matching the bore diameter and depth to common or adjacent-union spans on
   distinct axes. An optional rowless source-zero bottom precedes the four
   recipe groups, and exact `f7 17` compound-close trailers terminate the
-  corner frame.
+  corner frame. Complementary half-cylinder envelopes with one common radial
+  diameter, one adjacent-union radial diameter, and one common blind-depth span
+  supply the hole position and signed direction.
 - Fill boundaries use the unique feature-bound section transform when present
   and otherwise the unique feature-owned section definition. The sketch
   identity remains available when its placement or profile geometry is

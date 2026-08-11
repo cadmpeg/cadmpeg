@@ -20715,14 +20715,20 @@ fn schema_feature_definition(
             && stepped_directed.is_none())
         .then(|| counterbore_axis_placement(scan, ir, feature_id))
         .flatten();
-        let drilled_dimensions = simple_drilled_hole_recipe_table(
+        let drilled_table = simple_drilled_hole_recipe_table(
             feature_id,
             &scan.features.entity_tables,
             &scan.surfaces.rows,
-        )
-        .and_then(|table| {
+        );
+        let drilled_dimensions = drilled_table.and_then(|table| {
             simple_drilled_hole_dimensions(scan, simple_drilled_hole_envelope_spans(scan, table))
         });
+        let drilled_placement =
+            drilled_table
+                .zip(drilled_dimensions)
+                .and_then(|(table, (diameter, _, depth))| {
+                    simple_drilled_hole_placement(scan, table, diameter, depth)
+                });
         let placement = feature_outline_planes(scan, feature_id).and_then(hole_placement);
         let compact_cylinder_id = compact_simple_hole_cylinder_id(
             feature_id,
@@ -20764,8 +20770,15 @@ fn schema_feature_definition(
             || {
                 stepped_directed.map_or_else(
                     || {
-                        placement.map_or(
-                            (None, None, None, None, None, None),
+                        placement.map_or_else(
+                            || {
+                                drilled_placement.map_or(
+                                    (None, None, None, None, None, None),
+                                    |(position, direction)| {
+                                        (None, Some(position), Some(direction), None, None, None)
+                                    },
+                                )
+                            },
                             |(entry_surface_id, direction, extent)| {
                                 (
                                     Some(face_selection(entry_surface_id)),
@@ -22028,6 +22041,14 @@ fn simple_drilled_hole_envelope_spans(
     scan: &ContainerScan,
     table: &crate::feature::FeatureEntityTable,
 ) -> Option<[[Option<f64>; 2]; 3]> {
+    let [first, second] = simple_drilled_hole_corner_envelopes(scan, table)?;
+    paired_corner_envelope_axis_spans(first, second)
+}
+
+fn simple_drilled_hole_corner_envelopes(
+    scan: &ContainerScan,
+    table: &crate::feature::FeatureEntityTable,
+) -> Option<[[[f64; 3]; 2]; 2]> {
     let feature_id = table.feature_id?;
     let envelopes = table
         .surface_ids
@@ -22045,7 +22066,101 @@ fn simple_drilled_hole_envelope_spans(
     let [first, second] = envelopes.as_slice() else {
         return None;
     };
-    paired_corner_envelope_axis_spans(*first, *second)
+    Some([*first, *second])
+}
+
+fn simple_drilled_hole_placement(
+    scan: &ContainerScan,
+    table: &crate::feature::FeatureEntityTable,
+    diameter: f64,
+    depth: f64,
+) -> Option<(Point3, Vector3)> {
+    let corners = simple_drilled_hole_corner_envelopes(scan, table)?;
+    drilled_hole_placement_from_corner_envelopes(corners, diameter, depth)
+}
+
+fn drilled_hole_placement_from_corner_envelopes(
+    corners: [[[f64; 3]; 2]; 2],
+    diameter: f64,
+    depth: f64,
+) -> Option<(Point3, Vector3)> {
+    corners
+        .iter()
+        .flatten()
+        .flatten()
+        .all(|value| value.is_finite())
+        .then_some(())?;
+    let scale = corners
+        .iter()
+        .flatten()
+        .flatten()
+        .chain([&diameter, &depth])
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    (diameter > 1e-12 * scale && depth > 1e-12 * scale).then_some(())?;
+    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    let intervals = corners.map(|patch| {
+        std::array::from_fn::<_, 3, _>(|axis| {
+            [
+                patch[0][axis].min(patch[1][axis]),
+                patch[0][axis].max(patch[1][axis]),
+            ]
+        })
+    });
+    let shared = |axis: usize| {
+        close(intervals[0][axis][0], intervals[1][axis][0])
+            && close(intervals[0][axis][1], intervals[1][axis][1])
+    };
+    let adjacent = |axis: usize| {
+        close(intervals[0][axis][1], intervals[1][axis][0])
+            || close(intervals[1][axis][1], intervals[0][axis][0])
+    };
+    let span = |axis: usize| {
+        intervals[0][axis][1].max(intervals[1][axis][1])
+            - intervals[0][axis][0].min(intervals[1][axis][0])
+    };
+    let axial_axes = (0..3)
+        .filter(|axis| shared(*axis) && close(span(*axis), depth))
+        .collect::<Vec<_>>();
+    let [axis] = axial_axes.as_slice() else {
+        return None;
+    };
+    let radial = (0..3)
+        .filter(|candidate| candidate != axis)
+        .collect::<Vec<_>>();
+    let [first_radial, second_radial] = radial.as_slice() else {
+        unreachable!("three-dimensional axis complement")
+    };
+    let radial_forms = [*first_radial, *second_radial].map(|radial_axis| {
+        (
+            shared(radial_axis),
+            adjacent(radial_axis),
+            span(radial_axis),
+        )
+    });
+    ((radial_forms[0].0 && radial_forms[1].1) || (radial_forms[0].1 && radial_forms[1].0))
+        .then_some(())?;
+    radial_forms
+        .iter()
+        .all(|(_, _, radial_span)| close(*radial_span, diameter))
+        .then_some(())?;
+    let axial_deltas = corners.map(|patch| patch[1][*axis] - patch[0][*axis]);
+    (close(axial_deltas[0], axial_deltas[1]) && close(axial_deltas[0].abs(), depth))
+        .then_some(())?;
+    let mut position = [0.0; 3];
+    position[*axis] = f64::midpoint(corners[0][0][*axis], corners[1][0][*axis]);
+    for radial_axis in [*first_radial, *second_radial] {
+        position[radial_axis] = f64::midpoint(
+            intervals[0][radial_axis][0].min(intervals[1][radial_axis][0]),
+            intervals[0][radial_axis][1].max(intervals[1][radial_axis][1]),
+        );
+    }
+    let mut direction = [0.0; 3];
+    direction[*axis] = axial_deltas[0].signum();
+    Some((
+        Point3::new(position[0], position[1], position[2]),
+        Vector3::new(direction[0], direction[1], direction[2]),
+    ))
 }
 
 fn paired_corner_envelope_axis_spans(

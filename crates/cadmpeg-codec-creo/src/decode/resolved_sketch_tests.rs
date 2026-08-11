@@ -2334,6 +2334,31 @@ fn paired_corner_envelopes_expose_shared_and_union_spans() {
 }
 
 #[test]
+fn complementary_drilled_hole_envelopes_define_axis_placement() {
+    let corners = [
+        [[-10.0, 0.0, -10.0], [10.0, 45.0, 0.0]],
+        [[-10.0, 0.0, 0.0], [10.0, 45.0, 10.0]],
+    ];
+    assert_eq!(
+        drilled_hole_placement_from_corner_envelopes(corners, 20.0, 45.0),
+        Some((Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0)))
+    );
+
+    let reversed = corners.map(|[first, second]| [second, first]);
+    assert_eq!(
+        drilled_hole_placement_from_corner_envelopes(reversed, 20.0, 45.0),
+        Some((Point3::new(0.0, 45.0, 0.0), Vector3::new(0.0, -1.0, 0.0)))
+    );
+    assert!(drilled_hole_placement_from_corner_envelopes(corners, 10.0, 45.0).is_none());
+    let mut opposed = corners;
+    opposed[1].reverse();
+    assert!(drilled_hole_placement_from_corner_envelopes(opposed, 20.0, 45.0).is_none());
+    let mut diagonal_quadrants = corners;
+    diagonal_quadrants[1][0][0] = 0.0;
+    assert!(drilled_hole_placement_from_corner_envelopes(diagonal_quadrants, 20.0, 45.0).is_none());
+}
+
+#[test]
 fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features
