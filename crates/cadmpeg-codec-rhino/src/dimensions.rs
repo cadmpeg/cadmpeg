@@ -1053,10 +1053,7 @@ pub(crate) fn apply_userdata(
 
 /// Projects a decoded dimension into one measured semantic annotation.
 ///
-/// A Rhino dimension drives nothing: it references no design parameter and no
-/// regeneration graph reads it. Its neutral home is therefore
-/// `model.semantic_annotations` with `SemanticAnnotationKind::Dimension`, not a
-/// synthetic feature plus a `DesignParameter` whose owner is that same feature.
+/// Maps to `model.semantic_annotations` with `SemanticAnnotationKind::Dimension`.
 ///
 /// `object` is the identity of the 3DM object record that persists the
 /// annotation. In 3DM the application object and the source record are the same
@@ -1309,9 +1306,7 @@ pub(crate) fn project(
     }
     parameters.extend(properties);
 
-    // Model-space text point, composed through the dimension plane. Rhino
-    // persists it in plane coordinates, so lifting it with `z = 0.0` would be
-    // wrong for every plane that is not the world xy plane.
+    // Model-space text point via the dimension plane (stored UV, not world xyz).
     let position = (!dimension.use_default_text_point)
         .then(|| {
             let [u, v] = dimension.user_text_point;
@@ -1322,12 +1317,8 @@ pub(crate) fn project(
         })
         .filter(|point| point.iter().all(|value| value.is_finite()));
 
-    // `dimstyle_id` names a presentation record that `presentation::install`
-    // adds after candidate validation, and `detail_measured` names a layout
-    // detail this codec does not type, so neither target can be proven to
-    // resolve here. An unresolvable `target` is a hard `ReferentialIntegrity`
-    // error, so a nil UUID becomes an explicit null reference and a non-nil one
-    // is charged and left in `parameters` as the raw UUID.
+    // dimstyle/detail targets are not resolvable here: nil -> null reference;
+    // non-nil -> charge and keep the raw UUID in parameters.
     let mut references = BTreeMap::new();
     let mut unresolved = Vec::new();
     let mut reference = |role: &str, id: Option<Uuid>, code: RhinoLossCode| match id {

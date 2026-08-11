@@ -368,12 +368,8 @@ impl CadIr {
 
     /// Parse JSON and reject any unsupported `ir_version`.
     ///
-    /// The version is read by a probe that names `ir_version` and nothing else,
-    /// which serde skips past without building. Reading the version out of a
-    /// [`serde_json::Value`] of the whole document instead would hold that tree
-    /// — an allocation per member at every depth — for as long as it takes to
-    /// build the typed document from it, so a load would peak at both. The
-    /// document text is scanned twice and materialized once.
+    /// Version is probed first (`ir_version` only) so the full document is
+    /// materialized once after the version gate.
     pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
         /// Every member but `ir_version` is skipped, and the version stays a
         /// [`serde_json::Value`] so a non-string one is reported as an

@@ -1,22 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Declarative catalogue of the native record families.
 //!
-//! One [`FamilyRow`] per model field. Each row names the `nx`
-//! namespace arena the family serializes into, and — for families that also emit
-//! source annotations — the tag, exactness, and a `note` fn. Row order is the
-//! observable annotation-emission order for the note-bearing rows;
-//! phase identifies the semantic-island split that [`super::attach`] walks.
-//! Arena serialization order is not observable
-//! (arenas live in a `BTreeMap`), so the non-noting tail rows follow the legacy
-//! arena-pass order purely for readability.
+//! One [`FamilyRow`] per model field: arena name, and for noting families the
+//! tag, exactness, and `note` fn. Note-bearing row order is the annotation
+//! emission order; `phase` splits semantic islands for [`super::attach`].
+//! Stream choice (`nx:container` vs `nx:s{ordinal}`) lives in the `note` fn.
 //!
-//! Whether a family notes into the shared `nx:container` stream or a per-record
-//! `nx:s{ordinal}` stream is encoded in its `note` fn, not a row field.
-//!
-//! Per the IR-write firewall this module names `cadmpeg_ir` boundary types
-//! (`AnnotationBuilder`, `NativeNamespace`, `Exactness`, `NativeConvertError`)
-//! and calls the annotation/arena mutation surface from the row fns; the five
-//! domain modules and `model.rs` carry no `cadmpeg_ir` reference.
+//! This module is the IR-write boundary for native catalogue rows; domain
+//! modules and `model.rs` do not reference `cadmpeg_ir`.
 
 use serde::Serialize;
 

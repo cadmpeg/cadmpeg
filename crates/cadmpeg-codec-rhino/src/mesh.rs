@@ -590,10 +590,7 @@ fn read_counted_raw(
     Ok(Some(data))
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn read_buffer<'a>(
     expand: MeshExpand<'a>,
     reader: &mut BoundedReader<'_>,
@@ -1283,8 +1280,6 @@ mod tests {
             );
             assert_eq!(reader.remaining(), 0);
             assert_eq!(warnings.len(), 1);
-            // The buffer was committed at retention and the drop does not refund
-            // it: a rollback here is what would let arena memory outrun the cap.
             assert_eq!(document_budget.used, 2);
         });
     }

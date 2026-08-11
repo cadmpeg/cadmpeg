@@ -1587,8 +1587,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || incomplete_pattern(pattern, &incomplete_path)
             }
             FeatureDefinition::Native { .. } | FeatureDefinition::PostProcess { .. } => false,
-            // These variants explicitly retain unresolved construction semantics. Keep
-            // the match exhaustive so a new common-IR family cannot silently pass L6.
+            // Unresolved construction retained as native.
             FeatureDefinition::DatumPlaneUnresolved
             | FeatureDefinition::DatumPointUnresolved
             | FeatureDefinition::DatumCoordinateSystemUnresolved

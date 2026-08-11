@@ -9693,34 +9693,12 @@ fn extraction_uses_ordered_segment_wrappers_in_indexed_payloads() {
     assert_eq!(streams[0].schema.as_deref(), Some("SCH_REAL_1_9999"));
 }
 
-/// Phase 0 golden serialized-output snapshots.
+/// Golden serialized decode/inspect snapshots.
 ///
-/// These freeze the NX codec's complete observable output before the native-tier
-/// refactor begins. For each fixture the harness runs `NxCodec::decode` and
-/// `NxCodec::inspect`, then serializes the full [`DecodeResult`] (the decoded
-/// `CadIr` including the `nx` native-namespace arenas, the [`DecodeReport`], and
-/// the [`SourceFidelity`] sidecar carrying provenance/exactness annotations) plus
-/// the [`ContainerSummary`] into one deterministic pretty-JSON document, compared
-/// byte-for-byte against a committed golden file under `tests/golden/`.
-///
-/// Serialization goes through `serde_json::to_value` (whose object maps are
-/// `BTreeMap`, so keys sort) and then `to_string_pretty`. Every IR container that
-/// reaches the wire is `BTreeMap`- or `Vec`-backed and codec output is sorted by
-/// id, so the bytes are stable across runs; `golden_output_is_deterministic`
-/// asserts that directly.
-///
-/// Regenerate after an intended output change with:
-///   `UPDATE_GOLDEN=1 cargo test-fast golden`
-/// then review the golden diff before committing. Regenerate with the workspace
-/// feature set (`test-fast` / `--workspace`), NOT `-p cadmpeg-codec-nx`: the
-/// fixtures zlib-compress their streams through `flate2`, and Cargo feature
-/// unification selects the `zlib-rs` backend for the full-workspace build but
-/// `miniz_oxide` for an isolated crate build. The two backends emit different
-/// compressed bytes, so the container byte length, `sha256`, and byte-ledger
-/// totals in these snapshots are only stable under the workspace build (the one
-/// the commit hook and CI run). This is a build-config sensitivity of the
-/// fixtures, not codec nondeterminism: `golden_output_is_deterministic` confirms
-/// decode output is a pure function of the input bytes.
+/// Each fixture pins pretty-JSON of [`DecodeResult`] plus [`ContainerSummary`].
+/// Regenerate with `UPDATE_GOLDEN=1 cargo test-fast golden` (workspace build,
+/// not `-p cadmpeg-codec-nx`: isolated builds pick `miniz_oxide` and diverge
+/// zlib bytes from the `zlib-rs` workspace backend).
 mod golden {
     use std::collections::BTreeSet;
     use std::io::Cursor;

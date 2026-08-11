@@ -252,10 +252,7 @@ pub struct ExportPlan<'a> {
 impl<'a> ExportPlan<'a> {
     /// Creates a plan whose bytes have already been materialized.
     ///
-    /// The plan reports exactly the report it is given. `ExportReport::fidelity`
-    /// is the one place an encoder states how it resolved source fidelity; a
-    /// constructor that also took it as an argument would let the two disagree
-    /// and would silently pick a winner.
+    /// The plan reports exactly the report it is given, including fidelity.
     pub fn buffered(report: ExportReport, bytes: Vec<u8>) -> Self {
         Self {
             report,
@@ -265,8 +262,7 @@ impl<'a> ExportPlan<'a> {
 
     /// Creates a plan that writes through a deferred, report-invariant operation.
     ///
-    /// The report is reported verbatim, for the reason given on
-    /// [`ExportPlan::buffered`].
+    /// The report is reported verbatim.
     pub fn deferred(
         report: ExportReport,
         write: impl FnOnce(&mut dyn Write) -> Result<(), CodecError> + 'a,

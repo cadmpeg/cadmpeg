@@ -1098,10 +1098,7 @@ fn loop_head(attr: u16, first_coedge: u16, bridge_attr: u16) -> Vec<u8> {
 
 /// Coedge `00 11`: `refs[1]` owner loop, `refs[3]` next, `refs[4]` start
 /// vertex-use, `refs[5]` twin, `refs[6]` edge-use; marker is the local sense.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn coedge(
     attr: u16,
     owner_loop: u16,

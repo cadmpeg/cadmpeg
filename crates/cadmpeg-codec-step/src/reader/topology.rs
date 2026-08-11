@@ -1828,10 +1828,7 @@ mod tests {
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn staged_topology(
     typed: HashSet<u64>,
     vertices: Vec<Vertex>,

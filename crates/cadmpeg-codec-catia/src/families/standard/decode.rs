@@ -2930,10 +2930,7 @@ fn resolve_standard_limit_curve_binding(
     Some(binding)
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn attach_standard_topology(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -3947,10 +3944,7 @@ fn standard_boundary_roles(
 }
 
 /// Emits the edge, loop, coedge, and pcurve IR layers for the solved topology.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn emit_standard_topology(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -6221,10 +6215,7 @@ pub(crate) fn standard_spline_line(
     ))
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_standard_edge_curve(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -6670,10 +6661,7 @@ pub(crate) fn circular_ranges_are_nonoverlapping_or_coincident(ranges: &[[f64; 2
     })
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn standard_circle_param_range(
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
@@ -6718,10 +6706,7 @@ pub(crate) fn standard_circle_param_range(
     Some(range)
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn native_support_circle_param_range(
     support: &StandardEdgeSupport,
     center: Point3,

@@ -703,7 +703,7 @@ fn fixtures_replay_verbatim() {
     }
 }
 
-/// Without its baseline, this codec refuses to write.
+/// Write path requires a decode baseline.
 #[test]
 fn fixtures_refuse_to_write_without_a_baseline() {
     for (name, _) in fixtures() {

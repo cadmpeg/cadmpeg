@@ -276,11 +276,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     let mut round_trip = cadmpeg_ir::NativeNamespace::default();
     typed.store(&mut round_trip).unwrap();
     assert_eq!(typed, crate::native::F3dNative::load(&round_trip).unwrap());
-    // Storing what was loaded reproduces the stored arenas exactly, including
-    // the construction-history tree that `load` grafts across five arenas and
-    // `store` splits apart again. `f3z` merging depends on it: it appends a
-    // member's stored records onto the root's rather than routing the merged
-    // population through the typed form.
+    // Typed load/store must preserve each stored arena byte-for-byte.
     for name in crate::native::F3D_ARENA_NAMES {
         assert_eq!(
             round_trip.arenas.get(*name),
@@ -27316,9 +27312,7 @@ fn a_present_brep_stream_is_never_reclassified_as_sketch_only() {
     assert_eq!(report.losses.len(), 3);
 }
 
-/// A text-encoded carrier holds a B-rep this codec does not read. A document
-/// that has one is not sketch-only however many sketches it also carries:
-/// calling it complete would hide the whole of its solid geometry.
+/// A text-encoded B-rep carrier is not sketch-only, regardless of sketch count.
 #[test]
 fn a_text_brep_carrier_is_never_reclassified_as_sketch_only() {
     let mut report = brep_less_geometry_report();

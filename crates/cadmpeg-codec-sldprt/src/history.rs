@@ -14400,10 +14400,8 @@ pub fn sync_neutral_features(
                 length_along_profile_normal,
                 allow_multi_profile_faces,
             } => {
-                // Drafts and offsets live per side. The writer expresses only a
-                // first-side draft; a second-side draft or any side offset is
-                // rejected exactly as the removed `second_draft`/`first_offset`/
-                // `second_offset` fields were.
+                // Writer accepts only a first-side draft; second-side draft or
+                // any side offset is rejected.
                 let (first_draft, second_side_draft, any_side_offset) = match extent {
                     ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
                         (side.draft, None, side.offset.is_some())

@@ -56,8 +56,6 @@ pub enum ValidationMode {
 }
 
 /// Complete policy and target configuration for one conversion pipeline.
-// Each bool mirrors one independent CLI switch; a state machine over their
-// combinations would say less than the flags themselves.
 #[allow(clippy::struct_excessive_bools)]
 pub struct ConversionPlan {
     /// Replace an existing output or report file.
@@ -690,10 +688,7 @@ fn resolve_format(explicit: Option<Format>, out: Option<&Path>) -> Result<Format
     Format::from_path(out).ok_or_else(|| anyhow!("cannot infer format; pass -f"))
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn export_ir(
     registry: &Registry,
     ir: &CadIr,
