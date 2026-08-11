@@ -751,10 +751,7 @@ fn build_wire(
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Wire-set construction keeps source maps, decoded carriers, owner scope, and diagnostics explicit."
-)]
+#[allow(clippy::too_many_arguments)]
 fn build_wire_set(
     id: u64,
     set_id: u64,
@@ -908,10 +905,7 @@ fn build_shell_wire(
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Wire construction keeps source records, decoded carrier maps, and owner scope explicit."
-)]
+#[allow(clippy::too_many_arguments)]
 fn build_shell_wire_set(
     id: u64,
     shell_id: u64,
@@ -1961,10 +1955,7 @@ fn root_key(
     })
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Root construction keeps source maps, decoded optional carriers, and the collision scope explicit."
-)]
+#[allow(clippy::too_many_arguments)]
 fn build(
     id: u64,
     root: &RawRecord,
@@ -2093,10 +2084,7 @@ fn build(
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode helper keeps independent source maps, carrier sets, owner scope, and destination identities explicit."
-)]
+#[allow(clippy::too_many_arguments)]
 fn build_one(
     id: u64,
     root: &RawRecord,
@@ -3610,10 +3598,7 @@ fn pcurve_coordinate_bounds(geometry: &PcurveGeometry) -> Option<[[f64; 2]; 2]> 
     .then_some(bounds)
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Pcurve selection keeps the edge, vertex, carrier, unit, and diagnostic inputs explicit."
-)]
+#[allow(clippy::too_many_arguments)]
 fn select_associated_pcurve(
     ir: &mut CadIr,
     surface_step: u64,

@@ -15,10 +15,7 @@ use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase, VersionContract
 use cadmpeg_ir::{AnnotationBuilder, Exactness, NativeConvertError, NativeNamespace};
 
 use super::model::NativeModel;
-#[allow(
-    clippy::wildcard_imports,
-    reason = "Split check modules share a private orchestration prelude via wildcard import."
-)]
+#[allow(clippy::wildcard_imports)]
 use super::{
     display_jt::*, features::*, om::*, parasolid::*, segments::*, structure::*, toggle::*,
 };

@@ -265,9 +265,6 @@ fn tolerances_agree(left: crate::units::Tolerances, right: crate::units::Toleran
 
 /// Compare the source metadata of two documents, classifying each differing
 /// attribute as a difference or as an informational machine-local digest.
-///
-/// An absent `source` compares as [`SourceMeta::default`]; the module
-/// documentation states why.
 fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
     let absent = SourceMeta::default();
     let left = left.source.as_ref().unwrap_or(&absent);

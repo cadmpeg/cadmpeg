@@ -3652,8 +3652,6 @@ fn operation_source_properties(
     properties
 }
 
-// ===== Feature-semantics and attachment helpers (moved from decode.rs) =====
-
 struct ParasolidStringAttributeSources<'a> {
     topology_references: &'a [crate::native::parasolid::ParasolidTopologyAttributeListReference],
     class_uses: &'a [crate::native::parasolid::ParasolidTopologyAttributeClassUse],

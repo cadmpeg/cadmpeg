@@ -401,13 +401,8 @@ mod tests {
         ir
     }
 
-    /// The digest over a document that carries source metadata, pinned for the
-    /// same reason and under the same rules as [`pins_document_digests`] — which
-    /// states why a pasted literal is legitimate here and what a failure means.
-    ///
-    /// This one additionally pins the normalization: the recorded baseline
-    /// attribute is dropped before hashing and every other attribute is kept, so
-    /// changing which attribute the digest ignores fails here.
+    /// Pins normalization over source metadata: the recorded baseline attribute
+    /// is dropped before hashing and every other attribute is kept.
     #[test]
     fn pins_document_digest_over_source_metadata() {
         let ir = pinned_document_with_source();

@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Object-model, data-block, expression, and external-reference extractors and record types.
 
-#[allow(
-    clippy::wildcard_imports,
-    reason = "Split check modules share a private orchestration prelude via wildcard import."
-)]
+#[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::native::segments::segment_om_links;
 

@@ -65,10 +65,7 @@ use crate::topology::HalfEdgeId;
 mod native;
 mod records;
 use native::{annotate, emit_arena, emit_uniform, store_arena};
-#[allow(
-    clippy::wildcard_imports,
-    reason = "Split check modules share a private orchestration prelude via wildcard import."
-)]
+#[allow(clippy::wildcard_imports)]
 use records::*;
 
 /// The sole item of `iter`, or `None` when `iter` is empty or ambiguous.

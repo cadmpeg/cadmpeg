@@ -61,9 +61,6 @@ pub struct DecodeOptions {
     /// Stop after the container layer; do not attempt entity decode.
     pub container_only: bool,
     /// Resource limits and failure-handling mode governing the decode.
-    ///
-    /// Defaulted on deserialization so options serialized before this field
-    /// existed still parse, taking the desktop profile in salvage mode.
     #[serde(default)]
     pub policy: DecodePolicy,
 }

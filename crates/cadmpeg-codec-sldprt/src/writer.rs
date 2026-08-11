@@ -326,8 +326,6 @@ fn push_xml_attribute_value(output: &mut String, value: &str) {
 /// configuration when the native records carry none.
 ///
 /// Nothing in the file encodes that snapshot, so it cannot be written back.
-/// Leaving it makes the write path reason about configuration-local state that
-/// does not exist.
 fn drop_synthesized_configuration_snapshot(ir: &mut CadIr) {
     let Some(id) = ir.source.as_ref().and_then(|source| {
         source

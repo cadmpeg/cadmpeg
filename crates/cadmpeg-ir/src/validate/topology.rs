@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Focused validation checks for topology.
-#![allow(
-    clippy::wildcard_imports,
-    reason = "Split checks share private orchestration context."
-)]
+#![allow(clippy::wildcard_imports)]
 
 use std::collections::BTreeSet;
 

@@ -286,10 +286,7 @@ impl Stats {
 }
 
 /// Collect every `id` field value in a serialized value tree.
-#[allow(
-    clippy::implicit_hasher,
-    reason = "Callers pass default-hasher collections; a hasher parameter adds generic noise for one call shape."
-)]
+#[allow(clippy::implicit_hasher)]
 pub fn collect_owned_ids(value: &Value, out: &mut HashSet<String>) {
     match value {
         Value::Map(fields) => {
@@ -325,10 +322,7 @@ pub fn value_string(value: &Value) -> Option<&str> {
 
 /// Build the undirected id-adjacency of every entity in the top-level
 /// sequences of a serialized value tree.
-#[allow(
-    clippy::implicit_hasher,
-    reason = "Callers pass default-hasher collections; a hasher parameter adds generic noise for one call shape."
-)]
+#[allow(clippy::implicit_hasher)]
 pub fn collect_entity_adjacency(
     value: &Value,
     owned: &HashSet<String>,
@@ -369,10 +363,7 @@ pub fn entity_id(value: &Value) -> Option<&str> {
 }
 
 /// Collect every string in a serialized value tree that names an owned id.
-#[allow(
-    clippy::implicit_hasher,
-    reason = "Callers pass default-hasher collections; a hasher parameter adds generic noise for one call shape."
-)]
+#[allow(clippy::implicit_hasher)]
 pub fn collect_references(value: &Value, owned: &HashSet<String>, out: &mut HashSet<String>) {
     match value {
         Value::String(id) if owned.contains(id) => {
@@ -398,10 +389,7 @@ pub fn collect_references(value: &Value, owned: &HashSet<String>, out: &mut Hash
 
 /// Retain only entities with a reachable `id` in the top-level sequences of a
 /// serialized value tree.
-#[allow(
-    clippy::implicit_hasher,
-    reason = "Callers pass default-hasher collections; a hasher parameter adds generic noise for one call shape."
-)]
+#[allow(clippy::implicit_hasher)]
 pub fn retain_root_entities(value: &mut Value, reachable: &HashSet<String>) {
     let Value::Map(fields) = value else {
         return;
@@ -415,10 +403,7 @@ pub fn retain_root_entities(value: &mut Value, reachable: &HashSet<String>) {
 }
 
 /// Rewrite every string in a serialized value tree through `replacements`.
-#[allow(
-    clippy::implicit_hasher,
-    reason = "Callers pass default-hasher collections; a hasher parameter adds generic noise for one call shape."
-)]
+#[allow(clippy::implicit_hasher)]
 pub fn remap_owned_ids(value: &mut Value, replacements: &HashMap<String, String>) {
     match value {
         Value::String(id) => {

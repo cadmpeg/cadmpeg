@@ -12,10 +12,7 @@ use std::collections::{HashMap, HashSet};
 
 /// Follow `entity`'s attribute chain, emitting each record not yet in
 /// `emitted` as a [`SourceAttribute`] bound to `target`.
-#[allow(
-    clippy::implicit_hasher,
-    reason = "Callers pass default-hasher collections; a hasher parameter adds generic noise for one call shape."
-)]
+#[allow(clippy::implicit_hasher)]
 pub fn collect_attributes(
     entity: &Record,
     target: &AttributeTarget,
@@ -361,20 +358,14 @@ pub fn attribute_chain_color_carrier<'a>(
 }
 
 /// The first well-formed exact direct color on `entity`'s attribute chain.
-#[allow(
-    clippy::implicit_hasher,
-    reason = "Callers pass default-hasher collections; a hasher parameter adds generic noise for one call shape."
-)]
+#[allow(clippy::implicit_hasher)]
 pub fn attribute_chain_color(entity: &Record, by_index: &HashMap<i64, &Record>) -> Option<Color> {
     attribute_chain_color_carrier(entity, |index| by_index.get(&index).copied())
         .map(|(_, decoded)| decoded.color)
 }
 
 /// The first non-empty name attribute on `entity`'s attribute chain.
-#[allow(
-    clippy::implicit_hasher,
-    reason = "Callers pass default-hasher collections; a hasher parameter adds generic noise for one call shape."
-)]
+#[allow(clippy::implicit_hasher)]
 pub fn attribute_chain_name(entity: &Record, by_index: &HashMap<i64, &Record>) -> Option<String> {
     let mut current = entity.ref_at(0)?;
     let mut seen = HashSet::new();
