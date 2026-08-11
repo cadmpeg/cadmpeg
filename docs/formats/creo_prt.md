@@ -2285,6 +2285,12 @@ rather than performing a solid boolean.
 The fill operation creates a planar quilt from one closed sketch boundary. It
 has no adjacent support faces, imposes positional continuity at the boundary,
 and does not merge the result into an existing quilt.
+Exactly one section transform bound to a Fill feature selects its section
+definition by definition identifier and section offset. If the Fill has no
+bound section transform, exactly one definition owned by the Fill supplies the
+sketch boundary. Multiple bound transforms, an unmatched bound transform, or
+competing owned definitions leave the boundary unresolved. The selected sketch
+identity transfers independently of sketch placement and profile resolution.
 `Merge <decimal-ordinal>` identifies a surface-merge operation.
 Root feature-definition class `946` identifies the same surface-merge family
 when the current-state record omits its display name. The class value does not

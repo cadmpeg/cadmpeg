@@ -119,17 +119,6 @@ fn unique_feature_definition_for_transform<'a>(
     }))
 }
 
-fn unique_owned_transformed_definition<'a>(
-    definitions: &'a [crate::feature::FeatureDefinition],
-    transforms: &[crate::placement::FeatureSectionTransform],
-    feature_id: u32,
-) -> Option<&'a crate::feature::FeatureDefinition> {
-    let definition = unique_owned_feature_definition(definitions, feature_id)?;
-    let section = definition.section_3d.as_ref()?;
-    let transform = unique_feature_section_transform(transforms, definition.id, section.offset)?;
-    (transform.feature_id == Some(feature_id)).then_some(definition)
-}
-
 fn unique_feature_profile_definition<'a>(
     definitions: &'a [crate::feature::FeatureDefinition],
     transforms: &[crate::placement::FeatureSectionTransform],
@@ -20168,7 +20157,7 @@ fn filled_surface_feature_definition(
     ir: &CadIr,
     feature_id: u32,
 ) -> IrFeatureDefinition {
-    let boundary = unique_owned_transformed_definition(
+    let boundary = unique_feature_profile_definition(
         &scan.features.definitions,
         &scan.features.section_transforms,
         feature_id,

@@ -203,6 +203,10 @@ fixtures, claims above L1 remain unproven.
   type-24 terminal envelopes select among distinct document-level tuples by
   matching the bore diameter and depth to common or adjacent-union spans on
   distinct axes.
+- Fill boundaries use the unique feature-bound section transform when present
+  and otherwise the unique feature-owned section definition. The sketch
+  identity remains available when its placement or profile geometry is
+  unresolved; ambiguous joins remain unresolved.
 - Positional `ActDatums` outlines require exactly one held coordinate. Outlines
   with zero or multiple held coordinate pairs remain unresolved instead of
   selecting an arbitrary plane normal.

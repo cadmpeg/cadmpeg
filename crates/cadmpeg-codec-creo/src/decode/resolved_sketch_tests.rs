@@ -3901,7 +3901,7 @@ fn thicken_plane_offsets_require_parallel_agreeing_oriented_distances() {
 }
 
 #[test]
-fn transformed_feature_definition_requires_unique_owner_and_exact_transform_owner() {
+fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
     let definition = crate::feature::FeatureDefinition {
         id: 822,
         owner_feature_id: Some(822),
@@ -3938,37 +3938,10 @@ fn transformed_feature_definition_requires_unique_owner_and_exact_transform_owne
         offset: 90,
     };
 
-    assert_eq!(
-        unique_owned_transformed_definition(
-            std::slice::from_ref(&definition),
-            std::slice::from_ref(&transform),
-            822,
-        )
-        .map(|definition| definition.id),
-        Some(822)
-    );
-    assert!(unique_owned_transformed_definition(
-        &[definition.clone(), definition.clone()],
-        std::slice::from_ref(&transform),
-        822,
-    )
-    .is_none());
-    assert!(unique_owned_transformed_definition(
-        std::slice::from_ref(&definition),
-        &[transform.clone(), transform.clone()],
-        822,
-    )
-    .is_none());
     let mismatched_transform = crate::placement::FeatureSectionTransform {
         feature_id: Some(900),
-        ..transform
+        ..transform.clone()
     };
-    assert!(unique_owned_transformed_definition(
-        std::slice::from_ref(&definition),
-        std::slice::from_ref(&mismatched_transform),
-        822,
-    )
-    .is_none());
     assert_eq!(
         unique_feature_profile_definition(
             std::slice::from_ref(&definition),
@@ -3983,9 +3956,13 @@ fn transformed_feature_definition_requires_unique_owner_and_exact_transform_owne
             .map(|definition| definition.id),
         Some(822)
     );
+    assert!(
+        unique_feature_profile_definition(&[definition.clone(), definition.clone()], &[], 822,)
+            .is_none()
+    );
     assert!(unique_feature_profile_definition(
         std::slice::from_ref(&definition),
-        &[transform.clone(), transform],
+        &[transform.clone(), transform.clone()],
         822,
     )
     .is_none());
@@ -3999,9 +3976,21 @@ fn transformed_feature_definition_requires_unique_owner_and_exact_transform_owne
         Some(822)
     );
 
+    let mismatched_section_transform = crate::placement::FeatureSectionTransform {
+        definition_id: 900,
+        feature_id: Some(822),
+        ..transform
+    };
+    assert!(unique_feature_profile_definition(
+        std::slice::from_ref(&definition),
+        std::slice::from_ref(&mismatched_section_transform),
+        822,
+    )
+    .is_none());
+
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.definitions.push(definition);
-    let ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty(Units::default());
     for kind in ["Revolve", "Revolve 2"] {
         assert!(matches!(
             named_feature_definition(&scan, &ir, 822, kind),
@@ -4016,6 +4005,34 @@ fn transformed_feature_definition_requires_unique_owner_and_exact_transform_owne
             }) if profile == "creo:featdefs:sketch#822"
         ));
     }
+
+    let sketch = SketchId("creo:model:sketch#822".to_string());
+    ir.model.sketches.push(Sketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
+        profiles: Vec::new(),
+        native_ref: Some("creo:featdefs:sketch#822".to_string()),
+    });
+    assert!(matches!(
+        filled_surface_feature_definition(&scan, &ir, 822),
+        IrFeatureDefinition::FilledSurface {
+            boundary: SurfaceBoundary::Path(PathRef::Sketch(boundary)),
+            ..
+        } if boundary == sketch
+    ));
+
+    scan.features
+        .definitions
+        .push(scan.features.definitions[0].clone());
+    assert!(matches!(
+        filled_surface_feature_definition(&scan, &ir, 822),
+        IrFeatureDefinition::FilledSurface {
+            boundary: SurfaceBoundary::Edges(EdgeSelection::Unresolved),
+            ..
+        }
+    ));
 }
 
 #[test]
