@@ -694,12 +694,139 @@ fn directional_distance(
     if !approximately_equal(direction[0].hypot(direction[1]).hypot(direction[2]), 1.0) {
         return None;
     }
+    if let Some(length) = closed_slot_feature_size_distance(annotation, feature_index, direction) {
+        return Some(length);
+    }
     let [first, second] = annotation.features.references.as_slice() else {
         return None;
     };
     let first = location_projection(&first.id, feature_index, direction)?;
     let second = location_projection(&second.id, feature_index, direction)?;
     finite_positive((second - first).abs())
+}
+
+fn closed_slot_feature_size_distance(
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+    direction: [f64; 3],
+) -> Option<f64> {
+    if annotation.integers.get("FeatureFosUsage") != Some(&2)
+        || annotation.integers.get("OriginFeatureFosUsage") != Some(&2)
+    {
+        return None;
+    }
+    let [first_reference, second_reference] = annotation.features.references.as_slice() else {
+        return None;
+    };
+    let first = feature_index.get(first_reference.id.as_str())?;
+    let second = feature_index.get(second_reference.id.as_str())?;
+    let (cylinder_id, cylinder, slot_id, slot) =
+        match (short_class(&first.class), short_class(&second.class)) {
+            ("GdtCylinder", "GdtCompoundClosedSlot3D") => (
+                first_reference.id.as_str(),
+                *first,
+                second_reference.id.as_str(),
+                *second,
+            ),
+            ("GdtCompoundClosedSlot3D", "GdtCylinder") => (
+                second_reference.id.as_str(),
+                *second,
+                first_reference.id.as_str(),
+                *first,
+            ),
+            _ => return None,
+        };
+    if !feature_reaches(slot_id, cylinder_id, feature_index, &mut BTreeSet::new(), 0) {
+        return None;
+    }
+    let slot_geometry = &unique_related(slot, "NomClosedSlot")?.entity;
+    let cylinder_geometry = &unique_related(cylinder, "NomCylinder")?.entity;
+    let length = finite_positive(slot_geometry.doubles.get("Length").copied()?)?;
+    let width = finite_positive(slot_geometry.doubles.get("Width").copied()?)?;
+    let radius = finite_positive(cylinder_geometry.doubles.get("R").copied()?)?;
+    if length <= width || !diameters_equivalent(radius * 2.0, width) {
+        return None;
+    }
+    let slot_normal = vector(slot_geometry, ["I", "J", "K"])?;
+    let longitude = vector(slot_geometry, ["LongitudeI", "LongitudeJ", "LongitudeK"])?;
+    let slot_point = vector(slot_geometry, ["X", "Y", "Z"])?;
+    let cylinder_axis = vector(cylinder_geometry, ["I", "J", "K"])?;
+    let cylinder_point = vector(cylinder_geometry, ["X", "Y", "Z"])?;
+    if !approximately_equal(
+        slot_normal[0].hypot(slot_normal[1]).hypot(slot_normal[2]),
+        1.0,
+    ) || !approximately_equal(longitude[0].hypot(longitude[1]).hypot(longitude[2]), 1.0)
+        || !approximately_equal(
+            cylinder_axis[0]
+                .hypot(cylinder_axis[1])
+                .hypot(cylinder_axis[2]),
+            1.0,
+        )
+        || !approximately_equal(
+            (slot_normal[0] * cylinder_axis[0]
+                + slot_normal[1] * cylinder_axis[1]
+                + slot_normal[2] * cylinder_axis[2])
+                .abs(),
+            1.0,
+        )
+        || !approximately_equal(
+            slot_normal[0] * longitude[0]
+                + slot_normal[1] * longitude[1]
+                + slot_normal[2] * longitude[2],
+            0.0,
+        )
+        || !approximately_equal(
+            (longitude[0] * direction[0]
+                + longitude[1] * direction[1]
+                + longitude[2] * direction[2])
+                .abs(),
+            1.0,
+        )
+    {
+        return None;
+    }
+    let displacement = [
+        cylinder_point[0] - slot_point[0],
+        cylinder_point[1] - slot_point[1],
+        cylinder_point[2] - slot_point[2],
+    ];
+    let displacement_norm = displacement[0]
+        .hypot(displacement[1])
+        .hypot(displacement[2]);
+    let longitudinal = displacement[0] * longitude[0]
+        + displacement[1] * longitude[1]
+        + displacement[2] * longitude[2];
+    (approximately_equal(displacement_norm, longitudinal.abs())
+        && approximately_equal(longitudinal.abs(), (length - width) / 2.0))
+    .then_some(length)
+}
+
+fn feature_reaches(
+    id: &str,
+    target: &str,
+    feature_index: &BTreeMap<&str, &Entity>,
+    visited: &mut BTreeSet<String>,
+    depth: usize,
+) -> bool {
+    if depth >= MAX_DEPTH || !visited.insert(id.to_string()) {
+        return false;
+    }
+    let Some(feature) = feature_index.get(id) else {
+        return false;
+    };
+    let Some(next_depth) = depth.checked_add(1) else {
+        return false;
+    };
+    child_feature_ids(feature).into_iter().any(|child| {
+        child == target
+            || feature_reaches(
+                child,
+                target,
+                feature_index,
+                &mut visited.clone(),
+                next_depth,
+            )
+    })
 }
 
 fn identity_transform(transform: &Entity) -> bool {
@@ -2744,6 +2871,100 @@ mod tests {
             panic!("dimension definition");
         };
         assert_eq!(*nominal, Some(length(75.0)));
+    }
+
+    #[test]
+    fn closed_slot_end_feature_supplies_length_location_nominal() {
+        let mut root = semantic_root();
+        root.features
+            .references
+            .push(reference("FSC", "GdtCylinder"));
+        root.features
+            .entities
+            .push(cylinder_at([38.1, 3.037_84, -95.25], [0.0, 1.0, 0.0]));
+        root.features
+            .entities
+            .last_mut()
+            .and_then(|cylinder| cylinder.related.first_mut())
+            .expect("nominal cylinder")
+            .entity
+            .doubles
+            .insert("R".into(), 3.175);
+        let mut slot = entity("GdtCompoundClosedSlot3D");
+        slot.features
+            .references
+            .push(reference("FSC", "GdtCylinder"));
+        let mut geometry = Entity {
+            class: "PrizMetrik.Geometry.GeoClosedSlot".into(),
+            ..Entity::default()
+        };
+        for (name, value) in [
+            ("I", 0.0),
+            ("J", -1.0),
+            ("K", 0.0),
+            ("LongitudeI", -1.0),
+            ("LongitudeJ", 0.0),
+            ("LongitudeK", 0.0),
+            ("X", 47.625),
+            ("Y", 3.037_84),
+            ("Z", -95.25),
+            ("Length", 25.4),
+            ("Width", 6.35),
+        ] {
+            geometry.doubles.insert(name.into(), value);
+        }
+        slot.related.push(RelatedObject {
+            name: "NomClosedSlot".into(),
+            class: geometry.class.clone(),
+            entity: geometry,
+        });
+        root.features
+            .references
+            .push(reference("FS", "GdtCompoundClosedSlot3D"));
+        root.features.entities.push(slot);
+        root.annotations
+            .references
+            .push(reference("A50", "GdtDistanceBetween"));
+        let mut distance = distance_annotation(
+            reference("FSC", "GdtCylinder"),
+            reference("FS", "GdtCompoundClosedSlot3D"),
+            [-1.0, 0.0, 0.0],
+        );
+        distance.integers.insert("FeatureFosUsage".into(), 2);
+        distance.integers.insert("OriginFeatureFosUsage".into(), 2);
+        root.annotations.entities.push(distance);
+
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
+        let PmiDefinition::Dimension { nominal, .. } = &annotations
+            .iter()
+            .find(|annotation| annotation.id == pmi_id("A50"))
+            .expect("slot length location")
+            .definition
+        else {
+            panic!("dimension definition");
+        };
+        assert_eq!(*nominal, Some(length(25.4)));
+
+        root.features
+            .entities
+            .last_mut()
+            .and_then(|slot| slot.related.first_mut())
+            .expect("nominal slot")
+            .entity
+            .doubles
+            .insert("Width".into(), 7.0);
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
+        let PmiDefinition::Dimension { nominal, .. } = &annotations
+            .iter()
+            .find(|annotation| annotation.id == pmi_id("A50"))
+            .expect("slot length location")
+            .definition
+        else {
+            panic!("dimension definition");
+        };
+        assert_eq!(*nominal, None);
     }
 
     #[test]

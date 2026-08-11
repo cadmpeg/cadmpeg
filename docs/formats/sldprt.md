@@ -974,6 +974,15 @@ projection. Support planes do not define the compound-hole location. The
 positive absolute difference between the two feature projections is the
 location nominal.
 
+When `FeatureFosUsage` and `OriginFeatureFosUsage` are both 2, a directional
+distance can pair one `GdtCompoundClosedSlot3D` with one descendant
+`GdtCylinder`. `NomClosedSlot.LongitudeI`, `LongitudeJ`, and `LongitudeK` form
+a unit vector parallel to the measurement direction. The cylinder diameter
+equals `NomClosedSlot.Width`, its unit axis is parallel to the slot normal, and
+its origin lies on the slot longitude at `(Length - Width) / 2` from the slot
+origin. Under these invariants, the positive `NomClosedSlot.Length` is the
+location nominal.
+
 An omitted `GdtWidth.Nominal` is the positive millimetre `Width` field of its
 applied nominal slot geometry. `GdtCompoundWidth` uses
 `NomCompoundWidth.Width`, and `GdtCompoundClosedSlot3D` uses
