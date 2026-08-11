@@ -21,7 +21,7 @@ pub fn entity(data: &[u8]) {
     let _ = crate::brep::entity::scan(data, "SCH_SW_33103_11000");
 }
 
-/// Exercise `PMISemanticDataDB` MessagePack parse/patch/reparse.
+/// Exercise `PMISemanticDataDB` `MessagePack` parse/patch/reparse.
 ///
 /// Invariant: malformed input never panics; successful records keep patch
 /// offsets consistent across an in-place value edit and reparse.
