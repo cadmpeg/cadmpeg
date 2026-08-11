@@ -302,6 +302,7 @@ dependencies = [
  "cadmpeg-asm",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "serde_json",
 ]
 
 [[package]]
