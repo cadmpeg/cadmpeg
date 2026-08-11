@@ -1,0 +1,176 @@
+{
+  "ir": {
+    "ir_version": "5",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "sat:brep:entity#1",
+          "kind": "sheet",
+          "regions": [
+            "sat:brep:entity#2"
+          ]
+        }
+      ],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [
+        {
+          "id": "sat:brep:entity#4",
+          "loops": [],
+          "sense": "forward",
+          "shell": "sat:brep:entity#3",
+          "surface": "sat:brep:entity#5"
+        }
+      ],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [
+        {
+          "body": "sat:brep:entity#1",
+          "id": "sat:brep:entity#2",
+          "shells": [
+            "sat:brep:entity#3"
+          ]
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [
+        {
+          "faces": [
+            "sat:brep:entity#4"
+          ],
+          "id": "sat:brep:entity#3",
+          "region": "sat:brep:entity#2"
+        }
+      ],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "center": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "sphere",
+            "radius": 25.0,
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "sat:brep:entity#5"
+        }
+      ],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {
+      "sat": {
+        "arenas": {
+          "body_native_keys": [
+            {
+              "body": "sat:brep:entity#1",
+              "body_ordinal": 0,
+              "id": "sat:asm:body-native-key#1",
+              "record_index": 1,
+              "source_brep": "stream"
+            }
+          ],
+          "edge_continuities": [],
+          "edge_ownerships": [],
+          "face_native_keys": [
+            {
+              "face": "sat:brep:entity#4",
+              "id": "sat:asm:face-native-key#4",
+              "record_index": 4
+            }
+          ],
+          "face_sidedness": [
+            {
+              "face": "sat:brep:entity#4",
+              "id": "sat:asm:face-sidedness#4",
+              "native_sense": "forward",
+              "normalized_sense": "forward",
+              "record_index": 4
+            }
+          ],
+          "mesh_surface_sentinels": [],
+          "tolerant_coedge_parameters": [],
+          "tolerant_edge_tails": [],
+          "tolerant_vertex_tails": [],
+          "transform_hints": [],
+          "unknowns": [],
+          "vertex_ownerships": [],
+          "wire_topologies": []
+        },
+        "version": 1
+      }
+    },
+    "source": {
+      "attributes": {
+        "acis_save_format_version": "23200",
+        "encoding": "binary",
+        "kernel_entity_count": "2",
+        "kernel_family": "asm",
+        "kernel_flags": "2",
+        "product_family": "Autodesk Neutron",
+        "product_version": "ASM 232.4.0.65535 OSX",
+        "save_date": "Synthetic"
+      },
+      "format": "sat"
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "container_only": false,
+    "coverage": {
+      "unknown_records": 0,
+      "unknown_surface_faces": 0
+    },
+    "format": "sat",
+    "geometry_transferred": true,
+    "losses": [],
+    "notes": []
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "version": "3"
+  }
+}

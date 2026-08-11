@@ -1872,6 +1872,7 @@ fn append_text_surface(
                     axis_origin: *axis_origin,
                     axis_direction: *axis_direction,
                     angular_interval: [0.0, std::f64::consts::TAU],
+                    angular_parameter_interval: None,
                     parameter_interval: None,
                     transposed: true,
                     revision_form: None,

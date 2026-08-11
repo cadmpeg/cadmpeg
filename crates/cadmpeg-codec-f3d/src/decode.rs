@@ -3410,17 +3410,9 @@ fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
     }
 }
 
-/// The machine-local content digest recorded as the F3D `document_local_sha256`
-/// attribute.
+/// Machine-local `document_local_sha256` for the F3D write-path edit oracle.
 ///
-/// A bitwise digest over the decoded neutral document. Its one consumer is
-/// [`crate::F3dCodec`]'s write path, which replays the retained source bytes when
-/// the recorded digest still equals a freshly computed one and patches the
-/// container otherwise. It is not portable across platforms, because the decoded
-/// content includes values derived through libm transcendentals, and it is
-/// intentionally not tolerance-aware, because tolerant equality is not
-/// transitive and cannot back a hash. The `_local_sha256` suffix states that;
-/// see [`cadmpeg_ir::hash::document_local_sha256`].
+/// See [`cadmpeg_ir::hash::document_local_sha256`].
 pub(crate) fn document_local_sha256(ir: &CadIr) -> String {
     cadmpeg_ir::hash::document_local_sha256(ir, "f3d", crate::ids::FILE_SOURCE_IMAGE_ID)
 }

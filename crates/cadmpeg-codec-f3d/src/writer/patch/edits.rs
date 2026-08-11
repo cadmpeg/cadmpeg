@@ -2030,10 +2030,7 @@ pub(crate) fn validate_persistent_reference_edits(
 
 /// The three history-preamble fields a patch writes back, carried as
 /// non-optional values. [`validate_history_state_edits`] only builds one after
-/// it has confirmed both `stream_size` and `history_entry_count` are present, so
-/// a [`HistoryEdits`] that holds a preamble cannot reach the patcher with either
-/// field absent — the invariant `patch_history_states` previously asserted with
-/// `expect`.
+/// it has confirmed both `stream_size` and `history_entry_count` are present.
 pub(crate) struct PreambleEdit {
     pub(crate) byte_offset: u64,
     pub(crate) stream_size: i64,

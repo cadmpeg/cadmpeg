@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Focused validation checks for topology.
-#![allow(
-    clippy::wildcard_imports,
-    reason = "Split checks share private orchestration context."
-)]
+#![allow(clippy::wildcard_imports)]
 
 use std::collections::BTreeSet;
 
@@ -1949,7 +1946,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
         .map(|feature| (feature.id.0.as_str(), feature.ordinal))
         .collect::<HashMap<_, _>>();
     for configuration in &ir.model.configurations {
-        active_configurations += usize::from(configuration.active);
+        active_configurations += usize::from(configuration.active.is_active());
         if !configuration_ordinals.insert(configuration.ordinal) {
             findings.push(Finding {
                 check: Check::Counts,
@@ -2014,7 +2011,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 });
             }
         }
-        if configuration.active {
+        if configuration.active.is_active() {
             for feature in &ir.model.features {
                 if feature.suppressed.is_some_and(|suppressed| {
                     suppressed_features.contains(&feature.id) != suppressed
@@ -5601,26 +5598,9 @@ fn termination_magnitude_is_valid(termination: &crate::features::Termination) ->
 /// dependency an unsuppressed feature state names must itself have an
 /// unsuppressed state in the same configuration.
 ///
-/// This deliberately says nothing about which feature produced which body. No
-/// format guarantees total body-to-feature attribution -- SLDPRT resolves
-/// configuration bodies from per-configuration Parasolid partitions and carries
-/// no producer identity the decoder can reconcile to a final body at all, and
-/// the formats that do attribute cover only part of their features -- so an
-/// unclaimed body means the producer went unrecorded, not that the body is
-/// unproduced. Codecs report that gap as a design loss, which is the layer that
-/// can weigh it against what the specific format is known to encode. Whether a
-/// configuration's dependency graph is closed is independent of attribution, so
-/// the walk seeds from every unsuppressed state rather than from the states
-/// that happen to claim a body.
-///
-/// A dependency with no state in the configuration is not an omission.
-/// `feature_states` may be sparse -- a configuration that overrides only some
-/// features carries states only for those, and a dependency with no state
-/// inherits its model-level one. Nor is the converse case worth a finding: the
-/// dependency itself is already required to name a model feature, so a map that
-/// did enumerate every feature would necessarily carry a state for it and the
-/// check could never fire. Only an explicitly suppressed dependency is
-/// incoherent, and that is incoherent however sparse the map is.
+/// Does not check body-to-feature attribution. Sparse `feature_states` are
+/// allowed: a missing dependency state inherits the model-level one. Only an
+/// explicitly suppressed dependency is incoherent.
 fn check_configuration_state_closure(
     configuration: &crate::features::DesignConfiguration,
     findings: &mut Vec<Finding>,

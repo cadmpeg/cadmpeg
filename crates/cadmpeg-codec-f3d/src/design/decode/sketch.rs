@@ -1014,10 +1014,7 @@ pub(crate) fn parse_legacy_sketch_container_members(
 /// the fixed layout or in the `EntityGenesis` layout.
 pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHeader>, CodecError> {
     let mut out = Vec::new();
-    // A design entity id is unique inside its own segment and not across the
-    // archive, so the module map is per stream: one archive's Design segments
-    // reuse ids for entities of different modules, and a flat map would let
-    // whichever segment is read first name the module for all of them.
+    // Entity ids are unique per Design stream, not archive-wide.
     let mut entity_modules = HashMap::<String, HashMap<u64, String>>::new();
     let types = decode_types(scan)?;
     let mut legacy_sketch_candidates = HashMap::<String, std::collections::HashSet<u32>>::new();
@@ -2274,8 +2271,6 @@ fn decode_indexed_sketch_text_record_tail(payload: &[u8], cursor: usize) -> Opti
     closed
 }
 
-// Keep source identity, raw bytes, and the independently parsed head and tail
-// explicit at this native-record assembly boundary.
 #[allow(clippy::too_many_arguments)]
 fn assemble_sketch_text(
     payload: &[u8],

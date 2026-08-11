@@ -79,10 +79,11 @@ pub use diff::{diff, ArenaDiff, AttributeChange, IrDiff, ModifiedEntity, SourceD
 pub use document::{CadIr, SourceMeta, IR_VERSION};
 pub use features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction, CoilExtent, CoilPlacement,
-    CoilResult, CoilSection, CoilSectionPlacement, ConfigurationBodies, ConfigurationId,
-    CurveProjectionDirection, CurveProjectionDirectionState, DesignConfiguration, DesignParameter,
-    FaceMotion, Feature, FeatureDefinition, FeatureId, ParameterId, ParameterPmi, ParameterValue,
-    PmiDimensionSubtype, ScaleCenter, ScaleFactors, SketchSpace,
+    CoilResult, CoilSection, CoilSectionPlacement, ConfigurationActivation, ConfigurationBodies,
+    ConfigurationId, ConfigurationName, CurveProjectionDirection, CurveProjectionDirectionState,
+    DesignConfiguration, DesignParameter, FaceMotion, Feature, FeatureDefinition, FeatureId,
+    ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype, ScaleCenter, ScaleFactors,
+    SketchSpace,
 };
 pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
 pub use pmi::{
@@ -143,5 +144,7 @@ pub fn decode_sidecar_json_schema() -> schemars::Schema {
     schemars::schema_for!(source_fidelity::DecodeSidecar)
 }
 
+#[cfg(test)]
+mod proptests;
 #[cfg(test)]
 mod tests;

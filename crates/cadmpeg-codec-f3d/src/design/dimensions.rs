@@ -2610,10 +2610,7 @@ fn spatial_reflection_symmetry(
     })
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn spatial_counted_offset_dimension_definition(
     native_kind: &str,
     native_state: Option<u64>,
@@ -3310,10 +3307,7 @@ pub fn remove_dimension_frame_relations(
 
 /// Bind geometry referenced only by dimensional companions to the sketch
 /// reached through the parameter scope or the counted frame's explicit owner.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 pub fn bind_dimension_loci(
     placements: &[DesignSketchPlacement],
     owners: &[DesignParameterOwner],

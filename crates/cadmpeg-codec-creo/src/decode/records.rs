@@ -2,10 +2,7 @@
 //! Record shadow-layer structs and their `ContainerScan` mappers, moved
 //! verbatim from `decode.rs`.
 
-#[allow(
-    clippy::wildcard_imports,
-    reason = "Split check modules share a private orchestration prelude via wildcard import."
-)]
+#[allow(clippy::wildcard_imports)]
 use super::*;
 
 #[derive(Serialize)]
@@ -1836,7 +1833,8 @@ pub(super) fn feature_operation_state_records(
                 ),
                 feature_id: state.feature_id,
                 state_ordinal,
-                current: current_offsets.get(&state.feature_id) == Some(&state.offset),
+                current: !state.display_state_conflict
+                    && current_offsets.get(&state.feature_id) == Some(&state.offset),
                 family: state.kind.clone(),
                 display_name_stored: state.display_name_stored,
                 stored_name: state.stored_name.clone(),
@@ -1846,6 +1844,8 @@ pub(super) fn feature_operation_state_records(
                     .stored_name_prefix
                     .map(|prefix| char::from(prefix).to_string()),
                 recipe: state.recipe.map(crate::feature::FeatureRecipe::name),
+                recipe_conflict: state.recipe_conflict.then_some(true),
+                display_state_conflict: state.display_state_conflict.then_some(true),
                 root_schema_class: state.root_schema_class,
                 parent_feature_id: state.parent_feature_id,
                 offset: state.offset,

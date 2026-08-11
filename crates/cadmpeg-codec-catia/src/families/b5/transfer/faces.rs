@@ -97,6 +97,7 @@ pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
         body_kind,
         components: component_faces,
         face_components,
+        loop_owners,
     })
 }
 

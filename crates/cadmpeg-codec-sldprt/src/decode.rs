@@ -317,7 +317,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .model
         .configurations
         .iter()
-        .filter(|configuration| configuration.active)
+        .filter(|configuration| configuration.active.is_active())
         .count();
     if !ir.model.configurations.is_empty() && active_configurations != 1 {
         report.losses.push(SldprtLossCode::ConfigActiveIdentityUnresolved.note(format!(
@@ -335,7 +335,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         ir.model
             .configurations
             .iter()
-            .find(|configuration| configuration.active)
+            .find(|configuration| configuration.active.is_active())
             .is_some_and(|configuration| {
                 configuration.source_index.as_ref() != Some(active_partition)
             })
@@ -392,7 +392,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .model
         .configurations
         .iter()
-        .filter(|configuration| configuration.name.is_empty())
+        .filter(|configuration| configuration.name.resolved().is_none_or(str::is_empty))
         .count();
     let mut configuration_name_counts = BTreeMap::new();
     let mut configuration_ordinal_counts = BTreeMap::new();
@@ -405,7 +405,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .model
         .configurations
         .iter()
-        .map(|configuration| configuration.name.as_str())
+        .filter_map(|configuration| configuration.name.resolved())
         .filter(|name| !name.is_empty())
     {
         *configuration_name_counts.entry(name).or_insert(0usize) += 1;
@@ -1589,8 +1589,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || incomplete_pattern(pattern, &incomplete_path)
             }
             FeatureDefinition::Native { .. } | FeatureDefinition::PostProcess { .. } => false,
-            // These variants explicitly retain unresolved construction semantics. Keep
-            // the match exhaustive so a new common-IR family cannot silently pass L6.
+            // Unresolved construction retained as native.
             FeatureDefinition::DatumPlaneUnresolved
             | FeatureDefinition::DatumPointUnresolved
             | FeatureDefinition::DatumCoordinateSystemUnresolved
@@ -2452,10 +2451,7 @@ fn build_geometry_ir(
         );
     }
     native.store(ir.native.namespace_mut("sldprt"))?;
-    // The baseline has to describe native-backed configuration state only, so
-    // it is stamped before the read-side snapshot is fabricated. Stamping after
-    // would bake fabricated state into a hash the write path compares against a
-    // projection that can only ever re-derive the native-backed part.
+    // Stamp baseline before fabricating the read-side configuration snapshot.
     stamp_configuration_baseline(&mut ir);
     snapshot_active_configuration(&mut ir);
     let mut unknowns = brep.unknowns;
@@ -3387,7 +3383,7 @@ fn mark_active_configuration(ir: &mut CadIr) {
             .configurations
             .iter()
             .enumerate()
-            .filter(|(_, configuration)| &configuration.name == name)
+            .filter(|(_, configuration)| configuration.name.resolved() == Some(name.as_str()))
             .map(|(position, _)| position)
             .collect::<Vec<_>>();
         (matches.len() == 1).then(|| matches[0])
@@ -3414,7 +3410,7 @@ fn mark_active_configuration(ir: &mut CadIr) {
         None
     };
     for (position, configuration) in ir.model.configurations.iter_mut().enumerate() {
-        configuration.active = selected == Some(position);
+        configuration.active = (selected == Some(position)).into();
     }
 }
 
@@ -3424,7 +3420,7 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
         .configurations
         .iter()
         .enumerate()
-        .filter(|(_, configuration)| configuration.active)
+        .filter(|(_, configuration)| configuration.active.is_active())
         .map(|(index, _)| index);
     let Some(configuration_index) = active.next() else {
         return;
@@ -3472,10 +3468,8 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
     let configuration = &mut ir.model.configurations[configuration_index];
     configuration.parameter_values = parameter_values;
     configuration.feature_states = feature_states;
-    // This design state is a read-side presentation of model-level state, not
-    // configuration-local data the native records carry. Naming the
-    // configuration it was fabricated on lets the write path tell it apart from
-    // state that came out of a feature-input lane.
+    // Read-side fabricated snapshot of model-level state; tag the configuration
+    // so the write path can distinguish it from feature-input lane state.
     let id = configuration.id.0.clone();
     if let Some(source) = &mut ir.source {
         source
@@ -3490,7 +3484,7 @@ fn sync_active_configuration_face_selections(ir: &mut CadIr) {
         .configurations
         .iter()
         .enumerate()
-        .filter(|(_, configuration)| configuration.active)
+        .filter(|(_, configuration)| configuration.active.is_active())
         .map(|(index, _)| index);
     let Some(configuration_index) = active.next() else {
         return;
@@ -3706,7 +3700,8 @@ fn assign_configuration_bodies(
             .iter()
             .enumerate()
             .filter(|(_, configuration)| {
-                configuration.source_index.is_none() && &configuration.name == active_name
+                configuration.source_index.is_none()
+                    && configuration.name.resolved() == Some(active_name.as_str())
             })
             .map(|(position, _)| position)
             .collect::<Vec<_>>();
@@ -3734,9 +3729,9 @@ fn assign_configuration_bodies(
                     "sldprt:model:configuration#partition:{source_index}"
                 )),
                 ordinal,
-                active: false,
+                active: false.into(),
                 source_index: Some(source_index),
-                name: format!("Config-{source_index}"),
+                name: format!("Config-{source_index}").into(),
                 material: None,
                 properties: std::collections::BTreeMap::new(),
                 bodies: cadmpeg_ir::ConfigurationBodies::Resolved(bodies),
@@ -3772,21 +3767,10 @@ fn stamp_configuration_baseline(ir: &mut CadIr) {
 
 /// Record the sketch baselines the write path compares against.
 ///
-/// Two of the three are machine-local and say so with the `_local_sha256`
-/// suffix: they cover projected neutral sketch geometry, which reaches its
-/// values through `f64::cos` and friends.
-///
-/// `sldprt_native_sketch_sha256` carries no such suffix because it is portable
-/// by construction, not merely portable today. It digests
-/// `SldprtNative::feature_input_lanes`, whose every field is a `String`, an
-/// integer, or retained source bytes, with exactly three exceptions:
-/// `FeatureInputScalar::value`, `SketchInputEntity::state_value`, and
-/// `SketchInputEntity::coordinates_m`. Each of the three is one
-/// `f64::from_le_bytes` of the payload at the byte offset the record stores
-/// beside it, with no arithmetic between the read and the field. Reading an
-/// IEEE 754 bit pattern is exact on every platform, so no libm can move this
-/// digest. Any future enrichment that computes a lane float rather than reading
-/// one makes the digest machine-local and forces the rename.
+/// Neutral sketch and constraint digests use `_local_sha256` (projected
+/// geometry through libm). `sldprt_native_sketch_sha256` has no suffix: it
+/// digests lane fields that are strings, integers, or verbatim `f64` bit
+/// patterns from the payload.
 fn stamp_sketch_baseline(ir: &mut CadIr, native: &crate::native::SldprtNative) {
     let neutral_hash = crate::resolved_features::hashes::sketch_hash(ir);
     let constraint_hash = crate::resolved_features::hashes::constraint_hash(ir);
@@ -3912,17 +3896,9 @@ pub(crate) fn brep_local_sha256(ir: &CadIr) -> String {
     cadmpeg_ir::hash::canonical_json_sha256(&normalized)
 }
 
-/// The machine-local content digest recorded as the SLDPRT
-/// `document_local_sha256` attribute.
+/// Machine-local `document_local_sha256` for the SLDPRT write-path edit oracle.
 ///
-/// A bitwise digest over the decoded neutral document. Its one consumer is
-/// [`crate::SldprtCodec`]'s write path, which replays the retained source bytes
-/// when the recorded digest still equals a freshly computed one and writes the
-/// document through the semantic writer otherwise. It is not portable across
-/// platforms, because the decoded content includes values derived through libm
-/// transcendentals, and it is intentionally not tolerance-aware, because tolerant
-/// equality is not transitive and cannot back a hash. The `_local_sha256` suffix
-/// states that; see [`cadmpeg_ir::hash::document_local_sha256`].
+/// See [`cadmpeg_ir::hash::document_local_sha256`].
 pub(crate) fn document_local_sha256(ir: &CadIr) -> String {
     cadmpeg_ir::hash::document_local_sha256(ir, "sldprt", "sldprt:file:source-image#0")
 }
@@ -4229,9 +4205,9 @@ mod design_loss_tests {
             ir.model.configurations.push(DesignConfiguration {
                 id: ConfigurationId(format!("configuration-{ordinal}")),
                 ordinal,
-                active: ordinal == 0,
+                active: (ordinal == 0).into(),
                 source_index: Some(ordinal),
-                name: format!("Configuration {ordinal}"),
+                name: format!("Configuration {ordinal}").into(),
                 material: None,
                 properties: BTreeMap::new(),
                 bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
@@ -4309,7 +4285,7 @@ mod design_loss_tests {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId("configuration".into()),
             ordinal: 0,
-            active: true,
+            active: true.into(),
             source_index: Some(0),
             name: "Configuration".into(),
             material: None,
@@ -4396,7 +4372,7 @@ mod design_loss_tests {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId("configuration".into()),
             ordinal: 0,
-            active: true,
+            active: true.into(),
             source_index: Some(0),
             name: "Configuration".into(),
             material: None,
@@ -4478,9 +4454,9 @@ mod design_loss_tests {
             ir.model.configurations.push(DesignConfiguration {
                 id: ConfigurationId(format!("configuration-{ordinal}")),
                 ordinal,
-                active,
+                active: active.into(),
                 source_index: Some(ordinal),
-                name: format!("Configuration {ordinal}"),
+                name: format!("Configuration {ordinal}").into(),
                 material: None,
                 properties: BTreeMap::new(),
                 bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
@@ -5780,7 +5756,7 @@ mod design_loss_tests {
         let configuration = |id: &str, ordinal, source_index| DesignConfiguration {
             id: ConfigurationId(id.into()),
             ordinal,
-            active: false,
+            active: false.into(),
             source_index,
             name: id.into(),
             material: None,
@@ -5832,9 +5808,9 @@ mod design_loss_tests {
             ir.model.configurations.push(DesignConfiguration {
                 id: ConfigurationId(format!("configuration:{ordinal}")),
                 ordinal,
-                active: false,
+                active: false.into(),
                 source_index: Some(5),
-                name: format!("Configuration {ordinal}"),
+                name: format!("Configuration {ordinal}").into(),
                 material: None,
                 properties: BTreeMap::new(),
                 bodies: cadmpeg_ir::ConfigurationBodies::Unresolved,
@@ -5876,7 +5852,7 @@ mod design_loss_tests {
 
         assert_eq!(ir.model.configurations.len(), 1);
         let configuration = &ir.model.configurations[0];
-        assert!(!configuration.active);
+        assert!(configuration.active.is_inactive());
         assert_eq!(configuration.source_index, Some(3));
         assert_eq!(configuration.bodies, vec![body]);
 
@@ -5903,7 +5879,7 @@ mod design_loss_tests {
             ir.model.configurations.push(DesignConfiguration {
                 id: ConfigurationId(id.into()),
                 ordinal: ir.model.configurations.len() as u32,
-                active: false,
+                active: false.into(),
                 source_index: Some(5),
                 name: id.into(),
                 material: None,
@@ -5944,7 +5920,7 @@ mod design_loss_tests {
             ir.model.configurations.push(DesignConfiguration {
                 id: ConfigurationId(format!("configuration:{position}")),
                 ordinal,
-                active: position == 1,
+                active: (position == 1).into(),
                 source_index: Some(position as u32),
                 name: name.into(),
                 material: None,
@@ -5988,7 +5964,7 @@ mod design_loss_tests {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId("configuration".into()),
             ordinal: 0,
-            active: true,
+            active: true.into(),
             source_index: Some(5),
             name: "Default".into(),
             material: None,
@@ -6025,7 +6001,7 @@ mod design_loss_tests {
         let configuration = |id: &str, ordinal, bodies| DesignConfiguration {
             id: ConfigurationId(id.into()),
             ordinal,
-            active: ordinal == 0,
+            active: (ordinal == 0).into(),
             source_index: Some(ordinal),
             name: id.into(),
             material: None,
@@ -6087,7 +6063,7 @@ mod design_loss_tests {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId("configuration".into()),
             ordinal: 0,
-            active: true,
+            active: true.into(),
             source_index: Some(0),
             name: "Default".into(),
             material: None,
@@ -6145,7 +6121,7 @@ mod design_loss_tests {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId("configuration".into()),
             ordinal: 0,
-            active: true,
+            active: true.into(),
             source_index: Some(0),
             name: "Default".into(),
             material: None,

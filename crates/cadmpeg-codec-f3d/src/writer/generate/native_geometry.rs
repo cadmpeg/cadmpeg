@@ -941,10 +941,18 @@ fn native_procedural_surface_definition(
             axis_origin,
             axis_direction,
             angular_interval,
+            angular_parameter_interval,
             parameter_interval,
             transposed,
             revision_form,
         } => {
+            if angular_parameter_interval
+                .is_some_and(|parameter_interval| parameter_interval != *angular_interval)
+            {
+                return Err(CodecError::NotImplemented(
+                    "F3D rot_spl_sur cannot encode a distinct angular parameter interval".into(),
+                ));
+            }
             if let Some(form) = revision_form {
                 if form.revision <= 0 {
                     return Err(CodecError::Malformed(
@@ -2567,10 +2575,7 @@ fn encode_native_net_surface(
     Ok(())
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn encode_native_sweep_surface(
     bytes: &mut Vec<u8>,
     target: &CadIr,
@@ -2984,10 +2989,7 @@ fn encode_native_sweep_surface(
     Ok(())
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn encode_native_loft(
     bytes: &mut Vec<u8>,
     target: &CadIr,
@@ -3088,10 +3090,7 @@ fn encode_native_loft(
     Ok(())
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn encode_native_extrusion(
     bytes: &mut Vec<u8>,
     target: &CadIr,
@@ -4142,10 +4141,7 @@ fn encode_complete_native_rolling_ball(
     Ok(())
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn encode_native_rolling_ball(
     bytes: &mut Vec<u8>,
     target: &CadIr,

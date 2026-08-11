@@ -91,10 +91,6 @@ pub fn decode(
     ));
     make_sibling_ordinals_unique(&mut root.ir.model.occurrences);
     root.ir.finalize();
-    // The merged document is a different document from the root member, so its
-    // write-path baseline is restamped over the merged content. See
-    // `crate::decode::document_local_sha256` for what the baseline does and does
-    // not claim.
     let hash = crate::decode::document_local_sha256(&root.ir);
     if let Some(source) = &mut root.ir.source {
         source.attributes.insert(

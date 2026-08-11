@@ -272,9 +272,6 @@ impl Encoder for SldprtCodec {
             .source
             .as_ref()
             .is_some_and(|source| source.format == "sldprt");
-        // The writer above reports the resolution it could see; this branch is
-        // the only place that knows whether the retained source image was
-        // actually replayed.
         report.fidelity = match (input.fidelity.is_some() || expects_preserved_source, replay) {
             (_, true) => FidelityResolution::Replayed,
             (true, false) => FidelityResolution::Degraded {
@@ -379,3 +376,5 @@ mod golden_tests;
 mod spatial_write_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod writer_roundtrip_tests;

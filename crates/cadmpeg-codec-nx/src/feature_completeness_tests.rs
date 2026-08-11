@@ -2,10 +2,7 @@
 //! Feature-completeness predicates owned by `decode`.
 
 #![allow(clippy::unwrap_used)]
-#![allow(
-    clippy::default_trait_access,
-    reason = "Test fixtures use type-inferred defaults for compact record construction."
-)]
+#![allow(clippy::default_trait_access)]
 
 #[test]
 fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operands() {
@@ -1439,7 +1436,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("test:configuration#0".into()),
         ordinal: 0,
-        active: true,
+        active: true.into(),
         source_index: Some(0),
         name: "Model".into(),
         material: None,
@@ -1462,13 +1459,13 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     super::append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 
-    ir.model.configurations[0].active = false;
+    ir.model.configurations[0].active = false.into();
     losses.clear();
     super::append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("1 NX design configuration"));
 
-    ir.model.configurations[0].active = true;
+    ir.model.configurations[0].active = true.into();
     let output = ir.model.bodies[0].id.clone();
     let feature = Feature {
         id: FeatureId("test:feature#base".into()),

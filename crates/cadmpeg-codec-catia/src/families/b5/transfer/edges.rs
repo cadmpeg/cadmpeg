@@ -193,11 +193,19 @@ pub(super) fn orient_b5_supports_to_edge(
         let Some([start, end]) = b5_support_endpoints(support, surfaces, pcurves) else {
             continue;
         };
-        let forward = distance(start, endpoints[0]) <= tolerances[0]
-            && distance(end, endpoints[1]) <= tolerances[1];
-        let reversed = distance(end, endpoints[0]) <= tolerances[0]
-            && distance(start, endpoints[1]) <= tolerances[1];
-        if !forward && reversed {
+        let forward_residuals = [distance(start, endpoints[0]), distance(end, endpoints[1])];
+        let reversed_residuals = [distance(end, endpoints[0]), distance(start, endpoints[1])];
+        let forward = forward_residuals
+            .iter()
+            .zip(tolerances)
+            .all(|(residual, tolerance)| *residual <= tolerance);
+        let reversed = reversed_residuals
+            .iter()
+            .zip(tolerances)
+            .all(|(residual, tolerance)| *residual <= tolerance);
+        let reversed_is_closer = reversed_residuals[0].max(reversed_residuals[1])
+            < forward_residuals[0].max(forward_residuals[1]);
+        if reversed && (!forward || reversed_is_closer) {
             support.2.swap(0, 1);
         }
     }

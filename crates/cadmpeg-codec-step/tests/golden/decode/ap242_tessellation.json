@@ -1,0 +1,457 @@
+{
+  "ir": {
+    "ir_version": "5",
+    "model": {
+      "appearance_bindings": [
+        {
+          "appearance": "step:presentation:appearance#70",
+          "id": "step:presentation:binding#77:0-0",
+          "source_entity_id": "#77",
+          "target": {
+            "id": "step:tessellation:mesh#7",
+            "kind": "tessellation"
+          }
+        }
+      ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.20000000298023224,
+            "g": 0.800000011920929,
+            "r": 0.10000000149011612
+          },
+          "id": "step:presentation:appearance#70",
+          "name": "mesh green",
+          "schema": "step_surface_style"
+        }
+      ],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "step:data:body#38",
+          "kind": "sheet",
+          "regions": [
+            "step:data:region#38"
+          ]
+        }
+      ],
+      "coedges": [
+        {
+          "edge": "step:data:edge#26",
+          "id": "step:data:coedge#29-face-36",
+          "next": "step:data:coedge#30-face-36",
+          "owner_loop": "step:data:loop#32-face-36",
+          "previous": "step:data:coedge#31-face-36",
+          "radial_next": "step:data:coedge#29-face-36",
+          "sense": "forward"
+        },
+        {
+          "edge": "step:data:edge#27",
+          "id": "step:data:coedge#30-face-36",
+          "next": "step:data:coedge#31-face-36",
+          "owner_loop": "step:data:loop#32-face-36",
+          "previous": "step:data:coedge#29-face-36",
+          "radial_next": "step:data:coedge#30-face-36",
+          "sense": "forward"
+        },
+        {
+          "edge": "step:data:edge#28",
+          "id": "step:data:coedge#31-face-36",
+          "next": "step:data:coedge#29-face-36",
+          "owner_loop": "step:data:loop#32-face-36",
+          "previous": "step:data:coedge#30-face-36",
+          "radial_next": "step:data:coedge#31-face-36",
+          "sense": "forward"
+        }
+      ],
+      "configurations": [],
+      "curves": [
+        {
+          "geometry": {
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:curve#23"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": -0.7071067811865475,
+              "y": 0.7071067811865475,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 10.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:curve#24"
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": -1.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 10.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:curve#25"
+        }
+      ],
+      "drawings": [],
+      "edges": [
+        {
+          "curve": "step:data:curve#23",
+          "end": "step:data:vertex#14",
+          "id": "step:data:edge#26",
+          "param_range": [
+            0.0,
+            10.0
+          ],
+          "start": "step:data:vertex#13"
+        },
+        {
+          "curve": "step:data:curve#24",
+          "end": "step:data:vertex#15",
+          "id": "step:data:edge#27",
+          "param_range": [
+            0.0,
+            14.142135623730953
+          ],
+          "start": "step:data:vertex#14"
+        },
+        {
+          "curve": "step:data:curve#25",
+          "end": "step:data:vertex#13",
+          "id": "step:data:edge#28",
+          "param_range": [
+            0.0,
+            10.0
+          ],
+          "start": "step:data:vertex#15"
+        }
+      ],
+      "faces": [
+        {
+          "id": "step:data:face#36",
+          "loops": [
+            "step:data:loop#32-face-36"
+          ],
+          "sense": "forward",
+          "shell": "step:data:shell#37",
+          "surface": "step:data:surface#35"
+        }
+      ],
+      "features": [],
+      "loops": [
+        {
+          "boundary_role": "outer",
+          "coedges": [
+            "step:data:coedge#29-face-36",
+            "step:data:coedge#30-face-36",
+            "step:data:coedge#31-face-36"
+          ],
+          "face": "step:data:face#36",
+          "id": "step:data:loop#32-face-36"
+        }
+      ],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [
+        {
+          "id": "step:data:point#10",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "step:data:point#11",
+          "position": {
+            "x": 10.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "step:data:point#12",
+          "position": {
+            "x": 0.0,
+            "y": 10.0,
+            "z": 0.0
+          }
+        }
+      ],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [
+        {
+          "body": "step:data:body#38",
+          "id": "step:data:region#38",
+          "shells": [
+            "step:data:shell#37"
+          ]
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [
+        {
+          "faces": [
+            "step:data:face#36"
+          ],
+          "id": "step:data:shell#37",
+          "region": "step:data:region#38"
+        }
+      ],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:surface#35"
+        }
+      ],
+      "tessellations": [
+        {
+          "body": "step:data:body#38",
+          "channels": [],
+          "id": "step:tessellation:mesh#4",
+          "normals": [
+            {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            }
+          ],
+          "strip_lengths": [],
+          "triangles": [
+            [
+              0,
+              1,
+              2
+            ]
+          ],
+          "vertices": [
+            {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            {
+              "x": 10.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            {
+              "x": 0.0,
+              "y": 10.0,
+              "z": 0.0
+            }
+          ]
+        },
+        {
+          "channels": [],
+          "id": "step:tessellation:mesh#7",
+          "normals": [
+            {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            },
+            {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            {
+              "x": 0.0,
+              "y": 0.0,
+              "z": -1.0
+            }
+          ],
+          "source_object": {
+            "format": "step",
+            "object_id": "#7"
+          },
+          "strip_lengths": [],
+          "triangles": [
+            [
+              0,
+              1,
+              2
+            ],
+            [
+              2,
+              1,
+              3
+            ],
+            [
+              0,
+              1,
+              3
+            ]
+          ],
+          "vertices": [
+            {
+              "x": 10.0,
+              "y": 10.0,
+              "z": 0.0
+            },
+            {
+              "x": 0.0,
+              "y": 10.0,
+              "z": 0.0
+            },
+            {
+              "x": 10.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          ]
+        }
+      ],
+      "vertices": [
+        {
+          "id": "step:data:vertex#13",
+          "point": "step:data:point#10"
+        },
+        {
+          "id": "step:data:vertex#14",
+          "point": "step:data:point#11"
+        },
+        {
+          "id": "step:data:vertex#15",
+          "point": "step:data:point#12"
+        }
+      ],
+      "view_presentations": []
+    },
+    "native": {
+      "step": {
+        "arenas": {
+          "unknowns": []
+        },
+        "version": 1
+      }
+    },
+    "source": {
+      "attributes": {
+        "bytes_named_opaque": "0",
+        "bytes_structural": "329",
+        "bytes_typed": "3013",
+        "bytes_unclassified": "0",
+        "data_sections": "1",
+        "entity_instances": "67",
+        "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
+      },
+      "format": "step"
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "container_only": false,
+    "format": "step",
+    "geometry_transferred": true,
+    "losses": [
+      {
+        "code": "decode_diagnostic",
+        "message": "tessellation item #7 is not declared by an exact body container; mesh retained as detached",
+        "severity": "warning"
+      },
+      {
+        "code": "reference_graph_not_closed",
+        "message": "tessellation item #7 is not declared by an exact body container; mesh retained as detached",
+        "severity": "warning"
+      },
+      {
+        "code": "geometry_not_transferred",
+        "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
+        "severity": "error"
+      }
+    ],
+    "notes": [
+      "geometric validation surface area triangle sheet: expected 50, tessellation approximation 50",
+      "geometric validation centroid triangle centroid: expected (3.333333333333333,3.333333333333333,0), tessellation approximation distance 0",
+      "geometric validation volume open sheet volume: expected 0, tessellation approximation 0",
+      "geometric validation surface area intentional mismatch: expected 51, tessellation approximation 50",
+      "byte accounting: 329 structural, 3013 typed, 0 named opaque, 0 unclassified"
+    ]
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "version": "3"
+  }
+}

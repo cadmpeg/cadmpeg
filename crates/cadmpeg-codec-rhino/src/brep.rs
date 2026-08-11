@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Isolated `ON_Brep` parsing and semantic validation.
 //!
-//! This module deliberately stops at a validated native representation.  No
-//! topology IDs or IR carriers are created here.
+//! Stops at a validated native representation; no topology IDs or IR carriers.
 
 use std::collections::BTreeSet;
 use std::ops::Range;

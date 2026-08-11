@@ -993,10 +993,7 @@ fn standard_mesh_missing_edge_assignment_domains(
     type PointTransitions = HashMap<usize, Arc<HashSet<usize>>>;
     type DeadState = (usize, usize, u64, Option<u32>, Vec<usize>, bool);
 
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-    )]
+    #[allow(clippy::too_many_arguments)]
     fn enumerate_face(
         face: usize,
         gaps: &[MeshBoundaryGap],
@@ -1026,10 +1023,7 @@ fn standard_mesh_missing_edge_assignment_domains(
             complete: Vec<Vec<MeshEdgePlacementCandidate>>,
         }
         impl Search<'_> {
-            #[allow(
-                clippy::too_many_arguments,
-                reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-            )]
+            #[allow(clippy::too_many_arguments)]
             fn walk(
                 &mut self,
                 gap: usize,
@@ -1066,10 +1060,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                 Some(())
             }
 
-            #[allow(
-                clippy::too_many_arguments,
-                reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-            )]
+            #[allow(clippy::too_many_arguments)]
             fn walk_state(
                 &mut self,
                 gap: usize,

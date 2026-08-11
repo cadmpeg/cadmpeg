@@ -1141,10 +1141,7 @@ fn try_decode_geometry(
                 definition: ProceduralSurfaceDefinition::Offset {
                     support,
                     distance: offset.distance,
-                    // OFFSET_SURF status fields do not select parameter
-                    // direction. The exact fields remain in the native
-                    // source record; the neutral IR senses are intentionally
-                    // unknown.
+                    // OFFSET_SURF status fields do not select parameter direction.
                     u_sense: None,
                     v_sense: None,
                     extension_flags: Vec::new(),
@@ -1626,12 +1623,7 @@ fn try_decode_geometry(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    // Extract the native model once, before body selection: terminal-feature
-    // body selection and annotation attachment both read it, and extraction is
-    // pure, so building it here avoids re-parsing the same container/stream
-    // bytes for the seven feature/segment families body selection consumes.
-    // This moves extraction slightly earlier on the geometry path — the RFC's
-    // accepted memory-high-water cost.
+    // Extract once: body selection and annotation attachment both read it.
     let model =
         crate::native::NativeModel::extract(ctx, root, &scan.container, &scan.streams, &parsed);
     let mut active_body_selection = select_active_body(&mut ir, &body_node_ids, &rmfastload_ids);
@@ -3879,10 +3871,7 @@ fn blend_surface_frame_with_index(
     Some((center, tangent, first, second, radius))
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn spine_contact_direction_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     support: &SurfaceId,
@@ -6311,12 +6300,7 @@ fn normalize_pcurve_parameters(
     Some(())
 }
 
-// The parameters are the per-stream lookup tables produced by the decode pass;
-// bundling them into a struct would only rename the same lookup tables.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn emit_topology(
     ir: &mut CadIr,
     stream_index: usize,
@@ -8579,12 +8563,7 @@ fn boundary_curve_speed_bound(
     }
 }
 
-// The transfer contract needs both support charts, their shared carrier, and
-// the reusable model index; grouping them would hide rather than reduce state.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn transfer_intersection_pcurve(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     ir: &CadIr,
@@ -8660,10 +8639,7 @@ fn transfer_intersection_pcurve(
 
 type TransferredPcurveSample = (f64, Point2, Point3);
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn transferred_pcurve_sample(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     ir: &CadIr,
@@ -8783,10 +8759,7 @@ fn blend_boundary_spine_geometry_matches(
     (radial.x * tangent.x + radial.y * tangent.y + radial.z * tangent.z).abs() <= angular_tolerance
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn append_transferred_pcurve_segment(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     ir: &CadIr,
@@ -9152,10 +9125,7 @@ fn pcurve_matches_edge_range_with_index(
             && point_distance(coincident_surface[1], start) <= allowance)
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn retain_unresolved_topology_carriers(
     ir: &mut CadIr,
     stream_index: usize,
@@ -9264,10 +9234,7 @@ pub(crate) fn decoded_tolerance(value: f64) -> Option<f64> {
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn synthesize_closed_edge_vertex(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -9843,12 +9810,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .iter()
         .map(|body| body.id.clone())
         .collect::<Vec<_>>();
-    // A retained segment-body input is represented as a BaseFeature so that
-    // the saved body census has an explicit replay boundary. It is not an
-    // evaluated history writer. Do not use a closure rooted only in that
-    // boundary to suppress losses for the retained operation stream: without
-    // a non-BaseFeature writer, the body-to-history relation is still
-    // unproven and conservative accounting is required.
+    // Require a non-BaseFeature writer before treating body-to-history as proven.
     let active_features = crate::native::history::active_feature_closure(ir, &current_body_ids)
         .filter(|active| {
             active.iter().any(|id| {
@@ -9891,7 +9853,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .model
         .configurations
         .iter()
-        .filter(|configuration| configuration.active)
+        .filter(|configuration| configuration.active.is_active())
         .count();
     let current_bodies = ir
         .model
@@ -9906,12 +9868,12 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .filter(|configuration| {
             configuration.bodies.is_unresolved()
                 || active_configuration_count != 1
-                || (configuration.active
+                || (configuration.active.is_active()
                     && configuration.bodies.resolved().is_none_or(|bodies| {
                         bodies.len() != current_bodies.len()
                             || bodies.iter().collect::<BTreeSet<_>>() != current_bodies
                     }))
-                || (configuration.active
+                || (configuration.active.is_active()
                     && active_configuration_state_is_incomplete(ir, configuration))
         })
         .count();

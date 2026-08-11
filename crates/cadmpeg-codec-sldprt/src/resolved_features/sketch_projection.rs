@@ -60,10 +60,7 @@ pub fn sketches(
     (sketches, entities, constraints)
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn project_brep(
     brep: &crate::brep::Brep,
     block_offset: usize,

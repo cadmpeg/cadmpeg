@@ -558,12 +558,8 @@ pub(crate) fn exact_circular_pattern(
     {
         return None;
     }
-    // Relation ordinals are per-member counters and do not classify a member as
-    // center, seed, or generated. Anchor the partition to geometry instead:
-    // require the member and returned id sets to be equal and duplicate-free,
-    // then let the rotation search below pick the center/seed/generated split.
-    // Ambiguity (more than one viable center) falls through to the caller's
-    // lossless native fallback rather than guessing.
+    // Relation ordinals do not classify center/seed/generated; partition by
+    // geometry when the member and returned id sets match.
     let member_ids = members
         .iter()
         .map(|entity| &entity.id)
@@ -1309,8 +1305,7 @@ mod tests {
         let seed = circle("generated:circle#seed", 0.0);
         let middle = circle("generated:circle#middle", std::f64::consts::TAU / 3.0);
         let last = circle("generated:circle#last", 2.0 * std::f64::consts::TAU / 3.0);
-        // Relation ordinals are deliberately uninformative here: all zero. The
-        // geometry must still resolve the center/seed/generated partition.
+        // Ordinals are all zero; geometry must still partition the members.
         let relation = SketchRelation {
             id: "f3d:native:sketch-relation#circular".into(),
             record_index: 10,

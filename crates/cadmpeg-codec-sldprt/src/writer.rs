@@ -228,14 +228,22 @@ pub(crate) fn write_semantic_with_records(
         &active_partition_section,
         retain_native_brep,
     )?;
-    if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
+    if let Some(active) = ir
+        .model
+        .configurations
+        .iter()
+        .find(|value| value.active.is_active())
+    {
+        let active_name = active.name.resolved().ok_or_else(|| {
+            CodecError::Malformed("active SLDPRT configuration has no resolved name".into())
+        })?;
         let has_document_envelope = opaque
             .iter()
             .any(|(_, payload)| payload.windows(12).any(|window| window == b"swSolidWorks"));
         if !has_document_envelope {
             sections.push((
                 "Contents/SolidWorks".into(),
-                generated_solidworks_xml(ir, &active.name),
+                generated_solidworks_xml(ir, active_name),
             ));
         }
     }
@@ -263,15 +271,19 @@ fn assign_configuration_indices(
     let mut used = HashSet::new();
     let mut names = HashSet::new();
     for configuration in configurations.iter() {
-        if configuration.name.trim().is_empty() {
+        let Some(name) = configuration.name.resolved() else {
+            return Err(CodecError::Malformed(
+                "SLDPRT configuration has no resolved name".into(),
+            ));
+        };
+        if name.trim().is_empty() {
             return Err(CodecError::Malformed(
                 "SLDPRT configuration has an empty name".into(),
             ));
         }
-        if !names.insert(configuration.name.as_str()) {
+        if !names.insert(name) {
             return Err(CodecError::Malformed(format!(
-                "SLDPRT repeats configuration name {:?}",
-                configuration.name
+                "SLDPRT repeats configuration name {name:?}"
             )));
         }
         if let Some(index) = configuration.source_index {
@@ -325,14 +337,7 @@ fn push_xml_attribute_value(output: &mut String, value: &str) {
 /// Drop the design-state snapshot the decoder fabricates on the active
 /// configuration when the native records carry none.
 ///
-/// That snapshot mirrors model-level features and parameters so a reader sees a
-/// populated configuration, but nothing in the file encodes it: with no
-/// feature-input lane there is no way to write it back. Leaving it in place
-/// makes the write path reason about configuration-local design state that does
-/// not exist, which surfaces as dangling feature-state references once a caller
-/// edits the model, and as phantom native-edit conflicts once a caller edits a
-/// parameter. The decoder re-fabricates it on read-back, so dropping it here
-/// costs nothing observable.
+/// Nothing in the file encodes that snapshot, so it cannot be written back.
 fn drop_synthesized_configuration_snapshot(ir: &mut CadIr) {
     let Some(id) = ir.source.as_ref().and_then(|source| {
         source
@@ -568,7 +573,7 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
         .model
         .configurations
         .iter()
-        .all(|configuration| !configuration.active)
+        .all(|configuration| !configuration.active.is_active())
     {
         return Err(CodecError::NotImplemented(
             "SLDPRT semantic writing requires an active partition identity for a multi-partition source"
@@ -580,7 +585,7 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
             .model
             .configurations
             .iter()
-            .filter(|configuration| configuration.active)
+            .filter(|configuration| configuration.active.is_active())
             .count()
             != 1
     {
@@ -923,8 +928,18 @@ fn opaque_blocks(
                     return Some(Err(error));
                 }
             }
-            if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
-                match patch_active_configuration_xml(&payload, &active.name) {
+            if let Some(active) = ir
+                .model
+                .configurations
+                .iter()
+                .find(|value| value.active.is_active())
+            {
+                let Some(active_name) = active.name.resolved() else {
+                    return Some(Err(CodecError::Malformed(
+                        "active SLDPRT configuration has no resolved name".into(),
+                    )));
+                };
+                match patch_active_configuration_xml(&payload, active_name) {
                     Ok(Some(patched)) => payload = patched,
                     Ok(None) => {}
                     Err(error) => return Some(Err(error)),
@@ -1468,15 +1483,10 @@ fn metadata_source_position(id: &str) -> Option<(u64, u64)> {
     Some((section.parse().ok()?, offset.parse().ok()?))
 }
 
-/// This codec's document attributes, ordered as their records appear in the
-/// source payload rather than by identifier.
+/// This codec's document attributes, ordered by source payload position.
 ///
-/// The arena is sorted by identifier, which orders the records by attribute
-/// name. Writing that order rebuilds the payload with every record at a
-/// different byte offset, and the next decode mints identifiers from those
-/// offsets, so a rewrite that changed nothing would still rename every metadata
-/// attribute. Attributes whose identifier carries no record position keep their
-/// arena order, after the located ones.
+/// Arena order is by identifier name; writing that order would move every
+/// record and rename attributes minted from byte offsets.
 fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribute> {
     let mut attributes = ir
         .model

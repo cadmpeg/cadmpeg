@@ -276,11 +276,6 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     let mut round_trip = cadmpeg_ir::NativeNamespace::default();
     typed.store(&mut round_trip).unwrap();
     assert_eq!(typed, crate::native::F3dNative::load(&round_trip).unwrap());
-    // Storing what was loaded reproduces the stored arenas exactly, including
-    // the construction-history tree that `load` grafts across five arenas and
-    // `store` splits apart again. `f3z` merging depends on it: it appends a
-    // member's stored records onto the root's rather than routing the merged
-    // population through the typed form.
     for name in crate::native::F3D_ARENA_NAMES {
         assert_eq!(
             round_trip.arenas.get(*name),
@@ -1691,7 +1686,6 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
 fn legacy_law_intcurve_round_trips_byte_exactly() {
     use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition};
 
-    // The pre-stamp layout must keep decoding and re-emitting without regression.
     let smbh = synthetic_geometry_with_law_curve_smbh();
     let decoded = F3dCodec
         .decode(
@@ -6251,7 +6245,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .model
         .configurations
         .iter()
-        .map(|configuration| (configuration.name.as_str(), configuration.ordinal))
+        .filter_map(|configuration| Some((configuration.name.resolved()?, configuration.ordinal)))
         .collect::<Vec<_>>();
     authored.sort_by_key(|(_, ordinal)| *ordinal);
     assert_eq!(authored, [("Small", 0), ("Medium", 1), ("Large", 2)]);
@@ -6262,7 +6256,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .iter()
         .find(|configuration| configuration.name == "Medium")
         .expect("active medium configuration");
-    assert!(medium.active);
+    assert!(medium.active.is_active());
     assert_eq!(medium.properties["parameter:width"], "25 mm");
     assert_eq!(medium.properties["suppressed:slot"], "true");
     assert_eq!(
@@ -6328,7 +6322,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .iter_mut()
         .find(|configuration| configuration.name == "Medium")
         .expect("active medium configuration")
-        .active = false;
+        .active = false.into();
     let error = F3dCodec
         .plan(cadmpeg_ir::codec::EncodeInput {
             ir: &inconsistent,
@@ -10020,7 +10014,6 @@ fn design_type_table_attributes_each_entry_to_its_own_type() {
         }
     }
 
-    // A stream that does not close on its own end is rejected whole.
     let mut trailing = bytes.clone();
     trailing.push(0);
     assert!(parse(&trailing, "trailing MetaStream").is_err());
@@ -14814,7 +14807,6 @@ fn decode_yields_metadata_and_honest_report() {
     let mut cur = Cursor::new(f3d);
     let result = codec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    // No geometry was produced, and the report says so.
     assert!(!result.report.geometry_transferred);
     assert!(result.ir.model.faces.is_empty());
     assert!(result.report.error_count() >= 1);
@@ -14823,8 +14815,6 @@ fn decode_yields_metadata_and_honest_report() {
         cadmpeg_ir::report::LossCategory::Geometry
     )));
 
-    // But the explicit fallback BREP is preserved as an unknown passthrough with a hash,
-    // and source metadata was captured.
     let unknowns = result.ir.native_unknowns("f3d").unwrap();
     assert_eq!(unknowns.len(), 1);
     assert_eq!(result.source_fidelity.retained_records.len(), 2);
@@ -15000,7 +14990,6 @@ fn sab_framer_indexes_records_from_asmheader() {
     assert_eq!(records[6].name, "plane-surface");
     // The face's surface reference (chunk[7]) resolves to the plane at index 6.
     assert_eq!(records[4].ref_at(7), Some(6));
-    // The delta_state boundary record is not part of the active slice.
     assert!(records.iter().all(|r| r.head != "delta_state"));
 }
 
@@ -16141,9 +16130,7 @@ fn decode_succeeds_when_geometry_present() {
 fn decode_keeps_face_on_unknown_surface() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
-    // Rename the plane record so the face rests on a carrier this codec does not
-    // decode. The face must now be KEPT — topology intact — with an
-    // unknown-geometry surface linking to the preserved record bytes.
+    // Rename the plane so the face rests on an undecoded carrier.
     let mut smbh = synthetic_geometry_smbh();
     let needle = b"\x0e\x05plane";
     let pos = smbh
@@ -16158,14 +16145,12 @@ fn decode_keeps_face_on_unknown_surface() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    // Topology is transferred: the face, its loop, coedges, and vertices survive.
     assert!(result.report.geometry_transferred);
     assert_eq!(result.ir.model.faces.len(), 1);
     assert_eq!(result.ir.model.coedges.len(), 3);
     assert_eq!(result.ir.model.vertices.len(), 3);
     assert_eq!(result.ir.model.surfaces.len(), 1);
 
-    // The one surface is unknown-geometry and links to a preserved record.
     let SurfaceGeometry::Unknown { record } = &result.ir.model.surfaces[0].geometry else {
         panic!("expected unknown surface geometry");
     };
@@ -16180,7 +16165,6 @@ fn decode_keeps_face_on_unknown_surface() {
         "the linked unknown record is present in the arena"
     );
 
-    // The loss note is a Warning now (topology transferred), not an Error.
     let note = result
         .report
         .losses
@@ -16738,6 +16722,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
             axis_origin,
             axis_direction,
             angular_interval,
+            angular_parameter_interval,
             parameter_interval,
             transposed,
             revision_form: None,
@@ -16754,6 +16739,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
         );
         assert_eq!(*angular_interval, [0.0, 1.0]);
+        assert_eq!(*angular_parameter_interval, None);
         assert_eq!(*parameter_interval, Some([0.0, 1.0]));
         assert!(!transposed);
         assert!(result
@@ -21239,8 +21225,6 @@ fn generated_revision_compound_loft_rejects_present_parameters_without_a_curve()
             ProceduralSurfaceDefinition::RevisionCompoundLoft { .. }
         )));
 
-    // The writer refuses the same state rather than emitting bytes no reader
-    // can recover the curve from.
     let legal = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh(&synthetic_revision_surface_smbh(
@@ -25452,8 +25436,7 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
     };
-    // The base record is deliberately first. Prefix-only selection would bind
-    // it instead of the revision token carried by the face assignment.
+    // Base record first so prefix-only selection cannot bind it.
     ir.model.appearances.extend([
         appearance("appearance:base", visual_family),
         appearance("appearance:revision", visual_guid),
@@ -26191,7 +26174,6 @@ fn a_sketch_link_decodes_in_every_payload_form() {
             .sense,
         None
     );
-    // Form 2 without its trailing `0`, and form 0 with one, are misframed.
     assert!(decoded_sketch_link(SketchLinkForm::Integers(2, &[113, 0, 1, 2, 3])).is_none());
     assert!(decoded_sketch_link(SketchLinkForm::Integers(0, &[113, 0, 1, 2, 3, 0])).is_none());
 }
@@ -26288,8 +26270,6 @@ fn decode_mixed_analytic_and_unknown_faces_sharing_an_edge() {
 
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
-    // Both the analytic face and the unknown-surface face are present and each
-    // references a surface that exists in the arena.
     assert_eq!(result.ir.model.surfaces.len(), 2);
 }
 
@@ -26505,8 +26485,6 @@ fn legacy_face_appearance_assignment_decodes_both_variable_width_forms() {
 
 #[test]
 fn face_appearance_assignment_rejects_entity_id_and_uppercase_targets() {
-    // A body-style assignment has an entity id, not a face GUID, before the
-    // visual token. Uppercase or mixed-case GUIDs are not face identities.
     for target in [
         "0_985",
         "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C",
@@ -27340,9 +27318,7 @@ fn a_present_brep_stream_is_never_reclassified_as_sketch_only() {
     assert_eq!(report.losses.len(), 3);
 }
 
-/// A text-encoded carrier holds a B-rep this codec does not read. A document
-/// that has one is not sketch-only however many sketches it also carries:
-/// calling it complete would hide the whole of its solid geometry.
+/// A text-encoded B-rep carrier is not sketch-only, regardless of sketch count.
 #[test]
 fn a_text_brep_carrier_is_never_reclassified_as_sketch_only() {
     let mut report = brep_less_geometry_report();
@@ -27368,7 +27344,6 @@ fn text_encoded_asm_members_classify_as_geometry_carriers() {
             "{name} must classify as a text-encoded BREP carrier"
         );
     }
-    // The binary roles keep their own labels: the new arm must not capture them.
     assert_eq!(
         crate::container::classify("a/b.smb"),
         crate::container::role::BREP_SMB

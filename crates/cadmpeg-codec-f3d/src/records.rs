@@ -2780,10 +2780,6 @@ pub enum DesignEdgeWidthMode {
 #[cfg(test)]
 impl DesignParameterScope {
     /// Build a scope carrying only its identity, kind, and record index.
-    ///
-    /// Sheet-metal and other projection tests set the few typed members their
-    /// family reads and leave the rest empty, so a new member does not require
-    /// an edit in every test that constructs a scope.
     pub(crate) fn empty(id: &str, kind: &str, record_index: u32) -> Self {
         Self {
             id: id.to_string(),
@@ -3056,9 +3052,7 @@ pub struct DesignCopyPasteBodiesOperation {
 /// Typed construction data carried by a Fusion direct-modeling Base Feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-// Keep the legacy result-body JSON shape while allowing the native record to
-// grow form-specific fields. The required field sets are disjoint, so the
-// decoder remains unambiguous without adding a breaking discriminator field.
+// Untagged: required field sets are disjoint across variants.
 #[serde(untagged)]
 pub enum DesignBaseFeatureConstruction {
     /// Counted body, passive-reference, metadata, and result runs.

@@ -900,7 +900,7 @@ impl MeshQuotient {
         )
     }
 
-    fn signature_work(&mut self) -> usize {
+    pub(crate) fn signature_work(&mut self) -> usize {
         let mut work = 0usize;
         for node in 0..self.union.len() {
             if self.union.find(node) == node {
@@ -1378,10 +1378,7 @@ impl MeshQuotient {
         }
     }
 
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "Coordinate-root closure receives independent topology arenas and monotonic result flags."
-    )]
+    #[allow(clippy::too_many_arguments)]
     fn close_coordinate_roots_with_incidence(
         &mut self,
         point_count: usize,
@@ -1401,10 +1398,7 @@ impl MeshQuotient {
                     .any(|pair| same_unordered_pair(*pair, [left, right]))
         }
 
-        #[allow(
-            clippy::too_many_arguments,
-            reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-        )]
+        #[allow(clippy::too_many_arguments)]
         fn partial_ordered_assignment_viable(
             assignment: &MeshFaceBoundaryAssignment,
             local_edge_by_id: &HashMap<usize, usize>,
@@ -1492,10 +1486,7 @@ impl MeshQuotient {
             })
         }
 
-        #[allow(
-            clippy::too_many_arguments,
-            reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-        )]
+        #[allow(clippy::too_many_arguments)]
         fn partial_compact_assignment_viable(
             domain: &MeshFaceBoundaryDomain,
             local_edge_by_id: &HashMap<usize, usize>,
@@ -1635,10 +1626,7 @@ impl MeshQuotient {
             }
         }
 
-        #[allow(
-            clippy::too_many_arguments,
-            reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-        )]
+        #[allow(clippy::too_many_arguments)]
         fn walk(
             domains: &[Vec<usize>],
             edges: &[[usize; 2]],
@@ -1699,10 +1687,7 @@ impl MeshQuotient {
                 }
             }
 
-            #[allow(
-                clippy::too_many_arguments,
-                reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-            )]
+            #[allow(clippy::too_many_arguments)]
             fn assign(
                 root: usize,
                 point: usize,
@@ -1737,10 +1722,7 @@ impl MeshQuotient {
                 assigned[root] = None;
             }
 
-            #[allow(
-                clippy::too_many_arguments,
-                reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-            )]
+            #[allow(clippy::too_many_arguments)]
             fn rollback(
                 assigned: &mut [Option<usize>],
                 point_uses: &mut [usize],
@@ -2993,10 +2975,7 @@ impl MeshQuotient {
                 .checked_add(usize::from(!reversed))
         }
 
-        #[allow(
-            clippy::too_many_arguments,
-            reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-        )]
+        #[allow(clippy::too_many_arguments)]
         fn walk(
             boundaries: &[Vec<MeshBoundaryEdgeCandidate>],
             boundary_index: usize,
@@ -3350,10 +3329,7 @@ impl MeshQuotient {
             )
         }
 
-        #[allow(
-            clippy::too_many_arguments,
-            reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-        )]
+        #[allow(clippy::too_many_arguments)]
         fn value_viable(
             root: usize,
             point: usize,
@@ -3405,10 +3381,7 @@ impl MeshQuotient {
             })
         }
 
-        #[allow(
-            clippy::too_many_arguments,
-            reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-        )]
+        #[allow(clippy::too_many_arguments)]
         fn walk(
             domains: &[Arc<HashSet<usize>>],
             edge_roots: &[[usize; 2]],
@@ -3658,10 +3631,7 @@ fn deferred_face_quotient_options_limited(
         capacity: usize,
     }
 
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-    )]
+    #[allow(clippy::too_many_arguments)]
     fn fill_gap(
         gaps: &[Gap],
         gap: usize,
@@ -3750,10 +3720,7 @@ fn deferred_face_quotient_options_limited(
         }
     }
 
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-    )]
+    #[allow(clippy::too_many_arguments)]
     fn walk_gaps(
         gaps: &[Gap],
         gap: usize,
@@ -5050,10 +5017,14 @@ pub(crate) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
     fn endpoint_adjacency(
         candidates: impl IntoIterator<Item = [usize; 2]>,
         allowed: impl Fn([usize; 2]) -> bool,
+        budget: Option<&WorkBudget<'_>>,
     ) -> Option<HashMap<usize, Vec<usize>>> {
         let mut adjacency = HashMap::<usize, Vec<usize>>::new();
         let mut count = 0usize;
         for pair @ [left, right] in candidates {
+            if budget.is_some_and(|budget| !budget.charge()) {
+                return None;
+            }
             count = count.checked_add(1)?;
             if count > MAX_LOCAL_ENDPOINT_STATES {
                 return None;
@@ -5083,14 +5054,16 @@ pub(crate) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
                 continue;
             }
             let adjacency = match candidates(use_.edge)? {
-                MeshEndpointCandidates::Explicit(values) => {
-                    endpoint_adjacency(values.iter().copied(), |pair| allowed(use_.edge, pair))
-                }
+                MeshEndpointCandidates::Explicit(values) => endpoint_adjacency(
+                    values.iter().copied(),
+                    |pair| allowed(use_.edge, pair),
+                    budget,
+                ),
                 MeshEndpointCandidates::Implicit(values) => {
-                    endpoint_adjacency(values, |pair| allowed(use_.edge, pair))
+                    endpoint_adjacency(values, |pair| allowed(use_.edge, pair), budget)
                 }
                 MeshEndpointCandidates::Selected(value) => {
-                    endpoint_adjacency([value], |pair| allowed(use_.edge, pair))
+                    endpoint_adjacency([value], |pair| allowed(use_.edge, pair), budget)
                 }
             };
             prepared.insert(use_.edge, adjacency?);
@@ -6852,10 +6825,7 @@ fn resolve_standard_mesh_endpoint_candidates(
 /// variables that should be selected before unrelated incidence variables;
 /// those variables do not require a single incidence component.
 #[must_use]
-#[allow(
-    clippy::too_many_arguments,
-    reason = "The parser receives independent native tables and search constraints; bundling them would hide their cardinality contracts."
-)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn parse_standard_mesh_candidate_outcome<F>(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
@@ -7117,6 +7087,42 @@ fn mesh_candidate_rejection_retains_the_failed_solver_stage() {
         },),
         MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure)
     ));
+}
+
+#[test]
+fn endpoint_cycle_adjacency_charges_implicit_candidate_enumeration() {
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 1,
+            reversed: None,
+        }]],
+    };
+    let budget = WorkBudget::new(2);
+
+    assert_eq!(
+        mesh_assignment_endpoint_cycles_viable_by(
+            &assignment,
+            Some(&budget),
+            |_| {
+                Some(MeshEndpointCandidates::Implicit(
+                    MeshImplicitEdgeCandidates {
+                        source: MeshImplicitEdgeCandidateSource::Cartesian {
+                            left: vec![0, 1],
+                            right: vec![2, 3],
+                            left_index: 0,
+                            right_index: 0,
+                            same_root: false,
+                        },
+                    },
+                ))
+            },
+            |_, _| true,
+        ),
+        None
+    );
+    assert!(budget.exhausted());
 }
 
 #[test]

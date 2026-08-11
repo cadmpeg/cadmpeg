@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 #[cfg(test)]
 use std::collections::HashMap;
+use std::ops::Range;
 
 use crate::families::a5a8::records::{
     a5_pcurves_from_records, a5_surfaces_from_records, FreeformSurface,
@@ -32,7 +33,7 @@ use crate::wire::bytes::{
     allocation_ref, compact_int, finite_f64_lane, persistent_ref, read_f64_array,
 };
 use crate::wire::records::{
-    consolidated_records, records_are_contiguous, scan_vertex_records, ConsolidatedFamily,
+    consolidated_records, records_are_contiguous, scan_vertex_record_ranges, ConsolidatedFamily,
     ConsolidatedPcurve, ConsolidatedRecord,
 };
 
@@ -1240,6 +1241,16 @@ pub(crate) fn object_stream_vertices_from_records(
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
 ) -> Vec<Point3> {
+    object_stream_vertex_row_ranges_from_records(data, records)
+        .into_iter()
+        .flat_map(|range| crate::wire::records::scan_vertex_records(&data[range]))
+        .collect()
+}
+
+fn object_stream_vertex_row_ranges_from_records(
+    data: &[u8],
+    records: &[crate::wire::records::ConsolidatedRecord],
+) -> Vec<Range<usize>> {
     let mut ranges = records
         .iter()
         .map(|record| record.range.clone())
@@ -1249,19 +1260,27 @@ pub(crate) fn object_stream_vertices_from_records(
         return Vec::new();
     }
     ranges.sort_unstable_by_key(|range| (range.start, range.end));
-    let mut vertices = Vec::new();
+    let mut rows = Vec::new();
     let mut region_start = 0usize;
     for range in ranges {
         if range.end <= region_start {
             continue;
         }
         if range.start > region_start {
-            vertices.extend(scan_vertex_records(&data[region_start..range.start]));
+            rows.extend(
+                scan_vertex_record_ranges(&data[region_start..range.start])
+                    .into_iter()
+                    .map(|row| row.start + region_start..row.end + region_start),
+            );
         }
         region_start = region_start.max(range.end);
     }
-    vertices.extend(scan_vertex_records(&data[region_start..]));
-    vertices
+    rows.extend(
+        scan_vertex_record_ranges(&data[region_start..])
+            .into_iter()
+            .map(|row| row.start + region_start..row.end + region_start),
+    );
+    rows
 }
 
 #[cfg(test)]

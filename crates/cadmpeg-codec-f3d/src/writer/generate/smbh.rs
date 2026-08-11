@@ -1849,8 +1849,6 @@ fn apply_native_edge_owners(
                     }
                     native_record_index(coedge_start, ordinal)?
                 } else if owners.contains_key(&ownership.edge) {
-                    // Wire coedges are native-only and are reconstructed from
-                    // the shell's wire-edge list before this override runs.
                     continue;
                 } else {
                     return Err(CodecError::Malformed(format!(

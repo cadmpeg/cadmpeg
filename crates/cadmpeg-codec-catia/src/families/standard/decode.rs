@@ -1378,6 +1378,7 @@ pub(crate) fn try_decode_standard(
                         axis_origin: revolution.axis_origin,
                         axis_direction: revolution.axis_direction,
                         angular_interval: revolution.angular_interval,
+                        angular_parameter_interval: Some(revolution.angular_parameter_interval),
                         parameter_interval: Some(revolution.parameter_interval),
                         transposed: false,
                         revision_form: None,
@@ -1957,15 +1958,11 @@ pub(crate) fn standard_object_evidence(
     edge_tags: &HashSet<u32>,
     consolidated_records: &[ConsolidatedRecord],
 ) -> StandardObjectEvidence {
-    let streams = [scan.outer.as_ref(), scan.inner.as_ref()]
-        .into_iter()
-        .flatten()
-        .flat_map(|directory| {
-            directory.descriptors.iter().map(|descriptor| {
-                container::reconstruct_logical_stream(&scan.data, descriptor, directory.inner)
-            })
-        });
-    let mut evidence = standard_object_evidence_from_streams(streams, tags, edge_tags);
+    let mut evidence = standard_object_evidence_from_streams(
+        container::logical_record_streams(scan),
+        tags,
+        edge_tags,
+    );
     merge_standard_limit_curves_from_records(
         &mut evidence.limit_curves,
         &scan.data,
@@ -2004,9 +2001,54 @@ pub(crate) fn standard_object_evidence_from_streams(
     let mut edge_face_candidates = HashMap::<u32, Option<HashSet<u32>>>::new();
     let mut edge_support_candidates = HashMap::<u32, Option<StandardEdgeSupport>>::new();
     let mut limit_curves = Vec::<NurbsCurve>::new();
-    for stream in streams {
-        let records = crate::wire::records::consolidated_records(&stream);
-        merge_standard_limit_curves_from_records(&mut limit_curves, &stream, &records);
+    let streams = streams.into_iter().collect::<Vec<_>>();
+    for stream in &streams {
+        let records = crate::wire::records::consolidated_records(stream);
+        merge_standard_limit_curves_from_records(&mut limit_curves, stream, &records);
+    }
+    let populations = streams
+        .iter()
+        .flat_map(|stream| crate::families::b5::graph::object_stream_populations(stream))
+        .collect::<Vec<_>>();
+    let mut population_objects = HashMap::<u32, Option<Vec<u8>>>::new();
+    let mut seen_population_ids = HashSet::new();
+    let mut repeated_population_ids = HashSet::new();
+    for population in &populations {
+        let mut objects = HashMap::<u32, Option<Vec<u8>>>::new();
+        for frame in crate::families::b5::graph::object_stream_frames(population) {
+            let bytes = population[frame.start..frame.end].to_vec();
+            objects
+                .entry(frame.object_id)
+                .and_modify(|stored| {
+                    if stored.as_ref().is_some_and(|stored| *stored != bytes) {
+                        *stored = None;
+                    }
+                })
+                .or_insert(Some(bytes));
+        }
+        for (object_id, bytes) in objects {
+            if !seen_population_ids.insert(object_id) {
+                repeated_population_ids.insert(object_id);
+            }
+            population_objects
+                .entry(object_id)
+                .and_modify(|stored| {
+                    if stored
+                        .as_ref()
+                        .zip(bytes.as_ref())
+                        .is_none_or(|(stored, incoming)| stored != incoming)
+                    {
+                        *stored = None;
+                    }
+                })
+                .or_insert(bytes);
+        }
+    }
+    let conflicting_population_ids = population_objects
+        .into_iter()
+        .filter_map(|(object_id, bytes)| bytes.is_none().then_some(object_id))
+        .collect::<HashSet<_>>();
+    for stream in populations {
         let frames = crate::families::b5::graph::object_stream_frames(&stream);
         let face_surfaces =
             crate::families::b5::graph::face_surface_references_from_frames(&stream, &frames);
@@ -2196,6 +2238,23 @@ pub(crate) fn standard_object_evidence_from_streams(
             merge_standard_surface_evidence(&mut surface_candidates, face_id, evidence);
         }
     }
+    surface_candidates.retain(|object_id, _| !conflicting_population_ids.contains(object_id));
+    support_candidates.retain(|object_id, _| !conflicting_population_ids.contains(object_id));
+    edge_face_candidates.retain(|edge, owners| {
+        !repeated_population_ids.contains(edge)
+            && owners
+                .as_ref()
+                .is_none_or(|owners| owners.is_disjoint(&repeated_population_ids))
+    });
+    edge_support_candidates.retain(|edge, support| {
+        !repeated_population_ids.contains(edge)
+            && support.as_ref().is_none_or(|support| {
+                support
+                    .surface_object_ids
+                    .iter()
+                    .all(|surface| !repeated_population_ids.contains(surface))
+            })
+    });
     StandardObjectEvidence {
         surface_geometries: surface_candidates
             .iter()
@@ -2822,11 +2881,11 @@ fn standard_limit_curve_point_parameter(
         );
     }
     parameters.sort_by(|left, right| left.1.total_cmp(&right.1));
-    let &(parameter, distance) = parameters.first()?;
-    let ambiguous = parameters.iter().skip(1).any(|&(other, other_distance)| {
-        (other - parameter).abs() > parameter_tolerance
-            && (other_distance - distance).abs() <= tolerance * 1e-8
-    });
+    let &(parameter, _) = parameters.first()?;
+    let ambiguous = parameters
+        .iter()
+        .skip(1)
+        .any(|&(other, _)| (other - parameter).abs() > parameter_tolerance);
     (!ambiguous).then_some(parameter)
 }
 
@@ -2930,10 +2989,7 @@ fn resolve_standard_limit_curve_binding(
     Some(binding)
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn attach_standard_topology(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -3774,9 +3830,17 @@ fn attach_standard_topology(
     } else if let Some(topology) = constrained_endpoint_options.as_ref().and_then(|options| {
         missing_edge::standard_mesh_edge_ports(spine)
             .and_then(|ports| {
-                fbb::parse_standard_port_endpoint_candidates(spine, &edge_faces, options, &ports)
+                fbb::parse_standard_port_endpoint_candidates(
+                    spine,
+                    &edge_faces,
+                    options,
+                    &ports,
+                    work_budget,
+                )
             })
-            .or_else(|| fbb::parse_standard_endpoint_candidates(spine, &edge_faces, options))
+            .or_else(|| {
+                fbb::parse_standard_endpoint_candidates(spine, &edge_faces, options, work_budget)
+            })
     }) {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
@@ -3784,7 +3848,7 @@ fn attach_standard_topology(
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else {
-        return Err(if mesh_search_exhausted {
+        return Err(if mesh_search_exhausted || work_budget.exhausted() {
             StandardTopologyFailure::TopologySearchExhausted
         } else if diagnostics.mesh_ambiguity.is_some() {
             StandardTopologyFailure::AmbiguousTopologySolution
@@ -3947,10 +4011,7 @@ fn standard_boundary_roles(
 }
 
 /// Emits the edge, loop, coedge, and pcurve IR layers for the solved topology.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn emit_standard_topology(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -4470,9 +4531,7 @@ fn bind_ordered_standard_curve_branches_for_group(
 }
 
 /// Apply the ranked-family phases to one branch group without materializing a
-/// full candidate matrix for every group. The focused helper above is kept for
-/// the standalone tests and for the general all-edge binding path; the mesh
-/// solver supplies one group at a time and only needs the line/B-spline phases.
+/// full candidate matrix for every group.
 fn bind_standard_curve_branch_group(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     candidates: &mut [Vec<[usize; 2]>],
@@ -5780,10 +5839,6 @@ pub(crate) fn face_surface<'a>(
     ir.model.surfaces.get(*surface_indices.get(id)?)
 }
 
-pub(crate) fn point_on_known_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
-    matches!(surface, SurfaceGeometry::Unknown { .. }) || point_on_surface(point, surface)
-}
-
 pub(crate) fn point_on_standard_face(
     point: Point3,
     surface: &SurfaceGeometry,
@@ -5791,7 +5846,7 @@ pub(crate) fn point_on_standard_face(
 ) -> bool {
     const TOLERANCE: f64 = 2e-3;
 
-    if !point_on_known_surface(point, surface) {
+    if point_on_surface_if_supported(point, surface) == Some(false) {
         return false;
     }
     bounds.is_none_or(|bounds| {
@@ -6082,6 +6137,10 @@ pub(crate) fn unwrap_standard_uv(surface: &SurfaceGeometry, value: &mut Point2, 
 }
 
 pub(crate) fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
+    point_on_surface_if_supported(point, surface).unwrap_or(false)
+}
+
+fn point_on_surface_if_supported(point: Point3, surface: &SurfaceGeometry) -> Option<bool> {
     const TOLERANCE: f64 = 1e-3;
     let residual = match surface {
         SurfaceGeometry::Plane { origin, normal, .. } => {
@@ -6130,9 +6189,9 @@ pub(crate) fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool
         | SurfaceGeometry::Polygonal { .. }
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Transformed { .. }
-        | SurfaceGeometry::Unknown { .. } => return false,
+        | SurfaceGeometry::Unknown { .. } => return None,
     };
-    residual <= TOLERANCE
+    Some(residual <= TOLERANCE)
 }
 
 pub(crate) fn standard_spline_line(
@@ -6221,10 +6280,7 @@ pub(crate) fn standard_spline_line(
     ))
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_standard_edge_curve(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -6670,10 +6726,7 @@ pub(crate) fn circular_ranges_are_nonoverlapping_or_coincident(ranges: &[[f64; 2
     })
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn standard_circle_param_range(
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
@@ -6718,10 +6771,7 @@ pub(crate) fn standard_circle_param_range(
     Some(range)
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn native_support_circle_param_range(
     support: &StandardEdgeSupport,
     center: Point3,
@@ -7083,15 +7133,14 @@ mod route_tests {
         circular_ranges_are_nonoverlapping_or_coincident, combine_propagated_endpoint_pairs,
         corroborate_successor_endpoint_points, emit_standard_topology,
         include_native_endpoint_pairs, intersection_line_direction, merge_native_endpoint_evidence,
-        native_support_circle_param_range, plane_intersection_line, point_on_known_surface,
-        point_on_standard_face, point_on_surface, resolve_standard_endpoint_pairs,
-        resolve_standard_limit_curve_binding, retry_rejected_mesh_solution,
-        standard_circle_endpoint_candidates, standard_circle_param_range,
-        standard_curve_branch_assignment_is_ranked,
+        native_support_circle_param_range, plane_intersection_line, point_on_standard_face,
+        point_on_surface, resolve_standard_endpoint_pairs, resolve_standard_limit_curve_binding,
+        retry_rejected_mesh_solution, standard_circle_endpoint_candidates,
+        standard_circle_param_range, standard_curve_branch_assignment_is_ranked,
         standard_curve_branch_candidates_after_partial_assignment, standard_curve_branch_groups,
-        standard_limit_curve_bindings, standard_native_support_endpoint_pair,
-        standard_object_evidence_from_streams, standard_pcurve_geometry,
-        standard_plane_normals_from_face_frames, standard_spline_line,
+        standard_limit_curve_bindings, standard_limit_curve_point_parameter,
+        standard_native_support_endpoint_pair, standard_object_evidence_from_streams,
+        standard_pcurve_geometry, standard_plane_normals_from_face_frames, standard_spline_line,
         standard_successor_endpoint_pairs, standard_successor_endpoint_points,
         standard_surface_evidence, unique_native_identity_points, witness_arc_end,
         StandardEdgeSupport, StandardSurfaceProcedure,
@@ -7108,7 +7157,7 @@ mod route_tests {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::{pcurve_uv, surface_point};
     use cadmpeg_ir::geometry::{
-        Curve, CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurve,
+        Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurve,
         ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
         RollingBallJetDerivative, RollingBallJetSite, Surface, SurfaceGeometry,
     };
@@ -7165,12 +7214,25 @@ mod route_tests {
         append(&mut stream, 0x30, 9, &offset);
         append(&mut stream, 0x5f, 10, &[0x82, 0x89, 0x8b, 0x05]);
 
-        let evidence =
-            standard_object_evidence_from_streams([stream], &HashSet::from([10]), &HashSet::new());
+        let evidence = standard_object_evidence_from_streams(
+            [stream.clone(), stream.clone()],
+            &HashSet::from([10]),
+            &HashSet::new(),
+        );
         assert!(matches!(
             evidence.surface_geometries.get(&10),
             Some(SurfaceGeometry::Plane { origin, .. }) if *origin == Point3::new(0.0, 0.0, 0.0)
         ));
+
+        let mut conflicting = stream.clone();
+        let face_payload = conflicting.len() - 4;
+        conflicting[face_payload + 1] = 0x8d;
+        let evidence = standard_object_evidence_from_streams(
+            [stream, conflicting],
+            &HashSet::from([10]),
+            &HashSet::new(),
+        );
+        assert!(!evidence.surface_geometries.contains_key(&10));
     }
 
     #[test]
@@ -7667,6 +7729,27 @@ mod route_tests {
         };
         assert_eq!(
             standard_native_support_endpoint_pair(&disagreeing, &points, &[0, 1], None),
+            None
+        );
+    }
+
+    #[test]
+    fn limit_curve_point_binding_rejects_separated_occurrences_with_unequal_residuals() {
+        let line_span = |offset: f64| {
+            (0..6)
+                .map(|index| Point3::new(-1.0 + 0.4 * f64::from(index) + offset, 0.0, 0.0))
+                .collect::<Vec<_>>()
+        };
+        let curve = NurbsCurve {
+            degree: 5,
+            knots: [vec![0.0; 6], vec![0.5; 6], vec![1.0; 6]].concat(),
+            control_points: [line_span(0.0), line_span(1e-3)].concat(),
+            weights: None,
+            periodic: false,
+        };
+
+        assert_eq!(
+            standard_limit_curve_point_parameter(&curve, Point3::new(0.0, 0.0, 0.0), 2e-3),
             None
         );
     }
@@ -9147,10 +9230,33 @@ mod route_tests {
     }
 
     #[test]
-    fn unknown_surface_does_not_reject_endpoint_candidates() {
-        assert!(point_on_known_surface(
+    fn unsupported_surface_membership_does_not_reject_endpoint_candidates() {
+        assert!(point_on_standard_face(
             Point3::new(100.0, -50.0, 7.0),
-            &SurfaceGeometry::Unknown { record: None }
+            &SurfaceGeometry::Unknown { record: None },
+            None,
+        ));
+        let nurbs = SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        });
+        assert!(point_on_standard_face(
+            Point3::new(100.0, -50.0, 7.0),
+            &nurbs,
+            None,
         ));
     }
 

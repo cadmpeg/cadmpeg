@@ -6830,7 +6830,6 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         None
     );
 
-    // Fewer than six references cannot carry the two lanes plus both groups.
     draft_scope.reference_members = vec![175, 176, 181, 182, 186];
     assert_eq!(
         exact_draft_operation_with_owners(
@@ -9992,9 +9991,7 @@ fn base_flange_scope_has_exact_profile_and_thickness_fields() {
 
 #[test]
 fn edge_flange_scope_resolves_every_role_from_its_marked_slot() {
-    // The ordered reference table is in record-index order, so the fixture
-    // deliberately lists the settings record before the edge and aggregate
-    // groups: a reader that assigned roles by table position would mis-bind it.
+    // Settings before edge/aggregate groups; roles come from marked slots, not table position.
     let references = [201, 204, 207, 218, 221, 240, 243, 251, 254];
     let frame = edge_flange_frame(&EdgeFlangeFixture {
         header_shift: 0,
@@ -10048,8 +10045,6 @@ fn edge_flange_scope_resolves_every_role_from_its_marked_slot() {
 
 #[test]
 fn edge_flange_scope_reads_the_shifted_header_form() {
-    // The optional four-byte header member is not announced, so the same frame
-    // written four bytes later must still read through reference agreement.
     let references = [201, 204, 207, 218, 240, 243, 251, 254];
     for header_shift in [0usize, 4] {
         let frame = edge_flange_frame(&EdgeFlangeFixture {
@@ -10093,8 +10088,6 @@ fn edge_flange_scope_reads_the_shifted_header_form() {
 
 #[test]
 fn edge_flange_scope_refuses_a_frame_whose_group_operand_is_absent() {
-    // Record 254 is the edge group's operand. Without it the table has no entry
-    // three after the group, so the frame is refused rather than half-bound.
     let references = [201, 204, 207, 218, 240, 243, 251, 255];
     let frame = edge_flange_frame(&EdgeFlangeFixture {
         header_shift: 0,
@@ -10685,8 +10678,6 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
         bend_position: DesignBendPosition::Inside,
     });
 
-    // The symmetric mode needs one `EdgeWidth` parameter. Without it the scope
-    // has no complete width, so no partial neutral flange is reported.
     let inputs = crate::design::feature_project::ProjectInputs {
         native: &[],
         owners: &[],
@@ -11110,9 +11101,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
 
 #[test]
 fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
-    // The table deliberately places the groups before the owners so a reader
-    // assigning roles by table position cannot pass, and it is exercised under
-    // both header shifts because the shift is not announced by any member.
+    // Groups before owners; roles come from marked slots under both header shifts.
     let references = [240, 243, 251, 254, 301, 304, 308, 311];
     for header_shift in [0usize, 4] {
         let frame = hem_frame(&HemFixture {
@@ -11159,8 +11148,6 @@ fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
 
 #[test]
 fn hem_scope_refuses_a_frame_whose_owner_slot_is_absent() {
-    // The rolled form places its owner references at other offsets, so the
-    // gap-and-length reader must refuse a frame whose owner slot does not agree.
     let references = [240, 243, 251, 254, 301, 304, 308, 311];
     let mut frame = hem_frame(&HemFixture {
         header_shift: 0,
@@ -11568,8 +11555,6 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         u64::try_from(flagless_paired_at).unwrap()
     );
 
-    // A corrupt member count larger than the remaining bytes can supply must
-    // fail the parse without reaching the allocator.
     let mut bombed = bytes.clone();
     bombed[21..25].copy_from_slice(&u32::MAX.to_le_bytes());
     assert!(matches!(
@@ -16390,7 +16375,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         auxiliary_references: Vec::new(),
         auxiliary_reference_offsets: Vec::new(),
         rectangular_counted_reference_count: None,
-        // The first run deliberately disagrees with the semantic order below.
+        // Member run order disagrees with semantic order below.
         members: vec![104, 103],
         resolved_members: Vec::new(),
         member_offsets: Vec::new(),
@@ -20584,10 +20569,7 @@ fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
     );
 }
 
-#[allow(
-    clippy::large_stack_arrays,
-    reason = "This dependency fixture keeps the scope records inline to show their source order."
-)]
+#[allow(clippy::large_stack_arrays)]
 #[test]
 fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
     let parameter = |owner, record_index, expression: &str, name: &str| {
@@ -23783,10 +23765,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ));
 }
 
-#[allow(
-    clippy::large_stack_arrays,
-    reason = "This projection fixture keeps the scope records inline to show dependency order."
-)]
+#[allow(clippy::large_stack_arrays)]
 #[test]
 fn parameter_expressions_project_feature_dependencies() {
     let parameter = |owner_record_index, record_index, name: &str, expression: &str| {

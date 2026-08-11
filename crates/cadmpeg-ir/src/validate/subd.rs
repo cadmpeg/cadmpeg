@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Validation for `SubD` cages and free-carrier source associations.
-#![allow(
-    clippy::wildcard_imports,
-    reason = "Split check modules share a private orchestration prelude via wildcard import."
-)]
+#![allow(clippy::wildcard_imports)]
 
 use super::*;
 use crate::math::Point3;
@@ -129,16 +126,21 @@ pub(super) fn check_procedural_surfaces(ir: &CadIr, findings: &mut Vec<Finding>)
     for procedural in &ir.model.procedural_surfaces {
         if let crate::geometry::ProceduralSurfaceDefinition::Revolution {
             angular_interval,
+            angular_parameter_interval,
             parameter_interval,
             ..
         } = &procedural.definition
         {
-            let valid = [Some(angular_interval), parameter_interval.as_ref()]
-                .into_iter()
-                .flatten()
-                .all(|interval| {
-                    interval[0].is_finite() && interval[1].is_finite() && interval[0] < interval[1]
-                });
+            let valid = [
+                Some(angular_interval),
+                angular_parameter_interval.as_ref(),
+                parameter_interval.as_ref(),
+            ]
+            .into_iter()
+            .flatten()
+            .all(|interval| {
+                interval[0].is_finite() && interval[1].is_finite() && interval[0] < interval[1]
+            });
             if !valid {
                 bounds_err(
                     findings,

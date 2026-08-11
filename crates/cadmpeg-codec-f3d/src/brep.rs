@@ -22,9 +22,7 @@ use std::collections::{HashMap, HashSet};
 
 /// The ASM B-rep graph plus links derived from Fusion attribute records.
 ///
-/// The kernel graph is flattened so id qualification and body-key retention
-/// walk one top-level value tree; a nested field would hide the kernel arenas
-/// from [`retain_root_entities`], which only visits top-level sequences.
+/// Kernel arenas are flattened at the top level for [`retain_root_entities`].
 #[derive(Default, Serialize, Deserialize)]
 pub struct Brep {
     /// The format-independent ASM graph.

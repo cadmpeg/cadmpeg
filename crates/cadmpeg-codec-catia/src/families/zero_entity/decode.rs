@@ -587,13 +587,21 @@ pub(crate) fn try_decode_zero_entity(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Option<FamilyOutput> {
-    let surfaces = crate::families::zero_entity::records::zero_entity_surfaces(&scan.data);
+    let preamble = container::outer_preamble_range(&scan.data)?;
+    let surfaces = crate::families::zero_entity::records::zero_entity_surfaces_in_range(
+        &scan.data,
+        preamble.clone(),
+    );
     if surfaces.is_empty() {
         return None;
     }
-    let support_runs = crate::families::zero_entity::records::zero_entity_support_runs(&scan.data);
-    let ownership_root =
-        crate::families::zero_entity::records::zero_entity_ownership_root(&scan.data);
+    let support_runs = crate::families::zero_entity::records::zero_entity_support_runs_in_range(
+        &scan.data,
+        preamble.clone(),
+    );
+    let ownership_root = crate::families::zero_entity::records::zero_entity_ownership_root_in_range(
+        &scan.data, preamble,
+    );
 
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();

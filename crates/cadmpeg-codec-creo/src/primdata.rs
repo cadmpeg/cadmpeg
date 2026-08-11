@@ -16,7 +16,7 @@ pub struct PrimitiveScalarArray {
     pub values: Vec<f64>,
 }
 
-/// One complete position-only triangle-strip primitive.
+/// One complete triangle-strip primitive.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PrimitiveTriangleStrip {
     /// Byte offset of `value(prim_tristripsetwithatt)` in the expanded section.
@@ -30,11 +30,104 @@ pub struct PrimitiveTriangleStrip {
     pub strip_lengths: Vec<u32>,
 }
 
-/// Decode named position-only triangle-strip primitives.
-pub fn triangle_strips(data: &[u8]) -> Vec<PrimitiveTriangleStrip> {
+/// Complete triangle strips and conflicts found in one primitive-data stream.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrimitiveTriangleStripScan {
+    /// Triangle-strip records whose cumulative counts and geometry agree.
+    pub strips: Vec<PrimitiveTriangleStrip>,
+    /// Records with complete position or normal representations that disagree.
+    pub conflicting_representation_count: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TriangleStripGeometryError {
+    Missing,
+    Conflicting,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct TriangleStripGeometry {
+    positions: Vec<[f64; 3]>,
+    normals: Vec<[f64; 3]>,
+}
+
+fn triangle_strip_geometry(
+    arrays: &[PrimitiveScalarArray],
+    vertex_count: u32,
+) -> Result<TriangleStripGeometry, TriangleStripGeometryError> {
+    let vertex_count =
+        usize::try_from(vertex_count).map_err(|_| TriangleStripGeometryError::Missing)?;
+    let mut positions = None::<Vec<[f64; 3]>>;
+    let mut normals = None::<Vec<[f64; 3]>>;
+    for array in arrays {
+        let (candidate_positions, candidate_normals) = match array.field.as_str() {
+            "mv_p_xyz"
+                if array.values.len()
+                    == vertex_count
+                        .checked_mul(3)
+                        .ok_or(TriangleStripGeometryError::Missing)? =>
+            {
+                (
+                    array
+                        .values
+                        .chunks_exact(3)
+                        .map(|point| [point[0], point[1], point[2]])
+                        .collect(),
+                    None,
+                )
+            }
+            "mv_p_NxNyNzxyz"
+                if array.values.len()
+                    == vertex_count
+                        .checked_mul(6)
+                        .ok_or(TriangleStripGeometryError::Missing)? =>
+            {
+                (
+                    array
+                        .values
+                        .chunks_exact(6)
+                        .map(|tuple| [tuple[3], tuple[4], tuple[5]])
+                        .collect(),
+                    Some(
+                        array
+                            .values
+                            .chunks_exact(6)
+                            .map(|tuple| [tuple[0], tuple[1], tuple[2]])
+                            .collect(),
+                    ),
+                )
+            }
+            _ => continue,
+        };
+        if positions
+            .as_ref()
+            .is_some_and(|selected| *selected != candidate_positions)
+        {
+            return Err(TriangleStripGeometryError::Conflicting);
+        }
+        positions.get_or_insert(candidate_positions);
+        if let Some(candidate_normals) = candidate_normals {
+            if normals
+                .as_ref()
+                .is_some_and(|selected| *selected != candidate_normals)
+            {
+                return Err(TriangleStripGeometryError::Conflicting);
+            }
+            normals.get_or_insert(candidate_normals);
+        }
+    }
+    Ok(TriangleStripGeometry {
+        positions: positions.ok_or(TriangleStripGeometryError::Missing)?,
+        normals: normals.unwrap_or_default(),
+    })
+}
+
+/// Decode named triangle-strip primitives and representation conflicts.
+pub fn triangle_strips(data: &[u8]) -> PrimitiveTriangleStripScan {
     const RECORD: &[u8] = b"value(prim_tristripsetwithatt)\0";
     const ACCUM: &[u8] = b"\xe0\x01p_accum_set_size\0";
     let mut strips = Vec::new();
+    let mut conflicting_representation_count = 0usize;
     for (offset, _) in data
         .windows(RECORD.len())
         .enumerate()
@@ -66,37 +159,9 @@ pub fn triangle_strips(data: &[u8]) -> Vec<PrimitiveTriangleStrip> {
             cumulative.push(value);
             cursor = next;
         }
-        let arrays = scalar_arrays(record);
-        let Some((positions, normals)) = arrays.iter().find_map(|array| {
-            if array.field == "mv_p_xyz" && array.values.len() % 3 == 0 {
-                let positions: Vec<[f64; 3]> = array
-                    .values
-                    .chunks_exact(3)
-                    .map(|point| [point[0], point[1], point[2]])
-                    .collect();
-                return Some((positions, Vec::new()));
-            }
-            if array.field == "mv_p_NxNyNzxyz" && array.values.len() % 6 == 0 {
-                let normals: Vec<[f64; 3]> = array
-                    .values
-                    .chunks_exact(6)
-                    .map(|tuple| [tuple[0], tuple[1], tuple[2]])
-                    .collect();
-                let positions: Vec<[f64; 3]> = array
-                    .values
-                    .chunks_exact(6)
-                    .map(|tuple| [tuple[3], tuple[4], tuple[5]])
-                    .collect();
-                return Some((positions, normals));
-            }
-            None
-        }) else {
+        let Some(vertex_count) = cumulative.last().copied() else {
             continue;
         };
-        let vertex_count = u32::try_from(positions.len()).ok();
-        if cumulative.last().copied() != vertex_count {
-            continue;
-        }
         let mut previous = 0;
         let mut strip_lengths = Vec::with_capacity(cumulative.len());
         for current in cumulative {
@@ -110,14 +175,26 @@ pub fn triangle_strips(data: &[u8]) -> Vec<PrimitiveTriangleStrip> {
         if strip_lengths.is_empty() {
             continue;
         }
+        let arrays = scalar_arrays(record);
+        let geometry = match triangle_strip_geometry(&arrays, vertex_count) {
+            Ok(geometry) => geometry,
+            Err(TriangleStripGeometryError::Missing) => continue,
+            Err(TriangleStripGeometryError::Conflicting) => {
+                conflicting_representation_count += 1;
+                continue;
+            }
+        };
         strips.push(PrimitiveTriangleStrip {
             offset,
-            positions,
-            normals,
+            positions: geometry.positions,
+            normals: geometry.normals,
             strip_lengths,
         });
     }
-    strips
+    PrimitiveTriangleStripScan {
+        strips,
+        conflicting_representation_count,
+    }
 }
 
 /// Decode model-space scalar arrays from an expanded primitive-data section.
@@ -262,7 +339,9 @@ mod tests {
             ],
             9,
         ));
-        let strips = triangle_strips(&bytes);
+        let scan = triangle_strips(&bytes);
+        assert_eq!(scan.conflicting_representation_count, 0);
+        let strips = scan.strips;
         assert_eq!(strips.len(), 1);
         assert_eq!(strips[0].positions.len(), 3);
         assert!(strips[0].normals.is_empty());
@@ -280,7 +359,9 @@ mod tests {
         ];
         bytes.extend(named("mv_p_NxNyNzxyz", &tuple, 18));
 
-        let strips = triangle_strips(&bytes);
+        let scan = triangle_strips(&bytes);
+        assert_eq!(scan.conflicting_representation_count, 0);
+        let strips = scan.strips;
         assert_eq!(strips.len(), 1);
         assert_eq!(
             strips[0].positions,
@@ -288,5 +369,94 @@ mod tests {
         );
         assert_eq!(strips[0].normals, [[0.0, 1.0, 0.0]; 3]);
         assert_eq!(strips[0].strip_lengths, [3]);
+    }
+
+    #[test]
+    fn agreeing_triangle_strip_representations_select_normals_independent_of_order() {
+        let xyz = PrimitiveScalarArray {
+            field: "mv_p_xyz".to_string(),
+            offset: 10,
+            count: 9,
+            values: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+        };
+        let normal_xyz = PrimitiveScalarArray {
+            field: "mv_p_NxNyNzxyz".to_string(),
+            offset: 20,
+            count: 18,
+            values: vec![
+                0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+                1.0, 0.0,
+            ],
+        };
+
+        let expected = TriangleStripGeometry {
+            positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            normals: vec![[0.0, 0.0, 1.0]; 3],
+        };
+        assert_eq!(
+            triangle_strip_geometry(&[xyz.clone(), normal_xyz.clone()], 3),
+            Ok(expected.clone())
+        );
+        assert_eq!(triangle_strip_geometry(&[normal_xyz, xyz], 3), Ok(expected));
+    }
+
+    #[test]
+    fn conflicting_triangle_strip_representations_are_withheld() {
+        let xyz = PrimitiveScalarArray {
+            field: "mv_p_xyz".to_string(),
+            offset: 10,
+            count: 9,
+            values: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+        };
+        let conflicting_xyz = PrimitiveScalarArray {
+            field: "mv_p_NxNyNzxyz".to_string(),
+            offset: 20,
+            count: 18,
+            values: vec![
+                0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+                1.0, 0.0,
+            ],
+        };
+
+        assert_eq!(
+            triangle_strip_geometry(&[xyz, conflicting_xyz], 3),
+            Err(TriangleStripGeometryError::Conflicting)
+        );
+
+        let mut bytes =
+            b"value(prim_tristripsetwithatt)\0\xe0\x01p_accum_set_size\0\xf8\x01\x03".to_vec();
+        bytes.extend(named(
+            "mv_p_xyz",
+            &[
+                0x00, 0x00, 0x00, 0x46, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46, 0x80, 0x00, 0x00,
+                0x00,
+            ],
+            9,
+        ));
+        bytes.extend(named(
+            "mv_p_NxNyNzxyz",
+            &[
+                0x00, 0x28, 0x00, 0x00, 0x00, 0x00, // normal, position 0
+                0x00, 0x28, 0x00, 0x47, 0x00, 0x00, 0x00, 0x00,
+                0x00, // normal, position x = 2
+                0x00, 0x28, 0x00, 0x00, 0x46, 0x80, 0x00, 0x00, 0x00,
+            ],
+            18,
+        ));
+        let arrays = scalar_arrays(&bytes);
+        assert_eq!(
+            arrays
+                .iter()
+                .map(|array| array.field.as_str())
+                .collect::<Vec<_>>(),
+            ["mv_p_xyz", "mv_p_NxNyNzxyz"]
+        );
+        assert_eq!(
+            triangle_strip_geometry(&arrays, 3),
+            Err(TriangleStripGeometryError::Conflicting)
+        );
+        let scan = triangle_strips(&bytes);
+        assert!(scan.strips.is_empty());
+        assert_eq!(scan.conflicting_representation_count, 1);
     }
 }

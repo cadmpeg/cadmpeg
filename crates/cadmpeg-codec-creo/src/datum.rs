@@ -32,6 +32,7 @@ pub struct DatumPlane {
 /// This promotion applies only to model-space `ActDatums` outlines.
 pub fn planes(payload: &[u8]) -> Vec<DatumPlane> {
     let rows = crate::surface::counted_row_bounds(payload);
+    let cache = scalar::ScalarCache::from_section(payload);
     rows.iter()
         .enumerate()
         .filter(|(_, (row, _))| {
@@ -44,12 +45,17 @@ pub fn planes(payload: &[u8]) -> Vec<DatumPlane> {
             let row_end = rows
                 .get(index + 1)
                 .map_or(*frame_end, |(next, _)| (*frame_end).min(next.offset));
-            positional_plane(payload, row, row_end)
+            positional_plane(payload, row, row_end, &cache)
         })
         .collect()
 }
 
-fn positional_plane(payload: &[u8], row: &SurfaceRow, row_end: usize) -> Option<DatumPlane> {
+fn positional_plane(
+    payload: &[u8],
+    row: &SurfaceRow,
+    row_end: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<DatumPlane> {
     let id_start = row.offset;
     if payload.get(id_start).copied()? > 0xbf {
         return None;
@@ -60,7 +66,7 @@ fn positional_plane(payload: &[u8], row: &SurfaceRow, row_end: usize) -> Option<
     }
     let (_, after_feature) = crate::psb::compact_int(payload, after_id + 1);
     let body_start = crate::psb::compact_int(payload, after_feature + 2).1;
-    let values = datum_slots(payload, body_start, 10, row_end)?;
+    let values = datum_slots(payload, body_start, 10, row_end, cache)?;
     let outline = &values[4..];
     let equal = [
         slot_equal(&outline[0], &outline[3]),
@@ -152,8 +158,9 @@ fn find(data: &[u8], needle: &[u8], from: usize) -> Option<usize> {
 /// - `0f`/`e6`: a one-byte zero marker.
 /// - `41`: a seven-byte tail forming the IEEE double `3f XX..`.
 /// - `46`/`2d`: a world-coordinate scalar.
-/// - Named-outline DICT prefixes use the model-coordinate lane in
-///   `scalar::decode_named_datum_outline_coordinate`.
+/// - Datum-outline DICT prefixes use the model-coordinate lane in
+///   `scalar::decode_datum_outline_coordinate`.
+/// - `45`/`5c` retain a seven-byte token with an unresolved value.
 /// - Other `40..=bf`/`d3`/`d7`/`df` prefixes retain a seven-byte token whose
 ///   value is kept only when the generic scalar decode consumes exactly seven
 ///   bytes; otherwise the token remains valueless.
@@ -178,11 +185,16 @@ fn decode_outline_slot(
         0x0f | 0xe6 => Some((Some(0.0), offset + 1)),
         _ => {
             if let Some((value, next)) =
-                scalar::decode_named_datum_outline_coordinate(data, offset, cache)
+                scalar::decode_datum_outline_coordinate(data, offset, cache)
             {
                 return Some((Some(value), next));
             }
             let head = *data.get(offset)?;
+            if matches!(head, 0x45 | 0x5c) {
+                let next = offset + 7;
+                data.get(offset..next)?;
+                return Some((None, next));
+            }
             if !matches!(head, 0x40..=0xbf | 0xd3 | 0xd7 | 0xdf) {
                 return None;
             }
@@ -226,38 +238,38 @@ struct DatumSlot {
 /// return aborts the walk.
 ///
 /// - `18`/`0f`/`e6`: a one-byte zero marker.
-/// - `41`: a seven-byte tail forming the IEEE double `3f XX..`.
-/// - `73`/`9f`/`a5`/`bb`: a seven-byte valueless sentinel.
-/// - otherwise: a generic scalar in the datum lane.
-fn decode_datum_slot(data: &[u8], offset: usize) -> Option<(Option<f64>, usize)> {
+/// - `45`/`5c`: a seven-byte token whose numeric value is unresolved.
+/// - other tokens: a coordinate in the bounded datum-outline lane.
+fn decode_datum_slot(
+    data: &[u8],
+    offset: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<(Option<f64>, usize)> {
     let head = *data.get(offset)?;
     match head {
         0x18 | 0x0f | 0xe6 => Some((Some(0.0), offset + 1)),
-        0x41 => {
-            let tail = data.get(offset + 1..offset + 8)?;
-            let mut raw = [0; 8];
-            raw[0] = 0x3f;
-            raw[1..].copy_from_slice(tail);
-            Some((Some(f64::from_be_bytes(raw)), offset + 8))
-        }
-        0x73 | 0x9f | 0xa5 | 0xbb => {
+        0x45 | 0x5c => {
             let next = offset + 7;
             data.get(offset..next)?;
             Some((None, next))
         }
-        _ => {
-            let (value, next) = scalar::decode(data, offset)?;
-            Some((Some(value), next))
-        }
+        _ => scalar::decode_datum_outline_coordinate(data, offset, cache)
+            .map(|(value, next)| (Some(value), next)),
     }
 }
 
-fn datum_slots(data: &[u8], offset: usize, count: usize, end: usize) -> Option<Vec<DatumSlot>> {
+fn datum_slots(
+    data: &[u8],
+    offset: usize,
+    count: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<Vec<DatumSlot>> {
     let mut slots = Vec::with_capacity(count);
     let mut cursor = offset;
     while slots.len() < count {
         let start = cursor;
-        let (value, next) = decode_datum_slot(data, cursor)?;
+        let (value, next) = decode_datum_slot(data, cursor, cache)?;
         if next > end {
             return None;
         }
@@ -366,7 +378,7 @@ mod tests {
     }
 
     #[test]
-    fn positional_outline_preserves_opaque_seven_byte_slots() {
+    fn positional_outline_decodes_shared_named_coordinate_tokens() {
         let a5 = [0xa5, 1, 2, 3, 4, 5, 6];
         let nine_f = [0x9f, 7, 8, 9, 10, 11, 12];
         let mut data = b"srf_array\0\xf8\x01".to_vec();
@@ -382,8 +394,75 @@ mod tests {
         data.push(0x18);
         data.extend(nine_f);
 
-        assert_eq!(planes(&data)[0].normal, [0.0, 1.0, 0.0]);
-        assert_eq!(planes(&data)[0].offset, 0.0);
+        let positional = &planes(&data)[0];
+        assert_eq!(positional.normal, [0.0, 1.0, 0.0]);
+        assert_eq!(positional.offset, 0.0);
+
+        let mut named = b"\xe0\x01geom_id\0\x04\xe0\x01feat_id\0\x03outline\0\xf9\x02\x03".to_vec();
+        named.extend(ieee8(3.0));
+        named.push(0x18);
+        named.extend(a5);
+        named.extend(ieee8(-3.0));
+        named.push(0x18);
+        named.extend(nine_f);
+        assert_eq!(positional.corners, named_plane(&named).unwrap().corners);
+    }
+
+    #[test]
+    fn positional_outline_uses_the_bounded_model_coordinate_lane() {
+        let negative_x = [0xbb, 1, 2, 3, 4, 5, 6];
+        let positive_x = [0x73, 1, 2, 3, 4, 5, 6];
+        let lower_z = [0x41, 7, 8, 9, 10, 11, 12, 13];
+        let upper_z = [0x8c, 14, 15, 16, 17, 18, 19];
+        let mut data = b"srf_array\0\xf8\x01".to_vec();
+        data.extend([4, 0x22, 3, 1, 1, 0]);
+        data.extend([0x0f; 4]);
+        data.extend(negative_x);
+        data.push(0x18);
+        data.extend(lower_z);
+        data.extend(positive_x);
+        data.push(0x18);
+        data.extend(upper_z);
+
+        let positional = &planes(&data)[0];
+        assert_eq!(positional.normal, [0.0, 1.0, 0.0]);
+        assert_eq!(positional.offset, 0.0);
+        assert_eq!(
+            positional.corners,
+            [
+                [
+                    Some(f64::from_be_bytes([0xbf, 0xe8, 1, 2, 3, 4, 5, 6])),
+                    Some(0.0),
+                    Some(f64::from_be_bytes([0x3f, 7, 8, 9, 10, 11, 12, 13])),
+                ],
+                [
+                    Some(f64::from_be_bytes([0x3f, 0xe8, 1, 2, 3, 4, 5, 6])),
+                    Some(0.0),
+                    Some(f64::from_be_bytes([0x40, 0x01, 14, 15, 16, 17, 18, 19])),
+                ],
+            ]
+        );
+    }
+
+    #[test]
+    fn positional_outline_retains_unbacked_coordinate_tokens_without_values() {
+        let mut data = b"srf_array\0\xf8\x01".to_vec();
+        data.extend([4, 0x22, 3, 1, 1, 0]);
+        data.extend([0x0f; 4]);
+        data.extend([0x45, 0, 0, 0, 0, 0, 0]);
+        data.push(0x18);
+        data.extend([0x5c, 0, 0, 0, 0, 0, 0]);
+        data.extend([0x5c, 0, 0, 0, 0, 0, 0]);
+        data.push(0x18);
+        data.extend([0x45, 0, 0, 0, 0, 0, 0]);
+
+        let plane = &planes(&data)[0];
+        assert_eq!(plane.normal, [0.0, 1.0, 0.0]);
+        assert_eq!(plane.offset, 0.0);
+        assert_eq!(
+            plane.corners,
+            [[None, Some(0.0), None], [None, Some(0.0), None]]
+        );
     }
 
     #[test]
@@ -496,13 +575,13 @@ mod tests {
     }
 
     #[test]
-    fn named_outline_decodes_dictionary_coordinate_forms() {
+    fn named_outline_decodes_backed_dictionary_coordinate_forms() {
         let mut data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03".to_vec();
         data.extend([0x18]);
-        data.extend([0x5c, 0, 0, 0, 0, 0, 0]);
+        data.extend([0x9f, 0, 0, 0, 0, 0, 0]);
         data.extend([0xa5, 0, 0, 0, 0, 0, 0]);
         data.extend([0x18]);
-        data.extend([0x45, 0, 0, 0, 0, 0, 0]);
+        data.extend([0xa5, 0, 0, 0, 0, 0, 0]);
         data.extend([0x9f, 0, 0, 0, 0, 0, 0]);
 
         let plane = named_plane(&data).expect("named plane");
@@ -513,15 +592,34 @@ mod tests {
             [
                 [
                     Some(0.0),
-                    Some(f64::from_be_bytes([0x3f, 0xd1, 0, 0, 0, 0, 0, 0])),
+                    Some(f64::from_be_bytes([0x40, 0x14, 0, 0, 0, 0, 0, 0])),
                     Some(f64::from_be_bytes([0xbf, 0xd0, 0, 0, 0, 0, 0, 0]))
                 ],
                 [
                     Some(0.0),
-                    Some(f64::from_be_bytes([0xbf, 0, 0, 0, 0, 0, 0, 0])),
+                    Some(f64::from_be_bytes([0xbf, 0xd0, 0, 0, 0, 0, 0, 0])),
                     Some(f64::from_be_bytes([0x40, 0x14, 0, 0, 0, 0, 0, 0]))
                 ]
             ]
+        );
+    }
+
+    #[test]
+    fn named_outline_retains_unbacked_coordinate_tokens_without_values() {
+        let mut data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03".to_vec();
+        data.extend([0x18]);
+        data.extend([0x5c, 0, 0, 0, 0, 0, 0]);
+        data.extend([0x45, 0, 0, 0, 0, 0, 0]);
+        data.extend([0x18]);
+        data.extend([0x45, 0, 0, 0, 0, 0, 0]);
+        data.extend([0x5c, 0, 0, 0, 0, 0, 0]);
+
+        let plane = named_plane(&data).expect("zero-axis named plane");
+        assert_eq!(plane.normal, [1.0, 0.0, 0.0]);
+        assert_eq!(plane.offset, 0.0);
+        assert_eq!(
+            plane.corners,
+            [[Some(0.0), None, None], [Some(0.0), None, None],]
         );
     }
 }

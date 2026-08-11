@@ -463,9 +463,8 @@ fn bind_complete_record_tables(
     });
     if complete {
         bind_historical_transitions(states);
-        // Version tables are the reconstruction workspace for the sparse
-        // transitions. Keeping every cumulative table after the transitions
-        // exist makes history memory quadratic in states × active entities.
+        // Drop version tables once sparse transitions exist; retaining them is
+        // quadratic in states × active entities.
         for state in states {
             state.entity_versions.clear();
         }
@@ -1855,12 +1854,7 @@ fn body_revision_without_topology_change(
     Some(body)
 }
 
-// Each slice is a distinct decoded arena or mutable IR arena; grouping them
-// would hide the binding contract without reducing its state dependencies.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn bind_feature_face_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
@@ -1974,10 +1968,7 @@ pub(crate) fn bind_feature_face_selections(
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn bind_entity_face_selection(
     selection: &mut cadmpeg_ir::features::FaceSelection,
     feature_id: &cadmpeg_ir::features::FeatureId,
@@ -3076,11 +3067,8 @@ fn history_state_reaches(
 
 /// Return the state ID reached by a delta state's `next` link.
 ///
-/// The derived transition carries the same predecessor after complete
-/// historical topology projection. Before that projection, the raw chain is
-/// still sufficient to bind Design feature state identities. Reject a
-/// disagreement instead of allowing either representation to hide a corrupt
-/// history graph.
+/// Reject disagreement between the derived transition predecessor and the raw
+/// `next` chain.
 fn linked_previous_state_id(history: &AsmHistory, state: &AsmDeltaState) -> Option<i64> {
     let linked = state.next_ref.and_then(|node_index| {
         let mut states = history
@@ -3141,9 +3129,6 @@ pub(crate) fn bind_face_operand_history_candidates(
     operand_groups: &[crate::records::DesignConstructionOperandGroup],
     histories: &[AsmHistory],
 ) {
-    // These fields already contain the projection result after the complete
-    // historical snapshots have been released. Rebinding without those
-    // snapshots would erase that result rather than validate or refine it.
     if projection_was_finalized(histories) {
         return;
     }

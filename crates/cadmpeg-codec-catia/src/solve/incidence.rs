@@ -1641,6 +1641,13 @@ pub(crate) fn advance_compact_boundary_domains<'a>(
                 ) {
                     let mut next_oriented = oriented_edges.clone();
                     next_oriented.extend(face.boundaries.iter().flatten().map(|use_| use_.edge));
+                    if !budget.charge_by(
+                        candidate
+                            .signature_work()
+                            .saturating_add(next_oriented.len().max(1)),
+                    ) {
+                        return CompactBoundaryAdvanceOutcome::Exhausted;
+                    }
                     let mut oriented_signature = next_oriented.iter().copied().collect::<Vec<_>>();
                     oriented_signature.sort_unstable();
                     if signatures.insert((candidate.signature(), oriented_signature)) {
@@ -3329,10 +3336,7 @@ pub(crate) fn partial_face_orientability_viable(
     solve_boundary_orientation_constraints(boundary_count, &edge_uses, false).is_some()
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 #[cfg(test)]
 pub(crate) fn component_incidence_pair_solutions<F>(
     choices: &[Vec<[usize; 2]>],
@@ -3360,10 +3364,7 @@ where
     .into_option()
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 #[cfg(test)]
 pub(crate) fn component_incidence_pair_solution_outcome<F>(
     choices: &[Vec<[usize; 2]>],
@@ -3409,10 +3410,7 @@ where
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 #[cfg(test)]
 pub(crate) fn visit_component_incidence_pair_solutions<F, V>(
     choices: &[Vec<[usize; 2]>],
@@ -3445,10 +3443,7 @@ where
     )
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn visit_component_incidence_pair_solutions_with_coordinate_root_policy<F, V>(
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
@@ -3466,10 +3461,7 @@ where
     F: Fn(&[[usize; 2]]) -> bool,
     V: FnMut(&[[usize; 2]]) -> ControlFlow<()>,
 {
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-    )]
+    #[allow(clippy::too_many_arguments)]
     fn solve_component_domain(
         component: &[usize],
         choices: &[Vec<[usize; 2]>],
@@ -3588,10 +3580,7 @@ where
         search.exhausted
     }
 
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-    )]
+    #[allow(clippy::too_many_arguments)]
     fn visit_components<F, V>(
         component_index: usize,
         choices: &[Vec<[usize; 2]>],
@@ -3611,7 +3600,7 @@ where
         visited: &mut usize,
         ambiguous: &mut bool,
         components: &[Vec<usize>],
-        component_budgets: &[WorkBudget<'_>],
+        component_budget: &WorkBudget<'_>,
         orientation_budget: &WorkBudget<'_>,
         coordinate_propagation_budget: &WorkBudget<'_>,
         boundary_propagation_budget: &WorkBudget<'_>,
@@ -3743,7 +3732,7 @@ where
                     visited,
                     ambiguous,
                     components,
-                    component_budgets,
+                    component_budget,
                     orientation_budget,
                     coordinate_propagation_budget,
                     boundary_propagation_budget,
@@ -3779,9 +3768,6 @@ where
         };
         let narrowed_choices =
             coordinate_domains.map_or(choices, MeshCoordinateRootDomains::edge_candidates);
-        let Some(component_budget) = component_budgets.get(component_index) else {
-            return Err(());
-        };
         let component_exhausted = solve_component_domain(
             component,
             narrowed_choices,
@@ -3987,15 +3973,13 @@ where
             let _ = visitor(&pairs);
             return Some(());
         }
+        let preflight_orientation_budget =
+            session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let coordinate_preflight_budget =
+            session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let boundary_preflight_budget =
+            session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
         for component in &components {
-            let preflight_budget =
-                session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
-            let orientation_budget =
-                session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
-            let coordinate_preflight_budget =
-                session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
-            let boundary_preflight_budget =
-                session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
             let mut found = false;
             let mut accept_first = |solution: &[MeshEndpointPair]| {
                 let mut completed = fixed.clone();
@@ -4032,10 +4016,10 @@ where
                 &fixed,
                 &degrees,
                 point_count,
-                &preflight_budget,
+                session_budget,
                 &coordinate_preflight_budget,
                 &boundary_preflight_budget,
-                &orientation_budget,
+                &preflight_orientation_budget,
                 Some(&mut accept_first),
             );
             if !found {
@@ -4048,10 +4032,6 @@ where
             }
         }
         rejection = IncidenceRejection::ComponentComposition;
-        let composition_budget = session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
-        let component_budgets = (0..components.len())
-            .map(|_| session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS))
-            .collect::<Vec<_>>();
         let orientation_budget = session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
         // These deductions can reduce composition work but cannot establish a
         // solution. Keep their exhaustion independent of the exact search budget.
@@ -4073,12 +4053,12 @@ where
             &mut fixed,
             &mut degrees,
             point_count,
-            &composition_budget,
+            session_budget,
             visitor,
             &mut visited,
             &mut ambiguous,
             &components,
-            &component_budgets,
+            session_budget,
             &orientation_budget,
             &coordinate_propagation_budget,
             &boundary_propagation_budget,
@@ -4107,6 +4087,7 @@ pub(crate) fn reconstruct_incidence_candidates(
     edge_candidates: &[Vec<[usize; 2]>],
     edge_ports: Option<&[[u32; 2]]>,
     face_count: usize,
+    budget: &WorkBudget<'_>,
 ) -> Option<StandardTopology> {
     const MAX_TOPOLOGY_ASSIGNMENTS: usize = 256;
 
@@ -4124,7 +4105,6 @@ pub(crate) fn reconstruct_incidence_candidates(
     let mut solution_pairs: Option<Vec<[usize; 2]>> = None;
     let mut assignment_count = 0usize;
     let mut invalid = false;
-    let validation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let outcome = visit_incidence_endpoint_pair_solutions(
         edge_rows,
         vertex_points,
@@ -4134,7 +4114,7 @@ pub(crate) fn reconstruct_incidence_candidates(
         None,
         quotient.as_ref(),
         None,
-        Some(&validation_budget),
+        Some(budget),
         &|_| true,
         &mut |pairs| {
             if assignment_count == MAX_TOPOLOGY_ASSIGNMENTS {
@@ -4183,10 +4163,7 @@ pub(crate) fn reconstruct_incidence_candidates(
     )
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn visit_incidence_endpoint_pair_solutions<F, V>(
     edge_rows: &[EdgeRow],
     vertex_points: &[[f64; 3]],
@@ -4220,10 +4197,7 @@ where
     )
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy<F, V>(
     edge_rows: &[EdgeRow],
     vertex_points: &[[f64; 3]],
