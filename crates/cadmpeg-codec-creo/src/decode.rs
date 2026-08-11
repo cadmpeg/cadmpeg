@@ -23038,27 +23038,74 @@ fn counterbore_axis_placement(
     ir: &CadIr,
     feature_id: u32,
 ) -> Option<cadmpeg_ir::features::HolePlacement> {
-    let (_, counterbore_diameter, _) = counterbore_dimensions(scan, ir, feature_id)?;
-    let cylinder_sources = counterbore_cylinder_sources(scan, feature_id)?;
-    let existing_geometries = ir
-        .model
-        .surfaces
+    let cylinder_axis =
+        counterbore_dimensions(scan, ir, feature_id).and_then(|(_, counterbore_diameter, _)| {
+            let cylinder_sources = counterbore_cylinder_sources(scan, feature_id)?;
+            let existing_geometries = ir
+                .model
+                .surfaces
+                .iter()
+                .filter_map(|surface| {
+                    let id = surface
+                        .id
+                        .0
+                        .strip_prefix("creo:visibgeom:surface#")?
+                        .parse::<u32>()
+                        .ok()?;
+                    Some((id, surface.geometry.clone()))
+                })
+                .collect::<BTreeMap<_, _>>();
+            counterbore_axis_placement_from_sources(
+                &cylinder_sources,
+                &existing_geometries,
+                counterbore_diameter,
+            )
+        });
+    cylinder_axis.or_else(|| {
+        counterbore_support_axis_placement(
+            feature_id,
+            counterbore_entity_table(scan, feature_id)?,
+            &scan.surfaces.rows,
+            &scan.planes.local_systems,
+        )
+    })
+}
+
+fn counterbore_support_axis_placement(
+    feature_id: u32,
+    table: &crate::feature::FeatureEntityTable,
+    rows: &[crate::surface::SurfaceRow],
+    frames: &[crate::surface::PlaneLocalSystem],
+) -> Option<cadmpeg_ir::features::HolePlacement> {
+    (table.feature_id == Some(feature_id)).then_some(())?;
+    let plane_ids = table
+        .surface_ids
         .iter()
-        .filter_map(|surface| {
-            let id = surface
-                .id
-                .0
-                .strip_prefix("creo:visibgeom:surface#")?
-                .parse::<u32>()
-                .ok()?;
-            Some((id, surface.geometry.clone()))
+        .copied()
+        .filter(|surface_id| {
+            crate::surface::unique_surface_row(rows, *surface_id).is_some_and(|row| {
+                row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
+            })
         })
-        .collect::<BTreeMap<_, _>>();
-    counterbore_axis_placement_from_sources(
-        &cylinder_sources,
-        &existing_geometries,
-        counterbore_diameter,
-    )
+        .collect::<Vec<_>>();
+    let [plane_id] = plane_ids.as_slice() else {
+        return None;
+    };
+    let matching_frames = frames
+        .iter()
+        .filter(|frame| frame.surface_id == *plane_id)
+        .collect::<Vec<_>>();
+    let [frame] = matching_frames.as_slice() else {
+        return None;
+    };
+    let origin = frame
+        .origin
+        .filter(|origin| origin.iter().all(|value| value.is_finite()))?;
+    let axis = normalized(frame.normal?)?;
+    Some(cadmpeg_ir::features::HolePlacement::Axis {
+        origin: Point3::new(origin[0], origin[1], origin[2]),
+        axis: Vector3::new(axis[0], axis[1], axis[2]),
+    })
 }
 
 fn counterbore_axis_placement_from_sources(

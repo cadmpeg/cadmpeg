@@ -2900,6 +2900,59 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
 }
 
 #[test]
+fn counterbore_step_support_supplies_only_its_unoriented_normal_axis() {
+    let table = crate::feature::FeatureEntityTable {
+        feature_id: Some(9),
+        table_class_id: 29,
+        entry_ids: Vec::new(),
+        entries: Vec::new(),
+        surface_ids: vec![11, 13, 15],
+        non_surface_entity_ids: Vec::new(),
+        offset: 0,
+    };
+    let rows = [
+        class_911_surface_row(9, 11, crate::surface::SurfaceKind::Cylinder),
+        class_911_surface_row(9, 13, crate::surface::SurfaceKind::Plane),
+        class_911_surface_row(9, 15, crate::surface::SurfaceKind::Cylinder),
+    ];
+    let frame = crate::surface::PlaneLocalSystem {
+        surface_id: 13,
+        body: Vec::new(),
+        slots: vec![Some(0.0); 12],
+        origin: Some([2.0, 3.0, 4.0]),
+        u_axis: Some([0.0, 0.0, 1.0]),
+        normal: Some([0.0, -2.0, 0.0]),
+        classification: crate::surface::LocalSystemClassification::Simple,
+        row_offset: 0,
+        offset: 0,
+    };
+
+    assert_eq!(
+        counterbore_support_axis_placement(9, &table, &rows, std::slice::from_ref(&frame)),
+        Some(cadmpeg_ir::features::HolePlacement::Axis {
+            origin: Point3::new(2.0, 3.0, 4.0),
+            axis: Vector3::new(0.0, -1.0, 0.0),
+        })
+    );
+    assert!(
+        counterbore_support_axis_placement(10, &table, &rows, std::slice::from_ref(&frame),)
+            .is_none()
+    );
+    let mut incomplete = frame.clone();
+    incomplete.normal = None;
+    assert!(counterbore_support_axis_placement(
+        9,
+        &table,
+        &rows,
+        std::slice::from_ref(&incomplete),
+    )
+    .is_none());
+    assert!(
+        counterbore_support_axis_placement(9, &table, &rows, &[frame.clone(), frame]).is_none()
+    );
+}
+
+#[test]
 fn simple_drilled_axis_accepts_only_coaxial_dimension_matched_carriers() {
     let frame = |origin, axis, radius| crate::surface::PositionalCylinderFrame {
         origin,

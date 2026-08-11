@@ -2794,10 +2794,12 @@ A cylindrical stepped entry has two source section entities whose paired
 materialization entries are both cylinder rows and one other source whose pair
 contains one materialized plane row and one rowless face use. The paired
 cylinder rows are the two patches of each cylindrical step. The plane is an
-axis-containing support and does not define the step depth. When the feature
-generates no conical surface, this structure selects counterbore form
-independently of whether both cylinder carriers and the counterbore dimensions
-are evaluable.
+axis-normal step support. A complete local-system frame on that plane stores a
+point on the hole axis as its origin, and its normal supplies the unoriented
+hole axis. The frame alone does not assign the entry position, drilling
+direction, or step depth. When the feature generates no conical surface, this
+structure selects counterbore form independently of whether both cylinder
+carriers and the counterbore dimensions are evaluable.
 
 A class-911 table-class-29 simple-drilled recipe has one paired source that
 materializes two cone rows, one paired source that materializes two cylinder

@@ -257,7 +257,9 @@ fixtures, claims above L1 remain unproven.
   document-level replays and class-29 tables without materialized source
   cylinders do not participate. Coaxial radial centers and adjacent
   counterbore and bore intervals supply the entry position, direction, and full
-  blind extent without assigning a placement face.
+  blind extent without assigning a placement face. A complete frame on the
+  recipe's axis-normal step plane supplies an unoriented hole axis without
+  assigning the entry position or drilling direction.
 - Fill boundaries use the unique feature-bound section transform when present
   and otherwise the unique feature-owned section definition. The sketch
   identity remains available when its placement or profile geometry is
