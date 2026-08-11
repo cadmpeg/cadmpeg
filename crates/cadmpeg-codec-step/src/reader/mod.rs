@@ -537,7 +537,7 @@ fn decode_exchange_mode(
             };
             *counts.entry("SIGNATURE".into()).or_default() += 1;
             opaque.push(UnknownRecord {
-                id: UnknownId(format!("step:signature#{index}")),
+                id: UnknownId(format!("step:file:signature#{index}")),
                 offset: signature.start as u64,
                 byte_len: signature.len() as u64,
                 sha256: sha256_hex(&bytes),

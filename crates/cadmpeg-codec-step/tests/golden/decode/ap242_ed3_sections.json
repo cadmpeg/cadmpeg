@@ -60,7 +60,7 @@
               ]
             },
             {
-              "id": "step:signature#0"
+              "id": "step:file:signature#0"
             }
           ]
         },
@@ -132,7 +132,7 @@
       {
         "byte_len": 143,
         "data": "U0lHTkFUVVJFOwpNRm9HQ1NxR1NJYjNEUUVIQXFCTk1Fc0NBUUV4RFRBTEJnbGdoa2dCWlFNRUFnRXdDd1lKS29aSWh2Y05BUWNCTVNvd0tBSUJBVEFGTUFBQ0FRRXdDd1lKWUlaSUFXVURCQUlCTUEwR0NTcUdTSWIzRFFFQkFRVUFCQUE9CkVORFNFQzs=",
-        "id": "step:signature#0",
+        "id": "step:file:signature#0",
         "offset": 451,
         "sha256": "4658af8ce24b852b03d6801a706d9877e63da748cba1fe3cb94e6f96811fd3db",
         "stream": "source"

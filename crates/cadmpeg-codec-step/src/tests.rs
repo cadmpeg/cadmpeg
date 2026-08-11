@@ -1571,7 +1571,7 @@ fn codec_inspects_edition3_sections_and_external_references() {
         .expect("STEP unknown arena");
     let signature_unknown = unknowns
         .iter()
-        .find(|record| record.id.0 == "step:signature#0")
+        .find(|record| record.id.0 == "step:file:signature#0")
         .expect("retained signature");
     assert_eq!(
         decoded
