@@ -1452,9 +1452,7 @@ fn unique_appearance<'a>(
 
 /// Resolve one material owner through its exact ordered body-map pair.
 ///
-/// ASM keys are local to the pair's BREP basename. The already-resolved native
-/// binding therefore remains authoritative; reconstructing a document-global
-/// key map would discard that namespace.
+/// ASM keys are local to the pair's BREP basename.
 fn resolved_body_for_map_pair(
     body_bindings: &[DesignBodyBinding],
     owner_id: &str,

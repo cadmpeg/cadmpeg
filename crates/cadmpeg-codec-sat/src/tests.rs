@@ -17,7 +17,7 @@ fn decode_bytes(bytes: &[u8]) -> DecodeResult {
 
 /// A text stream carrying one loopless closed sphere face at header scale
 /// `scale` millimetres per unit.
-fn text_sphere_stream(scale: f64) -> Vec<u8> {
+pub(crate) fn text_sphere_stream(scale: f64) -> Vec<u8> {
     let mut text = String::new();
     text.push_str("23200 0 2 2 \n");
     text.push_str("16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 9 Synthetic \n");
@@ -36,12 +36,12 @@ fn text_sphere_stream(scale: f64) -> Vec<u8> {
 /// The same solid in the binary encoding, built token by token. The binary
 /// unit is centimetres, so the same 25 mm radius is stored as 2.5.
 #[derive(Clone, Copy)]
-enum BinaryFixtureKind {
+pub(crate) enum BinaryFixtureKind {
     Asm,
     Acis,
 }
 
-fn binary_sphere_stream(kind: BinaryFixtureKind) -> Vec<u8> {
+pub(crate) fn binary_sphere_stream(kind: BinaryFixtureKind) -> Vec<u8> {
     let mut bytes = Vec::new();
     let width = match kind {
         BinaryFixtureKind::Asm => {

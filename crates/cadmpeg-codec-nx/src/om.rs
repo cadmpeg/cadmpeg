@@ -1865,8 +1865,7 @@ pub struct OperationBodyReference {
 
 /// One exact nested object-relation frame in a bounded operation record.
 ///
-/// The two object indices are retained in wire order. Their semantic roles
-/// depend on the owning operation and are deliberately not inferred here.
+/// Object indices in wire order; roles depend on the owning operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationObjectRelation {
     /// Absolute offset of the opening `01 02` marker.
@@ -6113,9 +6112,8 @@ fn numeric_expression_at(
     })
 }
 
-/// Evaluate the context-free arithmetic subset used by NX numeric formulas.
-/// Names and function calls deliberately fail here; their values require the
-/// owning parameter graph rather than local expression syntax.
+/// Evaluate the context-free arithmetic subset of NX numeric formulas.
+/// Names and function calls fail; they need the parameter graph.
 pub(crate) fn evaluate_constant_expression(text: &str) -> Option<f64> {
     struct Parser<'a> {
         bytes: &'a [u8],

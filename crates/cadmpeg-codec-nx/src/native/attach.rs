@@ -1,11 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IR-writing attachment of the native object model.
-//!
-//! This module is the sole IR-mutation surface inside `native/`: it walks the
-//! extracted [`NativeModel`], emits source annotations in the legacy note order,
-//! serializes each record family into an `nx` namespace arena, and attaches the
-//! semantic islands (tessellations, source attributes, feature operations). The
-//! IR-free domain modules, `model.rs`, and `catalogue.rs` never write IR.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -749,9 +743,7 @@ fn attach_jpeg_preview_assets(
     }
 }
 
-/// Transfer the complete validated TIFF set atomically. A partial transfer
-/// would make native catalog links appear usable when one of their targets is
-/// absent from the neutral asset arena.
+/// Transfer the complete validated TIFF set atomically.
 fn attach_material_texture_assets(
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
@@ -3655,8 +3647,6 @@ fn operation_source_properties(
     properties.insert("operation_terminal_frame".to_string(), frame.id.clone());
     properties
 }
-
-// ===== Feature-semantics and attachment helpers (moved from decode.rs) =====
 
 struct ParasolidStringAttributeSources<'a> {
     topology_references: &'a [crate::native::parasolid::ParasolidTopologyAttributeListReference],

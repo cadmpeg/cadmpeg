@@ -12135,8 +12135,6 @@ fn real_formatting_always_has_decimal_point() {
 #[test]
 fn edge_without_curve_is_reported_and_omitted() {
     let _ = cylinder_surface_doc(); // keep helper exercised
-                                    // Build a tiny doc: one face on a plane, one loop, one coedge whose edge has
-                                    // no curve. The edge should be omitted and a loss recorded.
     let ir = edgeless_doc();
     let mut buf = Vec::new();
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
@@ -12282,9 +12280,6 @@ fn writer_reports_reduced_tessellation_metadata_and_body_links() {
 
 #[test]
 fn face_on_unknown_surface_is_skipped_and_reported() {
-    // Turn the cube's first face onto an unknown (opaque) surface. That face
-    // cannot become an ADVANCED_FACE, so the writer must skip it and record one
-    // aggregated, counted loss — the remaining five faces still export.
     let mut ir = unit_cube();
     let target = ir.model.faces[0].surface.0.clone();
     for s in &mut ir.model.surfaces {

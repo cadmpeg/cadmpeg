@@ -270,13 +270,9 @@ fn assign_native_operation_parameter_values(
 
 /// Give every neutral parameter a unique name within its ownership scope.
 ///
-/// CATIA permits several source parameters with the same name under one
-/// feature. The IR uses names as scope-local keys, so retaining those names
-/// verbatim would produce an invalid model. Keep the first source name and
-/// append a deterministic suffix to later collisions. Reserve every source
-/// name before choosing a suffix so a generated name cannot hide a later
-/// source parameter with that name. The original spelling remains available
-/// in `properties["source_name"]` whenever the neutral name changes.
+/// Keep the first source name; suffix later collisions. Reserve every source
+/// name before choosing a suffix. Original spelling stays in
+/// `properties["source_name"]` when the neutral name changes.
 fn normalize_parameter_names(ir: &mut CadIr) {
     let mut reserved_by_scope = HashMap::<Option<FeatureId>, HashSet<String>>::new();
     for parameter in &ir.model.parameters {

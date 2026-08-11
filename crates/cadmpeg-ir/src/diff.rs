@@ -73,7 +73,7 @@ pub struct SourceDiff {
 impl SourceDiff {
     /// Returns `true` when nothing that counts as a difference changed.
     ///
-    /// [`Self::local_digests`] is deliberately not consulted.
+    /// [`Self::local_digests`] is not consulted.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.format_change.is_none() && self.attributes.is_empty()
@@ -186,10 +186,7 @@ where
         .iter()
         .filter_map(|(id, before)| {
             let after = right.get(id)?;
-            // Exact equality is the fast path and skips serializing the pair.
-            // Anything else goes to the tolerant field comparison, which decides
-            // whether the entity moved at all: an empty field list means every
-            // difference was below the tolerance.
+            // Empty differing_fields means every difference was below tolerance.
             if *before == *after {
                 return None;
             }
@@ -265,9 +262,6 @@ fn tolerances_agree(left: crate::units::Tolerances, right: crate::units::Toleran
 
 /// Compare the source metadata of two documents, classifying each differing
 /// attribute as a difference or as an informational machine-local digest.
-///
-/// An absent `source` compares as [`SourceMeta::default`]; the module
-/// documentation states why.
 fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
     let absent = SourceMeta::default();
     let left = left.source.as_ref().unwrap_or(&absent);
@@ -388,9 +382,7 @@ mod tests {
             .collect()
     }
 
-    /// Index of a point whose `x` is at unit magnitude or above, so a relative
-    /// perturbation of it is a real perturbation. A zero coordinate would make
-    /// either direction of these tests vacuous.
+    /// Index of a point whose `x` is at unit magnitude or above.
     fn scaled_point(ir: &crate::CadIr) -> usize {
         ir.model
             .points
@@ -504,9 +496,6 @@ mod tests {
         ir
     }
 
-    /// An ordinary source attribute that moved is a difference. Before this was
-    /// compared, a `program_version` or `object_count` change between two
-    /// documents was invisible.
     #[test]
     fn a_source_attribute_difference_is_a_difference() {
         let left = with_source(&[("program_version", "1.0"), ("object_count", "3")]);
@@ -566,9 +555,7 @@ mod tests {
         );
     }
 
-    /// The carve-out follows the naming convention rather than a list of today's
-    /// keys, so a digest a codec adds tomorrow is classified without changing
-    /// this module.
+    /// Carve-out keys by `_local_sha256` suffix, not a fixed key list.
     #[test]
     fn the_carve_out_follows_the_suffix_convention() {
         let key = format!("future_codec_thing{}", compare::LOCAL_DIGEST_SUFFIX);
@@ -578,8 +565,7 @@ mod tests {
         assert!(result.is_empty(), "{result:?}");
         assert_eq!(result.source.local_digests[0].key, key);
 
-        // A digest over retained source bytes carries no such suffix, so a change
-        // in one stays a difference.
+        // Digests over retained source bytes have no suffix; a change stays a difference.
         let right = with_source(&[(&key, "b"), ("footer_fingerprint", "g")]);
         let result = diff(&left, &right);
         assert!(!result.is_empty());

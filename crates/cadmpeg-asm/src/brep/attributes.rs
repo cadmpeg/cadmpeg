@@ -12,10 +12,7 @@ use std::collections::{HashMap, HashSet};
 
 /// Follow `entity`'s attribute chain, emitting each record not yet in
 /// `emitted` as a [`SourceAttribute`] bound to `target`.
-#[allow(
-    clippy::implicit_hasher,
-    reason = "Callers pass default-hasher collections; a hasher parameter adds generic noise for one call shape."
-)]
+#[allow(clippy::implicit_hasher)]
 pub fn collect_attributes(
     entity: &Record,
     target: &AttributeTarget,
@@ -166,9 +163,6 @@ fn attribute_value(token: &Token, format: IdFormat<'_>) -> AttributeValue {
         Token::SubtypeClose => AttributeValue::String("subtype_close".into()),
         Token::Position(value) | Token::Vector3(value) => AttributeValue::Vector(value.to_vec()),
         Token::Vector2(value) => AttributeValue::Vector(value.to_vec()),
-        // Not reachable through `source_attribute`, which maps chunks; kept
-        // total so a payload identifier still carries its name if a future
-        // caller maps raw tokens.
         Token::Ident(value) | Token::SubIdent(value) => AttributeValue::String(value.clone()),
     }
 }
@@ -361,20 +355,14 @@ pub fn attribute_chain_color_carrier<'a>(
 }
 
 /// The first well-formed exact direct color on `entity`'s attribute chain.
-#[allow(
-    clippy::implicit_hasher,
-    reason = "Callers pass default-hasher collections; a hasher parameter adds generic noise for one call shape."
-)]
+#[allow(clippy::implicit_hasher)]
 pub fn attribute_chain_color(entity: &Record, by_index: &HashMap<i64, &Record>) -> Option<Color> {
     attribute_chain_color_carrier(entity, |index| by_index.get(&index).copied())
         .map(|(_, decoded)| decoded.color)
 }
 
 /// The first non-empty name attribute on `entity`'s attribute chain.
-#[allow(
-    clippy::implicit_hasher,
-    reason = "Callers pass default-hasher collections; a hasher parameter adds generic noise for one call shape."
-)]
+#[allow(clippy::implicit_hasher)]
 pub fn attribute_chain_name(entity: &Record, by_index: &HashMap<i64, &Record>) -> Option<String> {
     let mut current = entity.ref_at(0)?;
     let mut seen = HashSet::new();

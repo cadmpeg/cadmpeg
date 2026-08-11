@@ -422,10 +422,7 @@ impl<'a> Builder<'a> {
         Ok(())
     }
 
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-    )]
+    #[allow(clippy::too_many_arguments)]
     fn append_shape_regions(
         &mut self,
         ctx: &DecodeContext<'_>,

@@ -1097,10 +1097,7 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
     })
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn parse_binary_tshape(
     cursor: &mut BinaryCursor<'_>,
     version: u8,
@@ -1329,10 +1326,7 @@ fn parse_binary_tshape(
     })
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn parse_binary_edge_representation(
     cursor: &mut BinaryCursor<'_>,
     version: u8,

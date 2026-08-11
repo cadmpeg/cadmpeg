@@ -63,14 +63,15 @@ wrote part.step (2125 entities)
 
 - **FreeCAD `.FCStd`** — [L5](docs/format-support.md#support-ladder) (schema 4 / file 1)
 - **Autodesk Fusion `.f3d`** — [L4](docs/format-support.md#support-ladder)
+- **Autodesk Inventor `.ipt`/`.iam`** — [L1](docs/format-support.md#support-ladder)
 - **SolidWorks `.sldprt`** — [L4](docs/format-support.md#support-ladder)
-- **Rhino `.3dm`** — [L8](docs/format-support.md#support-ladder) (archive 50/60/70/80); older bands [L1](docs/format-support.md#support-ladder) / [L0](docs/format-support.md#support-ladder)
+- **Rhino `.3dm`** — [L1](docs/format-support.md#support-ladder) (archive 50/60/70/80 and V2–V4); [L0](docs/format-support.md#support-ladder) (V1 and archive 5)
 - **Siemens NX `.prt`** — [L3](docs/format-support.md#support-ladder) (selected or terminal-lineage-resolved body images); [L2](docs/format-support.md#support-ladder) (unresolved multi-partition history)
 - **CATIA V5 `.CATPart`** — [L2](docs/format-support.md#support-ladder) (standard-nested); [L1](docs/format-support.md#support-ladder) (other layouts)
 - **Creo `.prt`** — [L1](docs/format-support.md#support-ladder)
 - **STEP Part 21 AP203/AP214/AP242** — [L9](docs/format-support.md#support-ladder)
-- **IGES 5.3 Fixed ASCII** — [L8](docs/format-support.md#support-ladder)
-- **ASM `.sat`/`.smt`/`.smb`/`.sab` streams** — bare ShapeManager B-rep streams, binary and text encodings
+- **IGES 5.1/5.2/5.3 Fixed ASCII** — [L8](docs/format-support.md#support-ladder)
+- **ASM/ACIS `.sat`/`.smt`/`.smb`/`.sab` streams** — [L3](docs/format-support.md#support-ladder) (admitted binary and text branches)
 
 [Format support](docs/format-support.md) holds profiles and scoring rules. [`docs/formats/`](docs/formats/) holds byte semantics and open items.
 
@@ -136,4 +137,4 @@ AI-assisted contributions are welcome when reviewed and concise. Clean-room rule
 
 Code uses the [Apache License 2.0](LICENSE); documentation and specifications use [CC BY 4.0](LICENSE-docs). Contributions use the corresponding license.
 
-SolidWorks, Rhino, CATIA, Autodesk Fusion, Creo, NX, Parasolid, and other product names are trademarks of their respective owners. cadmpeg uses them only to identify the file formats its decoders target. cadmpeg is an independent project and is not affiliated with, endorsed by, or sponsored by any CAD vendor. See [LEGAL.md](LEGAL.md).
+SolidWorks, Rhino, CATIA, Autodesk Fusion, Autodesk Inventor, Creo, NX, Parasolid, ShapeManager, ACIS, and other product names are trademarks of their respective owners. cadmpeg uses them only to identify the file formats its decoders target. cadmpeg is an independent project and is not affiliated with, endorsed by, or sponsored by any CAD vendor. See [LEGAL.md](LEGAL.md).

@@ -22,8 +22,7 @@ use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 /// A stable, machine-readable identifier for one `.3dm` transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
-/// string form (via [`RhinoLossCode::code`]) is the stable contract; the Rust
-/// variant name may be refactored freely.
+/// string form (via [`RhinoLossCode::code`]) is the stable contract.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RhinoLossCode {
@@ -88,7 +87,7 @@ pub enum RhinoLossCode {
 }
 
 impl RhinoLossCode {
-    /// Every code, in declaration order. Used by tests to assert stability.
+    /// Every code, in declaration order.
     pub const ALL: &'static [RhinoLossCode] = &[
         Self::ContainerScanDiagnostic,
         Self::IntegrityFailure,
@@ -168,14 +167,8 @@ impl RhinoLossCode {
     }
 
     /// The shared cross-codec category this loss reports under.
-    ///
-    /// Matched exhaustively on purpose: see the module documentation.
     const fn shared_code(self) -> LossKind {
         match self {
-            // `ReferenceMember*` stay diagnostics rather than
-            // `ReferenceGraphNotClosed` so that an unresolvable member UUID
-            // keeps its current strict-mode handling: `ReferenceGraphNotClosed`
-            // carries a `Warning` strict floor and would newly reject.
             Self::ContainerScanDiagnostic
             | Self::ContainerInstanceDefinitionDegraded
             | Self::ObjectFramingUndecodable
@@ -212,13 +205,8 @@ impl RhinoLossCode {
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
-    /// The rendered message is `"<code>: <message>"`. [`LossNote`] has no field
-    /// for a codec-specific code, so prefixing the message is the only channel
-    /// that puts [`RhinoLossCode::code`] into a decode report. Without it the
-    /// code strings would be a vocabulary no consumer can observe.
-    ///
-    /// Severity comes from the codec-specific code. Provenance is left absent;
-    /// callers that can attribute a source offset add it with
+    /// Message form is `"<code>: <message>"`. Severity comes from the code;
+    /// provenance is absent unless the caller adds it with
     /// [`LossNote::with_provenance`].
     #[must_use]
     pub fn note(self, message: impl std::fmt::Display) -> LossNote {
@@ -232,8 +220,6 @@ mod tests {
     use super::RhinoLossCode;
     use std::collections::BTreeSet;
 
-    /// Value-level golden: the stable string form of every code, pinned. A
-    /// diff here is an intentional contract change to a gating identifier.
     #[test]
     fn code_strings_are_pinned() {
         let codes: Vec<&str> = RhinoLossCode::ALL.iter().map(|c| c.code()).collect();

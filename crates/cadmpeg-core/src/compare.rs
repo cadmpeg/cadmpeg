@@ -1,62 +1,61 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tolerance-aware semantic comparison of decoded values.
 //!
-//! ## Why a tolerance exists
+//! ## Tolerance
 //!
-//! Decoded geometry passes through `f64::cos`, `f64::sin`, and friends, which
-//! resolve to the platform's libm and are not bit-reproducible: glibc, the MSVC
-//! runtime, and Apple's libm disagree in the last one or two units in the last
-//! place. One conical face pins `origin.v` scaled by `cos(half_angle)`, which
-//! serializes as `1.802581857082682` on Linux and `1.8025818570826815` on
-//! Windows and macOS — two units in the last place apart, and identical to
+//! Decoded geometry calls `f64::cos`, `f64::sin`, and other libm functions.
+//! glibc, the MSVC runtime, and Apple's libm disagree by one or two units in
+//! the last place. One conical face pins `origin.v` scaled by
+//! `cos(half_angle)`, which serializes as `1.802581857082682` on Linux and
+//! `1.8025818570826815` on Windows and macOS: two ULPs apart, identical to
 //! fourteen significant digits.
 //!
-//! Exact equality therefore reports a platform as a change. That makes it the
-//! wrong relation for any question of the form "do these two decodes describe
-//! the same model", whether the asker is a snapshot harness or a user running a
-//! semantic comparison over the same file decoded on two machines.
+//! Exact equality therefore treats a platform difference as a model change.
+//! That breaks any check of the form "do these two decodes describe the same
+//! model", whether a snapshot harness or a cross-machine compare of one file.
 //!
-//! ## Why `1e-12` relative with a floor of one
+//! ## `1e-12` relative, floor of one
 //!
-//! Platform libm disagreement is a few units in the last place, near `1e-16`
-//! relative, so [`FLOAT_TOLERANCE`] leaves four decimal orders of headroom
-//! while still catching any change with physical meaning: at millimeter scale
-//! it admits a picometer. The tolerance applies to the larger of the two
-//! magnitudes, floored at one, so values below unit magnitude compare
-//! absolutely rather than demanding ever-finer agreement as they approach zero
-//! — a relative test against zero can never pass, and `0.0` against `1e-30` is
-//! agreement for every purpose this relation serves.
+//! Platform libm disagreement sits near `1e-16` relative. [`FLOAT_TOLERANCE`]
+//! leaves four decimal orders of headroom and still flags a change with
+//! physical meaning: at millimeter scale it admits a picometer. The tolerance
+//! uses the larger of the two magnitudes, floored at one, so values below unit
+//! magnitude compare absolutely. A relative test against zero can never pass,
+//! and `0.0` against `1e-30` agrees for every use of this relation.
 //!
-//! ## Why integers stay exact
+//! ## Exact integers
 //!
 //! Counts, indices, degrees, versions, and identifiers serialize as JSON
-//! integers. Not one of them passes through libm, and a change of one in any of
-//! them is a real change in the model. [`values_agree`] therefore admits a
-//! tolerance only when *both* sides are fractional; an integer pair, and a
-//! value that moved between integer and fractional form, compare exactly.
+//! integers. None of them pass through libm. A change of one is a real model
+//! change. [`values_agree`] admits a tolerance only when both sides are
+//! fractional. An integer pair, and a value that moved between integer and
+//! fractional form, compare exactly.
 //!
-//! ## Tolerant equality is not transitive
+//! String values compare exactly except for embedded fractional tokens
+//! (decimal or `E`/`D` exponent form), which use the same tolerance. Encode
+//! goldens pin writer text that still carries platform libm bits.
 //!
-//! `a` agreeing with `b` and `b` agreeing with `c` do not imply that `a` agrees
-//! with `c`: two steps of just under the tolerance sum to just over it. Every
-//! verdict this module produces is therefore strictly about the one pair it was
-//! given. Consequences:
+//! ## Non-transitive relation
 //!
-//! - The relation cannot back a hash, an equivalence class, a `BTreeMap` key,
-//!   or a deduplication pass, all of which need transitivity to be coherent.
+//! If `a` agrees with `b` and `b` agrees with `c`, `a` need not agree with
+//! `c`: two steps under the tolerance can sum over it. Each verdict covers
+//! only the pair you pass in.
+//!
+//! - Do not use this relation for a hash, equivalence class, `BTreeMap` key,
+//!   or deduplication pass. Those need transitivity.
 //! - A digest over tolerantly compared values is a bitwise fingerprint and
-//!   agrees only under exact equality, so no tolerance can rescue one.
-//! - Chaining comparisons through an intermediate proves nothing about the
-//!   endpoints. Compare the two values the question is actually about.
+//!   agrees only under exact equality.
+//! - Chaining through an intermediate proves nothing about the endpoints.
+//!   Compare the two values the question names.
 //!
-//! ## Naming a digest that this relation cannot reconcile
+//! ## Local digests
 //!
-//! A codec still needs bitwise digests over decoded content: the write path asks
-//! "was this document edited since it was decoded?" and only a bitwise digest
-//! answers that cheaply. Such a digest is valid within one machine's decode and
-//! nowhere else, for exactly the reason stated above. It is therefore named with
-//! the [`LOCAL_DIGEST_SUFFIX`] suffix, and [`is_local_digest_attribute`] is the
-//! one place that decides whether a source attribute holds one.
+//! A codec still needs bitwise digests over decoded content: the write path
+//! asks whether the document changed since decode, and only a bitwise digest
+//! answers that cheaply. Such a digest is valid within one machine's decode
+//! and nowhere else, for the libm reason above. Name it with
+//! [`LOCAL_DIGEST_SUFFIX`]. [`is_local_digest_attribute`] is the sole check
+//! for whether a source attribute holds one.
 
 use std::fmt::Write as _;
 
@@ -69,24 +68,16 @@ use serde_json::Value;
 /// this magnitude.
 pub const FLOAT_TOLERANCE: f64 = 1e-12;
 
-/// Suffix reserved for a source attribute holding a machine-local content
-/// digest.
+/// Suffix for a source attribute holding a machine-local content digest.
 ///
-/// A key ending in this suffix holds a bitwise digest over decoded neutral
-/// content — the very values this module compares tolerantly. It is reproducible
-/// only under the same binary on the same platform, it is never a portable
-/// identity, and no tolerance can reconcile two of them. A codec that records a
-/// new digest of decoded content must name it with this suffix; a digest over
-/// retained source bytes is bit-exact everywhere and must not.
+/// Bitwise over decoded content; machine-local only. Digests over retained
+/// source bytes must not use this suffix.
 pub const LOCAL_DIGEST_SUFFIX: &str = "_local_sha256";
 
 /// Whether a source attribute key names a machine-local content digest under the
 /// [`LOCAL_DIGEST_SUFFIX`] convention.
 ///
-/// Two consumers depend on this: a structural diff reports such an attribute
-/// informationally rather than as a real difference, and the golden harness
-/// elides it from a snapshot. Both would otherwise report a platform as a
-/// change.
+/// Structural diffs report these informationally; the golden harness elides them.
 #[must_use]
 pub fn is_local_digest_attribute(key: &str) -> bool {
     key.ends_with(LOCAL_DIGEST_SUFFIX)
@@ -96,9 +87,8 @@ pub fn is_local_digest_attribute(key: &str) -> bool {
 /// the larger magnitude, with a floor of one so small values compare
 /// absolutely.
 ///
-/// Exact equality short-circuits, so two infinities of the same sign agree. Any
-/// other non-finite pair disagrees: `NaN` is not equal to itself, and an
-/// infinity against a finite value has no meaningful difference to bound.
+/// Exact equality short-circuits (including same-sign infinities). Other
+/// non-finite pairs disagree.
 #[must_use]
 pub fn floats_agree(left: f64, right: f64) -> bool {
     if left == right {
@@ -112,12 +102,13 @@ pub fn floats_agree(left: f64, right: f64) -> bool {
 }
 
 /// Compares two JSON values structurally, tolerating only last-place
-/// disagreement between two fractional numbers.
+/// disagreement between fractional numbers.
 ///
-/// Object key sets, array lengths, strings, booleans, nulls, and integers must
-/// match exactly; a fractional pair may differ by up to [`FLOAT_TOLERANCE`]
-/// relative to the larger magnitude. The relation is not transitive; see the
-/// module documentation.
+/// Object key sets, array lengths, booleans, nulls, and integers must match
+/// exactly; a fractional pair may differ by up to [`FLOAT_TOLERANCE`] relative
+/// to the larger magnitude. Strings must match outside fractional tokens; see
+/// [`texts_agree`]. The relation is not transitive; see the module
+/// documentation.
 ///
 /// # Errors
 ///
@@ -126,6 +117,114 @@ pub fn floats_agree(left: f64, right: f64) -> bool {
 pub fn values_agree(left: &Value, right: &Value) -> Result<(), String> {
     let mut path = String::new();
     walk(left, right, &mut path)
+}
+
+/// Whether two texts agree, tolerating last-place drift in fractional tokens.
+///
+/// Non-numeric spans and integer-only tokens must match byte-exactly. A
+/// fractional token (mantissa with a decimal point, optional `E`/`D` exponent)
+/// may differ by [`FLOAT_TOLERANCE`]. IGES writer output uses `D` exponents; both
+/// `E` and `D` parse.
+#[must_use]
+pub fn texts_agree(left: &str, right: &str) -> bool {
+    if left == right {
+        return true;
+    }
+    let mut left_rest = left;
+    let mut right_rest = right;
+    loop {
+        let left_next = next_fractional_token(left_rest);
+        let right_next = next_fractional_token(right_rest);
+        match (left_next, right_next) {
+            (None, None) => return left_rest == right_rest,
+            (
+                Some((left_prefix, left_value, left_after)),
+                Some((right_prefix, right_value, right_after)),
+            ) => {
+                if left_prefix != right_prefix || !floats_agree(left_value, right_value) {
+                    return false;
+                }
+                left_rest = left_after;
+                right_rest = right_after;
+            }
+            _ => return false,
+        }
+    }
+}
+
+/// First fractional token in `text`: prefix before it, parsed value, and the
+/// remainder after it. Integer-only digit runs are not tokens.
+fn next_fractional_token(text: &str) -> Option<(&str, f64, &str)> {
+    let bytes = text.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if let Some((end, value)) = match_fractional_at(bytes, index) {
+            let prefix = &text[..index];
+            let after = &text[end..];
+            return Some((prefix, value, after));
+        }
+        index += 1;
+    }
+    None
+}
+
+/// Fractional token starting at `start`, or `None` when that byte is not the
+/// start of one. Requires a decimal point so directory-section `D` markers and
+/// bare integers stay outside the tolerance path.
+fn match_fractional_at(bytes: &[u8], start: usize) -> Option<(usize, f64)> {
+    if start > 0 {
+        let previous = bytes[start - 1];
+        if previous.is_ascii_alphanumeric() || previous == b'.' {
+            return None;
+        }
+    }
+
+    let mut index = start;
+    if index < bytes.len() && (bytes[index] == b'+' || bytes[index] == b'-') {
+        let next = *bytes.get(index + 1)?;
+        if next != b'.' && !next.is_ascii_digit() {
+            return None;
+        }
+        index += 1;
+    }
+
+    let mut saw_digit = false;
+    let mut saw_dot = false;
+    while index < bytes.len() && bytes[index].is_ascii_digit() {
+        saw_digit = true;
+        index += 1;
+    }
+    if index < bytes.len() && bytes[index] == b'.' {
+        saw_dot = true;
+        index += 1;
+        while index < bytes.len() && bytes[index].is_ascii_digit() {
+            saw_digit = true;
+            index += 1;
+        }
+    }
+    if !saw_dot || !saw_digit {
+        return None;
+    }
+
+    if index < bytes.len() && matches!(bytes[index], b'e' | b'E' | b'd' | b'D') {
+        let exponent_mark = index;
+        index += 1;
+        if index < bytes.len() && (bytes[index] == b'+' || bytes[index] == b'-') {
+            index += 1;
+        }
+        let exponent_digits = index;
+        while index < bytes.len() && bytes[index].is_ascii_digit() {
+            index += 1;
+        }
+        if index == exponent_digits {
+            index = exponent_mark;
+        }
+    }
+
+    let token = std::str::from_utf8(&bytes[start..index]).ok()?;
+    let normalized = token.replace(['d', 'D'], "e");
+    let value = normalized.parse().ok()?;
+    Some((index, value))
 }
 
 /// Walks two values in step, recording the path to the first disagreement.
@@ -195,6 +294,16 @@ fn walk(left: &Value, right: &Value, path: &mut String) -> Result<(), String> {
                 ))
             }
         }
+        (Value::String(left_text), Value::String(right_text)) => {
+            if texts_agree(left_text, right_text) {
+                Ok(())
+            } else {
+                Err(disagreement(
+                    path,
+                    &format!("left {}, right {}", truncate(left), truncate(right)),
+                ))
+            }
+        }
         _ if left == right => Ok(()),
         _ => Err(disagreement(
             path,
@@ -222,7 +331,7 @@ fn truncate(value: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{floats_agree, values_agree, FLOAT_TOLERANCE};
+    use super::{floats_agree, texts_agree, values_agree, FLOAT_TOLERANCE};
 
     /// The two values one conical face produces on Linux against Windows and
     /// macOS. Their difference is platform libm disagreement, not a change in
@@ -324,5 +433,44 @@ mod tests {
         assert!(!floats_agree(f64::INFINITY, f64::NEG_INFINITY));
         assert!(!floats_agree(f64::NAN, f64::NAN));
         assert!(!floats_agree(f64::INFINITY, 0.0));
+    }
+
+    #[test]
+    fn iges_d_notation_last_place_drift_agrees_in_text() {
+        // Writer emits `{value:.16e}` with `e` replaced by `D`. Surface-of-
+        // revolution encode goldens carry near-zeros from platform libm; the
+        // string field must tolerate the same last-place noise JSON numbers do.
+        let left = "6.1232339957367660D-17,9.9999999999999978D-1";
+        let right = "6.1232339957367650D-17,9.9999999999999989D-1";
+        assert_ne!(left, right);
+        assert!(texts_agree(left, right));
+        assert!(agree(
+            &format!("{{\"output\":{left:?}}}"),
+            &format!("{{\"output\":{right:?}}}"),
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn iges_directory_section_marker_is_not_an_exponent() {
+        // Fixed-width directory cards end with `D` then a sequence column.
+        // That `D` is a section letter, not a real exponent.
+        let left = "000000000D      1\n110,1.0000000000000000D0;";
+        let right = "000000000D      2\n110,1.0000000000000000D0;";
+        assert!(!texts_agree(left, right));
+    }
+
+    #[test]
+    fn integer_runs_in_text_stay_exact() {
+        assert!(!texts_agree("entity 110", "entity 111"));
+        assert!(texts_agree("entity 110", "entity 110"));
+    }
+
+    #[test]
+    fn drift_beyond_tolerance_in_text_disagrees() {
+        let left = "1.0000000000000000D0";
+        let moved = 1.0 * (1.0 + 1000.0 * FLOAT_TOLERANCE);
+        let right = format!("{moved:.16e}").replace('e', "D");
+        assert!(!texts_agree(left, &right));
     }
 }

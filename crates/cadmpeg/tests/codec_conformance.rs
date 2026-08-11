@@ -1,12 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Cross-codec conformance contracts that drive the codec crates in-process.
 //!
-//! Both module trees here import the codec crates directly, so each one used to
-//! be its own file under `tests/`. Every file in `tests/` is a separate harness
-//! binary that links the whole codec graph again, and these two linked about
-//! 350 MB between them to carry three test functions. They share one binary
-//! because they share that link cost; tests that only spawn the CLI belong in
-//! `cli.rs`, which links almost none of it.
+//! Both module trees share one harness binary. Tests that only spawn the CLI
+//! belong in `cli.rs`.
 
 /// Cross-codec resource-budget classification contracts.
 mod budget {

@@ -3264,13 +3264,7 @@ mod tests {
 
     /// B5 object ids carry an unpadded decimal key, so a face pair such as
     /// `#9`/`#10` reaches the neutral model in ascending native order while
-    /// sorting the other way. The route must still produce an admissible model:
-    /// every cross-reference is an id string, so canonical arena order is a
-    /// property the pipeline restores rather than one the emit passes owe.
-    ///
-    /// Two ownership components put several arenas out of sorted order at once,
-    /// which one face cannot do. The container-level counterpart is
-    /// `tests::decode_float_packed_stream_transfers_topology_under_decimal_object_ids`.
+    /// sorting the other way. The route must still produce an admissible model.
     #[test]
     fn decimal_object_id_keys_transfer_to_an_admissible_model() {
         let graph = synthetic_spherical_graph(&[

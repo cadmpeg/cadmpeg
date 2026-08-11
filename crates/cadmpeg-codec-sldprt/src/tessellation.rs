@@ -539,10 +539,7 @@ impl PlanarTrim {
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Each arena map validates one topology link."
-)]
+#[allow(clippy::too_many_arguments)]
 fn planar_trim(
     face: &cadmpeg_ir::topology::Face,
     surface: &SurfaceGeometry,

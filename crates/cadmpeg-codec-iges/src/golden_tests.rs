@@ -1,29 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Golden snapshot harness for `inspect` and `decode` over the committed
-//! fixtures.
+//! Golden snapshot harness for `inspect`, `decode`, and `encode` over the
+//! committed fixtures.
 //!
 //! `tests/golden/fixtures/*.igs` are the frozen inputs.
-//! This harness never writes them: a snapshot test can only tell a decoder
-//! change apart from an input change while the inputs hold still, so
-//! regenerating an input destroys the evidence the snapshot exists to carry.
-//! `UPDATE_GOLDEN=1` rewrites `tests/golden/decode/` and
-//! `tests/golden/inspect/`, and nothing else.
-//!
-//! `tests/golden/inspect/` pins the container summary and
-//! `tests/golden/decode/` pins the decoded document: the IR, the decode
-//! report's losses, and source fidelity. A feature-typing or loss-accounting
-//! change moves the decode branch and `inspect` cannot see it, because an
-//! inspect summary describes the container, not what was transferred out of it.
-//!
-//! [`cadmpeg_core::golden`] holds the enumeration, comparison, and
-//! reporting shared with every other codec; this module supplies only this
-//! codec's branches.
+//! Fixtures stay frozen; `UPDATE_GOLDEN=1` rewrites goldens only.
+//! `inspect` pins the container summary; `decode` pins the IR, losses, and
+//! source fidelity; `encode` pins writer output and deliberate refusals.
+//! Shared harness: [`cadmpeg_core::golden`].
 
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::golden::{elide_local_digests, snapshot_text, Branch, Harness};
-use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
+use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, EncodeInput, Encoder};
 
 use super::IgesCodec;
 
@@ -38,10 +27,11 @@ fn harness() -> Harness {
 }
 
 /// The branches this codec pins, in golden-directory order.
-fn branches() -> [Branch; 2] {
+fn branches() -> [Branch; 3] {
     [
         Branch::new("inspect", inspect_snapshot),
         Branch::new("decode", decode_snapshot),
+        Branch::new("encode", encode_snapshot),
     ]
 }
 
@@ -77,6 +67,75 @@ fn decode_snapshot(bytes: &[u8]) -> String {
         Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
     };
     snapshot_text(&value)
+}
+
+/// Decodes `bytes`, then re-encodes through the semantic writer path.
+///
+/// `fidelity: None` forces synthesis. Decode and encode refusals freeze as
+/// `decode_error` / `encode_error`. The writer stamps `SystemTime::now()` into
+/// G-section field 18; that wall-clock value is replaced before freeze.
+fn encode_snapshot(bytes: &[u8]) -> String {
+    let decoded =
+        match IgesCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
+            Ok(result) => result,
+            Err(error) => {
+                return snapshot_text(&serde_json::json!({
+                    "decode_error": error.to_string()
+                }))
+            }
+        };
+    let outcome = Encoder::plan(
+        &IgesCodec,
+        EncodeInput {
+            ir: &decoded.ir,
+            fidelity: None,
+        },
+    )
+    .and_then(|plan| {
+        let mut produced = Vec::new();
+        plan.write_to(&mut produced)
+            .map(|report| (report, produced))
+    });
+    match outcome {
+        Ok((report, produced)) => {
+            let output = elide_generation_timestamps(&String::from_utf8_lossy(&produced));
+            snapshot_text(&serde_json::json!({
+                "report": report,
+                "output": output,
+            }))
+        }
+        Err(error) => snapshot_text(&serde_json::json!({
+            "encode_error": error.to_string()
+        })),
+    }
+}
+
+/// Replaces each writer generation timestamp `15HYYYYMMDD.HHMMSS` with a fixed
+/// placeholder of the same Hollerith length.
+fn elide_generation_timestamps(output: &str) -> String {
+    const PREFIX: &str = "15H";
+    const STAMP_LEN: usize = 15;
+    const PLACEHOLDER: &str = "YYYYMMDD.HHMMSS";
+    let mut result = output.to_string();
+    let mut search_from = 0;
+    while let Some(rel) = result[search_from..].find(PREFIX) {
+        let start = search_from + rel;
+        let stamp_start = start + PREFIX.len();
+        let stamp_end = stamp_start + STAMP_LEN;
+        if stamp_end <= result.len() {
+            let stamp = &result.as_bytes()[stamp_start..stamp_end];
+            if stamp[0..8].iter().all(u8::is_ascii_digit)
+                && stamp[8] == b'.'
+                && stamp[9..15].iter().all(u8::is_ascii_digit)
+            {
+                result.replace_range(stamp_start..stamp_end, PLACEHOLDER);
+                search_from = stamp_end;
+                continue;
+            }
+        }
+        search_from = start + PREFIX.len();
+    }
+    result
 }
 
 /// Every committed golden still matches what the codec produces.

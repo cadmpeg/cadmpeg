@@ -20,8 +20,7 @@
 //!   named source file, which is how a table claims agreement with a parser.
 //!
 //! `layout_validator_rejects_broken_tables` runs the same validator over
-//! deliberately-broken fixtures in `tests/fixtures/layout-invalid/` so that the
-//! rules above are proven to fire rather than assumed to.
+//! broken fixtures in `tests/fixtures/layout-invalid/`.
 
 #![allow(clippy::unwrap_used)] // Test code: a failed unwrap is a test failure.
 
@@ -31,9 +30,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-/// Every format directory the workspace ships a codec or spec for. A new
-/// format must gain a layout table (or an explicit `[[not_applicable]]`
-/// rationale inside one) before this test passes.
+/// Every format directory the workspace ships a codec or spec for.
 const EXPECTED_FORMATS: &[&str] = &[
     "asm", "catia", "creo", "f3d", "freecad", "iges", "inventor", "nx", "rhino", "sldprt", "step",
 ];
@@ -361,12 +358,6 @@ impl Context {
 }
 
 /// Read a text file with `\r\n` folded to `\n`.
-///
-/// Only `crates/cadmpeg-codec-nx/tests/golden/*.json` is pinned to LF in
-/// `.gitattributes`, so a Windows checkout hands these tables, the
-/// specifications, and the rendered pages CRLF. Rendering emits LF, and the
-/// stale-page check compares the two byte for byte. Folding on read keeps the
-/// comparison, and the TOML multi-line notes that feed it, platform-neutral.
 fn read_text(path: &Path) -> std::io::Result<String> {
     Ok(std::fs::read_to_string(path)?.replace("\r\n", "\n"))
 }
@@ -402,7 +393,7 @@ fn check_anchor(
     }
 }
 
-#[allow(clippy::too_many_lines)] // One rule per block; splitting hides the checklist.
+#[allow(clippy::too_many_lines)]
 fn validate(ctx: &mut Context, path: &Path, file: &LayoutFile) -> Vec<String> {
     let mut errors = Vec::new();
     let where_file = path.file_name().unwrap().to_string_lossy().to_string();
@@ -1144,8 +1135,6 @@ fn layout_tables_are_internally_consistent() {
 
 #[test]
 fn layout_validator_rejects_broken_tables() {
-    // Each fixture violates exactly one rule. The expected substring pins which
-    // rule fired, so a fixture cannot pass by tripping an unrelated check.
     let cases: &[(&str, &str)] = &[
         ("overlapping-fields.toml", "overlaps the preceding span"),
         ("uncovered-gap.toml", "uncovered byte ranges"),

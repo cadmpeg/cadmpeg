@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Vector primitives shared by the native feature-semantics tier and the decode
-//! geometry parser. The native tier is the lower layer, so it owns these and the
-//! decode tier imports them.
+//! Vector primitives shared by native feature semantics and decode geometry.
 
 use cadmpeg_ir::math::Vector3;
 

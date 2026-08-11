@@ -140,10 +140,7 @@ pub(crate) fn validate_configuration_payload(
         ))
     })?;
     if kind == DesignConfigurationKind::Rule {
-        // A rule document is an open JSON object. Only the closed, typed
-        // projection with both `when` and `activate` as strings has neutral
-        // activation semantics; every other shape remains native JSON and is
-        // deliberately not interpreted as a partial rule.
+        // Rules need typed `when` and `activate` strings; other shapes stay native JSON.
         return Ok(());
     }
     let configurations = match object.get("configurations") {

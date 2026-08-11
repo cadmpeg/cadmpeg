@@ -2,22 +2,13 @@
 //! Golden snapshot harness for `inspect` and `decode` over the committed
 //! fixtures.
 //!
-//! `corpus/freecad_fcstd/fixtures/*.FCStd` are the frozen inputs.
-//! This harness never writes them: a snapshot test can only tell a decoder
-//! change apart from an input change while the inputs hold still, so
-//! regenerating an input destroys the evidence the snapshot exists to carry.
-//! `UPDATE_GOLDEN=1` rewrites `tests/golden/decode/` and
+//! `corpus/freecad_fcstd/fixtures/*.FCStd` are the frozen inputs. This harness
+//! never writes them. `UPDATE_GOLDEN=1` rewrites `tests/golden/decode/` and
 //! `tests/golden/inspect/`, and nothing else.
 //!
 //! `tests/golden/inspect/` pins the container summary and
 //! `tests/golden/decode/` pins the decoded document: the IR, the decode
-//! report's losses, and source fidelity. A feature-typing or loss-accounting
-//! change moves the decode branch and `inspect` cannot see it, because an
-//! inspect summary describes the container, not what was transferred out of it.
-//!
-//! [`cadmpeg_core::golden`] holds the enumeration, comparison, and
-//! reporting shared with every other codec; this module supplies only this
-//! codec's branches.
+//! report's losses, and source fidelity.
 
 use std::collections::BTreeSet;
 use std::io::Cursor;
@@ -72,13 +63,7 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 }
 
 /// Serializes one decoded document: the IR, the decode report, and source
-/// fidelity. A decode error is frozen too: refusing a document is
-/// contract-relevant behavior, so this never panics on codec output.
-///
-/// The retained native arenas are pinned by digest rather than by value. Written
-/// out they run to 65MB across these eleven goldens, which no reviewer can read
-/// and which swamps every other change in a diff; a length and a hash still fail
-/// the moment their content moves.
+/// fidelity. A decode error is frozen too. Native arenas are pinned by digest.
 fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
@@ -105,26 +90,10 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     snapshot_text(&value)
 }
 
-/// Serializes one re-encoded document by archive membership rather than by
-/// archive bytes: the entry names in write order, and the length and digest of
-/// each entry's decompressed payload.
+/// Serializes one re-encoded document by archive membership: entry names in
+/// write order, plus length and digest of each decompressed payload.
 ///
-/// An `FCStd` file is a ZIP, and a ZIP's bytes are a function of the deflate
-/// implementation as much as of the content. Pinning them makes a `miniz_oxide`
-/// release read as codec drift, which is a false positive this harness cannot
-/// distinguish from a real one. The decompressed payloads are what this codec
-/// authors, so they are what the golden holds. Perturbing every libm
-/// transcendental by one unit in the last place leaves all 11 fixtures' payloads
-/// bit-identical, so these digests need no tolerance — unlike the numbers in the
-/// `decode` branch.
-///
-/// The compressed bytes are still held to something: the archive is produced
-/// twice in this process and the two must agree bit for bit, which is what
-/// catches map ordering and embedded timestamps. Reproducibility across
-/// compression-library versions is not this codec's contract.
-///
-/// An encode error is frozen too: refusing to write is contract-relevant
-/// behavior, so this never panics on codec output.
+/// Digests cover decompressed payloads; ZIP bytes depend on the deflate library.
 ///
 /// # Panics
 ///
@@ -172,8 +141,7 @@ fn encode_once(bytes: &[u8]) -> Result<(cadmpeg_ir::ExportReport, Vec<u8>), Stri
 ///
 /// # Panics
 ///
-/// Panics when the bytes are not a readable ZIP or an entry cannot be inflated,
-/// which is a defect in the writer rather than drift.
+/// Panics when the bytes are not a readable ZIP or an entry cannot be inflated.
 fn archive_entries(archive: &[u8]) -> serde_json::Value {
     let mut zip = zip::ZipArchive::new(Cursor::new(archive.to_vec()))
         .expect("the FCStd writer produced a readable ZIP");
@@ -208,13 +176,8 @@ fn golden_output_is_deterministic() {
 
 /// Serializes what one fixture exports as, or the refusal the export reports.
 ///
-/// The STEP encoder writes these bytes, not this codec. The tree lives beside
-/// this crate's goldens because this crate owns their inputs, and the pairing is
-/// the point: this is the only artifact in the repository that pins STEP output
-/// by content, and what moves it is a change on either side of the pipeline.
-///
-/// An export error is frozen too: refusing to write is contract-relevant
-/// behavior, so this never panics on codec output.
+/// Pins STEP output by content for this crate's fixtures. Export errors are
+/// frozen too.
 fn step_snapshot(bytes: &[u8]) -> String {
     let decoded =
         match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
@@ -237,16 +200,6 @@ fn step_snapshot(bytes: &[u8]) -> String {
 }
 
 /// Compares two STEP texts, holding structure exact and numbers to a tolerance.
-///
-/// [`cadmpeg_core::golden::snapshots_agree`] cannot do this: STEP is not
-/// JSON, so it falls back to a line comparison, and a line comparison of an
-/// exchange file reports a platform as a regression. These texts carry the same
-/// decoded geometry the `decode` branch compares tolerantly — a conical face's
-/// origin is `cos(half_angle)` scaled, and glibc, the MSVC runtime, and Apple's
-/// libm disagree in the last place — so the same tolerance has to reach here.
-///
-/// Every non-numeric character still compares exactly, so an entity name, an
-/// instance number, or a record's shape cannot move under this.
 ///
 /// # Errors
 ///
@@ -312,15 +265,6 @@ enum StepToken<'a> {
 }
 
 /// Splits a STEP line into numeric literals and the text around them.
-///
-/// A literal starts at a digit and runs over digits, one decimal point, and one
-/// exponent. The sign is deliberately left in the surrounding text, so a sign
-/// flip is a difference rather than something a tolerance could absorb.
-///
-/// An instance reference such as `#307` stays in the surrounding text and
-/// compares exactly: it names a record rather than measuring anything, and one
-/// record standing where another used to must fail. The whole run is consumed
-/// either way, so the digits after the first cannot start a literal of their own.
 fn step_tokens(line: &str) -> Vec<StepToken<'_>> {
     let bytes = line.as_bytes();
     let mut tokens = Vec::new();
@@ -435,7 +379,6 @@ fn step_output_is_deterministic() {
     }
 }
 
-/// [`step_texts_agree`] tolerates a platform's libm and nothing else.
 mod step_comparison {
     use super::step_texts_agree;
 

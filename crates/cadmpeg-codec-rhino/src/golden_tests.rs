@@ -3,21 +3,9 @@
 //! fixtures.
 //!
 //! `tests/golden/fixtures/*.3dm` are the frozen inputs.
-//! This harness never writes them: a snapshot test can only tell a decoder
-//! change apart from an input change while the inputs hold still, so
-//! regenerating an input destroys the evidence the snapshot exists to carry.
-//! `UPDATE_GOLDEN=1` rewrites `tests/golden/decode/` and
-//! `tests/golden/inspect/`, and nothing else.
-//!
-//! `tests/golden/inspect/` pins the container summary and
-//! `tests/golden/decode/` pins the decoded document: the IR, the decode
-//! report's losses, and source fidelity. A feature-typing or loss-accounting
-//! change moves the decode branch and `inspect` cannot see it, because an
-//! inspect summary describes the container, not what was transferred out of it.
-//!
-//! [`cadmpeg_core::golden`] holds the enumeration, comparison, and
-//! reporting shared with every other codec; this module supplies only this
-//! codec's branches.
+//! Fixtures stay frozen; `UPDATE_GOLDEN=1` rewrites goldens only.
+//! `inspect` pins the container summary; `decode` pins the IR, losses, and
+//! source fidelity. Shared harness: [`cadmpeg_core::golden`].
 
 use std::collections::BTreeSet;
 use std::io::Cursor;
@@ -89,11 +77,6 @@ fn golden_output_is_deterministic() {
 }
 
 /// Archive targets `tests/golden/encode/` covers, as `(golden infix, target)`.
-///
-/// Both sides of the writer's only version branch. `mesh_payload` chooses its
-/// object minor version on `archive_version == 50`, so `V6` and `V7` take the
-/// same branch as `V8` and differ from it only in the digits `header` writes.
-/// Pinning them would add two near-copies of the `V8` bytes.
 const ENCODE_TARGETS: [(&str, RhinoArchiveVersion); 2] = [
     ("v5", RhinoArchiveVersion::V5),
     ("v8", RhinoArchiveVersion::V8),
@@ -101,9 +84,6 @@ const ENCODE_TARGETS: [(&str, RhinoArchiveVersion); 2] = [
 
 /// The archive [`RhinoEncoder`] produces for one target, or the refusal it
 /// reports.
-///
-/// `None` when the input does not decode: there is no document to write, and
-/// the `decode` golden already pins that refusal.
 fn encode_outcome(bytes: &[u8], version: RhinoArchiveVersion) -> Option<Result<Vec<u8>, String>> {
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
@@ -113,9 +93,6 @@ fn encode_outcome(bytes: &[u8], version: RhinoArchiveVersion) -> Option<Result<V
         &RhinoEncoder::new(version),
         EncodeInput {
             ir: &decoded.ir,
-            // The writer reports `NotConsumed` for a sidecar rather than
-            // ignoring the argument, so pass the decoded sidecar: a change that
-            // starts consuming it moves these bytes instead of passing quietly.
             fidelity: Some(&decoded.source_fidelity),
         },
     )
@@ -127,17 +104,6 @@ fn encode_outcome(bytes: &[u8], version: RhinoArchiveVersion) -> Option<Result<V
 }
 
 /// Compares every fixture's encode outcome against `tests/golden/encode/`.
-///
-/// A written archive is pinned byte for byte as `{fixture}.{target}.bin`, and a
-/// refusal is pinned as `{fixture}.{target}.err.txt`. Which of the two a fixture
-/// produces is itself the pinned fact: this codec writes what it can prove it
-/// retained and declines the rest, so the frontier between the two is what moves
-/// when the writer grows, and it moves visibly here.
-///
-/// Byte equality is the right comparison for the archives. Perturbing every libm
-/// transcendental by one unit in the last place leaves both of them
-/// bit-identical, because the geometry they carry reaches the archive as stored
-/// doubles without passing through one.
 fn check_encode_branch(fixtures: &[(String, Vec<u8>)], update: bool) -> Vec<String> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/encode");
     let mut failures = Vec::new();
@@ -207,7 +173,6 @@ fn check_encode_branch(fixtures: &[(String, Vec<u8>)], update: bool) -> Vec<Stri
     failures
 }
 
-/// Writes one golden, creating nothing else.
 fn write_golden(path: &Path, bytes: &[u8]) {
     std::fs::write(path, bytes).unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
 }

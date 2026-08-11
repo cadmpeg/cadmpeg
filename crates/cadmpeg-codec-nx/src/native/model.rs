@@ -1,19 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Eager, best-effort extraction of the native NX object model.
 //!
-//! [`NativeModel::extract`] runs the full extraction dependency DAG in the same
-//! hand-ordered topological order the decode tier previously inlined, grouping
-//! the resulting record vectors into domain sub-structs. Extraction is
-//! infallible: malformed data is omitted, never surfaced as an error.
+//! [`NativeModel::extract`] runs the extraction dependency DAG and groups
+//! record vectors into domain sub-structs. Extraction is infallible: malformed
+//! data is omitted, never surfaced as an error.
 
 use crate::container::Container;
 use crate::parasolid::Stream;
 use cadmpeg_core::decode::{DecodeContext, View};
 
-#[allow(
-    clippy::wildcard_imports,
-    reason = "Split check modules share a private orchestration prelude via wildcard import."
-)]
+#[allow(clippy::wildcard_imports)]
 use super::{
     display_jt::*, features::*, om::*, parasolid::*, segments::*, structure::*, substrate::*,
     toggle::*,
@@ -314,10 +310,8 @@ impl NativeModel {
         )
     }
 
-    /// Runs the full extraction dependency DAG in the original hand-ordered
-    /// sequence. The ordering is load-bearing: several families feed later ones
-    /// and some record ids embed positional information, so the `let` order here
-    /// is fixed to match the legacy wiring block byte-for-byte.
+    /// Runs the extraction dependency DAG. Ordering is load-bearing: later
+    /// families depend on earlier ones, and some record ids embed position.
     pub(crate) fn extract(
         ctx: &DecodeContext<'_>,
         root: View<'_>,
@@ -1132,18 +1126,10 @@ impl NativeModel {
         }
     }
 
-    /// Whether every emptiness-counting record family is empty. Derived from
-    /// [`CATALOGUE`](super::catalogue::CATALOGUE): the fold visits
-    /// exactly the rows whose `counts_toward_emptiness` flag is set, reproducing
-    /// the operand set of the legacy hand-written all-empty guard. The
-    /// non-counting families are documented on
-    /// [`FamilyRow::counts_toward_emptiness`](cadmpeg_ir::native::catalogue::FamilyRow::counts_toward_emptiness).
-    /// The fold is order-insensitive — the legacy guard was a pure `&&` of
-    /// `is_empty()` calls on plain `Vec`s — so it is behavior-identical to the
-    /// conjunction it replaces.
+    /// Whether every emptiness-counting catalogue family is empty.
     ///
-    /// The caller additionally checks `object_sections`, the sole non-model
-    /// operand of the legacy guard, which this method does not cover.
+    /// Visits rows with `counts_toward_emptiness`. Does not cover
+    /// `object_sections`; the caller checks that separately.
     pub(crate) fn is_empty(&self) -> bool {
         super::catalogue::NATIVE_CATALOGUE.is_empty(self)
     }

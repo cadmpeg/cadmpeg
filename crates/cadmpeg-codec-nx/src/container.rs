@@ -697,6 +697,11 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
     let footer_offset = u48_le(&data, 0x11);
     let fo = usize::try_from(footer_offset)
         .map_err(|_| CodecError::Malformed("FOOTER offset exceeds address space".to_string()))?;
+    if fo > data.len() {
+        return Err(CodecError::Malformed(
+            "FOOTER offset exceeds the file image".to_string(),
+        ));
+    }
     let footer_directory_end = data
         .len()
         .checked_sub(4)

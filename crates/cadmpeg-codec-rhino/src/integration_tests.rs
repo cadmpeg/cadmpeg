@@ -251,10 +251,6 @@ const HATCH_OBJECT_TYPE: i64 = 0x0001_0000;
 const CURVE_OBJECT_TYPE: i64 = 0x0000_0004;
 
 /// A synthesized archive whose two records both reach a native-retention path.
-///
-/// Hatch and polyedge are the cheapest such records: neither needs a resolved
-/// B-rep, and both produce a `FeatureDefinition::Native` feature as their only
-/// carrier of construction state.
 fn native_retention_archive() -> Vec<u8> {
     let hatch = support::object_record(
         HATCH_OBJECT_TYPE,
@@ -274,8 +270,6 @@ fn native_retentions_are_charged_and_excluded_from_the_decoded_census() {
     let result = decode(native_retention_archive());
     let losses = &result.report.losses;
 
-    // Neither record is "decoded": the only entity carrying their construction
-    // state is a native feature blob.
     assert!(losses.iter().any(|loss| {
         loss.code == LossKind::ObjectRecordsUntransferred
             && loss.message.contains("decoded 0/2 Rhino object records")
@@ -298,7 +292,6 @@ fn native_retentions_are_charged_and_excluded_from_the_decoded_census() {
         assert!(charged[0].provenance.is_some());
     }
 
-    // A native retention must not also claim the payload was never read.
     assert!(!losses
         .iter()
         .any(|loss| loss.code == LossKind::UnsupportedObjectFamily));
@@ -348,7 +341,6 @@ fn dimension_becomes_a_measured_semantic_annotation_with_resolvable_identities()
     let text_point = [2.0, 3.0];
     let result = decode(dimension_archive([0; 16], Some(text_point)));
     assert_eq!(result.ir.model.semantic_annotations.len(), 1);
-    // The dimension is no longer projected as a driving parameter.
     assert!(result.ir.model.parameters.is_empty());
     assert!(result.ir.model.features.is_empty());
 
@@ -419,7 +411,6 @@ fn unresolvable_dimension_style_is_charged_without_a_dangling_reference() {
         annotation.parameters["dimstyle_id"],
         crate::wire::Uuid::from_wire(dimstyle).to_string()
     );
-    // An unauthored text point is omitted rather than invented.
     assert!(annotation.position.is_none());
 
     let charged = result

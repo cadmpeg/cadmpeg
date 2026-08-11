@@ -1215,8 +1215,7 @@ fn identify_variant(
     }
 }
 
-/// Identify a whole `.CATPart` byte image. Split out so tests drive it from a
-/// synthetic buffer without a reader.
+/// Identify a whole `.CATPart` byte image.
 pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let data = data.into();
     let outer_dir_offset = u32_be(&data, 8).unwrap_or(0);

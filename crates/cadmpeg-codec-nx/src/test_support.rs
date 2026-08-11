@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared synthetic byte-fixture builders for the crate's `#[cfg(test)]` suites.
 //!
-//! These helpers hand-build `.prt` byte images and embedded-stream payloads used
-//! by the white-box tests relocated into their owning modules and by the golden
-//! oracle. They construct raw bytes only; no native record type crosses in here.
+//! Helpers hand-build `.prt` byte images and embedded-stream payloads. They
+//! construct raw bytes only; no native record type crosses in here.
 #![allow(clippy::unwrap_used)]
 
 use std::io::Write;
@@ -344,10 +343,7 @@ pub(crate) fn composed_feature_history_inputs() -> ComposedInputs {
         0x14, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00,
     ];
 
-    // Additional container-level operations whose typed payloads each populate a
-    // reference/header/lane family directly (mirrors the per-parser white-box
-    // fixtures). Object indices in these payloads are intentionally large and do
-    // not resolve, so only the leading reference/header arenas populate.
+    // Object indices do not resolve; only the leading reference/header arenas populate.
     let point = b"\x72\x00\x00\x01\x00\x00\x00\xf1\x1c\x8f\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0d\x01\x02\x01\x00\x00\x00\x89\x02\x01\x01\x01\x00\xa5\x57\x95\x01\x00\x00\xff\x02\xc0\x1f\xff\xfd\x01\x00\x00\x01\x01\x01\x03\x02\x01\x01\x01\x00\x00\x00\x00\x00\xaa".to_vec();
     let draft = {
         let prefix = b"\x67\x00\x00\x01\x00\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\xff\xff\xff\xff\xff\xff\xff\xff\x01\x03\x80\x94\x82\x49".as_slice();
@@ -677,7 +673,7 @@ pub(crate) fn offset_only_indexed_om_section_with_control(control_block: &[u8]) 
 /// the control block, preceded by a zero-prefixed aligned index-value array.
 /// The two column records carry no product marker, so the section still holds
 /// exactly one product record and `data_block_control_index_values` decodes the
-/// array. Mirrors the `om_offset_store_index_values_*` white-box test.
+/// array.
 pub(crate) fn offset_only_indexed_om_section_with_index_values() -> Vec<u8> {
     let mut control = Vec::new();
     control.extend_from_slice(&[0, 0]); // two-byte zero prefix
@@ -710,8 +706,7 @@ pub(crate) fn offset_only_indexed_om_section_with_index_values() -> Vec<u8> {
 /// An offset-store indexed OM section whose first (object-id-less) record is an
 /// offset-store named point (`Point7` with two `57.15` scalars). The single
 /// product record lives in the control block so the section validates while the
-/// column records carry the point payload. Mirrors the
-/// `om_offset_store_named_point_*` white-box test.
+/// column records carry the point payload.
 pub(crate) fn offset_only_indexed_om_section_with_named_point() -> Vec<u8> {
     let mut named_point = vec![
         0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'7', 0x00, 0x50, 0x59, 0x66, 0x58, 0x00, 0x30,
@@ -889,8 +884,7 @@ pub(crate) fn partition_stream() -> Vec<u8> {
 /// index over one empty record and one four-slot handle-set record, followed by
 /// an end-anchored four-string table. Decoding walks the record index, string
 /// table, empty-record form, handle-set slots, and the handle/tagged tail,
-/// populating every `external_reference*` arena. The record and table byte
-/// shapes mirror the `external_reference_*` white-box tests.
+/// populating every `external_reference*` arena.
 pub(crate) fn external_reference_stream() -> Vec<u8> {
     let mut p = b"EXTREFSTREAM".to_vec();
     p.extend_from_slice(&[0u8; 13]); // header; byte 24 must be zero
@@ -935,8 +929,7 @@ pub(crate) fn external_reference_stream() -> Vec<u8> {
 /// declares one compressed segment. Decoding walks
 /// `display_jt_indices -> display_jt_documents -> display_jt_segments ->
 /// display_jt_compressed_element_sequences`, populating those arenas plus
-/// `display_jt_compressed_elements`. The byte layout mirrors the
-/// `display_jt_index_requires_every_declared_header` white-box test.
+/// `display_jt_compressed_elements`.
 pub(crate) fn display_jt_basic_stream() -> Vec<u8> {
     let mut inflated = Vec::new();
     inflated.extend_from_slice(&24_u32.to_le_bytes());
@@ -1113,12 +1106,10 @@ pub(crate) fn jt_scene_element(
 
 /// Raw bytes for a `/Root/UG_PART/DisplayJT` container entry whose single type-1
 /// scene-graph segment inflates to an element sequence of one instance, group,
-/// partition, range-LOD, tri-strip shape, and geometric-transform node. Each
-/// node's object-type UUID, base type, and body match the corresponding
-/// `display_jt9_*` white-box test, so decoding populates
-/// `display_jt_base_node_data`, `_group_node_data`, `_instance_nodes`,
-/// `_partition_nodes`, `_range_lod_nodes`, `_tri_strip_shape_nodes`, and
-/// `_geometric_transform_attributes`.
+/// partition, range-LOD, tri-strip shape, and geometric-transform node.
+/// Decoding populates `display_jt_base_node_data`, `_group_node_data`,
+/// `_instance_nodes`, `_partition_nodes`, `_range_lod_nodes`,
+/// `_tri_strip_shape_nodes`, and `_geometric_transform_attributes`.
 pub(crate) fn display_jt_scene_graph_stream() -> Vec<u8> {
     const INSTANCE: [u8; 16] = [
         0x2a, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
@@ -1287,11 +1278,10 @@ pub(crate) fn display_jt_scene_graph_stream() -> Vec<u8> {
 
 /// A Parasolid `(partition)` stream carrying the neutral-binary attribute and
 /// typed-entity records (`00 4f`/`00 50` class declaration, `00 51` framed
-/// entity, `00 52`/`00 53` counted value records, `00 54` string record) whose
-/// extractors are exercised by the `parasolid_entity_*`, `parasolid_attribute_*`
-/// white-box tests. The `00 51` entity's references resolve to the value and
-/// string records, and its definition reference selects the class declaration, so the
-/// join arenas (`parasolid_entity_51_numeric_uses`, `parasolid_entity_51_string_uses`,
+/// entity, `00 52`/`00 53` counted value records, `00 54` string record). The
+/// `00 51` entity's references resolve to the value and string records, and its
+/// definition reference selects the class declaration, so the join arenas
+/// (`parasolid_entity_51_numeric_uses`, `parasolid_entity_51_string_uses`,
 /// `parasolid_attribute_class_uses`) are populated as well.
 pub(crate) fn parasolid_entity_records_stream() -> Vec<u8> {
     let mut s = Vec::new();

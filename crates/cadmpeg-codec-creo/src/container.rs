@@ -2009,8 +2009,7 @@ fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u3
     (after > value_offset).then_some(count)
 }
 
-/// Parse a whole `.prt` byte image. Split out so tests drive it from a synthetic
-/// buffer without a reader.
+/// Parse a whole `.prt` byte image.
 pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let data = data.into();
     let version_line = line_at(&data, 0);

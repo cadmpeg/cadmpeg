@@ -47,15 +47,6 @@ struct ClassOutcome {
     first_object_type: u32,
 }
 
-/// Per-record transfer state.
-///
-/// `NativeRetained` is distinct from both `Retained` and `Decoded`: the record
-/// was framed and its payload was read, but the only neutral entity it produced
-/// carries the construction state as a `FeatureDefinition::Native` blob. Such a
-/// record is not "decoded" for census purposes, and it is not "retained"
-/// either, because a `Retained` record reports
-/// `RhinoLossCode::ObjectFamilyNotTransferred`, which claims the payload was
-/// never read.
 /// Outcome of resolving one foreign object UUID against the object table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ObjectReference {
@@ -383,10 +374,6 @@ impl ArenaLengths {
     }
 }
 
-// Instance expansion re-enters `decode_geometry` per member, which reaches the mesh decoder's
-// `begin_expand` path; these caps bound reference, member, and entity
-// amplification from a hostile definition graph independently of the platform
-// budget, and are kept as defense in depth.
 const MAX_INSTANCE_REFERENCES: usize = 1 << 20;
 const MAX_INSTANCE_MEMBERS: usize = 1 << 20;
 const MAX_INSTANCE_ENTITIES: usize = 1 << 20;
@@ -449,10 +436,7 @@ pub(crate) struct DecodeContext<'a> {
     mesh_budget: crate::mesh::MeshBudget,
     geometry_transferred: bool,
     phase_warnings: Vec<String>,
-    /// Typed loss notes raised at semantic conversion boundaries. Distinct
-    /// from `phase_warnings`, which aggregate into
-    /// untyped `DecodeDiagnostic` notes; these carry the boundary's own loss
-    /// code and drain into the report's `losses` at finalization.
+    /// Typed loss notes from semantic conversion; drain into report `losses`.
     typed_losses: Vec<LossNote>,
     selected_object: Option<usize>,
     instance_key: Option<String>,
@@ -699,9 +683,7 @@ impl<'a> DecodeContext<'a> {
 
     /// Marks one object as read but retained as native passthrough.
     ///
-    /// `code` names the lane whose construction state did not reach a typed
-    /// neutral entity. It is recorded once per class; every record of one Rhino
-    /// class runs the same decoder branch, so the code is stable per class.
+    /// Record the native-retention loss code once per Rhino class.
     fn mark_native_retained(&mut self, source_order: usize, code: RhinoLossCode) -> bool {
         if !self.transition(source_order, GeometryStatus::NativeRetained) {
             return false;
@@ -713,10 +695,6 @@ impl<'a> DecodeContext<'a> {
     }
 
     /// Resolves one foreign object UUID to the single record that owns it.
-    ///
-    /// A 3DM record names another object by UUID, and the object table is free
-    /// to omit that UUID or to repeat it. Both outcomes must stay distinct: an
-    /// omitted UUID is a broken link, a repeated one is an unusable link.
     fn resolve_object(&self, id: crate::wire::Uuid) -> ObjectReference {
         match self
             .object_candidates
@@ -1797,9 +1775,7 @@ impl<'a> DecodeContext<'a> {
         let mut path = self.instance_path.clone();
         let parent = Transform::identity();
         let outcome = self.expand_reference_inner(source_order, parent, &mut path, &mut stack);
-        // Every decoded member inflated its mesh buffers into the shared session
-        // arena, which cannot reclaim them. Retain that
-        // retained-byte charge even if the transaction is rolled back.
+        // Mesh buffers stay charged in the session arena even on rollback.
         let mut rejection_warning = None;
         let accepted = match outcome {
             Ok(links) => {
@@ -1865,8 +1841,6 @@ impl<'a> DecodeContext<'a> {
         path: &mut Vec<String>,
         stack: &mut Vec<crate::wire::Uuid>,
     ) -> Result<Vec<String>, String> {
-        // Bounds instance recursion depth on the geometry-expansion path that
-        // reaches the mesh decoder, independently of the platform depth gauge.
         const MAX_INSTANCE_DEPTH: usize = 64;
         self.expansion_budget.reference()?;
         if stack.len() >= MAX_INSTANCE_DEPTH {
@@ -5041,10 +5015,6 @@ pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> De
             scale,
         )
     });
-    // History projection now appends carrier geometry, so it runs inside the
-    // same atomic transaction the object-record phases use. Before this it wrote
-    // straight into the document, and an invalid entity would have surfaced only
-    // at `cadmpeg validate` time.
     let untyped = context.validate_candidate(|candidate, _annotations| {
         crate::history::project(&scan.history, geometry_context, candidate)
     });

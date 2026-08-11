@@ -2,10 +2,7 @@
 //! Feature-completeness predicates owned by `decode`.
 
 #![allow(clippy::unwrap_used)]
-#![allow(
-    clippy::default_trait_access,
-    reason = "Test fixtures use type-inferred defaults for compact record construction."
-)]
+#![allow(clippy::default_trait_access)]
 
 #[test]
 fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operands() {
