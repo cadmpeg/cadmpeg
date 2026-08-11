@@ -564,7 +564,10 @@ defines the generated-surface recipe and the bore-radius, included-angle, and
 blind-depth dimension roles. The paired cylinder parameter records provide
 per-axis common and adjacent-union spans. Bore diameter and blind depth select
 the complete tables that match those spans on distinct axes. All matching
-tables must define one equal tuple. The neutral hole bottom retains no
+tables must define one equal tuple. Complementary envelopes define placement
+directly. A clipped envelope pair defines placement when its two cylinders
+share a unique feature-owned type-0 support plane whose transferred normal
+aligns with the omitted radial coordinate. The neutral hole bottom retains no
 depth-to-tip state.
 
 **Need.** We must identify the per-feature replay join when competing tuples
