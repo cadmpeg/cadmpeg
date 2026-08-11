@@ -519,6 +519,24 @@ fn axial_profile_resolves_counterbore_roles() {
         } if (angle - 118_f64.to_radians()).abs() < 1.0e-12
     ));
     assert_eq!(construction.bottom, None);
+
+    profile.parameters.insert("a".into(), "180°".into());
+    let construction =
+        profiled_hole_construction(&profile, &sketch, &entities[..3]).expect("flat-bottom profile");
+    assert_eq!(
+        construction.extent,
+        Termination::Blind {
+            length: Length(15.0)
+        }
+    );
+    assert_eq!(
+        construction.kind,
+        HoleKind::Counterbore {
+            diameter: Length(10.0),
+            depth: Length(5.7),
+        }
+    );
+    assert_eq!(construction.bottom, Some(HoleBottom::Flat));
 }
 
 #[test]
@@ -944,9 +962,7 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         features[0].definition,
         FeatureDefinition::Hole {
             diameter: Some(Length(9.0)),
-            extent: Some(Termination::Blind {
-                length: Length(23.0)
-            }),
+            extent: Some(Termination::ThroughAll),
             kind: HoleKind::Counterbore {
                 diameter: Length(15.0),
                 depth: Length(8.6),

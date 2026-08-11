@@ -544,7 +544,7 @@ struct ProfiledHoleConstruction {
 }
 
 const DISPLAY_DIMENSION_TOLERANCE_MM: f64 = 1.0e-5;
-const GENERATED_PROFILE_TERMINAL_OVERRUN_MM: f64 = 0.001;
+const GENERATED_PROFILE_TERMINAL_OVERRUN_MM: [f64; 3] = [0.0, 0.000_025, 0.001];
 
 fn profiled_hole_construction(
     profile: &crate::records::Feature,
@@ -563,6 +563,10 @@ fn profiled_hole_construction(
         .values()
         .filter_map(|value| crate::history::parse_bounded_angle_rad(value))
         .collect::<Vec<_>>();
+    let flat_bottom = profile.parameters.values().any(|value| {
+        crate::history::parse_angle_rad(value)
+            .is_some_and(|angle| (angle - std::f64::consts::PI).abs() <= 1.0e-12)
+    });
     let mut lengths = profile
         .parameters
         .values()
@@ -705,42 +709,74 @@ fn profiled_hole_construction(
                     let entry = point(0.0, entry_radius);
                     let entry_corner = point(-entry_depth, entry_radius);
                     let bore_corner = point(-entry_depth, bore_radius);
-                    let bore_end = point(-depth, bore_radius);
-                    if !has_line(entry, entry_corner)
-                        || !has_line(entry_corner, bore_corner)
-                        || !has_line(bore_corner, bore_end)
-                    {
-                        continue;
-                    }
-                    let kind = match angles.as_slice() {
-                        [] => HoleKind::Counterbore {
-                            diameter: Length(*entry_diameter),
-                            depth: Length(*entry_depth),
-                        },
-                        [drill_point_angle] => {
-                            let drill_length = bore_radius / (drill_point_angle / 2.0).tan();
-                            if !drill_length.is_finite()
-                                || !has_line(bore_end, point(-depth - drill_length, 0.0))
-                            {
-                                continue;
-                            }
-                            HoleKind::CounterboreDrilled {
-                                diameter: Length(*entry_diameter),
-                                depth: Length(*entry_depth),
-                                drill_point_angle: Angle(*drill_point_angle),
-                            }
-                        }
-                        _ => continue,
+                    let terminal_overruns = if angles.is_empty() && !flat_bottom {
+                        &GENERATED_PROFILE_TERMINAL_OVERRUN_MM[..]
+                    } else {
+                        &GENERATED_PROFILE_TERMINAL_OVERRUN_MM[..1]
                     };
-                    return Some(ProfiledHoleConstruction {
-                        diameter: Length(*diameter),
-                        extent: Termination::Blind {
-                            length: Length(*depth),
-                        },
-                        kind,
-                        bottom: None,
-                        taper_angle: None,
-                    });
+                    for terminal_overrun in terminal_overruns {
+                        let bore_end = point(-depth - terminal_overrun, bore_radius);
+                        let edges = [
+                            (entry, entry_corner),
+                            (entry_corner, bore_corner),
+                            (bore_corner, bore_end),
+                        ];
+                        let materialized_edges = edges
+                            .iter()
+                            .filter(|(first, second)| has_line(*first, *second))
+                            .count();
+                        if materialized_edges < 2
+                            || edges.iter().any(|(first, second)| {
+                                !has_line(*first, *second) && !has_point_pair(*first, *second)
+                            })
+                        {
+                            continue;
+                        }
+                        let (kind, extent) = match angles.as_slice() {
+                            [] => {
+                                let extent = if flat_bottom {
+                                    Termination::Blind {
+                                        length: Length(*depth),
+                                    }
+                                } else {
+                                    Termination::ThroughAll
+                                };
+                                (
+                                    HoleKind::Counterbore {
+                                        diameter: Length(*entry_diameter),
+                                        depth: Length(*entry_depth),
+                                    },
+                                    extent,
+                                )
+                            }
+                            [drill_point_angle] => {
+                                let drill_length = bore_radius / (drill_point_angle / 2.0).tan();
+                                if !drill_length.is_finite()
+                                    || !has_line(bore_end, point(-depth - drill_length, 0.0))
+                                {
+                                    continue;
+                                }
+                                (
+                                    HoleKind::CounterboreDrilled {
+                                        diameter: Length(*entry_diameter),
+                                        depth: Length(*entry_depth),
+                                        drill_point_angle: Angle(*drill_point_angle),
+                                    },
+                                    Termination::Blind {
+                                        length: Length(*depth),
+                                    },
+                                )
+                            }
+                            _ => continue,
+                        };
+                        return Some(ProfiledHoleConstruction {
+                            diameter: Length(*diameter),
+                            extent,
+                            kind,
+                            bottom: (angles.is_empty() && flat_bottom).then_some(HoleBottom::Flat),
+                            taper_angle: None,
+                        });
+                    }
                 }
                 let [depth] = lengths.as_slice() else {
                     continue;
@@ -752,19 +788,12 @@ fn profiled_hole_construction(
                     }
                     let entry = point(0.0, entry_radius);
                     let bore_start = point(-setback, bore_radius);
-                    let bore_end = point(-depth, bore_radius);
-                    let overrun_bore_end =
-                        point(-depth - GENERATED_PROFILE_TERMINAL_OVERRUN_MM, bore_radius);
                     let mirrored_bore_start = point(-setback, -bore_radius);
-                    let mirrored_bore_end = point(-depth, -bore_radius);
-                    let mirrored_overrun_bore_end =
-                        point(-depth - GENERATED_PROFILE_TERMINAL_OVERRUN_MM, -bore_radius);
-                    if has_line(entry, bore_start)
-                        && (has_line(bore_start, bore_end)
-                            || has_line(bore_start, overrun_bore_end)
-                            || has_line(mirrored_bore_start, mirrored_bore_end)
-                            || has_line(mirrored_bore_start, mirrored_overrun_bore_end))
-                    {
+                    let bore_wall = GENERATED_PROFILE_TERMINAL_OVERRUN_MM.iter().any(|overrun| {
+                        has_line(bore_start, point(-depth - overrun, bore_radius))
+                            || has_line(mirrored_bore_start, point(-depth - overrun, -bore_radius))
+                    });
+                    if has_line(entry, bore_start) && bore_wall {
                         return Some(ProfiledHoleConstruction {
                             diameter: Length(*diameter),
                             extent: Termination::ThroughAll,
