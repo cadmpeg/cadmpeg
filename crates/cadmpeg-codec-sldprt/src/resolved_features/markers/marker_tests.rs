@@ -277,6 +277,33 @@ fn extended_kind_one_spatial_point_uses_wide_coordinate_offset() {
 }
 
 #[test]
+fn extended_spatial_relation_handle_uses_wide_model_coordinates() {
+    let offset = 4;
+    let mut payload = vec![0; offset + 90];
+    payload[..offset].copy_from_slice(&7u32.to_le_bytes());
+    payload[offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len()]
+        .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+    payload[offset + 5..offset + 13].fill(0xff);
+    payload[offset + 13..offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[offset + 17..offset + 21].copy_from_slice(&4u32.to_le_bytes());
+    payload[offset + 23..offset + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+    payload[offset + 27..offset + 29].copy_from_slice(&1u16.to_le_bytes());
+    payload[offset + 48..offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[offset + 64..offset + 66].copy_from_slice(&[0x0e, 0x00]);
+    for (index, value) in [0.0235_f64, 0.01, -0.075].into_iter().enumerate() {
+        let start = offset + 66 + index * 8;
+        payload[start..start + 8].copy_from_slice(&value.to_le_bytes());
+    }
+
+    assert_eq!(
+        marker_spatial_coordinates(&payload, offset),
+        Some(Point3::new(23.5, 10.0, -75.0))
+    );
+    payload[offset + 56] = 1;
+    assert_eq!(marker_spatial_coordinates(&payload, offset), None);
+}
+
+#[test]
 fn extended_object_indexed_spatial_point_uses_wide_coordinate_offset() {
     let offset = 4;
     let mut payload = vec![0; offset + 90];

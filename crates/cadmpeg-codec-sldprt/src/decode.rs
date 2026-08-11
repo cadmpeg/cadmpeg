@@ -2107,14 +2107,6 @@ fn build_geometry_ir(
     );
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations);
     project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
-    let (spatial_sketches, spatial_sketch_entities) =
-        crate::resolved_features::markers::spatial_sketches(
-            &mut ir.model.features,
-            &histories,
-            &lanes,
-        );
-    ir.model.spatial_sketches = spatial_sketches;
-    ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::resolved_features::operations::bind_extrusion_operations(
         &mut ir.model.features,
         &histories,
@@ -2187,6 +2179,14 @@ fn build_geometry_ir(
     // geometry and constraints must use the same complete lane set.
     let mut sketch_lanes = lanes.clone();
     sketch_lanes.extend(supplemental_config_lanes.clone());
+    let (spatial_sketches, spatial_sketch_entities) =
+        crate::resolved_features::markers::spatial_sketches(
+            &mut ir.model.features,
+            &histories,
+            &sketch_lanes,
+        );
+    ir.model.spatial_sketches = spatial_sketches;
+    ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::resolved_features::profiles::project_marker_backed_sketches(
         &mut ir.model.features,
         &mut sketches,
@@ -3046,14 +3046,6 @@ fn build_metadata_ir(
         attributes,
     });
     project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
-    let (spatial_sketches, spatial_sketch_entities) =
-        crate::resolved_features::markers::spatial_sketches(
-            &mut ir.model.features,
-            &histories,
-            &lanes,
-        );
-    ir.model.spatial_sketches = spatial_sketches;
-    ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
@@ -3106,6 +3098,14 @@ fn build_metadata_ir(
     // geometry and constraints must use the same complete lane set.
     let mut sketch_lanes = lanes.clone();
     sketch_lanes.extend(supplemental_config_lanes.clone());
+    let (spatial_sketches, spatial_sketch_entities) =
+        crate::resolved_features::markers::spatial_sketches(
+            &mut ir.model.features,
+            &histories,
+            &sketch_lanes,
+        );
+    ir.model.spatial_sketches = spatial_sketches;
+    ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::resolved_features::profiles::project_marker_backed_sketches(
         &mut ir.model.features,
         &mut ir.model.sketches,

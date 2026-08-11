@@ -5469,10 +5469,10 @@ contains = "const EXTENDED_DIRECTION_OFFSET: usize = 129;"
 note = "The parser reads the extended-form pull direction only after the nine-byte zero discriminator."
 
 [[record]]
-name = "current_spatial_marker_coordinate_prefix"
+name = "wide_spatial_marker_coordinate_prefix"
 kind = "byte"
 section = "2"
-anchor = "In the second form, the native kind is at marker +17"
+anchor = "In either `ff ff 1f` form, the native kind is at marker +17"
 size = 90
 endianness = "little"
 note = "The fixed coordinate prefix is shared by point and relation-handle markers. The record trailer follows the third coordinate."
@@ -5482,7 +5482,7 @@ name = "marker"
 offset = 0
 type = "bytes[5]"
 source = "spec"
-anchor = "An object-indexed marker-backed spatial point begins with `ff ff 07 00 01` or `ff ff 1f 00 03`"
+anchor = "An object-indexed marker-backed spatial point begins with `ff ff 07 00 01`, `ff ff 1f 00 01`, or `ff ff 1f 00 03`"
 
 [[record.field]]
 name = "header"

@@ -1,5 +1,6 @@
 //! Sketch marker record decoding and profile point coordinates.
 
+use super::bindings::spatial_relation_manager_ranges;
 use super::curves::slot_curve_and_center_indices;
 use super::endpoints::{
     compact_curve_endpoint_indices, compact_indexed_curve_endpoint_indices,
@@ -58,12 +59,34 @@ pub(crate) fn spatial_sketches(
         };
         let mut point_candidates = Vec::new();
         for lane in lanes {
+            let relation_ranges = spatial_relation_manager_ranges(lane)
+                .into_iter()
+                .filter(|(start, end)| {
+                    lane.scalars.iter().any(|scalar| {
+                        scalar.feature_ref.as_deref() == Some(native_ref)
+                            && scalar.offset > *start
+                            && scalar.offset < *end
+                    })
+                })
+                .collect::<Vec<_>>();
             let points = lane
                 .sketch_entities
                 .iter()
                 .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
                 .filter_map(|marker| {
                     let offset = usize::try_from(marker.offset).ok()?;
+                    if !relation_ranges.is_empty()
+                        && (!relation_ranges
+                            .iter()
+                            .any(|(start, end)| marker.offset > *start && marker.offset < *end)
+                            || marker.object_index.is_none()
+                            || !matches!(
+                                marker_native_code(&lane.native_payload, offset),
+                                Some(1..=85)
+                            ))
+                    {
+                        return None;
+                    }
                     marker_spatial_coordinates(&lane.native_payload, offset)
                         .map(|point| (marker.id.clone(), point, offset))
                 })
@@ -266,7 +289,7 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
                 (offset.checked_add(66)?, true)
             }
             prefix
-                if prefix == SKETCH_MARKER
+                if (prefix == SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER)
                     && matches!(marker_native_code(payload, offset), Some(1..=85))
                     && locus == [0x04, 0x00, 0x02, 0x00]
                     && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())

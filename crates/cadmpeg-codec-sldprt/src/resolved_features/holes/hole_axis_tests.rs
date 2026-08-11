@@ -2676,6 +2676,49 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
 }
 
 #[test]
+fn noncollinear_coplanar_spatial_positions_define_one_hole_axis() {
+    let points = [
+        Point3::new(23.5, 10.0, -75.0),
+        Point3::new(23.5, 10.0, -23.0),
+        Point3::new(151.5, 10.0, -23.0),
+        Point3::new(151.5, 10.0, -75.0),
+    ];
+    assert_eq!(
+        coplanar_spatial_position_placements(&points),
+        Some(vec![
+            HolePlacement::Axis {
+                origin: Point3::new(23.5, 10.0, -23.0),
+                axis: Vector3::new(0.0, 1.0, 0.0),
+            },
+            HolePlacement::Axis {
+                origin: Point3::new(23.5, 10.0, -75.0),
+                axis: Vector3::new(0.0, 1.0, 0.0),
+            },
+            HolePlacement::Axis {
+                origin: Point3::new(151.5, 10.0, -23.0),
+                axis: Vector3::new(0.0, 1.0, 0.0),
+            },
+            HolePlacement::Axis {
+                origin: Point3::new(151.5, 10.0, -75.0),
+                axis: Vector3::new(0.0, 1.0, 0.0),
+            },
+        ])
+    );
+    assert_eq!(
+        coplanar_spatial_position_placements(&[
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 1.0),
+            Point3::new(0.0, 2.0, 0.0),
+        ]),
+        None
+    );
+    let translated =
+        points.map(|point| Point3::new(point.x + 1.0e12, point.y - 1.0e12, point.z + 1.0e12));
+    assert!(coplanar_spatial_position_placements(&translated).is_some());
+}
+
+#[test]
 fn source_intervals_supply_legacy_hole_profiles() {
     let mut history = native_history();
     history.features.push(crate::records::Feature {
