@@ -2421,10 +2421,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                         "294" | "329" | "386" | "390"
                                     )
                                     && path.identity_guids.len() == path.identity_guid_offsets.len()
-                                    && if matches!(path.class_tag.as_str(), "294" | "386" | "390") {
-                                        path.identity_guids.len() == 4
-                                    } else {
-                                        path.identity_guids.is_empty()
+                                    && match path.class_tag.as_str() {
+                                        "294" | "386" | "390" => path.identity_guids.len() == 4,
+                                        "329" => {
+                                            path.identity_guids.is_empty()
+                                                || path.identity_guids.len() == 4
+                                        }
+                                        _ => false,
                                     }
                                     && path
                                         .identity_guids

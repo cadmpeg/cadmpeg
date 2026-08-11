@@ -26420,6 +26420,38 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     assert!(compact_identity_paths
         .iter()
         .all(|path| path.class_tag == "386"));
+    for path_at in [first_identity_path_at, second_identity_path_at] {
+        identity_path_bytes[path_at + 4..path_at + 7].copy_from_slice(b"329");
+    }
+    let extended_class_329_paths = exact_assembly_alignment(
+        &identity_path_bytes,
+        &IndexedRecordOffsets::build(&identity_path_bytes),
+        &scope,
+        &rectangular_owners,
+    )
+    .and_then(|alignment| alignment.operand_paths)
+    .expect("identity-qualified class-329 assembly occurrence paths");
+    assert!(extended_class_329_paths.iter().all(|path| {
+        path.class_tag == "329"
+            && !path.occurrence_guids.is_empty()
+            && path.identity_guids == identities
+    }));
+    let first_identity_length_at = usize::try_from(
+        extended_class_329_paths[0].identity_guid_offsets[0]
+            .checked_sub(4)
+            .expect("identity length precedes text"),
+    )
+    .expect("identity length offset fits usize");
+    let mut malformed_class_329_identity = identity_path_bytes.clone();
+    malformed_class_329_identity[first_identity_length_at..first_identity_length_at + 4]
+        .copy_from_slice(&35_u32.to_le_bytes());
+    assert!(exact_assembly_alignment(
+        &malformed_class_329_identity,
+        &IndexedRecordOffsets::build(&malformed_class_329_identity),
+        &scope,
+        &rectangular_owners,
+    )
+    .is_some_and(|alignment| alignment.operand_paths.is_none()));
 
     let first_locator_at = assembly_bytes.len();
     push_path_locator(&mut assembly_bytes, 64, 66);

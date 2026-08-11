@@ -1860,7 +1860,7 @@ fn exact_assembly_operand_path(
                 return None;
             }
         }
-        "329" => {
+        "329" | "386" | "390" => {
             if bytes.get(after_tag + 8..after_tag + 14)? != [0; 6] {
                 return None;
             }
@@ -1878,58 +1878,43 @@ fn exact_assembly_operand_path(
                 occurrence_guids.push(guid);
                 position = after_guid;
             }
-            if position != limit {
-                return None;
-            }
-        }
-        "386" | "390" => {
-            if bytes.get(after_tag + 8..after_tag + 14)? != [0; 6] {
-                return None;
-            }
-            let count = usize::try_from(u32_at(bytes, after_tag + 14)?).ok()?;
-            if !(1..=64).contains(&count) {
-                return None;
-            }
-            let mut position = after_tag + 18;
-            for _ in 0..count {
-                let (guid, after_guid) = lp_utf16_bounded(bytes.get(..limit)?, position, 36..=36)?;
-                if !crate::bytes::is_guid_relaxed(&guid) {
+            if position == limit {
+                if class_tag != "329" {
                     return None;
                 }
-                occurrence_guid_offsets.push(u64::try_from(position + 4).ok()?);
-                occurrence_guids.push(guid);
-                position = after_guid;
-            }
-            let end = next_indexed_record_offset(bytes, start + 1)?;
-            if end != limit {
-                return None;
-            }
-            for _ in 0..2 {
-                let (guid, after_guid) = lp_utf16_bounded(bytes.get(..end)?, position, 36..=36)?;
-                if !crate::bytes::is_guid_relaxed(&guid) {
+            } else {
+                for _ in 0..2 {
+                    let (guid, after_guid) =
+                        lp_utf16_bounded(bytes.get(..limit)?, position, 36..=36)?;
+                    if !crate::bytes::is_guid_relaxed(&guid) {
+                        return None;
+                    }
+                    identity_guid_offsets.push(u64::try_from(position + 4).ok()?);
+                    identity_guids.push(guid);
+                    position = after_guid;
+                }
+                if read_u64(bytes, position)? != 2 {
                     return None;
                 }
-                identity_guid_offsets.push(u64::try_from(position + 4).ok()?);
-                identity_guids.push(guid);
-                position = after_guid;
-            }
-            if read_u64(bytes, position)? != 2 {
-                return None;
-            }
-            position += 8;
-            for _ in 0..2 {
-                let (guid, after_guid) = lp_utf16_bounded(bytes.get(..end)?, position, 36..=36)?;
-                if !crate::bytes::is_guid_relaxed(&guid) {
+                position += 8;
+                for _ in 0..2 {
+                    let (guid, after_guid) =
+                        lp_utf16_bounded(bytes.get(..limit)?, position, 36..=36)?;
+                    if !crate::bytes::is_guid_relaxed(&guid) {
+                        return None;
+                    }
+                    identity_guid_offsets.push(u64::try_from(position + 4).ok()?);
+                    identity_guids.push(guid);
+                    position = after_guid;
+                }
+                if u32_at(bytes, position)? != 2
+                    || !bytes
+                        .get(position + 4..limit)?
+                        .iter()
+                        .all(|byte| *byte == 0)
+                {
                     return None;
                 }
-                identity_guid_offsets.push(u64::try_from(position + 4).ok()?);
-                identity_guids.push(guid);
-                position = after_guid;
-            }
-            if u32_at(bytes, position)? != 2
-                || !bytes.get(position + 4..end)?.iter().all(|byte| *byte == 0)
-            {
-                return None;
             }
         }
         _ => return None,
