@@ -479,13 +479,16 @@ pub(super) fn compact_surface_selections(
                         == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
                 })
                 .filter_map(|marker| {
-                    mirror_surface_component_path_at(&lane.native_payload, marker)
+                    counted_surface_component_path_at(&lane.native_payload, marker)
                         .map(|components| (marker, components))
                 })
                 .chain(mirror_surface_prefix.into_iter().flat_map(|prefix| {
                     inline_mirror_surface_paths(&lane.native_payload, start, end, prefix)
                 }))
                 .collect(),
+            NativeClassKind::ReferencePlane => {
+                face_reference_plane_selection_candidates(lane, start, end)
+            }
             NativeClassKind::Operation(operation) => {
                 operation_surface_selection_candidates(operation, lane, start, end, name.object_id)
             }
@@ -524,6 +527,48 @@ pub(super) fn compact_surface_selections(
         }
     }
     result
+}
+
+fn face_reference_plane_selection_candidates(
+    lane: &FeatureInputLane,
+    start: usize,
+    end: usize,
+) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
+    let data_classes = lane
+        .classes
+        .iter()
+        .filter(|class| {
+            class.name == "moFaceRefPlnData_c"
+                && usize::try_from(class.offset).is_ok_and(|offset| (start..end).contains(&offset))
+        })
+        .collect::<Vec<_>>();
+    let [data_class] = data_classes.as_slice() else {
+        return Vec::new();
+    };
+    let Some(body) = usize::try_from(data_class.offset)
+        .ok()
+        .and_then(|offset| offset.checked_add(6 + data_class.name.len()))
+    else {
+        return Vec::new();
+    };
+    let mut candidates = (body..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
+        .filter(|marker| {
+            lane.native_payload
+                .get(*marker..*marker + COMPACT_EDGE_VECTOR_MARKER.len())
+                == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
+        })
+        .filter_map(|marker| {
+            counted_surface_component_path_at(&lane.native_payload, marker)
+                .map(|components| (marker, components))
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by_key(|(offset, _)| *offset);
+    candidates.dedup();
+    if candidates.len() == 1 {
+        candidates
+    } else {
+        Vec::new()
+    }
 }
 
 fn operation_surface_selection_candidates(
@@ -982,7 +1027,7 @@ pub(crate) fn compact_surface_reference_at(
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
     compact_surface_selection_at(payload, marker)
-        .or_else(|| mirror_surface_component_path_at(payload, marker))
+        .or_else(|| counted_surface_component_path_at(payload, marker))
         .or_else(|| compact_termination_reference_path_at(payload, marker))
         .or_else(|| compact_sketch_surface_component_path_at(payload, marker))
         .or_else(|| inline_surface_reference_at(payload, marker))
@@ -995,7 +1040,7 @@ pub(crate) fn surface_reference_matches_at(
 ) -> bool {
     [
         compact_surface_selection_at(payload, marker),
-        mirror_surface_component_path_at(payload, marker),
+        counted_surface_component_path_at(payload, marker),
         compact_termination_reference_path_at(payload, marker),
         compact_sketch_surface_component_path_at(payload, marker),
         inline_surface_reference_at(payload, marker),
@@ -1191,7 +1236,7 @@ pub(super) fn compact_mixed_component_path(
     Some((components, cursor))
 }
 
-pub(super) fn mirror_surface_component_path_at(
+pub(super) fn counted_surface_component_path_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
