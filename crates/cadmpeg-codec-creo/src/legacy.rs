@@ -64,34 +64,34 @@ impl Serialize for Real {
     }
 }
 
-/// One run in a type-2 real array.
+/// One run in a numeric legacy array.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct RealRun {
+pub struct NumericRun<T> {
     /// Number of consecutive array elements carrying `value`.
     pub count: u32,
     /// Element value.
-    pub value: Real,
+    pub value: T,
 }
 
-/// Complete semantic payload of one legacy type-2 value row.
+/// Complete semantic payload of one numeric legacy value row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
-pub enum RealPayload {
-    /// One scalar real.
+pub enum NumericPayload<T> {
+    /// One scalar value.
     Scalar {
         /// Scalar value.
-        value: Real,
+        value: T,
     },
     /// A complete multidimensional array, retained as source runs.
     Array {
         /// Array extents from outermost to innermost dimension.
         dimensions: Vec<u32>,
         /// Ordered source runs whose count sum equals the extent product.
-        runs: Vec<RealRun>,
+        runs: Vec<NumericRun<T>>,
     },
 }
 
-impl RealPayload {
+impl<T> NumericPayload<T> {
     /// Number of logical scalar elements represented by this payload.
     pub fn element_count(&self) -> u64 {
         match self {
@@ -101,9 +101,9 @@ impl RealPayload {
     }
 }
 
-/// One completely decoded legacy type-2 attribute value.
+/// One completely decoded numeric legacy attribute value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct RealRecord {
+pub struct NumericRecord<T> {
     /// Globally unique native record identity.
     pub id: String,
     /// Declared attribute name.
@@ -115,10 +115,23 @@ pub struct RealRecord {
     /// Object-tree nesting depth of the scalar or array header.
     pub depth: u32,
     /// Complete typed value.
-    pub payload: RealPayload,
+    pub payload: NumericPayload<T>,
     /// Byte offset of the scalar row or array header.
     pub offset: usize,
 }
+
+/// One run in a type-2 real array.
+pub type RealRun = NumericRun<Real>;
+/// Complete semantic payload of one legacy type-2 value row.
+pub type RealPayload = NumericPayload<Real>;
+/// One completely decoded legacy type-2 attribute value.
+pub type RealRecord = NumericRecord<Real>;
+/// One run in a type-1 integer array.
+pub type IntegerRun = NumericRun<i32>;
+/// Complete semantic payload of one legacy type-1 value row.
+pub type IntegerPayload = NumericPayload<i32>;
+/// One completely decoded legacy type-1 attribute value.
+pub type IntegerRecord = NumericRecord<i32>;
 
 /// One unique `@<name> <id> <type-code>` declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -174,6 +187,10 @@ pub struct Persistence {
     pub real_values: Vec<RealRecord>,
     /// Type-2 value rows not represented by a complete scalar or owning array.
     pub unresolved_real_value_count: usize,
+    /// Complete type-1 signed-integer scalars and arrays in source order.
+    pub integer_values: Vec<IntegerRecord>,
+    /// Type-1 value rows not represented by a complete scalar or owning array.
+    pub unresolved_integer_value_count: usize,
 }
 
 impl Persistence {
@@ -318,6 +335,20 @@ fn compact_real(bytes: &[u8]) -> Option<Real> {
     f64::from_bits(bits).is_finite().then_some(Real(bits))
 }
 
+fn signed_integer(bytes: &[u8]) -> Option<i32> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    if text.is_empty()
+        || !text
+            .strip_prefix('-')
+            .unwrap_or(text)
+            .bytes()
+            .all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    text.parse().ok()
+}
+
 fn array_dimensions(bytes: &[u8]) -> Option<Vec<u32>> {
     let mut dimensions = Vec::new();
     let mut cursor = 0;
@@ -332,25 +363,28 @@ fn array_dimensions(bytes: &[u8]) -> Option<Vec<u32>> {
     (!dimensions.is_empty() && cursor == bytes.len()).then_some(dimensions)
 }
 
-fn real_run(bytes: &[u8]) -> Option<RealRun> {
+fn numeric_run<T>(bytes: &[u8], scalar: fn(&[u8]) -> Option<T>) -> Option<NumericRun<T>> {
     if let Some(star) = bytes.iter().position(|byte| *byte == b'*') {
         let (count, after_count) = decimal(bytes, 0)?;
         if count == 0 || after_count != star {
             return None;
         }
-        Some(RealRun {
+        Some(NumericRun {
             count,
-            value: compact_real(bytes.get(star + 1..)?)?,
+            value: scalar(bytes.get(star + 1..)?)?,
         })
     } else {
-        Some(RealRun {
+        Some(NumericRun {
             count: 1,
-            value: compact_real(bytes)?,
+            value: scalar(bytes)?,
         })
     }
 }
 
-fn continuation_real_runs(bytes: &[u8]) -> Option<Vec<RealRun>> {
+fn continuation_numeric_runs<T>(
+    bytes: &[u8],
+    scalar: fn(&[u8]) -> Option<T>,
+) -> Option<Vec<NumericRun<T>>> {
     let mut runs = Vec::new();
     for row in bytes.split(|byte| *byte == b'\n') {
         let row = row.strip_suffix(b"\r").unwrap_or(row);
@@ -363,13 +397,19 @@ fn continuation_real_runs(bytes: &[u8]) -> Option<Vec<RealRun>> {
                 }
                 continue;
             }
-            runs.push(real_run(token)?);
+            runs.push(numeric_run(token, scalar)?);
         }
     }
     Some(runs)
 }
 
-fn real_records(data: &[u8], scopes: &[Scope]) -> (Vec<RealRecord>, usize) {
+fn numeric_records<T>(
+    data: &[u8],
+    scopes: &[Scope],
+    type_code: u8,
+    identity_kind: &str,
+    scalar: fn(&[u8]) -> Option<T>,
+) -> (Vec<NumericRecord<T>>, usize) {
     let mut records = Vec::new();
     let mut unresolved = 0usize;
     for scope in scopes {
@@ -382,7 +422,7 @@ fn real_records(data: &[u8], scopes: &[Scope]) -> (Vec<RealRecord>, usize) {
         while let Some(value) = scope.values.get(index) {
             let Some(declaration) = declarations
                 .get(&value.attribute_id)
-                .filter(|declaration| declaration.type_code == 2)
+                .filter(|declaration| declaration.type_code == type_code)
             else {
                 index += 1;
                 continue;
@@ -400,7 +440,7 @@ fn real_records(data: &[u8], scopes: &[Scope]) -> (Vec<RealRecord>, usize) {
                         index += 1;
                         continue;
                     };
-                    let Some(runs) = continuation_real_runs(bytes) else {
+                    let Some(runs) = continuation_numeric_runs(bytes, scalar) else {
                         unresolved += 1;
                         index += 1;
                         continue;
@@ -416,7 +456,7 @@ fn real_records(data: &[u8], scopes: &[Scope]) -> (Vec<RealRecord>, usize) {
                             break;
                         };
                         let Some(run) = (child.continuation_count == 0)
-                            .then(|| real_run(bytes))
+                            .then(|| numeric_run(bytes, scalar))
                             .flatten()
                         else {
                             break;
@@ -439,20 +479,25 @@ fn real_records(data: &[u8], scopes: &[Scope]) -> (Vec<RealRecord>, usize) {
                     index = next_index;
                     continue;
                 }
-                (RealPayload::Array { dimensions, runs }, next_index)
+                (NumericPayload::Array { dimensions, runs }, next_index)
             } else {
-                let Some(real) = (value.continuation_count == 0)
-                    .then(|| compact_real(payload_bytes))
+                let Some(scalar_value) = (value.continuation_count == 0)
+                    .then(|| scalar(payload_bytes))
                     .flatten()
                 else {
                     unresolved += 1;
                     index += 1;
                     continue;
                 };
-                (RealPayload::Scalar { value: real }, index + 1)
+                (
+                    NumericPayload::Scalar {
+                        value: scalar_value,
+                    },
+                    index + 1,
+                )
             };
-            records.push(RealRecord {
-                id: format!("creo:legacy_ascii:real#{}", value.offset),
+            records.push(NumericRecord {
+                id: format!("creo:legacy_ascii:{identity_kind}#{}", value.offset),
                 name: declaration.name.clone(),
                 attribute_id: value.attribute_id,
                 scope_offset: scope.range.start,
@@ -562,11 +607,16 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         .filter(|range| range.start < range.end && range.start < data.len())
         .map(|range| scan_scope(data, range))
         .collect::<Vec<_>>();
-    let (real_values, unresolved_real_value_count) = real_records(data, &scopes);
+    let (real_values, unresolved_real_value_count) =
+        numeric_records(data, &scopes, 2, "real", compact_real);
+    let (integer_values, unresolved_integer_value_count) =
+        numeric_records(data, &scopes, 1, "integer", signed_integer);
     Persistence {
         scopes,
         real_values,
         unresolved_real_value_count,
+        integer_values,
+        unresolved_integer_value_count,
     }
 }
 
@@ -714,6 +764,55 @@ mod tests {
 
         assert!(persistence.real_values.is_empty());
         assert_eq!(persistence.unresolved_real_value_count, 3);
+    }
+
+    #[test]
+    fn type_1_integers_decode_signed_scalars_runs_and_child_rows() {
+        let data = b"@minimum 1 1\n0 1 -2147483648\n\
+            @array 2 1\n0 2 [4]\n$1,2*-1,0\n\
+            @single 3 1\n0 3 [1]\n1 3 42\n";
+        let persistence = scan(data, std::iter::once(0..data.len()));
+
+        assert_eq!(persistence.integer_values.len(), 3);
+        assert_eq!(persistence.unresolved_integer_value_count, 0);
+        assert_eq!(
+            persistence.integer_values[0].payload,
+            IntegerPayload::Scalar { value: i32::MIN }
+        );
+        assert_eq!(
+            persistence.integer_values[1].payload,
+            IntegerPayload::Array {
+                dimensions: vec![4],
+                runs: vec![
+                    IntegerRun { count: 1, value: 1 },
+                    IntegerRun {
+                        count: 2,
+                        value: -1,
+                    },
+                    IntegerRun { count: 1, value: 0 },
+                ],
+            }
+        );
+        assert_eq!(
+            persistence.integer_values[2].payload,
+            IntegerPayload::Array {
+                dimensions: vec![1],
+                runs: vec![IntegerRun {
+                    count: 1,
+                    value: 42,
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn type_1_integers_withhold_incomplete_arrays_and_overflow() {
+        let data = b"@short 1 1\n0 1 [2]\n$0\n\
+            @overflow 2 1\n0 2 2147483648\n";
+        let persistence = scan(data, std::iter::once(0..data.len()));
+
+        assert!(persistence.integer_values.is_empty());
+        assert_eq!(persistence.unresolved_integer_value_count, 2);
     }
 
     #[test]

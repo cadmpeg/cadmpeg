@@ -103,7 +103,10 @@ fixtures, claims above L1 remain unproven.
   `principal_sys_units` scalar transfers the active length system and its
   canonical millimeter scale. Complete finite type-2 scalars and dimensioned
   run-length arrays transfer as exact typed native records without expanding
-  repeated elements.
+  repeated elements. Complete type-1 signed-integer scalars and arrays transfer
+  with the same scoped identity and retained run representation. Declared
+  type-1 arrays without stored elements remain unresolved and are counted as
+  typed-record losses; the decoder does not synthesize zero elements.
 - Compressed `THMB_IMG_MAIN` payloads expand to the JPEG marker before preview
   detection and retain the JPEG bytes as a derived native record.
 - Axis-aligned coaxial cone-cylinder intersections transfer the unique circle

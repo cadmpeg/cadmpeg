@@ -9904,6 +9904,7 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
     let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
         @principal_sys_units 25 10\n2 25 Inch lbm Second (Pro/E Default)\n\
         @rel_accuracy 26 2\n2 26 3FF\n\
+        @feat_id 27 1\n2 27 42\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
 
     let result = CreoCodec
@@ -9924,6 +9925,10 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
         result.report.coverage["decoded_legacy_real_element_count"],
         1
     );
+    assert_eq!(
+        result.report.coverage["decoded_legacy_integer_scalar_count"],
+        1
+    );
     let reals = &result
         .ir
         .native
@@ -9939,12 +9944,28 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
         reals[0].field("payload"),
         Some(serde_json::json!({"form": "scalar", "value": 1.0}))
     );
+    let integers = &result
+        .ir
+        .native
+        .namespace("creo")
+        .expect("Creo namespace")
+        .arenas["legacy_integer_values"];
+    assert_eq!(integers.len(), 1);
+    assert_eq!(
+        integers[0].field("name"),
+        Some(serde_json::json!("feat_id"))
+    );
+    assert_eq!(
+        integers[0].field("payload"),
+        Some(serde_json::json!({"form": "scalar", "value": 42}))
+    );
 }
 
 #[test]
 fn incomplete_legacy_real_array_is_reported() {
     let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
         @values 7 2\n0 7 [2]\n$0\n\
+        @ids 8 1\n0 8 [2]\n$1\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
 
     let result = CreoCodec
@@ -9954,11 +9975,19 @@ fn incomplete_legacy_real_array_is_reported() {
         result.report.coverage["unresolved_legacy_real_value_count"],
         1
     );
-    assert!(result
-        .report
-        .losses
-        .iter()
-        .any(|loss| loss.code == cadmpeg_ir::report::LossKind::RecordNotTyped));
+    assert_eq!(
+        result.report.coverage["unresolved_legacy_integer_value_count"],
+        1
+    );
+    assert_eq!(
+        result
+            .report
+            .losses
+            .iter()
+            .filter(|loss| loss.code == cadmpeg_ir::report::LossKind::RecordNotTyped)
+            .count(),
+        2
+    );
 }
 
 #[test]

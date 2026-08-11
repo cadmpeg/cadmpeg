@@ -76,6 +76,16 @@ as its payload. A `$` row continues the immediately preceding value row; a
 identifiers can be reused in another scope. Named sections with a byte payload
 that does not begin with an attribute declaration do not use this line grammar.
 
+A type-1 scalar payload is a signed decimal 32-bit integer. A type-1 array uses
+the positive decimal extent header, continuation rows, comma separators,
+terminal-comma rule, and `n*value` run-length form defined below for type 2,
+with signed decimal integers in place of compact reals. A one-element `[1]`
+array can instead store its integer in the immediately following value row at
+depth one greater and with the same attribute identifier. The sum of run counts
+must equal the product of the extents. A type-1 array header without element
+rows stores no integer elements; its declared extents do not supply default
+values.
+
 A type-2 scalar payload is one through sixteen uppercase hexadecimal digits.
 The digits are the most-significant nibbles of an IEEE-754 binary64 bit word.
 Missing low nibbles are zero. A terminal `R` instead repeats the last written

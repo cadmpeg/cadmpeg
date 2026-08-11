@@ -32725,25 +32725,41 @@ fn emit_legacy_arenas(
     let Some(legacy) = &scan.framing.legacy_ascii else {
         return Ok(());
     };
+    let source_stream = |offset: usize| {
+        scan.framing
+            .sections
+            .iter()
+            .find(|section| {
+                offset >= section.offset && offset < section.offset.saturating_add(section.length)
+            })
+            .map_or("legacy_ascii", |section| section.name.as_str())
+    };
+    emit_arena(
+        ir,
+        annotations,
+        "legacy_integer_values",
+        &legacy.persistence.integer_values,
+        |annotations, record| {
+            annotate(
+                annotations,
+                &record.id,
+                source_stream(record.offset),
+                record.offset as u64,
+                "legacy_type_1_integer",
+                Exactness::ByteExact,
+            );
+        },
+    )?;
     emit_arena(
         ir,
         annotations,
         "legacy_real_values",
         &legacy.persistence.real_values,
         |annotations, record| {
-            let stream = scan
-                .framing
-                .sections
-                .iter()
-                .find(|section| {
-                    record.offset >= section.offset
-                        && record.offset < section.offset.saturating_add(section.length)
-                })
-                .map_or("legacy_ascii", |section| section.name.as_str());
             annotate(
                 annotations,
                 &record.id,
-                stream,
+                source_stream(record.offset),
                 record.offset as u64,
                 "legacy_type_2_real",
                 Exactness::ByteExact,
@@ -35713,6 +35729,31 @@ fn torus_parameter_coverage(scan: &ContainerScan) -> TorusParameterCoverage {
     }
 }
 
+fn legacy_numeric_coverage<T>(
+    records: &[crate::legacy::NumericRecord<T>],
+) -> (usize, usize, usize) {
+    records.iter().fold(
+        (0usize, 0usize, 0usize),
+        |(scalars, arrays, elements), record| {
+            (
+                scalars
+                    + usize::from(matches!(
+                        record.payload,
+                        crate::legacy::NumericPayload::Scalar { .. }
+                    )),
+                arrays
+                    + usize::from(matches!(
+                        record.payload,
+                        crate::legacy::NumericPayload::Array { .. }
+                    )),
+                elements.saturating_add(
+                    usize::try_from(record.payload.element_count()).unwrap_or(usize::MAX),
+                ),
+            )
+        },
+    )
+}
+
 fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
     let mut attributes = BTreeMap::new();
     let mut coverage = BTreeMap::new();
@@ -35793,39 +35834,31 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
             usize::from(scan.framing.principal_unit.is_some()),
         );
         if let Some(legacy) = &scan.framing.legacy_ascii {
+            let (integer_scalars, integer_arrays, integer_elements) =
+                legacy_numeric_coverage(&legacy.persistence.integer_values);
             coverage.insert(
-                "decoded_legacy_real_scalar_count".to_string(),
-                legacy
-                    .persistence
-                    .real_values
-                    .iter()
-                    .filter(|record| {
-                        matches!(record.payload, crate::legacy::RealPayload::Scalar { .. })
-                    })
-                    .count(),
+                "decoded_legacy_integer_scalar_count".to_string(),
+                integer_scalars,
             );
             coverage.insert(
-                "decoded_legacy_real_array_count".to_string(),
-                legacy
-                    .persistence
-                    .real_values
-                    .iter()
-                    .filter(|record| {
-                        matches!(record.payload, crate::legacy::RealPayload::Array { .. })
-                    })
-                    .count(),
+                "decoded_legacy_integer_array_count".to_string(),
+                integer_arrays,
             );
+            coverage.insert(
+                "decoded_legacy_integer_element_count".to_string(),
+                integer_elements,
+            );
+            coverage.insert(
+                "unresolved_legacy_integer_value_count".to_string(),
+                legacy.persistence.unresolved_integer_value_count,
+            );
+            let (real_scalars, real_arrays, real_elements) =
+                legacy_numeric_coverage(&legacy.persistence.real_values);
+            coverage.insert("decoded_legacy_real_scalar_count".to_string(), real_scalars);
+            coverage.insert("decoded_legacy_real_array_count".to_string(), real_arrays);
             coverage.insert(
                 "decoded_legacy_real_element_count".to_string(),
-                legacy
-                    .persistence
-                    .real_values
-                    .iter()
-                    .fold(0usize, |count, record| {
-                        count.saturating_add(
-                            usize::try_from(record.payload.element_count()).unwrap_or(usize::MAX),
-                        )
-                    }),
+                real_elements,
             );
             coverage.insert(
                 "unresolved_legacy_real_value_count".to_string(),
@@ -36609,6 +36642,18 @@ fn build_report(
             message: format!(
                 "{unresolved_legacy_reals} legacy type-2 value row(s) did not form a complete \
                  finite scalar or dimension-complete real array."
+            ),
+            provenance: None,
+        });
+    }
+    let unresolved_legacy_integers = count("unresolved_legacy_integer_value_count");
+    if unresolved_legacy_integers != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_legacy_integers} legacy type-1 value row(s) did not form a signed \
+                 32-bit scalar or dimension-complete integer array."
             ),
             provenance: None,
         });
