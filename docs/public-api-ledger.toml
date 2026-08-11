@@ -1,0 +1,21 @@
+# Public API change ledger for the refactor.
+# Phase 2+ adds one row per intentional public deletion, module move, visibility
+# reduction, signature change, removed trait implementation, or field encapsulation.
+# At phase 9, compare rustdoc public items to the baseline snapshots under
+# docs/api-baseline/ and reconcile every difference with a row here.
+#
+# Lineage baseline is the Phase 0 starting commit on feat/refactor-lego /
+# sldprt-l6. The proposal's audit baseline 14a0a4dfc remains an ancestor and is
+# recorded for cross-reference; do not reset to main.
+baseline_commit = "087baee8ba7e4374fa45a0355eb3268824fd81d8"
+audit_baseline_commit = "14a0a4dfc89b77e04fac53d478f6479449a84deb"
+api_baseline_dir = "docs/api-baseline"
+measured_at = "2bb9a14d97e376495b3137a878c4de34c1eef8ed"
+
+# Empty until Phase 2. Example row shape (commented):
+# [[change]]
+# commit = "<sha>"
+# crate = "cadmpeg-core"
+# kind = "deletion" # deletion | move | visibility | signature | trait_impl | field
+# item = "cadmpeg_core::cursor::Cursor"
+# reason = "replaced by View; FreeCAD and Rhino ports complete"
