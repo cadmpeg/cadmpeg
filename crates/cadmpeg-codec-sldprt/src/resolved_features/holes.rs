@@ -748,6 +748,64 @@ fn profiled_hole_construction_with_evidence(
         }
         return None;
     }
+    if let ([diameter, recess_diameter, entry_diameter], [recess_depth, depth], [entry_angle]) =
+        (diameters.as_slice(), lengths.as_slice(), angles.as_slice())
+    {
+        let bore_radius = diameter / 2.0;
+        let recess_radius = recess_diameter / 2.0;
+        let entry_radius = entry_diameter / 2.0;
+        let setback = (entry_radius - recess_radius) / (entry_angle / 2.0).tan();
+        if !setback.is_finite()
+            || setback <= 0.0
+            || recess_depth <= &setback
+            || depth <= recess_depth
+        {
+            return None;
+        }
+        for swap in [false, true] {
+            for axial_sign in [-1.0, 1.0] {
+                for radial_sign in [-1.0, 1.0] {
+                    let point = |axial: f64, radial: f64| {
+                        let axial = axial * axial_sign;
+                        let radial = radial * radial_sign;
+                        if swap {
+                            Point2::new(radial, axial)
+                        } else {
+                            Point2::new(axial, radial)
+                        }
+                    };
+                    let entry = point(0.0, entry_radius);
+                    let recess_start = point(-setback, recess_radius);
+                    let recess_end = point(-recess_depth, recess_radius);
+                    let bore_start = point(-recess_depth, bore_radius);
+                    for terminal_overrun in GENERATED_PROFILE_TERMINAL_OVERRUN_MM {
+                        let bore_end = point(-depth - terminal_overrun, bore_radius);
+                        let edges = [
+                            (entry, recess_start),
+                            (recess_start, recess_end),
+                            (recess_end, bore_start),
+                            (bore_start, bore_end),
+                        ];
+                        if profile_translation(&edges, 2).is_some() {
+                            return Some(ProfiledHoleConstruction {
+                                diameter: Length(*diameter),
+                                extent: Termination::ThroughAll,
+                                kind: HoleKind::Counterdrill {
+                                    diameter: Length(*recess_diameter),
+                                    entry_diameter: Some(Length(*entry_diameter)),
+                                    depth: Length(*recess_depth),
+                                    angle: Angle(*entry_angle),
+                                },
+                                bottom: None,
+                                taper_angle: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        return None;
+    }
     let [diameter, entry_diameter] = diameters.as_slice() else {
         return None;
     };
@@ -890,11 +948,22 @@ fn profiled_hole_construction_with_evidence(
                     let entry = point(0.0, entry_radius);
                     let bore_start = point(-setback, bore_radius);
                     let mirrored_bore_start = point(-setback, -bore_radius);
-                    let bore_wall = GENERATED_PROFILE_TERMINAL_OVERRUN_MM.iter().any(|overrun| {
-                        has_line(bore_start, point(-depth - overrun, bore_radius))
-                            || has_line(mirrored_bore_start, point(-depth - overrun, -bore_radius))
-                    });
-                    if has_line(entry, bore_start) && bore_wall {
+                    let profile_matches =
+                        GENERATED_PROFILE_TERMINAL_OVERRUN_MM.iter().any(|overrun| {
+                            [
+                                (bore_start, bore_radius),
+                                (mirrored_bore_start, -bore_radius),
+                            ]
+                            .into_iter()
+                            .any(|(wall_start, wall_radius)| {
+                                let edges = [
+                                    (entry, bore_start),
+                                    (wall_start, point(-depth - overrun, wall_radius)),
+                                ];
+                                profile_translation(&edges, 2).is_some()
+                            })
+                        });
+                    if profile_matches {
                         return Some(ProfiledHoleConstruction {
                             diameter: Length(*diameter),
                             extent: Termination::ThroughAll,
