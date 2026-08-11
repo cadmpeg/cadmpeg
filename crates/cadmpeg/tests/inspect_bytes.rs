@@ -975,3 +975,42 @@ fn find_context_prints_a_window_around_each_hit() {
              |AAAAneedleBBBB|\n",
         );
 }
+
+#[test]
+fn find_json_emits_the_versioned_envelope() {
+    let dir = tempdir().unwrap();
+    let file = write(dir.path(), "probe.bin", b"AAAAneedleBBBBneedle");
+    let output = cadmpeg()
+        .args([
+            "inspect",
+            "find",
+            file.to_str().unwrap(),
+            "--ascii",
+            "needle",
+            "--max",
+            "0",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["command"], "inspect find");
+    assert_eq!(value["hits"], serde_json::json!([4, 14]));
+    assert_eq!(value["truncated"], false);
+}
+
+#[test]
+fn json_on_a_tool_without_a_json_form_teaches_where_json_lives() {
+    let dir = tempdir().unwrap();
+    let file = write(dir.path(), "probe.bin", b"AAAA");
+    for tool in ["hex", "strings"] {
+        let output = cadmpeg()
+            .args(["inspect", tool, file.to_str().unwrap(), "--json"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{tool}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("inspect find --json"), "{tool}: {stderr}");
+    }
+}

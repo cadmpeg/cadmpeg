@@ -390,7 +390,7 @@ enum Command {
     /// Project one named view from a cadmpeg JSON artifact.
     ///
     /// Accepts a decoded CADIR document, a command report written by
-    /// `--report`/`-o`, or a `.decode.json` sidecar, and detects which one
+    /// `--report`/`-o`, or a `<stem>.fidelity.json` decode sidecar, and detects which one
     /// it was given. Output is tab-separated with a header row.
     Query {
         /// View to project.

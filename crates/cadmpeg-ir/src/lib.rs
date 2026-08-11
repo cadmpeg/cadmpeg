@@ -135,6 +135,14 @@ pub fn cadir_json_schema() -> schemars::Schema {
     schemars::schema_for!(CadIr)
 }
 
+/// Generate the JSON Schema for the decode sidecar (`<stem>.fidelity.json`).
+///
+/// Requires the `schema` feature.
+#[cfg(feature = "schema")]
+pub fn decode_sidecar_json_schema() -> schemars::Schema {
+    schemars::schema_for!(source_fidelity::DecodeSidecar)
+}
+
 #[cfg(test)]
 mod proptests;
 #[cfg(test)]

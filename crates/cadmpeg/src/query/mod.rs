@@ -3,10 +3,15 @@
 //!
 //! `cadmpeg query` reads one of the three JSON artifact kinds the CLI
 //! produces — a decoded CADIR document, a versioned command report, or a
-//! `.decode.json` sidecar — detects which one it was given, and prints one
-//! named view as tab-separated rows. It replaces ad-hoc `jq` path
-//! exploration: the view names are stable and each view's help states which
-//! artifact kinds it accepts.
+//! `<stem>.fidelity.json` decode sidecar — detects which one it was given, and prints one
+//! named view. Aggregate views print tab-separated rows; `item` prints
+//! pretty-printed JSON records (or a TSV projection with `--fields`). It
+//! replaces ad-hoc `jq` path exploration: the view names are stable and each
+//! view's help states which artifact kinds it accepts.
+
+mod fidelity;
+mod item;
+mod schema;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -19,6 +24,10 @@ use serde::de::{IgnoredAny, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 
 use crate::commands::CLI_SCHEMA_VERSION;
+
+pub use fidelity::FidelityArgs;
+pub use item::ItemArgs;
+pub use schema::SchemaArgs;
 
 /// One named projection over a cadmpeg JSON artifact.
 #[derive(Debug, Subcommand)]
@@ -39,6 +48,41 @@ pub enum QueryView {
     /// (`entity_counts`).
     #[command(visible_alias = "arenas")]
     Counts(QueryArgs),
+    /// One or more arena records by ID (CADIR documents only).
+    ///
+    /// Arena names are the dotted keys from `query counts --json`
+    /// (`model.<arena>` or `native.<codec>.<arena>`; a bare name means
+    /// `model.<arena>`). IDs match exactly, or as a unique suffix of the
+    /// JSON-string `id` field. With no IDs, prints the first record;
+    /// `--head N` prints the first N. Default output is pretty-printed JSON
+    /// (blank-line separated), not TSV — nested records do not fit the other
+    /// views' table convention. `--fields a,b.c` projects those paths as TSV
+    /// (null/absent → empty cell; arrays/objects → compact JSON; tab/newline
+    /// in strings → `\t`/`\n`). Alias: `record` (also `get`).
+    #[command(visible_alias = "record", alias = "get")]
+    Item(ItemArgs),
+    /// The IR schema of one model arena's records (no FILE — compile time).
+    ///
+    /// Unlike the other views this takes no file: it prints what this
+    /// binary's IR types allow — every field of an arena's element type,
+    /// which fields are optional, and every variant of a tagged union
+    /// (`FaceSelection`'s `value` is absent, a string, an array, or an
+    /// object depending on `kind`; the discriminator of a feature's
+    /// `definition` is `.definition.definition`). Bare `query schema`
+    /// lists every model arena and its element type; `sidecar` prints the
+    /// `<stem>.fidelity.json` decode-sidecar shape. Which arenas a given
+    /// document actually has still comes from `query counts FILE`; native
+    /// arena records are codec-owned — fetch one with `query item` instead.
+    Schema(SchemaArgs),
+    /// Retained source records and annotations of a decode sidecar.
+    ///
+    /// The bare view lists `retained_records` as a table (stream, offset,
+    /// bytes, whether the bytes are retained, id) with annotation counts
+    /// on standard error. `--stream NAME` reassembles that stream's
+    /// retained bytes byte-exactly into `-o FILE` (or stdout with
+    /// `--binary-stdout`) — replacing the
+    /// `jq '.fidelity.retained_records[].data' | base64 -d` pipeline.
+    Fidelity(FidelityArgs),
 }
 
 /// Input selection and output format for one query view.
@@ -59,6 +103,9 @@ impl QueryView {
             | Self::Findings(args)
             | Self::Losses(args)
             | Self::Counts(args) => args,
+            Self::Item(_) => unreachable!("item uses ItemArgs"),
+            Self::Schema(_) => unreachable!("schema uses SchemaArgs"),
+            Self::Fidelity(_) => unreachable!("fidelity uses FidelityArgs"),
         }
     }
 }
@@ -69,7 +116,7 @@ enum Artifact {
     Report(ReportProbe),
     /// A decoded CADIR document.
     Cadir(CadirProbe),
-    /// A `.decode.json` sidecar.
+    /// A `<stem>.fidelity.json` decode sidecar.
     Sidecar(SidecarProbe),
 }
 
@@ -99,6 +146,9 @@ struct KindProbe {
 struct ReportProbe {
     schema_version: u32,
     command: String,
+    /// Binary that wrote the report; absent in reports from older builds.
+    #[serde(default)]
+    generator: Option<String>,
     #[serde(default)]
     decode_report: Option<DecodeReportProbe>,
     #[serde(default)]
@@ -242,6 +292,15 @@ impl<'de> Deserialize<'de> for ArenaLen {
 
 /// Runs one query view against one artifact file.
 pub fn run(view: &QueryView) -> Result<()> {
+    if let QueryView::Item(args) = view {
+        return item::run(args);
+    }
+    if let QueryView::Schema(args) = view {
+        return schema::run(args);
+    }
+    if let QueryView::Fidelity(args) = view {
+        return fidelity::run(args);
+    }
     let args = view.args();
     let bytes = read_input(&args.file)?;
     let artifact = detect(&bytes, &args.file)?;
@@ -254,6 +313,9 @@ pub fn run(view: &QueryView) -> Result<()> {
         QueryView::Findings(args) => findings(&artifact, args),
         QueryView::Losses(args) => losses(&artifact, args),
         QueryView::Counts(args) => counts(&artifact, args),
+        QueryView::Item(_) | QueryView::Schema(_) | QueryView::Fidelity(_) => {
+            unreachable!("handled above")
+        }
     }
 }
 
@@ -274,7 +336,7 @@ fn detect(bytes: &[u8], path: &Path) -> Result<Artifact> {
     let sniff: KindProbe = serde_json::from_slice(bytes).with_context(|| {
         format!(
             "{} is not a JSON object; query reads a command report (--report/-o), \
-             a decoded CADIR document, or a .decode.json sidecar",
+             a decoded CADIR document, or a .fidelity.json decode sidecar",
             path.display()
         )
     })?;
@@ -296,7 +358,7 @@ fn detect(bytes: &[u8], path: &Path) -> Result<Artifact> {
     bail!(
         "{} is JSON but not a recognized artifact; query reads a command report \
          (top-level `schema_version` and `command`), a decoded CADIR document \
-         (`ir_version` and `model`), or a .decode.json sidecar (`version` and \
+         (`ir_version` and `model`), or a .fidelity.json decode sidecar (`version` and \
          `ir_sha256`)",
         path.display()
     )
@@ -337,6 +399,9 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                 report.schema_version.to_string(),
             ));
             rows.push(("command".to_owned(), cell(&report.command)));
+            if let Some(generator) = &report.generator {
+                rows.push(("generator".to_owned(), cell(generator)));
+            }
             match &report.decode_report {
                 Some(decode) => {
                     if let Some(format) = &decode.format {
@@ -456,7 +521,7 @@ fn coverage(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
         Artifact::Sidecar(sidecar) => sidecar.report.as_ref(),
         Artifact::Cadir(_) => bail!(
             "a CADIR document has no decode report; coverage is in the report \
-             written by `decode --report` or in the `.decode.json` sidecar"
+             written by `decode --report` or in the `.fidelity.json` sidecar"
         ),
     };
     let (coverage, note): (&BTreeMap<String, u64>, Option<&str>) = match decode {
@@ -550,7 +615,7 @@ fn losses(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
         },
         Artifact::Cadir(_) => bail!(
             "a CADIR document has no loss notes; losses are in the report written \
-             by `--report` or in the `.decode.json` sidecar"
+             by `--report` or in the `.fidelity.json` sidecar"
         ),
     };
     if args.json {
