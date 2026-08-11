@@ -65,9 +65,10 @@ pub(crate) const JPEG_MAGIC: &[u8] = &[0xff, 0xd8, 0xff];
 pub(crate) const UNIX_COMPRESS_MAGIC: &[u8] = &[0x1f, 0x9d];
 
 /// ASCII names that appear in the header/TOC framing and look like section
-/// headers but are structural markers, not binary sections ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)).
+/// headers but are structural markers, not body sections ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)).
 const FRAMING_NAMES: &[&str] = &[
     "-END_OF_UGC_HEADER",
+    "END_OF_P_OBJECT",
     "END_OF_UGC",
     "UGC_TOC",
     "END_OF_TOC_HEADER",
@@ -117,6 +118,8 @@ pub struct LegacyAsciiFraming {
     pub schema: String,
     /// Product release token in a `Version` or `Release` banner form.
     pub product_release: Option<String>,
+    /// Byte offset of the `#Pro/ENGINEER` banner and legacy TOC offset base.
+    pub banner_offset: usize,
 }
 
 impl Layout {
@@ -643,6 +646,152 @@ fn toc_sections(data: &[u8], header_base: usize) -> Vec<Section> {
     sections
 }
 
+fn ascii_line(data: &[u8], start: usize) -> Option<(&[u8], usize)> {
+    let bytes = data.get(start..)?;
+    let relative_end = bytes.iter().position(|byte| *byte == b'\n');
+    let end = relative_end.map_or(data.len(), |end| start + end);
+    let next = relative_end.map_or(end, |_| end + 1);
+    Some((
+        data[start..end]
+            .strip_suffix(b"\r")
+            .unwrap_or(&data[start..end]),
+        next,
+    ))
+}
+
+fn legacy_declaration_id(line: &[u8], expected_name: &str, expected_type: u8) -> Option<u32> {
+    let line = std::str::from_utf8(line).ok()?;
+    let mut fields = line.split_ascii_whitespace();
+    let name = fields.next()?;
+    let id = fields.next()?.parse().ok()?;
+    let type_code = fields.next()?.parse::<u8>().ok()?;
+    (name == expected_name && type_code == expected_type && fields.next().is_none()).then_some(id)
+}
+
+fn legacy_toc_sections(data: &[u8], banner_offset: usize) -> Vec<Section> {
+    const MAX_LEGACY_TOC_ENTRIES: usize = 4096;
+
+    let Some(toc_offset) = find(data, b"\n@Toc ", banner_offset).map(|offset| offset + 1) else {
+        return Vec::new();
+    };
+    let Some((toc_declaration, after_toc_declaration)) = ascii_line(data, toc_offset) else {
+        return Vec::new();
+    };
+    let Some(toc_id) = legacy_declaration_id(toc_declaration, "@Toc", 0) else {
+        return Vec::new();
+    };
+    let Some((toc_value, after_toc_value)) = ascii_line(data, after_toc_declaration) else {
+        return Vec::new();
+    };
+    let Ok(toc_value) = std::str::from_utf8(toc_value) else {
+        return Vec::new();
+    };
+    let mut toc_fields = toc_value.split_ascii_whitespace();
+    if toc_fields.next() != Some("0")
+        || toc_fields.next().and_then(|id| id.parse::<u32>().ok()) != Some(toc_id)
+        || toc_fields.next() != Some("->")
+        || toc_fields.next().is_some()
+    {
+        return Vec::new();
+    }
+
+    let Some((entry_declaration, after_entry_declaration)) = ascii_line(data, after_toc_value)
+    else {
+        return Vec::new();
+    };
+    let Some(entry_id) = legacy_declaration_id(entry_declaration, "@entry", 10) else {
+        return Vec::new();
+    };
+    let Some((entry_array, mut next)) = ascii_line(data, after_entry_declaration) else {
+        return Vec::new();
+    };
+    let Ok(entry_array) = std::str::from_utf8(entry_array) else {
+        return Vec::new();
+    };
+    let mut array_fields = entry_array.split_ascii_whitespace();
+    if array_fields.next() != Some("1")
+        || array_fields.next().and_then(|id| id.parse::<u32>().ok()) != Some(entry_id)
+    {
+        return Vec::new();
+    }
+    let Some(count) = array_fields
+        .next()
+        .and_then(|count| count.strip_prefix('['))
+        .and_then(|count| count.strip_suffix(']'))
+        .and_then(|count| count.parse::<usize>().ok())
+        .filter(|count| *count <= MAX_LEGACY_TOC_ENTRIES)
+    else {
+        return Vec::new();
+    };
+    if array_fields.next().is_some() {
+        return Vec::new();
+    }
+
+    let mut sections = Vec::new();
+    for _ in 0..count {
+        let Some((entry, after_entry)) = ascii_line(data, next) else {
+            break;
+        };
+        next = after_entry;
+        let Ok(entry) = std::str::from_utf8(entry) else {
+            continue;
+        };
+        let entry = entry.trim_end_matches('#').trim_end();
+        let fields = entry.split_ascii_whitespace().collect::<Vec<_>>();
+        if fields.len() == 2 {
+            continue;
+        }
+        if fields.len() != 7
+            || fields[0] != "2"
+            || fields[1].parse::<u32>().ok() != Some(entry_id)
+            || fields[5] != "0"
+            || fields[6].parse::<u32>().is_err()
+        {
+            continue;
+        }
+        let raw_name = fields[2];
+        if raw_name.len() < 2
+            || !raw_name.bytes().all(is_name_byte)
+            || !raw_name.bytes().any(|byte| byte.is_ascii_alphanumeric())
+        {
+            continue;
+        }
+        let (Ok(relative_offset), Ok(length)) = (
+            usize::from_str_radix(fields[3], 16),
+            usize::from_str_radix(fields[4], 16),
+        ) else {
+            continue;
+        };
+        let Some(offset) = banner_offset.checked_add(relative_offset) else {
+            continue;
+        };
+        let marker = [b"#".as_slice(), raw_name.as_bytes(), b"\n"].concat();
+        let Some(marker_end) = offset.checked_add(marker.len()) else {
+            continue;
+        };
+        if length < marker.len()
+            || data.get(offset..marker_end) != Some(marker.as_slice())
+            || offset
+                .checked_add(length)
+                .is_none_or(|end| end > data.len())
+        {
+            continue;
+        }
+        let normalized = normalize_name(raw_name);
+        sections.push(Section {
+            role: classify(&normalized),
+            name: normalized,
+            raw_name: raw_name.to_string(),
+            offset,
+            length,
+            expanded_length: None,
+        });
+    }
+    sections.sort_by_key(|section| section.offset);
+    sections.dedup_by_key(|section| section.offset);
+    sections
+}
+
 fn expanded_sections(data: &[u8], sections: &[Section]) -> Vec<ExpandedSection> {
     const MAX_EXPANDED_SECTION: usize = 256 * 1024 * 1024;
     sections
@@ -741,9 +890,11 @@ fn legacy_ascii_framing(data: &[u8]) -> Option<LegacyAsciiFraming> {
             .filter(|tail| tail.starts_with(LEGACY_BANNER_START))
         {
             let banner_end = find(banner, b"\n", 0).unwrap_or(banner.len());
+            let banner_offset = data.len() - banner.len();
             return Some(LegacyAsciiFraming {
                 schema,
                 product_release: legacy_product_release(&banner[..banner_end]),
+                banner_offset,
             });
         }
         from = object_end + 1;
@@ -1884,7 +2035,11 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         .map(|nl| nl + 1);
     let body_start = toc_end.or(header_end).unwrap_or(0);
 
-    let sections = toc_sections(&data, header_end.unwrap_or(0));
+    let legacy_ascii = legacy_ascii_framing(&data);
+    let sections = legacy_ascii.as_ref().map_or_else(
+        || toc_sections(&data, header_end.unwrap_or(0)),
+        |legacy| legacy_toc_sections(&data, legacy.banner_offset),
+    );
     let sections = if sections.is_empty() {
         scan_sections(&data, body_start)
     } else {
@@ -1966,7 +2121,6 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         })
         .collect();
     let reference_ellipses = reference::ellipse_carriers(&reference_conics);
-    let legacy_ascii = legacy_ascii_framing(&data);
     let layout = identify_layout(&data, &sections, legacy_ascii.is_some());
     let legacy_ascii = if layout == Layout::LegacyAscii {
         legacy_ascii

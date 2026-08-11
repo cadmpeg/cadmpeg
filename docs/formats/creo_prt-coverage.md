@@ -95,7 +95,9 @@ fixtures, claims above L1 remain unproven.
   the legacy ASCII persistence family without interpreting its attribute
   payload as ND or DEPDB byte grammar. The decimal persistence schema and the
   `Version`/`Release` product token, including the concatenated `Release` form,
-  are preserved as source metadata.
+  are preserved as source metadata. Legacy `@Toc` rows enumerate exact
+  banner-relative named-section extents; monolithic framing markers are not
+  exposed as sections.
 - Compressed `THMB_IMG_MAIN` payloads expand to the JPEG marker before preview
   detection and retain the JPEG bytes as a derived native record.
 - Axis-aligned coaxial cone-cylinder intersections transfer the unique circle

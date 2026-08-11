@@ -10085,12 +10085,40 @@ fn complete_header_adjacent_p_object_selects_legacy_ascii_layout() {
 
     assert_eq!(scan.framing.layout, Layout::LegacyAscii);
     assert_eq!(scan.framing.layout.token(), "LEGACY_ASCII");
+    assert!(scan.framing.sections.is_empty());
     let legacy = scan.framing.legacy_ascii.as_ref().expect("legacy framing");
     assert_eq!(legacy.schema, "6");
     assert_eq!(legacy.product_release.as_deref(), Some("H-01-21"));
     assert!(container::summarize(&scan).notes.iter().any(|note| {
         note.contains("legacy ASCII persistence: schema 6; product release H-01-21")
     }));
+}
+
+#[test]
+fn legacy_ascii_toc_is_authoritative_for_named_section_extents() {
+    let mut data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
+        #END_OF_P_OBJECT\n"
+        .to_vec();
+    let banner_offset = data.len();
+    data.extend_from_slice(
+        b"#Pro/ENGINEER  TM  Version H-01-21\n@Toc 52 0\n0 52 ->\n\
+          @entry 53 10\n1 53 [2]\n",
+    );
+    let section = b"#BasicData\nvalue\n#FakeSection\nembedded";
+    let row_tail = format!(" {:08x} 0 983####\n2 53 ####\n", section.len());
+    let relative_offset =
+        data.len() + b"2 53 BasicData ".len() + 8 + row_tail.len() - banner_offset;
+    data.extend_from_slice(format!("2 53 BasicData {relative_offset:08x}{row_tail}").as_bytes());
+    let section_offset = data.len();
+    data.extend_from_slice(section);
+
+    let scan = container::scan_bytes(data);
+
+    assert_eq!(scan.framing.layout, Layout::LegacyAscii);
+    assert_eq!(scan.framing.sections.len(), 1);
+    assert_eq!(scan.framing.sections[0].name, "BasicData");
+    assert_eq!(scan.framing.sections[0].offset, section_offset);
+    assert_eq!(scan.framing.sections[0].length, section.len());
 }
 
 #[test]
