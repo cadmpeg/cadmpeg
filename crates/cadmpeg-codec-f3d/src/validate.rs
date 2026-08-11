@@ -3081,6 +3081,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             _ => false,
         };
         let work_point_link = valid_work_point_construction(ctx, scope, native_stream);
+        let work_plane_link = valid_work_plane_construction(ctx, scope, native_stream);
         let valid = scope.class_tag.len() == 3
             && scope.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && scope.paired_class_tag.len() == 3
@@ -3504,6 +3505,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && thread_link
             && joint_origin_link
             && work_point_link
+            && work_plane_link
             && (scope.kind != "Sketch"
                 || placements_by_scope.contains_key(&(native_stream, scope.record_index)))
             && unique_index;
@@ -3560,90 +3562,7 @@ fn valid_work_point_construction(
                     })
                 }
                 Some(records::DesignWorkPointInputCarrier::VertexRecipe { recipe: vertex }) => {
-                    let recipe = ctx.recipes_by_id.get(vertex.recipe_id.as_str());
-                    let mut expected_references =
-                        design::decode::dimension_frames::decode_recipe_references(
-                            &vertex.recipe_prefix_bytes,
-                            vertex.recipe_prefix_offset,
-                        );
-                    for reference in &mut expected_references {
-                        design::decode::dimension_frames::bind_recipe_reference_candidates(
-                            reference,
-                            &native.persistent_subentity_tags,
-                            Some(&scope.id),
-                        );
-                    }
-                    let prefix_length = u64::try_from(vertex.recipe_prefix_bytes.len()).ok();
-                    let family_name_length =
-                        u64::try_from(design::construction_recipe_family_name_len(
-                            records::ConstructionRecipeKind::Vertex,
-                        ))
-                        .ok();
-                    let program_byte_length = u64::try_from(vertex.recipe_program.len())
-                        .ok()
-                        .and_then(|length| length.checked_mul(4));
-                    let resolution_is_valid =
-                        match (vertex.recipe_state_id, vertex.resolved_vertex_slot) {
-                            (None, None) => true,
-                            (Some(state_id), Some(vertex_slot)) if vertex_slot >= 0 => {
-                                let mut states = native
-                                    .asm_histories
-                                    .iter()
-                                    .flat_map(|history| &history.states)
-                                    .filter(|state| state.state_id == state_id);
-                                states.next().is_some_and(|state| {
-                                    states.next().is_none()
-                                        && state.topology.as_ref().map_or_else(
-                                            || {
-                                                history::projection_was_finalized(
-                                                    &native.asm_histories,
-                                                )
-                                            },
-                                            |topology| topology.vertices.contains(&vertex_slot),
-                                        )
-                                })
-                            }
-                            _ => false,
-                        };
-                    vertex.class_tag.len() == 3
-                        && vertex.class_tag.bytes().all(|byte| byte.is_ascii_digit())
-                        && header.is_some_and(|header| {
-                            header.class_tag == vertex.class_tag
-                                && vertex.paired_byte_offset > header.byte_offset
-                        })
-                        && vertex.paired_class_tag.len() == 3
-                        && vertex
-                            .paired_class_tag
-                            .bytes()
-                            .all(|byte| byte.is_ascii_digit())
-                        && vertex.recipe_record_index == input.record_index.saturating_add(3)
-                        && vertex.next_record_index == input.record_index.saturating_add(5)
-                        && vertex.recipe_prefix_offset
-                            == vertex.recipe_record_byte_offset.saturating_add(11)
-                        && prefix_length.is_some_and(|prefix_length| {
-                            vertex.recipe_prefix_offset.saturating_add(prefix_length)
-                                == recipe
-                                    .map_or(u64::MAX, |recipe| recipe.byte_offset.saturating_sub(4))
-                        })
-                        && vertex.recipe_references == expected_references
-                        && resolution_is_valid
-                        && recipe.is_some_and(|recipe| {
-                            design_stream(&recipe.id) == native_stream
-                                && recipe.kind == records::ConstructionRecipeKind::Vertex
-                                && recipe.byte_offset > vertex.recipe_record_byte_offset
-                                && recipe.byte_offset < vertex.next_byte_offset
-                                && family_name_length.is_some_and(|family_name_length| {
-                                    vertex.recipe_program_offset
-                                        == recipe.byte_offset.saturating_add(family_name_length)
-                                })
-                        })
-                        && program_byte_length.is_some_and(|program_byte_length| {
-                            program_byte_length != 0
-                                && vertex
-                                    .recipe_program_offset
-                                    .saturating_add(program_byte_length)
-                                    == vertex.next_byte_offset
-                        })
+                    valid_vertex_recipe(ctx, scope, native_stream, input.record_index, vertex)
                 }
                 Some(records::DesignWorkPointInputCarrier::WorkPlane { selection }) => {
                     valid_design_guid(&selection.asset_id)
@@ -3676,6 +3595,173 @@ fn valid_work_point_construction(
                 }
             }
     })
+}
+
+fn valid_work_plane_construction(
+    ctx: &Ctx,
+    scope: &records::DesignParameterScope,
+    native_stream: &str,
+) -> bool {
+    let Some(records::DesignWorkPlaneConstruction::ThreePoint {
+        placement_record_index,
+        inputs,
+    }) = &scope.work_plane_construction
+    else {
+        return true;
+    };
+    let [placement, first, second, third, extra_offset] = scope.reference_members.as_slice() else {
+        return false;
+    };
+    let Some(transform) = scope.work_plane_transform else {
+        return false;
+    };
+    let Some(placement_header) = ctx
+        .records_by_index
+        .get(&(native_stream, *placement_record_index))
+    else {
+        return false;
+    };
+    let Some(transform_offset) = scope.work_plane_transform_offset else {
+        return false;
+    };
+    let Some(owner) = ctx.native.design_parameter_owners.iter().find(|owner| {
+        design_stream(&owner.id) == native_stream
+            && owner.record_index == *extra_offset
+            && owner.scope_record_index == scope.record_index
+            && owner.evaluated_value.is_finite()
+            && owner.evaluated_value == 0.0
+    }) else {
+        return false;
+    };
+
+    scope.kind == "WorkPlane"
+        && placement == placement_record_index
+        && [
+            inputs[0].record_index,
+            inputs[1].record_index,
+            inputs[2].record_index,
+        ] == [*first, *second, *third]
+        && scope.work_plane_reference == Some(*extra_offset)
+        && scope.work_plane_reference_offset.is_some()
+        && design::decode::sketch::valid_sketch_transform(&transform)
+        && transform_offset > placement_header.byte_offset
+        && inputs
+            .iter()
+            .all(|input| valid_vertex_recipe(ctx, scope, native_stream, input.record_index, input))
+        && valid_three_point_recipe_resolution(inputs)
+        && ctx.native.design_parameters.iter().any(|parameter| {
+            design_stream(&parameter.id) == native_stream
+                && parameter.record_index == owner.parameter_record_index
+                && parameter.owner_record_index == Some(owner.record_index)
+                && parameter.source_kind == "ExtraOffset"
+                && parameter.evaluated_value.is_finite()
+                && parameter.evaluated_value == 0.0
+        })
+}
+
+fn valid_three_point_recipe_resolution(inputs: &[records::DesignVertexRecipe; 3]) -> bool {
+    let resolved = inputs
+        .each_ref()
+        .map(|input| (input.recipe_state_id, input.resolved_vertex_slot));
+    match resolved {
+        [(None, None), (None, None), (None, None)] => true,
+        [(Some(first_state), Some(first_vertex)), (Some(second_state), Some(second_vertex)), (Some(third_state), Some(third_vertex))] => {
+            first_state == second_state
+                && first_state == third_state
+                && first_vertex != second_vertex
+                && first_vertex != third_vertex
+                && second_vertex != third_vertex
+        }
+        _ => false,
+    }
+}
+
+fn valid_vertex_recipe(
+    ctx: &Ctx,
+    scope: &records::DesignParameterScope,
+    native_stream: &str,
+    record_index: u32,
+    vertex: &records::DesignVertexRecipe,
+) -> bool {
+    let native = ctx.native;
+    let header = ctx.records_by_index.get(&(native_stream, record_index));
+    let recipe = ctx.recipes_by_id.get(vertex.recipe_id.as_str());
+    let mut expected_references = design::decode::dimension_frames::decode_recipe_references(
+        &vertex.recipe_prefix_bytes,
+        vertex.recipe_prefix_offset,
+    );
+    for reference in &mut expected_references {
+        design::decode::dimension_frames::bind_recipe_reference_candidates(
+            reference,
+            &native.persistent_subentity_tags,
+            Some(&scope.id),
+        );
+    }
+    let prefix_length = u64::try_from(vertex.recipe_prefix_bytes.len()).ok();
+    let family_name_length = u64::try_from(design::construction_recipe_family_name_len(
+        records::ConstructionRecipeKind::Vertex,
+    ))
+    .ok();
+    let program_byte_length = u64::try_from(vertex.recipe_program.len())
+        .ok()
+        .and_then(|length| length.checked_mul(4));
+    let resolution_is_valid = match (vertex.recipe_state_id, vertex.resolved_vertex_slot) {
+        (None, None) => true,
+        (Some(state_id), Some(vertex_slot)) if vertex_slot >= 0 => {
+            let mut states = native
+                .asm_histories
+                .iter()
+                .flat_map(|history| &history.states)
+                .filter(|state| state.state_id == state_id);
+            states.next().is_some_and(|state| {
+                states.next().is_none()
+                    && state.topology.as_ref().map_or_else(
+                        || history::projection_was_finalized(&native.asm_histories),
+                        |topology| topology.vertices.contains(&vertex_slot),
+                    )
+            })
+        }
+        _ => false,
+    };
+    vertex.record_index == record_index
+        && vertex.class_tag.len() == 3
+        && vertex.class_tag.bytes().all(|byte| byte.is_ascii_digit())
+        && header.is_some_and(|header| {
+            header.byte_offset == vertex.byte_offset
+                && header.class_tag == vertex.class_tag
+                && vertex.paired_byte_offset > header.byte_offset
+        })
+        && vertex.paired_class_tag.len() == 3
+        && vertex
+            .paired_class_tag
+            .bytes()
+            .all(|byte| byte.is_ascii_digit())
+        && vertex.recipe_record_index == record_index.saturating_add(3)
+        && vertex.next_record_index == record_index.saturating_add(5)
+        && vertex.recipe_prefix_offset == vertex.recipe_record_byte_offset.saturating_add(11)
+        && prefix_length.is_some_and(|prefix_length| {
+            vertex.recipe_prefix_offset.saturating_add(prefix_length)
+                == recipe.map_or(u64::MAX, |recipe| recipe.byte_offset.saturating_sub(4))
+        })
+        && vertex.recipe_references == expected_references
+        && resolution_is_valid
+        && recipe.is_some_and(|recipe| {
+            design_stream(&recipe.id) == native_stream
+                && recipe.kind == records::ConstructionRecipeKind::Vertex
+                && recipe.byte_offset > vertex.recipe_record_byte_offset
+                && recipe.byte_offset < vertex.next_byte_offset
+                && family_name_length.is_some_and(|family_name_length| {
+                    vertex.recipe_program_offset
+                        == recipe.byte_offset.saturating_add(family_name_length)
+                })
+        })
+        && program_byte_length.is_some_and(|program_byte_length| {
+            program_byte_length != 0
+                && vertex
+                    .recipe_program_offset
+                    .saturating_add(program_byte_length)
+                    == vertex.next_byte_offset
+        })
 }
 
 fn validate_component_occurrences(ctx: &Ctx, findings: &mut Vec<Finding>) {

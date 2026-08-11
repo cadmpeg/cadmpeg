@@ -606,6 +606,17 @@ pub enum FeatureDefinition {
         /// In-plane u-axis.
         u_axis: Vector3,
     },
+    /// Reference plane constructed through three selected vertices.
+    DatumThreePointPlane {
+        /// Plane origin in model space.
+        origin: Point3,
+        /// Plane normal.
+        normal: Vector3,
+        /// In-plane u-axis.
+        u_axis: Vector3,
+        /// Construction vertices in source order.
+        points: Box<[VertexSelection; 3]>,
+    },
     /// Constructed reference-plane family whose model-space frame is unresolved.
     DatumPlaneUnresolved,
     /// Reference plane offset from another datum plane.

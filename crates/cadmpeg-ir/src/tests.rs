@@ -277,6 +277,107 @@ fn historical_vertex_selection_requires_input_state_membership() {
 }
 
 #[test]
+fn three_point_datum_plane_requires_distinct_vertices_from_one_input_topology() {
+    use crate::features::{
+        Feature, FeatureDefinition, FeatureId, FeatureInputTopology, VertexSelection,
+    };
+    use crate::ids::{FeatureInputTopologyId, HistoricalVertexId};
+
+    let feature_id = FeatureId("test:model:feature#three-point-plane".into());
+    let first_state = FeatureInputTopologyId("test:model:feature-input#three-point-plane-a".into());
+    let second_state =
+        FeatureInputTopologyId("test:model:feature-input#three-point-plane-b".into());
+    let vertices = [
+        HistoricalVertexId("test:model:historical-vertex#1".into()),
+        HistoricalVertexId("test:model:historical-vertex#2".into()),
+        HistoricalVertexId("test:model:historical-vertex#3".into()),
+    ];
+    let other_vertex = HistoricalVertexId("test:model:historical-vertex#4".into());
+    let historical = |state: &FeatureInputTopologyId, vertex: &HistoricalVertexId, native: &str| {
+        VertexSelection::Historical {
+            state: state.clone(),
+            vertex: vertex.clone(),
+            native: native.into(),
+        }
+    };
+
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.feature_input_topologies.extend([
+        FeatureInputTopology {
+            id: first_state.clone(),
+            input_of: feature_id.clone(),
+            bodies: Vec::new(),
+            faces: Vec::new(),
+            edges: Vec::new(),
+            vertices: vertices.to_vec(),
+            native_ref: None,
+        },
+        FeatureInputTopology {
+            id: second_state.clone(),
+            input_of: feature_id.clone(),
+            bodies: Vec::new(),
+            faces: Vec::new(),
+            edges: Vec::new(),
+            vertices: vec![other_vertex.clone()],
+            native_ref: None,
+        },
+    ]);
+    ir.model.features.push(Feature {
+        id: feature_id,
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::DatumThreePointPlane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            points: Box::new([
+                historical(&first_state, &vertices[0], "native:1"),
+                historical(&first_state, &vertices[1], "native:2"),
+                historical(&first_state, &vertices[2], "native:3"),
+            ]),
+        },
+        native_ref: None,
+    });
+
+    let findings = validate(&ir, Vec::new()).findings;
+    assert!(!findings
+        .iter()
+        .any(|finding| finding.message.contains("three-point datum-plane")));
+
+    let set_third = |ir: &mut CadIr, point| {
+        let FeatureDefinition::DatumThreePointPlane { points, .. } =
+            &mut ir.model.features[0].definition
+        else {
+            unreachable!("test feature is a three-point datum plane")
+        };
+        points[2] = point;
+    };
+    set_third(
+        &mut ir,
+        historical(&first_state, &vertices[0], "different-native-identity"),
+    );
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.message == "three-point datum plane requires three distinct vertices"
+    }));
+
+    set_third(
+        &mut ir,
+        historical(&second_state, &other_vertex, "native:4"),
+    );
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.message == "three-point datum-plane vertices use different input topologies"
+    }));
+}
+
+#[test]
 fn typed_ids_keep_their_canonical_json_string_shape() {
     let id = crate::ids::BodyId("test:model:body#1".into());
     assert_eq!(serde_json::to_string(&id).unwrap(), "\"test:model:body#1\"");

@@ -1943,6 +1943,10 @@ pub enum DesignWorkPointInputCarrier {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignVertexRecipe {
+    /// Indexed record that owns the vertex-recipe envelope.
+    pub record_index: u32,
+    /// Byte offset of the owning indexed-record header.
+    pub byte_offset: u64,
     /// Source per-file dynamic primary class tag.
     pub class_tag: String,
     /// Byte offset of the same-index paired header.
@@ -1977,6 +1981,20 @@ pub struct DesignVertexRecipe {
     pub next_record_index: u32,
     /// Byte offset of the indexed record closing the envelope.
     pub next_byte_offset: u64,
+}
+
+/// Exact construction rule carried by a `WorkPlane` scope.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DesignWorkPlaneConstruction {
+    /// Plane through three persistent B-rep vertices.
+    ThreePoint {
+        /// Solved placement-frame record named by the scope.
+        placement_record_index: u32,
+        /// Persistent vertex inputs in source order.
+        inputs: Box<[DesignVertexRecipe; 3]>,
+    },
 }
 
 /// Exact persistent entity selection naming one `WorkPlane` scope.
@@ -2377,6 +2395,9 @@ pub struct DesignParameterScope {
     /// Byte offset of the `WorkPlane` construction reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_plane_reference_offset: Option<u64>,
+    /// Exact construction rule carried by a `WorkPlane` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_plane_construction: Option<DesignWorkPlaneConstruction>,
     /// Exact two-point construction carried by a `WorkAxis` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_axis_construction: Option<DesignWorkAxisConstruction>,
@@ -2825,6 +2846,7 @@ impl DesignParameterScope {
             work_plane_transform_offset: None,
             work_plane_reference: None,
             work_plane_reference_offset: None,
+            work_plane_construction: None,
             work_axis_construction: None,
             joint_origin_transform: None,
             joint_origin_transform_offset: None,

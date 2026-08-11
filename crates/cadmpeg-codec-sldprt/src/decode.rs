@@ -1049,6 +1049,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::TreeNode { .. }
             | FeatureDefinition::DatumPrincipalPlane { .. }
             | FeatureDefinition::DatumPlane { .. }
+            | FeatureDefinition::DatumThreePointPlane { .. }
             | FeatureDefinition::DatumAxis { .. }
             | FeatureDefinition::DatumPoint { .. }
             | FeatureDefinition::DatumCoordinateSystem { .. }

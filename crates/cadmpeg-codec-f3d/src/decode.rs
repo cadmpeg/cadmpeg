@@ -453,6 +453,13 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         // F3D WorkPlane projection currently retains only the solved frame.
         // Its construction rule and operands are required for replay.
         FeatureDefinition::DatumPlane { .. } => true,
+        FeatureDefinition::DatumThreePointPlane { points, .. } => !points.iter().all(|point| {
+            matches!(
+                point,
+                cadmpeg_ir::features::VertexSelection::Generated { .. }
+                    | cadmpeg_ir::features::VertexSelection::Historical { .. }
+            )
+        }),
         FeatureDefinition::DatumOffsetPlane { reference, .. } => reference
             .as_ref()
             .is_none_or(|reference| !datum_plane_reference_is_resolved(reference)),
@@ -4171,11 +4178,19 @@ fn extend_related_design_records(
         &native.construction_recipes,
         &native.design_edge_operands,
     )?;
-    crate::design::decode::operands::bind_work_point_vertex_recipe_candidates(
+    crate::design::decode::operands::bind_work_plane_constructions(
+        scan,
+        &mut native.design_parameter_scopes,
+        &native.design_record_headers,
+        &native.construction_recipes,
+        &native.design_parameter_owners,
+        &native.design_parameters,
+    )?;
+    crate::design::decode::operands::bind_vertex_recipe_candidates(
         &mut native.design_parameter_scopes,
         &native.persistent_subentity_tags,
     );
-    crate::history::bind_work_point_vertex_history(
+    crate::history::bind_vertex_recipe_history(
         &mut native.design_parameter_scopes,
         &native.design_feature_timelines,
         &native.asm_histories,
@@ -5504,6 +5519,28 @@ mod tests {
                 "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}
             }),
         )));
+        let three_point = |point: serde_json::Value| {
+            serde_json::json!({
+                "definition": "datum_three_point_plane",
+                "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
+                "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0},
+                "points": [point.clone(), point.clone(), point]
+            })
+        };
+        assert!(!feature_definition_is_incomplete(&definition(three_point(
+            serde_json::json!({
+                "kind": "historical",
+                "value": {
+                    "state": "state:1",
+                    "vertex": "vertex:1",
+                    "native": "native:1"
+                }
+            }),
+        ))));
+        assert!(feature_definition_is_incomplete(&definition(three_point(
+            serde_json::json!({"kind": "native", "value": "native:1"}),
+        ))));
         assert!(!feature_definition_is_incomplete(&definition(
             serde_json::json!({
                 "definition": "datum_principal_plane",
@@ -6113,6 +6150,7 @@ mod tests {
             work_plane_transform_offset: None,
             work_plane_reference: None,
             work_plane_reference_offset: None,
+            work_plane_construction: None,
             work_axis_construction: None,
             joint_origin_transform: None,
             joint_origin_transform_offset: None,
@@ -6327,6 +6365,7 @@ mod tests {
             work_plane_transform_offset: None,
             work_plane_reference: None,
             work_plane_reference_offset: None,
+            work_plane_construction: None,
             work_axis_construction: None,
             joint_origin_transform: None,
             joint_origin_transform_offset: None,

@@ -2229,6 +2229,7 @@ pub(crate) fn project_feature_input_topologies(
                 .or_else(|| {
                     crate::design::feature_project::work_point_recipe_state_id(scope, edge_operands)
                 })
+                .or_else(|| crate::design::feature_project::work_plane_recipe_state_id(scope))
                 .or_else(|| effective_scope_previous_history_state_id(scope, histories))?;
             let state = scope
                 .history_state_id
@@ -2273,9 +2274,9 @@ pub(crate) fn project_feature_input_topologies(
         .collect()
 }
 
-/// Resolve `WorkPoint` vertex recipes in the last history-bearing feature state
-/// that precedes the point in authored timeline order.
-pub(crate) fn bind_work_point_vertex_history(
+/// Resolve persistent vertex recipes in the last history-bearing feature state
+/// that precedes their owning construction in authored timeline order.
+pub(crate) fn bind_vertex_recipe_history(
     scopes: &mut [crate::records::DesignParameterScope],
     timelines: &[crate::records::DesignFeatureTimeline],
     histories: &[AsmHistory],
@@ -2284,7 +2285,7 @@ pub(crate) fn bind_work_point_vertex_history(
         crate::design::feature_project::authored_scope_ordinals_per_stream(scopes, timelines)?;
     let input_states = scopes
         .iter()
-        .filter(|scope| scope.kind == "WorkPoint")
+        .filter(|scope| matches!(scope.kind.as_str(), "WorkPlane" | "WorkPoint"))
         .filter_map(|scope| {
             let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
             let ordinal = *source_ordinals.get(&(stream, scope.record_index))?;
@@ -2334,31 +2335,7 @@ pub(crate) fn bind_work_point_vertex_history(
             let Some(topology) = state.topology.as_ref() else {
                 continue;
             };
-            let face_slots = recipe
-                .recipe_references
-                .iter()
-                .map(|reference| {
-                    let mut slots = reference
-                        .candidate_faces
-                        .iter()
-                        .filter_map(|face| stable_ref(&face.0))
-                        .filter(|face| topology.faces.contains(face))
-                        .collect::<Vec<_>>();
-                    slots.sort_unstable();
-                    slots.dedup();
-                    let [slot] = slots.as_slice() else {
-                        return None;
-                    };
-                    Some(*slot)
-                })
-                .collect::<Option<Vec<_>>>();
-            let Some(face_slots) = face_slots.filter(|faces| !faces.is_empty()) else {
-                continue;
-            };
-            let Some(vertex) = common_face_vertex(&face_slots, topology) else {
-                continue;
-            };
-            let Some(position) = unique_historical_vertex_position(vertex, topology) else {
+            let Some((vertex, position)) = vertex_recipe_candidate(recipe, topology) else {
                 continue;
             };
             if !point_matches(position, solved_position) {
@@ -2368,7 +2345,116 @@ pub(crate) fn bind_work_point_vertex_history(
             recipe.resolved_vertex_slot = Some(vertex);
         }
     }
+
+    for scope in scopes.iter_mut().filter(|scope| scope.kind == "WorkPlane") {
+        let Some(crate::records::DesignWorkPlaneConstruction::ThreePoint { inputs, .. }) =
+            &mut scope.work_plane_construction
+        else {
+            continue;
+        };
+        for recipe in inputs.iter_mut() {
+            recipe.recipe_state_id = None;
+            recipe.resolved_vertex_slot = None;
+        }
+        let Some(state_id) = input_states.get(&scope.id).copied() else {
+            continue;
+        };
+        let Some((_, state)) = unique_history_state(histories, state_id) else {
+            continue;
+        };
+        let Some(topology) = state.topology.as_ref() else {
+            continue;
+        };
+        let candidates = inputs
+            .iter()
+            .map(|recipe| vertex_recipe_candidate(recipe, topology))
+            .collect::<Option<Vec<_>>>();
+        let Some(candidates) = candidates else {
+            continue;
+        };
+        let Ok(candidates): Result<[(i64, cadmpeg_ir::math::Point3); 3], _> = candidates.try_into()
+        else {
+            continue;
+        };
+        let [first, second, third] = candidates;
+        if first.0 == second.0
+            || first.0 == third.0
+            || second.0 == third.0
+            || !three_point_plane_matches(scope.work_plane_transform, [first.1, second.1, third.1])
+        {
+            continue;
+        }
+        for (recipe, (vertex, _)) in inputs.iter_mut().zip(candidates) {
+            recipe.recipe_state_id = Some(state_id);
+            recipe.resolved_vertex_slot = Some(vertex);
+        }
+    }
     Ok(())
+}
+
+fn vertex_recipe_candidate(
+    recipe: &crate::records::DesignVertexRecipe,
+    topology: &AsmHistoricalTopology,
+) -> Option<(i64, cadmpeg_ir::math::Point3)> {
+    let face_slots = recipe
+        .recipe_references
+        .iter()
+        .map(|reference| {
+            let mut slots = reference
+                .candidate_faces
+                .iter()
+                .filter_map(|face| stable_ref(&face.0))
+                .filter(|face| topology.faces.contains(face))
+                .collect::<Vec<_>>();
+            slots.sort_unstable();
+            slots.dedup();
+            let [slot] = slots.as_slice() else {
+                return None;
+            };
+            Some(*slot)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if face_slots.is_empty() {
+        return None;
+    }
+    let vertex = common_face_vertex(&face_slots, topology)?;
+    let position = unique_historical_vertex_position(vertex, topology)?;
+    Some((vertex, position))
+}
+
+fn three_point_plane_matches(
+    transform: Option<[[f64; 4]; 4]>,
+    points: [cadmpeg_ir::math::Point3; 3],
+) -> bool {
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let Some(transform) = transform else {
+        return false;
+    };
+    let origin = Point3::new(
+        transform[0][3] * 10.0,
+        transform[1][3] * 10.0,
+        transform[2][3] * 10.0,
+    );
+    let Some(normal) = Vector3::new(transform[0][2], transform[1][2], transform[2][2]).unit()
+    else {
+        return false;
+    };
+    let Some(point_normal) = points[1]
+        .vector_from(points[0])
+        .cross(points[2].vector_from(points[0]))
+        .unit()
+    else {
+        return false;
+    };
+    let scale = points
+        .iter()
+        .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
+        .fold(1.0_f64, f64::max);
+    (normal.dot(point_normal).abs() - 1.0).abs() <= WORK_POINT_POSITION_TOLERANCE
+        && points.iter().all(|point| {
+            point.vector_from(origin).dot(normal).abs() <= WORK_POINT_POSITION_TOLERANCE * scale
+        })
 }
 
 fn common_face_vertex(face_slots: &[i64], topology: &AsmHistoricalTopology) -> Option<i64> {
@@ -7499,6 +7585,42 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
 #[cfg(test)]
 mod tests {
     #[test]
+    fn three_point_recipe_vertices_must_define_the_solved_plane() {
+        use cadmpeg_ir::math::Point3;
+
+        let transform = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        assert!(super::three_point_plane_matches(
+            Some(transform),
+            [
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(10.0, 0.0, 0.0),
+                Point3::new(0.0, 10.0, 0.0),
+            ],
+        ));
+        assert!(!super::three_point_plane_matches(
+            Some(transform),
+            [
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(10.0, 0.0, 0.0),
+                Point3::new(20.0, 0.0, 0.0),
+            ],
+        ));
+        assert!(!super::three_point_plane_matches(
+            Some(transform),
+            [
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(10.0, 0.0, 0.0),
+                Point3::new(0.0, 10.0, 1.0),
+            ],
+        ));
+    }
+
+    #[test]
     fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         use crate::history_records::{
             AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge,
@@ -7532,6 +7654,8 @@ mod tests {
             alternate_selector_edges: Vec::new(),
         };
         let recipe = DesignVertexRecipe {
+            record_index: 202,
+            byte_offset: 0,
             class_tag: "369".into(),
             paired_byte_offset: 1,
             paired_class_tag: "261".into(),
@@ -7677,7 +7801,7 @@ mod tests {
         };
         let mut scopes = vec![extrude, work_point];
 
-        super::bind_work_point_vertex_history(
+        super::bind_vertex_recipe_history(
             &mut scopes,
             std::slice::from_ref(&timeline),
             std::slice::from_ref(&history),
@@ -7713,7 +7837,7 @@ mod tests {
         recipe.recipe_references[0]
             .candidate_faces
             .push(FaceId(crate::ids::brep_entity_id(11)));
-        super::bind_work_point_vertex_history(
+        super::bind_vertex_recipe_history(
             &mut ambiguous,
             std::slice::from_ref(&timeline),
             std::slice::from_ref(&history),

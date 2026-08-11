@@ -1129,23 +1129,7 @@ pub fn project_parameter_design_with_edge_identities(
                                     .collect(),
                                 properties: native_scope_properties(scope, native_scope),
                             },
-                            |transform| FeatureDefinition::DatumPlane {
-                                origin: Point3::new(
-                                    transform[0][3] * 10.0,
-                                    transform[1][3] * 10.0,
-                                    transform[2][3] * 10.0,
-                                ),
-                                normal: Vector3::new(
-                                    transform[0][2],
-                                    transform[1][2],
-                                    transform[2][2],
-                                ),
-                                u_axis: Vector3::new(
-                                    transform[0][0],
-                                    transform[1][0],
-                                    transform[2][0],
-                                ),
-                            },
+                            |transform| project_work_plane(scope, transform),
                         )
                     } else if scope.kind == "WorkAxis" {
                         scope
@@ -1399,6 +1383,15 @@ pub fn project_parameter_design_with_edge_identities(
                 construction: Some(construction),
                 ..
             } => construction.feature_references(),
+            FeatureDefinition::DatumThreePointPlane { points, .. } => points
+                .iter()
+                .filter_map(|point| match point {
+                    cadmpeg_ir::features::VertexSelection::Generated { vertex, .. } => {
+                        Some(&vertex.feature)
+                    }
+                    _ => None,
+                })
+                .collect(),
             _ => Vec::new(),
         };
         for dependency in dependencies {
@@ -1678,6 +1671,18 @@ pub(crate) fn work_point_recipe_state_id(
     states.all(|candidate| candidate == state).then_some(state)
 }
 
+pub(crate) fn work_plane_recipe_state_id(scope: &DesignParameterScope) -> Option<i64> {
+    let crate::records::DesignWorkPlaneConstruction::ThreePoint { inputs, .. } =
+        scope.work_plane_construction.as_ref()?;
+    let state = inputs[0].recipe_state_id?;
+    inputs
+        .iter()
+        .all(|recipe| {
+            recipe.recipe_state_id == Some(state) && recipe.resolved_vertex_slot.is_some()
+        })
+        .then_some(state)
+}
+
 fn project_work_point_construction(
     scope: &DesignParameterScope,
     construction: &crate::records::DesignWorkPointConstruction,
@@ -1783,6 +1788,67 @@ fn project_work_point_construction(
         }
         DesignWorkPointRule::Native { .. } => return None,
     })
+}
+
+fn project_work_plane(
+    scope: &DesignParameterScope,
+    transform: [[f64; 4]; 4],
+) -> cadmpeg_ir::features::FeatureDefinition {
+    use crate::records::DesignWorkPlaneConstruction;
+    use cadmpeg_ir::features::{FeatureDefinition, VertexSelection};
+
+    let origin = Point3::new(
+        transform[0][3] * 10.0,
+        transform[1][3] * 10.0,
+        transform[2][3] * 10.0,
+    );
+    let normal = Vector3::new(transform[0][2], transform[1][2], transform[2][2]);
+    let u_axis = Vector3::new(transform[0][0], transform[1][0], transform[2][0]);
+    let Some(DesignWorkPlaneConstruction::ThreePoint { inputs, .. }) =
+        &scope.work_plane_construction
+    else {
+        return FeatureDefinition::DatumPlane {
+            origin,
+            normal,
+            u_axis,
+        };
+    };
+    let Some(state_id) = work_plane_recipe_state_id(scope) else {
+        return FeatureDefinition::DatumPlane {
+            origin,
+            normal,
+            u_axis,
+        };
+    };
+    let feature_id = neutral_feature_id(scope);
+    let feature_key = feature_id
+        .0
+        .split_once('#')
+        .map_or(feature_id.0.as_str(), |(_, key)| key);
+    let prefix = ids::history_input_prefix(feature_key, state_id);
+    let points = inputs
+        .iter()
+        .map(|recipe| {
+            Some(VertexSelection::Historical {
+                state: feature_input_topology_id(&feature_id, state_id),
+                vertex: ids::history_input_vertex_id(&prefix, recipe.resolved_vertex_slot?),
+                native: recipe.recipe_id.clone(),
+            })
+        })
+        .collect::<Option<Vec<_>>>();
+    let Some(points) = points.and_then(|points| points.try_into().ok()) else {
+        return FeatureDefinition::DatumPlane {
+            origin,
+            normal,
+            u_axis,
+        };
+    };
+    FeatureDefinition::DatumThreePointPlane {
+        origin,
+        normal,
+        u_axis,
+        points: Box::new(points),
+    }
 }
 
 pub(crate) fn project_combine(

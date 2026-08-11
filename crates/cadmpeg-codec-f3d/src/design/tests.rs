@@ -535,6 +535,51 @@ fn dispatcher_projects_datum_feature_scopes() {
 }
 
 #[test]
+fn dispatcher_projects_three_point_work_plane_vertices() {
+    use crate::records::{DesignVertexRecipe, DesignWorkPlaneConstruction};
+    use cadmpeg_ir::features::VertexSelection;
+
+    let recipe = |record_index, vertex| DesignVertexRecipe {
+        record_index,
+        byte_offset: u64::from(record_index),
+        class_tag: "306".into(),
+        paired_byte_offset: 1,
+        paired_class_tag: "261".into(),
+        recipe_record_index: record_index + 3,
+        recipe_record_byte_offset: 2,
+        recipe_id: format!("f3d:native:construction-recipe#{record_index}"),
+        recipe_prefix_offset: 3,
+        recipe_prefix_bytes: Vec::new(),
+        recipe_references: Vec::new(),
+        recipe_program_offset: 4,
+        recipe_program: vec![0],
+        recipe_state_id: Some(4),
+        resolved_vertex_slot: Some(vertex),
+        next_record_index: record_index + 5,
+        next_byte_offset: 5,
+    };
+    let mut plane = DesignParameterScope::empty("f3d:native:parameter-scope#20", "WorkPlane", 20);
+    plane.work_plane_transform = Some(identity_matrix());
+    plane.work_plane_construction = Some(DesignWorkPlaneConstruction::ThreePoint {
+        placement_record_index: 21,
+        inputs: Box::new([recipe(22, 43), recipe(27, 64), recipe(32, 84)]),
+    });
+
+    let (features, _) = project_parameter_design(&[], &[], &[plane], &[], &[], &[], &[], &[]);
+    let FeatureDefinition::DatumThreePointPlane { points, .. } = &features[0].definition else {
+        panic!("three-point datum plane")
+    };
+    assert!(matches!(
+        points.as_ref(),
+        [
+            VertexSelection::Historical { vertex: first, .. },
+            VertexSelection::Historical { vertex: second, .. },
+            VertexSelection::Historical { vertex: third, .. },
+        ] if first.0.ends_with(":43") && second.0.ends_with(":64") && third.0.ends_with(":84")
+    ));
+}
+
+#[test]
 fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
     use crate::records::{
         DesignWorkPointConstruction, DesignWorkPointInput, DesignWorkPointInputCarrier,
@@ -620,6 +665,8 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     predecessor.history_state_id = Some(4);
     let recipe_id = "f3d:native:construction-recipe#vertex".to_string();
     let recipe = DesignVertexRecipe {
+        record_index: 12,
+        byte_offset: 0,
         class_tag: "369".into(),
         paired_byte_offset: 1,
         paired_class_tag: "261".into(),
@@ -11353,6 +11400,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
@@ -12923,6 +12971,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
@@ -13384,6 +13433,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
@@ -20451,6 +20501,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
@@ -20628,6 +20679,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
@@ -20828,6 +20880,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
@@ -22079,6 +22132,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
@@ -23172,6 +23226,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
@@ -23814,6 +23869,7 @@ fn parameter_expressions_project_feature_dependencies() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
@@ -23943,6 +23999,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
@@ -25297,6 +25354,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
@@ -25952,6 +26010,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
@@ -27535,6 +27594,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,

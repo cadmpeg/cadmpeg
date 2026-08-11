@@ -24,9 +24,9 @@ use crate::records::{
     DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchProfileOperand,
     DesignSketchProfileRegion, DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection,
     DesignSurfaceOffsetSupport, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
-    DesignTopologyRecipeTriplet, DesignVertexRecipe, DesignWorkPointInputCarrier,
-    DesignWorkPointPlaneSelection, LostEdgeReference, PersistentSubentityTag, SketchCurveIdentity,
-    SketchPoint, SketchRelationOperand,
+    DesignTopologyRecipeTriplet, DesignVertexRecipe, DesignWorkPlaneConstruction,
+    DesignWorkPointInputCarrier, DesignWorkPointPlaneSelection, LostEdgeReference,
+    PersistentSubentityTag, SketchCurveIdentity, SketchPoint, SketchRelationOperand,
 };
 use cadmpeg_core::le::{f64_at, i32_at, u32_at, u64_at as read_u64};
 use cadmpeg_core::CodecError;
@@ -250,21 +250,121 @@ pub fn bind_work_point_input_carriers(
     Ok(())
 }
 
-/// Bind persistent subentity candidates carried by decoded `WorkPoint` vertex recipes.
-pub fn bind_work_point_vertex_recipe_candidates(
+/// Bind the exact three-vertex construction carried by a `WorkPlane` scope.
+pub fn bind_work_plane_constructions(
+    scan: &ContainerScan,
+    scopes: &mut [DesignParameterScope],
+    headers: &[DesignRecordHeader],
+    recipes: &[ConstructionRecipe],
+    owners: &[DesignParameterOwner],
+    parameters: &[DesignParameter],
+) -> Result<(), CodecError> {
+    let headers = headers
+        .iter()
+        .filter_map(|header| {
+            Some((
+                (native_stream(&header.id)?.to_owned(), header.record_index),
+                header,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+
+    for scope in scopes.iter_mut().filter(|scope| scope.kind == "WorkPlane") {
+        scope.work_plane_construction = None;
+        let Some(stream) = native_stream(&scope.id).map(str::to_owned) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            scan.is_design_stream(entry, role::BULKSTREAM)
+                && stream == ids::native_scope(&entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let [placement_record_index, first, second, third, extra_offset] =
+            scope.reference_members.as_slice()
+        else {
+            continue;
+        };
+        if scope.work_plane_transform.is_none() || scope.work_plane_reference != Some(*extra_offset)
+        {
+            continue;
+        }
+        let Some(owner) = owners.iter().find(|owner| {
+            native_stream(&owner.id) == Some(stream.as_str())
+                && owner.record_index == *extra_offset
+                && owner.scope_record_index == scope.record_index
+                && owner.evaluated_value.is_finite()
+                && owner.evaluated_value == 0.0
+        }) else {
+            continue;
+        };
+        if !parameters.iter().any(|parameter| {
+            native_stream(&parameter.id) == Some(stream.as_str())
+                && parameter.record_index == owner.parameter_record_index
+                && parameter.owner_record_index == Some(owner.record_index)
+                && parameter.source_kind == "ExtraOffset"
+                && parameter.evaluated_value.is_finite()
+                && parameter.evaluated_value == 0.0
+        }) {
+            continue;
+        }
+        let inputs = [first, second, third]
+            .into_iter()
+            .map(|record_index| {
+                parse_vertex_recipe(
+                    bytes,
+                    &stream,
+                    headers.get(&(stream.clone(), *record_index))?,
+                    recipes,
+                )
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(inputs) = inputs else {
+            continue;
+        };
+        let Ok(inputs) = inputs.try_into() else {
+            continue;
+        };
+        scope.work_plane_construction = Some(DesignWorkPlaneConstruction::ThreePoint {
+            placement_record_index: *placement_record_index,
+            inputs: Box::new(inputs),
+        });
+    }
+    Ok(())
+}
+
+/// Bind persistent subentity candidates carried by decoded vertex recipes.
+pub fn bind_vertex_recipe_candidates(
     scopes: &mut [DesignParameterScope],
     tags: &[PersistentSubentityTag],
 ) {
-    for scope in scopes.iter_mut().filter(|scope| scope.kind == "WorkPoint") {
+    for scope in scopes {
+        if let Some(DesignWorkPlaneConstruction::ThreePoint { inputs, .. }) =
+            &mut scope.work_plane_construction
+        {
+            for recipe in inputs.iter_mut() {
+                for reference in &mut recipe.recipe_references {
+                    bind_recipe_reference_candidates(reference, tags, Some(&scope.id));
+                }
+            }
+        }
         let Some(construction) = &mut scope.work_point_construction else {
             continue;
         };
-        for input in construction.rule.inputs_mut() {
-            let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) =
-                input.carrier.as_deref_mut()
-            else {
-                continue;
-            };
+        for recipe in construction
+            .rule
+            .inputs_mut()
+            .iter_mut()
+            .filter_map(|input| {
+                let DesignWorkPointInputCarrier::VertexRecipe { recipe } =
+                    input.carrier.as_deref_mut()?
+                else {
+                    return None;
+                };
+                Some(recipe)
+            })
+        {
             for reference in &mut recipe.recipe_references {
                 bind_recipe_reference_candidates(reference, tags, Some(&scope.id));
             }
@@ -3126,6 +3226,8 @@ pub(crate) fn parse_vertex_recipe(
         RecipeOperandTerminator::RecordDelta(5),
     )?;
     Some(DesignVertexRecipe {
+        record_index: header.record_index,
+        byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
         paired_byte_offset: parsed.paired_byte_offset,
         paired_class_tag: parsed.paired_class_tag,

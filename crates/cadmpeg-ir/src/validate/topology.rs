@@ -4358,6 +4358,52 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     feature_geometry_error(findings, feature, "datum-plane frame is invalid");
                 }
             }
+            FeatureDefinition::DatumThreePointPlane {
+                origin,
+                normal,
+                u_axis,
+                points,
+            } => {
+                let scale = normal.norm() * u_axis.norm();
+                if !finite_feature_point(*origin)
+                    || !valid_feature_direction(*normal)
+                    || !valid_feature_direction(*u_axis)
+                    || !scale.is_finite()
+                    || normal.dot(*u_axis).abs() > 1.0e-9 * scale
+                {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "three-point datum-plane frame is invalid",
+                    );
+                }
+                if same_vertex_target(&points[0], &points[1])
+                    || same_vertex_target(&points[0], &points[2])
+                    || same_vertex_target(&points[1], &points[2])
+                {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "three-point datum plane requires three distinct vertices",
+                    );
+                }
+                let mut historical_states = points.iter().filter_map(|point| match point {
+                    crate::features::VertexSelection::Historical { state, .. } => Some(state),
+                    _ => None,
+                });
+                if let Some(state) = historical_states.next() {
+                    if historical_states.any(|candidate| candidate != state) {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "three-point datum-plane vertices use different input topologies",
+                        );
+                    }
+                }
+                for point in points.iter() {
+                    vertex_selections.push((point, "three-point datum-plane"));
+                }
+            }
             FeatureDefinition::DatumAxis { origin, direction } => {
                 if !finite_feature_point(*origin) || !valid_feature_direction(*direction) {
                     feature_geometry_error(findings, feature, "datum-axis frame is invalid");
@@ -5239,6 +5285,35 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
     }
 }
 
+fn same_vertex_target(
+    first: &crate::features::VertexSelection,
+    second: &crate::features::VertexSelection,
+) -> bool {
+    use crate::features::VertexSelection;
+
+    match (first, second) {
+        (
+            VertexSelection::Generated { vertex: first, .. },
+            VertexSelection::Generated { vertex: second, .. },
+        ) => first == second,
+        (
+            VertexSelection::Historical {
+                state: first_state,
+                vertex: first_vertex,
+                ..
+            },
+            VertexSelection::Historical {
+                state: second_state,
+                vertex: second_vertex,
+                ..
+            },
+        ) => first_state == second_state && first_vertex == second_vertex,
+        (VertexSelection::Native(first), VertexSelection::Native(second)) => first == second,
+        (VertexSelection::Unresolved, VertexSelection::Unresolved) => true,
+        _ => false,
+    }
+}
+
 fn check_historical_selection<'a, I, F>(
     findings: &mut Vec<Finding>,
     feature: &crate::features::FeatureId,
@@ -5378,6 +5453,14 @@ fn regeneration_references(
             construction: Some(construction),
             ..
         } => references.extend(construction.feature_references()),
+        crate::features::FeatureDefinition::DatumThreePointPlane { points, .. } => {
+            references.extend(points.iter().filter_map(|point| match point {
+                crate::features::VertexSelection::Generated { vertex, .. } => Some(&vertex.feature),
+                crate::features::VertexSelection::Historical { .. }
+                | crate::features::VertexSelection::Native(_)
+                | crate::features::VertexSelection::Unresolved => None,
+            }));
+        }
         crate::features::FeatureDefinition::DerivedGeometry { source: reference }
         | crate::features::FeatureDefinition::SketchBlockInstance {
             block: Some(reference),
