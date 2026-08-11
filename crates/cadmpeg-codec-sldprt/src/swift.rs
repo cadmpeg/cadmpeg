@@ -674,37 +674,13 @@ fn diameter_nominal(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Option<ImplicitNominal> {
-    if let Some(exact) = direct_diameter(annotation, feature_index) {
-        return Some(ImplicitNominal::RenderedOrExact {
-            kind: RenderedDimensionKind::Diameter,
-            geometry: exact,
-            exact,
-        });
-    }
     diameter_from_applied_geometry(annotation, feature_index).map(|geometry| {
-        ImplicitNominal::Rendered {
+        ImplicitNominal::RenderedOrExact {
             kind: RenderedDimensionKind::Diameter,
             geometry,
+            exact: geometry,
         }
     })
-}
-
-fn direct_diameter(annotation: &Entity, feature_index: &BTreeMap<&str, &Entity>) -> Option<f64> {
-    let candidates = annotation
-        .features
-        .references
-        .iter()
-        .filter_map(|reference| feature_index.get(reference.id.as_str()).copied())
-        .filter_map(|feature| {
-            let radius = match short_class(&feature.class) {
-                "GdtCylinder" => nominal_radius(feature, "NomCylinder"),
-                "GdtSphere" => nominal_radius(feature, "NomSphere"),
-                _ => None,
-            }?;
-            finite_positive(radius * 2.0)
-        })
-        .collect::<Vec<_>>();
-    unique_measurement(&candidates)
 }
 
 fn depth_from_applied_geometry(
@@ -2128,6 +2104,30 @@ mod tests {
             panic!("dimension definition");
         };
         assert_eq!(*nominal, None);
+    }
+
+    #[test]
+    fn agreeing_pattern_sizes_supply_diameter_without_rendered_text() {
+        let mut root = semantic_root();
+        *root.features.entities.get_mut(1).expect("first cylinder") = cylinder_with_radius(2.5);
+        *root.features.entities.get_mut(2).expect("second cylinder") = cylinder_with_radius(2.5);
+        root.annotations
+            .entities
+            .get_mut(2)
+            .expect("diameter")
+            .features
+            .references = vec![reference("FP", "GdtPattern")];
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
+        let PmiDefinition::Dimension { nominal, .. } = &annotations
+            .iter()
+            .find(|annotation| annotation.id == pmi_id("A30"))
+            .expect("pattern diameter")
+            .definition
+        else {
+            panic!("dimension definition");
+        };
+        assert_eq!(*nominal, Some(length(5.0)));
     }
 
     #[test]
