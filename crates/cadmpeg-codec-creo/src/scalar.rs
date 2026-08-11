@@ -382,13 +382,14 @@ pub fn decode_tabulated_cylinder_second_coordinate(
     decode_second_coordinate_lane(data, offset, cache)
 }
 
-/// Decode a model-space coordinate in a named `ActDatums` outline.
+/// Decode a model-space coordinate in an `ActDatums` outline.
 ///
-/// Named datum outlines use the backed subset of the bounded positive/negative
-/// DICT lattice for the second coordinate of a tabulated-cylinder directrix.
-/// The unresolved `45` and `5c` forms are excluded here so the datum walker can
-/// retain their seven-byte slot boundaries without assigning numeric values.
-pub(crate) fn decode_named_datum_outline_coordinate(
+/// Named and positional datum outlines use the backed subset of the bounded
+/// positive/negative DICT lattice for the second coordinate of a
+/// tabulated-cylinder directrix. The unresolved `45` and `5c` forms are
+/// excluded here so the datum walker can retain their seven-byte slot
+/// boundaries without assigning numeric values.
+pub(crate) fn decode_datum_outline_coordinate(
     data: &[u8],
     offset: usize,
     cache: &ScalarCache,

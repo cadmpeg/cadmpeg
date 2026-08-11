@@ -217,7 +217,8 @@ fixtures, claims above L1 remain unproven.
 - `ActDatums` positional datum promotion is limited to counted `srf_array`
   rows with compact-width identifiers, `geom_type = 22`, `boundary_type = 01`,
   and `next_geom_ptr = 0`; each row body is bounded at the next validated row
-  or its containing frame boundary.
+  or its containing frame boundary. Named and positional outline coordinates
+  use the same bounded model-coordinate scalar lane.
 - Unique feature-owned materialized table surfaces emit feature-result topology
   face identities, including class-203 caps and class-210 transition results.
   Hole placement, thicken inputs, and knit inputs use generated face references
@@ -238,10 +239,10 @@ fixtures, claims above L1 remain unproven.
 - Positional `ActDatums` outlines require exactly one held coordinate. Outlines
   with zero or multiple held coordinate pairs remain unresolved instead of
   selecting an arbitrary plane normal.
-- Named and positional `ActDatums` outlines decode their shared `a5` and `9f`
-  model-coordinate DICT forms into complete corner coordinates. Named `45`
-  and `5c` tokens and positional `73` and `bb` tokens retain their bounded
-  slots with unresolved numeric values.
+- Named and positional `ActDatums` outlines decode their shared bounded
+  model-coordinate forms, including `73`, `9f`, `a5`, and `bb`, into complete
+  corner coordinates. Both forms retain `45` and `5c` tokens as bounded slots
+  with unresolved numeric values.
 - Unique feature-owned `crv_array` topology rows now emit feature-result edge
   identities. Fillet and chamfer affected-edge selections use generated edge
   references only when the topology row is unique and its producer result

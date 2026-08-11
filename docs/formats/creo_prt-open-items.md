@@ -528,11 +528,11 @@ that assign a dimension value to a dimension-driven solver variable.
 
 **Need.** We must know the alternate datum to complete the sketch frame.
 
-### SP-24. Named `ActDatums` outline tokens
+### SP-24. `ActDatums` outline tokens
 
-**Question.** What scalar value does each `5c` and `45` token encode in a named `ActDatums` outline?
+**Question.** What scalar value does each `5c` and `45` token encode in an `ActDatums` outline?
 
-**Known.** `creo_prt.md` §6 "`ActDatums` stores datum-plane geometry as `act_datum_geoms → srf_array` records. Each section" defines the two-corner outline and its held-coordinate plane rule. Named and positional outlines use the same numeric reconstruction for complete `a5` and `9f` tokens. A `5c` or `45` token consumes one seven-byte coordinate slot without supplying a numeric value.
+**Known.** `creo_prt.md` §6 "`ActDatums` stores datum-plane geometry as `act_datum_geoms → srf_array` records. Each section" defines the two-corner outline and its held-coordinate plane rule. Named and positional outlines use the same bounded model-coordinate lane. A `5c` or `45` token consumes one seven-byte coordinate slot without supplying a numeric value.
 
 **Need.** We must know the values to construct nonzero datum offsets and extents.
 

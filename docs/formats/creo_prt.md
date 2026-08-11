@@ -3371,16 +3371,16 @@ contiguous and consume the bounded field body. A complete outline with
 exactly one equal coordinate pair defines the corresponding axis-aligned plane
 and offset.
 
-The positional datum scalar lane decodes `a5 <tail6>` as
-`[bf d0 <tail6>]` and `9f <tail6>` as `[40 14 <tail6>]`. These forms use the
-same reconstruction in named datum outlines. The positional `73` and `bb`
-forms remain seven-byte opaque tokens. Identical opaque tokens compare equal
-and distinct opaque tokens compare unequal.
+Named and positional datum outlines use the same bounded model-coordinate
+lane. In this lane, `73 <tail6>` reconstructs
+`[3f e8 <tail6>]`, `bb <tail6>` reconstructs `[bf e8 <tail6>]`,
+`a5 <tail6>` reconstructs `[bf d0 <tail6>]`, and `9f <tail6>` reconstructs
+`[40 14 <tail6>]`.
 
 In a named datum outline, exactly one pair of standalone-zero slots at
 positions `k` and `k+3` identifies coordinate axis `k` and plane offset zero.
 Zero pairs or multiple pairs do not define a plane equation.
-Named-outline coordinates use the bounded model-coordinate DICT lane. `5e..a3`
+Datum-outline nonzero coordinates use the bounded model-coordinate DICT lane. `5e..a3`
 set the two-byte IEEE prefix to `0x3f75 + prefix`; `a4..a6`,
 `a7..b1`, `b2..cf`, `d0..dc`, `dd`, and `de..df` set it to
 `0xbf2b + prefix`, `0xbf2c + prefix`, `0xbf2d + prefix`, `0xbf2e + prefix`,

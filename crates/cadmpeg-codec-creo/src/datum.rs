@@ -158,8 +158,8 @@ fn find(data: &[u8], needle: &[u8], from: usize) -> Option<usize> {
 /// - `0f`/`e6`: a one-byte zero marker.
 /// - `41`: a seven-byte tail forming the IEEE double `3f XX..`.
 /// - `46`/`2d`: a world-coordinate scalar.
-/// - Named-outline DICT prefixes use the model-coordinate lane in
-///   `scalar::decode_named_datum_outline_coordinate`.
+/// - Datum-outline DICT prefixes use the model-coordinate lane in
+///   `scalar::decode_datum_outline_coordinate`.
 /// - `45`/`5c` retain a seven-byte token with an unresolved value.
 /// - Other `40..=bf`/`d3`/`d7`/`df` prefixes retain a seven-byte token whose
 ///   value is kept only when the generic scalar decode consumes exactly seven
@@ -185,7 +185,7 @@ fn decode_outline_slot(
         0x0f | 0xe6 => Some((Some(0.0), offset + 1)),
         _ => {
             if let Some((value, next)) =
-                scalar::decode_named_datum_outline_coordinate(data, offset, cache)
+                scalar::decode_datum_outline_coordinate(data, offset, cache)
             {
                 return Some((Some(value), next));
             }
@@ -238,10 +238,8 @@ struct DatumSlot {
 /// return aborts the walk.
 ///
 /// - `18`/`0f`/`e6`: a one-byte zero marker.
-/// - `41`: a seven-byte tail forming the IEEE double `3f XX..`.
-/// - `9f`/`a5`: a seven-byte coordinate in the named-outline DICT lane.
-/// - `73`/`bb`: a seven-byte valueless sentinel.
-/// - otherwise: a generic scalar in the datum lane.
+/// - `45`/`5c`: a seven-byte token whose numeric value is unresolved.
+/// - other tokens: a coordinate in the bounded datum-outline lane.
 fn decode_datum_slot(
     data: &[u8],
     offset: usize,
@@ -250,24 +248,13 @@ fn decode_datum_slot(
     let head = *data.get(offset)?;
     match head {
         0x18 | 0x0f | 0xe6 => Some((Some(0.0), offset + 1)),
-        0x41 => {
-            let tail = data.get(offset + 1..offset + 8)?;
-            let mut raw = [0; 8];
-            raw[0] = 0x3f;
-            raw[1..].copy_from_slice(tail);
-            Some((Some(f64::from_be_bytes(raw)), offset + 8))
-        }
-        0x9f | 0xa5 => scalar::decode_named_datum_outline_coordinate(data, offset, cache)
-            .map(|(value, next)| (Some(value), next)),
-        0x73 | 0xbb => {
+        0x45 | 0x5c => {
             let next = offset + 7;
             data.get(offset..next)?;
             Some((None, next))
         }
-        _ => {
-            let (value, next) = scalar::decode(data, offset)?;
-            Some((Some(value), next))
-        }
+        _ => scalar::decode_datum_outline_coordinate(data, offset, cache)
+            .map(|(value, next)| (Some(value), next)),
     }
 }
 
@@ -419,6 +406,63 @@ mod tests {
         named.push(0x18);
         named.extend(nine_f);
         assert_eq!(positional.corners, named_plane(&named).unwrap().corners);
+    }
+
+    #[test]
+    fn positional_outline_uses_the_bounded_model_coordinate_lane() {
+        let negative_x = [0xbb, 1, 2, 3, 4, 5, 6];
+        let positive_x = [0x73, 1, 2, 3, 4, 5, 6];
+        let lower_z = [0x41, 7, 8, 9, 10, 11, 12, 13];
+        let upper_z = [0x8c, 14, 15, 16, 17, 18, 19];
+        let mut data = b"srf_array\0\xf8\x01".to_vec();
+        data.extend([4, 0x22, 3, 1, 1, 0]);
+        data.extend([0x0f; 4]);
+        data.extend(negative_x);
+        data.push(0x18);
+        data.extend(lower_z);
+        data.extend(positive_x);
+        data.push(0x18);
+        data.extend(upper_z);
+
+        let positional = &planes(&data)[0];
+        assert_eq!(positional.normal, [0.0, 1.0, 0.0]);
+        assert_eq!(positional.offset, 0.0);
+        assert_eq!(
+            positional.corners,
+            [
+                [
+                    Some(f64::from_be_bytes([0xbf, 0xe8, 1, 2, 3, 4, 5, 6])),
+                    Some(0.0),
+                    Some(f64::from_be_bytes([0x3f, 7, 8, 9, 10, 11, 12, 13])),
+                ],
+                [
+                    Some(f64::from_be_bytes([0x3f, 0xe8, 1, 2, 3, 4, 5, 6])),
+                    Some(0.0),
+                    Some(f64::from_be_bytes([0x40, 0x01, 14, 15, 16, 17, 18, 19])),
+                ],
+            ]
+        );
+    }
+
+    #[test]
+    fn positional_outline_retains_unbacked_coordinate_tokens_without_values() {
+        let mut data = b"srf_array\0\xf8\x01".to_vec();
+        data.extend([4, 0x22, 3, 1, 1, 0]);
+        data.extend([0x0f; 4]);
+        data.extend([0x45, 0, 0, 0, 0, 0, 0]);
+        data.push(0x18);
+        data.extend([0x5c, 0, 0, 0, 0, 0, 0]);
+        data.extend([0x5c, 0, 0, 0, 0, 0, 0]);
+        data.push(0x18);
+        data.extend([0x45, 0, 0, 0, 0, 0, 0]);
+
+        let plane = &planes(&data)[0];
+        assert_eq!(plane.normal, [0.0, 1.0, 0.0]);
+        assert_eq!(plane.offset, 0.0);
+        assert_eq!(
+            plane.corners,
+            [[None, Some(0.0), None], [None, Some(0.0), None]]
+        );
     }
 
     #[test]
