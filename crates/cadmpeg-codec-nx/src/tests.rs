@@ -2022,6 +2022,17 @@ fn container_rejects_trailing_or_overlapping_footer_data() {
 }
 
 #[test]
+fn container_rejects_footer_offset_beyond_the_file_image() {
+    let mut bytes = single_part_prt();
+    bytes[0x11..0x17].copy_from_slice(&[0xff; 6]);
+    let error = container::scan_bytes(bytes).expect_err("required invariant");
+    assert_eq!(
+        error.to_string(),
+        "malformed container: FOOTER offset exceeds the file image"
+    );
+}
+
+#[test]
 fn inspect_reports_bounded_nx_object_model_entities() {
     let mut cur = Cursor::new(prt_with_indexed_om_section());
     let summary = NxCodec
