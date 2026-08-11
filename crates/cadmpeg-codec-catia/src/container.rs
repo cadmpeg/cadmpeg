@@ -1222,14 +1222,18 @@ fn find_subslice(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
 /// FBB spine plus the standard edge-table delimiter; FBB-only requires an FBB
 /// spine without that delimiter; zero-entity requires no nested container and an
 /// `a9 03` family; the object-stream / E5 families are named from their record
-/// census when no FBB spine is present. Anything that matches no invariant is
-/// [`Variant::Unknown`].
+/// census. A coherent E5 walk owns its bounded stream before the weaker
+/// container and marker fallbacks are considered. Anything that matches no
+/// invariant is [`Variant::Unknown`].
 fn identify_variant(
     inner: Option<&InnerDir>,
     brep: Option<&[u8]>,
     census: &Census,
     coherent_e5: bool,
 ) -> Variant {
+    if coherent_e5 {
+        return Variant::E5Stream;
+    }
     match (inner, brep) {
         // No nested container at all.
         (None, _) => {
@@ -1242,9 +1246,7 @@ fn identify_variant(
         // Nested container, but its directory catalogues no BREP body.
         (Some(_), None) => Variant::InnerNoDirectory,
         (Some(_), Some(_)) => {
-            if coherent_e5 {
-                Variant::E5Stream
-            } else if census.fbb_runs > 0 {
+            if census.fbb_runs > 0 {
                 if census.edge_delimiters > 0 {
                     Variant::StandardNested
                 } else {
@@ -1570,6 +1572,41 @@ mod tests {
         };
         assert_eq!(
             identify_variant(Some(&inner), Some(&[]), &census, true),
+            Variant::E5Stream
+        );
+    }
+
+    #[test]
+    fn coherent_e5_stream_overrides_zero_entity_markers() {
+        let census = Census {
+            a9_records: 1,
+            ..Census::default()
+        };
+        assert_eq!(
+            identify_variant(None, None, &census, true),
+            Variant::E5Stream
+        );
+    }
+
+    #[test]
+    fn scan_selects_a_coherent_e5_walk_over_a_zero_entity_record() {
+        let mut body = vec![0xa9, 0x03, 0x10, 0x00, 0, 0, 0, 0, 0, 0, 0, 0];
+        for id in 0..10 {
+            append_e5_test_record(&mut body, id);
+        }
+        let scan = scan_bytes(outer_with_preamble(&body));
+        assert_eq!(scan.census.a9_records, 1);
+        assert_eq!(scan.variant, Variant::E5Stream);
+    }
+
+    #[test]
+    fn coherent_e5_stream_overrides_an_inner_body_without_brep_streams() {
+        let inner = InnerDir {
+            inner: 0,
+            descriptors: Vec::new(),
+        };
+        assert_eq!(
+            identify_variant(Some(&inner), None, &Census::default(), true),
             Variant::E5Stream
         );
     }

@@ -32,16 +32,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the bit assignments to validate an extent and to write its flags.
 
-### CR-04. E5 precedence with inner records but no BREP
-
-**Question.** What precedence resolves a coherent E5 stream when a nested container has no BREP body, or when zero-entity records coexist with a coherent E5 stream?
-
-**Known.** `catia.md` §1 lists E5, zero-entity, and inner-no-directory variants as distinct families. `identify_variant` considers `coherent_e5` only when both an inner directory and a BREP stream exist.
-
-**Need.** We must prove these populations are mutually exclusive or define the ownership and refusal rule before choosing a decoder family.
-
-**Note.** Added by the 2026-08-10 hostile sweep. `container.rs:1185-1215` returns `InnerNoDirectory` for `(Some(inner), None)` and `ZeroEntity` for `(None, _)` with any `a9` marker, without using `coherent_e5`. The route table then sends `InnerNoDirectory` to the freeform path. A file containing both a coherent E5 walk and one of these populations can be assigned a different family solely from branch order. No committed fixture proves the populations are exclusive. Confidence: medium.
-
 ## 2. Design intent
 
 ### DI-01. Compact schema-program semantics
