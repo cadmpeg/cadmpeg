@@ -2779,21 +2779,31 @@ the neutral hole position, twice the square half-span is its diameter, and the
 four-entry form is a simple cylindrical hole.
 The termination plane is the flat blind bottom of that simple hole.
 
-In a class-911 table-class-29 generated table, a cylindrical stepped entry has
-two distinct source section entities that each generate exactly two
-materialized cylinder rows and one other source entity that generates one
-materialized plane row plus one rowless face use. The paired cylinder rows are
-the two patches of each cylindrical step. The plane is an axis-containing
-support and does not define the step depth. When the feature generates no conical surface, this structure
-selects counterbore form independently of whether both cylinder carriers and
-the counterbore dimensions are evaluable.
+In the paired-replay form of a class-911 table-class-29 generated table, an
+adjacent class-204 and class-203 pair opens a replay run of the contiguous
+class-200 entries that follow it. The next class-204 entry or the next
+non-class-200 entry closes the run. Exactly two runs contain materialized
+surfaces. These two materialization runs have the same nonzero source roster
+and pair entries by source identifier. Additional replay runs contain only
+rowless topology uses. Reuse of a source identifier in those topology runs
+does not add an entry to its materialization pair. An optional source-zero
+entry is rowless and occurs at most once. An entry without a source identifier
+is also rowless. Neither form participates in the paired source roster.
 
-A class-911 table-class-29 simple-drilled recipe has exactly four source
-section entity groups among its class-200 entries. One group generates two
-cone rows, one group generates two cylinder rows, and the other two groups
-each generate two rowless face uses. A separate source-zero group contains one
-rowless bottom entry when present and does not participate in the recipe
-groups. A complete three-row class-911 dimension table assigns external ID `0`
+A cylindrical stepped entry has two source section entities whose paired
+materialization entries are both cylinder rows and one other source whose pair
+contains one materialized plane row and one rowless face use. The paired
+cylinder rows are the two patches of each cylindrical step. The plane is an
+axis-containing support and does not define the step depth. When the feature
+generates no conical surface, this structure selects counterbore form
+independently of whether both cylinder carriers and the counterbore dimensions
+are evaluable.
+
+A class-911 table-class-29 simple-drilled recipe has one paired source that
+materializes two cone rows, one paired source that materializes two cylinder
+rows, and at least two other paired sources that each contain two rowless face
+uses. Every source in the materialization roster has one of these forms. A
+complete three-row class-911 dimension table assigns external ID `0`
 to the bore radius, ID `1` to the included drill-point angle, and ID `2` to the
 blind depth. IDs `0` and `2` have
 dimension type `2` and millimetre units. ID `1` has dimension type `10` and

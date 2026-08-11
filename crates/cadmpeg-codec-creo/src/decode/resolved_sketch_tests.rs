@@ -2062,10 +2062,10 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
 
 #[test]
 fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
-    let entry = |entity_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
         entity_id,
-        class_id: 200,
-        source_entity_id: Some(source_entity_id),
+        class_id,
+        source_entity_id,
         related_entity_id: None,
         related_entity_state: None,
         prefixed: false,
@@ -2073,12 +2073,21 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
         end_offset: 0,
     };
     let entries = vec![
-        entry(11, 4),
-        entry(12, 4),
-        entry(13, 6),
-        entry(14, 6),
-        entry(15, 7),
-        entry(16, 7),
+        entry(21, 204, None),
+        entry(22, 203, None),
+        entry(11, 200, Some(4)),
+        entry(13, 200, Some(6)),
+        entry(15, 200, Some(7)),
+        entry(23, 204, None),
+        entry(24, 203, None),
+        entry(12, 200, Some(4)),
+        entry(14, 200, Some(6)),
+        entry(16, 200, Some(7)),
+        entry(31, 204, None),
+        entry(32, 203, None),
+        entry(33, 200, Some(4)),
+        entry(34, 200, Some(6)),
+        entry(35, 200, Some(7)),
     ];
     let table = crate::feature::FeatureEntityTable {
         feature_id: Some(9),
@@ -2086,7 +2095,7 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
         entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
         entries,
         surface_ids: vec![11, 12, 13, 15, 16],
-        non_surface_entity_ids: vec![14],
+        non_surface_entity_ids: vec![21, 22, 23, 24, 14, 31, 32, 33, 34, 35],
         offset: 0,
     };
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
@@ -2141,10 +2150,10 @@ fn class_911_surface_row(
 }
 
 fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::FeatureEntityTable {
-    let sourced_entry = |entity_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
         entity_id,
-        class_id: 200,
-        source_entity_id: Some(source_entity_id),
+        class_id,
+        source_entity_id,
         related_entity_id: None,
         related_entity_state: None,
         prefixed: false,
@@ -2152,24 +2161,25 @@ fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::FeatureEntity
         end_offset: 0,
     };
     let entries = vec![
-        sourced_entry(11, 1),
-        sourced_entry(12, 1),
-        sourced_entry(13, 2),
-        sourced_entry(14, 2),
-        sourced_entry(15, 3),
-        sourced_entry(16, 3),
-        sourced_entry(17, 4),
-        sourced_entry(18, 4),
-        crate::feature::FeatureEntityTableEntry {
-            entity_id: 19,
-            class_id: 200,
-            source_entity_id: None,
-            related_entity_id: None,
-            related_entity_state: None,
-            prefixed: false,
-            offset: 0,
-            end_offset: 0,
-        },
+        entry(21, 204, None),
+        entry(22, 203, None),
+        entry(19, 200, None),
+        entry(11, 200, Some(1)),
+        entry(13, 200, Some(2)),
+        entry(15, 200, Some(3)),
+        entry(17, 200, Some(4)),
+        entry(23, 204, None),
+        entry(24, 203, None),
+        entry(12, 200, Some(1)),
+        entry(14, 200, Some(2)),
+        entry(16, 200, Some(3)),
+        entry(18, 200, Some(4)),
+        entry(31, 204, None),
+        entry(32, 203, None),
+        entry(33, 200, Some(1)),
+        entry(34, 200, Some(2)),
+        entry(35, 200, Some(3)),
+        entry(36, 200, Some(4)),
     ];
     crate::feature::FeatureEntityTable {
         feature_id: Some(feature_id),
@@ -2177,7 +2187,7 @@ fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::FeatureEntity
         entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
         entries,
         surface_ids: vec![11, 12, 13, 14],
-        non_surface_entity_ids: vec![15, 16, 17, 18, 19],
+        non_surface_entity_ids: vec![21, 22, 19, 15, 17, 23, 24, 16, 18, 31, 32, 33, 34, 35, 36],
         offset: 0,
     }
 }
@@ -2199,17 +2209,30 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
     assert!(simple_drilled_hole_recipe_table(9, std::slice::from_ref(&table), &rows,).is_some());
     assert!(simple_drilled_hole_recipe_table(9, &[table.clone(), table.clone()], &rows,).is_none());
 
-    let mut bottom = table.entries[0].clone();
+    let mut extended = table.clone();
+    let mut extra = extended.entries[3].clone();
+    extra.entity_id = 26;
+    extra.source_entity_id = Some(5);
+    extended.entry_ids.insert(7, extra.entity_id);
+    extended.non_surface_entity_ids.push(extra.entity_id);
+    extended.entries.insert(7, extra.clone());
+    extra.entity_id = 27;
+    extended.entry_ids.insert(14, extra.entity_id);
+    extended.non_surface_entity_ids.push(extra.entity_id);
+    extended.entries.insert(14, extra);
+    assert!(simple_drilled_hole_recipe_table(9, std::slice::from_ref(&extended), &rows).is_some());
+
+    let mut bottom = table.entries[2].clone();
     bottom.entity_id = 20;
     bottom.source_entity_id = Some(0);
-    table.entry_ids.insert(0, bottom.entity_id);
+    table.entry_ids.insert(2, bottom.entity_id);
     table.non_surface_entity_ids.push(bottom.entity_id);
-    table.entries.insert(0, bottom.clone());
+    table.entries.insert(2, bottom.clone());
     assert!(simple_drilled_hole_recipe_table(9, std::slice::from_ref(&table), &rows).is_some());
-    bottom.entity_id = 21;
-    table.entry_ids.insert(1, bottom.entity_id);
+    bottom.entity_id = 25;
+    table.entry_ids.insert(3, bottom.entity_id);
     table.non_surface_entity_ids.push(bottom.entity_id);
-    table.entries.insert(1, bottom);
+    table.entries.insert(3, bottom);
     assert!(simple_drilled_hole_recipe_table(9, std::slice::from_ref(&table), &rows).is_none());
 
     let table = simple_drilled_recipe_table(9);

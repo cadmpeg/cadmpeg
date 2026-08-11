@@ -21925,7 +21925,7 @@ fn stepped_hole_form(
     let candidates = tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
-        .filter_map(|table| generated_hole_surfaces_by_source(feature_id, table, rows))
+        .filter_map(|table| paired_hole_replay_surfaces_by_source(feature_id, table, rows))
         .filter(|generated_by_source| {
             let cylinder_sources = generated_by_source
                 .values()
@@ -21942,12 +21942,11 @@ fn stepped_hole_form(
             let planar_support_sources = generated_by_source
                 .values()
                 .filter(|entries| {
-                    entries.len() == 2
-                        && entries
-                            .iter()
-                            .filter(|kind| **kind == Some(crate::surface::SurfaceKind::Plane))
-                            .count()
-                            == 1
+                    entries
+                        .iter()
+                        .filter(|kind| **kind == Some(crate::surface::SurfaceKind::Plane))
+                        .count()
+                        == 1
                         && entries.iter().filter(|kind| kind.is_none()).count() == 1
                 })
                 .count();
@@ -21961,35 +21960,83 @@ fn stepped_hole_form(
     (candidates == 1).then_some(HoleForm::Counterbore)
 }
 
-fn generated_hole_surfaces_by_source(
+fn paired_hole_replay_surfaces_by_source(
     feature_id: u32,
     table: &crate::feature::FeatureEntityTable,
     rows: &[crate::surface::SurfaceRow],
-) -> Option<BTreeMap<u32, Vec<Option<crate::surface::SurfaceKind>>>> {
-    let mut generated_by_source = BTreeMap::<u32, Vec<Option<crate::surface::SurfaceKind>>>::new();
-    for entry in table.entries.iter().filter(|entry| entry.class_id == 200) {
-        let Some(source_id) = entry.source_entity_id else {
-            (table.non_surface_entity_ids.contains(&entry.entity_id)
-                && !table.surface_ids.contains(&entry.entity_id))
-            .then_some(())?;
-            continue;
-        };
-        let kind = if table.surface_ids.contains(&entry.entity_id) {
-            Some(
+) -> Option<BTreeMap<u32, [Option<crate::surface::SurfaceKind>; 2]>> {
+    let entry_kind = |entry: &crate::feature::FeatureEntityTableEntry| {
+        if table.surface_ids.contains(&entry.entity_id) {
+            Some(Some(
                 crate::surface::unique_surface_row(rows, entry.entity_id)
                     .filter(|row| row.feature_id == feature_id)?
                     .kind,
-            )
+            ))
         } else {
-            table
-                .non_surface_entity_ids
-                .contains(&entry.entity_id)
-                .then_some(())?;
-            None
+            (table.non_surface_entity_ids.contains(&entry.entity_id)
+                && !table.surface_ids.contains(&entry.entity_id))
+            .then_some(None)
+        }
+    };
+    let mut runs = Vec::<BTreeMap<u32, Option<crate::surface::SurfaceKind>>>::new();
+    let mut framed_class_200_count = 0;
+    let mut source_zero_count = 0;
+    let mut index = 0;
+    while index < table.entries.len() {
+        let Some(class_203) = table.entries.get(index + 1) else {
+            break;
         };
-        generated_by_source.entry(source_id).or_default().push(kind);
+        let class_204 = &table.entries[index];
+        if class_204.class_id != 204 || class_203.class_id != 203 {
+            index += 1;
+            continue;
+        }
+        entry_kind(class_204)?.is_none().then_some(())?;
+        entry_kind(class_203)?.is_none().then_some(())?;
+        index += 2;
+        let mut run = BTreeMap::new();
+        while let Some(entry) = table
+            .entries
+            .get(index)
+            .filter(|entry| entry.class_id == 200)
+        {
+            framed_class_200_count += 1;
+            let kind = entry_kind(entry)?;
+            match entry.source_entity_id {
+                Some(0) => {
+                    kind.is_none().then_some(())?;
+                    source_zero_count += 1;
+                }
+                Some(source_id) => {
+                    run.insert(source_id, kind).is_none().then_some(())?;
+                }
+                None => kind.is_none().then_some(())?,
+            }
+            index += 1;
+        }
+        runs.push(run);
     }
-    Some(generated_by_source)
+    (source_zero_count <= 1
+        && framed_class_200_count
+            == table
+                .entries
+                .iter()
+                .filter(|entry| entry.class_id == 200)
+                .count())
+    .then_some(())?;
+    let materialized = runs
+        .iter()
+        .filter(|run| run.values().any(Option::is_some))
+        .collect::<Vec<_>>();
+    let [first, second] = materialized.as_slice() else {
+        return None;
+    };
+    (first.keys().eq(second.keys())).then_some(())?;
+    let mut paired_by_source = BTreeMap::new();
+    for (source_id, first_kind) in *first {
+        paired_by_source.insert(*source_id, [*first_kind, *second.get(source_id)?]);
+    }
+    Some(paired_by_source)
 }
 
 fn simple_drilled_hole_recipe_table<'a>(
@@ -22002,33 +22049,25 @@ fn simple_drilled_hole_recipe_table<'a>(
         .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
         .filter(|table| {
             let Some(generated_by_source) =
-                generated_hole_surfaces_by_source(feature_id, table, rows)
+                paired_hole_replay_surfaces_by_source(feature_id, table, rows)
             else {
                 return false;
             };
-            let recipe_groups = generated_by_source
-                .iter()
-                .filter(|(source_id, _)| **source_id != 0)
-                .map(|(_, entries)| entries)
-                .collect::<Vec<_>>();
+            let recipe_groups = generated_by_source.values().collect::<Vec<_>>();
             let paired = |kind| {
                 recipe_groups
                     .iter()
                     .filter(|entries| entries.as_slice() == [Some(kind), Some(kind)])
                     .count()
             };
-            let valid_bottom = generated_by_source
-                .get(&0)
-                .is_none_or(|entries| entries.as_slice() == [None]);
-            recipe_groups.len() == 4
-                && valid_bottom
-                && paired(crate::surface::SurfaceKind::Cone) == 1
+            let rowless = recipe_groups
+                .iter()
+                .filter(|entries| entries.as_slice() == [None, None])
+                .count();
+            paired(crate::surface::SurfaceKind::Cone) == 1
                 && paired(crate::surface::SurfaceKind::Cylinder) == 1
-                && recipe_groups
-                    .iter()
-                    .filter(|entries| entries.as_slice() == [None, None])
-                    .count()
-                    == 2
+                && rowless >= 2
+                && recipe_groups.len() == rowless + 2
         })
         .collect::<Vec<_>>();
     let [table] = candidates.as_slice() else {
