@@ -222,7 +222,8 @@ fn solved_reference_point_layouts_project_to_a_datum_point() {
                     x: 125.0,
                     y: -250.0,
                     z: 0.0
-                }
+                },
+                ..
             }
         ));
     }

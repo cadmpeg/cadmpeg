@@ -1714,6 +1714,7 @@ fn configuration_body_membership_round_trips_and_validates() {
             outputs: vec![BodyId("synthetic:test:body#missing-output".into())],
             definition: FeatureDefinition::DatumPoint {
                 position: Point3::new(0.0, 0.0, 0.0),
+                construction: None,
             },
         },
     )]);
@@ -1770,6 +1771,7 @@ fn configuration_body_membership_round_trips_and_validates() {
             outputs: Vec::new(),
             definition: FeatureDefinition::DatumPoint {
                 position: Point3::new(0.0, 0.0, 0.0),
+                construction: None,
             },
             native_ref: None,
         });
@@ -1782,6 +1784,7 @@ fn configuration_body_membership_round_trips_and_validates() {
             outputs: vec![body.clone(), body.clone()],
             definition: FeatureDefinition::DatumPoint {
                 position: Point3::new(0.0, 0.0, 0.0),
+                construction: None,
             },
         },
     )]);
@@ -1807,6 +1810,7 @@ fn configuration_body_membership_round_trips_and_validates() {
             outputs: Vec::new(),
             definition: FeatureDefinition::DatumPoint {
                 position: Point3::new(0.0, 0.0, 0.0),
+                construction: None,
             },
         },
     )]);
@@ -1849,6 +1853,7 @@ fn configuration_body_membership_round_trips_and_validates() {
             outputs: vec![body.clone()],
             definition: FeatureDefinition::DatumPoint {
                 position: Point3::new(0.0, 0.0, 0.0),
+                construction: None,
             },
         },
     )]);
@@ -1863,6 +1868,7 @@ fn configuration_body_membership_round_trips_and_validates() {
             outputs: Vec::new(),
             definition: FeatureDefinition::DatumPoint {
                 position: Point3::new(0.0, 0.0, 0.0),
+                construction: None,
             },
         },
     );
@@ -3914,6 +3920,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         outputs: Vec::new(),
         definition: FeatureDefinition::DatumPoint {
             position: Point3::new(0.0, 0.0, 0.0),
+            construction: None,
         },
         native_ref: None,
     });
@@ -4190,6 +4197,7 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         outputs: Vec::new(),
         definition: FeatureDefinition::DatumPoint {
             position: Point3::new(0.0, 0.0, 0.0),
+            construction: None,
         },
         native_ref: None,
     });
@@ -4462,6 +4470,16 @@ fn resolved_datum_geometry_must_be_finite_and_coherent() {
         },
         FeatureDefinition::DatumPoint {
             position: Point3::new(f64::NAN, 0.0, 0.0),
+            construction: None,
+        },
+        FeatureDefinition::DatumPoint {
+            position: Point3::new(0.0, 0.0, 0.0),
+            construction: Some(Box::new(
+                crate::features::DatumPointConstruction::DistanceOnEdge {
+                    edge: crate::features::EdgeSelection::Unresolved,
+                    fraction: 1.5,
+                },
+            )),
         },
     ];
     let mut ir = unit_cube();
@@ -4487,6 +4505,7 @@ fn resolved_datum_geometry_must_be_finite_and_coherent() {
         "datum-plane frame is invalid",
         "datum-axis frame is invalid",
         "datum-point position is invalid",
+        "datum-point path fraction is invalid",
     ] {
         assert!(findings.iter().any(|finding| finding.message == message));
     }

@@ -10092,7 +10092,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "datum axis"
             }
-            FeatureDefinition::DatumPoint { position } if !finite_feature_point(*position) => {
+            FeatureDefinition::DatumPoint { position, .. } if !finite_feature_point(*position) => {
                 "datum point"
             }
             FeatureDefinition::DatumCoordinateSystem {

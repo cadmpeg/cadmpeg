@@ -417,6 +417,74 @@ pub enum DatumPlaneReference {
     },
 }
 
+/// Construction rule used to derive one datum point.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DatumPointConstruction {
+    /// Center of one selected circular edge.
+    CircleCenter {
+        /// Selected circular edge.
+        edge: EdgeSelection,
+    },
+    /// Intersection of two selected edges.
+    TwoEdgeIntersection {
+        /// Selected edges in source order.
+        edges: [EdgeSelection; 2],
+    },
+    /// Intersection of three selected planes.
+    ThreePlaneIntersection {
+        /// Selected planes in source order.
+        planes: Box<[DatumPlaneReference; 3]>,
+    },
+    /// One selected topological vertex.
+    Vertex {
+        /// Selected vertex.
+        vertex: VertexSelection,
+    },
+    /// Intersection of one selected edge and one selected plane.
+    EdgePlaneIntersection {
+        /// Selected edge.
+        edge: EdgeSelection,
+        /// Selected plane.
+        plane: DatumPlaneReference,
+    },
+    /// Point at a normalized position along one selected edge.
+    DistanceOnEdge {
+        /// Selected edge.
+        edge: EdgeSelection,
+        /// Fraction from the path start in the closed interval from zero through one.
+        fraction: f64,
+    },
+}
+
+impl DatumPointConstruction {
+    /// Return construction features referenced by this rule.
+    pub fn feature_references(&self) -> Vec<&FeatureId> {
+        match self {
+            Self::ThreePlaneIntersection { planes } => planes
+                .iter()
+                .filter_map(|plane| match plane {
+                    DatumPlaneReference::Feature(feature) => Some(feature),
+                    DatumPlaneReference::Face { .. } => None,
+                })
+                .collect(),
+            Self::EdgePlaneIntersection {
+                plane: DatumPlaneReference::Feature(feature),
+                ..
+            } => vec![feature],
+            Self::Vertex {
+                vertex: VertexSelection::Generated { vertex, .. },
+            } => vec![&vertex.feature],
+            Self::CircleCenter { .. }
+            | Self::TwoEdgeIntersection { .. }
+            | Self::Vertex { .. }
+            | Self::EdgePlaneIntersection { .. }
+            | Self::DistanceOnEdge { .. } => Vec::new(),
+        }
+    }
+}
+
 /// Neutral construction semantics, with an explicit native escape hatch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -525,6 +593,9 @@ pub enum FeatureDefinition {
     DatumPoint {
         /// Point position in model space.
         position: Point3,
+        /// Rule that derives the point from preceding construction geometry.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        construction: Option<Box<DatumPointConstruction>>,
     },
     /// Datum point whose model-space position is unresolved.
     DatumPointUnresolved,

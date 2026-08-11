@@ -523,9 +523,82 @@ fn dispatcher_projects_datum_feature_scopes() {
     ));
     assert!(matches!(
         &features[2].definition,
-        FeatureDefinition::DatumPoint { position }
-            if *position == Point3::new(40.0, 50.0, 60.0)
+        FeatureDefinition::DatumPoint { position, construction }
+            if *position == Point3::new(40.0, 50.0, 60.0) && construction.is_none()
     ));
+}
+
+#[test]
+fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
+    use crate::records::{
+        DesignWorkPointConstruction, DesignWorkPointInput, DesignWorkPointInputCarrier,
+        DesignWorkPointPlaneSelection, DesignWorkPointRule,
+    };
+    use cadmpeg_ir::features::{DatumPlaneReference, DatumPointConstruction};
+
+    let planes = [10, 20, 30].map(|record_index| {
+        let id = format!("f3d:native:parameter-scope#{record_index}");
+        let mut scope = DesignParameterScope::empty(&id, "WorkPlane", record_index);
+        scope.work_plane_transform = Some(identity_matrix());
+        scope
+    });
+    let input = |record_index, work_plane_scope_record_index| DesignWorkPointInput {
+        record_index,
+        reference_offset: u64::from(record_index),
+        carrier: Some(Box::new(DesignWorkPointInputCarrier::WorkPlane {
+            selection: DesignWorkPointPlaneSelection {
+                class_tag: "267".into(),
+                asset_id: "00000000-0000-0000-0000-000000000001".into(),
+                asset_id_offset: 1,
+                context_id: "00000000-0000-0000-0000-000000000002".into(),
+                context_id_offset: 2,
+                identity_record_index: record_index + 3,
+                identity_record_offset: 3,
+                primary_identity: u64::from(work_plane_scope_record_index - 1),
+                primary_identity_offset: 24,
+                work_plane_scope_record_index,
+                next_record_index: record_index + 4,
+                next_byte_offset: 32,
+            },
+        })),
+    };
+    let mut point = DesignParameterScope::empty("f3d:native:parameter-scope#40", "WorkPoint", 40);
+    point.work_point_construction = Some(DesignWorkPointConstruction {
+        point_record_index: 41,
+        point_record_byte_offset: 0,
+        position: [1.0, 2.0, 3.0],
+        position_offset: 0,
+        rule: DesignWorkPointRule::ThreePlaneIntersection {
+            inputs: [input(42, 10), input(46, 20), input(50, 30)],
+        },
+        reference_type_offset: 0,
+    });
+    let mut scopes = planes.to_vec();
+    scopes.push(point);
+
+    let (features, _) = project_parameter_design(&[], &[], &scopes, &[], &[], &[], &[], &[]);
+    let point = features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some("f3d:native:parameter-scope#40"))
+        .expect("projected work point");
+    let FeatureDefinition::DatumPoint {
+        construction: Some(construction),
+        ..
+    } = &point.definition
+    else {
+        panic!("typed datum-point construction");
+    };
+    let DatumPointConstruction::ThreePlaneIntersection { planes } = construction.as_ref() else {
+        panic!("three-plane construction");
+    };
+    let plane_features = planes
+        .iter()
+        .map(|plane| match plane {
+            DatumPlaneReference::Feature(feature) => feature.clone(),
+            DatumPlaneReference::Face { .. } => panic!("feature-backed plane"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(point.dependencies, plane_features);
 }
 
 #[test]

@@ -5324,6 +5324,7 @@ fn encoder_writes_source_less_datum_features() {
         },
         FeatureDefinition::DatumPoint {
             position: Point3::new(7.0, 8.0, 9.0),
+            construction: None,
         },
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
@@ -15350,6 +15351,7 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
                 y: 5.0,
                 z: 6.0
             },
+            ..
         }
     ));
 
@@ -15360,7 +15362,8 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
     };
     *origin = Point3::new(-1.0, 0.0, 2.0);
     *direction = Vector3::new(0.0, 1.0, 0.0);
-    let FeatureDefinition::DatumPoint { position } = &mut decoded.ir.model.features[1].definition
+    let FeatureDefinition::DatumPoint { position, .. } =
+        &mut decoded.ir.model.features[1].definition
     else {
         panic!("typed reference point");
     };
@@ -15400,6 +15403,7 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
                 y: 8.0,
                 z: 9.0
             },
+            ..
         }
     ));
 }

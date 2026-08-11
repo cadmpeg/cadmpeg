@@ -4338,9 +4338,148 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     feature_geometry_error(findings, feature, "datum-axis frame is invalid");
                 }
             }
-            FeatureDefinition::DatumPoint { position } => {
+            FeatureDefinition::DatumPoint {
+                position,
+                construction,
+            } => {
                 if !finite_feature_point(*position) {
                     feature_geometry_error(findings, feature, "datum-point position is invalid");
+                }
+                let mut plane_references = Vec::new();
+                if let Some(construction) = construction.as_deref() {
+                    match construction {
+                        crate::features::DatumPointConstruction::CircleCenter { edge }
+                        | crate::features::DatumPointConstruction::DistanceOnEdge {
+                            edge, ..
+                        } => edge_selections.push(edge),
+                        crate::features::DatumPointConstruction::TwoEdgeIntersection { edges } => {
+                            edge_selections.extend(edges);
+                        }
+                        crate::features::DatumPointConstruction::ThreePlaneIntersection {
+                            planes,
+                        } => plane_references.extend(planes.iter()),
+                        crate::features::DatumPointConstruction::Vertex { vertex } => {
+                            match vertex {
+                                crate::features::VertexSelection::Generated { vertex, native } => {
+                                    if native.trim().is_empty()
+                                        || vertex.local_id.trim().is_empty()
+                                        || features
+                                            .get(vertex.feature.0.as_str())
+                                            .is_none_or(|ordinal| *ordinal >= feature.ordinal)
+                                        || !feature.dependencies.contains(&vertex.feature)
+                                        || result_topologies_by_feature
+                                            .get(vertex.feature.as_str())
+                                            .is_some_and(|state| {
+                                                !state.vertices.contains(&vertex.local_id)
+                                            })
+                                    {
+                                        feature_geometry_error(
+                                            findings,
+                                            feature,
+                                            "generated datum-point vertex is invalid",
+                                        );
+                                    }
+                                }
+                                crate::features::VertexSelection::Native(native)
+                                    if native.trim().is_empty() =>
+                                {
+                                    feature_geometry_error(
+                                        findings,
+                                        feature,
+                                        "native datum-point vertex is invalid",
+                                    );
+                                }
+                                crate::features::VertexSelection::Unresolved
+                                | crate::features::VertexSelection::Native(_) => {}
+                            }
+                        }
+                        crate::features::DatumPointConstruction::EdgePlaneIntersection {
+                            edge,
+                            plane,
+                        } => {
+                            edge_selections.push(edge);
+                            plane_references.push(plane);
+                        }
+                    }
+                    if matches!(
+                        construction,
+                        crate::features::DatumPointConstruction::DistanceOnEdge { fraction, .. }
+                            if !fraction.is_finite() || !(0.0..=1.0).contains(fraction)
+                    ) {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "datum-point path fraction is invalid",
+                        );
+                    }
+                }
+                for plane in plane_references {
+                    match plane {
+                        DatumPlaneReference::Feature(reference) => {
+                            match feature_records.get(reference.0.as_str()) {
+                                None => ref_error(
+                                    findings,
+                                    &feature.id.0,
+                                    "datum-point plane",
+                                    &reference.0,
+                                ),
+                                Some(record)
+                                    if !matches!(
+                                        record.definition,
+                                        FeatureDefinition::DatumPrincipalPlane { .. }
+                                            | FeatureDefinition::DatumPlane { .. }
+                                            | FeatureDefinition::DatumPlaneUnresolved
+                                            | FeatureDefinition::DatumOffsetPlane { .. }
+                                    ) =>
+                                {
+                                    feature_geometry_error(
+                                        findings,
+                                        feature,
+                                        "datum-point plane reference does not name a plane",
+                                    );
+                                }
+                                Some(record) if record.ordinal >= feature.ordinal => {
+                                    feature_geometry_error(
+                                        findings,
+                                        feature,
+                                        "datum-point plane does not precede the point",
+                                    );
+                                }
+                                Some(_) if !feature.dependencies.contains(reference) => {
+                                    findings.push(Finding {
+                                        check: Check::ReferentialIntegrity,
+                                        severity: Severity::Error,
+                                        message: format!(
+                                            "datum point omits plane feature `{}` from its dependencies",
+                                            reference.0
+                                        ),
+                                        entity: Some(feature.id.0.clone()),
+                                    });
+                                }
+                                Some(_) => {}
+                            }
+                        }
+                        DatumPlaneReference::Face {
+                            face,
+                            origin,
+                            normal,
+                            u_axis,
+                        } => {
+                            face_selections.push(face);
+                            if !finite_feature_point(*origin)
+                                || !valid_feature_direction(*normal)
+                                || !valid_feature_direction(*u_axis)
+                                || normal.dot(*u_axis).abs()
+                                    > 1.0e-9 * normal.norm() * u_axis.norm()
+                            {
+                                feature_geometry_error(
+                                    findings,
+                                    feature,
+                                    "datum-point plane support frame is invalid",
+                                );
+                            }
+                        }
+                    }
                 }
             }
             FeatureDefinition::DatumPrincipalPlane { .. }
@@ -5210,6 +5349,10 @@ fn regeneration_references(
         } => {
             references.insert(reference);
         }
+        crate::features::FeatureDefinition::DatumPoint {
+            construction: Some(construction),
+            ..
+        } => references.extend(construction.feature_references()),
         crate::features::FeatureDefinition::DerivedGeometry { source: reference }
         | crate::features::FeatureDefinition::SketchBlockInstance {
             block: Some(reference),

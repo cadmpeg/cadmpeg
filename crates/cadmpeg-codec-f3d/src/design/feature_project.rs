@@ -1191,6 +1191,14 @@ pub fn project_parameter_design_with_edge_identities(
                                     construction.position[1] * 10.0,
                                     construction.position[2] * 10.0,
                                 ),
+                                construction: project_work_point_construction(
+                                    scope,
+                                    construction,
+                                    &parameters,
+                                    edge_operands,
+                                    &scope_ids,
+                                )
+                                .map(Box::new),
                             },
                         )
                     } else if scope.kind == "BaseFlange" {
@@ -1367,7 +1375,7 @@ pub fn project_parameter_design_with_edge_identities(
         }
     }
     for feature in &mut features {
-        let dependencies: &[cadmpeg_ir::features::FeatureId] = match &feature.definition {
+        let dependencies = match &feature.definition {
             FeatureDefinition::Draft {
                 pull_plane: Some(plane),
                 ..
@@ -1375,14 +1383,56 @@ pub fn project_parameter_design_with_edge_identities(
             | FeatureDefinition::SplitFace {
                 tool: cadmpeg_ir::features::SplitFaceTool::Plane { plane },
                 ..
-            } => std::slice::from_ref(plane),
+            } => vec![plane],
             FeatureDefinition::SplitFace {
                 tool: cadmpeg_ir::features::SplitFaceTool::Planes { planes },
                 ..
-            } => planes,
-            _ => &[],
+            } => planes.iter().collect(),
+            FeatureDefinition::DatumPoint {
+                construction: Some(construction),
+                ..
+            } => construction.feature_references(),
+            _ => Vec::new(),
         };
         for dependency in dependencies {
+            if dependency != &feature.id && !feature.dependencies.contains(dependency) {
+                feature.dependencies.push(dependency.clone());
+            }
+        }
+    }
+    let mut history_state_features =
+        HashMap::<(&str, i64), Option<cadmpeg_ir::features::FeatureId>>::new();
+    for scope in scopes {
+        let Some(state_id) = scope.history_state_id else {
+            continue;
+        };
+        let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
+        let Some(feature_id) = scope_ids.get(&(stream, scope.record_index)) else {
+            continue;
+        };
+        history_state_features
+            .entry((stream, state_id))
+            .and_modify(|candidate| *candidate = None)
+            .or_insert_with(|| Some(feature_id.clone()));
+    }
+    for feature in &mut features {
+        let Some(scope) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
+        else {
+            continue;
+        };
+        let Some(construction) = &scope.work_point_construction else {
+            continue;
+        };
+        let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
+        for state_id in construction.rule.inputs().iter().filter_map(|input| {
+            work_point_edge_operand(scope, input, edge_operands)?.recipe_state_id
+        }) {
+            let Some(Some(dependency)) = history_state_features.get(&(stream, state_id)) else {
+                continue;
+            };
             if dependency != &feature.id && !feature.dependencies.contains(dependency) {
                 feature.dependencies.push(dependency.clone());
             }
@@ -1596,6 +1646,117 @@ pub fn project_parameter_design_with_edge_identities(
     ensure_feature_dependencies_precede(&features)?;
     parameters.sort_by_key(|parameter| parameter.id.clone());
     Ok((features, parameters))
+}
+
+fn work_point_edge_operand<'a>(
+    scope: &DesignParameterScope,
+    input: &crate::records::DesignWorkPointInput,
+    edge_operands: &'a [DesignEdgeOperand],
+) -> Option<&'a DesignEdgeOperand> {
+    let crate::records::DesignWorkPointInputCarrier::EdgeRecipe { operand_id } =
+        input.carrier.as_deref()?
+    else {
+        return None;
+    };
+    let stream = native_stream(&scope.id)?;
+    let mut matching = edge_operands.iter().filter(|operand| {
+        operand.id == *operand_id
+            && native_stream(&operand.id) == Some(stream)
+            && operand.scope_record_index == scope.record_index
+            && operand.record_index == input.record_index
+    });
+    let operand = matching.next()?;
+    matching.next().is_none().then_some(operand)
+}
+
+fn project_work_point_construction(
+    scope: &DesignParameterScope,
+    construction: &crate::records::DesignWorkPointConstruction,
+    parameters: &[(u32, &DesignParameter)],
+    edge_operands: &[DesignEdgeOperand],
+    scope_ids: &HashMap<(&str, u32), cadmpeg_ir::features::FeatureId>,
+) -> Option<cadmpeg_ir::features::DatumPointConstruction> {
+    use crate::records::{DesignWorkPointInput, DesignWorkPointInputCarrier, DesignWorkPointRule};
+    use cadmpeg_ir::features::{
+        DatumPlaneReference, DatumPointConstruction, EdgeSelection, VertexSelection,
+    };
+
+    let stream = native_stream(&scope.id)?;
+    let edge = |input: &DesignWorkPointInput| {
+        let operand = work_point_edge_operand(scope, input, edge_operands)?;
+        let Some((state_id, edge_slot)) = operand
+            .recipe_state_id
+            .zip(crate::design::edge_resolve::resolved_edge_operand(operand))
+        else {
+            return Some(EdgeSelection::Native(operand.id.clone()));
+        };
+        let feature_id = neutral_feature_id(scope);
+        let feature_key = feature_id
+            .0
+            .split_once('#')
+            .map_or(feature_id.0.as_str(), |(_, key)| key);
+        let prefix = ids::history_input_prefix(feature_key, state_id);
+        Some(EdgeSelection::Historical {
+            state: feature_input_topology_id(&feature_id, state_id),
+            edges: vec![ids::history_input_edge_id(&prefix, edge_slot)],
+            native: operand.id.clone(),
+        })
+    };
+    let plane = |input: &DesignWorkPointInput| {
+        let DesignWorkPointInputCarrier::WorkPlane { selection } = input.carrier.as_deref()? else {
+            return None;
+        };
+        scope_ids
+            .get(&(stream, selection.work_plane_scope_record_index))
+            .cloned()
+            .map(DatumPlaneReference::Feature)
+    };
+
+    Some(match &construction.rule {
+        DesignWorkPointRule::CircleCenter { input } => {
+            DatumPointConstruction::CircleCenter { edge: edge(input)? }
+        }
+        DesignWorkPointRule::TwoEdgeIntersection { inputs } => {
+            DatumPointConstruction::TwoEdgeIntersection {
+                edges: [edge(&inputs[0])?, edge(&inputs[1])?],
+            }
+        }
+        DesignWorkPointRule::ThreePlaneIntersection { inputs } => {
+            DatumPointConstruction::ThreePlaneIntersection {
+                planes: Box::new([plane(&inputs[0])?, plane(&inputs[1])?, plane(&inputs[2])?]),
+            }
+        }
+        DesignWorkPointRule::Vertex { input } => {
+            let DesignWorkPointInputCarrier::VertexRecipe { recipe } = input.carrier.as_deref()?
+            else {
+                return None;
+            };
+            DatumPointConstruction::Vertex {
+                vertex: VertexSelection::Native(recipe.recipe_id.clone()),
+            }
+        }
+        DesignWorkPointRule::EdgePlaneIntersection { inputs } => {
+            DatumPointConstruction::EdgePlaneIntersection {
+                edge: edge(&inputs[0])?,
+                plane: plane(&inputs[1])?,
+            }
+        }
+        DesignWorkPointRule::DistanceOnEdge { input } => {
+            let mut distances = parameters
+                .iter()
+                .map(|(_, parameter)| *parameter)
+                .filter(|parameter| parameter.source_kind == "PathDistance");
+            let distance = distances.next()?;
+            if distances.next().is_some() || !(0.0..=1.0).contains(&distance.evaluated_value) {
+                return None;
+            }
+            DatumPointConstruction::DistanceOnEdge {
+                edge: edge(input)?,
+                fraction: distance.evaluated_value,
+            }
+        }
+        DesignWorkPointRule::Native { .. } => return None,
+    })
 }
 
 pub(crate) fn project_combine(

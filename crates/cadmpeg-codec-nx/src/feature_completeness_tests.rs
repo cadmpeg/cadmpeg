@@ -1545,6 +1545,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         outputs: Vec::new(),
         definition: FeatureDefinition::DatumPoint {
             position: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            construction: None,
         },
         native_ref: None,
     };

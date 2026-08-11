@@ -8195,6 +8195,7 @@ fn project_datum_axis(feature: &Feature) -> Option<FeatureDefinition> {
 fn project_datum_point(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::DatumPoint {
         position: parse_point3_mm(feature.properties.get("Position")?)?,
+        construction: None,
     })
 }
 
@@ -13990,7 +13991,7 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
-            FeatureDefinition::DatumPoint { position } => {
+            FeatureDefinition::DatumPoint { position, .. } => {
                 if ![position.x, position.y, position.z]
                     .iter()
                     .all(|value| value.is_finite())
