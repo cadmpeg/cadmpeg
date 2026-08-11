@@ -553,6 +553,18 @@ fn hole_topology_uses_exact_cylinder_spans() {
         },
         source_object: None,
     };
+    let cone = Surface {
+        id: SurfaceId("cone".into()),
+        geometry: SurfaceGeometry::Cone {
+            origin: Point3::new(0.0, 0.0, -10.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+            ratio: 1.0,
+            half_angle: 1.0,
+        },
+        source_object: None,
+    };
     let face = Face {
         id: FaceId("face".into()),
         shell: ShellId("shell".into()),
@@ -617,7 +629,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
 
     let mut bore_face = face;
     bore_face.sense = Sense::Reversed;
-    let surfaces = [surface];
+    let surfaces = [surface, cone];
     let faces = [bore_face];
     let loops = [loop_];
     let coedges = [coedge];
@@ -663,6 +675,56 @@ fn hole_topology_uses_exact_cylinder_spans() {
     });
     project_hole_topology_axes(std::slice::from_mut(&mut unplaced), &topology);
     let FeatureDefinition::Hole { placements, .. } = &unplaced.definition else {
+        unreachable!();
+    };
+    assert!(placements.is_empty());
+
+    let mut drilled = model_hole();
+    let FeatureDefinition::Hole {
+        kind,
+        extent,
+        bottom,
+        ..
+    } = &mut drilled.definition
+    else {
+        unreachable!();
+    };
+    *kind = HoleKind::SimpleDrilled {
+        drill_point_angle: Angle(2.0),
+    };
+    *extent = Some(Termination::Blind {
+        length: Length(10.0),
+    });
+    *bottom = Some(HoleBottom::Angled {
+        included_angle: Angle(2.0),
+        depth_to_tip: false,
+    });
+    project_hole_topology_axes(std::slice::from_mut(&mut drilled), &topology);
+    let FeatureDefinition::Hole { placements, .. } = &drilled.definition else {
+        unreachable!();
+    };
+    assert_eq!(placements.len(), 1);
+
+    let mut wrong_surfaces = surfaces.clone();
+    let SurfaceGeometry::Cone { half_angle, .. } = &mut wrong_surfaces[1].geometry else {
+        unreachable!();
+    };
+    *half_angle = 0.5;
+    let wrong_topology = HoleTopology {
+        surfaces: &wrong_surfaces,
+        faces: &faces,
+        loops: &loops,
+        coedges: &coedges,
+        edges: &edges,
+        vertices: &vertices,
+        points: &points,
+    };
+    let FeatureDefinition::Hole { placements, .. } = &mut drilled.definition else {
+        unreachable!();
+    };
+    placements.clear();
+    project_hole_topology_axes(std::slice::from_mut(&mut drilled), &wrong_topology);
+    let FeatureDefinition::Hole { placements, .. } = &drilled.definition else {
         unreachable!();
     };
     assert!(placements.is_empty());

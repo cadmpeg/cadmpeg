@@ -1843,6 +1843,7 @@ pub(crate) fn project_generated_hole_axes(
 /// Resolve placements from exact dimensional topology matches.
 /// Counterbores require identical primary and counterbore axis sets. Flat
 /// blind holes require a finite cylinder span equal to the declared depth.
+/// Drilled holes additionally require a coaxial cone with the declared angle.
 /// Ownership must be unique, or an otherwise placed identical counterbore
 /// family must claim every axis outside the inferred residual set.
 pub(crate) fn project_hole_topology_axes(
@@ -1980,14 +1981,15 @@ pub(crate) fn project_hole_topology_axes(
         *placements = residual;
     }
 
-    project_flat_blind_topology_axes(features, topology);
+    let cylinders = cylindrical_bore_face_spans(topology);
+    project_flat_blind_topology_axes(features, &cylinders);
+    project_drilled_hole_topology_axes(features, &cylinders, topology.surfaces);
 }
 
 fn project_flat_blind_topology_axes(
     features: &mut [cadmpeg_ir::features::Feature],
-    topology: &HoleTopology<'_>,
+    cylinders: &[(Point3, Vector3, f64, f64, bool)],
 ) {
-    let cylinders = cylindrical_bore_face_spans(topology);
     let unresolved = features
         .iter()
         .enumerate()
@@ -2016,15 +2018,7 @@ fn project_flat_blind_topology_axes(
         .collect::<Vec<_>>();
 
     for (index, diameter, length) in unresolved {
-        if features
-            .iter()
-            .filter(|feature| feature.suppressed != Some(true))
-            .filter(|feature| {
-                same_hole_construction(&features[index].definition, &feature.definition)
-            })
-            .count()
-            != 1
-        {
+        if !hole_construction_is_unique(features, index) {
             continue;
         }
         let radius = diameter * 0.5;
@@ -2048,6 +2042,115 @@ fn project_flat_blind_topology_axes(
         };
         *hole_placements = placements;
     }
+}
+
+fn project_drilled_hole_topology_axes(
+    features: &mut [cadmpeg_ir::features::Feature],
+    cylinders: &[(Point3, Vector3, f64, f64, bool)],
+    surfaces: &[Surface],
+) {
+    let unresolved = features
+        .iter()
+        .enumerate()
+        .filter(|(_, feature)| feature.suppressed != Some(true))
+        .filter_map(|(index, feature)| match feature.definition {
+            FeatureDefinition::Hole {
+                placements: ref hole_placements,
+                kind:
+                    HoleKind::SimpleDrilled {
+                        drill_point_angle: Angle(drill_point_angle),
+                    },
+                diameter: Some(Length(diameter)),
+                extent:
+                    Some(Termination::Blind {
+                        length: Length(length),
+                    }),
+                bottom:
+                    Some(HoleBottom::Angled {
+                        included_angle: Angle(bottom_angle),
+                        depth_to_tip: false,
+                    }),
+                ..
+            } if hole_placements.is_empty()
+                && diameter.is_finite()
+                && diameter > 0.0
+                && length.is_finite()
+                && length > 0.0
+                && drill_point_angle.is_finite()
+                && drill_point_angle > 0.0
+                && (bottom_angle - drill_point_angle).abs() <= 1.0e-9 =>
+            {
+                Some((index, diameter, length, drill_point_angle))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    for (index, diameter, length, drill_point_angle) in unresolved {
+        if !hole_construction_is_unique(features, index) {
+            continue;
+        }
+        let radius = diameter * 0.5;
+        let radius_tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
+        let length_tolerance = (length.abs() * 1.0e-9).max(1.0e-8);
+        let cone_keys = surfaces
+            .iter()
+            .filter_map(|surface| match surface.geometry {
+                SurfaceGeometry::Cone {
+                    origin,
+                    axis,
+                    radius: candidate_radius,
+                    ratio,
+                    half_angle,
+                    ..
+                } if (candidate_radius - radius).abs() <= radius_tolerance
+                    && (ratio - 1.0).abs() <= 1.0e-9
+                    && (half_angle - drill_point_angle * 0.5).abs() <= 1.0e-9 =>
+                {
+                    hole_axis_key(&HolePlacement::Axis { origin, axis })
+                }
+                _ => None,
+            })
+            .collect::<HashSet<_>>();
+        if cone_keys.is_empty() {
+            continue;
+        }
+        let Some(placements) = carrier_placements(cylinders.iter().filter_map(
+            |(origin, axis, candidate_radius, candidate_span, _)| {
+                ((candidate_radius - radius).abs() <= radius_tolerance
+                    && (candidate_span - length).abs() <= length_tolerance)
+                    .then_some((*origin, *axis))
+            },
+        )) else {
+            continue;
+        };
+        let placements = placements
+            .into_iter()
+            .filter(|placement| {
+                hole_axis_key(placement).is_some_and(|key| cone_keys.contains(&key))
+            })
+            .collect::<Vec<_>>();
+        if placements.is_empty() {
+            continue;
+        }
+        let FeatureDefinition::Hole {
+            placements: hole_placements,
+            ..
+        } = &mut features[index].definition
+        else {
+            unreachable!("drilled topology selection requires a hole feature");
+        };
+        *hole_placements = placements;
+    }
+}
+
+fn hole_construction_is_unique(features: &[cadmpeg_ir::features::Feature], index: usize) -> bool {
+    features
+        .iter()
+        .filter(|feature| feature.suppressed != Some(true))
+        .filter(|feature| same_hole_construction(&features[index].definition, &feature.definition))
+        .count()
+        == 1
 }
 
 fn counterbore_topology_candidates(
