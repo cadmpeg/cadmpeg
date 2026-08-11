@@ -3914,12 +3914,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 && group.extrude_face_role.is_some()
                         }
                         None => {
-                            group.role == 0x0000_0005_0000_0000
-                                && group.extrude_face_role.is_none()
-                                && scope.extrude_prologue.is_some_and(|prologue| {
-                                    prologue.extent()
-                                        == Some(records::DesignExtrudeExtent::OneSidedToFace)
-                                })
+                            group.role == 0x0000_0005_0000_0000 && group.extrude_face_role.is_none()
                         }
                     },
                     Some(
