@@ -348,8 +348,8 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         | FeatureDefinition::FreeformSurfaceUnresolved
         | FeatureDefinition::BoundarySurfaceUnresolved
         | FeatureDefinition::DraftUnresolved => true,
-        // The draft angle remains available when face recipes fail; selections
-        // determine completeness.
+        // The draft angle remains available when face recipes fail, but replay
+        // also requires resolved selections and the material-side convention.
         FeatureDefinition::Draft {
             faces,
             neutral_plane,
@@ -357,9 +357,11 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             pull_direction,
             pull_plane,
             angle,
+            outward,
             ..
         } => {
             angle.is_none()
+                || outward.is_none()
                 || !face_selection_is_resolved(faces)
                 || match parting_tool {
                     Some(parting_tool) => {
@@ -4823,6 +4825,28 @@ mod tests {
             design_projection_gaps(&ir, &F3dNative::default()).incomplete_features,
             0
         );
+    }
+
+    #[test]
+    fn draft_completeness_requires_material_side() {
+        let complete: cadmpeg_ir::features::FeatureDefinition =
+            serde_json::from_value(serde_json::json!({
+                "definition": "draft",
+                "faces": {"kind": "faces", "value": ["face:drafted"]},
+                "neutral_plane": {"kind": "faces", "value": ["face:neutral"]},
+                "pull_direction": null,
+                "angle": 0.1,
+                "outward": true
+            }))
+            .expect("complete neutral-plane Draft");
+        assert!(!feature_definition_is_incomplete(&complete));
+
+        let mut incomplete = complete;
+        let cadmpeg_ir::features::FeatureDefinition::Draft { outward, .. } = &mut incomplete else {
+            panic!("Draft definition");
+        };
+        *outward = None;
+        assert!(feature_definition_is_incomplete(&incomplete));
     }
 
     #[test]
