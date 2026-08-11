@@ -282,10 +282,15 @@ impl<'a> ScopeHistoryGraph<'a> {
     pub(crate) fn new(
         scopes: &'a [DesignParameterScope],
         body_bindings: &[DesignBodyBinding],
+        body_recipe_operands: &[DesignBodyRecipeOperand],
         histories: &[crate::history_records::AsmHistory],
     ) -> Self {
-        let bound_histories =
-            crate::history::bind_scope_histories(scopes, body_bindings, histories);
+        let bound_histories = crate::history::bind_scope_histories(
+            scopes,
+            body_bindings,
+            body_recipe_operands,
+            histories,
+        );
         let histories_present = !histories.is_empty();
         let mut scopes_by_state = HashMap::new();
         for scope in scopes {
@@ -655,6 +660,7 @@ pub fn project_parameter_design_with_edge_identities(
                     construction_groups,
                     edge_operands,
                     entity_selection_operands,
+                    face_operands,
                     placements,
                     curve_identities,
                 )
@@ -1117,23 +1123,7 @@ pub fn project_parameter_design_with_edge_identities(
                                     .collect(),
                                 properties: native_scope_properties(scope, native_scope),
                             },
-                            |transform| FeatureDefinition::DatumPlane {
-                                origin: Point3::new(
-                                    transform[0][3] * 10.0,
-                                    transform[1][3] * 10.0,
-                                    transform[2][3] * 10.0,
-                                ),
-                                normal: Vector3::new(
-                                    transform[0][2],
-                                    transform[1][2],
-                                    transform[2][2],
-                                ),
-                                u_axis: Vector3::new(
-                                    transform[0][0],
-                                    transform[1][0],
-                                    transform[2][0],
-                                ),
-                            },
+                            |transform| project_work_plane(scope, transform),
                         )
                     } else if scope.kind == "WorkAxis" {
                         scope
@@ -1168,7 +1158,7 @@ pub fn project_parameter_design_with_edge_identities(
                                 },
                             )
                     } else if scope.kind == "WorkPoint" {
-                        scope.work_point_position.map_or_else(
+                        scope.work_point_construction.as_ref().map_or_else(
                             || FeatureDefinition::Native {
                                 kind: scope.kind.clone(),
                                 parameters: parameters
@@ -1179,12 +1169,20 @@ pub fn project_parameter_design_with_edge_identities(
                                     .collect(),
                                 properties: native_scope_properties(scope, native_scope),
                             },
-                            |position| FeatureDefinition::DatumPoint {
+                            |construction| FeatureDefinition::DatumPoint {
                                 position: Point3::new(
-                                    position[0] * 10.0,
-                                    position[1] * 10.0,
-                                    position[2] * 10.0,
+                                    construction.position[0] * 10.0,
+                                    construction.position[1] * 10.0,
+                                    construction.position[2] * 10.0,
                                 ),
+                                construction: project_work_point_construction(
+                                    scope,
+                                    construction,
+                                    &parameters,
+                                    edge_operands,
+                                    &scope_ids,
+                                )
+                                .map(Box::new),
                             },
                         )
                     } else if scope.kind == "BaseFlange" {
@@ -1322,7 +1320,8 @@ pub fn project_parameter_design_with_edge_identities(
             }
         })
         .collect::<Vec<_>>();
-    let scope_history = ScopeHistoryGraph::new(scopes, body_bindings, histories);
+    let scope_history =
+        ScopeHistoryGraph::new(scopes, body_bindings, body_recipe_operands, histories);
     for feature in &mut features {
         let Some(scope) = feature
             .native_ref
@@ -1361,7 +1360,7 @@ pub fn project_parameter_design_with_edge_identities(
         }
     }
     for feature in &mut features {
-        let dependencies: &[cadmpeg_ir::features::FeatureId] = match &feature.definition {
+        let dependencies = match &feature.definition {
             FeatureDefinition::Draft {
                 pull_plane: Some(plane),
                 ..
@@ -1369,12 +1368,25 @@ pub fn project_parameter_design_with_edge_identities(
             | FeatureDefinition::SplitFace {
                 tool: cadmpeg_ir::features::SplitFaceTool::Plane { plane },
                 ..
-            } => std::slice::from_ref(plane),
+            } => vec![plane],
             FeatureDefinition::SplitFace {
                 tool: cadmpeg_ir::features::SplitFaceTool::Planes { planes },
                 ..
-            } => planes,
-            _ => &[],
+            } => planes.iter().collect(),
+            FeatureDefinition::DatumPoint {
+                construction: Some(construction),
+                ..
+            } => construction.feature_references(),
+            FeatureDefinition::DatumThreePointPlane { points, .. } => points
+                .iter()
+                .filter_map(|point| match point {
+                    cadmpeg_ir::features::VertexSelection::Generated { vertex, .. } => {
+                        Some(&vertex.feature)
+                    }
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
         };
         for dependency in dependencies {
             if dependency != &feature.id && !feature.dependencies.contains(dependency) {
@@ -1382,34 +1394,64 @@ pub fn project_parameter_design_with_edge_identities(
             }
         }
     }
+    let mut history_state_features =
+        HashMap::<(&str, i64), Option<cadmpeg_ir::features::FeatureId>>::new();
+    for scope in scopes {
+        let Some(state_id) = scope.history_state_id else {
+            continue;
+        };
+        let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
+        let Some(feature_id) = scope_ids.get(&(stream, scope.record_index)) else {
+            continue;
+        };
+        history_state_features
+            .entry((stream, state_id))
+            .and_modify(|candidate| *candidate = None)
+            .or_insert_with(|| Some(feature_id.clone()));
+    }
+    for feature in &mut features {
+        let Some(scope) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
+        else {
+            continue;
+        };
+        let Some(construction) = &scope.work_point_construction else {
+            continue;
+        };
+        let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
+        for state_id in construction
+            .rule
+            .inputs()
+            .iter()
+            .filter_map(|input| work_point_input_history_state_id(scope, input, edge_operands))
+        {
+            let Some(Some(dependency)) = history_state_features.get(&(stream, state_id)) else {
+                continue;
+            };
+            if dependency != &feature.id && !feature.dependencies.contains(dependency) {
+                feature.dependencies.push(dependency.clone());
+            }
+        }
+    }
     features.sort_by_key(|feature| feature.id.clone());
 
-    let unresolved_owner_parameter_ids = native
-        .iter()
-        .filter_map(|parameter| {
-            let owner_record_index = parameter.owner_record_index?;
-            let stream = native_stream(&parameter.id).unwrap_or(ids::DEFAULT_STREAM);
-            let owner_is_bound = owners_by_index
-                .get(&(stream, owner_record_index))
-                .is_some_and(|owner| scope_ids.contains_key(&(stream, owner.scope_record_index)));
-            (!owner_is_bound).then(|| neutral_parameter_id(parameter))
-        })
-        .collect::<HashSet<_>>();
     let mut parameters = native
         .iter()
         .map(|parameter| {
+            let stream = native_stream(&parameter.id).unwrap_or(ids::DEFAULT_STREAM);
+            let native_owner = parameter
+                .owner_record_index
+                .and_then(|record_index| owners_by_index.get(&(stream, record_index)));
+            let owner =
+                native_owner.and_then(|owner| scope_ids.get(&(stream, owner.scope_record_index)));
             let mut properties = BTreeMap::new();
             if parameter.kind != DesignParameterKind::User {
                 properties.insert("source_kind".into(), parameter.source_kind.clone());
             }
-            if unresolved_owner_parameter_ids.contains(&neutral_parameter_id(parameter)) {
-                properties.insert(
-                    "owner_record_index".into(),
-                    parameter
-                        .owner_record_index
-                        .expect("unresolved owner id has an owner record")
-                        .to_string(),
-                );
+            if let (Some(owner_record_index), None) = (parameter.owner_record_index, owner) {
+                properties.insert("owner_record_index".into(), owner_record_index.to_string());
             }
             let value = match parameter.unit.as_deref() {
                 Some(unit) if design_length_unit(unit) => Some(ParameterValue::Length(Length(
@@ -1430,30 +1472,10 @@ pub fn project_parameter_design_with_edge_identities(
             };
             NeutralParameter {
                 id: neutral_parameter_id(parameter),
-                owner: parameter
-                    .owner_record_index
-                    .and_then(|owner| {
-                        owners_by_index.get(&(
-                            native_stream(&parameter.id).unwrap_or(ids::DEFAULT_STREAM),
-                            owner,
-                        ))
-                    })
-                    .and_then(|owner| {
-                        scope_ids.get(&(
-                            native_stream(&owner.id).unwrap_or(ids::DEFAULT_STREAM),
-                            owner.scope_record_index,
-                        ))
-                    })
-                    .cloned(),
-                ordinal: parameter
-                    .owner_record_index
-                    .and_then(|owner| {
-                        owners_by_index.get(&(
-                            native_stream(&parameter.id).unwrap_or(ids::DEFAULT_STREAM),
-                            owner,
-                        ))
-                    })
-                    .map_or(parameter.source_ordinal, |owner| owner.local_ordinal),
+                owner: owner.cloned(),
+                ordinal: owner
+                    .zip(native_owner)
+                    .map_or(parameter.source_ordinal, |(_, owner)| owner.local_ordinal),
                 name: parameter.name.clone(),
                 expression: parameter.expression.clone(),
                 display: if parameter.source_kind.contains("Diameter Dimension") {
@@ -1513,7 +1535,7 @@ pub fn project_parameter_design_with_edge_identities(
     for parameter in &mut parameters {
         let scope = parameter_scopes[&parameter.id];
         let consumer_owner = parameter.owner.clone();
-        if unresolved_owner_parameter_ids.contains(&parameter.id) {
+        if parameter.properties.contains_key("owner_record_index") {
             continue;
         }
         let mut seen = HashSet::new();
@@ -1590,6 +1612,237 @@ pub fn project_parameter_design_with_edge_identities(
     ensure_feature_dependencies_precede(&features)?;
     parameters.sort_by_key(|parameter| parameter.id.clone());
     Ok((features, parameters))
+}
+
+fn work_point_edge_operand<'a>(
+    scope: &DesignParameterScope,
+    input: &crate::records::DesignWorkPointInput,
+    edge_operands: &'a [DesignEdgeOperand],
+) -> Option<&'a DesignEdgeOperand> {
+    let crate::records::DesignWorkPointInputCarrier::EdgeRecipe { operand_id } =
+        input.carrier.as_deref()?
+    else {
+        return None;
+    };
+    let stream = native_stream(&scope.id)?;
+    let mut matching = edge_operands.iter().filter(|operand| {
+        operand.id == *operand_id
+            && native_stream(&operand.id) == Some(stream)
+            && operand.scope_record_index == scope.record_index
+            && operand.record_index == input.record_index
+    });
+    let operand = matching.next()?;
+    matching.next().is_none().then_some(operand)
+}
+
+pub(crate) fn work_point_input_history_state_id(
+    scope: &DesignParameterScope,
+    input: &crate::records::DesignWorkPointInput,
+    edge_operands: &[DesignEdgeOperand],
+) -> Option<i64> {
+    match input.carrier.as_deref()? {
+        crate::records::DesignWorkPointInputCarrier::EdgeRecipe { .. } => {
+            work_point_edge_operand(scope, input, edge_operands)?.recipe_state_id
+        }
+        crate::records::DesignWorkPointInputCarrier::VertexRecipe { recipe } => {
+            recipe.resolved_vertex_slot.and(recipe.recipe_state_id)
+        }
+        crate::records::DesignWorkPointInputCarrier::WorkPlane { .. } => None,
+    }
+}
+
+pub(crate) fn work_point_recipe_state_id(
+    scope: &DesignParameterScope,
+    edge_operands: &[DesignEdgeOperand],
+) -> Option<i64> {
+    let construction = scope.work_point_construction.as_ref()?;
+    let mut states = construction
+        .rule
+        .inputs()
+        .iter()
+        .filter_map(|input| work_point_input_history_state_id(scope, input, edge_operands));
+    let state = states.next()?;
+    states.all(|candidate| candidate == state).then_some(state)
+}
+
+pub(crate) fn work_plane_recipe_state_id(scope: &DesignParameterScope) -> Option<i64> {
+    let crate::records::DesignWorkPlaneConstruction::ThreePoint { inputs, .. } =
+        scope.work_plane_construction.as_ref()?;
+    let state = inputs[0].recipe_state_id?;
+    inputs
+        .iter()
+        .all(|recipe| {
+            recipe.recipe_state_id == Some(state) && recipe.resolved_vertex_slot.is_some()
+        })
+        .then_some(state)
+}
+
+fn project_work_point_construction(
+    scope: &DesignParameterScope,
+    construction: &crate::records::DesignWorkPointConstruction,
+    parameters: &[(u32, &DesignParameter)],
+    edge_operands: &[DesignEdgeOperand],
+    scope_ids: &HashMap<(&str, u32), cadmpeg_ir::features::FeatureId>,
+) -> Option<cadmpeg_ir::features::DatumPointConstruction> {
+    use crate::records::{DesignWorkPointInput, DesignWorkPointInputCarrier, DesignWorkPointRule};
+    use cadmpeg_ir::features::{
+        DatumPlaneReference, DatumPointConstruction, EdgeSelection, VertexSelection,
+    };
+
+    let stream = native_stream(&scope.id)?;
+    let edge = |input: &DesignWorkPointInput| {
+        let operand = work_point_edge_operand(scope, input, edge_operands)?;
+        let Some((state_id, edge_slot)) = operand
+            .recipe_state_id
+            .zip(crate::design::edge_resolve::resolved_edge_operand(operand))
+        else {
+            return Some(EdgeSelection::Native(operand.id.clone()));
+        };
+        let feature_id = neutral_feature_id(scope);
+        let feature_key = feature_id
+            .0
+            .split_once('#')
+            .map_or(feature_id.0.as_str(), |(_, key)| key);
+        let prefix = ids::history_input_prefix(feature_key, state_id);
+        Some(EdgeSelection::Historical {
+            state: feature_input_topology_id(&feature_id, state_id),
+            edges: vec![ids::history_input_edge_id(&prefix, edge_slot)],
+            native: operand.id.clone(),
+        })
+    };
+    let plane = |input: &DesignWorkPointInput| {
+        let DesignWorkPointInputCarrier::WorkPlane { selection } = input.carrier.as_deref()? else {
+            return None;
+        };
+        scope_ids
+            .get(&(stream, selection.work_plane_scope_record_index))
+            .cloned()
+            .map(DatumPlaneReference::Feature)
+    };
+
+    Some(match &construction.rule {
+        DesignWorkPointRule::CircleCenter { input } => {
+            DatumPointConstruction::CircleCenter { edge: edge(input)? }
+        }
+        DesignWorkPointRule::TwoEdgeIntersection { inputs } => {
+            DatumPointConstruction::TwoEdgeIntersection {
+                edges: [edge(&inputs[0])?, edge(&inputs[1])?],
+            }
+        }
+        DesignWorkPointRule::ThreePlaneIntersection { inputs } => {
+            DatumPointConstruction::ThreePlaneIntersection {
+                planes: Box::new([plane(&inputs[0])?, plane(&inputs[1])?, plane(&inputs[2])?]),
+            }
+        }
+        DesignWorkPointRule::Vertex { input } => {
+            let DesignWorkPointInputCarrier::VertexRecipe { recipe } = input.carrier.as_deref()?
+            else {
+                return None;
+            };
+            let vertex = recipe
+                .recipe_state_id
+                .zip(recipe.resolved_vertex_slot)
+                .map_or_else(
+                    || VertexSelection::Native(recipe.recipe_id.clone()),
+                    |(state_id, vertex_slot)| {
+                        let feature_id = neutral_feature_id(scope);
+                        let feature_key = feature_id
+                            .0
+                            .split_once('#')
+                            .map_or(feature_id.0.as_str(), |(_, key)| key);
+                        let prefix = ids::history_input_prefix(feature_key, state_id);
+                        VertexSelection::Historical {
+                            state: feature_input_topology_id(&feature_id, state_id),
+                            vertex: ids::history_input_vertex_id(&prefix, vertex_slot),
+                            native: recipe.recipe_id.clone(),
+                        }
+                    },
+                );
+            DatumPointConstruction::Vertex { vertex }
+        }
+        DesignWorkPointRule::EdgePlaneIntersection { inputs } => {
+            DatumPointConstruction::EdgePlaneIntersection {
+                edge: edge(&inputs[0])?,
+                plane: plane(&inputs[1])?,
+            }
+        }
+        DesignWorkPointRule::DistanceOnEdge { input } => {
+            let mut distances = parameters
+                .iter()
+                .map(|(_, parameter)| *parameter)
+                .filter(|parameter| parameter.source_kind == "PathDistance");
+            let distance = distances.next()?;
+            if distances.next().is_some() || !(0.0..=1.0).contains(&distance.evaluated_value) {
+                return None;
+            }
+            DatumPointConstruction::DistanceOnEdge {
+                edge: edge(input)?,
+                fraction: distance.evaluated_value,
+            }
+        }
+        DesignWorkPointRule::Native { .. } => return None,
+    })
+}
+
+fn project_work_plane(
+    scope: &DesignParameterScope,
+    transform: [[f64; 4]; 4],
+) -> cadmpeg_ir::features::FeatureDefinition {
+    use crate::records::DesignWorkPlaneConstruction;
+    use cadmpeg_ir::features::{FeatureDefinition, VertexSelection};
+
+    let origin = Point3::new(
+        transform[0][3] * 10.0,
+        transform[1][3] * 10.0,
+        transform[2][3] * 10.0,
+    );
+    let normal = Vector3::new(transform[0][2], transform[1][2], transform[2][2]);
+    let u_axis = Vector3::new(transform[0][0], transform[1][0], transform[2][0]);
+    let Some(DesignWorkPlaneConstruction::ThreePoint { inputs, .. }) =
+        &scope.work_plane_construction
+    else {
+        return FeatureDefinition::DatumPlane {
+            origin,
+            normal,
+            u_axis,
+        };
+    };
+    let Some(state_id) = work_plane_recipe_state_id(scope) else {
+        return FeatureDefinition::DatumPlane {
+            origin,
+            normal,
+            u_axis,
+        };
+    };
+    let feature_id = neutral_feature_id(scope);
+    let feature_key = feature_id
+        .0
+        .split_once('#')
+        .map_or(feature_id.0.as_str(), |(_, key)| key);
+    let prefix = ids::history_input_prefix(feature_key, state_id);
+    let points = inputs
+        .iter()
+        .map(|recipe| {
+            Some(VertexSelection::Historical {
+                state: feature_input_topology_id(&feature_id, state_id),
+                vertex: ids::history_input_vertex_id(&prefix, recipe.resolved_vertex_slot?),
+                native: recipe.recipe_id.clone(),
+            })
+        })
+        .collect::<Option<Vec<_>>>();
+    let Some(points) = points.and_then(|points| points.try_into().ok()) else {
+        return FeatureDefinition::DatumPlane {
+            origin,
+            normal,
+            u_axis,
+        };
+    };
+    FeatureDefinition::DatumThreePointPlane {
+        origin,
+        normal,
+        u_axis,
+        points: Box::new(points),
+    }
 }
 
 pub(crate) fn project_combine(
@@ -4342,6 +4595,7 @@ pub(crate) fn project_fixed_revolve_with_entities(
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
     entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    face_operands: &[crate::records::DesignFaceOperand],
     placements: &[DesignSketchPlacement],
     curve_identities: &[SketchCurveIdentity],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
@@ -4418,6 +4672,7 @@ pub(crate) fn project_fixed_revolve_with_entities(
                 *axis_member,
                 entity_selection_operands,
             )
+            && revolve_face_axis_operand(scope, axis_group, *axis_member, face_operands).is_none()
         {
             return None;
         }
@@ -4464,12 +4719,37 @@ fn unresolved_historical_face_axis_selection(
     matches!(selections.as_slice(), [selection] if !selection.historical_face_candidates.is_empty())
 }
 
+fn revolve_face_axis_operand<'a>(
+    scope: &DesignParameterScope,
+    axis_group: &DesignConstructionOperandGroup,
+    axis_member: u32,
+    face_operands: &'a [crate::records::DesignFaceOperand],
+) -> Option<&'a crate::records::DesignFaceOperand> {
+    let stream = native_stream(&scope.id);
+    let operands = face_operands
+        .iter()
+        .filter(|operand| {
+            native_stream(&operand.id) == stream
+                && operand.scope_record_index == scope.record_index
+                && operand.group_record_index == Some(axis_group.record_index)
+                && operand.group_member_ordinal == Some(0)
+                && operand.record_index == axis_member
+        })
+        .collect::<Vec<_>>();
+    let [operand] = operands.as_slice() else {
+        return None;
+    };
+    (!crate::design::face_resolve::historical_face_operand_candidates(operand).is_empty())
+        .then_some(*operand)
+}
+
 /// Resolve Revolve axes selected through history-qualified analytic faces.
 pub(crate) fn bind_revolve_face_axes(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[DesignParameterScope],
     construction_groups: &[DesignConstructionOperandGroup],
     entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    face_operands: &[crate::records::DesignFaceOperand],
     faces: &[cadmpeg_ir::topology::Face],
     surfaces: &[cadmpeg_ir::geometry::Surface],
 ) {
@@ -4516,39 +4796,79 @@ pub(crate) fn bind_revolve_face_axes(
                     && operand.record_index == *member
             })
             .collect::<Vec<_>>();
-        let [selection] = selections.as_slice() else {
-            continue;
+        let entity_face_slot = match selections.as_slice() {
+            [selection] => selection
+                .historical_face_candidates
+                .first()
+                .map(|candidate| candidate.face_slot)
+                .filter(|slot| {
+                    selection
+                        .historical_face_candidates
+                        .iter()
+                        .all(|candidate| candidate.face_slot == *slot)
+                }),
+            _ => None,
         };
-        let Some(face_slot) = selection
-            .historical_face_candidates
-            .first()
-            .map(|candidate| candidate.face_slot)
-            .filter(|slot| {
-                selection
-                    .historical_face_candidates
+        let entity_axis = entity_face_slot.and_then(|face_slot| {
+            analytic_axis_for_face(
+                &cadmpeg_ir::ids::FaceId(ids::brep_entity_id(face_slot)),
+                faces,
+                surfaces,
+            )
+        });
+        let recipe_axis =
+            revolve_face_axis_operand(scope, group, *member, face_operands).and_then(|operand| {
+                let candidates =
+                    crate::design::face_resolve::historical_face_operand_candidates(operand);
+                let mut axes = candidates
                     .iter()
-                    .all(|candidate| candidate.face_slot == *slot)
-            })
-        else {
-            continue;
+                    .map(|face_id| analytic_axis_for_face(face_id, faces, surfaces));
+                let first = axes.next().flatten()?;
+                axes.all(|axis| {
+                    axis.is_some_and(|axis| {
+                        crate::history::same_axis_line(
+                            (first.origin, first.direction),
+                            (axis.origin, axis.direction),
+                        )
+                    })
+                })
+                .then_some(first)
+            });
+        construction.axis = match (entity_axis, recipe_axis) {
+            (Some(entity), Some(recipe))
+                if crate::history::same_axis_line(
+                    (entity.origin, entity.direction),
+                    (recipe.origin, recipe.direction),
+                ) =>
+            {
+                Some(entity)
+            }
+            (Some(axis), None) | (None, Some(axis)) => Some(axis),
+            _ => None,
         };
-        let face_id = cadmpeg_ir::ids::FaceId(ids::brep_entity_id(face_slot));
-        let matching_faces = faces
-            .iter()
-            .filter(|face| face.id == face_id)
-            .collect::<Vec<_>>();
-        let [face] = matching_faces.as_slice() else {
-            continue;
-        };
-        let matching_surfaces = surfaces
-            .iter()
-            .filter(|surface| surface.id == face.surface)
-            .collect::<Vec<_>>();
-        let [surface] = matching_surfaces.as_slice() else {
-            continue;
-        };
-        construction.axis = analytic_surface_axis(&surface.geometry);
     }
+}
+
+fn analytic_axis_for_face(
+    face_id: &cadmpeg_ir::ids::FaceId,
+    faces: &[cadmpeg_ir::topology::Face],
+    surfaces: &[cadmpeg_ir::geometry::Surface],
+) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+    let faces = faces
+        .iter()
+        .filter(|face| &face.id == face_id)
+        .collect::<Vec<_>>();
+    let [face] = faces.as_slice() else {
+        return None;
+    };
+    let surfaces = surfaces
+        .iter()
+        .filter(|surface| surface.id == face.surface)
+        .collect::<Vec<_>>();
+    let [surface] = surfaces.as_slice() else {
+        return None;
+    };
+    analytic_surface_axis(&surface.geometry)
 }
 
 fn analytic_surface_axis(

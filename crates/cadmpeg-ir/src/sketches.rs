@@ -93,6 +93,9 @@ pub struct Sketch {
     /// Source configuration key, when scoped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub configuration: Option<String>,
+    /// Source display visibility, when recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visible: Option<bool>,
     /// Placement of sketch coordinates in model space.
     pub placement: SketchPlacement,
     /// Ordered closed or open profile chains.
@@ -344,6 +347,9 @@ pub struct SpatialSketch {
     /// Source configuration key, when scoped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub configuration: Option<String>,
+    /// Source display visibility, when recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visible: Option<bool>,
     /// Ordered closed profile loops with profile-local planes.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub profiles: Vec<SpatialSketchProfile>,

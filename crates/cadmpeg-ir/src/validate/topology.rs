@@ -2332,6 +2332,14 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     .map(crate::ids::HistoricalEdgeId::as_str)
                     .collect::<Vec<_>>(),
             ),
+            (
+                "historical vertex",
+                state
+                    .vertices
+                    .iter()
+                    .map(crate::ids::HistoricalVertexId::as_str)
+                    .collect::<Vec<_>>(),
+            ),
         ] {
             let mut seen = HashSet::new();
             for member in members {
@@ -2514,6 +2522,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
         let mut paths = Vec::new();
         let mut edge_selections = Vec::new();
         let mut face_selections = Vec::new();
+        let mut vertex_selections = Vec::new();
         let mut body_selections = Vec::new();
         let definition = match &feature.definition {
             FeatureDefinition::PostProcess {
@@ -2542,6 +2551,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 v_axis,
                 bounds,
                 opacity,
+                ..
             } => {
                 if !asset_ids.contains(asset.0.as_str()) {
                     ref_error(findings, &feature.id.0, "reference-image asset", &asset.0);
@@ -2569,6 +2579,21 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         "reference-image placement is invalid",
                     );
                 }
+            }
+            FeatureDefinition::Decal {
+                asset,
+                faces,
+                opacity,
+                ..
+            } => {
+                if !asset_ids.contains(asset.0.as_str()) {
+                    ref_error(findings, &feature.id.0, "decal asset", &asset.0);
+                }
+                if opacity.is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
+                {
+                    feature_geometry_error(findings, feature, "decal opacity is invalid");
+                }
+                face_selections.push(faces);
             }
             FeatureDefinition::Block {
                 dimensions,
@@ -4330,14 +4355,167 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     feature_geometry_error(findings, feature, "datum-plane frame is invalid");
                 }
             }
+            FeatureDefinition::DatumThreePointPlane {
+                origin,
+                normal,
+                u_axis,
+                points,
+            } => {
+                let scale = normal.norm() * u_axis.norm();
+                if !finite_feature_point(*origin)
+                    || !valid_feature_direction(*normal)
+                    || !valid_feature_direction(*u_axis)
+                    || !scale.is_finite()
+                    || normal.dot(*u_axis).abs() > 1.0e-9 * scale
+                {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "three-point datum-plane frame is invalid",
+                    );
+                }
+                if same_vertex_target(&points[0], &points[1])
+                    || same_vertex_target(&points[0], &points[2])
+                    || same_vertex_target(&points[1], &points[2])
+                {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "three-point datum plane requires three distinct vertices",
+                    );
+                }
+                let mut historical_states = points.iter().filter_map(|point| match point {
+                    crate::features::VertexSelection::Historical { state, .. } => Some(state),
+                    _ => None,
+                });
+                if let Some(state) = historical_states.next() {
+                    if historical_states.any(|candidate| candidate != state) {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "three-point datum-plane vertices use different input topologies",
+                        );
+                    }
+                }
+                for point in points.iter() {
+                    vertex_selections.push((point, "three-point datum-plane"));
+                }
+            }
             FeatureDefinition::DatumAxis { origin, direction } => {
                 if !finite_feature_point(*origin) || !valid_feature_direction(*direction) {
                     feature_geometry_error(findings, feature, "datum-axis frame is invalid");
                 }
             }
-            FeatureDefinition::DatumPoint { position } => {
+            FeatureDefinition::DatumPoint {
+                position,
+                construction,
+            } => {
                 if !finite_feature_point(*position) {
                     feature_geometry_error(findings, feature, "datum-point position is invalid");
+                }
+                let mut plane_references = Vec::new();
+                if let Some(construction) = construction.as_deref() {
+                    match construction {
+                        crate::features::DatumPointConstruction::CircleCenter { edge }
+                        | crate::features::DatumPointConstruction::DistanceOnEdge {
+                            edge, ..
+                        } => edge_selections.push(edge),
+                        crate::features::DatumPointConstruction::TwoEdgeIntersection { edges } => {
+                            edge_selections.extend(edges);
+                        }
+                        crate::features::DatumPointConstruction::ThreePlaneIntersection {
+                            planes,
+                        } => plane_references.extend(planes.iter()),
+                        crate::features::DatumPointConstruction::Vertex { vertex } => {
+                            vertex_selections.push((vertex, "datum-point"));
+                        }
+                        crate::features::DatumPointConstruction::EdgePlaneIntersection {
+                            edge,
+                            plane,
+                        } => {
+                            edge_selections.push(edge);
+                            plane_references.push(plane);
+                        }
+                    }
+                    if matches!(
+                        construction,
+                        crate::features::DatumPointConstruction::DistanceOnEdge { fraction, .. }
+                            if !fraction.is_finite() || !(0.0..=1.0).contains(fraction)
+                    ) {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "datum-point path fraction is invalid",
+                        );
+                    }
+                }
+                for plane in plane_references {
+                    match plane {
+                        DatumPlaneReference::Feature(reference) => {
+                            match feature_records.get(reference.0.as_str()) {
+                                None => ref_error(
+                                    findings,
+                                    &feature.id.0,
+                                    "datum-point plane",
+                                    &reference.0,
+                                ),
+                                Some(record)
+                                    if !matches!(
+                                        record.definition,
+                                        FeatureDefinition::DatumPrincipalPlane { .. }
+                                            | FeatureDefinition::DatumPlane { .. }
+                                            | FeatureDefinition::DatumPlaneUnresolved
+                                            | FeatureDefinition::DatumOffsetPlane { .. }
+                                    ) =>
+                                {
+                                    feature_geometry_error(
+                                        findings,
+                                        feature,
+                                        "datum-point plane reference does not name a plane",
+                                    );
+                                }
+                                Some(record) if record.ordinal >= feature.ordinal => {
+                                    feature_geometry_error(
+                                        findings,
+                                        feature,
+                                        "datum-point plane does not precede the point",
+                                    );
+                                }
+                                Some(_) if !feature.dependencies.contains(reference) => {
+                                    findings.push(Finding {
+                                        check: Check::ReferentialIntegrity,
+                                        severity: Severity::Error,
+                                        message: format!(
+                                            "datum point omits plane feature `{}` from its dependencies",
+                                            reference.0
+                                        ),
+                                        entity: Some(feature.id.0.clone()),
+                                    });
+                                }
+                                Some(_) => {}
+                            }
+                        }
+                        DatumPlaneReference::Face {
+                            face,
+                            origin,
+                            normal,
+                            u_axis,
+                        } => {
+                            face_selections.push(face);
+                            if !finite_feature_point(*origin)
+                                || !valid_feature_direction(*normal)
+                                || !valid_feature_direction(*u_axis)
+                                || normal.dot(*u_axis).abs()
+                                    > 1.0e-9 * normal.norm() * u_axis.norm()
+                            {
+                                feature_geometry_error(
+                                    findings,
+                                    feature,
+                                    "datum-point plane support frame is invalid",
+                                );
+                            }
+                        }
+                    }
                 }
             }
             FeatureDefinition::DatumPrincipalPlane { .. }
@@ -4674,26 +4852,58 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     |identity| ids.faces(identity).is_some(),
                 );
             }
-            if let Termination::ToVertex {
-                vertex: crate::features::VertexSelection::Generated { vertex, native },
-            } = termination
-            {
-                if native.trim().is_empty()
-                    || vertex.local_id.trim().is_empty()
-                    || features
-                        .get(vertex.feature.0.as_str())
-                        .is_none_or(|ordinal| *ordinal >= feature.ordinal)
-                    || !feature.dependencies.contains(&vertex.feature)
-                    || result_topologies_by_feature
-                        .get(vertex.feature.as_str())
-                        .is_some_and(|state| !state.vertices.contains(&vertex.local_id))
-                {
+            if let Termination::ToVertex { vertex } = termination {
+                vertex_selections.push((vertex, "termination"));
+            }
+        }
+        for (selection, consumer) in vertex_selections {
+            match selection {
+                crate::features::VertexSelection::Generated { vertex, native } => {
+                    if native.trim().is_empty()
+                        || vertex.local_id.trim().is_empty()
+                        || features
+                            .get(vertex.feature.0.as_str())
+                            .is_none_or(|ordinal| *ordinal >= feature.ordinal)
+                        || !feature.dependencies.contains(&vertex.feature)
+                        || result_topologies_by_feature
+                            .get(vertex.feature.as_str())
+                            .is_some_and(|state| !state.vertices.contains(&vertex.local_id))
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            &format!("generated {consumer} vertex is invalid"),
+                        );
+                    }
+                }
+                crate::features::VertexSelection::Historical {
+                    state,
+                    vertex,
+                    native,
+                } => check_historical_selection(
+                    findings,
+                    &feature.id,
+                    (state, std::iter::once(vertex.as_str()), native),
+                    "vertex",
+                    false,
+                    &input_topologies,
+                    |topology| {
+                        topology
+                            .vertices
+                            .iter()
+                            .map(crate::ids::HistoricalVertexId::as_str)
+                            .collect()
+                    },
+                ),
+                crate::features::VertexSelection::Native(native) if native.trim().is_empty() => {
                     feature_geometry_error(
                         findings,
                         feature,
-                        "generated termination vertex is invalid",
+                        &format!("native {consumer} vertex is invalid"),
                     );
                 }
+                crate::features::VertexSelection::Unresolved
+                | crate::features::VertexSelection::Native(_) => {}
             }
         }
         for selection in edge_selections {
@@ -5072,6 +5282,35 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
     }
 }
 
+fn same_vertex_target(
+    first: &crate::features::VertexSelection,
+    second: &crate::features::VertexSelection,
+) -> bool {
+    use crate::features::VertexSelection;
+
+    match (first, second) {
+        (
+            VertexSelection::Generated { vertex: first, .. },
+            VertexSelection::Generated { vertex: second, .. },
+        ) => first == second,
+        (
+            VertexSelection::Historical {
+                state: first_state,
+                vertex: first_vertex,
+                ..
+            },
+            VertexSelection::Historical {
+                state: second_state,
+                vertex: second_vertex,
+                ..
+            },
+        ) => first_state == second_state && first_vertex == second_vertex,
+        (VertexSelection::Native(first), VertexSelection::Native(second)) => first == second,
+        (VertexSelection::Unresolved, VertexSelection::Unresolved) => true,
+        _ => false,
+    }
+}
+
 fn check_historical_selection<'a, I, F>(
     findings: &mut Vec<Finding>,
     feature: &crate::features::FeatureId,
@@ -5206,6 +5445,18 @@ fn regeneration_references(
             ..
         } => {
             references.insert(reference);
+        }
+        crate::features::FeatureDefinition::DatumPoint {
+            construction: Some(construction),
+            ..
+        } => references.extend(construction.feature_references()),
+        crate::features::FeatureDefinition::DatumThreePointPlane { points, .. } => {
+            references.extend(points.iter().filter_map(|point| match point {
+                crate::features::VertexSelection::Generated { vertex, .. } => Some(&vertex.feature),
+                crate::features::VertexSelection::Historical { .. }
+                | crate::features::VertexSelection::Native(_)
+                | crate::features::VertexSelection::Unresolved => None,
+            }));
         }
         crate::features::FeatureDefinition::DerivedGeometry { source: reference }
         | crate::features::FeatureDefinition::SketchBlockInstance {

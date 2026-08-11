@@ -3497,7 +3497,7 @@ fn transfers_datum_frames_from_persisted_placements() {
     ));
     assert!(matches!(
         definition("Point"),
-        cadmpeg_ir::features::FeatureDefinition::DatumPoint { position }
+        cadmpeg_ir::features::FeatureDefinition::DatumPoint { position, .. }
             if *position == cadmpeg_ir::math::Point3::new(7.0, 8.0, 9.0)
     ));
     assert!(matches!(

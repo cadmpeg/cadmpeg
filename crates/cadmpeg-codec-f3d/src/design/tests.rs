@@ -25,7 +25,8 @@ use crate::design::decode::operands::{
     parse_construction_operand_path, parse_construction_operand_transform,
     parse_construction_tracking_path, parse_edge_operand, parse_entity_selection_operand,
     parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
-    parse_sketch_profile, ConstructionOperandGroupParse, FaceRecipeProgramKind,
+    parse_sketch_profile, parse_vertex_recipe, ConstructionOperandGroupParse,
+    FaceRecipeProgramKind,
 };
 use crate::design::decode::parameters::{
     bind_parameter_companion_payloads, design_parameter_discriminator, parse_design_parameter,
@@ -42,7 +43,8 @@ use crate::design::decode::scopes::{
     exact_ruled_surface_operation, exact_scale_operation, exact_solid_primitive,
     exact_surface_extend_operation, exact_surface_offset_operation, exact_surface_stitch_operation,
     exact_thread_construction, exact_work_axis_construction, exact_work_plane_frame,
-    exact_work_point_position, parse_parameter_scope, parse_thread_payload,
+    exact_work_point_construction, parse_parameter_scope, parse_thread_payload,
+    select_circular_pattern_axis,
 };
 use crate::design::decode::sketch::{
     bind_sketch_graph, decode_constraint_kinds, decode_pattern_definition, identity_matrix,
@@ -58,7 +60,8 @@ use crate::design::dimensions::{
     null_locus_dimension_definition, offset_parameter_factor,
     owner_scoped_angular_dimension_definition, owner_scoped_line_length_dimension_definition,
     owner_scoped_radial_dimension_definition, point_lies_on_sketch_geometry,
-    radial_dimension_definition, radial_locus_dimension_definition,
+    preceding_incident_angular_dimension_definition, radial_dimension_definition,
+    radial_extension_annotation_group, radial_locus_dimension_definition,
     remove_dimension_frame_relations, repeated_linear_dimension,
     spatial_counted_offset_dimension_definition, spatial_parallel_line_distance_matches,
     spatial_point_distance_matches, two_locus_distance_dimension,
@@ -354,6 +357,10 @@ fn sketch_surface_parser_recovers_tensor_product_grid() {
 #[test]
 fn feature_family_tokens_are_localized() {
     assert_eq!(
+        design_feature_family("As-built"),
+        Some(DesignFeatureFamily::Assemble)
+    );
+    assert_eq!(
         design_feature_family("Esquisse"),
         Some(DesignFeatureFamily::Sketch)
     );
@@ -428,6 +435,9 @@ fn feature_family_tokens_are_localized() {
     assert!(crate::design::decode::operands::has_edge_recipe_operands(
         "SurfacePatch"
     ));
+    assert!(crate::design::decode::operands::has_edge_recipe_operands(
+        "WorkPoint"
+    ));
     assert_eq!(
         design_feature_family("SurfaceRuled"),
         Some(DesignFeatureFamily::SurfaceRuled)
@@ -487,7 +497,17 @@ fn dispatcher_projects_datum_feature_scopes() {
 
     let mut work_point =
         DesignParameterScope::empty("f3d:native:parameter-scope#3", "WorkPoint", 3);
-    work_point.work_point_position = Some([4.0, 5.0, 6.0]);
+    work_point.work_point_construction = Some(crate::records::DesignWorkPointConstruction {
+        point_record_index: 4,
+        point_record_byte_offset: 0,
+        position: [4.0, 5.0, 6.0],
+        position_offset: 0,
+        rule: crate::records::DesignWorkPointRule::Native {
+            reference_type: 1,
+            inputs: Vec::new(),
+        },
+        reference_type_offset: 0,
+    });
 
     let scopes = vec![joint_origin, work_plane, work_point];
     let (features, _) = project_parameter_design(&[], &[], &scopes, &[], &[], &[], &[], &[]);
@@ -509,9 +529,250 @@ fn dispatcher_projects_datum_feature_scopes() {
     ));
     assert!(matches!(
         &features[2].definition,
-        FeatureDefinition::DatumPoint { position }
-            if *position == Point3::new(40.0, 50.0, 60.0)
+        FeatureDefinition::DatumPoint { position, construction }
+            if *position == Point3::new(40.0, 50.0, 60.0) && construction.is_none()
     ));
+}
+
+#[test]
+fn dispatcher_projects_three_point_work_plane_vertices() {
+    use crate::records::{DesignVertexRecipe, DesignWorkPlaneConstruction};
+    use cadmpeg_ir::features::VertexSelection;
+
+    let recipe = |record_index, vertex| DesignVertexRecipe {
+        record_index,
+        byte_offset: u64::from(record_index),
+        class_tag: "306".into(),
+        paired_byte_offset: 1,
+        paired_class_tag: "261".into(),
+        recipe_record_index: record_index + 3,
+        recipe_record_byte_offset: 2,
+        recipe_id: format!("f3d:native:construction-recipe#{record_index}"),
+        recipe_prefix_offset: 3,
+        recipe_prefix_bytes: Vec::new(),
+        recipe_references: Vec::new(),
+        recipe_program_offset: 4,
+        recipe_program: vec![0],
+        recipe_state_id: Some(4),
+        resolved_vertex_slot: Some(vertex),
+        next_record_index: record_index + 5,
+        next_byte_offset: 5,
+    };
+    let mut plane = DesignParameterScope::empty("f3d:native:parameter-scope#20", "WorkPlane", 20);
+    plane.work_plane_transform = Some(identity_matrix());
+    plane.work_plane_construction = Some(DesignWorkPlaneConstruction::ThreePoint {
+        placement_record_index: 21,
+        inputs: Box::new([recipe(22, 43), recipe(27, 64), recipe(32, 84)]),
+    });
+
+    let (features, _) = project_parameter_design(&[], &[], &[plane], &[], &[], &[], &[], &[]);
+    let FeatureDefinition::DatumThreePointPlane { points, .. } = &features[0].definition else {
+        panic!("three-point datum plane")
+    };
+    assert!(matches!(
+        points.as_ref(),
+        [
+            VertexSelection::Historical { vertex: first, .. },
+            VertexSelection::Historical { vertex: second, .. },
+            VertexSelection::Historical { vertex: third, .. },
+        ] if first.0.ends_with(":43") && second.0.ends_with(":64") && third.0.ends_with(":84")
+    ));
+}
+
+#[test]
+fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
+    use crate::records::{
+        DesignWorkPointConstruction, DesignWorkPointInput, DesignWorkPointInputCarrier,
+        DesignWorkPointPlaneSelection, DesignWorkPointRule,
+    };
+    use cadmpeg_ir::features::{DatumPlaneReference, DatumPointConstruction};
+
+    let planes = [10, 20, 30].map(|record_index| {
+        let id = format!("f3d:native:parameter-scope#{record_index}");
+        let mut scope = DesignParameterScope::empty(&id, "WorkPlane", record_index);
+        scope.work_plane_transform = Some(identity_matrix());
+        scope
+    });
+    let input = |record_index, work_plane_scope_record_index| DesignWorkPointInput {
+        record_index,
+        reference_offset: u64::from(record_index),
+        carrier: Some(Box::new(DesignWorkPointInputCarrier::WorkPlane {
+            selection: DesignWorkPointPlaneSelection {
+                class_tag: "267".into(),
+                asset_id: "00000000-0000-0000-0000-000000000001".into(),
+                asset_id_offset: 1,
+                context_id: "00000000-0000-0000-0000-000000000002".into(),
+                context_id_offset: 2,
+                identity_record_index: record_index + 3,
+                identity_record_offset: 3,
+                primary_identity: u64::from(work_plane_scope_record_index - 1),
+                primary_identity_offset: 24,
+                work_plane_scope_record_index,
+                next_record_index: record_index + 4,
+                next_byte_offset: 32,
+            },
+        })),
+    };
+    let mut point = DesignParameterScope::empty("f3d:native:parameter-scope#40", "WorkPoint", 40);
+    point.work_point_construction = Some(DesignWorkPointConstruction {
+        point_record_index: 41,
+        point_record_byte_offset: 0,
+        position: [1.0, 2.0, 3.0],
+        position_offset: 0,
+        rule: DesignWorkPointRule::ThreePlaneIntersection {
+            inputs: [input(42, 10), input(46, 20), input(50, 30)],
+        },
+        reference_type_offset: 0,
+    });
+    let mut scopes = planes.to_vec();
+    scopes.push(point);
+
+    let (features, _) = project_parameter_design(&[], &[], &scopes, &[], &[], &[], &[], &[]);
+    let point = features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some("f3d:native:parameter-scope#40"))
+        .expect("projected work point");
+    let FeatureDefinition::DatumPoint {
+        construction: Some(construction),
+        ..
+    } = &point.definition
+    else {
+        panic!("typed datum-point construction");
+    };
+    let DatumPointConstruction::ThreePlaneIntersection { planes } = construction.as_ref() else {
+        panic!("three-plane construction");
+    };
+    let plane_features = planes
+        .iter()
+        .map(|plane| match plane {
+            DatumPlaneReference::Feature(feature) => feature.clone(),
+            DatumPlaneReference::Face { .. } => panic!("feature-backed plane"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(point.dependencies, plane_features);
+}
+
+#[test]
+fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
+    use crate::records::{
+        DesignVertexRecipe, DesignWorkPointConstruction, DesignWorkPointInput,
+        DesignWorkPointInputCarrier, DesignWorkPointRule,
+    };
+    use cadmpeg_ir::features::{DatumPointConstruction, VertexSelection};
+
+    let mut predecessor =
+        DesignParameterScope::empty("f3d:native:parameter-scope#10", "Extrude", 10);
+    predecessor.history_state_id = Some(4);
+    let recipe_id = "f3d:native:construction-recipe#vertex".to_string();
+    let recipe = DesignVertexRecipe {
+        record_index: 12,
+        byte_offset: 0,
+        class_tag: "369".into(),
+        paired_byte_offset: 1,
+        paired_class_tag: "261".into(),
+        recipe_record_index: 23,
+        recipe_record_byte_offset: 2,
+        recipe_id: recipe_id.clone(),
+        recipe_prefix_offset: 3,
+        recipe_prefix_bytes: Vec::new(),
+        recipe_references: Vec::new(),
+        recipe_program_offset: 4,
+        recipe_program: vec![0],
+        recipe_state_id: Some(4),
+        resolved_vertex_slot: Some(43),
+        next_record_index: 25,
+        next_byte_offset: 5,
+    };
+    let mut point = DesignParameterScope::empty("f3d:native:parameter-scope#20", "WorkPoint", 20);
+    point.work_point_construction = Some(DesignWorkPointConstruction {
+        point_record_index: 21,
+        point_record_byte_offset: 0,
+        position: [4.0, 3.0, 0.0],
+        position_offset: 0,
+        rule: DesignWorkPointRule::Vertex {
+            input: DesignWorkPointInput {
+                record_index: 22,
+                reference_offset: 0,
+                carrier: Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
+                    recipe,
+                })),
+            },
+        },
+        reference_type_offset: 0,
+    });
+    let timeline = DesignFeatureTimeline {
+        id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:native", 0),
+        byte_offset: 0,
+        class_tag: "256".into(),
+        record_index: 1,
+        source_ordinal: 0,
+        frame_length: 0,
+        context_record_index: 1,
+        context_record_index_offset: 0,
+        item_count_offset: 0,
+        item_record_indices: vec![10, 20],
+        item_record_index_offsets: vec![0, 0],
+    };
+    let scopes = [predecessor, point];
+    let (features, _) = project_parameter_design_with_edge_identities(
+        &crate::design::feature_project::ProjectInputs {
+            native: &[],
+            owners: &[],
+            scopes: &scopes,
+            timelines: std::slice::from_ref(&timeline),
+            construction_groups: &[],
+            fillet_radius_groups: &[],
+            edge_operands: &[],
+            edge_identity_operands: &[],
+            entity_selection_operands: &[],
+            curve_identities: &[],
+            face_operands: &[],
+            body_recipe_operands: &[],
+            placements: &[],
+            body_bindings: &[],
+            histories: &[],
+        },
+    )
+    .expect("authored WorkPoint timeline");
+    let predecessor = features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(&scopes[0].id))
+        .expect("projected predecessor");
+    let point = features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(&scopes[1].id))
+        .expect("projected WorkPoint");
+    let FeatureDefinition::DatumPoint {
+        construction: Some(construction),
+        ..
+    } = &point.definition
+    else {
+        panic!("typed datum-point construction")
+    };
+    let DatumPointConstruction::Vertex {
+        vertex:
+            VertexSelection::Historical {
+                state,
+                vertex,
+                native,
+            },
+    } = construction.as_ref()
+    else {
+        panic!("historical vertex construction")
+    };
+    let feature_key = point
+        .id
+        .0
+        .split_once('#')
+        .map_or(point.id.0.as_str(), |(_, key)| key);
+    let prefix = crate::ids::history_input_prefix(feature_key, 4);
+    assert_eq!(
+        state,
+        &crate::design::edge_resolve::feature_input_topology_id(&point.id, 4)
+    );
+    assert_eq!(vertex, &crate::ids::history_input_vertex_id(&prefix, 43));
+    assert_eq!(native, &recipe_id);
+    assert_eq!(point.dependencies, [predecessor.id.clone()]);
 }
 
 #[test]
@@ -696,6 +957,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         scope_record_index: None,
         entity_id: format!("{stream}:sketch#7"),
         entity_suffix: 7,
+        visibility: None,
         byte_offset: 0,
         class_tag: "264".into(),
         record_index: 700,
@@ -1552,6 +1814,7 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(10.0, 20.0, 5.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -2058,6 +2321,7 @@ fn inserted_cylinder_selects_its_exact_circular_sketch_profile() {
         id: sketch_id,
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -2307,6 +2571,7 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
         id: sketch_id,
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -4036,6 +4301,109 @@ fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
 }
 
 #[test]
+fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
+    let stream = "f3d:A";
+    let sketch = SketchId("f3d:model:sketch#angular-incidence".into());
+    let curve = |record_index, byte_offset, angle: f64| SketchCurveIdentity {
+        id: format!("{stream}:sketch-curve#{record_index}"),
+        record_index,
+        owner_reference: Some(100),
+        class_tag: "301".into(),
+        byte_offset,
+        geometry_offset: 0,
+        entity_genesis: None,
+        primary_id: u64::from(record_index),
+        secondary_id: 0,
+        geometry: Some(SketchCurveGeometry::Line {
+            start: Point3::new(0.0, 0.0, 0.0),
+            end: Point3::new(angle.cos(), angle.sin(), 0.0),
+            direction: Vector3::new(angle.cos(), angle.sin(), 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+        }),
+    };
+    let curves = vec![
+        curve(10, 10, 0.0),
+        curve(11, 20, 3.0 * std::f64::consts::FRAC_PI_4),
+        curve(12, 110, std::f64::consts::FRAC_PI_2),
+        curve(13, 120, -std::f64::consts::FRAC_PI_4),
+    ];
+    let point = |record_index, byte_offset, incident_curves| SketchPoint {
+        id: format!("{stream}:sketch-point#{record_index}"),
+        record_index,
+        owner_reference: Some(100),
+        class_tag: "300".into(),
+        byte_offset,
+        coordinate_offset: 0,
+        entity_genesis: None,
+        record_form: crate::records::SketchPointRecordForm::default(),
+        persistent_id: Some(u64::from(record_index)),
+        paired_reference: 0,
+        flags: [0; 8],
+        coordinates: Point2::new(0.0, 0.0),
+        depth: 0.0,
+        closure: None,
+        companion: Some(crate::records::SketchPointCompanion {
+            prefix_present_zero: false,
+            reference_encoding: Default::default(),
+            incident_curves,
+        }),
+    };
+    let points = vec![point(20, 30, vec![10, 11]), point(21, 130, vec![12, 13])];
+    let entity = |record_index, angle: f64| SketchEntity {
+        id: SketchEntityId(format!("f3d:model:sketch-entity#line-{record_index}")),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(angle.cos(), angle.sin()),
+        },
+    };
+    let entities = [
+        entity(10, 0.0),
+        entity(11, 3.0 * std::f64::consts::FRAC_PI_4),
+        entity(12, std::f64::consts::FRAC_PI_2),
+        entity(13, -std::f64::consts::FRAC_PI_4),
+    ];
+    let projected = HashMap::from([
+        ((stream, 10), &entities[0]),
+        ((stream, 11), &entities[1]),
+        ((stream, 12), &entities[2]),
+        ((stream, 13), &entities[3]),
+    ]);
+    let mut parameter = parse_design_parameter(&parameter_record(
+        Some(1),
+        "135 deg",
+        "Angular Dimension-2",
+        Some("deg"),
+        "d1",
+        3.0 * std::f64::consts::FRAC_PI_4,
+    ))
+    .expect("angular parameter");
+    parameter.byte_offset = 100;
+    let parameter_id = ParameterId("parameter#angle".into());
+
+    assert!(matches!(
+        preceding_incident_angular_dimension_definition(
+            stream,
+            &points,
+            &curves,
+            &projected,
+            &sketch,
+            &parameter,
+            &parameter_id,
+        ),
+        Some(SketchConstraintDefinition::Angle {
+            first,
+            second,
+            parameter,
+        }) if first == entities[0].id && second == entities[1].id && parameter == parameter_id
+    ));
+}
+
+#[test]
 fn owner_scoped_point_dimensions_quotient_coincident_identities() {
     let sketch = SketchId("f3d:model:sketch#point-classes".into());
     let point = |name: &str, u: f64, v: f64| SketchEntity {
@@ -4160,6 +4528,64 @@ fn radial_locus_groups_use_direct_curves_then_unique_center_witnesses() {
             &parameter,
         ),
         Some(SketchConstraintDefinition::Diameter { entity, .. }) if entity == measured.id
+    ));
+}
+
+#[test]
+fn radial_extension_annotations_require_a_point_on_the_line_carrier() {
+    let sketch = SketchId("f3d:model:sketch#radial-extension".into());
+    let entity = |id: &str, geometry| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry,
+    };
+    let line = entity(
+        "line",
+        SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(6.0, 0.0),
+        },
+    );
+    let extension_point = entity(
+        "extension-point",
+        SketchGeometry::Point {
+            position: Point2::new(6.5, 0.0),
+        },
+    );
+    let off_carrier = entity(
+        "off-carrier",
+        SketchGeometry::Point {
+            position: Point2::new(6.5, 0.25),
+        },
+    );
+    let parameter = parse_design_parameter(&parameter_record(
+        Some(1),
+        "5 mm",
+        "Radial Dimension-2",
+        Some("mm"),
+        "d1",
+        0.5,
+    ))
+    .expect("radial parameter");
+
+    assert!(radial_extension_annotation_group(
+        &[&extension_point, &line],
+        &parameter,
+    ));
+    assert!(!radial_extension_annotation_group(
+        &[&off_carrier, &line],
+        &parameter,
+    ));
+
+    let mut linear = parameter;
+    linear.source_kind = "Linear Dimension-2".into();
+    assert!(!radial_extension_annotation_group(
+        &[&extension_point, &line],
+        &linear,
     ));
 }
 
@@ -4388,7 +4814,7 @@ fn work_point_direct_record_carries_model_space_position() {
     };
     let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
         .expect("WorkPoint scope");
-    let frame = exact_work_point_position(
+    let frame = exact_work_point_construction(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
         &scope,
@@ -4397,12 +4823,12 @@ fn work_point_direct_record_carries_model_space_position() {
     .expect("work point frame");
     assert_eq!(frame.position, [1.25, -2.5, 3.75]);
     assert_eq!(frame.position_offset, position_at as u64);
-    assert_eq!(frame.reference_type, 7);
-    assert_eq!(frame.input_record_indices, [56, 57]);
+    assert_eq!(frame.rule.reference_type(), 7);
+    assert_eq!(work_point_input_indices(&frame.rule), [56, 57]);
     bytes[point_at + 66..point_at + 70].copy_from_slice(&1u32.to_le_bytes());
     bytes[point_at + 94..point_at + 98].copy_from_slice(&1u32.to_le_bytes());
     bytes.drain(point_at + 197..point_at + 208);
-    let frame = exact_work_point_position(
+    let frame = exact_work_point_construction(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
         &scope,
@@ -4411,8 +4837,8 @@ fn work_point_direct_record_carries_model_space_position() {
     .expect("work point frame");
     assert_eq!(frame.position, [1.25, -2.5, 3.75]);
     assert_eq!(frame.position_offset, position_at as u64);
-    assert_eq!(frame.reference_type, 1);
-    assert_eq!(frame.input_record_indices, [56]);
+    assert_eq!(frame.rule.reference_type(), 1);
+    assert_eq!(work_point_input_indices(&frame.rule), [56]);
 }
 
 #[test]
@@ -4473,27 +4899,34 @@ fn work_point_input_count_frames_the_rule_inputs() {
     };
     let records = IndexedRecordOffsets::build(&bytes);
     let scope = parse_parameter_scope(&bytes, &records, &header).expect("WorkPoint scope");
-    let frame = exact_work_point_position(&bytes, &records, &scope, &HashMap::new())
+    let frame = exact_work_point_construction(&bytes, &records, &scope, &HashMap::new())
         .expect("work point frame");
-    assert_eq!(frame.reference_type, 18);
-    assert_eq!(frame.input_record_indices, [56, 57]);
+    assert_eq!(frame.rule.reference_type(), 18);
+    assert_eq!(work_point_input_indices(&frame.rule), [56, 57]);
 
     bytes[count_at..count_at + 4].copy_from_slice(&1u32.to_le_bytes());
     let records = IndexedRecordOffsets::build(&bytes);
-    let frame = exact_work_point_position(&bytes, &records, &scope, &HashMap::new())
+    let frame = exact_work_point_construction(&bytes, &records, &scope, &HashMap::new())
         .expect("work point frame");
-    assert_eq!(frame.reference_type, 18);
-    assert_eq!(frame.input_record_indices, [56]);
+    assert_eq!(frame.rule.reference_type(), 18);
+    assert_eq!(work_point_input_indices(&frame.rule), [56]);
 
     // A rule above the values the shipped range check admitted still names a
     // coordinate when its input arity agrees.
     bytes[position_at + 24..position_at + 28].copy_from_slice(&64u32.to_le_bytes());
     let records = IndexedRecordOffsets::build(&bytes);
-    let frame = exact_work_point_position(&bytes, &records, &scope, &HashMap::new())
+    let frame = exact_work_point_construction(&bytes, &records, &scope, &HashMap::new())
         .expect("work point frame");
     assert_eq!(frame.position, [4.0, 5.0, 6.0]);
-    assert_eq!(frame.reference_type, 64);
-    assert_eq!(frame.input_record_indices, [56]);
+    assert_eq!(frame.rule.reference_type(), 64);
+    assert_eq!(work_point_input_indices(&frame.rule), [56]);
+}
+
+fn work_point_input_indices(rule: &crate::records::DesignWorkPointRule) -> Vec<u32> {
+    rule.inputs()
+        .iter()
+        .map(|input| input.record_index)
+        .collect()
 }
 
 #[test]
@@ -6770,6 +7203,50 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             opposite_angle_offset: None,
         })
     );
+    legacy_revolve_scope.class_tag = "323".into();
+    legacy_revolve_scope.paired_class_tag = "260".into();
+    legacy_revolve_scope.frame_length = 381;
+    legacy_revolve_scope.reference_members =
+        vec![legacy_angle_record_index, 200, 201, 202, 203, 204, 205, 206];
+    assert_eq!(
+        exact_path_feature_construction(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &legacy_revolve_scope,
+            std::slice::from_ref(&legacy_angle),
+        ),
+        Some(DesignPathFeatureConstruction::Revolve {
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: (legacy_revolve_start + 25) as u64,
+            angle: std::f64::consts::TAU,
+            angle_record_index: legacy_angle_record_index,
+            angle_offset: 55,
+            opposite_angle_record_index: None,
+            opposite_angle_offset: None,
+        })
+    );
+    legacy_revolve_scope.class_tag = "385".into();
+    legacy_revolve_scope.paired_class_tag = "262".into();
+    legacy_revolve_scope.frame_length = 369;
+    legacy_revolve_scope.reference_members =
+        vec![200, 201, 202, 203, legacy_angle_record_index, 204];
+    assert_eq!(
+        exact_path_feature_construction(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &legacy_revolve_scope,
+            std::slice::from_ref(&legacy_angle),
+        ),
+        Some(DesignPathFeatureConstruction::Revolve {
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: (legacy_revolve_start + 25) as u64,
+            angle: std::f64::consts::TAU,
+            angle_record_index: legacy_angle_record_index,
+            angle_offset: 55,
+            opposite_angle_record_index: None,
+            opposite_angle_offset: None,
+        })
+    );
     revolve_scope.id = "stream:scope".into();
     revolve_scope.path_feature_construction = revolve_construction;
     let mut revolve_profile = thicken_group.clone();
@@ -6783,6 +7260,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         crate::design::feature_project::project_fixed_revolve_with_entities(
             &revolve_scope,
             &[revolve_profile, revolve_axis],
+            &[],
             &[],
             &[],
             &[],
@@ -6838,6 +7316,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         scope_record_index: Some(10),
         entity_id: "Sketch_100".into(),
         entity_suffix: 100,
+        visibility: None,
         byte_offset: 0,
         class_tag: "305".into(),
         record_index: 904,
@@ -6878,6 +7357,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         ],
         &[],
         std::slice::from_ref(&axis_selection),
+        &[],
         &[axis_placement],
         &[axis_curve],
     );
@@ -6907,10 +7387,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             &[
                 indexed_profile.clone(),
                 indexed_axis.clone(),
-                indexed_bodies,
+                indexed_bodies.clone(),
             ],
             &[],
             std::slice::from_ref(&axis_selection),
+            &[],
             &[],
             &[],
         )
@@ -6941,8 +7422,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     crate::design::feature_project::bind_revolve_face_axes(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&indexed_revolve_scope),
-        &[indexed_profile, indexed_axis],
+        &[indexed_profile.clone(), indexed_axis.clone()],
         std::slice::from_ref(&axis_selection),
+        &[],
         &[cadmpeg_ir::topology::Face {
             id: cadmpeg_ir::ids::FaceId("f3d:brep:entity#40".into()),
             shell: cadmpeg_ir::ids::ShellId("shell:1".into()),
@@ -6973,6 +7455,150 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             ..
         } if origin == Point3::new(4.0, 5.0, 6.0)
             && direction == Vector3::new(0.0, 0.0, -1.0)
+    ));
+
+    let face_axis_operand = DesignFaceOperand {
+        id: "stream:indexed-face-axis".into(),
+        scope_record_index: indexed_revolve_scope.record_index,
+        scope_reference_ordinal: 2,
+        group_record_index: Some(indexed_axis.record_index),
+        group_member_ordinal: Some(0),
+        record_index: 900,
+        byte_offset: 0,
+        class_tag: "256".into(),
+        paired_byte_offset: 0,
+        paired_class_tag: "262".into(),
+        recipe_record_index: 903,
+        recipe_record_byte_offset: 0,
+        recipe_id: "stream:indexed-face-axis-recipe".into(),
+        recipe_prefix_offset: 0,
+        recipe_prefix_bytes: Vec::new(),
+        recipe_references: Vec::new(),
+        recipe_kind: ConstructionRecipeKind::Face,
+        recipe_program_offset: 0,
+        recipe_program: vec![0, -1],
+        recipe_node_offsets: Vec::new(),
+        recipe_nodes: Vec::new(),
+        candidate_faces: vec![
+            cadmpeg_ir::ids::FaceId("face:axis-a".into()),
+            cadmpeg_ir::ids::FaceId("face:axis-b".into()),
+        ],
+        unreferenced_candidate_faces: Vec::new(),
+        alternate_selector_candidate_faces: Vec::new(),
+        preceding_candidate_faces: Vec::new(),
+        changed_candidate_faces: Vec::new(),
+        historical_support_contexts: Vec::new(),
+        resolved_face_slots: Vec::new(),
+        next_record_index: 905,
+        next_byte_offset: 0,
+    };
+    let face_axis_definition = crate::design::feature_project::project_fixed_revolve_with_entities(
+        &indexed_revolve_scope,
+        &[
+            indexed_profile.clone(),
+            indexed_axis.clone(),
+            indexed_bodies,
+        ],
+        &[],
+        &[],
+        std::slice::from_ref(&face_axis_operand),
+        &[],
+        &[],
+    )
+    .expect("face-recipe axis retains a neutral Revolve before geometry binding");
+    let mut face_axis_feature = cadmpeg_ir::features::Feature {
+        definition: face_axis_definition.clone(),
+        ..feature.clone()
+    };
+    let axis_faces = [
+        cadmpeg_ir::topology::Face {
+            id: cadmpeg_ir::ids::FaceId("face:axis-a".into()),
+            shell: cadmpeg_ir::ids::ShellId("shell:axis".into()),
+            surface: cadmpeg_ir::ids::SurfaceId("surface:axis-a".into()),
+            sense: cadmpeg_ir::topology::Sense::Forward,
+            loops: Vec::new(),
+            name: None,
+            color: None,
+            tolerance: None,
+        },
+        cadmpeg_ir::topology::Face {
+            id: cadmpeg_ir::ids::FaceId("face:axis-b".into()),
+            shell: cadmpeg_ir::ids::ShellId("shell:axis".into()),
+            surface: cadmpeg_ir::ids::SurfaceId("surface:axis-b".into()),
+            sense: cadmpeg_ir::topology::Sense::Forward,
+            loops: Vec::new(),
+            name: None,
+            color: None,
+            tolerance: None,
+        },
+    ];
+    let mut axis_surfaces = [
+        cadmpeg_ir::geometry::Surface {
+            id: cadmpeg_ir::ids::SurfaceId("surface:axis-a".into()),
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
+                origin: Point3::new(1.0, 2.0, 3.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                radius: 4.0,
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+        cadmpeg_ir::geometry::Surface {
+            id: cadmpeg_ir::ids::SurfaceId("surface:axis-b".into()),
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
+                origin: Point3::new(1.0, 2.0, 8.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                radius: 5.0,
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+    ];
+    crate::design::feature_project::bind_revolve_face_axes(
+        std::slice::from_mut(&mut face_axis_feature),
+        std::slice::from_ref(&indexed_revolve_scope),
+        &[indexed_profile.clone(), indexed_axis.clone()],
+        &[],
+        std::slice::from_ref(&face_axis_operand),
+        &axis_faces,
+        &axis_surfaces,
+    );
+    assert!(matches!(
+        face_axis_feature.definition,
+        FeatureDefinition::Revolve {
+            construction: cadmpeg_ir::features::RevolutionConstruction {
+                axis: Some(cadmpeg_ir::features::RevolutionAxis { origin, direction }),
+                ..
+            },
+            ..
+        } if origin == Point3::new(1.0, 2.0, 3.0)
+            && direction == Vector3::new(0.0, 0.0, 1.0)
+    ));
+    let mut conflicting_face_axis_feature = cadmpeg_ir::features::Feature {
+        definition: face_axis_definition,
+        ..feature
+    };
+    axis_surfaces[1].geometry = cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
+        origin: Point3::new(2.0, 2.0, 8.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        radius: 5.0,
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+    };
+    crate::design::feature_project::bind_revolve_face_axes(
+        std::slice::from_mut(&mut conflicting_face_axis_feature),
+        std::slice::from_ref(&indexed_revolve_scope),
+        &[indexed_profile, indexed_axis],
+        &[],
+        std::slice::from_ref(&face_axis_operand),
+        &axis_faces,
+        &axis_surfaces,
+    );
+    assert!(matches!(
+        conflicting_face_axis_feature.definition,
+        FeatureDefinition::Revolve {
+            construction: cadmpeg_ir::features::RevolutionConstruction { axis: None, .. },
+            ..
+        }
     ));
 
     let loft_start = bytes.len();
@@ -8185,8 +8811,10 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         bytes.extend_from_slice(&12u32.to_le_bytes());
         bytes.resize(120, 0);
         bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
+        let legacy_operation_marker = legacy_side_extents.is_some() && reference_marker;
+        let legacy_field_shift = usize::from(legacy_operation_marker);
         let operation_offset = if legacy_side_extents.is_some() {
-            27
+            27 + legacy_field_shift
         } else if let Some(reference_padding) = reference_padding {
             bytes[25] = 1;
             bytes[26..30].copy_from_slice(&77u32.to_le_bytes());
@@ -8195,7 +8823,11 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             28
         };
         if reference_marker {
-            assert_eq!(reference_padding, Some(8));
+            if legacy_operation_marker {
+                assert_eq!(reference_padding, None);
+            } else {
+                assert_eq!(reference_padding, Some(8));
+            }
             bytes[operation_offset - 1] = 1;
         }
         bytes[operation_offset..operation_offset + 4].copy_from_slice(&operation.to_le_bytes());
@@ -8245,13 +8877,14 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
                 } else {
                     252
                 }
-            });
+            }) + legacy_field_shift;
             bytes.resize(reference_count_offset, 0);
         }
         let compact_two_sided =
             legacy_reference_count_offset == Some(283) && direction_face_extend.0 == 2;
         if compact_two_sided {
             for reference_at in [139, 170, 185] {
+                let reference_at = reference_at + legacy_field_shift;
                 bytes[reference_at] = 1;
                 bytes[reference_at + 1..reference_at + 5].copy_from_slice(&55u32.to_le_bytes());
             }
@@ -8259,6 +8892,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             || legacy_side_extents.is_some() && direction_face_extend.0 == 2
         {
             for reference_at in [139, 159, 182] {
+                let reference_at = reference_at + legacy_field_shift;
                 bytes[reference_at] = 1;
                 bytes[reference_at + 1..reference_at + 5].copy_from_slice(&55u32.to_le_bytes());
             }
@@ -8292,6 +8926,8 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             } else {
                 (106, if side_extents.0 == 2 { 116 } else { 110 })
             };
+            let first_extent_at = first_extent_at + legacy_field_shift;
+            let second_extent_at = second_extent_at + legacy_field_shift;
             bytes[first_extent_at..first_extent_at + 4]
                 .copy_from_slice(&side_extents.0.to_le_bytes());
             bytes[second_extent_at..second_extent_at + 4]
@@ -8574,8 +9210,67 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert!(matches!(
         shifted_compact_symmetric.extrude_prologue,
         Some(DesignExtrudePrologue::LegacyShifted {
+            operation_prefix_marker: None,
+            operation_prefix_marker_offset: None,
             side_extent_discriminator_offsets: [116, 130],
             extent: Some(DesignExtrudeExtent::SymmetricDistance),
+            ..
+        })
+    ));
+    let shifted_marked_symmetric = scope(
+        "Extrude",
+        4,
+        (3, 2),
+        0,
+        1,
+        0,
+        None,
+        true,
+        None,
+        Some(((1, 0), true)),
+        Some(283),
+    );
+    assert!(matches!(
+        shifted_marked_symmetric.extrude_prologue,
+        Some(DesignExtrudePrologue::LegacyShifted {
+            operation_prefix_marker: Some(1),
+            operation_prefix_marker_offset: Some(27),
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: 28,
+            direction_face_extend_values: [3, 2],
+            side_extent_discriminator_offsets: [117, 131],
+            extent: Some(DesignExtrudeExtent::SymmetricDistance),
+            direction_face_extend_offsets: [32, 36],
+            direction_reversed_offset: 40,
+            solid_operation_offset: 41,
+            start_offset: 42,
+            ..
+        })
+    ));
+    let shifted_offset_profile = scope(
+        "Extrude",
+        2,
+        (1, 2),
+        0,
+        1,
+        1,
+        None,
+        false,
+        None,
+        Some(((1, 0), true)),
+        Some(262),
+    );
+    assert!(matches!(
+        shifted_offset_profile.extrude_prologue,
+        Some(DesignExtrudePrologue::LegacyShifted {
+            operation_prefix_marker: None,
+            operation_prefix_marker_offset: None,
+            operation: DesignExtrudeOperation::Cut,
+            operation_offset: 27,
+            side_extent_discriminator_offsets: [116, 130],
+            extent: Some(DesignExtrudeExtent::OneSidedDistance),
+            start: DesignExtrudeStart::OffsetProfilePlane,
+            start_offset: 41,
             ..
         })
     ));
@@ -10692,16 +11387,14 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -12263,16 +12956,14 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -12489,6 +13180,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -12661,8 +13353,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     header(&mut bytes, *b"408", 101);
     header(&mut bytes, *b"414", 102);
     let recipe_record_at = header(&mut bytes, *b"423", 103);
-    // A recipe prefix can contain header-shaped scalar bytes. Only the exact
-    // N+4 record closes the N through N+3 operand envelope.
+    // A recipe prefix can contain header-shaped scalar bytes. The consumer's
+    // exact closing index, not the first header-like run, closes the envelope.
     header(&mut bytes, *b"122", 0);
     let recipe_name_at = bytes.len() + 4;
     bytes.extend_from_slice(&16u32.to_le_bytes());
@@ -12726,16 +13418,14 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -12770,15 +13460,127 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         record_index: 303,
     };
 
-    let mut edge_operand =
-        parse_edge_operand(&bytes, &scope, 0, &record, std::slice::from_ref(&recipe))
-            .expect("edge recipe operand");
+    let mut edge_operand = parse_edge_operand(
+        &bytes,
+        &scope,
+        0,
+        &record,
+        std::slice::from_ref(&recipe),
+        None,
+    )
+    .expect("edge recipe operand");
     assert_eq!(edge_operand.record_index, 100);
     assert_eq!(edge_operand.paired_byte_offset, paired_at);
     assert_eq!(edge_operand.recipe_record_index, 103);
     assert_eq!(edge_operand.recipe_record_byte_offset, recipe_record_at);
     assert_eq!(edge_operand.recipe_id, recipe.id);
     assert_eq!(edge_operand.resolved_edge_slot, None);
+    bytes[next_at as usize + 7..next_at as usize + 11].copy_from_slice(&105u32.to_le_bytes());
+    let mut work_point_scope = scope.clone();
+    work_point_scope.kind = "WorkPoint".into();
+    let work_point_operand = parse_edge_operand(
+        &bytes,
+        &work_point_scope,
+        0,
+        &record,
+        std::slice::from_ref(&recipe),
+        None,
+    )
+    .expect("WorkPoint edge recipe operand");
+    assert_eq!(work_point_operand.next_record_index, 105);
+    bytes[next_at as usize + 7..next_at as usize + 11].copy_from_slice(&107u32.to_le_bytes());
+    let mut sweep_scope = scope.clone();
+    sweep_scope.kind = "Sweep".into();
+    let sweep_operand = parse_edge_operand(
+        &bytes,
+        &sweep_scope,
+        0,
+        &record,
+        std::slice::from_ref(&recipe),
+        None,
+    )
+    .expect("Sweep edge recipe operand");
+    assert_eq!(sweep_operand.next_record_index, 107);
+    bytes[next_at as usize + 7..next_at as usize + 11].copy_from_slice(&160u32.to_le_bytes());
+    assert_eq!(
+        parse_edge_operand(
+            &bytes,
+            &scope,
+            0,
+            &record,
+            std::slice::from_ref(&recipe),
+            None,
+        ),
+        None
+    );
+    assert_eq!(
+        parse_edge_operand(
+            &bytes,
+            &scope,
+            0,
+            &record,
+            std::slice::from_ref(&recipe),
+            Some(recipe.byte_offset),
+        ),
+        None
+    );
+    let terminal_group_operand = parse_edge_operand(
+        &bytes,
+        &scope,
+        0,
+        &record,
+        std::slice::from_ref(&recipe),
+        Some(u64::try_from(bytes.len()).expect("generated stream length fits u64")),
+    )
+    .expect("terminal construction-group edge recipe operand");
+    assert_eq!(terminal_group_operand.next_record_index, 160);
+    assert_eq!(terminal_group_operand.next_byte_offset, next_at);
+
+    let mut vertex_bytes = Vec::new();
+    header(&mut vertex_bytes, *b"369", 200);
+    let vertex_paired_at = header(&mut vertex_bytes, *b"261", 200);
+    header(&mut vertex_bytes, *b"408", 201);
+    header(&mut vertex_bytes, *b"414", 202);
+    let vertex_recipe_record_at = header(&mut vertex_bytes, *b"423", 203);
+    let vertex_recipe_name_at = vertex_bytes.len() + 4;
+    vertex_bytes.extend_from_slice(&18u32.to_le_bytes());
+    vertex_bytes.extend_from_slice(b"vertex_recipe_data");
+    for value in [-1i32, 3, 1, -1, 2, -1, 0, -1, 0, 0] {
+        vertex_bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    let vertex_next_at = header(&mut vertex_bytes, *b"370", 205);
+    let vertex_header = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:record#200".into(),
+        byte_offset: 0,
+        class_tag: "369".into(),
+        record_index: 200,
+    };
+    let vertex_recipe = ConstructionRecipe {
+        id: "f3d:Design/BulkStream.dat:construction-recipe#200".into(),
+        byte_offset: u64::try_from(vertex_recipe_name_at).expect("generated offset fits u64"),
+        record_index_offset: Some(vertex_recipe_record_at + 8),
+        kind: ConstructionRecipeKind::Vertex,
+        design_id: None,
+        design_id_offset: None,
+        design_selector: None,
+        recipe_index: 9,
+        record_index: 303,
+    };
+    let parsed_vertex = parse_vertex_recipe(
+        &vertex_bytes,
+        crate::ids::native_stream(&scope.id).expect("scope stream"),
+        &vertex_header,
+        std::slice::from_ref(&vertex_recipe),
+    )
+    .expect("WorkPoint vertex recipe operand");
+    assert_eq!(parsed_vertex.paired_byte_offset, vertex_paired_at);
+    assert_eq!(parsed_vertex.recipe_record_index, 203);
+    assert_eq!(parsed_vertex.next_record_index, 205);
+    assert_eq!(parsed_vertex.next_byte_offset, vertex_next_at);
+    assert_eq!(
+        parsed_vertex.recipe_program,
+        [-1, 3, 1, -1, 2, -1, 0, -1, 0, 0]
+    );
     edge_operand.terminal_reference_edge_slots = vec![vec![17], vec![18, 19]];
     assert_eq!(
         crate::design::edge_resolve::edge_operand_reference_edge_sets(&edge_operand),
@@ -14097,6 +14899,7 @@ fn selected_face_start_requires_unique_sketch_plane_coincidence() {
         id: SketchId("sketch".into()),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 2.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -14343,6 +15146,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
         scope_record_index: Some(10),
         entity_id: "0_100".into(),
         entity_suffix: 100,
+        visibility: None,
         byte_offset: 0,
         class_tag: "293".into(),
         record_index: 11,
@@ -15110,6 +15914,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         scope_record_index: Some(177),
         entity_id: "0_172".into(),
         entity_suffix: 172,
+        visibility: None,
         byte_offset: 100,
         class_tag: "356".into(),
         record_index: 185,
@@ -15471,6 +16276,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         scope_record_index: None,
         entity_id: "Sketch_42".into(),
         entity_suffix: 42,
+        visibility: None,
         byte_offset: 100,
         class_tag: "300".into(),
         record_index: 100,
@@ -15832,6 +16638,112 @@ fn three_member_symmetry_states_project_unique_reflection_axis() {
     ] {
         assert!(exact_atomic_constraint(kind, &[&on_axis, &axis_entity, &on_axis]).is_none());
     }
+}
+
+#[test]
+fn counted_dimension_groups_resolve_full_circle_symmetry() {
+    let entity = |id: &str, geometry: SketchGeometry| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: SketchId("generated:sketch#0".into()),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry,
+    };
+    let first = entity(
+        "generated:circle#first",
+        SketchGeometry::Circle {
+            center: Point2::new(-3.0, 2.0),
+            radius: Length(1.5),
+        },
+    );
+    let axis = entity(
+        "generated:line#axis",
+        SketchGeometry::Line {
+            start: Point2::new(0.0, -1.0),
+            end: Point2::new(0.0, 4.0),
+        },
+    );
+    let second = entity(
+        "generated:circle#second",
+        SketchGeometry::Circle {
+            center: Point2::new(3.0, 2.0),
+            radius: Length(1.5),
+        },
+    );
+
+    assert!(matches!(
+        exact_counted_dimension_relation(&[&first, &axis, &second]),
+        Some(SketchConstraintDefinition::Symmetric {
+            first: SketchLocus::Entity(ref first_id),
+            second: SketchLocus::Entity(ref second_id),
+            axis: ref axis_id,
+        }) if first_id == &first.id && second_id == &second.id && axis_id == &axis.id
+    ));
+
+    let mut mismatched = second.clone();
+    mismatched.geometry = SketchGeometry::Circle {
+        center: Point2::new(3.0, 2.0),
+        radius: Length(2.0),
+    };
+    assert!(exact_counted_dimension_relation(&[&first, &axis, &mismatched]).is_none());
+}
+
+#[test]
+fn counted_dimension_groups_resolve_bounded_arc_symmetry() {
+    let entity = |id: &str, geometry: SketchGeometry| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: SketchId("generated:sketch#0".into()),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry,
+    };
+    let first = entity(
+        "generated:arc#first",
+        SketchGeometry::Arc {
+            center: Point2::new(-3.0, 2.0),
+            radius: Length(1.5),
+            start_angle: Angle(-std::f64::consts::FRAC_PI_4),
+            end_angle: Angle(std::f64::consts::FRAC_PI_3),
+        },
+    );
+    let axis = entity(
+        "generated:line#axis",
+        SketchGeometry::Line {
+            start: Point2::new(0.0, -1.0),
+            end: Point2::new(0.0, 4.0),
+        },
+    );
+    let second = entity(
+        "generated:arc#second",
+        SketchGeometry::Arc {
+            center: Point2::new(3.0, 2.0),
+            radius: Length(1.5),
+            start_angle: Angle(2.0 * std::f64::consts::FRAC_PI_3),
+            end_angle: Angle(5.0 * std::f64::consts::FRAC_PI_4),
+        },
+    );
+
+    assert!(matches!(
+        exact_counted_dimension_relation(&[&first, &axis, &second]),
+        Some(SketchConstraintDefinition::Symmetric {
+            first: SketchLocus::Entity(ref first_id),
+            second: SketchLocus::Entity(ref second_id),
+            axis: ref axis_id,
+        }) if first_id == &first.id && second_id == &second.id && axis_id == &axis.id
+    ));
+
+    let mut mismatched = second.clone();
+    mismatched.geometry = SketchGeometry::Arc {
+        center: Point2::new(3.0, 2.0),
+        radius: Length(1.5),
+        start_angle: Angle(2.0 * std::f64::consts::FRAC_PI_3),
+        end_angle: Angle(5.0 * std::f64::consts::FRAC_PI_4 + 0.1),
+    };
+    assert!(exact_counted_dimension_relation(&[&first, &axis, &mismatched]).is_none());
 }
 
 #[test]
@@ -16263,6 +17175,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         scope_record_index: Some(10),
         entity_id: "0_100".into(),
         entity_suffix: 100,
+        visibility: None,
         byte_offset: 0,
         class_tag: "356".into(),
         record_index: 11,
@@ -16582,10 +17495,31 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         &[&first, &second],
         10.0,
         parameter.clone(),
+        0.0,
     )
     .is_none());
     assert!(matches!(
-        crate::design::dimensions::directional_point_dimension(&[&first, &second], 40.0, parameter),
+        crate::design::dimensions::directional_point_dimension(
+            &[&first, &second],
+            40.0,
+            parameter.clone(),
+            0.0,
+        ),
+        Some(SketchConstraintDefinition::HorizontalDistance { .. })
+    ));
+    let rounded = entity(
+        "generated:point#rounded",
+        SketchGeometry::Point {
+            position: Point2::new(40.000_000_5, 0.0),
+        },
+    );
+    assert!(matches!(
+        crate::design::dimensions::directional_point_dimension(
+            &[&first, &rounded],
+            40.0,
+            parameter,
+            1.0e-6,
+        ),
         Some(SketchConstraintDefinition::HorizontalDistance { .. })
     ));
 
@@ -16634,12 +17568,20 @@ fn dimension_proofs_require_the_evaluated_measurement() {
     assert!(crate::design::dimensions::point_line_separation(
         &offset_point,
         &vertical,
-        2.0
+        2.0,
+        0.0,
+    ));
+    assert!(crate::design::dimensions::point_line_separation(
+        &offset_point,
+        &vertical,
+        2.000_000_5,
+        1.0e-6,
     ));
     assert!(!crate::design::dimensions::point_line_separation(
         &vertical,
         &offset_point,
-        3.0
+        3.0,
+        1.0e-6,
     ));
 
     let inner_circle = entity(
@@ -16696,7 +17638,7 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
     let parameter = cadmpeg_ir::features::ParameterId("generated:parameter#distance".into());
 
     let definition =
-        directional_point_dimension(&[&first, &second], 2.0, parameter.clone()).unwrap();
+        directional_point_dimension(&[&first, &second], 2.0, parameter.clone(), 0.0).unwrap();
     assert!(matches!(
         definition,
         SketchConstraintDefinition::VerticalDistance {
@@ -16705,7 +17647,7 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
             parameter: ref parameter_id,
         } if first_id == &first.id && second_id == &second.id && parameter_id == &parameter
     ));
-    assert!(directional_point_dimension(&[&first, &second], 3.0, parameter).is_none());
+    assert!(directional_point_dimension(&[&first, &second], 3.0, parameter, 0.0).is_none());
 
     let diagonal = entity("generated:point#diagonal", Point2::new(7.0, 14.0));
     assert!(matches!(
@@ -16713,6 +17655,7 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
             &[&first, &diagonal],
             3.0,
             cadmpeg_ir::features::ParameterId("generated:parameter#horizontal".into()),
+            0.0,
         ),
         Some(SketchConstraintDefinition::HorizontalDistance { .. })
     ));
@@ -16721,6 +17664,7 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
         &[&first, &square],
         2.0,
         cadmpeg_ir::features::ParameterId("generated:parameter#ambiguous".into()),
+        0.0,
     )
     .is_none());
 }
@@ -16859,6 +17803,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         scope_record_index: Some(10),
         entity_id: "0_100".into(),
         entity_suffix: 100,
+        visibility: None,
         byte_offset: 0,
         class_tag: "356".into(),
         record_index: 11,
@@ -17026,6 +17971,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         id: neutral_spatial_sketch_id(&placement),
         name: None,
         configuration: None,
+        visible: None,
         profiles: Vec::new(),
         native_ref: Some(placement.id.clone()),
     };
@@ -17349,9 +18295,14 @@ fn counted_offset_return_run_pairs_sources_and_results() {
     );
 
     let entities = HashMap::from([(1, &bottom), (2, &top), (3, &inset_top), (4, &inset_bottom)]);
-    let definition =
-        exact_counted_offset(&[(1, 3), (2, 2), (3, 0), (4, 0)], &[1, 4, 2, 3], &entities)
-            .expect("counted offset graph");
+    let definition = exact_counted_offset(
+        &[(1, 3), (2, 2), (3, 0), (4, 0)],
+        &[1, 4, 2, 3],
+        &entities,
+        &HashMap::new(),
+        1.0e-6,
+    )
+    .expect("counted offset graph");
     let SketchConstraintDefinition::Offset {
         pairs,
         distance,
@@ -17372,7 +18323,131 @@ fn counted_offset_return_run_pairs_sources_and_results() {
 }
 
 #[test]
-fn counted_offset_accepts_concentric_arcs_with_the_same_sweep() {
+fn counted_offset_accepts_primary_to_generated_identity_partition() {
+    let entity = |id: &str, y| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: SketchId("generated:sketch#0".into()),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line {
+            start: Point2::new(0.0, y),
+            end: Point2::new(8.0, y),
+        },
+    };
+    let source = entity("generated:line#source", 0.0);
+    let result = entity("generated:line#result", 2.75);
+    let entities = HashMap::from([(1, &source), (2, &result)]);
+    let secondary_ids = HashMap::from([(1, 0), (2, 42)]);
+
+    assert!(matches!(
+        exact_counted_offset(
+            &[(1, 4), (2, 1)],
+            &[1, 2],
+            &entities,
+            &secondary_ids,
+            1.0e-6,
+        ),
+        Some(SketchConstraintDefinition::Offset {
+            pairs,
+            distance: Length(distance),
+            ..
+        }) if pairs.len() == 1
+            && pairs[0].source == source.id
+            && pairs[0].result == result.id
+            && (distance - 2.75).abs() <= 1.0e-9
+    ));
+
+    let ambiguous_ids = HashMap::from([(1, 0), (2, 0)]);
+    assert!(exact_counted_offset(
+        &[(1, 4), (2, 1)],
+        &[1, 2],
+        &entities,
+        &ambiguous_ids,
+        1.0e-6,
+    )
+    .is_none());
+}
+
+#[test]
+fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
+    let entity = |id: &str, degree, knots, control_points| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: SketchId("generated:sketch#0".into()),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights: None,
+            periodic: false,
+        },
+    };
+    let source = entity(
+        "generated:nurbs#source",
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(4.0, 3.0),
+            Point2::new(10.0, 0.0),
+        ],
+    );
+    let result_start = Point2::new(-1.2, 1.6);
+    let result_end = Point2::new(10.0 + 2.0 / 5.0_f64.sqrt(), 4.0 / 5.0_f64.sqrt());
+    let result = entity(
+        "generated:nurbs#result",
+        3,
+        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        vec![
+            result_start,
+            Point2::new(result_start.u + 2.0, result_start.v + 1.5),
+            Point2::new(result_end.u - 3.0, result_end.v + 1.5),
+            result_end,
+        ],
+    );
+    let entities = HashMap::from([(1, &source), (2, &result)]);
+    assert!(matches!(
+        exact_counted_offset(
+            &[(1, 3), (2, 0)],
+            &[1, 2],
+            &entities,
+            &HashMap::new(),
+            1.0e-6,
+        ),
+        Some(SketchConstraintDefinition::Offset {
+            pairs,
+            distance: Length(distance),
+            ..
+        }) if pairs.as_slice() == [cadmpeg_ir::sketches::SketchOffsetPair {
+            source: source.id.clone(),
+            result: result.id.clone(),
+            source_reversed: false,
+        }] && (distance - 2.0).abs() <= 1.0e-9
+    ));
+
+    let mut skewed = result;
+    let SketchGeometry::Nurbs { control_points, .. } = &mut skewed.geometry else {
+        unreachable!("test result is a NURBS")
+    };
+    control_points.last_mut().expect("result endpoint").u += 0.01;
+    let entities = HashMap::from([(1, &source), (2, &skewed)]);
+    assert!(exact_counted_offset(
+        &[(1, 3), (2, 0)],
+        &[1, 2],
+        &entities,
+        &HashMap::new(),
+        1.0e-6,
+    )
+    .is_none());
+}
+
+#[test]
+fn counted_offset_accepts_trimmed_concentric_arcs() {
     let arc = |id: &str, radius| cadmpeg_ir::sketches::SketchEntity {
         id: SketchEntityId(id.into()),
         sketch: SketchId("generated:sketch#0".into()),
@@ -17388,11 +18463,23 @@ fn counted_offset_accepts_concentric_arcs_with_the_same_sweep() {
         },
     };
     let source = arc("generated:arc#source", 2.0);
-    let result = arc("generated:arc#result", 5.0);
+    let mut result = arc("generated:arc#result", 5.0);
+    result.geometry = SketchGeometry::Arc {
+        center: Point2::new(3.0, -4.0),
+        radius: Length(5.0),
+        start_angle: Angle(0.1),
+        end_angle: Angle(1.4),
+    };
     let entities = HashMap::from([(1, &source), (2, &result)]);
 
-    let definition =
-        exact_counted_offset(&[(1, 7), (2, 0)], &[1, 2], &entities).expect("concentric arc offset");
+    let definition = exact_counted_offset(
+        &[(1, 7), (2, 0)],
+        &[1, 2],
+        &entities,
+        &HashMap::new(),
+        1.0e-6,
+    )
+    .expect("concentric arc offset");
     assert!(matches!(
         definition,
         SketchConstraintDefinition::Offset {
@@ -17410,11 +18497,18 @@ fn counted_offset_accepts_concentric_arcs_with_the_same_sweep() {
     mismatched.geometry = SketchGeometry::Arc {
         center: Point2::new(3.0, -4.0),
         radius: Length(5.0),
-        start_angle: Angle(0.0),
-        end_angle: Angle(std::f64::consts::PI),
+        start_angle: Angle(std::f64::consts::PI),
+        end_angle: Angle(3.0 * std::f64::consts::FRAC_PI_2),
     };
     let entities = HashMap::from([(1, &source), (2, &mismatched)]);
-    assert!(exact_counted_offset(&[(1, 7), (2, 0)], &[1, 2], &entities).is_none());
+    assert!(exact_counted_offset(
+        &[(1, 7), (2, 0)],
+        &[1, 2],
+        &entities,
+        &HashMap::new(),
+        1.0e-6,
+    )
+    .is_none());
 }
 
 #[test]
@@ -17492,6 +18586,7 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         profiles: vec![profile],
         native_ref: None,
     };
@@ -17746,6 +18841,7 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
         scope_record_index: Some(10),
         entity_id: format!("0_{suffix}"),
         entity_suffix: suffix,
+        visibility: None,
         byte_offset: 0,
         class_tag: "356".into(),
         record_index: 11,
@@ -17844,6 +18940,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         scope_record_index: Some(10),
         entity_id: "0_100".into(),
         entity_suffix: 100,
+        visibility: None,
         byte_offset: 0,
         class_tag: "356".into(),
         record_index: 11,
@@ -18023,6 +19120,116 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     );
     assert!(matches!(
         radial_constraints.as_slice(),
+        [cadmpeg_ir::sketches::SketchConstraint {
+            definition: SketchConstraintDefinition::Radius {
+                entity,
+                parameter: actual_parameter,
+            },
+            ..
+        }] if entity == &circle.id
+            && actual_parameter == &neutral_parameter_id_parts(stream, parameter.record_index)
+    ));
+
+    let annotation_point = SketchPoint {
+        id: format!("{stream}:sketch-point#50"),
+        record_index: 50,
+        owner_reference: Some(100),
+        class_tag: "300".into(),
+        byte_offset: 0,
+        coordinate_offset: 0,
+        entity_genesis: None,
+        record_form: crate::records::SketchPointRecordForm::default(),
+        persistent_id: Some(50),
+        paired_reference: 0,
+        flags: [0; 8],
+        coordinates: Point2::new(4.5, 0.0),
+        depth: 0.0,
+        closure: None,
+        companion: None,
+    };
+    let annotation_curve = SketchCurveIdentity {
+        id: format!("{stream}:sketch-curve#51"),
+        record_index: 51,
+        owner_reference: Some(100),
+        class_tag: "300".into(),
+        byte_offset: 0,
+        geometry_offset: 0,
+        entity_genesis: None,
+        primary_id: 51,
+        secondary_id: 0,
+        geometry: None,
+    };
+    let annotation_point_entity = SketchEntity {
+        id: SketchEntityId("radial-extension-point".into()),
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref: Some(annotation_point.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: annotation_point.coordinates,
+        },
+    };
+    let mut annotation_line_entity = entities[0].clone();
+    annotation_line_entity.native_ref = Some(annotation_curve.id.clone());
+    let annotation_group = DesignDimensionLocusGroup {
+        id: format!("{stream}:design-dimension-locus-group#60"),
+        companion_record_index: 22,
+        byte_offset: 0,
+        class_tag: "292".into(),
+        record_index: 60,
+        frame_length: 100,
+        loci: vec![
+            DesignDimensionLocus {
+                geometry_record_index: 50,
+                geometry_reference_offset: 0,
+                role: 2,
+                role_offset: 0,
+            },
+            DesignDimensionLocus {
+                geometry_record_index: 51,
+                geometry_reference_offset: 0,
+                role: 2,
+                role_offset: 0,
+            },
+        ],
+        owner_reference: 100,
+        owner_reference_offset: 0,
+        owner_role: 1,
+        owner_role_offset: 0,
+        state: 0,
+        state_offset: 0,
+        constraint_kinds: vec![SketchConstraintKind::Coincident],
+        unknown_constraint_bits: 0,
+        return_members: vec![50, 51],
+        return_member_offsets: vec![0, 0],
+        next_class_tag: "300".into(),
+        next_record_index: 61,
+        next_byte_offset: 100,
+    };
+    let extension_constraints = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&radial_parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: std::slice::from_ref(&annotation_group),
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[],
+            points: std::slice::from_ref(&annotation_point),
+            curves: std::slice::from_ref(&annotation_curve),
+            entities: &[
+                circle.clone(),
+                annotation_point_entity,
+                annotation_line_entity,
+            ],
+        },
+        &[],
+    );
+    assert!(matches!(
+        extension_constraints.as_slice(),
         [cadmpeg_ir::sketches::SketchConstraint {
             definition: SketchConstraintDefinition::Radius {
                 entity,
@@ -18577,6 +19784,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &sketch,
             &parameter,
             &cadmpeg_ir::features::ParameterId("parameter".into()),
+            1.0e-6,
         ),
         Some(SketchConstraintDefinition::Distance {
             entities,
@@ -18602,9 +19810,88 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &sketch,
             &parameter,
             &cadmpeg_ir::features::ParameterId("parameter".into()),
+            1.0e-6,
         )
         .is_none()
     );
+}
+
+#[test]
+fn recipe_dimension_resolves_unique_axis_aligned_extension_point() {
+    let sketch = SketchId("sketch".into());
+    let parameter = cadmpeg_ir::features::ParameterId("parameter".into());
+    let point = |name: &str, u, v| SketchEntity {
+        id: SketchEntityId(name.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(u, v),
+        },
+    };
+    let entities = vec![
+        SketchEntity {
+            id: SketchEntityId("carrier".into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: Point2::new(2.0, 0.0),
+                end: Point2::new(0.0, 0.0),
+            },
+        },
+        point("carrier-start", 2.0, 0.0),
+        point("carrier-end", 0.0, 0.0),
+        point("extension", 4.0, 0.0),
+        point("off-carrier-horizontal", 2.0, 3.0),
+        point("off-carrier-vertical", 4.0, 2.0),
+    ];
+    let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
+        &entities, &sketch, 2.0, &parameter,
+    );
+    assert!(candidates.len() > 2);
+    assert!(matches!(
+        crate::design::dimensions::recipe_extension_point_dimension(
+            &candidates,
+            &entities,
+            &sketch,
+        ),
+        Some(SketchConstraintDefinition::HorizontalDistance { first, second, parameter: actual })
+            if first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId("carrier-start".into()))
+                && second == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId("extension".into()))
+                && actual == parameter
+    ));
+
+    let mut ambiguous = entities;
+    ambiguous.extend([
+        point("second-carrier-start", 12.0, 5.0),
+        point("second-extension", 14.0, 5.0),
+        SketchEntity {
+            id: SketchEntityId("second-carrier".into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: Point2::new(12.0, 5.0),
+                end: Point2::new(10.0, 5.0),
+            },
+        },
+    ]);
+    let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
+        &ambiguous, &sketch, 2.0, &parameter,
+    );
+    assert!(crate::design::dimensions::recipe_extension_point_dimension(
+        &candidates,
+        &ambiguous,
+        &sketch,
+    )
+    .is_none());
 }
 
 #[test]
@@ -18701,6 +19988,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         scope_record_index: Some(10),
         entity_id: format!("{stream}_100"),
         entity_suffix: 100,
+        visibility: None,
         byte_offset: 0,
         class_tag: "356".into(),
         record_index: 11,
@@ -19198,16 +20486,14 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -19262,6 +20548,7 @@ fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
     .unwrap();
     parameter.id = "f3d:native:parameter#45".into();
     parameter.record_index = 45;
+    parameter.source_ordinal = 17;
     let mut owner = parse_parameter_owner(&parameter_owner_frame()).unwrap();
     owner.id = "f3d:native:parameter-owner#44".into();
 
@@ -19272,6 +20559,7 @@ fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
         panic!("expected the parameter to remain in the neutral model");
     };
     assert_eq!(parameter.owner, None);
+    assert_eq!(parameter.ordinal, 17);
     assert_eq!(
         parameter
             .properties
@@ -19373,16 +20661,14 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -19576,16 +20862,14 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: Some(DesignSketchProfileOperand {
             scope_reference_ordinal: 0,
@@ -19621,6 +20905,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         scope_record_index: Some(11),
         entity_id: "0_172".into(),
         entity_suffix: 172,
+        visibility: None,
         byte_offset: 600,
         class_tag: "300".into(),
         record_index: 200,
@@ -19688,6 +20973,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         }
     ));
     scope.extrude_prologue = Some(DesignExtrudePrologue::LegacyShifted {
+        operation_prefix_marker: None,
+        operation_prefix_marker_offset: None,
         operation: DesignExtrudeOperation::NewBody,
         operation_offset: 127,
         direction_face_extend_values: [3, 2],
@@ -19816,6 +21103,17 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&selection),
         &[],
         &[],
+        &crate::design::profile_select::SketchCurveSelectionResolution {
+            scopes: &[],
+            groups: &[],
+            operands: &[],
+            placements: &[],
+            curve_identities: &[],
+            sketches: &[],
+            sketch_entities: &[],
+            spatial_sketches: &[],
+            spatial_sketch_entities: &[],
+        },
         crate::design::profile_select::ExtrudeProfileResolution {
             entities: &[],
             spatial_sketches: &[],
@@ -19906,6 +21204,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         id: neutral_sketch_id(&placement),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -19945,6 +21244,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         id: neutral_spatial_sketch_id(&placement),
         name: None,
         configuration: None,
+        visible: None,
         profiles: vec![cadmpeg_ir::sketches::SpatialSketchProfile {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -19994,6 +21294,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         id: neutral_spatial_sketch_id(&placement),
         name: None,
         configuration: None,
+        visible: None,
         profiles: Vec::new(),
         native_ref: Some(placement.id.clone()),
     };
@@ -20813,16 +22114,14 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -21909,16 +23208,14 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -22551,16 +23848,14 @@ fn parameter_expressions_project_feature_dependencies() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -22683,16 +23978,14 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -24040,16 +25333,14 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -24396,7 +25687,130 @@ fn assembly_operand_frame_fixture(scope_record_index: u32) -> Vec<u8> {
     bytes
 }
 
-#[allow(clippy::large_stack_arrays)]
+fn append_as_built_path_envelope(
+    bytes: &mut Vec<u8>,
+    scope_record_index: u32,
+    locator_record_index: u32,
+    operand_record_index: u32,
+    occurrence_guid: &str,
+    translation: [f64; 3],
+) {
+    let write_reference = |bytes: &mut [u8], at: usize, record_index: u32| {
+        bytes[at] = 1;
+        bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+    };
+    let mut locator = vec![0_u8; 190];
+    locator[..4].copy_from_slice(&3_u32.to_le_bytes());
+    locator[4..7].copy_from_slice(b"309");
+    locator[7..11].copy_from_slice(&locator_record_index.to_le_bytes());
+    write_reference(&mut locator, 21, operand_record_index);
+    for (ordinal, value) in [
+        1.0,
+        0.0,
+        0.0,
+        translation[0],
+        0.0,
+        1.0,
+        0.0,
+        translation[1],
+        0.0,
+        0.0,
+        1.0,
+        translation[2],
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        locator[33 + ordinal * 8..41 + ordinal * 8].copy_from_slice(&value.to_le_bytes());
+    }
+    write_reference(&mut locator, 162, scope_record_index);
+    write_reference(&mut locator, 173, locator_record_index + 2);
+    locator[184..188].copy_from_slice(&2_u32.to_le_bytes());
+    bytes.extend(locator);
+
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    bytes.extend_from_slice(b"294");
+    bytes.extend_from_slice(&u64::from(locator_record_index + 1).to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    let identities = [
+        occurrence_guid,
+        "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        "cccccccc-cccc-cccc-cccc-cccccccccccc",
+        "dddddddd-dddd-dddd-dddd-dddddddddddd",
+    ];
+    for guid in &identities[..3] {
+        let encoded = guid.encode_utf16().collect::<Vec<_>>();
+        bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+        bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
+    }
+    bytes.extend_from_slice(&2_u64.to_le_bytes());
+    for guid in &identities[3..] {
+        let encoded = guid.encode_utf16().collect::<Vec<_>>();
+        bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+        bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
+    }
+    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 8]);
+
+    let wrapper_record_index = locator_record_index + 2;
+    let path_record_index = locator_record_index + 1;
+    let mut wrapper = vec![0_u8; 37];
+    wrapper[..4].copy_from_slice(&3_u32.to_le_bytes());
+    wrapper[4..7].copy_from_slice(b"271");
+    wrapper[7..11].copy_from_slice(&wrapper_record_index.to_le_bytes());
+    wrapper[21] = 1;
+    wrapper[22..26].copy_from_slice(&1_u32.to_le_bytes());
+    write_reference(&mut wrapper, 26, path_record_index);
+    bytes.extend(wrapper);
+}
+
+#[test]
+fn circular_pattern_axis_prefers_one_inline_carrier() {
+    use crate::records::DesignCircularPatternAxis;
+
+    let historical = DesignCircularPatternAxis::HistoricalEdge {
+        wrapper_record_indices: vec![11],
+        persistent_identities: vec![17],
+        identity_offsets: vec![23],
+        resolved_origin: None,
+        resolved_direction: None,
+    };
+    let inline = DesignCircularPatternAxis::Inline {
+        origin: [1.0, 2.0, 3.0],
+        origin_offset: 29,
+        direction: [0.0, 0.0, 1.0],
+        direction_offset: 53,
+    };
+
+    let historical_only = [(historical.clone(), 10, 11)];
+    assert_eq!(
+        select_circular_pattern_axis(&historical_only).map(|candidate| (candidate.1, candidate.2)),
+        Some((10, 11))
+    );
+
+    let mixed = [(historical.clone(), 10, 11), (inline.clone(), 20, 21)];
+    assert_eq!(
+        select_circular_pattern_axis(&mixed).map(|candidate| (candidate.1, candidate.2)),
+        Some((20, 21))
+    );
+
+    let duplicate_inline = [(inline.clone(), 20, 21), (inline, 30, 31)];
+    assert!(select_circular_pattern_axis(&duplicate_inline).is_none());
+
+    let duplicate_historical = [(historical.clone(), 10, 11), (historical, 12, 13)];
+    assert!(select_circular_pattern_axis(&duplicate_historical).is_none());
+}
+
+#[allow(
+    clippy::large_stack_arrays,
+    reason = "This pattern fixture keeps the decoded scope records inline for frame assertions."
+)]
 #[test]
 fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     fn append_header(bytes: &mut Vec<u8>, record_index: u32) {
@@ -24575,16 +25989,14 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -24859,6 +26271,21 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(alignment.angle, 0.25);
     assert_eq!(alignment.offset, [4.0, 5.0, 6.0]);
     assert_eq!(alignment.owner_record_indices, [60, 61, 62, 63]);
+    scope.frame_length = 604;
+    let datum_envelope_alignment = exact_assembly_alignment(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &placement_and_alignment_owners,
+    )
+    .expect("JointOrigin datum-envelope alignment after four placement lanes");
+    assert_eq!(datum_envelope_alignment.angle, 0.25);
+    assert_eq!(datum_envelope_alignment.offset, [4.0, 5.0, 6.0]);
+    assert_eq!(
+        datum_envelope_alignment.owner_record_indices,
+        [60, 61, 62, 63]
+    );
+    assert!(datum_envelope_alignment.operand_frames.is_none());
 
     let mut short_axial_owners = rectangular_owners.to_vec();
     short_axial_owners.extend([owner(64, 4, 0.5, 605), owner(65, 5, 2.0, 606)]);
@@ -25099,7 +26526,11 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     single_frame_assembly.paired_class_tag = "258".into();
     single_frame_assembly.frame_length = 604;
     single_frame_assembly.paired_byte_offset = 604;
-    single_frame_assembly.assembly_alignment = Some(alignment.clone());
+    single_frame_assembly.reference_members = placement_and_alignment_owners
+        .iter()
+        .map(|owner| owner.record_index)
+        .collect();
+    single_frame_assembly.assembly_alignment = Some(datum_envelope_alignment);
     let mut single_frame_joint_origin = scope.clone();
     single_frame_joint_origin.kind = "JointOrigin".into();
     single_frame_joint_origin.record_index = 91;
@@ -25125,6 +26556,27 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             .as_ref()
             .and_then(|alignment| alignment.joint_origin_scope_record_index),
         Some(91)
+    );
+
+    let mut conflicting_assembly = single_frame_scopes[0].clone();
+    conflicting_assembly
+        .assembly_alignment
+        .as_mut()
+        .unwrap()
+        .joint_origin_scope_record_index = None;
+    let mut conflicting_joint_origin = single_frame_scopes[1].clone();
+    conflicting_joint_origin
+        .joint_origin_transform
+        .as_mut()
+        .unwrap()[2][3] += 1.0;
+    let mut conflicting_scopes = [conflicting_assembly, conflicting_joint_origin];
+    bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut conflicting_scopes);
+    assert_eq!(
+        conflicting_scopes[0]
+            .assembly_alignment
+            .as_ref()
+            .and_then(|alignment| alignment.joint_origin_scope_record_index),
+        None
     );
 
     single_frame_bytes[175..179].copy_from_slice(&2_u32.to_le_bytes());
@@ -25316,6 +26768,38 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     assert!(compact_identity_paths
         .iter()
         .all(|path| path.class_tag == "386"));
+    for path_at in [first_identity_path_at, second_identity_path_at] {
+        identity_path_bytes[path_at + 4..path_at + 7].copy_from_slice(b"329");
+    }
+    let extended_class_329_paths = exact_assembly_alignment(
+        &identity_path_bytes,
+        &IndexedRecordOffsets::build(&identity_path_bytes),
+        &scope,
+        &rectangular_owners,
+    )
+    .and_then(|alignment| alignment.operand_paths)
+    .expect("identity-qualified class-329 assembly occurrence paths");
+    assert!(extended_class_329_paths.iter().all(|path| {
+        path.class_tag == "329"
+            && !path.occurrence_guids.is_empty()
+            && path.identity_guids == identities
+    }));
+    let first_identity_length_at = usize::try_from(
+        extended_class_329_paths[0].identity_guid_offsets[0]
+            .checked_sub(4)
+            .expect("identity length precedes text"),
+    )
+    .expect("identity length offset fits usize");
+    let mut malformed_class_329_identity = identity_path_bytes.clone();
+    malformed_class_329_identity[first_identity_length_at..first_identity_length_at + 4]
+        .copy_from_slice(&35_u32.to_le_bytes());
+    assert!(exact_assembly_alignment(
+        &malformed_class_329_identity,
+        &IndexedRecordOffsets::build(&malformed_class_329_identity),
+        &scope,
+        &rectangular_owners,
+    )
+    .is_some_and(|alignment| alignment.operand_paths.is_none()));
 
     let first_locator_at = assembly_bytes.len();
     push_path_locator(&mut assembly_bytes, 64, 66);
@@ -25518,6 +27002,142 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         ),
         None
     );
+}
+
+#[test]
+fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
+    let scope_record_index = 10_u32;
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#0",
+        "As-built",
+        scope_record_index,
+    );
+    scope.class_tag = "439".into();
+    scope.frame_length = 399;
+    scope.reference_members = vec![50, 51, 52, 53];
+    scope.paired_class_tag = "262".into();
+    scope.paired_byte_offset = 399;
+
+    let owner = |record_index, local_ordinal, evaluated_value, evaluated_value_offset| {
+        DesignParameterOwner {
+            id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
+            byte_offset: 0,
+            frame_length: 103,
+            class_tag: "321".into(),
+            record_index,
+            scope_record_index,
+            local_ordinal,
+            evaluated_value,
+            evaluated_value_offset,
+            parameter_record_index: record_index + 1,
+            owned_ordinal: local_ordinal,
+            variant: None,
+            companion_record_index: record_index + 2,
+        }
+    };
+    let owners = [
+        owner(50, 0, 0.25, 501),
+        owner(51, 1, 1.0, 502),
+        owner(52, 2, 2.0, 503),
+        owner(53, 3, 3.0, 504),
+    ];
+
+    let mut bytes = vec![0_u8; 399];
+    bytes[..4].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"439");
+    bytes[7..11].copy_from_slice(&scope_record_index.to_le_bytes());
+    bytes[47..51].copy_from_slice(&2_u32.to_le_bytes());
+    for (at, locator_record_index) in [(51, 64_u32), (62, 67_u32)] {
+        bytes[at] = 1;
+        bytes[at + 1..at + 5].copy_from_slice(&locator_record_index.to_le_bytes());
+    }
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    bytes.extend_from_slice(b"262");
+    bytes.extend_from_slice(&scope_record_index.to_le_bytes());
+    bytes.extend_from_slice(&[0; 17]);
+    let first_locator_at = bytes.len();
+    append_as_built_path_envelope(
+        &mut bytes,
+        scope_record_index,
+        64,
+        70,
+        "11111111-1111-1111-1111-111111111111",
+        [1.0, 2.0, 3.0],
+    );
+    let second_locator_at = bytes.len();
+    append_as_built_path_envelope(
+        &mut bytes,
+        scope_record_index,
+        67,
+        80,
+        "22222222-2222-2222-2222-222222222222",
+        [4.0, 5.0, 6.0],
+    );
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    bytes.extend_from_slice(b"396");
+    bytes.extend_from_slice(&90_u32.to_le_bytes());
+
+    let alignment = exact_assembly_alignment(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &owners,
+    )
+    .expect("exact As-built alignment");
+    assert_eq!(alignment.angle, 0.25);
+    assert_eq!(alignment.offset, [1.0, 2.0, 3.0]);
+    assert_eq!(alignment.owner_record_indices, [50, 51, 52, 53]);
+    assert_eq!(alignment.value_offsets, [501, 502, 503, 504]);
+    let frames = alignment.operand_frames.expect("locator transforms");
+    assert_eq!(
+        frames
+            .each_ref()
+            .map(|frame| (frame.reference_record_index, frame.transform[0][3])),
+        [(70, 1.0), (80, 4.0)]
+    );
+    assert_eq!(
+        frames.each_ref().map(|frame| frame.transform_offset),
+        [
+            u64::try_from(first_locator_at + 33).expect("fixture offset fits u64"),
+            u64::try_from(second_locator_at + 33).expect("fixture offset fits u64"),
+        ]
+    );
+    let paths = alignment.operand_paths.expect("locator occurrence paths");
+    assert_eq!(
+        paths.each_ref().map(|path| (
+            path.link.locator_record_index,
+            path.occurrence_guids[0].as_str()
+        )),
+        [
+            (64, "11111111-1111-1111-1111-111111111111"),
+            (67, "22222222-2222-2222-2222-222222222222"),
+        ]
+    );
+
+    let mut invalid_transform = bytes.clone();
+    invalid_transform[first_locator_at + 33..first_locator_at + 41]
+        .copy_from_slice(&2.0_f64.to_le_bytes());
+    let incomplete = exact_assembly_alignment(
+        &invalid_transform,
+        &IndexedRecordOffsets::build(&invalid_transform),
+        &scope,
+        &owners,
+    )
+    .expect("alignment scalars remain exact");
+    assert_eq!(incomplete.operand_frames, None);
+    assert_eq!(incomplete.operand_paths, None);
+
+    let mut duplicate_reference = bytes;
+    duplicate_reference[63..67].copy_from_slice(&64_u32.to_le_bytes());
+    let incomplete = exact_assembly_alignment(
+        &duplicate_reference,
+        &IndexedRecordOffsets::build(&duplicate_reference),
+        &scope,
+        &owners,
+    )
+    .expect("alignment scalars remain exact");
+    assert_eq!(incomplete.operand_frames, None);
+    assert_eq!(incomplete.operand_paths, None);
 }
 
 fn append_axial_test_header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
@@ -25953,16 +27573,14 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,

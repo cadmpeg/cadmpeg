@@ -134,6 +134,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         bodies: Vec::new(),
         faces: Vec::new(),
         edges: vec![historical_edge.clone()],
+        vertices: Vec::new(),
         native_ref: None,
     };
     let feature = Feature {
@@ -192,6 +193,187 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         finding.check == Check::ReferentialIntegrity
             && finding.entity.as_deref() == Some(feature_id.as_str())
             && finding.message == format!("references missing historical edge `{missing}`")
+    }));
+}
+
+#[test]
+fn historical_vertex_selection_requires_input_state_membership() {
+    use crate::features::{
+        DatumPointConstruction, Feature, FeatureDefinition, FeatureId, FeatureInputTopology,
+        VertexSelection,
+    };
+    use crate::ids::{FeatureInputTopologyId, HistoricalVertexId};
+    use crate::schema::EntitySchema;
+
+    let feature_id = FeatureId("test:model:feature#datum-point".into());
+    let state_id = FeatureInputTopologyId("test:model:feature-input#datum-point".into());
+    let historical_vertex = HistoricalVertexId("test:model:historical-vertex#local".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model
+        .feature_input_topologies
+        .push(FeatureInputTopology {
+            id: state_id.clone(),
+            input_of: feature_id.clone(),
+            bodies: Vec::new(),
+            faces: Vec::new(),
+            edges: Vec::new(),
+            vertices: vec![historical_vertex.clone()],
+            native_ref: None,
+        });
+    ir.model.features.push(Feature {
+        id: feature_id.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::DatumPoint {
+            position: crate::math::Point3::new(1.0, 2.0, 3.0),
+            construction: Some(Box::new(DatumPointConstruction::Vertex {
+                vertex: VertexSelection::Historical {
+                    state: state_id.clone(),
+                    vertex: historical_vertex,
+                    native: "vertex:local".into(),
+                },
+            })),
+        },
+        native_ref: None,
+    });
+
+    let mut references = Vec::new();
+    ir.model.features[0].visit_references(&mut |reference| references.push(reference.target));
+    assert_eq!(references, vec![state_id.0]);
+
+    assert!(!validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.check == Check::ReferentialIntegrity));
+
+    let missing = "test:model:historical-vertex#missing";
+    let FeatureDefinition::DatumPoint {
+        construction: Some(construction),
+        ..
+    } = &mut ir.model.features[0].definition
+    else {
+        unreachable!("test feature is a constructed datum point")
+    };
+    let DatumPointConstruction::Vertex {
+        vertex: VertexSelection::Historical { vertex, .. },
+    } = construction.as_mut()
+    else {
+        unreachable!("test datum point uses a historical vertex")
+    };
+    *vertex = HistoricalVertexId(missing.into());
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.check == Check::ReferentialIntegrity
+            && finding.entity.as_deref() == Some(feature_id.as_str())
+            && finding.message == format!("references missing historical vertex `{missing}`")
+    }));
+}
+
+#[test]
+fn three_point_datum_plane_requires_distinct_vertices_from_one_input_topology() {
+    use crate::features::{
+        Feature, FeatureDefinition, FeatureId, FeatureInputTopology, VertexSelection,
+    };
+    use crate::ids::{FeatureInputTopologyId, HistoricalVertexId};
+
+    let feature_id = FeatureId("test:model:feature#three-point-plane".into());
+    let first_state = FeatureInputTopologyId("test:model:feature-input#three-point-plane-a".into());
+    let second_state =
+        FeatureInputTopologyId("test:model:feature-input#three-point-plane-b".into());
+    let vertices = [
+        HistoricalVertexId("test:model:historical-vertex#1".into()),
+        HistoricalVertexId("test:model:historical-vertex#2".into()),
+        HistoricalVertexId("test:model:historical-vertex#3".into()),
+    ];
+    let other_vertex = HistoricalVertexId("test:model:historical-vertex#4".into());
+    let historical = |state: &FeatureInputTopologyId, vertex: &HistoricalVertexId, native: &str| {
+        VertexSelection::Historical {
+            state: state.clone(),
+            vertex: vertex.clone(),
+            native: native.into(),
+        }
+    };
+
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.feature_input_topologies.extend([
+        FeatureInputTopology {
+            id: first_state.clone(),
+            input_of: feature_id.clone(),
+            bodies: Vec::new(),
+            faces: Vec::new(),
+            edges: Vec::new(),
+            vertices: vertices.to_vec(),
+            native_ref: None,
+        },
+        FeatureInputTopology {
+            id: second_state.clone(),
+            input_of: feature_id.clone(),
+            bodies: Vec::new(),
+            faces: Vec::new(),
+            edges: Vec::new(),
+            vertices: vec![other_vertex.clone()],
+            native_ref: None,
+        },
+    ]);
+    ir.model.features.push(Feature {
+        id: feature_id,
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::DatumThreePointPlane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            points: Box::new([
+                historical(&first_state, &vertices[0], "native:1"),
+                historical(&first_state, &vertices[1], "native:2"),
+                historical(&first_state, &vertices[2], "native:3"),
+            ]),
+        },
+        native_ref: None,
+    });
+
+    let findings = validate(&ir, Vec::new()).findings;
+    assert!(!findings
+        .iter()
+        .any(|finding| finding.message.contains("three-point datum-plane")));
+
+    let set_third = |ir: &mut CadIr, point| {
+        let FeatureDefinition::DatumThreePointPlane { points, .. } =
+            &mut ir.model.features[0].definition
+        else {
+            unreachable!("test feature is a three-point datum plane")
+        };
+        points[2] = point;
+    };
+    set_third(
+        &mut ir,
+        historical(&first_state, &vertices[0], "different-native-identity"),
+    );
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.message == "three-point datum plane requires three distinct vertices"
+    }));
+
+    set_third(
+        &mut ir,
+        historical(&second_state, &other_vertex, "native:4"),
+    );
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.message == "three-point datum-plane vertices use different input topologies"
     }));
 }
 
@@ -552,6 +734,7 @@ fn malformed_sketch_geometry_and_constraints_are_rejected() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: crate::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -644,6 +827,7 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
         id: sketch.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: crate::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -705,6 +889,152 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
         finding.entity.as_deref() == Some(constraint.0.as_str())
             && finding.message.contains("three distinct members")
     }));
+}
+
+#[test]
+fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
+    use crate::features::Length;
+    use crate::math::{Point2, Point3, Vector3};
+    use crate::sketches::{
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+        SketchEntityId, SketchGeometry, SketchId, SketchOffsetPair,
+    };
+
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    let sketch = SketchId("synthetic:test:sketch#nurbs-offset".into());
+    ir.model.sketches.push(Sketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: crate::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        profiles: Vec::new(),
+        native_ref: None,
+    });
+    let source = SketchEntityId("synthetic:test:nurbs#source".into());
+    let result = SketchEntityId("synthetic:test:nurbs#result".into());
+    let result_start = Point2::new(-1.2, 1.6);
+    let result_end = Point2::new(10.0 + 2.0 / 5.0_f64.sqrt(), 4.0 / 5.0_f64.sqrt());
+    ir.model.sketch_entities.extend([
+        SketchEntity {
+            id: source.clone(),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Nurbs {
+                degree: 2,
+                knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                control_points: vec![
+                    Point2::new(0.0, 0.0),
+                    Point2::new(4.0, 3.0),
+                    Point2::new(10.0, 0.0),
+                ],
+                weights: None,
+                periodic: false,
+            },
+        },
+        SketchEntity {
+            id: result.clone(),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Nurbs {
+                degree: 3,
+                knots: vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+                control_points: vec![
+                    result_start,
+                    Point2::new(result_start.u + 2.0, result_start.v + 1.5),
+                    Point2::new(result_end.u - 3.0, result_end.v + 1.5),
+                    result_end,
+                ],
+                weights: None,
+                periodic: false,
+            },
+        },
+    ]);
+    let constraint = SketchConstraintId("synthetic:test:constraint#nurbs-offset".into());
+    ir.model.sketch_constraints.push(SketchConstraint {
+        id: constraint.clone(),
+        sketch,
+        definition: SketchConstraintDefinition::Offset {
+            pairs: vec![SketchOffsetPair {
+                source: source.clone(),
+                result: result.clone(),
+                source_reversed: false,
+            }],
+            distance: Length(2.0),
+            parameter: None,
+            parameter_factor: None,
+        },
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: None,
+    });
+    ir.finalize();
+    let source_ordinal = ir
+        .model
+        .sketch_entities
+        .iter()
+        .position(|entity| entity.id == source)
+        .expect("source entity");
+    let result_ordinal = ir
+        .model
+        .sketch_entities
+        .iter()
+        .position(|entity| entity.id == result)
+        .expect("result entity");
+    let offset_mismatch = |report: &crate::report::ValidationReport| {
+        report.findings.iter().any(|finding| {
+            finding.entity.as_deref() == Some(constraint.0.as_str())
+                && finding
+                    .message
+                    .contains("offset pair does not match its oriented distance")
+        })
+    };
+    assert!(!offset_mismatch(&validate(&ir, Vec::new())));
+
+    {
+        let SketchGeometry::Nurbs { control_points, .. } =
+            &mut ir.model.sketch_entities[result_ordinal].geometry
+        else {
+            unreachable!("test result is a NURBS")
+        };
+        control_points.reverse();
+    }
+    let reversed_distance = crate::eval::fitted_nurbs_offset_frame_distance(
+        &ir.model.sketch_entities[source_ordinal].geometry,
+        &ir.model.sketch_entities[result_ordinal].geometry,
+        ir.tolerances.linear,
+    )
+    .expect("reversed fitted offset frame");
+    assert!(
+        (reversed_distance - 2.0).abs() <= 1.0e-9,
+        "reversed fitted offset distance {reversed_distance}"
+    );
+    assert!(!offset_mismatch(&validate(&ir, Vec::new())));
+    let SketchGeometry::Nurbs { control_points, .. } =
+        &mut ir.model.sketch_entities[result_ordinal].geometry
+    else {
+        unreachable!("test result is a NURBS")
+    };
+    control_points.reverse();
+    control_points.last_mut().expect("result endpoint").u += 0.01;
+    assert!(offset_mismatch(&validate(&ir, Vec::new())));
 }
 
 #[test]
@@ -855,6 +1185,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         id: sketch.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: crate::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -930,6 +1261,7 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
         id,
         name: None,
         configuration: None,
+        visible: None,
         placement: crate::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1714,6 +2046,7 @@ fn configuration_body_membership_round_trips_and_validates() {
             outputs: vec![BodyId("synthetic:test:body#missing-output".into())],
             definition: FeatureDefinition::DatumPoint {
                 position: Point3::new(0.0, 0.0, 0.0),
+                construction: None,
             },
         },
     )]);
@@ -1770,6 +2103,7 @@ fn configuration_body_membership_round_trips_and_validates() {
             outputs: Vec::new(),
             definition: FeatureDefinition::DatumPoint {
                 position: Point3::new(0.0, 0.0, 0.0),
+                construction: None,
             },
             native_ref: None,
         });
@@ -1782,6 +2116,7 @@ fn configuration_body_membership_round_trips_and_validates() {
             outputs: vec![body.clone(), body.clone()],
             definition: FeatureDefinition::DatumPoint {
                 position: Point3::new(0.0, 0.0, 0.0),
+                construction: None,
             },
         },
     )]);
@@ -1807,6 +2142,7 @@ fn configuration_body_membership_round_trips_and_validates() {
             outputs: Vec::new(),
             definition: FeatureDefinition::DatumPoint {
                 position: Point3::new(0.0, 0.0, 0.0),
+                construction: None,
             },
         },
     )]);
@@ -1849,6 +2185,7 @@ fn configuration_body_membership_round_trips_and_validates() {
             outputs: vec![body.clone()],
             definition: FeatureDefinition::DatumPoint {
                 position: Point3::new(0.0, 0.0, 0.0),
+                construction: None,
             },
         },
     )]);
@@ -1863,6 +2200,7 @@ fn configuration_body_membership_round_trips_and_validates() {
             outputs: Vec::new(),
             definition: FeatureDefinition::DatumPoint {
                 position: Point3::new(0.0, 0.0, 0.0),
+                construction: None,
             },
         },
     );
@@ -3934,6 +4272,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         outputs: Vec::new(),
         definition: FeatureDefinition::DatumPoint {
             position: Point3::new(0.0, 0.0, 0.0),
+            construction: None,
         },
         native_ref: None,
     });
@@ -4210,6 +4549,7 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         outputs: Vec::new(),
         definition: FeatureDefinition::DatumPoint {
             position: Point3::new(0.0, 0.0, 0.0),
+            construction: None,
         },
         native_ref: None,
     });
@@ -4482,6 +4822,16 @@ fn resolved_datum_geometry_must_be_finite_and_coherent() {
         },
         FeatureDefinition::DatumPoint {
             position: Point3::new(f64::NAN, 0.0, 0.0),
+            construction: None,
+        },
+        FeatureDefinition::DatumPoint {
+            position: Point3::new(0.0, 0.0, 0.0),
+            construction: Some(Box::new(
+                crate::features::DatumPointConstruction::DistanceOnEdge {
+                    edge: crate::features::EdgeSelection::Unresolved,
+                    fraction: 1.5,
+                },
+            )),
         },
     ];
     let mut ir = unit_cube();
@@ -4507,6 +4857,7 @@ fn resolved_datum_geometry_must_be_finite_and_coherent() {
         "datum-plane frame is invalid",
         "datum-axis frame is invalid",
         "datum-point position is invalid",
+        "datum-point path fraction is invalid",
     ] {
         assert!(findings.iter().any(|finding| finding.message == message));
     }
@@ -4764,6 +5115,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: crate::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -4850,6 +5202,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: crate::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -5009,6 +5362,7 @@ fn spatial_sketch_feature_owns_spatial_geometry() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         profiles: Vec::new(),
         native_ref: None,
     });
@@ -5057,6 +5411,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         id: sketch.clone(),
         name: Some("3D path".into()),
         configuration: None,
+        visible: Some(false),
         profiles: vec![SpatialSketchProfile {
             origin: Point3::new(1.0, 2.0, 3.0),
             normal: Vector3::new(0.0, 1.0, 0.0),
@@ -6342,6 +6697,9 @@ fn reference_images_require_valid_assets_and_plane_placements() {
         outputs: Vec::new(),
         definition: FeatureDefinition::ReferenceImage {
             asset: asset_id,
+            visible: true,
+            mirror_u: false,
+            mirror_v: false,
             origin: Point3::new(0.0, 0.0, 0.0),
             u_axis: Vector3::new(1.0, 0.0, 0.0),
             v_axis: Vector3::new(0.0, 1.0, 0.0),
@@ -6373,6 +6731,61 @@ fn reference_images_require_valid_assets_and_plane_placements() {
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(feature_id.0.as_str())
             && finding.message == "reference-image placement is invalid"
+    }));
+}
+
+#[test]
+fn decals_require_valid_assets_faces_and_opacity() {
+    use crate::assets::{Asset, AssetContent, AssetId};
+    use crate::features::{DecalMapping, FaceSelection, Feature, FeatureDefinition, FeatureId};
+
+    let asset_id = AssetId("synthetic:test:asset#decal".into());
+    let feature_id = FeatureId("synthetic:test:feature#decal".into());
+    let mut ir = unit_cube();
+    let face_id = ir.model.faces[0].id.clone();
+    ir.model.assets.push(Asset {
+        id: asset_id.clone(),
+        name: Some("decal.png".into()),
+        media_type: Some("image/png".into()),
+        content: AssetContent::Embedded {
+            data: vec![1, 2, 3],
+        },
+        native_ref: None,
+    });
+    ir.model.features.push(Feature {
+        id: feature_id.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Decal {
+            asset: asset_id,
+            faces: FaceSelection::Faces(vec![face_id]),
+            mapping: DecalMapping::FitToFaces,
+            opacity: Some(0.75),
+        },
+        native_ref: None,
+    });
+    ir.finalize();
+    assert!(validate(&ir, Vec::new()).is_ok());
+
+    let FeatureDefinition::Decal {
+        ref mut opacity, ..
+    } = ir.model.features.last_mut().unwrap().definition
+    else {
+        unreachable!();
+    };
+    *opacity = Some(2.0);
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(feature_id.0.as_str())
+            && finding.message == "decal opacity is invalid"
     }));
 }
 

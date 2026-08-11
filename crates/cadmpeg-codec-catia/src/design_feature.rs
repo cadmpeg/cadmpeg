@@ -510,6 +510,7 @@ fn transfer_sketch(
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: SketchPlacement::Unresolved,
         profiles: Vec::new(),
         native_ref: Some(object.id.clone()),

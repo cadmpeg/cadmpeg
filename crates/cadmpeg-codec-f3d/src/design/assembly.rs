@@ -23,8 +23,8 @@ pub(crate) const fn alignment_lane_bounds(
     owner_count: usize,
 ) -> Option<(usize, usize)> {
     match (frame_length, owner_count) {
-        (627 | 633 | 637 | 692, 4) => Some((0, 4)),
-        (732, 8) => Some((4, 8)),
+        (399 | 627 | 633 | 637 | 692, 4) => Some((0, 4)),
+        (604 | 732, 8) => Some((4, 8)),
         (705, 6) => Some((4, 6)),
         (772, 10) => Some((8, 10)),
         _ => None,
@@ -35,6 +35,7 @@ pub(crate) const fn alignment_lane_bounds(
 /// locator references carried by a non-axial assembly frame.
 pub(crate) const fn operand_path_locator_offsets(frame_length: u64) -> Option<[usize; 2]> {
     match frame_length {
+        399 => Some([51, 62]),
         627 | 637 | 692 => Some([366, 377]),
         633 | 732 => Some([362, 373]),
         _ => None,
@@ -346,6 +347,7 @@ mod tests {
             (633, 4, (0, 4)),
             (637, 4, (0, 4)),
             (692, 4, (0, 4)),
+            (604, 8, (4, 8)),
             (732, 8, (4, 8)),
             (705, 6, (4, 6)),
             (772, 10, (8, 10)),

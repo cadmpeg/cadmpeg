@@ -23,6 +23,7 @@ fn transformed_dimensioned_arc_swaps_endpoint_identity_with_minor_geometry() {
         id: SketchId("sketch".into()),
         name: None,
         configuration: None,
+        visible: None,
         placement: SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),

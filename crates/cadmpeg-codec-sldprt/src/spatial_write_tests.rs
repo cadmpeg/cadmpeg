@@ -30,6 +30,7 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
         id: sketch_id.clone(),
         name: Some("Spatial path".into()),
         configuration: Some("0".into()),
+        visible: None,
         profiles: Vec::new(),
         native_ref: None,
     });

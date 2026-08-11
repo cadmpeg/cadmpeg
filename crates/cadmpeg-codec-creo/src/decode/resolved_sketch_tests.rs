@@ -3640,6 +3640,7 @@ fn circle_remains_a_closed_extrusion_profile() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
         profiles: vec![vec![SketchEntityUse {
             entity: entity_id.clone(),
@@ -3750,6 +3751,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
         profiles: vec![vec![
             SketchEntityUse {
@@ -4623,6 +4625,7 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
         id: sketch.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
         profiles: Vec::new(),
         native_ref: Some("creo:featdefs:sketch#822".to_string()),
@@ -5311,6 +5314,7 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
         id: SketchId("creo:model:sketch#offset:40".to_string()),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -5348,6 +5352,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
         profiles: vec![vec![
             SketchEntityUse {

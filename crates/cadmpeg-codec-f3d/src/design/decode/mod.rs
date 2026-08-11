@@ -4,7 +4,9 @@
 pub mod body;
 pub mod canvas;
 pub mod components;
+pub mod decal;
 pub mod dimension_frames;
+pub(crate) mod image;
 pub mod mesh;
 pub mod meta;
 pub mod operands;

@@ -5603,6 +5603,7 @@ mod history_reference_tests {
             id: sketch_id.clone(),
             name: Some("sketch-native".into()),
             configuration: Some("0".into()),
+            visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -5627,6 +5628,7 @@ mod history_reference_tests {
             id: spatial_sketch_id.clone(),
             name: Some("spatial-native".into()),
             configuration: Some("0".into()),
+            visible: None,
             profiles: Vec::new(),
             native_ref: Some("lane".into()),
         });
@@ -5855,6 +5857,7 @@ mod history_reference_tests {
             id: sketch_id.clone(),
             name: Some("spatial".into()),
             configuration: None,
+            visible: None,
             profiles: Vec::new(),
             native_ref: Some("first-lane".into()),
         });
@@ -5862,6 +5865,7 @@ mod history_reference_tests {
             id: planar_sketch_id.clone(),
             name: Some("planar-state".into()),
             configuration: None,
+            visible: None,
             profiles: Vec::new(),
             native_ref: Some("first-lane".into()),
         });
@@ -8187,6 +8191,7 @@ fn project_datum_axis(feature: &Feature) -> Option<FeatureDefinition> {
 fn project_datum_point(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::DatumPoint {
         position: parse_point3_mm(feature.properties.get("Position")?)?,
+        construction: None,
     })
 }
 
@@ -10515,7 +10520,9 @@ fn face_selection_value(selection: &FaceSelection) -> Option<String> {
 
 fn vertex_selection_value(selection: &VertexSelection) -> Option<String> {
     match selection {
-        VertexSelection::Native(native) | VertexSelection::Generated { native, .. }
+        VertexSelection::Native(native)
+        | VertexSelection::Generated { native, .. }
+        | VertexSelection::Historical { native, .. }
             if !native.trim().is_empty() =>
         {
             Some(native.clone())
@@ -13976,7 +13983,7 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
-            FeatureDefinition::DatumPoint { position } => {
+            FeatureDefinition::DatumPoint { position, .. } => {
                 if ![position.x, position.y, position.z]
                     .iter()
                     .all(|value| value.is_finite())

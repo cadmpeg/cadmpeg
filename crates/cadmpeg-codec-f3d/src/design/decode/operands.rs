@@ -24,8 +24,9 @@ use crate::records::{
     DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchProfileOperand,
     DesignSketchProfileRegion, DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection,
     DesignSurfaceOffsetSupport, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
-    DesignTopologyRecipeTriplet, LostEdgeReference, PersistentSubentityTag, SketchCurveIdentity,
-    SketchPoint, SketchRelationOperand,
+    DesignTopologyRecipeTriplet, DesignVertexRecipe, DesignWorkPlaneConstruction,
+    DesignWorkPointInputCarrier, DesignWorkPointPlaneSelection, LostEdgeReference,
+    PersistentSubentityTag, SketchCurveIdentity, SketchPoint, SketchRelationOperand,
 };
 use cadmpeg_core::le::{f64_at, i32_at, u32_at, u64_at as read_u64};
 use cadmpeg_core::CodecError;
@@ -39,10 +40,21 @@ pub fn decode_edge_operands(
     headers: &[DesignRecordHeader],
     recipes: &[ConstructionRecipe],
 ) -> Result<Vec<DesignEdgeOperand>, CodecError> {
-    let headers = headers
+    let record_headers = headers;
+    let headers = record_headers
         .iter()
         .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
         .collect::<HashMap<_, _>>();
+    let terminal_group_members = groups
+        .iter()
+        .filter_map(|group| {
+            Some((
+                native_stream(&group.id)?.to_owned(),
+                group.scope_record_index,
+                *group.members.last()?,
+            ))
+        })
+        .collect::<HashSet<_>>();
     let mut out = Vec::new();
     for scope in scopes
         .iter()
@@ -68,6 +80,15 @@ pub fn decode_edge_operands(
                 member_indices.extend(edge_record_indices.iter().copied());
             }
         }
+        if let Some(construction) = &scope.work_point_construction {
+            member_indices.extend(
+                construction
+                    .rule
+                    .inputs()
+                    .iter()
+                    .map(|input| input.record_index),
+            );
+        }
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
@@ -88,7 +109,25 @@ pub fn decode_edge_operands(
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
-            let Some(operand) = parse_edge_operand(bytes, scope, ordinal, header, recipes) else {
+            let terminal_group_member = terminal_group_members.contains(&(
+                stream.to_owned(),
+                scope.record_index,
+                header.record_index,
+            ));
+            let terminal_group_limit = terminal_group_member.then(|| {
+                record_headers
+                    .iter()
+                    .filter(|candidate| {
+                        native_stream(&candidate.id) == Some(stream)
+                            && candidate.byte_offset > header.byte_offset
+                    })
+                    .map(|candidate| candidate.byte_offset)
+                    .min()
+                    .unwrap_or_else(|| u64::try_from(bytes.len()).unwrap_or(u64::MAX))
+            });
+            let Some(operand) =
+                parse_edge_operand(bytes, scope, ordinal, header, recipes, terminal_group_limit)
+            else {
                 continue;
             };
             out.push(operand);
@@ -96,6 +135,241 @@ pub fn decode_edge_operands(
     }
     out.sort_by_key(|operand| operand.id.clone());
     Ok(out)
+}
+
+/// Bind each `WorkPoint` input to its exact edge, vertex, or `WorkPlane` carrier.
+pub fn bind_work_point_input_carriers(
+    scan: &ContainerScan,
+    scopes: &mut [DesignParameterScope],
+    headers: &[DesignRecordHeader],
+    recipes: &[ConstructionRecipe],
+    edge_operands: &[DesignEdgeOperand],
+) -> Result<(), CodecError> {
+    let headers = headers
+        .iter()
+        .filter_map(|header| {
+            Some((
+                (native_stream(&header.id)?.to_owned(), header.record_index),
+                header,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let work_planes = scopes
+        .iter()
+        .filter(|scope| scope.kind == "WorkPlane")
+        .filter_map(|scope| {
+            Some((
+                (
+                    native_stream(&scope.id)?.to_owned(),
+                    scope.record_index.checked_sub(1)?,
+                ),
+                scope.record_index,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+
+    for scope in scopes.iter_mut().filter(|scope| scope.kind == "WorkPoint") {
+        let Some(stream) = native_stream(&scope.id).map(str::to_owned) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            scan.is_design_stream(entry, role::BULKSTREAM)
+                && stream == ids::native_scope(&entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let scope_record_index = scope.record_index;
+        let Some(construction) = &mut scope.work_point_construction else {
+            continue;
+        };
+        for input in construction.rule.inputs_mut() {
+            let edge_matches = edge_operands
+                .iter()
+                .filter(|operand| {
+                    native_stream(&operand.id) == Some(stream.as_str())
+                        && operand.scope_record_index == scope_record_index
+                        && operand.record_index == input.record_index
+                })
+                .collect::<Vec<_>>();
+            if let [operand] = edge_matches.as_slice() {
+                input.carrier = Some(Box::new(DesignWorkPointInputCarrier::EdgeRecipe {
+                    operand_id: operand.id.clone(),
+                }));
+                continue;
+            }
+            let Some(header) = headers.get(&(stream.clone(), input.record_index)) else {
+                continue;
+            };
+            if let Some(recipe) = parse_vertex_recipe(bytes, &stream, header, recipes) {
+                input.carrier = Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
+                    recipe,
+                }));
+                continue;
+            }
+            let Some(selection) = parse_entity_selection_frame(
+                bytes,
+                input.record_index,
+                header.byte_offset,
+                &header.class_tag,
+            ) else {
+                continue;
+            };
+            let Ok(primary_identity) = u32::try_from(selection.primary_identity) else {
+                continue;
+            };
+            let Some(work_plane_scope_record_index) = work_planes
+                .get(&(stream.clone(), primary_identity))
+                .copied()
+            else {
+                continue;
+            };
+            if selection.secondary_identity.is_some()
+                || selection.curve_secondary_identity.is_some()
+            {
+                continue;
+            }
+            input.carrier = Some(Box::new(DesignWorkPointInputCarrier::WorkPlane {
+                selection: DesignWorkPointPlaneSelection {
+                    class_tag: header.class_tag.clone(),
+                    asset_id: selection.asset_id,
+                    asset_id_offset: selection.asset_id_offset,
+                    context_id: selection.context_id,
+                    context_id_offset: selection.context_id_offset,
+                    identity_record_index: selection.identity_record_index,
+                    identity_record_offset: selection.identity_record_offset,
+                    primary_identity: selection.primary_identity,
+                    primary_identity_offset: selection.primary_identity_offset,
+                    work_plane_scope_record_index,
+                    next_record_index: selection.next_record_index,
+                    next_byte_offset: selection.next_byte_offset,
+                },
+            }));
+        }
+    }
+    Ok(())
+}
+
+/// Bind the exact three-vertex construction carried by a `WorkPlane` scope.
+pub fn bind_work_plane_constructions(
+    scan: &ContainerScan,
+    scopes: &mut [DesignParameterScope],
+    headers: &[DesignRecordHeader],
+    recipes: &[ConstructionRecipe],
+    owners: &[DesignParameterOwner],
+    parameters: &[DesignParameter],
+) -> Result<(), CodecError> {
+    let headers = headers
+        .iter()
+        .filter_map(|header| {
+            Some((
+                (native_stream(&header.id)?.to_owned(), header.record_index),
+                header,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+
+    for scope in scopes.iter_mut().filter(|scope| scope.kind == "WorkPlane") {
+        scope.work_plane_construction = None;
+        let Some(stream) = native_stream(&scope.id).map(str::to_owned) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            scan.is_design_stream(entry, role::BULKSTREAM)
+                && stream == ids::native_scope(&entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let [placement_record_index, first, second, third, extra_offset] =
+            scope.reference_members.as_slice()
+        else {
+            continue;
+        };
+        if scope.work_plane_transform.is_none() || scope.work_plane_reference != Some(*extra_offset)
+        {
+            continue;
+        }
+        let Some(owner) = owners.iter().find(|owner| {
+            native_stream(&owner.id) == Some(stream.as_str())
+                && owner.record_index == *extra_offset
+                && owner.scope_record_index == scope.record_index
+                && owner.evaluated_value.is_finite()
+                && owner.evaluated_value == 0.0
+        }) else {
+            continue;
+        };
+        if !parameters.iter().any(|parameter| {
+            native_stream(&parameter.id) == Some(stream.as_str())
+                && parameter.record_index == owner.parameter_record_index
+                && parameter.owner_record_index == Some(owner.record_index)
+                && parameter.source_kind == "ExtraOffset"
+                && parameter.evaluated_value.is_finite()
+                && parameter.evaluated_value == 0.0
+        }) {
+            continue;
+        }
+        let inputs = [first, second, third]
+            .into_iter()
+            .map(|record_index| {
+                parse_vertex_recipe(
+                    bytes,
+                    &stream,
+                    headers.get(&(stream.clone(), *record_index))?,
+                    recipes,
+                )
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(inputs) = inputs else {
+            continue;
+        };
+        let Ok(inputs) = inputs.try_into() else {
+            continue;
+        };
+        scope.work_plane_construction = Some(DesignWorkPlaneConstruction::ThreePoint {
+            placement_record_index: *placement_record_index,
+            inputs: Box::new(inputs),
+        });
+    }
+    Ok(())
+}
+
+/// Bind persistent subentity candidates carried by decoded vertex recipes.
+pub fn bind_vertex_recipe_candidates(
+    scopes: &mut [DesignParameterScope],
+    tags: &[PersistentSubentityTag],
+) {
+    for scope in scopes {
+        if let Some(DesignWorkPlaneConstruction::ThreePoint { inputs, .. }) =
+            &mut scope.work_plane_construction
+        {
+            for recipe in inputs.iter_mut() {
+                for reference in &mut recipe.recipe_references {
+                    bind_recipe_reference_candidates(reference, tags, Some(&scope.id));
+                }
+            }
+        }
+        let Some(construction) = &mut scope.work_point_construction else {
+            continue;
+        };
+        for recipe in construction
+            .rule
+            .inputs_mut()
+            .iter_mut()
+            .filter_map(|input| {
+                let DesignWorkPointInputCarrier::VertexRecipe { recipe } =
+                    input.carrier.as_deref_mut()?
+                else {
+                    return None;
+                };
+                Some(recipe)
+            })
+        {
+            for reference in &mut recipe.recipe_references {
+                bind_recipe_reference_candidates(reference, tags, Some(&scope.id));
+            }
+        }
+    }
 }
 
 /// Whether a feature family owns edge-recipe operands directly or through a
@@ -115,7 +389,17 @@ pub(crate) fn has_edge_recipe_operands(kind: &str) -> bool {
                 | DesignFeatureFamily::SurfaceOffset
                 | DesignFeatureFamily::SurfaceRuled
         )
-    ) || matches!(kind, "EdgeFlange" | "Hem")
+    ) || matches!(kind, "EdgeFlange" | "Hem" | "WorkPoint")
+}
+
+/// Indexed-record distance from an edge-recipe primary record to its terminal
+/// record for the owning consumer.
+pub(crate) fn edge_recipe_terminal_delta(kind: &str) -> u32 {
+    match design_feature_family(kind) {
+        Some(DesignFeatureFamily::Sweep) => 7,
+        _ if kind == "WorkPoint" => 5,
+        _ => 4,
+    }
 }
 
 /// Decode persistent selection identities named by Fillet and Chamfer groups.
@@ -234,6 +518,9 @@ pub fn decode_face_operands(
         let is_sweep_guide_surface = design_feature_family(&scope.kind)
             == Some(DesignFeatureFamily::Sweep)
             && group.role == 0x0000_0011_0000_0000;
+        let is_revolve_axis = design_feature_family(&scope.kind)
+            == Some(DesignFeatureFamily::Revolve)
+            && group.role == 0x0000_0021_0000_0000;
         let is_edge_treatment_support = matches!(
             design_feature_family(&scope.kind),
             Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
@@ -258,6 +545,7 @@ pub fn decode_face_operands(
             && !is_shell_operand
             && !is_loft_profile
             && !is_sweep_guide_surface
+            && !is_revolve_axis
             && !is_edge_treatment_support
             && !is_circular_pattern_seed
             && !is_mirror_seed
@@ -2901,13 +3189,75 @@ fn marked_record_reference(bytes: &[u8], at: usize) -> Option<u32> {
     u32_at(bytes, at + 1)
 }
 
-pub(crate) fn parse_edge_operand(
+struct ParsedRecipeOperand {
+    paired_byte_offset: u64,
+    paired_class_tag: String,
+    recipe_record_index: u32,
+    recipe_record_byte_offset: u64,
+    recipe_id: String,
+    recipe_prefix_offset: u64,
+    recipe_prefix_bytes: Vec<u8>,
+    recipe_references: Vec<crate::records::DesignRecipeReference>,
+    recipe_program_offset: u64,
+    recipe_program: Vec<i32>,
+    next_record_index: u32,
+    next_byte_offset: u64,
+}
+
+#[derive(Clone, Copy)]
+enum RecipeOperandTerminator {
+    RecordDelta(u32),
+    NextIndexedAfterRecipe { limit: u64 },
+}
+
+/// Parse one exact persistent vertex-recipe envelope.
+pub(crate) fn parse_vertex_recipe(
     bytes: &[u8],
-    scope: &DesignParameterScope,
-    scope_reference_ordinal: u32,
+    stream: &str,
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
-) -> Option<DesignEdgeOperand> {
+) -> Option<DesignVertexRecipe> {
+    let parsed = parse_recipe_operand(
+        bytes,
+        stream,
+        header,
+        recipes,
+        ConstructionRecipeKind::Vertex,
+        RecipeOperandTerminator::RecordDelta(5),
+    )?;
+    Some(DesignVertexRecipe {
+        record_index: header.record_index,
+        byte_offset: header.byte_offset,
+        class_tag: header.class_tag.clone(),
+        paired_byte_offset: parsed.paired_byte_offset,
+        paired_class_tag: parsed.paired_class_tag,
+        recipe_record_index: parsed.recipe_record_index,
+        recipe_record_byte_offset: parsed.recipe_record_byte_offset,
+        recipe_id: parsed.recipe_id,
+        recipe_prefix_offset: parsed.recipe_prefix_offset,
+        recipe_prefix_bytes: parsed.recipe_prefix_bytes,
+        recipe_references: parsed.recipe_references,
+        recipe_program_offset: parsed.recipe_program_offset,
+        recipe_program: parsed.recipe_program,
+        recipe_state_id: None,
+        resolved_vertex_slot: None,
+        next_record_index: parsed.next_record_index,
+        next_byte_offset: parsed.next_byte_offset,
+    })
+}
+
+/// Parse the indexed-record envelope shared by topology recipe operands.
+fn parse_recipe_operand(
+    bytes: &[u8],
+    stream: &str,
+    header: &DesignRecordHeader,
+    recipes: &[ConstructionRecipe],
+    recipe_kind: ConstructionRecipeKind,
+    terminator: RecipeOperandTerminator,
+) -> Option<ParsedRecipeOperand> {
+    let family_name = crate::design::RECIPES
+        .iter()
+        .find_map(|(name, kind)| (*kind == recipe_kind).then_some(*name))?;
     let start = usize::try_from(header.byte_offset).ok()?;
     let mut offsets = Vec::with_capacity(5);
     let mut position = start.checked_add(11)?;
@@ -2916,38 +3266,67 @@ pub(crate) fn parse_edge_operand(
         offsets.push(offset);
         position = offset.checked_add(11)?;
     }
-    offsets.push(next_indexed_record_offset_with_index(
-        bytes,
-        position,
-        header.record_index.checked_add(4)?,
-    )?);
-    let mut indexed = Vec::with_capacity(offsets.len());
-    for offset in &offsets {
-        let (class_tag, after_tag) =
-            lp_ascii_filtered(bytes, *offset, 0..=2000, u8::is_ascii_graphic)?;
-        indexed.push((class_tag, u32_at(bytes, after_tag)?));
-    }
-    let next_one = header.record_index.checked_add(1)?;
-    let next_two = header.record_index.checked_add(2)?;
+    offsets.push(match terminator {
+        RecipeOperandTerminator::RecordDelta(delta) => next_indexed_record_offset_with_index(
+            bytes,
+            position,
+            header.record_index.checked_add(delta)?,
+        )?,
+        RecipeOperandTerminator::NextIndexedAfterRecipe { limit } => {
+            let recipe_record_byte_offset = u64::try_from(offsets[3]).ok()?;
+            let recipe = recipes
+                .iter()
+                .filter(|recipe| {
+                    native_stream(&recipe.id) == Some(stream)
+                        && recipe.kind == recipe_kind
+                        && recipe.byte_offset > recipe_record_byte_offset
+                        && recipe.byte_offset < limit
+                })
+                .min_by_key(|recipe| recipe.byte_offset)?;
+            let recipe_program_at = usize::try_from(recipe.byte_offset)
+                .ok()?
+                .checked_add(family_name.len())?;
+            let next = next_indexed_record_offset(bytes, recipe_program_at)?;
+            (u64::try_from(next).ok()? <= limit).then_some(next)?
+        }
+    });
+    let indexed = offsets
+        .iter()
+        .map(|offset| {
+            let (class_tag, after_tag) =
+                lp_ascii_filtered(bytes, *offset, 0..=2000, u8::is_ascii_graphic)?;
+            Some((class_tag, u32_at(bytes, after_tag)?))
+        })
+        .collect::<Option<Vec<_>>>()?;
     let recipe_record_index = header.record_index.checked_add(3)?;
-    let next_record_index = header.record_index.checked_add(4)?;
-    if indexed[0].1 != header.record_index
-        || indexed[1].1 != next_one
-        || indexed[2].1 != next_two
-        || indexed[3].1 != recipe_record_index
-        || indexed[4].1 != next_record_index
+    let expected_prefix = [
+        header.record_index,
+        header.record_index.checked_add(1)?,
+        header.record_index.checked_add(2)?,
+        recipe_record_index,
+    ];
+    if !indexed
+        .iter()
+        .take(4)
+        .zip(expected_prefix)
+        .all(|((_, actual), expected)| *actual == expected)
     {
         return None;
     }
-    let stream = native_stream(&scope.id)?;
-    let recipe_start = u64::try_from(offsets[3]).ok()?;
+    let next_record_index = indexed[4].1;
+    if let RecipeOperandTerminator::RecordDelta(delta) = terminator {
+        if next_record_index != header.record_index.checked_add(delta)? {
+            return None;
+        }
+    }
+    let recipe_record_byte_offset = u64::try_from(offsets[3]).ok()?;
     let next_byte_offset = u64::try_from(offsets[4]).ok()?;
     let matches = recipes
         .iter()
         .filter(|recipe| {
             native_stream(&recipe.id) == Some(stream)
-                && recipe.kind == ConstructionRecipeKind::Edge
-                && recipe.byte_offset > recipe_start
+                && recipe.kind == recipe_kind
+                && recipe.byte_offset > recipe_record_byte_offset
                 && recipe.byte_offset < next_byte_offset
         })
         .collect::<Vec<_>>();
@@ -2958,13 +3337,13 @@ pub(crate) fn parse_edge_operand(
         bytes,
         offsets[3],
         usize::try_from(recipe.byte_offset).ok()?,
-        b"edge_recipe_data".len(),
+        family_name.len(),
     )?;
-    let recipe_references =
-        decode_recipe_references(&recipe_prefix_bytes, u64::try_from(recipe_prefix_at).ok()?);
+    let recipe_prefix_offset = u64::try_from(recipe_prefix_at).ok()?;
+    let recipe_references = decode_recipe_references(&recipe_prefix_bytes, recipe_prefix_offset);
     let recipe_program_at = usize::try_from(recipe.byte_offset)
         .ok()?
-        .checked_add(b"edge_recipe_data".len())?;
+        .checked_add(family_name.len())?;
     let recipe_program_bytes =
         bytes.get(recipe_program_at..usize::try_from(next_byte_offset).ok()?)?;
     if recipe_program_bytes.is_empty()
@@ -2981,13 +3360,60 @@ pub(crate) fn parse_edge_operand(
                     .expect("invariant: chunks_exact(4) yields four-byte slices"),
             )
         })
-        .collect::<Vec<_>>();
-    let recipe_structure = edge_recipe_structure(&recipe_program);
+        .collect();
+    Some(ParsedRecipeOperand {
+        paired_byte_offset: u64::try_from(offsets[0]).ok()?,
+        paired_class_tag: indexed[0].0.clone(),
+        recipe_record_index,
+        recipe_record_byte_offset,
+        recipe_id: recipe.id.clone(),
+        recipe_prefix_offset,
+        recipe_prefix_bytes,
+        recipe_references,
+        recipe_program_offset: u64::try_from(recipe_program_at).ok()?,
+        recipe_program,
+        next_record_index,
+        next_byte_offset,
+    })
+}
+
+pub(crate) fn parse_edge_operand(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    scope_reference_ordinal: u32,
+    header: &DesignRecordHeader,
+    recipes: &[ConstructionRecipe],
+    terminal_group_limit: Option<u64>,
+) -> Option<DesignEdgeOperand> {
+    let next_record_delta = edge_recipe_terminal_delta(&scope.kind);
+    let stream = native_stream(&scope.id)?;
+    let parsed = parse_recipe_operand(
+        bytes,
+        stream,
+        header,
+        recipes,
+        ConstructionRecipeKind::Edge,
+        RecipeOperandTerminator::RecordDelta(next_record_delta),
+    )
+    .or_else(|| {
+        let limit = terminal_group_limit?;
+        parse_recipe_operand(
+            bytes,
+            stream,
+            header,
+            recipes,
+            ConstructionRecipeKind::Edge,
+            RecipeOperandTerminator::NextIndexedAfterRecipe { limit },
+        )
+    })?;
+    let recipe_structure = edge_recipe_structure(&parsed.recipe_program);
     let surface_patch_recipe_structure = (scope.kind == "SurfacePatch")
-        .then(|| surface_patch_recipe_structure(&recipe_program, recipe_references.len()))
+        .then(|| {
+            surface_patch_recipe_structure(&parsed.recipe_program, parsed.recipe_references.len())
+        })
         .flatten();
     let local_topology_references = recipe_structure.as_ref().and_then(|structure| {
-        edge_recipe_local_topology_references(structure, recipe_references.len())
+        edge_recipe_local_topology_references(structure, parsed.recipe_references.len())
     });
     Some(DesignEdgeOperand {
         id: ids::native_design_edge_operand_id(
@@ -2999,16 +3425,16 @@ pub(crate) fn parse_edge_operand(
         record_index: header.record_index,
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
-        paired_byte_offset: u64::try_from(offsets[0]).ok()?,
-        paired_class_tag: indexed[0].0.clone(),
-        recipe_record_index,
-        recipe_record_byte_offset: recipe_start,
-        recipe_id: recipe.id.clone(),
-        recipe_prefix_offset: u64::try_from(recipe_prefix_at).ok()?,
-        recipe_prefix_bytes,
-        recipe_references,
-        recipe_program_offset: u64::try_from(recipe_program_at).ok()?,
-        recipe_program,
+        paired_byte_offset: parsed.paired_byte_offset,
+        paired_class_tag: parsed.paired_class_tag,
+        recipe_record_index: parsed.recipe_record_index,
+        recipe_record_byte_offset: parsed.recipe_record_byte_offset,
+        recipe_id: parsed.recipe_id,
+        recipe_prefix_offset: parsed.recipe_prefix_offset,
+        recipe_prefix_bytes: parsed.recipe_prefix_bytes,
+        recipe_references: parsed.recipe_references,
+        recipe_program_offset: parsed.recipe_program_offset,
+        recipe_program: parsed.recipe_program,
         recipe_structure,
         surface_patch_recipe_structure,
         local_topology_references,
@@ -3033,8 +3459,8 @@ pub(crate) fn parse_edge_operand(
         resolved_edge_slot: None,
         resolved_axis_origin: None,
         resolved_axis_direction: None,
-        next_record_index: indexed[4].1,
-        next_byte_offset,
+        next_record_index: parsed.next_record_index,
+        next_byte_offset: parsed.next_byte_offset,
     })
 }
 

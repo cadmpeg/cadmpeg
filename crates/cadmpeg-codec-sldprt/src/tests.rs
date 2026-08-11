@@ -2879,6 +2879,7 @@ fn encoder_writes_source_less_line_sketches() {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -3248,6 +3249,7 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
         id: sketch_id.clone(),
         name: Some("Spatial path".into()),
         configuration: Some("0".into()),
+        visible: None,
         profiles: Vec::new(),
         native_ref: None,
     });
@@ -3390,6 +3392,7 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -3619,6 +3622,7 @@ fn encoder_writes_source_less_curved_sketches() {
         id: sketch_id.clone(),
         name: Some("Curves".into()),
         configuration: Some("Main".into()),
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -4258,6 +4262,7 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
             id: sketch_id.clone(),
             name: Some(name.into()),
             configuration: None,
+            visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin: Point3::new(0.0, 0.0, ordinal as f64),
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -5321,6 +5326,7 @@ fn encoder_writes_source_less_datum_features() {
         },
         FeatureDefinition::DatumPoint {
             position: Point3::new(7.0, 8.0, 9.0),
+            construction: None,
         },
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
@@ -15347,6 +15353,7 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
                 y: 5.0,
                 z: 6.0
             },
+            ..
         }
     ));
 
@@ -15357,7 +15364,8 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
     };
     *origin = Point3::new(-1.0, 0.0, 2.0);
     *direction = Vector3::new(0.0, 1.0, 0.0);
-    let FeatureDefinition::DatumPoint { position } = &mut decoded.ir.model.features[1].definition
+    let FeatureDefinition::DatumPoint { position, .. } =
+        &mut decoded.ir.model.features[1].definition
     else {
         panic!("typed reference point");
     };
@@ -15397,6 +15405,7 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
                 y: 8.0,
                 z: 9.0
             },
+            ..
         }
     ));
 }
@@ -22179,6 +22188,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),

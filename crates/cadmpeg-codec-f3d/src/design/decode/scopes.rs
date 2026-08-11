@@ -35,7 +35,8 @@ use crate::records::{
     DesignScaleOperation, DesignSheetMetalHeightDatum, DesignSolidPrimitive,
     DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
     DesignSurfaceOffsetSupport, DesignSurfaceStitchOperation, DesignThreadConstruction,
-    DesignThreadForm, DesignWorkAxisConstruction,
+    DesignThreadForm, DesignWorkAxisConstruction, DesignWorkPointConstruction,
+    DesignWorkPointInput, DesignWorkPointRule,
 };
 use cadmpeg_core::le::{f64_at, f64s_at, u16_at, u32_at, u64_at as read_u64};
 use cadmpeg_core::CodecError;
@@ -126,12 +127,8 @@ pub fn decode_parameter_scopes(
                     }
                 }
             }
-            if let Some(frame) = exact_work_point_position(bytes, &records, &scope, &stream_types) {
-                scope.work_point_position = Some(frame.position);
-                scope.work_point_position_offset = Some(frame.position_offset);
-                scope.work_point_reference_type = Some(frame.reference_type);
-                scope.work_point_input_record_indices = frame.input_record_indices;
-            }
+            scope.work_point_construction =
+                exact_work_point_construction(bytes, &records, &scope, &stream_types);
             scope.hole_construction =
                 exact_hole_construction(bytes, &records, &scope, &stream_types);
             scope.coil_placement = exact_coil_placement(bytes, &records, &scope, recipes);
@@ -325,7 +322,7 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
             }
         }
         if let Some((joint_origin, frame)) = exact_single_joint_origin_frame(bytes, scope) {
-            envelopes.push((scope.record_index, joint_origin));
+            envelopes.push((scope.record_index, joint_origin, frame.transform));
             candidates.push((
                 joint_origin,
                 frame.transform,
@@ -360,11 +357,11 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
     }
     let resolved_origins = scopes
         .iter()
-        .filter(|scope| scope.kind == "JointOrigin" && scope.joint_origin_transform.is_some())
-        .map(|scope| scope.record_index)
-        .collect::<HashSet<_>>();
-    for (assembly_record_index, joint_origin_record_index) in envelopes {
-        if !resolved_origins.contains(&joint_origin_record_index) {
+        .filter(|scope| scope.kind == "JointOrigin")
+        .filter_map(|scope| Some((scope.record_index, scope.joint_origin_transform?)))
+        .collect::<HashMap<_, _>>();
+    for (assembly_record_index, joint_origin_record_index, transform) in envelopes {
+        if resolved_origins.get(&joint_origin_record_index) != Some(&transform) {
             continue;
         }
         let mut assemblies = scopes.iter_mut().filter(|scope| {
@@ -1139,7 +1136,7 @@ pub(crate) fn exact_assembly_alignment(
     let alignment_lanes = lanes.get(alignment_start..alignment_end)?;
     let (angle, offset, owner_record_indices, value_offsets) = match alignment_lanes {
         [angle, offset_x, offset_y, offset_z] => (
-            *angle,
+            angle.evaluated_value,
             [
                 offset_x.evaluated_value,
                 offset_y.evaluated_value,
@@ -1159,7 +1156,7 @@ pub(crate) fn exact_assembly_alignment(
             ],
         ),
         [angle, axial_offset] => (
-            *angle,
+            angle.evaluated_value,
             [0.0, 0.0, axial_offset.evaluated_value],
             vec![angle.record_index, axial_offset.record_index],
             vec![
@@ -1173,7 +1170,7 @@ pub(crate) fn exact_assembly_alignment(
         return None;
     }
     let mut alignment = DesignAssemblyAlignment {
-        angle: angle.evaluated_value,
+        angle,
         offset,
         owner_record_indices,
         value_offsets,
@@ -1182,9 +1179,17 @@ pub(crate) fn exact_assembly_alignment(
         axial_operand_targets: None,
         joint_origin_scope_record_index: None,
     };
-    alignment.operand_frames = exact_assembly_operand_frames(bytes, scope);
-    if alignment.operand_frames.is_some() {
+    if scope.kind == "As-built" {
         alignment.operand_paths = exact_assembly_operand_paths(bytes, records, scope);
+        alignment.operand_frames = alignment
+            .operand_paths
+            .as_ref()
+            .and_then(|paths| exact_as_built_operand_frames(bytes, paths));
+    } else {
+        alignment.operand_frames = exact_assembly_operand_frames(bytes, scope);
+        if alignment.operand_frames.is_some() {
+            alignment.operand_paths = exact_assembly_operand_paths(bytes, records, scope);
+        }
     }
     Some(alignment)
 }
@@ -1654,6 +1659,27 @@ fn exact_assembly_operand_frames(
     (first.reference_record_index != second.reference_record_index).then_some([first, second])
 }
 
+fn exact_as_built_operand_frames(
+    bytes: &[u8],
+    paths: &[DesignAssemblyOperandPath; 2],
+) -> Option<[DesignAssemblyOperandFrame; 2]> {
+    let frames = paths.each_ref().map(|path| {
+        let locator_at = usize::try_from(path.link.locator_byte_offset).ok()?;
+        let reference_at = locator_at.checked_add(21)?;
+        let transform_at = locator_at.checked_add(33)?;
+        Some(DesignAssemblyOperandFrame {
+            reference_record_index: marked_record_reference(bytes, reference_at)?,
+            reference_offset: u64::try_from(reference_at.checked_add(1)?).ok()?,
+            transform: rigid_transform_at(bytes, transform_at)?,
+            transform_offset: u64::try_from(transform_at).ok()?,
+        })
+    });
+    let [Some(first), Some(second)] = frames else {
+        return None;
+    };
+    (first.reference_record_index != second.reference_record_index).then_some([first, second])
+}
+
 fn exact_assembly_operand_paths(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -1834,7 +1860,7 @@ fn exact_assembly_operand_path(
                 return None;
             }
         }
-        "329" => {
+        "329" | "386" | "390" => {
             if bytes.get(after_tag + 8..after_tag + 14)? != [0; 6] {
                 return None;
             }
@@ -1852,58 +1878,43 @@ fn exact_assembly_operand_path(
                 occurrence_guids.push(guid);
                 position = after_guid;
             }
-            if position != limit {
-                return None;
-            }
-        }
-        "386" | "390" => {
-            if bytes.get(after_tag + 8..after_tag + 14)? != [0; 6] {
-                return None;
-            }
-            let count = usize::try_from(u32_at(bytes, after_tag + 14)?).ok()?;
-            if !(1..=64).contains(&count) {
-                return None;
-            }
-            let mut position = after_tag + 18;
-            for _ in 0..count {
-                let (guid, after_guid) = lp_utf16_bounded(bytes.get(..limit)?, position, 36..=36)?;
-                if !crate::bytes::is_guid_relaxed(&guid) {
+            if position == limit {
+                if class_tag != "329" {
                     return None;
                 }
-                occurrence_guid_offsets.push(u64::try_from(position + 4).ok()?);
-                occurrence_guids.push(guid);
-                position = after_guid;
-            }
-            let end = next_indexed_record_offset(bytes, start + 1)?;
-            if end != limit {
-                return None;
-            }
-            for _ in 0..2 {
-                let (guid, after_guid) = lp_utf16_bounded(bytes.get(..end)?, position, 36..=36)?;
-                if !crate::bytes::is_guid_relaxed(&guid) {
+            } else {
+                for _ in 0..2 {
+                    let (guid, after_guid) =
+                        lp_utf16_bounded(bytes.get(..limit)?, position, 36..=36)?;
+                    if !crate::bytes::is_guid_relaxed(&guid) {
+                        return None;
+                    }
+                    identity_guid_offsets.push(u64::try_from(position + 4).ok()?);
+                    identity_guids.push(guid);
+                    position = after_guid;
+                }
+                if read_u64(bytes, position)? != 2 {
                     return None;
                 }
-                identity_guid_offsets.push(u64::try_from(position + 4).ok()?);
-                identity_guids.push(guid);
-                position = after_guid;
-            }
-            if read_u64(bytes, position)? != 2 {
-                return None;
-            }
-            position += 8;
-            for _ in 0..2 {
-                let (guid, after_guid) = lp_utf16_bounded(bytes.get(..end)?, position, 36..=36)?;
-                if !crate::bytes::is_guid_relaxed(&guid) {
+                position += 8;
+                for _ in 0..2 {
+                    let (guid, after_guid) =
+                        lp_utf16_bounded(bytes.get(..limit)?, position, 36..=36)?;
+                    if !crate::bytes::is_guid_relaxed(&guid) {
+                        return None;
+                    }
+                    identity_guid_offsets.push(u64::try_from(position + 4).ok()?);
+                    identity_guids.push(guid);
+                    position = after_guid;
+                }
+                if u32_at(bytes, position)? != 2
+                    || !bytes
+                        .get(position + 4..limit)?
+                        .iter()
+                        .all(|byte| *byte == 0)
+                {
                     return None;
                 }
-                identity_guid_offsets.push(u64::try_from(position + 4).ok()?);
-                identity_guids.push(guid);
-                position = after_guid;
-            }
-            if u32_at(bytes, position)? != 2
-                || !bytes.get(position + 4..end)?.iter().all(|byte| *byte == 0)
-            {
-                return None;
             }
         }
         _ => return None,
@@ -2177,9 +2188,8 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
             }
         }
     }
-    let [(axis, record_index, selection_record_index)] = axis_candidates.as_slice() else {
-        return None;
-    };
+    let (axis, record_index, selection_record_index) =
+        select_circular_pattern_axis(&axis_candidates)?;
     let owner_count_candidates = parameter_owners.iter().filter_map(|owner| {
         if native_stream(&owner.id) != native_stream(&scope.id)
             || owner.scope_record_index != scope.record_index
@@ -2252,6 +2262,32 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
         axis_record_index: *record_index,
         selection_record_index: *selection_record_index,
     })
+}
+
+pub(crate) type CircularPatternAxisCandidate =
+    (crate::records::DesignCircularPatternAxis, u32, u32);
+
+/// Select one circular-pattern axis, preferring the explicit solved carrier.
+pub(crate) fn select_circular_pattern_axis(
+    candidates: &[CircularPatternAxisCandidate],
+) -> Option<&CircularPatternAxisCandidate> {
+    let inline = candidates
+        .iter()
+        .filter(|(axis, _, _)| {
+            matches!(
+                axis,
+                crate::records::DesignCircularPatternAxis::Inline { .. }
+            )
+        })
+        .collect::<Vec<_>>();
+    match inline.as_slice() {
+        [candidate] => Some(*candidate),
+        [] => match candidates {
+            [candidate] => Some(candidate),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 fn exact_legacy_circular_pattern_axis(
@@ -3949,23 +3985,19 @@ pub(crate) fn exact_path_feature_construction(
     };
     match design_feature_family(&scope.kind)? {
         DesignFeatureFamily::Revolve
-            if scope.class_tag == "409"
-                && scope.paired_class_tag == "257"
-                && parameter_scope_payload_length(scope) == Some(345)
-                && scope.reference_members.len() == 6
+            if matches!(scope.reference_members.len(), 6 | 8)
                 && bytes.get(start + 20) == Some(&1)
                 && u32_at(bytes, start + 21) == Some(0)
                 && u32_at(bytes, start + 29) == Some(2)
                 && bytes.get(start + 33) == Some(&0)
                 && u32_at(bytes, start + 34) == Some(1) =>
         {
-            let angle_record_index = *scope.reference_members.get(4)?;
             let candidates = parameter_owners
                 .iter()
                 .filter(|owner| {
                     native_stream(&owner.id) == native_stream(&scope.id)
                         && owner.scope_record_index == scope.record_index
-                        && owner.record_index == angle_record_index
+                        && scope.reference_members.contains(&owner.record_index)
                         && owner.local_ordinal == 0
                         && owner.evaluated_value.is_finite()
                         && owner.evaluated_value > 0.0
@@ -3978,7 +4010,7 @@ pub(crate) fn exact_path_feature_construction(
                 operation: operation(start + 25)?,
                 operation_offset: u64::try_from(start + 25).ok()?,
                 angle: angle.evaluated_value,
-                angle_record_index,
+                angle_record_index: angle.record_index,
                 angle_offset: angle.evaluated_value_offset,
                 opposite_angle_record_index: None,
                 opposite_angle_offset: None,
@@ -4417,14 +4449,16 @@ pub(crate) fn payload_prologue(bytes: &[u8], at: usize, end: usize) -> Option<us
 const POINT_DATA_TYPE_GUID: &str = "69EE2FA7-BCC7-449E-9CA9-976CEFDFED44";
 
 /// The base class level of a point-data record, read under one record version.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct PointDataLevel {
     /// Byte offset of `point3d`'s first coordinate.
     position_at: usize,
     /// Construction rule that produced the point.
     reference_type: u32,
-    /// Record indices of the counted reference run that closes the level.
-    input_record_indices: Vec<u32>,
+    /// Byte offset of the serialized construction rule.
+    reference_type_at: usize,
+    /// Counted input-reference run that closes the level.
+    inputs: Vec<DesignWorkPointInput>,
 }
 
 /// Read the base class level of the point-data class at `start` under one
@@ -4452,6 +4486,7 @@ fn point_data_level(
     }
     let position_at = cursor;
     cursor = cursor.checked_add(24)?;
+    let reference_type_at = cursor;
     let reference_type = u32_at(body, cursor)?;
     cursor = cursor.checked_add(4)?;
     if version >= 3 {
@@ -4462,29 +4497,22 @@ fn point_data_level(
     if arity == 0 || arity > end.checked_sub(cursor)? {
         return None;
     }
-    let mut input_record_indices = Vec::with_capacity(arity);
+    let mut inputs = Vec::with_capacity(arity);
     for _ in 0..arity {
+        let reference_offset = cursor.checked_add(1)?;
         let reference = take_reference(body, &mut cursor)?;
-        input_record_indices.push(u32::try_from(reference.target?).ok()?);
+        inputs.push(DesignWorkPointInput {
+            record_index: u32::try_from(reference.target?).ok()?,
+            reference_offset: u64::try_from(reference_offset).ok()?,
+            carrier: None,
+        });
     }
     Some(PointDataLevel {
         position_at,
         reference_type,
-        input_record_indices,
+        reference_type_at,
+        inputs,
     })
-}
-
-/// The base class level of the point-data record a `WorkPoint` scope selects.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct WorkPointFrame {
-    /// Model-space coordinate.
-    pub(crate) position: [f64; 3],
-    /// Byte offset of the coordinate's first f64.
-    pub(crate) position_offset: u64,
-    /// Construction rule that produced the point.
-    pub(crate) reference_type: u32,
-    /// Record indices of the counted reference run that closes the level.
-    pub(crate) input_record_indices: Vec<u32>,
 }
 
 /// The coordinate of a `WorkPoint`'s point-data record.
@@ -4496,12 +4524,12 @@ pub(crate) struct WorkPointFrame {
 /// Where the record's entity is not registered there, the class cannot be named
 /// and every version whose member sequence fits the frame stays a candidate, so
 /// the frame is read only when they agree on the offset.
-pub(crate) fn exact_work_point_position(
+pub(crate) fn exact_work_point_construction(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
-) -> Option<WorkPointFrame> {
+) -> Option<DesignWorkPointConstruction> {
     if scope.kind != "WorkPoint" {
         return None;
     }
@@ -4529,15 +4557,18 @@ pub(crate) fn exact_work_point_position(
             else {
                 continue;
             };
-            let mut levels = stored
+            let levels = stored
                 .map_or_else(|| (0..=3).collect::<Vec<_>>(), |(_, version)| vec![version])
                 .into_iter()
                 .filter_map(|version| point_data_level(bytes, payload_at, paired, version))
-                .collect::<Vec<_>>();
+                .fold(Vec::new(), |mut levels, level| {
+                    if !levels.contains(&level) {
+                        levels.push(level);
+                    }
+                    levels
+                });
             // Agreement is over the levels the fitting versions name, so the
-            // duplicates are removed by value and not only where adjacent.
-            levels.sort_unstable();
-            levels.dedup();
+            // duplicates are removed by value regardless of version order.
             let [level] = levels.as_slice() else {
                 continue;
             };
@@ -4548,11 +4579,16 @@ pub(crate) fn exact_work_point_position(
                 continue;
             };
             if position.iter().all(|value| value.is_finite()) {
-                candidates.push(WorkPointFrame {
+                candidates.push(DesignWorkPointConstruction {
+                    point_record_index: *record_index,
+                    point_record_byte_offset: u64::try_from(start).ok()?,
                     position,
-                    position_offset: level.position_at as u64,
-                    reference_type: level.reference_type,
-                    input_record_indices: level.input_record_indices.clone(),
+                    position_offset: u64::try_from(level.position_at).ok()?,
+                    rule: DesignWorkPointRule::from_serialized(
+                        level.reference_type,
+                        level.inputs.clone(),
+                    ),
+                    reference_type_offset: u64::try_from(level.reference_type_at).ok()?,
                 });
             }
         }
@@ -5430,16 +5466,14 @@ pub(crate) fn parse_parameter_scope(
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
@@ -5477,11 +5511,16 @@ fn named_parameter_scope_tail_is_valid(
     if marker.checked_add(59)? != paired_at || bytes.get(label_end..marker)? != [0; 7] {
         return Some(false);
     }
+    let first_lane_value = read_u64(bytes, marker + 2)?;
+    let second_lane_value = read_u64(bytes, marker + 34)?;
+    let third_lane_value = read_u64(bytes, marker + 48)?;
     Some(
         bytes.get(kind_end + 4..kind_end + 8)? == [0; 4]
             && bytes.get(marker) == Some(&1)
             && bytes.get(marker + 1).is_some_and(|field_id| *field_id != 0)
-            && read_u64(bytes, marker + 2)? == 1
+            && matches!(first_lane_value, 0 | 1)
+            && second_lane_value == first_lane_value
+            && third_lane_value == first_lane_value
             && bytes.get(marker + 10..marker + 12)? == [0; 2]
             && u32_at(bytes, marker + 12)? > 0
             && u32_at(bytes, marker + 16)? == 0xfc
@@ -5491,13 +5530,11 @@ fn named_parameter_scope_tail_is_valid(
             && bytes
                 .get(marker + 33)
                 .is_some_and(|field_id| *field_id != 0)
-            && read_u64(bytes, marker + 34)? == 1
             && bytes.get(marker + 42..marker + 46)? == [0, 1, 0, 0]
             && bytes.get(marker + 46) == Some(&1)
             && bytes
                 .get(marker + 47)
                 .is_some_and(|field_id| *field_id != 0)
-            && read_u64(bytes, marker + 48)? == 1
             && bytes.get(marker + 56..marker + 59)? == [0; 3],
     )
 }
@@ -6231,7 +6268,21 @@ fn exact_legacy_shifted_extrude_prologue(
     {
         return None;
     }
-    let operation_offset = start.checked_add(27)?;
+    let marker_offset = start.checked_add(27)?;
+    let (operation_prefix_marker, operation_prefix_marker_offset, field_shift) =
+        if matches!(u32_at(bytes, marker_offset), Some(1..=4)) {
+            (None, None, 0)
+        } else if bytes.get(marker_offset) == Some(&1)
+            && matches!(u32_at(bytes, marker_offset.checked_add(1)?), Some(1..=4))
+        {
+            (Some(1), Some(marker_offset as u64), 1)
+        } else {
+            return None;
+        };
+    let operation_offset = marker_offset.checked_add(field_shift)?;
+    let reference_count_delta = reference_count_at
+        .checked_sub(start)?
+        .checked_sub(field_shift)?;
     let operation = match u32_at(bytes, operation_offset)? {
         1 => DesignExtrudeOperation::Join,
         2 => DesignExtrudeOperation::Cut,
@@ -6249,34 +6300,39 @@ fn exact_legacy_shifted_extrude_prologue(
         return None;
     }
     let two_sided_offsets = || {
-        if reference_count_at.checked_sub(start)? == 283 {
-            let first_parameter_at = start.checked_add(139)?;
-            let first_side_extent_offset = start.checked_add(166)?;
-            let second_parameter_at = start.checked_add(170)?;
-            let second_side_extent_offset = start.checked_add(181)?;
-            let compact_valid = bytes.get(start.checked_add(150)?..first_side_extent_offset)?
+        if reference_count_delta == 283 {
+            let first_parameter_at = start.checked_add(139 + field_shift)?;
+            let first_side_extent_offset = start.checked_add(166 + field_shift)?;
+            let second_parameter_at = start.checked_add(170 + field_shift)?;
+            let second_side_extent_offset = start.checked_add(181 + field_shift)?;
+            let compact_valid = bytes
+                .get(start.checked_add(150 + field_shift)?..first_side_extent_offset)?
                 == [0; 16]
-                && bytes.get(start.checked_add(175)?..second_side_extent_offset)? == [0; 6]
+                && bytes.get(start.checked_add(175 + field_shift)?..second_side_extent_offset)?
+                    == [0; 6]
                 && [first_parameter_at, second_parameter_at]
                     .into_iter()
                     .map(|offset| marked_record_reference(bytes, offset))
                     .all(|reference| {
                         reference.is_some_and(|value| reference_members.contains(&value))
                     })
-                && marked_record_reference(bytes, start.checked_add(185)?).is_some()
-                && bytes.get(start.checked_add(196)?..start.checked_add(204)?)? == [0; 8];
+                && marked_record_reference(bytes, start.checked_add(185 + field_shift)?).is_some()
+                && bytes.get(
+                    start.checked_add(196 + field_shift)?..start.checked_add(204 + field_shift)?,
+                )? == [0; 8];
             if compact_valid {
                 return Some([first_side_extent_offset, second_side_extent_offset]);
             }
         }
-        let first_parameter_at = start.checked_add(139)?;
-        let first_side_extent_offset = start.checked_add(155)?;
-        let first_offset_at = start.checked_add(159)?;
-        let second_side_extent_offset = start.checked_add(178)?;
-        let second_parameter_at = start.checked_add(182)?;
+        let first_parameter_at = start.checked_add(139 + field_shift)?;
+        let first_side_extent_offset = start.checked_add(155 + field_shift)?;
+        let first_offset_at = start.checked_add(159 + field_shift)?;
+        let second_side_extent_offset = start.checked_add(178 + field_shift)?;
+        let second_parameter_at = start.checked_add(182 + field_shift)?;
         if second_parameter_at.checked_add(11)? > reference_count_at
-            || bytes.get(start.checked_add(150)?..first_side_extent_offset)? != [0; 5]
-            || bytes.get(start.checked_add(170)?..second_side_extent_offset)? != [0; 8]
+            || bytes.get(start.checked_add(150 + field_shift)?..first_side_extent_offset)? != [0; 5]
+            || bytes.get(start.checked_add(170 + field_shift)?..second_side_extent_offset)?
+                != [0; 8]
             || [first_parameter_at, first_offset_at, second_parameter_at]
                 .into_iter()
                 .map(|offset| marked_record_reference(bytes, offset))
@@ -6314,7 +6370,8 @@ fn exact_legacy_shifted_extrude_prologue(
                 exact_extrude_extent(direction_face_extend_values[0], discriminators)?,
             )
         } else {
-            let (first_offset, second_offset) = match reference_count_at.checked_sub(start)? {
+            let (first_offset, second_offset) = match reference_count_delta {
+                262 if bytes.get(operation_offset.checked_add(14)?) == Some(&1) => (116, 130),
                 252 | 262 | 263 => (106, 110),
                 272 => (116, 130),
                 283 => (116, 130),
@@ -6323,8 +6380,8 @@ fn exact_legacy_shifted_extrude_prologue(
                 _ => return None,
             };
             candidate(
-                start.checked_add(first_offset)?,
-                start.checked_add(second_offset)?,
+                start.checked_add(first_offset + field_shift)?,
+                start.checked_add(second_offset + field_shift)?,
             )?
         };
     let direction_reversed_offset = operation_offset.checked_add(12)?;
@@ -6347,6 +6404,8 @@ fn exact_legacy_shifted_extrude_prologue(
         _ => return None,
     };
     Some(DesignExtrudePrologue::LegacyShifted {
+        operation_prefix_marker,
+        operation_prefix_marker_offset,
         operation,
         operation_offset: operation_offset as u64,
         direction_face_extend_values,
@@ -7149,14 +7208,15 @@ mod mirror_tests {
 mod tests {
     use super::{
         exact_coil_placement, exact_hole_construction, exact_path_feature_construction,
-        exact_pattern_identity_wrapper, exact_work_point_position, parse_parameter_scope,
-        HOLE_POINT_DATA_TYPE_GUID, POINT_DATA_TYPE_GUID,
+        exact_pattern_identity_wrapper, exact_work_point_construction,
+        named_parameter_scope_tail_is_valid, parse_parameter_scope, HOLE_POINT_DATA_TYPE_GUID,
+        POINT_DATA_TYPE_GUID,
     };
     use crate::design::decode::sketch::IndexedRecordOffsets;
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignCoilExtent, DesignCoilSelection,
         DesignExtrudeOperation, DesignParameterScope, DesignPathFeatureConstruction,
-        DesignRecordHeader,
+        DesignRecordHeader, DesignWorkPointInputCarrier, DesignWorkPointRule,
     };
     use std::collections::HashMap;
 
@@ -7172,6 +7232,62 @@ mod tests {
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(&class_tag);
         bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+
+    fn named_scope_tail(lane_value: u64) -> Vec<u8> {
+        let label = "Canvas";
+        let label_code_units = label.encode_utf16().count();
+        let marker = 19 + label_code_units * 2;
+        let mut bytes = vec![0; marker + 59];
+        bytes[0..4].copy_from_slice(&1u32.to_le_bytes());
+        let mut label_bytes = Vec::new();
+        lp_utf16(&mut label_bytes, label);
+        bytes[8..8 + label_bytes.len()].copy_from_slice(&label_bytes);
+        bytes[marker] = 1;
+        bytes[marker + 1] = 0xd5;
+        bytes[marker + 2..marker + 10].copy_from_slice(&lane_value.to_le_bytes());
+        bytes[marker + 12..marker + 16].copy_from_slice(&u32::MAX.to_le_bytes());
+        bytes[marker + 16..marker + 20].copy_from_slice(&0xfcu32.to_le_bytes());
+        bytes[marker + 20..marker + 28].copy_from_slice(&0.25f64.to_le_bytes());
+        bytes[marker + 28..marker + 32].copy_from_slice(&0xfcu32.to_le_bytes());
+        bytes[marker + 32] = 1;
+        bytes[marker + 33] = 0xd4;
+        bytes[marker + 34..marker + 42].copy_from_slice(&lane_value.to_le_bytes());
+        bytes[marker + 42..marker + 46].copy_from_slice(&[0, 1, 0, 0]);
+        bytes[marker + 46] = 1;
+        bytes[marker + 47] = 0xd3;
+        bytes[marker + 48..marker + 56].copy_from_slice(&lane_value.to_le_bytes());
+        bytes
+    }
+
+    #[test]
+    fn named_scope_tail_requires_one_repeated_binary_lane_value() {
+        for lane_value in [0, 1] {
+            let bytes = named_scope_tail(lane_value);
+            assert_eq!(
+                named_parameter_scope_tail_is_valid(&bytes, 0, bytes.len(), bytes.len()),
+                Some(true)
+            );
+        }
+
+        let mut mismatched = named_scope_tail(0);
+        let marker = mismatched.len() - 59;
+        mismatched[marker + 34..marker + 42].copy_from_slice(&1u64.to_le_bytes());
+        assert_eq!(
+            named_parameter_scope_tail_is_valid(&mismatched, 0, mismatched.len(), mismatched.len()),
+            Some(false)
+        );
+
+        let outside_domain = named_scope_tail(2);
+        assert_eq!(
+            named_parameter_scope_tail_is_valid(
+                &outside_domain,
+                0,
+                outside_domain.len(),
+                outside_domain.len()
+            ),
+            Some(false)
+        );
     }
 
     #[test]
@@ -7740,7 +7856,7 @@ mod tests {
         let (bytes, scope, position_at) =
             work_point_stream("282", 3, true, Some(9), [1.25, -2.5, 3.75], 20, 1);
 
-        let frame = exact_work_point_position(
+        let frame = exact_work_point_construction(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
             &scope,
@@ -7749,7 +7865,7 @@ mod tests {
         .expect("work point frame");
         assert_eq!(frame.position, [1.25, -2.5, 3.75]);
         assert_eq!(frame.position_offset, position_at as u64);
-        assert_eq!(frame.input_record_indices, [70]);
+        assert_eq!(work_point_input_indices(&frame.rule), [70]);
     }
 
     #[test]
@@ -7758,7 +7874,7 @@ mod tests {
             let (bytes, scope, position_at) =
                 work_point_stream("282", version, false, None, [4.0, 5.0, 6.0], 5, 1);
 
-            let frame = exact_work_point_position(
+            let frame = exact_work_point_construction(
                 &bytes,
                 &IndexedRecordOffsets::build(&bytes),
                 &scope,
@@ -7778,7 +7894,7 @@ mod tests {
         let (bytes, scope, position_at) =
             work_point_stream("282", 2, false, None, [4.0, 5.0, 6.0], 5, 1);
         let records = IndexedRecordOffsets::build(&bytes);
-        let frame = exact_work_point_position(
+        let frame = exact_work_point_construction(
             &bytes,
             &records,
             &scope,
@@ -7790,7 +7906,7 @@ mod tests {
         // The stored version drives the read: a version that describes a
         // different member sequence does not yield this frame's coordinate.
         assert_ne!(
-            exact_work_point_position(
+            exact_work_point_construction(
                 &bytes,
                 &records,
                 &scope,
@@ -7801,13 +7917,13 @@ mod tests {
         );
         // An unregistered entity falls back to the agreement sweep.
         assert_eq!(
-            exact_work_point_position(
+            exact_work_point_construction(
                 &bytes,
                 &records,
                 &scope,
                 &HashMap::from([(9, (POINT_DATA_TYPE_GUID, 0))])
             ),
-            exact_work_point_position(&bytes, &records, &scope, &HashMap::new())
+            exact_work_point_construction(&bytes, &records, &scope, &HashMap::new())
         );
     }
 
@@ -7821,7 +7937,7 @@ mod tests {
                 work_point_stream(class_tag, 2, false, None, [7.5, 8.5, 9.5], 5, 1);
             let records = IndexedRecordOffsets::build(&bytes);
 
-            let frame = exact_work_point_position(
+            let frame = exact_work_point_construction(
                 &bytes,
                 &records,
                 &scope,
@@ -7844,7 +7960,7 @@ mod tests {
         let records = IndexedRecordOffsets::build(&bytes);
 
         assert_eq!(
-            exact_work_point_position(
+            exact_work_point_construction(
                 &bytes,
                 &records,
                 &scope,
@@ -7862,38 +7978,117 @@ mod tests {
         let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 18, 1);
 
         let records = IndexedRecordOffsets::build(&bytes);
-        let frame = exact_work_point_position(&bytes, &records, &scope, &HashMap::new())
+        let frame = exact_work_point_construction(&bytes, &records, &scope, &HashMap::new())
             .expect("work point frame");
-        assert_eq!(frame.input_record_indices, [70]);
-        assert_eq!(frame.reference_type, 18);
+        assert_eq!(work_point_input_indices(&frame.rule), [70]);
+        assert_eq!(frame.rule.reference_type(), 18);
         let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 14, 2);
-        let frame = exact_work_point_position(
+        let frame = exact_work_point_construction(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
             &scope,
             &HashMap::new(),
         )
         .expect("work point frame");
-        assert_eq!(frame.input_record_indices, [70, 71]);
+        assert_eq!(work_point_input_indices(&frame.rule), [70, 71]);
 
         let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 8, 3);
-        let frame = exact_work_point_position(
+        let frame = exact_work_point_construction(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
             &scope,
             &HashMap::new(),
         )
         .expect("work point frame");
-        assert_eq!(frame.input_record_indices, [70, 71, 72]);
+        assert_eq!(work_point_input_indices(&frame.rule), [70, 71, 72]);
 
         let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 18, 2);
-        let frame = exact_work_point_position(
+        let frame = exact_work_point_construction(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
             &scope,
             &HashMap::new(),
         )
         .expect("work point frame");
-        assert_eq!(frame.input_record_indices, [70, 71]);
+        assert_eq!(work_point_input_indices(&frame.rule), [70, 71]);
+    }
+
+    #[test]
+    fn work_point_rule_codes_select_typed_input_arities() {
+        for (reference_type, arity) in [(5, 1), (7, 2), (8, 3), (10, 1), (14, 2), (20, 1)] {
+            let (bytes, scope, _) = work_point_stream(
+                "282",
+                2,
+                false,
+                None,
+                [1.0, 2.0, 3.0],
+                reference_type,
+                arity,
+            );
+            let frame = exact_work_point_construction(
+                &bytes,
+                &IndexedRecordOffsets::build(&bytes),
+                &scope,
+                &HashMap::new(),
+            )
+            .expect("work point frame");
+            assert_eq!(frame.rule.reference_type(), reference_type);
+            assert_eq!(u32::try_from(frame.rule.inputs().len()).unwrap(), arity);
+            assert!(match frame.rule {
+                DesignWorkPointRule::CircleCenter { .. } => reference_type == 5,
+                DesignWorkPointRule::TwoEdgeIntersection { .. } => reference_type == 7,
+                DesignWorkPointRule::ThreePlaneIntersection { .. } => reference_type == 8,
+                DesignWorkPointRule::Vertex { .. } => reference_type == 10,
+                DesignWorkPointRule::EdgePlaneIntersection { .. } => reference_type == 14,
+                DesignWorkPointRule::DistanceOnEdge { .. } => reference_type == 20,
+                DesignWorkPointRule::Native { .. } => false,
+            });
+        }
+    }
+
+    #[test]
+    fn work_point_rule_code_with_wrong_arity_remains_native() {
+        let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 5, 2);
+        let frame = exact_work_point_construction(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &HashMap::new(),
+        )
+        .expect("work point frame");
+
+        assert!(matches!(
+            frame.rule,
+            DesignWorkPointRule::Native {
+                reference_type: 5,
+                ref inputs,
+            } if inputs.len() == 2
+        ));
+    }
+
+    #[test]
+    fn work_point_rule_rejects_an_incompatible_input_carrier() {
+        let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 14, 2);
+        let mut frame = exact_work_point_construction(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &HashMap::new(),
+        )
+        .expect("work point frame");
+        assert!(frame.rule.carriers_are_compatible());
+
+        frame.rule.inputs_mut()[1].carrier =
+            Some(Box::new(DesignWorkPointInputCarrier::EdgeRecipe {
+                operand_id: "f3d:native:edge-operand#wrong-role".into(),
+            }));
+        assert!(!frame.rule.carriers_are_compatible());
+    }
+
+    fn work_point_input_indices(rule: &DesignWorkPointRule) -> Vec<u32> {
+        rule.inputs()
+            .iter()
+            .map(|input| input.record_index)
+            .collect()
     }
 }

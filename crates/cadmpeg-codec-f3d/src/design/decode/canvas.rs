@@ -3,12 +3,13 @@
 
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::{role, ContainerScan};
+use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::sketch::next_indexed_record_offset_with_index;
 use crate::ids;
 use crate::records::{DesignCanvasImage, DesignParameterScope};
 use cadmpeg_core::le::{f32_at, f64_at, u32_at};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::assets::{Asset, AssetContent};
+use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -63,11 +64,7 @@ pub fn project_canvas_images(
         else {
             continue;
         };
-        let mut entries = scan.entries.iter().filter(|entry| {
-            scan.is_design_asset_entry(entry, role::IMAGE)
-                && entry.name.rsplit('/').next() == Some(image.asset_name.as_str())
-        });
-        let (Some(entry), None) = (entries.next(), entries.next()) else {
+        let Some((mirror_u, mirror_v)) = canvas_mirroring(image.boundary_segments) else {
             continue;
         };
         let mut u_values = image
@@ -92,29 +89,21 @@ pub fn project_canvas_images(
             v_min = v_min.min(value);
             v_max = v_max.max(value);
         }
-        let asset_id = crate::ids::neutral_asset_id(&entry.name);
-        if !assets.iter().any(|asset: &Asset| asset.id == asset_id) {
-            let media_type = std::path::Path::new(&image.asset_name)
-                .extension()
-                .and_then(|extension| extension.to_str())
-                .and_then(|extension| match extension.to_ascii_lowercase().as_str() {
-                    "jpg" | "jpeg" => Some("image/jpeg"),
-                    "png" => Some("image/png"),
-                    _ => None,
-                })
-                .map(str::to_owned);
-            assets.push(Asset {
-                id: asset_id.clone(),
-                name: Some(image.asset_name.clone()),
-                media_type,
-                content: AssetContent::Embedded {
-                    data: scan.entry_bytes(&entry.name)?.to_vec(),
-                },
-                native_ref: Some(crate::ids::native_scope(&entry.name)),
-            });
+        let Some(asset) = embedded_image_asset(scan, &image.asset_name)? else {
+            continue;
+        };
+        let asset_id = asset.id.clone();
+        if !assets
+            .iter()
+            .any(|candidate: &Asset| candidate.id == asset_id)
+        {
+            assets.push(asset);
         }
         feature.definition = FeatureDefinition::ReferenceImage {
             asset: asset_id,
+            visible: image.visible,
+            mirror_u,
+            mirror_v,
             origin: image.origin,
             u_axis: image.u_axis,
             v_axis: image.v_axis,
@@ -152,9 +141,8 @@ fn parse_canvas_image(
         .get(geometry_at + 11..geometry_at + 26)?
         .try_into()
         .ok()?;
-    if u32_at(bytes, after_geometry_tag)? != geometry_record_index
-        || !valid_geometry_prologue(&geometry_prologue)
-    {
+    let visible = geometry_prologue_visibility(&geometry_prologue)?;
+    if u32_at(bytes, after_geometry_tag)? != geometry_record_index {
         return None;
     }
 
@@ -200,9 +188,7 @@ fn parse_canvas_image(
             Point2::new(coordinates[6], coordinates[7]),
         ],
     ];
-    if !opposite_rectangle_edges(boundary_segments) {
-        return None;
-    }
+    canvas_mirroring(boundary_segments)?;
 
     let plane_at = geometry_at + 58;
     let scope_reference_at = geometry_at + 146;
@@ -252,6 +238,8 @@ fn parse_canvas_image(
         geometry_reference_offset: u64::try_from(geometry_reference_at + 1).ok()?,
         geometry_byte_offset: u64::try_from(geometry_at).ok()?,
         geometry_prologue,
+        visible,
+        visibility_offset: u64::try_from(geometry_at + 25).ok()?,
         geometry_frame_length: u64::try_from(paired_at.checked_sub(geometry_at)?).ok()?,
         paired_geometry_class_tag,
         paired_geometry_byte_offset: u64::try_from(paired_at).ok()?,
@@ -320,11 +308,18 @@ fn marked_reference(bytes: &[u8], at: usize) -> Option<u32> {
 }
 
 pub(crate) fn valid_geometry_prologue(prologue: &[u8; 15]) -> bool {
-    (prologue[..14] == [0; 14] && prologue[14] == 1)
-        || (prologue[..10] == [0; 10] && prologue[10..] == [1, 0, 0, 0, 0])
+    geometry_prologue_visibility(prologue).is_some()
 }
 
-pub(crate) fn opposite_rectangle_edges(segments: [[Point2; 2]; 2]) -> bool {
+pub(crate) fn geometry_prologue_visibility(prologue: &[u8; 15]) -> Option<bool> {
+    (prologue[..10] == [0; 10]
+        && matches!(prologue[10], 0 | 1)
+        && prologue[11..14] == [0; 3]
+        && matches!(prologue[14], 0 | 1))
+    .then_some(prologue[14] != 0)
+}
+
+pub(crate) fn canvas_mirroring(segments: [[Point2; 2]; 2]) -> Option<(bool, bool)> {
     let [[a, b], [c, d]] = segments;
     let close = |left: f64, right: f64| {
         (left - right).abs() <= 64.0 * f64::EPSILON * left.abs().max(right.abs()).max(1.0)
@@ -339,12 +334,21 @@ pub(crate) fn opposite_rectangle_edges(segments: [[Point2; 2]; 2]) -> bool {
         && close(a.v, c.v)
         && close(b.v, d.v)
         && !close(a.u, c.u);
-    horizontal || vertical
+    if horizontal {
+        Some((a.u > b.u, a.v > c.v))
+    } else if vertical {
+        Some((a.u > c.u, a.v > b.v))
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_geometry_payload, opposite_rectangle_edges, valid_geometry_prologue};
+    use super::{
+        canvas_mirroring, decode_geometry_payload, geometry_prologue_visibility,
+        valid_geometry_prologue,
+    };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
     #[test]
@@ -383,42 +387,87 @@ mod tests {
     }
 
     #[test]
-    fn canvas_bounds_require_two_opposite_non_degenerate_edges() {
-        assert!(opposite_rectangle_edges([
-            [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
-            [Point2::new(-2.0, 4.0), Point2::new(3.0, 4.0)],
-        ]));
-        assert!(opposite_rectangle_edges([
-            [Point2::new(-2.0, 4.0), Point2::new(-2.0, -1.0)],
-            [Point2::new(3.0, 4.0), Point2::new(3.0, -1.0)],
-        ]));
-        assert!(opposite_rectangle_edges([
-            [
-                Point2::new(-2.0, 4.0),
-                Point2::new(f64::from_bits((-2.0f64).to_bits() + 4), -1.0),
-            ],
-            [
-                Point2::new(3.0, f64::from_bits(4.0f64.to_bits() + 4)),
-                Point2::new(f64::from_bits(3.0f64.to_bits() + 4), -1.0),
-            ],
-        ]));
-        assert!(!opposite_rectangle_edges([
-            [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
-            [Point2::new(-2.0, 4.0), Point2::new(2.0, 4.0)],
-        ]));
+    fn canvas_bounds_decode_u_and_v_mirroring_from_endpoint_order() {
+        assert_eq!(
+            canvas_mirroring([
+                [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
+                [Point2::new(-2.0, 4.0), Point2::new(3.0, 4.0)],
+            ]),
+            Some((false, false))
+        );
+        assert_eq!(
+            canvas_mirroring([
+                [Point2::new(3.0, -1.0), Point2::new(-2.0, -1.0)],
+                [Point2::new(3.0, 4.0), Point2::new(-2.0, 4.0)],
+            ]),
+            Some((true, false))
+        );
+        assert_eq!(
+            canvas_mirroring([
+                [Point2::new(-2.0, 4.0), Point2::new(3.0, 4.0)],
+                [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
+            ]),
+            Some((false, true))
+        );
+        assert_eq!(
+            canvas_mirroring([
+                [Point2::new(3.0, 4.0), Point2::new(-2.0, 4.0)],
+                [Point2::new(3.0, -1.0), Point2::new(-2.0, -1.0)],
+            ]),
+            Some((true, true))
+        );
+        assert_eq!(
+            canvas_mirroring([
+                [Point2::new(-2.0, 4.0), Point2::new(-2.0, -1.0)],
+                [Point2::new(3.0, 4.0), Point2::new(3.0, -1.0)],
+            ]),
+            Some((false, true))
+        );
+        assert_eq!(
+            canvas_mirroring([
+                [Point2::new(3.0, -1.0), Point2::new(3.0, 4.0)],
+                [Point2::new(-2.0, -1.0), Point2::new(-2.0, 4.0)],
+            ]),
+            Some((true, false))
+        );
+        assert_eq!(
+            canvas_mirroring([
+                [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
+                [
+                    Point2::new(f64::from_bits((-2.0f64).to_bits() + 4), 4.0),
+                    Point2::new(f64::from_bits(3.0f64.to_bits() + 4), 4.0),
+                ],
+            ]),
+            Some((false, false))
+        );
+        assert_eq!(
+            canvas_mirroring([
+                [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
+                [Point2::new(-2.0, 4.0), Point2::new(2.0, 4.0)],
+            ]),
+            None
+        );
     }
 
     #[test]
-    fn canvas_geometry_prologue_accepts_only_expanded_and_compact_forms() {
+    fn canvas_geometry_prologue_decodes_visibility_in_both_forms() {
         let mut expanded = [0; 15];
         expanded[14] = 1;
         assert!(valid_geometry_prologue(&expanded));
+        assert_eq!(geometry_prologue_visibility(&expanded), Some(true));
+
+        expanded[14] = 0;
+        assert_eq!(geometry_prologue_visibility(&expanded), Some(false));
 
         let mut compact = [0; 15];
         compact[10] = 1;
         assert!(valid_geometry_prologue(&compact));
+        assert_eq!(geometry_prologue_visibility(&compact), Some(false));
 
         compact[14] = 1;
+        assert_eq!(geometry_prologue_visibility(&compact), Some(true));
+
+        compact[11] = 1;
         assert!(!valid_geometry_prologue(&compact));
     }
 }

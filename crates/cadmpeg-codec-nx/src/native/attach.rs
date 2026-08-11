@@ -3574,6 +3574,7 @@ fn attach_sketch_points(
         id: sketch_id.clone(),
         name: Some(label.value.clone()),
         configuration: None,
+        visible: None,
         placement: SketchPlacement::Unresolved,
         profiles: Vec::new(),
         native_ref: Some(label.id.clone()),

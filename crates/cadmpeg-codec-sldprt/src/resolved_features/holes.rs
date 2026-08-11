@@ -2086,6 +2086,7 @@ pub(crate) fn project_bore_backed_position_sketches(
                 id: sketch_id,
                 name: model_position.name.clone(),
                 configuration: lane.configuration.clone(),
+                visible: None,
                 placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                     origin: *origin,
                     normal: *normal,

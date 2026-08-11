@@ -1020,6 +1020,7 @@ pub(crate) fn project(
             id: sketch_id(sketch),
             name: None,
             configuration: None,
+            visible: None,
             placement,
             profiles: build_profiles(&referenced_entities),
             native_ref: Some(sketch.id.clone()),

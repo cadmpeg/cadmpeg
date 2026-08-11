@@ -562,6 +562,14 @@ pub(crate) fn history_input_edge_id(
     cadmpeg_ir::ids::HistoricalEdgeId(format!("f3d:history-input:edge#{prefix}:{slot}"))
 }
 
+/// The history-input vertex key for `slot` under a `prefix`.
+pub(crate) fn history_input_vertex_id(
+    prefix: &str,
+    slot: impl std::fmt::Display,
+) -> cadmpeg_ir::ids::HistoricalVertexId {
+    cadmpeg_ir::ids::HistoricalVertexId(format!("f3d:history-input:vertex#{prefix}:{slot}"))
+}
+
 /// The history-input face key for `slot` under a `prefix`.
 pub(crate) fn history_input_face_id(
     prefix: &str,
@@ -647,6 +655,11 @@ native_record_id!(
     /// The native design Canvas image-plane binding key.
     native_design_canvas_image_id,
     "design-canvas-image"
+);
+native_record_id!(
+    /// The native design Decal image and target binding key.
+    native_design_decal_image_id,
+    "design-decal-image"
 );
 native_record_id!(
     /// The native design-dimension-recipe-record key.

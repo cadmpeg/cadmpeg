@@ -290,10 +290,14 @@ fn resolved_edge_group_with_transition_chain(
                 || identity_group_transition_slots.is_some()
                 || identity_radius_slots.is_some())
     });
+    let all_member_identities_are_lost =
+        !group.members.is_empty() && group.lost_edge_references.len() == group.members.len();
     if let Some(identity_matches) = identity_matches.as_ref().filter(|_| {
         !has_recipe_operands
             || (has_complete_identity_selection
-                && (!has_concrete_recipe_evidence || identity_transition_is_supported))
+                && (!has_concrete_recipe_evidence
+                    || identity_transition_is_supported
+                    || all_member_identities_are_lost))
     }) {
         if identity_matches.is_empty() {
             return unmatched_selection(previous_state_id);
@@ -1288,6 +1292,95 @@ pub(crate) fn resolved_edge_operand(operand: &DesignEdgeOperand) -> Option<i64> 
     operand
         .resolved_edge_slot
         .or_else(|| resolve_edge_operand_candidates(operand))
+        .or_else(|| common_local_reference_shared_edge(operand))
+        .or_else(|| primary_terminal_reference_shared_edge(operand))
+}
+
+/// Resolve an unchanged edge selected as the unique boundary intersection of
+/// two or more locally referenced support faces.
+fn common_local_reference_shared_edge(operand: &DesignEdgeOperand) -> Option<i64> {
+    let local_references = operand.local_topology_references.as_ref()?;
+    let mut reference_ordinals = local_references
+        .iter()
+        .filter_map(|ordinal| usize::try_from(ordinal.get()).ok()?.checked_sub(1))
+        .collect::<Vec<_>>();
+    reference_ordinals.sort_unstable();
+    reference_ordinals.dedup();
+
+    let mut shared_sets = reference_ordinals.into_iter().filter_map(|ordinal| {
+        let shared = operand
+            .recipe_reference_contexts
+            .get(ordinal)?
+            .shared_edge_slots
+            .as_slice();
+        (!shared.is_empty()).then_some(shared)
+    });
+    let mut candidates = shared_sets.next()?.to_vec();
+    let mut support_count = 1usize;
+    for shared in shared_sets {
+        support_count += 1;
+        candidates.retain(|candidate| shared.contains(candidate));
+    }
+    candidates.sort_unstable();
+    candidates.dedup();
+
+    (support_count >= 2
+        && candidates.len() == 1
+        && operand
+            .preceding_boundary_edge_slots
+            .contains(&candidates[0]))
+    .then_some(candidates[0])
+}
+
+/// Resolve the selected edge of a zero-payload terminal recipe from the two
+/// support-face references in its primary side.
+fn primary_terminal_reference_shared_edge(operand: &DesignEdgeOperand) -> Option<i64> {
+    if !operand.recipe_reference_contexts.is_empty() {
+        return None;
+    }
+    let structure = operand.recipe_structure.as_ref()?;
+    if structure.root != 2
+        || structure.sides.len() != 2
+        || structure.sides.iter().any(|side| {
+            side.field_count.get() != 3
+                || side.scalars.len() != 2
+                || side.payload_prefix != [0]
+                || side.payload_entry_count != 0
+                || !side.entries.is_empty()
+        })
+    {
+        return None;
+    }
+
+    let primary = &structure.sides[0];
+    let reference_ordinals = std::iter::once(primary.header_value)
+        .chain(primary.scalars.iter().copied())
+        .filter(|value| *value != 0)
+        .map(|value| usize::try_from(value).ok()?.checked_sub(1))
+        .collect::<Option<Vec<_>>>()?;
+    let [first_ordinal, second_ordinal] = reference_ordinals.as_slice() else {
+        return None;
+    };
+    if first_ordinal == second_ordinal {
+        return None;
+    }
+    let first = operand.terminal_reference_edge_slots.get(*first_ordinal)?;
+    let second = operand.terminal_reference_edge_slots.get(*second_ordinal)?;
+    if first.is_empty() || second.is_empty() {
+        return None;
+    }
+
+    let mut candidates = first
+        .iter()
+        .copied()
+        .filter(|candidate| second.contains(candidate))
+        .collect::<Vec<_>>();
+    candidates.sort_unstable();
+    candidates.dedup();
+    match candidates.as_slice() {
+        [candidate] if operand.terminal_boundary_edge_slots.contains(candidate) => Some(*candidate),
+        _ => None,
+    }
 }
 
 pub(crate) fn edge_operand_reference_edge_sets(operand: &DesignEdgeOperand) -> Vec<&[i64]> {
@@ -1798,8 +1891,8 @@ pub(crate) fn project_fixed_fillet(
 mod radius_identity_tests {
     use super::{
         project_fixed_fillet, radius_edge_identity_group_candidates, resolved_edge_group,
-        resolved_edge_treatment_group, transition_chain_is_supported_by_recipe,
-        unique_hem_transition_edge_candidate,
+        resolved_edge_operand, resolved_edge_treatment_group,
+        transition_chain_is_supported_by_recipe, unique_hem_transition_edge_candidate,
     };
     use crate::records::{
         DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignEdgeOperand,
@@ -2067,6 +2160,92 @@ mod radius_identity_tests {
     }
 
     #[test]
+    fn local_support_face_references_resolve_one_unchanged_shared_edge() {
+        let context = |reference_ordinal, shared_edge_slots: &[i64]| {
+            serde_json::from_value(serde_json::json!({
+                "reference_ordinal": reference_ordinal,
+                "result_faces": [],
+                "result_shared_edge_slots": shared_edge_slots,
+                "preceding_faces": [],
+                "shared_edge_slots": shared_edge_slots,
+                "changed_shared_edge_slots": []
+            }))
+            .expect("edge recipe reference context")
+        };
+        let mut operand = recipe_edge_operand(10, &[63, 106, 109, 164], &[]);
+        operand.local_topology_references = Some(
+            [2, 1, 3, 1]
+                .into_iter()
+                .map(|ordinal| std::num::NonZeroU32::new(ordinal).expect("nonzero ordinal"))
+                .collect(),
+        );
+        operand.recipe_reference_contexts = vec![
+            context(0, &[]),
+            context(1, &[164, 180, 183, 210]),
+            context(2, &[106, 139, 180, 195]),
+            context(3, &[109, 142, 183, 197]),
+        ];
+        operand.preceding_boundary_edge_slots =
+            vec![63, 106, 109, 139, 142, 164, 168, 180, 183, 195, 197, 210];
+
+        assert_eq!(resolved_edge_operand(&operand), Some(180));
+
+        operand.recipe_reference_contexts[1].shared_edge_slots = vec![164, 180, 181];
+        operand.recipe_reference_contexts[2].shared_edge_slots = vec![106, 180, 181];
+        assert_eq!(resolved_edge_operand(&operand), None);
+
+        operand.local_topology_references = Some(vec![std::num::NonZeroU32::new(2).unwrap()]);
+        assert_eq!(resolved_edge_operand(&operand), None);
+    }
+
+    #[test]
+    fn primary_terminal_support_references_resolve_one_shared_edge() {
+        let side = |header_value, scalars: [i32; 2]| {
+            serde_json::from_value(serde_json::json!({
+                "field_count": 3,
+                "header_value": header_value,
+                "scalars": scalars,
+                "payload_prefix": [0],
+                "payload_entry_count": 0,
+                "entries": []
+            }))
+            .expect("terminal edge recipe side")
+        };
+        let mut operand = recipe_edge_operand(10, &[], &[]);
+        operand.recipe_structure = Some(crate::records::DesignEdgeRecipeStructure {
+            root: 2,
+            sides: vec![side(0, [2, 1]), side(0, [1, 3])],
+        });
+        operand.terminal_reference_edge_slots = vec![
+            vec![25, 38, 39, 62],
+            vec![25, 35, 55, 69],
+            vec![35, 39, 57, 83],
+        ];
+        operand.terminal_boundary_edge_slots = vec![25, 35, 38, 39, 55, 57, 62, 69, 83];
+
+        assert_eq!(resolved_edge_operand(&operand), Some(25));
+
+        operand.terminal_reference_edge_slots[0].push(69);
+        assert_eq!(resolved_edge_operand(&operand), None);
+
+        operand.terminal_reference_edge_slots[0].pop();
+        operand.recipe_structure.as_mut().unwrap().sides[0] = side(0, [2, 0]);
+        assert_eq!(resolved_edge_operand(&operand), None);
+
+        operand.recipe_structure.as_mut().unwrap().sides[0] = side(0, [2, 1]);
+        operand.recipe_reference_contexts = vec![serde_json::from_value(serde_json::json!({
+            "reference_ordinal": 0,
+            "result_faces": [],
+            "result_shared_edge_slots": [],
+            "preceding_faces": [],
+            "shared_edge_slots": [],
+            "changed_shared_edge_slots": []
+        }))
+        .expect("historical edge recipe reference context")];
+        assert_eq!(resolved_edge_operand(&operand), None);
+    }
+
+    #[test]
     fn edge_treatment_chain_requires_complete_recipe_boundary_coverage() {
         let first = recipe_edge_operand(10, &[17], &[17]);
         let second = recipe_edge_operand(11, &[], &[]);
@@ -2081,6 +2260,72 @@ mod radius_identity_tests {
             &[17, 18],
             2,
             [&first, &second],
+        ));
+    }
+
+    #[test]
+    fn lost_references_preserve_a_complete_compact_transition_chain() {
+        let mut selection_group = group(2, 10);
+        selection_group.members = vec![10, 11];
+        selection_group.member_offsets = vec![0, 0];
+        let first_identity = identity(10, &[(17, 0.0), (18, 0.0)]);
+        let mut second_identity = identity(11, &[(17, 0.0), (18, 0.0)]);
+        second_identity.group_member_ordinal = 1;
+        let recipe_operands = [
+            recipe_edge_operand(10, &[19], &[19]),
+            recipe_edge_operand(11, &[19], &[19]),
+        ];
+        let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#chamfer".into());
+
+        assert!(matches!(
+            resolved_edge_treatment_group(
+                &selection_group,
+                std::slice::from_ref(&selection_group),
+                &recipe_operands,
+                &[first_identity.clone(), second_identity.clone()],
+                Some(7),
+                &feature_id,
+                None,
+            ),
+            cadmpeg_ir::features::EdgeSelection::Native(_)
+        ));
+
+        selection_group.lost_edge_references = vec!["f3d:test:lost#0".into()];
+        assert!(matches!(
+            resolved_edge_treatment_group(
+                &selection_group,
+                std::slice::from_ref(&selection_group),
+                &recipe_operands,
+                &[first_identity.clone(), second_identity.clone()],
+                Some(7),
+                &feature_id,
+                None,
+            ),
+            cadmpeg_ir::features::EdgeSelection::Unresolved
+        ));
+
+        selection_group
+            .lost_edge_references
+            .push("f3d:test:lost#1".into());
+        assert!(matches!(
+            resolved_edge_treatment_group(
+                &selection_group,
+                std::slice::from_ref(&selection_group),
+                &recipe_operands,
+                &[first_identity, second_identity],
+                Some(7),
+                &feature_id,
+                None,
+            ),
+            cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+                if edges == [
+                    cadmpeg_ir::ids::HistoricalEdgeId(
+                        "f3d:history-input:edge#7:chamfer:7:17".into()
+                    ),
+                    cadmpeg_ir::ids::HistoricalEdgeId(
+                        "f3d:history-input:edge#7:chamfer:7:18".into()
+                    ),
+                ]
         ));
     }
 

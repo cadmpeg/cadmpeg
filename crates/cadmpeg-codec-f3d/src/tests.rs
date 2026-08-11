@@ -257,7 +257,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .iter()
         .map(|row| row.arena)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(crate::native::F3D_FAMILIES.len(), 69);
+    assert_eq!(crate::native::F3D_FAMILIES.len(), 70);
     assert_eq!(
         catalogue_names,
         crate::native::F3D_ARENA_NAMES
@@ -12076,16 +12076,14 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_transform: None,
         joint_origin_transform_offset: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
-        work_point_position: None,
-        work_point_position_offset: None,
+        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        work_point_reference_type: None,
-        work_point_input_record_indices: Vec::new(),
         hole_construction: None,
         extrude_profile: Some(profile),
         sweep_profile: None,
@@ -27253,7 +27251,7 @@ fn brep_less_geometry_report() -> cadmpeg_ir::report::DecodeReport {
 #[test]
 fn sketch_only_design_is_not_a_geometry_loss() {
     let mut report = brep_less_geometry_report();
-    crate::decode::apply_sketch_only_classification(&mut report, 0, 0, 0, 13);
+    crate::decode::apply_bodyless_design_classification(&mut report, 0, 0, 0, 13, 0);
     assert!(report.geometry_transferred);
     assert!(
         report
@@ -27269,12 +27267,32 @@ fn sketch_only_design_is_not_a_geometry_loss() {
         .any(|loss| loss.message.contains("13 sketch entity(s)")));
 }
 
+/// A reference-image timeline object is presentation content. A bodyless
+/// document that contains one does not require a BREP geometry carrier.
+#[test]
+fn presentation_only_design_is_not_a_geometry_loss() {
+    let mut report = brep_less_geometry_report();
+    crate::decode::apply_bodyless_design_classification(&mut report, 0, 0, 0, 0, 1);
+    assert!(report.geometry_transferred);
+    assert!(
+        report
+            .losses
+            .iter()
+            .all(|loss| loss.severity < Severity::Error),
+        "presentation-only design must not keep blocking losses: {:?}",
+        report.losses
+    );
+    assert!(report.losses.iter().any(|loss| loss
+        .message
+        .contains("1 reference-image timeline object(s)")));
+}
+
 /// A declared body whose BREP stream is absent is a real missing carrier. Its
 /// sketches do not stand in for the solid the document says it has.
 #[test]
 fn a_declared_body_without_a_brep_stream_keeps_its_geometry_losses() {
     let mut report = brep_less_geometry_report();
-    crate::decode::apply_sketch_only_classification(&mut report, 0, 0, 1, 13);
+    crate::decode::apply_bodyless_design_classification(&mut report, 0, 0, 1, 13, 0);
     assert!(!report.geometry_transferred);
     assert_eq!(report.losses.len(), 3);
 }
@@ -27285,7 +27303,7 @@ fn a_declared_body_without_a_brep_stream_keeps_its_geometry_losses() {
 #[test]
 fn a_document_without_sketch_entities_keeps_its_geometry_losses() {
     let mut report = brep_less_geometry_report();
-    crate::decode::apply_sketch_only_classification(&mut report, 0, 0, 0, 0);
+    crate::decode::apply_bodyless_design_classification(&mut report, 0, 0, 0, 0, 0);
     assert!(!report.geometry_transferred);
     assert_eq!(report.losses.len(), 3);
 }
@@ -27295,7 +27313,7 @@ fn a_document_without_sketch_entities_keeps_its_geometry_losses() {
 #[test]
 fn a_present_brep_stream_is_never_reclassified_as_sketch_only() {
     let mut report = brep_less_geometry_report();
-    crate::decode::apply_sketch_only_classification(&mut report, 1, 0, 0, 13);
+    crate::decode::apply_bodyless_design_classification(&mut report, 1, 0, 0, 13, 0);
     assert!(!report.geometry_transferred);
     assert_eq!(report.losses.len(), 3);
 }
@@ -27304,7 +27322,7 @@ fn a_present_brep_stream_is_never_reclassified_as_sketch_only() {
 #[test]
 fn a_text_brep_carrier_is_never_reclassified_as_sketch_only() {
     let mut report = brep_less_geometry_report();
-    crate::decode::apply_sketch_only_classification(&mut report, 0, 2, 0, 13);
+    crate::decode::apply_bodyless_design_classification(&mut report, 0, 2, 0, 13, 0);
     assert!(!report.geometry_transferred);
     assert_eq!(report.losses.len(), 3);
 }

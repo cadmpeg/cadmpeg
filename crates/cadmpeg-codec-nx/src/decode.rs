@@ -10054,7 +10054,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "datum axis"
             }
-            FeatureDefinition::DatumPoint { position } if !finite_feature_point(*position) => {
+            FeatureDefinition::DatumPoint { position, .. } if !finite_feature_point(*position) => {
                 "datum point"
             }
             FeatureDefinition::DatumCoordinateSystem {
@@ -11177,6 +11177,13 @@ pub(crate) fn termination_is_incomplete(termination: &Termination) -> bool {
         Termination::ToVertex { vertex } => match vertex {
             VertexSelection::Generated { vertex, native } => {
                 native.trim().is_empty() || vertex.local_id.trim().is_empty()
+            }
+            VertexSelection::Historical {
+                state,
+                vertex,
+                native,
+            } => {
+                state.0.trim().is_empty() || vertex.0.trim().is_empty() || native.trim().is_empty()
             }
             VertexSelection::Unresolved | VertexSelection::Native(_) => true,
         },

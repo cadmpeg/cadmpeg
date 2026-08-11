@@ -1291,6 +1291,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1542,6 +1543,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         outputs: Vec::new(),
         definition: FeatureDefinition::DatumPoint {
             position: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            construction: None,
         },
         native_ref: None,
     };
