@@ -792,9 +792,16 @@ fn profiled_hole_construction(
                     let entry = point(0.0, entry_radius);
                     let bore_start = point(-setback, bore_radius);
                     let bore_end = point(-depth, bore_radius);
-                    if has_line(entry, bore_start)
-                        && has_line(bore_start, bore_end)
-                        && has_line(bore_end, point(-depth - drill_length, 0.0))
+                    let tip = point(-depth - drill_length, 0.0);
+                    let edges = [(entry, bore_start), (bore_start, bore_end), (bore_end, tip)];
+                    let materialized_edges = edges
+                        .iter()
+                        .filter(|(first, second)| has_line(*first, *second))
+                        .count();
+                    if materialized_edges >= 2
+                        && edges.iter().all(|(first, second)| {
+                            has_line(*first, *second) || has_point_pair(*first, *second)
+                        })
                     {
                         return Some(ProfiledHoleConstruction {
                             diameter: Length(*diameter),

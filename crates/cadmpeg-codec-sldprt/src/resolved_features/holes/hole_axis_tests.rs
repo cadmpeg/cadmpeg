@@ -678,22 +678,27 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
     .into_iter()
     .collect();
     let sketch = SketchId("profile".into());
+    let point = |ordinal: usize, position| SketchEntity {
+        id: SketchEntityId(format!("profile-point-{ordinal}")),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point { position },
+    };
     let entities = [
+        point(0, Point2::new(0.0, 2.5)),
+        point(1, Point2::new(-0.433, 2.067)),
         profile_line(
             &sketch,
-            0,
-            Point2::new(0.0, 2.5),
-            Point2::new(-0.433, 2.067),
-        ),
-        profile_line(
-            &sketch,
-            1,
+            2,
             Point2::new(-0.433, 2.067),
             Point2::new(-5.0, 2.067),
         ),
         profile_line(
             &sketch,
-            2,
+            3,
             Point2::new(-5.0, 2.067),
             Point2::new(-6.193_383_012, 0.0),
         ),
@@ -722,6 +727,19 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
             depth_to_tip: false,
         })
     );
+
+    let insufficient = [
+        point(0, Point2::new(0.0, 2.5)),
+        point(1, Point2::new(-0.433, 2.067)),
+        point(2, Point2::new(-5.0, 2.067)),
+        profile_line(
+            &sketch,
+            3,
+            Point2::new(-5.0, 2.067),
+            Point2::new(-6.193_383_012, 0.0),
+        ),
+    ];
+    assert!(profiled_hole_construction(&profile, &sketch, &insufficient).is_none());
 }
 
 #[test]
