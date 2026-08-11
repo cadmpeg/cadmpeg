@@ -834,6 +834,8 @@ millimeters.
 Type 1 selects signed decimal 32-bit integer scalars and dimensioned run-length
 arrays. Type 2 selects finite IEEE-754 binary64 scalars and dimensioned
 run-length arrays with the compact hexadecimal grammar in `creo_prt.md` §1.
+Type 0 selects null, arrow, inline, and dimensioned-array object nodes; row
+depth supplies their scoped ownership tree.
 
 **Need.** We must know the remaining type codes and payload grammars,
 the semantic axis order of multidimensional type-2 arrays, geometry and

@@ -76,6 +76,20 @@ as its payload. A `$` row continues the immediately preceding value row; a
 identifiers can be reused in another scope. Named sections with a byte payload
 that does not begin with an attribute declaration do not use this line grammar.
 
+Type 0 stores object nodes. `->` and an empty payload are distinct non-null
+object forms, and `NULL` is the null form. A positive dimension header stores an
+object array. Its direct elements are the following rows at depth one greater
+with the same attribute identifier; element subtrees can contain rows at still
+greater depths. The direct-element count must equal the product of the extents
+for a complete array. A header without direct element rows stores no default
+objects.
+
+Within one attribute scope, a row at depth `d > 0` is owned by the most recent
+preceding type-0 row at depth `d - 1`. A row at depth zero has no parent. A new
+row at a depth closes the prior node at that depth and all of its deeper
+descendants. Object and numeric native records retain this scoped parent
+identity.
+
 A type-1 scalar payload is a signed decimal 32-bit integer. A type-1 array uses
 the positive decimal extent header, continuation rows, comma separators,
 terminal-comma rule, and `n*value` run-length form defined below for type 2,

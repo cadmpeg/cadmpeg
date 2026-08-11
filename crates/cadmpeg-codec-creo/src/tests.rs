@@ -9902,6 +9902,7 @@ fn scan_decodes_active_principal_unit() {
 #[test]
 fn legacy_principal_unit_sets_the_source_length_scale() {
     let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
+        @root 28 0\n1 28 ->\n\
         @principal_sys_units 25 10\n2 25 Inch lbm Second (Pro/E Default)\n\
         @rel_accuracy 26 2\n2 26 3FF\n\
         @feat_id 27 1\n2 27 42\n\
@@ -9927,6 +9928,10 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
     );
     assert_eq!(
         result.report.coverage["decoded_legacy_integer_scalar_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["decoded_legacy_object_arrow_count"],
         1
     );
     let reals = &result
@@ -9959,13 +9964,26 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
         integers[0].field("payload"),
         Some(serde_json::json!({"form": "scalar", "value": 42}))
     );
+    let objects = &result
+        .ir
+        .native
+        .namespace("creo")
+        .expect("Creo namespace")
+        .arenas["legacy_objects"];
+    assert_eq!(objects.len(), 1);
+    assert_eq!(
+        integers[0].field("parent"),
+        Some(serde_json::json!(objects[0].id()))
+    );
 }
 
 #[test]
-fn incomplete_legacy_real_array_is_reported() {
+fn incomplete_legacy_values_are_reported() {
     let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
         @values 7 2\n0 7 [2]\n$0\n\
         @ids 8 1\n0 8 [2]\n$1\n\
+        @objects 9 0\n0 9 [2]\n\
+        @future 10 0\n0 10 token\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
 
     let result = CreoCodec
@@ -9980,13 +9998,21 @@ fn incomplete_legacy_real_array_is_reported() {
         1
     );
     assert_eq!(
+        result.report.coverage["incomplete_legacy_object_array_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["unresolved_legacy_object_value_count"],
+        1
+    );
+    assert_eq!(
         result
             .report
             .losses
             .iter()
             .filter(|loss| loss.code == cadmpeg_ir::report::LossKind::RecordNotTyped)
             .count(),
-        2
+        4
     );
 }
 

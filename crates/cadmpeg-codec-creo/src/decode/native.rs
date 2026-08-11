@@ -29,6 +29,7 @@ const CREO_NATIVE_VERSION: u32 = 1;
 const CREO_ARENAS: &[&str] = &[
     "expanded_sections",
     "legacy_integer_values",
+    "legacy_objects",
     "legacy_real_values",
     "double_xar_tables",
     "primitive_scalar_arrays",

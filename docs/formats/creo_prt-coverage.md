@@ -106,7 +106,10 @@ fixtures, claims above L1 remain unproven.
   repeated elements. Complete type-1 signed-integer scalars and arrays transfer
   with the same scoped identity and retained run representation. Declared
   type-1 arrays without stored elements remain unresolved and are counted as
-  typed-record losses; the decoder does not synthesize zero elements.
+  typed-record losses; the decoder does not synthesize zero elements. Type-0
+  null, arrow, inline, and array nodes transfer with depth-defined parent links
+  and direct array-element identities. Incomplete object arrays retain their
+  headers and existing elements and produce a typed-record loss.
 - Compressed `THMB_IMG_MAIN` payloads expand to the JPEG marker before preview
   detection and retain the JPEG bytes as a derived native record.
 - Axis-aligned coaxial cone-cylinder intersections transfer the unique circle

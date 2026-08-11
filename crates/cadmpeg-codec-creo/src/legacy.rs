@@ -112,6 +112,8 @@ pub struct NumericRecord<T> {
     pub attribute_id: u32,
     /// Byte offset of the owning attribute-ID scope.
     pub scope_offset: usize,
+    /// Owning type-0 object node, when the depth tree supplies one.
+    pub parent: Option<String>,
     /// Object-tree nesting depth of the scalar or array header.
     pub depth: u32,
     /// Complete typed value.
@@ -132,6 +134,53 @@ pub type IntegerRun = NumericRun<i32>;
 pub type IntegerPayload = NumericPayload<i32>;
 /// One completely decoded legacy type-1 attribute value.
 pub type IntegerRecord = NumericRecord<i32>;
+
+/// Structural payload of one legacy type-0 object node.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "form", rename_all = "snake_case")]
+pub enum ObjectPayload {
+    /// The `->` object token.
+    Arrow,
+    /// The empty inline-object payload.
+    Inline,
+    /// The `NULL` object token.
+    Null,
+    /// A dimensioned object array and its direct element nodes.
+    Array {
+        /// Array extents from outermost to innermost dimension.
+        dimensions: Vec<u32>,
+        /// Direct child object identities in source order.
+        elements: Vec<String>,
+        /// Whether element cardinality equals the extent product.
+        complete: bool,
+    },
+    /// A type-0 payload outside the defined object forms.
+    Opaque {
+        /// Uninterpreted payload bytes after the attribute identifier.
+        bytes: Vec<u8>,
+    },
+}
+
+/// One legacy type-0 object node in the depth-defined ownership tree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ObjectRecord {
+    /// Globally unique native object-node identity.
+    pub id: String,
+    /// Declared attribute name.
+    pub name: String,
+    /// Scope-local declaration identifier.
+    pub attribute_id: u32,
+    /// Byte offset of the owning attribute-ID scope.
+    pub scope_offset: usize,
+    /// Owning type-0 object node, when the depth tree supplies one.
+    pub parent: Option<String>,
+    /// Object-tree nesting depth.
+    pub depth: u32,
+    /// Stored object form.
+    pub payload: ObjectPayload,
+    /// Byte offset of the value row.
+    pub offset: usize,
+}
 
 /// One unique `@<name> <id> <type-code>` declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -191,6 +240,12 @@ pub struct Persistence {
     pub integer_values: Vec<IntegerRecord>,
     /// Type-1 value rows not represented by a complete scalar or owning array.
     pub unresolved_integer_value_count: usize,
+    /// Type-0 object nodes in source order.
+    pub objects: Vec<ObjectRecord>,
+    /// Type-0 arrays whose direct element count differs from their extents.
+    pub incomplete_object_array_count: usize,
+    /// Type-0 value rows outside the defined object forms.
+    pub unresolved_object_value_count: usize,
 }
 
 impl Persistence {
@@ -403,12 +458,137 @@ fn continuation_numeric_runs<T>(
     Some(runs)
 }
 
+fn object_node_id(offset: usize) -> String {
+    format!("creo:legacy_ascii:object#{offset}")
+}
+
+fn parent_object_offsets(scopes: &[Scope]) -> BTreeMap<usize, usize> {
+    let mut parents = BTreeMap::new();
+    for scope in scopes {
+        let declarations = scope
+            .declarations
+            .iter()
+            .map(|declaration| (declaration.id, declaration))
+            .collect::<BTreeMap<_, _>>();
+        let mut active_objects = BTreeMap::<u32, usize>::new();
+        for value in &scope.values {
+            drop(active_objects.split_off(&value.depth));
+            if let Some(parent) = value
+                .depth
+                .checked_sub(1)
+                .and_then(|depth| active_objects.get(&depth))
+            {
+                parents.insert(value.offset, *parent);
+            }
+            if declarations
+                .get(&value.attribute_id)
+                .is_some_and(|declaration| declaration.type_code == 0)
+            {
+                active_objects.insert(value.depth, value.offset);
+            }
+        }
+    }
+    parents
+}
+
+fn object_records(
+    data: &[u8],
+    scopes: &[Scope],
+    parents: &BTreeMap<usize, usize>,
+) -> (Vec<ObjectRecord>, usize, usize) {
+    let mut records = Vec::new();
+    let mut incomplete_arrays = 0usize;
+    let mut unresolved = 0usize;
+    for scope in scopes {
+        let declarations = scope
+            .declarations
+            .iter()
+            .map(|declaration| (declaration.id, declaration))
+            .collect::<BTreeMap<_, _>>();
+        let value_attributes = scope
+            .values
+            .iter()
+            .map(|value| (value.offset, value.attribute_id))
+            .collect::<BTreeMap<_, _>>();
+        let mut direct_array_elements = BTreeMap::<usize, Vec<usize>>::new();
+        for child in &scope.values {
+            let Some(parent_offset) = parents.get(&child.offset).copied() else {
+                continue;
+            };
+            if value_attributes.get(&parent_offset) == Some(&child.attribute_id)
+                && declarations
+                    .get(&child.attribute_id)
+                    .is_some_and(|declaration| declaration.type_code == 0)
+            {
+                direct_array_elements
+                    .entry(parent_offset)
+                    .or_default()
+                    .push(child.offset);
+            }
+        }
+        for value in &scope.values {
+            let Some(declaration) = declarations
+                .get(&value.attribute_id)
+                .filter(|declaration| declaration.type_code == 0)
+            else {
+                continue;
+            };
+            let bytes = &data[value.payload.clone()];
+            let payload = if bytes == b"->" {
+                ObjectPayload::Arrow
+            } else if bytes.is_empty() {
+                ObjectPayload::Inline
+            } else if bytes == b"NULL" {
+                ObjectPayload::Null
+            } else if let Some(dimensions) = array_dimensions(bytes) {
+                let elements = direct_array_elements
+                    .get(&value.offset)
+                    .into_iter()
+                    .flatten()
+                    .map(|offset| object_node_id(*offset))
+                    .collect::<Vec<_>>();
+                let expected = dimensions.iter().try_fold(1u64, |count, dimension| {
+                    count.checked_mul(u64::from(*dimension))
+                });
+                let complete = expected
+                    .and_then(|count| usize::try_from(count).ok())
+                    .is_some_and(|count| count == elements.len());
+                incomplete_arrays += usize::from(!complete);
+                ObjectPayload::Array {
+                    dimensions,
+                    elements,
+                    complete,
+                }
+            } else {
+                unresolved += 1;
+                ObjectPayload::Opaque {
+                    bytes: bytes.to_vec(),
+                }
+            };
+            records.push(ObjectRecord {
+                id: object_node_id(value.offset),
+                name: declaration.name.clone(),
+                attribute_id: value.attribute_id,
+                scope_offset: scope.range.start,
+                parent: parents
+                    .get(&value.offset)
+                    .map(|offset| object_node_id(*offset)),
+                depth: value.depth,
+                payload,
+                offset: value.offset,
+            });
+        }
+    }
+    (records, incomplete_arrays, unresolved)
+}
+
 fn numeric_records<T>(
     data: &[u8],
     scopes: &[Scope],
     type_code: u8,
     identity_kind: &str,
     scalar: fn(&[u8]) -> Option<T>,
+    parents: &BTreeMap<usize, usize>,
 ) -> (Vec<NumericRecord<T>>, usize) {
     let mut records = Vec::new();
     let mut unresolved = 0usize;
@@ -501,6 +681,9 @@ fn numeric_records<T>(
                 name: declaration.name.clone(),
                 attribute_id: value.attribute_id,
                 scope_offset: scope.range.start,
+                parent: parents
+                    .get(&value.offset)
+                    .map(|offset| object_node_id(*offset)),
                 depth: value.depth,
                 payload,
                 offset: value.offset,
@@ -607,16 +790,22 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         .filter(|range| range.start < range.end && range.start < data.len())
         .map(|range| scan_scope(data, range))
         .collect::<Vec<_>>();
+    let parents = parent_object_offsets(&scopes);
+    let (objects, incomplete_object_array_count, unresolved_object_value_count) =
+        object_records(data, &scopes, &parents);
     let (real_values, unresolved_real_value_count) =
-        numeric_records(data, &scopes, 2, "real", compact_real);
+        numeric_records(data, &scopes, 2, "real", compact_real, &parents);
     let (integer_values, unresolved_integer_value_count) =
-        numeric_records(data, &scopes, 1, "integer", signed_integer);
+        numeric_records(data, &scopes, 1, "integer", signed_integer, &parents);
     Persistence {
         scopes,
         real_values,
         unresolved_real_value_count,
         integer_values,
         unresolved_integer_value_count,
+        objects,
+        incomplete_object_array_count,
+        unresolved_object_value_count,
     }
 }
 
@@ -813,6 +1002,82 @@ mod tests {
 
         assert!(persistence.integer_values.is_empty());
         assert_eq!(persistence.unresolved_integer_value_count, 2);
+    }
+
+    #[test]
+    fn type_0_objects_define_scoped_ownership_and_array_elements() {
+        let data = b"@root 1 0\n@number 2 1\n@children 3 0\n@weight 4 2\n\
+            0 1 ->\n1 2 7\n1 3 [2]\n2 3 ->\n3 4 3FF\n2 3 NULL\n";
+        let root_offset = data
+            .windows(b"0 1 ->".len())
+            .position(|window| window == b"0 1 ->")
+            .expect("root offset");
+        let array_offset = data
+            .windows(b"1 3 [2]".len())
+            .position(|window| window == b"1 3 [2]")
+            .expect("array offset");
+        let first_child_offset = data
+            .windows(b"2 3 ->".len())
+            .position(|window| window == b"2 3 ->")
+            .expect("first child offset");
+        let second_child_offset = data
+            .windows(b"2 3 NULL".len())
+            .position(|window| window == b"2 3 NULL")
+            .expect("second child offset");
+        let persistence = scan(data, std::iter::once(0..data.len()));
+
+        assert_eq!(persistence.objects.len(), 4);
+        assert_eq!(persistence.incomplete_object_array_count, 0);
+        assert_eq!(persistence.unresolved_object_value_count, 0);
+        assert_eq!(
+            persistence.objects[1].parent.as_deref(),
+            Some(object_node_id(root_offset).as_str())
+        );
+        assert_eq!(
+            persistence.objects[1].payload,
+            ObjectPayload::Array {
+                dimensions: vec![2],
+                elements: vec![
+                    object_node_id(first_child_offset),
+                    object_node_id(second_child_offset),
+                ],
+                complete: true,
+            }
+        );
+        assert_eq!(persistence.integer_values.len(), 1);
+        assert_eq!(
+            persistence.integer_values[0].parent.as_deref(),
+            Some(object_node_id(root_offset).as_str())
+        );
+        assert_eq!(persistence.real_values.len(), 1);
+        assert_eq!(
+            persistence.real_values[0].parent.as_deref(),
+            Some(object_node_id(first_child_offset).as_str())
+        );
+        assert_eq!(persistence.objects[1].offset, array_offset);
+    }
+
+    #[test]
+    fn type_0_objects_retain_incomplete_and_opaque_forms() {
+        let data = b"@array 1 0\n0 1 [2]\n@future 2 0\n0 2 token\n";
+        let persistence = scan(data, std::iter::once(0..data.len()));
+
+        assert_eq!(persistence.objects.len(), 2);
+        assert_eq!(persistence.incomplete_object_array_count, 1);
+        assert_eq!(persistence.unresolved_object_value_count, 1);
+        assert!(matches!(
+            persistence.objects[0].payload,
+            ObjectPayload::Array {
+                complete: false,
+                ..
+            }
+        ));
+        assert_eq!(
+            persistence.objects[1].payload,
+            ObjectPayload::Opaque {
+                bytes: b"token".to_vec()
+            }
+        );
     }
 
     #[test]

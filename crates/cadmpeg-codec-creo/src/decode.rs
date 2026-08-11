@@ -32737,6 +32737,22 @@ fn emit_legacy_arenas(
     emit_arena(
         ir,
         annotations,
+        "legacy_objects",
+        &legacy.persistence.objects,
+        |annotations, record| {
+            annotate(
+                annotations,
+                &record.id,
+                source_stream(record.offset),
+                record.offset as u64,
+                "legacy_type_0_object",
+                Exactness::ByteExact,
+            );
+        },
+    )?;
+    emit_arena(
+        ir,
+        annotations,
         "legacy_integer_values",
         &legacy.persistence.integer_values,
         |annotations, record| {
@@ -35834,6 +35850,40 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
             usize::from(scan.framing.principal_unit.is_some()),
         );
         if let Some(legacy) = &scan.framing.legacy_ascii {
+            let mut object_arrows = 0usize;
+            let mut object_inlines = 0usize;
+            let mut object_nulls = 0usize;
+            let mut object_arrays = 0usize;
+            for record in &legacy.persistence.objects {
+                match record.payload {
+                    crate::legacy::ObjectPayload::Arrow => object_arrows += 1,
+                    crate::legacy::ObjectPayload::Inline => object_inlines += 1,
+                    crate::legacy::ObjectPayload::Null => object_nulls += 1,
+                    crate::legacy::ObjectPayload::Array { .. } => object_arrays += 1,
+                    crate::legacy::ObjectPayload::Opaque { .. } => {}
+                }
+            }
+            coverage.insert(
+                "decoded_legacy_object_arrow_count".to_string(),
+                object_arrows,
+            );
+            coverage.insert(
+                "decoded_legacy_object_inline_count".to_string(),
+                object_inlines,
+            );
+            coverage.insert("decoded_legacy_object_null_count".to_string(), object_nulls);
+            coverage.insert(
+                "decoded_legacy_object_array_count".to_string(),
+                object_arrays,
+            );
+            coverage.insert(
+                "incomplete_legacy_object_array_count".to_string(),
+                legacy.persistence.incomplete_object_array_count,
+            );
+            coverage.insert(
+                "unresolved_legacy_object_value_count".to_string(),
+                legacy.persistence.unresolved_object_value_count,
+            );
             let (integer_scalars, integer_arrays, integer_elements) =
                 legacy_numeric_coverage(&legacy.persistence.integer_values);
             coverage.insert(
@@ -36654,6 +36704,30 @@ fn build_report(
             message: format!(
                 "{unresolved_legacy_integers} legacy type-1 value row(s) did not form a signed \
                  32-bit scalar or dimension-complete integer array."
+            ),
+            provenance: None,
+        });
+    }
+    let incomplete_legacy_object_arrays = count("incomplete_legacy_object_array_count");
+    if incomplete_legacy_object_arrays != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+            severity: Severity::Warning,
+            message: format!(
+                "{incomplete_legacy_object_arrays} legacy type-0 object array(s) have a direct \
+                 element count that differs from their declared extents."
+            ),
+            provenance: None,
+        });
+    }
+    let unresolved_legacy_objects = count("unresolved_legacy_object_value_count");
+    if unresolved_legacy_objects != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_legacy_objects} legacy type-0 value row(s) use an undefined object \
+                 payload form."
             ),
             provenance: None,
         });
