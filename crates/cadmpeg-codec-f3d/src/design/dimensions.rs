@@ -329,12 +329,15 @@ fn project_all_dimension_constraints(
         }
         if source_kind.starts_with("Linear Dimension") && entities.len() == 2 {
             let evaluated_mm = evaluated_value * 10.0;
-            if let Some(definition) =
-                directional_point_dimension(&entities, evaluated_mm, parameter.clone())
-            {
+            if let Some(definition) = directional_point_dimension(
+                &entities,
+                evaluated_mm,
+                parameter.clone(),
+                linear_tolerance,
+            ) {
                 return Some(definition);
             }
-            if point_line_separation(entities[0], entities[1], evaluated_mm)
+            if point_line_separation(entities[0], entities[1], evaluated_mm, linear_tolerance)
                 || parallel_line_separation(entities[0], entities[1], evaluated_mm)
                 || concentric_circle_separation(entities[0], entities[1], evaluated_mm)
             {
@@ -356,8 +359,7 @@ fn project_all_dimension_constraints(
             };
             let measured =
                 (first_position.u - second_position.u).hypot(first_position.v - second_position.v);
-            let scale = 1.0 + measured.abs().max(evaluated_mm.abs());
-            if evaluated_mm.is_finite() && (measured - evaluated_mm.abs()).abs() <= 1.0e-9 * scale {
+            if linear_measurement_matches(measured, evaluated_mm, linear_tolerance) {
                 return Some(Definition::DistanceLoci {
                     first: cadmpeg_ir::sketches::SketchLocus::Entity(entities[0].id.clone()),
                     second: cadmpeg_ir::sketches::SketchLocus::Entity(entities[1].id.clone()),
@@ -490,6 +492,7 @@ fn project_all_dimension_constraints(
                 &locus_entities,
                 parameter.evaluated_value * 10.0,
                 parameter_id.clone(),
+                linear_tolerance,
             ) {
                 return Some(definition);
             }
@@ -1059,7 +1062,13 @@ fn project_all_dimension_constraints(
             )
         })
         .or_else(|| {
-            unique_point_line_dimension_definition(entities, &sketch, parameter, &parameter_id)
+            unique_point_line_dimension_definition(
+                entities,
+                &sketch,
+                parameter,
+                &parameter_id,
+                linear_tolerance,
+            )
         })
         .or_else(|| {
             unique_point_class_dimension_definition(
@@ -1262,6 +1271,7 @@ pub(crate) fn unique_point_line_dimension_definition(
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
+    linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
 
@@ -1287,7 +1297,7 @@ pub(crate) fn unique_point_line_dimension_definition(
     let mut matched = None;
     for point in points {
         for line in &lines {
-            if point_line_separation(point, line, evaluated_mm) {
+            if point_line_separation(point, line, evaluated_mm, linear_tolerance) {
                 if matched.is_some() {
                     return None;
                 }
@@ -3715,6 +3725,7 @@ pub(crate) fn directional_point_dimension(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     evaluated_mm: f64,
     parameter: cadmpeg_ir::features::ParameterId,
+    linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinition as Definition, SketchGeometry, SketchLocus,
@@ -3735,14 +3746,18 @@ pub(crate) fn directional_point_dimension(
     else {
         return None;
     };
-    let expected = evaluated_mm.abs();
-    let scale = 1.0 + expected;
     let first_locus = SketchLocus::Entity(first.id.clone());
     let second_locus = SketchLocus::Entity(second.id.clone());
-    let horizontal =
-        ((first_position.u - second_position.u).abs() - expected).abs() <= scale * 1.0e-9;
-    let vertical =
-        ((first_position.v - second_position.v).abs() - expected).abs() <= scale * 1.0e-9;
+    let horizontal = linear_measurement_matches(
+        first_position.u - second_position.u,
+        evaluated_mm,
+        linear_tolerance,
+    );
+    let vertical = linear_measurement_matches(
+        first_position.v - second_position.v,
+        evaluated_mm,
+        linear_tolerance,
+    );
     match (horizontal, vertical) {
         (true, false) => Some(Definition::HorizontalDistance {
             first: first_locus,
@@ -3833,6 +3848,7 @@ pub(crate) fn recipe_linear_dimension_candidates(
                 &[points[first], points[second]],
                 evaluated_mm,
                 parameter.clone(),
+                0.0,
             ) {
                 candidates.push(definition);
             }
@@ -4007,6 +4023,7 @@ pub(crate) fn point_line_separation(
     first: &cadmpeg_ir::sketches::SketchEntity,
     second: &cadmpeg_ir::sketches::SketchEntity,
     evaluated_mm: f64,
+    linear_tolerance: f64,
 ) -> bool {
     use cadmpeg_ir::sketches::SketchGeometry;
 
@@ -4024,8 +4041,20 @@ pub(crate) fn point_line_separation(
     }
     let offset = Point2::new(point.u - line.0.u, point.v - line.0.v);
     let measured = (offset.u * direction.v - offset.v * direction.u).abs() / length;
-    let expected = evaluated_mm.abs();
-    (measured - expected).abs() <= 1.0e-9 * (1.0 + measured.max(expected))
+    linear_measurement_matches(measured, evaluated_mm, linear_tolerance)
+}
+
+fn linear_measurement_matches(measured: f64, expected: f64, linear_tolerance: f64) -> bool {
+    if !measured.is_finite()
+        || !expected.is_finite()
+        || !linear_tolerance.is_finite()
+        || linear_tolerance < 0.0
+    {
+        return false;
+    }
+    let expected = expected.abs();
+    let scale = 1.0 + measured.abs().max(expected);
+    (measured.abs() - expected).abs() <= linear_tolerance.max(1.0e-9 * scale)
 }
 
 pub(crate) fn two_locus_distance_dimension(

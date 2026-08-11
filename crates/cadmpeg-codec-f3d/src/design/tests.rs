@@ -16970,10 +16970,31 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         &[&first, &second],
         10.0,
         parameter.clone(),
+        0.0,
     )
     .is_none());
     assert!(matches!(
-        crate::design::dimensions::directional_point_dimension(&[&first, &second], 40.0, parameter),
+        crate::design::dimensions::directional_point_dimension(
+            &[&first, &second],
+            40.0,
+            parameter.clone(),
+            0.0,
+        ),
+        Some(SketchConstraintDefinition::HorizontalDistance { .. })
+    ));
+    let rounded = entity(
+        "generated:point#rounded",
+        SketchGeometry::Point {
+            position: Point2::new(40.000_000_5, 0.0),
+        },
+    );
+    assert!(matches!(
+        crate::design::dimensions::directional_point_dimension(
+            &[&first, &rounded],
+            40.0,
+            parameter,
+            1.0e-6,
+        ),
         Some(SketchConstraintDefinition::HorizontalDistance { .. })
     ));
 
@@ -17022,12 +17043,20 @@ fn dimension_proofs_require_the_evaluated_measurement() {
     assert!(crate::design::dimensions::point_line_separation(
         &offset_point,
         &vertical,
-        2.0
+        2.0,
+        0.0,
+    ));
+    assert!(crate::design::dimensions::point_line_separation(
+        &offset_point,
+        &vertical,
+        2.000_000_5,
+        1.0e-6,
     ));
     assert!(!crate::design::dimensions::point_line_separation(
         &vertical,
         &offset_point,
-        3.0
+        3.0,
+        1.0e-6,
     ));
 
     let inner_circle = entity(
@@ -17084,7 +17113,7 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
     let parameter = cadmpeg_ir::features::ParameterId("generated:parameter#distance".into());
 
     let definition =
-        directional_point_dimension(&[&first, &second], 2.0, parameter.clone()).unwrap();
+        directional_point_dimension(&[&first, &second], 2.0, parameter.clone(), 0.0).unwrap();
     assert!(matches!(
         definition,
         SketchConstraintDefinition::VerticalDistance {
@@ -17093,7 +17122,7 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
             parameter: ref parameter_id,
         } if first_id == &first.id && second_id == &second.id && parameter_id == &parameter
     ));
-    assert!(directional_point_dimension(&[&first, &second], 3.0, parameter).is_none());
+    assert!(directional_point_dimension(&[&first, &second], 3.0, parameter, 0.0).is_none());
 
     let diagonal = entity("generated:point#diagonal", Point2::new(7.0, 14.0));
     assert!(matches!(
@@ -17101,6 +17130,7 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
             &[&first, &diagonal],
             3.0,
             cadmpeg_ir::features::ParameterId("generated:parameter#horizontal".into()),
+            0.0,
         ),
         Some(SketchConstraintDefinition::HorizontalDistance { .. })
     ));
@@ -17109,6 +17139,7 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
         &[&first, &square],
         2.0,
         cadmpeg_ir::features::ParameterId("generated:parameter#ambiguous".into()),
+        0.0,
     )
     .is_none());
 }
@@ -19127,6 +19158,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &sketch,
             &parameter,
             &cadmpeg_ir::features::ParameterId("parameter".into()),
+            1.0e-6,
         ),
         Some(SketchConstraintDefinition::Distance {
             entities,
@@ -19152,6 +19184,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &sketch,
             &parameter,
             &cadmpeg_ir::features::ParameterId("parameter".into()),
+            1.0e-6,
         )
         .is_none()
     );
