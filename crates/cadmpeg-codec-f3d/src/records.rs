@@ -712,6 +712,12 @@ pub enum DesignExtrudePrologue {
     },
     /// Shifted layout without the reference-aware prefix.
     LegacyShifted {
+        /// Optional marker immediately before the operation fields.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        operation_prefix_marker: Option<u8>,
+        /// Byte offset of `operation_prefix_marker` when present.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        operation_prefix_marker_offset: Option<u64>,
         /// Boolean result operation.
         operation: DesignExtrudeOperation,
         /// Byte offset of `operation`.

@@ -8460,8 +8460,10 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         bytes.extend_from_slice(&12u32.to_le_bytes());
         bytes.resize(120, 0);
         bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
+        let legacy_operation_marker = legacy_side_extents.is_some() && reference_marker;
+        let legacy_field_shift = usize::from(legacy_operation_marker);
         let operation_offset = if legacy_side_extents.is_some() {
-            27
+            27 + legacy_field_shift
         } else if let Some(reference_padding) = reference_padding {
             bytes[25] = 1;
             bytes[26..30].copy_from_slice(&77u32.to_le_bytes());
@@ -8470,7 +8472,11 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             28
         };
         if reference_marker {
-            assert_eq!(reference_padding, Some(8));
+            if legacy_operation_marker {
+                assert_eq!(reference_padding, None);
+            } else {
+                assert_eq!(reference_padding, Some(8));
+            }
             bytes[operation_offset - 1] = 1;
         }
         bytes[operation_offset..operation_offset + 4].copy_from_slice(&operation.to_le_bytes());
@@ -8520,13 +8526,14 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
                 } else {
                     252
                 }
-            });
+            }) + legacy_field_shift;
             bytes.resize(reference_count_offset, 0);
         }
         let compact_two_sided =
             legacy_reference_count_offset == Some(283) && direction_face_extend.0 == 2;
         if compact_two_sided {
             for reference_at in [139, 170, 185] {
+                let reference_at = reference_at + legacy_field_shift;
                 bytes[reference_at] = 1;
                 bytes[reference_at + 1..reference_at + 5].copy_from_slice(&55u32.to_le_bytes());
             }
@@ -8534,6 +8541,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             || legacy_side_extents.is_some() && direction_face_extend.0 == 2
         {
             for reference_at in [139, 159, 182] {
+                let reference_at = reference_at + legacy_field_shift;
                 bytes[reference_at] = 1;
                 bytes[reference_at + 1..reference_at + 5].copy_from_slice(&55u32.to_le_bytes());
             }
@@ -8567,6 +8575,8 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             } else {
                 (106, if side_extents.0 == 2 { 116 } else { 110 })
             };
+            let first_extent_at = first_extent_at + legacy_field_shift;
+            let second_extent_at = second_extent_at + legacy_field_shift;
             bytes[first_extent_at..first_extent_at + 4]
                 .copy_from_slice(&side_extents.0.to_le_bytes());
             bytes[second_extent_at..second_extent_at + 4]
@@ -8849,8 +8859,40 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert!(matches!(
         shifted_compact_symmetric.extrude_prologue,
         Some(DesignExtrudePrologue::LegacyShifted {
+            operation_prefix_marker: None,
+            operation_prefix_marker_offset: None,
             side_extent_discriminator_offsets: [116, 130],
             extent: Some(DesignExtrudeExtent::SymmetricDistance),
+            ..
+        })
+    ));
+    let shifted_marked_symmetric = scope(
+        "Extrude",
+        4,
+        (3, 2),
+        0,
+        1,
+        0,
+        None,
+        true,
+        None,
+        Some(((1, 0), true)),
+        Some(283),
+    );
+    assert!(matches!(
+        shifted_marked_symmetric.extrude_prologue,
+        Some(DesignExtrudePrologue::LegacyShifted {
+            operation_prefix_marker: Some(1),
+            operation_prefix_marker_offset: Some(27),
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: 28,
+            direction_face_extend_values: [3, 2],
+            side_extent_discriminator_offsets: [117, 131],
+            extent: Some(DesignExtrudeExtent::SymmetricDistance),
+            direction_face_extend_offsets: [32, 36],
+            direction_reversed_offset: 40,
+            solid_operation_offset: 41,
+            start_offset: 42,
             ..
         })
     ));
@@ -20417,6 +20459,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         }
     ));
     scope.extrude_prologue = Some(DesignExtrudePrologue::LegacyShifted {
+        operation_prefix_marker: None,
+        operation_prefix_marker_offset: None,
         operation: DesignExtrudeOperation::NewBody,
         operation_offset: 127,
         direction_face_extend_values: [3, 2],

@@ -1106,6 +1106,44 @@ Unstated regions:
 
 - `0..20` (20 B): The indexed header and the preceding shifted-operation envelope are outside this field run.
 
+## `marked_shifted_extrude_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 43 B
+
+Offsets are relative to the marked shifted Extrude primary indexed header. The marker shifts every subsequent field in the shifted layout by one byte.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 4 | `prefix_constant` | `u32` | little | spec | The shifted Extrude prologue stores u32 `1` at primary-header offset 20 |
+| 24 | 3 | `zero_run_3` | `bytes[3]` | little | spec | three zero bytes at offsets 24 through 26 |
+| 27 | 1 | `operation_prefix_marker` | `u8` | little | spec | inserts marker byte `01` at primary-header offset 27 |
+| 28 | 4 | `operation` | `u32` | little | spec | The result operation is at offset 28 |
+| 32 | 4 | `direction` | `u32` | little | spec | travel direction at offset 32 |
+| 36 | 4 | `face_extend` | `u32` | little | spec | face-extend option at offset 36 |
+| 40 | 1 | `direction_reversed` | `u8` | little | spec | direction reversal at offset 40 |
+| 41 | 1 | `geometry_kind` | `u8` | little | spec | geometry kind at offset 41 |
+| 42 | 1 | `start_support` | `u8` | little | spec | start support at offset 42 |
+
+Unstated regions:
+
+- `0..20` (20 B): The indexed header and the preceding shifted-operation envelope are outside this field run.
+
+## `marked_shifted_extrude_symmetric_extent_lane`
+
+Spec §3.1 · layout: byte offsets · size: 135 B
+
+Offsets are relative to the marked shifted Extrude primary indexed header. Unselected fields in the intervening envelope have no extent semantics.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 117 | 4 | `first_side_extent` | `u32` | little | spec | stores first-side extent `1` at offset 117 |
+| 131 | 4 | `second_side_extent` | `u32` | little | spec | second-side extent `0` at offset 131 |
+
+Unstated regions:
+
+- `0..117` (117 B): The marked shifted prologue, profile-normal envelope, and unselected extent fields precede the widened extent lane.
+- `121..131` (10 B): The fixed widened-lane payload separates the side extent values.
+
 ## `shifted_extrude_offset_283_two_sided_tail`
 
 Spec §3.1 · layout: byte offsets · size: 204 B

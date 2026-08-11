@@ -3093,6 +3093,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 (
                     true,
                     Some(records::DesignExtrudePrologue::LegacyShifted {
+                        operation_prefix_marker,
+                        operation_prefix_marker_offset,
                         operation_offset,
                         direction_face_extend_values,
                         side_extent_discriminators,
@@ -3105,7 +3107,22 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         ..
                     }),
                 ) => {
-                    operation_offset == scope.byte_offset.saturating_add(27)
+                    let field_shift =
+                        match (operation_prefix_marker, operation_prefix_marker_offset) {
+                            (None, None)
+                                if operation_offset == scope.byte_offset.saturating_add(27) =>
+                            {
+                                Some(0)
+                            }
+                            (Some(1), Some(marker_offset))
+                                if marker_offset == scope.byte_offset.saturating_add(27)
+                                    && operation_offset == marker_offset.saturating_add(1) =>
+                            {
+                                Some(1)
+                            }
+                            _ => None,
+                        };
+                    field_shift.is_some()
                         && matches!(direction_face_extend_values[0], 1..=3)
                         && matches!(
                             (
@@ -3143,51 +3160,61 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 Some(records::DesignExtrudeExtent::SymmetricThroughAll)
                             )
                         )
-                        && side_extent_discriminator_offsets
-                            == if direction_face_extend_values[0] == 2 {
-                                if scope.reference_count_offset.checked_sub(scope.byte_offset)
-                                    == Some(283)
+                        && field_shift.is_some_and(|field_shift| {
+                            side_extent_discriminator_offsets
+                                == if direction_face_extend_values[0] == 2 {
+                                    if scope
+                                        .reference_count_offset
+                                        .checked_sub(scope.byte_offset)
+                                        .and_then(|offset| offset.checked_sub(field_shift))
+                                        == Some(283)
+                                    {
+                                        [
+                                            scope.byte_offset.saturating_add(166 + field_shift),
+                                            scope.byte_offset.saturating_add(181 + field_shift),
+                                        ]
+                                    } else {
+                                        [
+                                            scope.byte_offset.saturating_add(155 + field_shift),
+                                            scope.byte_offset.saturating_add(178 + field_shift),
+                                        ]
+                                    }
+                                } else if side_extent_discriminators[0] == 2 {
+                                    let first_offset = side_extent_discriminator_offsets[0];
+                                    if matches!(
+                                        first_offset
+                                            .checked_sub(scope.byte_offset)
+                                            .and_then(|offset| offset.checked_sub(field_shift)),
+                                        Some(106 | 116)
+                                    ) {
+                                        [
+                                            first_offset,
+                                            scope.reference_count_offset.saturating_sub(4),
+                                        ]
+                                    } else {
+                                        [0, 0]
+                                    }
+                                } else if side_extent_discriminator_offsets
+                                    == [
+                                        scope.byte_offset.saturating_add(116 + field_shift),
+                                        scope.byte_offset.saturating_add(129 + field_shift),
+                                    ]
+                                {
+                                    side_extent_discriminator_offsets
+                                } else if side_extent_discriminator_offsets[0]
+                                    == scope.byte_offset.saturating_add(116 + field_shift)
                                 {
                                     [
-                                        scope.byte_offset.saturating_add(166),
-                                        scope.byte_offset.saturating_add(181),
+                                        scope.byte_offset.saturating_add(116 + field_shift),
+                                        scope.byte_offset.saturating_add(130 + field_shift),
                                     ]
                                 } else {
                                     [
-                                        scope.byte_offset.saturating_add(155),
-                                        scope.byte_offset.saturating_add(178),
+                                        scope.byte_offset.saturating_add(106 + field_shift),
+                                        scope.byte_offset.saturating_add(110 + field_shift),
                                     ]
                                 }
-                            } else if side_extent_discriminators[0] == 2 {
-                                let first_offset = side_extent_discriminator_offsets[0];
-                                if matches!(
-                                    first_offset.checked_sub(scope.byte_offset),
-                                    Some(106 | 116)
-                                ) {
-                                    [first_offset, scope.reference_count_offset.saturating_sub(4)]
-                                } else {
-                                    [0, 0]
-                                }
-                            } else if side_extent_discriminator_offsets
-                                == [
-                                    scope.byte_offset.saturating_add(116),
-                                    scope.byte_offset.saturating_add(129),
-                                ]
-                            {
-                                side_extent_discriminator_offsets
-                            } else if side_extent_discriminator_offsets[0]
-                                == scope.byte_offset.saturating_add(116)
-                            {
-                                [
-                                    scope.byte_offset.saturating_add(116),
-                                    scope.byte_offset.saturating_add(130),
-                                ]
-                            } else {
-                                [
-                                    scope.byte_offset.saturating_add(106),
-                                    scope.byte_offset.saturating_add(110),
-                                ]
-                            }
+                        })
                         && direction_face_extend_offsets
                             == [
                                 operation_offset.saturating_add(4),

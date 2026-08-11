@@ -6254,7 +6254,21 @@ fn exact_legacy_shifted_extrude_prologue(
     {
         return None;
     }
-    let operation_offset = start.checked_add(27)?;
+    let marker_offset = start.checked_add(27)?;
+    let (operation_prefix_marker, operation_prefix_marker_offset, field_shift) =
+        if matches!(u32_at(bytes, marker_offset), Some(1..=4)) {
+            (None, None, 0)
+        } else if bytes.get(marker_offset) == Some(&1)
+            && matches!(u32_at(bytes, marker_offset.checked_add(1)?), Some(1..=4))
+        {
+            (Some(1), Some(marker_offset as u64), 1)
+        } else {
+            return None;
+        };
+    let operation_offset = marker_offset.checked_add(field_shift)?;
+    let reference_count_delta = reference_count_at
+        .checked_sub(start)?
+        .checked_sub(field_shift)?;
     let operation = match u32_at(bytes, operation_offset)? {
         1 => DesignExtrudeOperation::Join,
         2 => DesignExtrudeOperation::Cut,
@@ -6272,34 +6286,39 @@ fn exact_legacy_shifted_extrude_prologue(
         return None;
     }
     let two_sided_offsets = || {
-        if reference_count_at.checked_sub(start)? == 283 {
-            let first_parameter_at = start.checked_add(139)?;
-            let first_side_extent_offset = start.checked_add(166)?;
-            let second_parameter_at = start.checked_add(170)?;
-            let second_side_extent_offset = start.checked_add(181)?;
-            let compact_valid = bytes.get(start.checked_add(150)?..first_side_extent_offset)?
+        if reference_count_delta == 283 {
+            let first_parameter_at = start.checked_add(139 + field_shift)?;
+            let first_side_extent_offset = start.checked_add(166 + field_shift)?;
+            let second_parameter_at = start.checked_add(170 + field_shift)?;
+            let second_side_extent_offset = start.checked_add(181 + field_shift)?;
+            let compact_valid = bytes
+                .get(start.checked_add(150 + field_shift)?..first_side_extent_offset)?
                 == [0; 16]
-                && bytes.get(start.checked_add(175)?..second_side_extent_offset)? == [0; 6]
+                && bytes.get(start.checked_add(175 + field_shift)?..second_side_extent_offset)?
+                    == [0; 6]
                 && [first_parameter_at, second_parameter_at]
                     .into_iter()
                     .map(|offset| marked_record_reference(bytes, offset))
                     .all(|reference| {
                         reference.is_some_and(|value| reference_members.contains(&value))
                     })
-                && marked_record_reference(bytes, start.checked_add(185)?).is_some()
-                && bytes.get(start.checked_add(196)?..start.checked_add(204)?)? == [0; 8];
+                && marked_record_reference(bytes, start.checked_add(185 + field_shift)?).is_some()
+                && bytes.get(
+                    start.checked_add(196 + field_shift)?..start.checked_add(204 + field_shift)?,
+                )? == [0; 8];
             if compact_valid {
                 return Some([first_side_extent_offset, second_side_extent_offset]);
             }
         }
-        let first_parameter_at = start.checked_add(139)?;
-        let first_side_extent_offset = start.checked_add(155)?;
-        let first_offset_at = start.checked_add(159)?;
-        let second_side_extent_offset = start.checked_add(178)?;
-        let second_parameter_at = start.checked_add(182)?;
+        let first_parameter_at = start.checked_add(139 + field_shift)?;
+        let first_side_extent_offset = start.checked_add(155 + field_shift)?;
+        let first_offset_at = start.checked_add(159 + field_shift)?;
+        let second_side_extent_offset = start.checked_add(178 + field_shift)?;
+        let second_parameter_at = start.checked_add(182 + field_shift)?;
         if second_parameter_at.checked_add(11)? > reference_count_at
-            || bytes.get(start.checked_add(150)?..first_side_extent_offset)? != [0; 5]
-            || bytes.get(start.checked_add(170)?..second_side_extent_offset)? != [0; 8]
+            || bytes.get(start.checked_add(150 + field_shift)?..first_side_extent_offset)? != [0; 5]
+            || bytes.get(start.checked_add(170 + field_shift)?..second_side_extent_offset)?
+                != [0; 8]
             || [first_parameter_at, first_offset_at, second_parameter_at]
                 .into_iter()
                 .map(|offset| marked_record_reference(bytes, offset))
@@ -6337,7 +6356,7 @@ fn exact_legacy_shifted_extrude_prologue(
                 exact_extrude_extent(direction_face_extend_values[0], discriminators)?,
             )
         } else {
-            let (first_offset, second_offset) = match reference_count_at.checked_sub(start)? {
+            let (first_offset, second_offset) = match reference_count_delta {
                 252 | 262 | 263 => (106, 110),
                 272 => (116, 130),
                 283 => (116, 130),
@@ -6346,8 +6365,8 @@ fn exact_legacy_shifted_extrude_prologue(
                 _ => return None,
             };
             candidate(
-                start.checked_add(first_offset)?,
-                start.checked_add(second_offset)?,
+                start.checked_add(first_offset + field_shift)?,
+                start.checked_add(second_offset + field_shift)?,
             )?
         };
     let direction_reversed_offset = operation_offset.checked_add(12)?;
@@ -6370,6 +6389,8 @@ fn exact_legacy_shifted_extrude_prologue(
         _ => return None,
     };
     Some(DesignExtrudePrologue::LegacyShifted {
+        operation_prefix_marker,
+        operation_prefix_marker_offset,
         operation,
         operation_offset: operation_offset as u64,
         direction_face_extend_values,

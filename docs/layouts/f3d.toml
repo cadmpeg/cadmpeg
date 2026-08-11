@@ -3146,6 +3146,114 @@ source = "spec"
 anchor = "the start-support byte at offset 41"
 
 [[record]]
+name = "marked_shifted_extrude_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "The marked shifted Extrude prologue inserts marker byte `01` at primary-header offset 27"
+size = 43
+note = "Offsets are relative to the marked shifted Extrude primary indexed header. The marker shifts every subsequent field in the shifted layout by one byte."
+
+[[record.gap]]
+offset = 0
+size = 20
+note = "The indexed header and the preceding shifted-operation envelope are outside this field run."
+
+[[record.field]]
+name = "prefix_constant"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "The shifted Extrude prologue stores u32 `1` at primary-header offset 20"
+
+[[record.field]]
+name = "zero_run_3"
+offset = 24
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes at offsets 24 through 26"
+
+[[record.field]]
+name = "operation_prefix_marker"
+offset = 27
+type = "u8"
+source = "spec"
+anchor = "inserts marker byte `01` at primary-header offset 27"
+
+[[record.field]]
+name = "operation"
+offset = 28
+type = "u32"
+source = "spec"
+anchor = "The result operation is at offset 28"
+
+[[record.field]]
+name = "direction"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "travel direction at offset 32"
+
+[[record.field]]
+name = "face_extend"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "face-extend option at offset 36"
+
+[[record.field]]
+name = "direction_reversed"
+offset = 40
+type = "u8"
+source = "spec"
+anchor = "direction reversal at offset 40"
+
+[[record.field]]
+name = "geometry_kind"
+offset = 41
+type = "u8"
+source = "spec"
+anchor = "geometry kind at offset 41"
+
+[[record.field]]
+name = "start_support"
+offset = 42
+type = "u8"
+source = "spec"
+anchor = "start support at offset 42"
+
+[[record]]
+name = "marked_shifted_extrude_symmetric_extent_lane"
+kind = "byte"
+section = "3.1"
+anchor = "A symmetric distance form with its reference-count field at offset 284"
+size = 135
+note = "Offsets are relative to the marked shifted Extrude primary indexed header. Unselected fields in the intervening envelope have no extent semantics."
+
+[[record.gap]]
+offset = 0
+size = 117
+note = "The marked shifted prologue, profile-normal envelope, and unselected extent fields precede the widened extent lane."
+
+[[record.field]]
+name = "first_side_extent"
+offset = 117
+type = "u32"
+source = "spec"
+anchor = "stores first-side extent `1` at offset 117"
+
+[[record.gap]]
+offset = 121
+size = 10
+note = "The fixed widened-lane payload separates the side extent values."
+
+[[record.field]]
+name = "second_side_extent"
+offset = 131
+type = "u32"
+source = "spec"
+anchor = "second-side extent `0` at offset 131"
+
+[[record]]
 name = "shifted_extrude_offset_283_two_sided_tail"
 kind = "byte"
 section = "3.1"
