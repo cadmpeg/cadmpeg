@@ -525,6 +525,39 @@ fn axial_profile_resolves_counterbore_roles() {
     ));
     assert_eq!(construction.bottom, None);
 
+    let mut translated_entities = entities.clone();
+    for entity in &mut translated_entities {
+        let SketchGeometry::Line { start, end } = &mut entity.geometry else {
+            unreachable!();
+        };
+        start.u += 42.0;
+        start.v -= 17.0;
+        end.u += 42.0;
+        end.v -= 17.0;
+    }
+    let translated = profiled_hole_construction(&profile, &sketch, &translated_entities)
+        .expect("translated exact profile");
+    assert_eq!(translated.diameter, construction.diameter);
+    assert_eq!(translated.extent, construction.extent);
+    assert_eq!(translated.kind, construction.kind);
+    assert_eq!(translated.bottom, construction.bottom);
+    assert_eq!(translated.taper_angle, construction.taper_angle);
+
+    let mut independently_translated_entities = entities.clone();
+    for (ordinal, entity) in independently_translated_entities.iter_mut().enumerate() {
+        let SketchGeometry::Line { start, end } = &mut entity.geometry else {
+            unreachable!();
+        };
+        let offset = (ordinal + 1) as f64 * 100.0;
+        start.u += offset;
+        start.v -= offset;
+        end.u += offset;
+        end.v -= offset;
+    }
+    assert!(
+        profiled_hole_construction(&profile, &sketch, &independently_translated_entities).is_none()
+    );
+
     profile.parameters.insert("a".into(), "180°".into());
     let construction =
         profiled_hole_construction(&profile, &sketch, &entities[..3]).expect("flat-bottom profile");
@@ -750,6 +783,29 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
             depth_to_tip: false,
         })
     );
+
+    let mut translated_entities = entities.clone();
+    for entity in &mut translated_entities {
+        match &mut entity.geometry {
+            SketchGeometry::Point { position } => {
+                position.u += 21.0;
+                position.v -= 33.0;
+            }
+            SketchGeometry::Line { start, end } => {
+                start.u += 21.0;
+                start.v -= 33.0;
+                end.u += 21.0;
+                end.v -= 33.0;
+            }
+            _ => unreachable!(),
+        }
+    }
+    let translated = profiled_hole_construction(&profile, &sketch, &translated_entities)
+        .expect("translated exact profile");
+    assert_eq!(translated.diameter, construction.diameter);
+    assert_eq!(translated.extent, construction.extent);
+    assert_eq!(translated.kind, construction.kind);
+    assert_eq!(translated.bottom, construction.bottom);
 
     let insufficient = [
         point(0, Point2::new(0.0, 2.5)),

@@ -667,6 +667,40 @@ fn profiled_hole_construction(
         points.iter().any(|point| same_point(*point, first))
             && points.iter().any(|point| same_point(*point, second))
     };
+    let profile_translation = |edges: &[(Point2, Point2)], minimum_lines: usize| {
+        let expected_points = edges
+            .iter()
+            .flat_map(|(first, second)| [*first, *second])
+            .collect::<Vec<_>>();
+        let actual_points = lines
+            .iter()
+            .flat_map(|(first, second)| [*first, *second])
+            .chain(points.iter().copied())
+            .collect::<Vec<_>>();
+        actual_points.iter().find_map(|actual| {
+            expected_points.iter().find_map(|expected| {
+                let translation = Point2::new(actual.u - expected.u, actual.v - expected.v);
+                let translated = edges
+                    .iter()
+                    .map(|(first, second)| {
+                        (
+                            Point2::new(first.u + translation.u, first.v + translation.v),
+                            Point2::new(second.u + translation.u, second.v + translation.v),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                (translated
+                    .iter()
+                    .filter(|(first, second)| has_line(*first, *second))
+                    .count()
+                    >= minimum_lines
+                    && translated.iter().all(|(first, second)| {
+                        has_line(*first, *second) || has_point_pair(*first, *second)
+                    }))
+                .then_some(translation)
+            })
+        })
+    };
     let bore_radius = diameter / 2.0;
     let entry_radius = entry_diameter / 2.0;
     for swap in [false, true] {
@@ -737,17 +771,9 @@ fn profiled_hole_construction(
                             (entry_corner, bore_corner),
                             (bore_corner, bore_end),
                         ];
-                        let materialized_edges = edges
-                            .iter()
-                            .filter(|(first, second)| has_line(*first, *second))
-                            .count();
-                        if materialized_edges < 2
-                            || edges.iter().any(|(first, second)| {
-                                !has_line(*first, *second) && !has_point_pair(*first, *second)
-                            })
-                        {
+                        let Some(translation) = profile_translation(&edges, 2) else {
                             continue;
-                        }
+                        };
                         let (kind, extent) = match angles.as_slice() {
                             [] => {
                                 let extent = if flat_bottom {
@@ -767,8 +793,14 @@ fn profiled_hole_construction(
                             }
                             [drill_point_angle] => {
                                 let drill_length = bore_radius / (drill_point_angle / 2.0).tan();
+                                let translated = |point: Point2| {
+                                    Point2::new(point.u + translation.u, point.v + translation.v)
+                                };
                                 if !drill_length.is_finite()
-                                    || !has_line(bore_end, point(-depth - drill_length, 0.0))
+                                    || !has_line(
+                                        translated(bore_end),
+                                        translated(point(-depth - drill_length, 0.0)),
+                                    )
                                 {
                                     continue;
                                 }
@@ -839,15 +871,7 @@ fn profiled_hole_construction(
                     let bore_end = point(-depth, bore_radius);
                     let tip = point(-depth - drill_length, 0.0);
                     let edges = [(entry, bore_start), (bore_start, bore_end), (bore_end, tip)];
-                    let materialized_edges = edges
-                        .iter()
-                        .filter(|(first, second)| has_line(*first, *second))
-                        .count();
-                    if materialized_edges >= 2
-                        && edges.iter().all(|(first, second)| {
-                            has_line(*first, *second) || has_point_pair(*first, *second)
-                        })
-                    {
+                    if profile_translation(&edges, 2).is_some() {
                         return Some(ProfiledHoleConstruction {
                             diameter: Length(*diameter),
                             extent: Termination::Blind {
