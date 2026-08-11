@@ -146,6 +146,9 @@ struct KindProbe {
 struct ReportProbe {
     schema_version: u32,
     command: String,
+    /// Binary that wrote the report; absent in reports from older builds.
+    #[serde(default)]
+    generator: Option<String>,
     #[serde(default)]
     decode_report: Option<DecodeReportProbe>,
     #[serde(default)]
@@ -396,6 +399,9 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                 report.schema_version.to_string(),
             ));
             rows.push(("command".to_owned(), cell(&report.command)));
+            if let Some(generator) = &report.generator {
+                rows.push(("generator".to_owned(), cell(generator)));
+            }
             match &report.decode_report {
                 Some(decode) => {
                     if let Some(format) = &decode.format {

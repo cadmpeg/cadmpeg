@@ -909,6 +909,15 @@ fn write_command_report(
     )
 }
 
+/// The version-and-revision string stamped into command reports.
+pub(crate) fn generator() -> String {
+    format!(
+        "cadmpeg {}+g{}",
+        env!("CARGO_PKG_VERSION"),
+        env!("CADMPEG_BUILD_GIT")
+    )
+}
+
 fn write_json_report(
     input: &Path,
     output: Option<&Path>,
@@ -928,6 +937,9 @@ fn write_json_report(
         serde_json::json!(CLI_SCHEMA_VERSION),
     );
     object.insert("command".to_string(), serde_json::json!(command));
+    // Names the writing binary so a stale report announces itself; see
+    // `query summary`'s generator row.
+    object.insert("generator".to_string(), serde_json::json!(generator()));
     let mut bytes = serde_json::to_vec_pretty(&serde_json::Value::Object(object))?;
     bytes.push(b'\n');
     write_output(input, output, &bytes, force)?;

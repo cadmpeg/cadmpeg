@@ -1066,3 +1066,42 @@ fn fidelity_rejects_non_sidecar_kinds_and_wraps_json() {
         false
     );
 }
+
+#[test]
+fn a_written_report_carries_the_generator_and_summary_prints_it() {
+    let dir = tempdir().unwrap();
+    let ir = unit_cube();
+    let model = dir.path().join("cube.cadir.json");
+    fs::write(&model, ir.to_canonical_json().unwrap()).unwrap();
+    let report = dir.path().join("cube.report.json");
+
+    cadmpeg()
+        .args([
+            "validate",
+            model.to_str().unwrap(),
+            "-o",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let value: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&report).unwrap()).unwrap();
+    let generator = value["generator"].as_str().unwrap();
+    assert!(generator.starts_with("cadmpeg "), "{generator}");
+    assert!(generator.contains("+g"), "{generator}");
+
+    cadmpeg()
+        .args(["query", "summary", report.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("generator\tcadmpeg "));
+
+    // Reports from older builds have no generator; the row is simply absent.
+    let stripped = write(dir.path(), "old.report.json", VALIDATE_REPORT);
+    let output = cadmpeg()
+        .args(["query", "summary", stripped.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("generator"));
+}
