@@ -5703,12 +5703,8 @@ mod history_reference_tests {
             },
         ];
 
-        project_configuration_sketch_states(
-            &mut ir,
-            &[history],
-            &[lane],
-            &cadmpeg_ir::Annotations::default(),
-        );
+        let mut annotations = cadmpeg_ir::Annotations::default();
+        project_configuration_sketch_states(&mut ir, &[history], &[lane], &mut annotations);
 
         assert_eq!(ir.model.sketches.len(), 1);
         assert!(matches!(
@@ -5911,12 +5907,8 @@ mod history_reference_tests {
             feature_input_lane("second-lane", Some("1")),
         ];
 
-        project_configuration_sketch_states(
-            &mut ir,
-            &[],
-            &lanes,
-            &cadmpeg_ir::Annotations::default(),
-        );
+        let mut annotations = cadmpeg_ir::Annotations::default();
+        project_configuration_sketch_states(&mut ir, &[], &lanes, &mut annotations);
 
         assert!(ir.model.configurations.iter().all(|configuration| matches!(
             &configuration.feature_states[&feature_id].definition,
@@ -6192,11 +6184,12 @@ mod history_reference_tests {
         );
         ir.model.configurations.push(configuration);
 
+        let mut annotations = cadmpeg_ir::Annotations::default();
         project_configuration_sketch_states(
             &mut ir,
             &[],
             &[feature_input_lane("lane", Some("0"))],
-            &cadmpeg_ir::Annotations::default(),
+            &mut annotations,
         );
 
         assert!(matches!(
@@ -11088,7 +11081,7 @@ pub(crate) fn project_configuration_sketch_states(
     ir: &mut cadmpeg_ir::CadIr,
     histories: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
-    annotations: &cadmpeg_ir::Annotations,
+    annotations: &mut cadmpeg_ir::Annotations,
 ) {
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
@@ -11169,7 +11162,8 @@ pub(crate) fn project_configuration_sketch_states(
         crate::resolved_features::profiles::bind_sketch_profiles(
             &mut features,
             &mut ir.model.sketches,
-            &ir.model.sketch_entities,
+            &mut ir.model.sketch_entities,
+            &mut ir.model.sketch_constraints,
             &parameters,
             histories,
             scoped_lanes,
@@ -12398,11 +12392,12 @@ fn sync_configuration_design_state(
         &native.pmi_dimensions,
     );
     align_configuration_parameter_kinds(&mut current_projection);
+    let mut current_annotations = annotations.clone();
     project_configuration_sketch_states(
         &mut current_projection,
         &native.feature_histories,
         &native.feature_input_lanes,
-        annotations,
+        &mut current_annotations,
     );
     let current_parameter_hash =
         configuration_parameter_value_hash(&current_projection.model.configurations);
@@ -12439,11 +12434,12 @@ fn sync_configuration_design_state(
         &native.pmi_dimensions,
     );
     align_configuration_parameter_kinds(&mut projected);
+    let mut projected_annotations = annotations.clone();
     project_configuration_sketch_states(
         &mut projected,
         &native.feature_histories,
         &native.feature_input_lanes,
-        annotations,
+        &mut projected_annotations,
     );
     if configuration_parameter_value_hash(&projected.model.configurations)
         != configuration_parameter_value_hash(&ir.model.configurations)

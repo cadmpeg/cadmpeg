@@ -39,6 +39,7 @@ use super::markers::{
 };
 use super::projections::bind_circular_profile_by_dimension;
 use super::reference_geometry::reference_plane_frame_key;
+use super::relation_geometry::{declared_entity_handle_circle_marker, owned_relation_parameters};
 use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
 use super::transforms::{quantize, sketch_frame_marker_transform};
@@ -54,8 +55,8 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::features::{Angle, FeatureDefinition, Length};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
-    SketchPlacement,
+    Sketch, SketchConstraint, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
+    SketchId, SketchPlacement,
 };
 use cadmpeg_ir::transform::Transform;
 use std::collections::{HashMap, HashSet};
@@ -63,16 +64,21 @@ use std::collections::{HashMap, HashSet};
 #[cfg(test)]
 use std::collections::BTreeMap;
 
-/// Bind profile streams to uniquely enclosing sketch feature records.
+/// Reconcile profile streams with uniquely enclosing sketch feature records.
+// All sketch arenas and their annotations must be updated in one operation.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn bind_sketch_profiles(
     features: &mut [cadmpeg_ir::features::Feature],
-    sketches: &mut [Sketch],
-    sketch_entities: &[SketchEntity],
+    sketches: &mut Vec<Sketch>,
+    sketch_entities: &mut Vec<SketchEntity>,
+    sketch_constraints: &mut Vec<SketchConstraint>,
     parameters: &[cadmpeg_ir::features::DesignParameter],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-    annotations: &Annotations,
+    annotations: &mut Annotations,
 ) {
+    let declared_circles = declared_entity_handle_circles(features, parameters, lanes);
+    let mut superseded = HashSet::new();
     let native_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -108,6 +114,15 @@ pub(crate) fn bind_sketch_profiles(
             if enclosed.next().is_some() {
                 continue;
             }
+            if declared_circles
+                .get(native_feature.id.as_str())
+                .is_some_and(|circles| {
+                    !nested_profile_contains_declared_circles(sketch, sketch_entities, circles)
+                })
+            {
+                superseded.insert(sketch.id.clone());
+                continue;
+            }
             match &mut feature.definition {
                 cadmpeg_ir::features::FeatureDefinition::Sketch {
                     space: cadmpeg_ir::features::SketchSpace::Planar,
@@ -137,7 +152,114 @@ pub(crate) fn bind_sketch_profiles(
             }
         }
     }
+    let mut removed = superseded
+        .iter()
+        .map(|sketch| sketch.0.clone())
+        .collect::<HashSet<_>>();
+    removed.extend(
+        sketch_entities
+            .iter()
+            .filter(|entity| superseded.contains(&entity.sketch))
+            .map(|entity| entity.id.0.clone()),
+    );
+    removed.extend(
+        sketch_constraints
+            .iter()
+            .filter(|constraint| superseded.contains(&constraint.sketch))
+            .map(|constraint| constraint.id.0.clone()),
+    );
+    sketches.retain(|sketch| !superseded.contains(&sketch.id));
+    sketch_entities.retain(|entity| !superseded.contains(&entity.sketch));
+    sketch_constraints.retain(|constraint| !superseded.contains(&constraint.sketch));
+    annotations.provenance.retain(|id, _| !removed.contains(id));
+    annotations.exactness.retain(|id, _| !removed.contains(id));
     bind_circular_profile_by_dimension(features, sketches, sketch_entities, parameters);
+}
+
+fn declared_entity_handle_circles(
+    features: &[cadmpeg_ir::features::Feature],
+    parameters: &[cadmpeg_ir::features::DesignParameter],
+    lanes: &[FeatureInputLane],
+) -> HashMap<String, Vec<([f64; 2], f64)>> {
+    let ownership = owned_relation_parameters(features, parameters, lanes);
+    let parameters_by_id = parameters
+        .iter()
+        .map(|parameter| (&parameter.id, parameter))
+        .collect::<HashMap<_, _>>();
+    let mut circles = HashMap::<String, Vec<([f64; 2], f64)>>::new();
+    for lane in lanes {
+        for relation in lane
+            .relation_instances
+            .iter()
+            .filter(|relation| relation.family == FeatureInputRelationFamily::CircleDiameter)
+        {
+            let [operand] = relation.operands.as_slice() else {
+                continue;
+            };
+            let Some(parameter) = ownership
+                .get(&relation.id)
+                .and_then(Option::as_ref)
+                .and_then(|id| parameters_by_id.get(id))
+            else {
+                continue;
+            };
+            let Some(cadmpeg_ir::features::ParameterValue::Length(value)) = &parameter.value else {
+                continue;
+            };
+            let radius = match parameter.display {
+                Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
+                Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+                None => continue,
+            };
+            let Some((center, encoded_radius)) = declared_entity_handle_circle_marker(
+                lanes,
+                relation.feature_ref.as_str(),
+                operand,
+                radius,
+            ) else {
+                continue;
+            };
+            let Some(coordinates) = center.coordinates_m else {
+                continue;
+            };
+            circles
+                .entry(relation.feature_ref.clone())
+                .or_default()
+                .push((coordinates, encoded_radius));
+        }
+    }
+    circles
+}
+
+pub(super) fn nested_profile_contains_declared_circles(
+    sketch: &Sketch,
+    entities: &[SketchEntity],
+    declared: &[([f64; 2], f64)],
+) -> bool {
+    const NATIVE_TO_IR: f64 = 1000.0;
+    const QUANTUM: f64 = 1.0e-8;
+
+    let Some(transform) = sketch_frame_marker_transform(sketch, QUANTUM) else {
+        return true;
+    };
+    declared.iter().all(|([u, v], radius)| {
+        let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
+        let Some((center_u, center_v)) = transform.apply(native) else {
+            return true;
+        };
+        let center = (center_u, center_v);
+        entities.iter().any(|entity| {
+            entity.sketch == sketch.id
+                && matches!(
+                    &entity.geometry,
+                    SketchGeometry::Circle {
+                        center: existing,
+                        radius: existing_radius,
+                    } if quantize(*existing, QUANTUM) == center
+                        && same_dimension_length(existing_radius.0, *radius)
+                )
+        })
+    })
 }
 
 pub(crate) fn project_compact_sketch_profiles(

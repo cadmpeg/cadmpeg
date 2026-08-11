@@ -2156,11 +2156,12 @@ fn build_geometry_ir(
     crate::resolved_features::profiles::bind_sketch_profiles(
         &mut ir.model.features,
         &mut sketches,
-        &sketch_entities,
+        &mut sketch_entities,
+        &mut sketch_constraints,
         &ir.model.parameters,
         &histories,
         &lanes,
-        &annotations,
+        &mut annotations,
     );
     crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
         &ir.model.features,
@@ -2420,7 +2421,7 @@ fn build_geometry_ir(
         &mut ir,
         &histories,
         &native.feature_input_lanes,
-        &annotations,
+        &mut annotations,
     );
     mark_active_configuration(&mut ir);
     crate::resolved_features::projections::project_unbound_cosmetic_thread_faces(
@@ -3054,11 +3055,12 @@ fn build_metadata_ir(
     crate::resolved_features::profiles::bind_sketch_profiles(
         &mut ir.model.features,
         &mut ir.model.sketches,
-        &ir.model.sketch_entities,
+        &mut ir.model.sketch_entities,
+        &mut ir.model.sketch_constraints,
         &ir.model.parameters,
         &histories,
         &lanes,
-        &annotations,
+        &mut annotations,
     );
     crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
         &ir.model.features,
@@ -3245,7 +3247,12 @@ fn build_metadata_ir(
     );
     sync_active_configuration_face_selections(&mut ir);
     crate::history::order_features_for_regeneration(&mut ir.model.features);
-    crate::history::project_configuration_sketch_states(&mut ir, &histories, &lanes, &annotations);
+    crate::history::project_configuration_sketch_states(
+        &mut ir,
+        &histories,
+        &lanes,
+        &mut annotations,
+    );
     crate::history::order_model_features_for_regeneration(&mut ir);
     stamp_feature_baseline(&mut ir);
     lanes.extend(supplemental_config_lanes);
