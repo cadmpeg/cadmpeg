@@ -599,6 +599,39 @@ fn single_diameter_axial_profile_resolves_flat_and_drilled_holes() {
     assert_eq!(flat.kind, HoleKind::Simple);
     assert_eq!(flat.bottom, Some(HoleBottom::Flat));
     assert_eq!(flat.taper_angle, None);
+    assert!(profiled_hole_construction_with_evidence(
+        &profile,
+        &sketch,
+        &[],
+        ProfileEvidence::AxialTopology,
+    )
+    .is_none());
+    let radius = 14.5 / 2.0;
+    let entities = [
+        profile_line(&sketch, 0, Point2::new(0.0, 0.0), Point2::new(0.0, radius)),
+        profile_line(
+            &sketch,
+            1,
+            Point2::new(0.0, radius),
+            Point2::new(-15.0, radius),
+        ),
+        profile_line(
+            &sketch,
+            2,
+            Point2::new(-15.0, radius),
+            Point2::new(-15.0, 0.0),
+        ),
+        profile_line(&sketch, 3, Point2::new(-15.0, 0.0), Point2::new(0.0, 0.0)),
+    ];
+    let topology_proven = profiled_hole_construction_with_evidence(
+        &profile,
+        &sketch,
+        &entities,
+        ProfileEvidence::AxialTopology,
+    )
+    .expect("axial rectangle");
+    assert_eq!(topology_proven.diameter, flat.diameter);
+    assert_eq!(topology_proven.extent, flat.extent);
 
     profile.parameters.insert("point".into(), "118°".into());
     let drilled =
@@ -1102,8 +1135,42 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
         model_sketch("first-profile", "first-sketch", 2),
         model_sketch("second-profile", "second-sketch", 3),
     ];
+    let axial_rectangle = |sketch: &str, radius: f64, depth: f64, first_ordinal| {
+        let sketch = SketchId(sketch.into());
+        [
+            profile_line(
+                &sketch,
+                first_ordinal,
+                Point2::new(0.0, 0.0),
+                Point2::new(0.0, radius),
+            ),
+            profile_line(
+                &sketch,
+                first_ordinal + 1,
+                Point2::new(0.0, radius),
+                Point2::new(-depth, radius),
+            ),
+            profile_line(
+                &sketch,
+                first_ordinal + 2,
+                Point2::new(-depth, radius),
+                Point2::new(-depth, 0.0),
+            ),
+            profile_line(
+                &sketch,
+                first_ordinal + 3,
+                Point2::new(-depth, 0.0),
+                Point2::new(0.0, 0.0),
+            ),
+        ]
+    };
+    let entities = [
+        axial_rectangle("first-sketch", 2.1, 6.8, 0),
+        axial_rectangle("second-sketch", 3.0, 14.0, 4),
+    ]
+    .concat();
 
-    project_profiled_hole_constructions(&mut features, &[], &[history], &[]);
+    project_profiled_hole_constructions(&mut features, &entities, &[history], &[]);
 
     assert!(matches!(
         features[0].definition,

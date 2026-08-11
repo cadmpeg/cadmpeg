@@ -543,6 +543,12 @@ struct ProfiledHoleConstruction {
     taper_angle: Option<Angle>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ProfileEvidence {
+    Dimensions,
+    AxialTopology,
+}
+
 const DISPLAY_DIMENSION_TOLERANCE_MM: f64 = 1.0e-5;
 const GENERATED_PROFILE_TERMINAL_OVERRUN_MM: [f64; 4] = [0.0, 0.000_025, 0.000_05, 0.001];
 
@@ -550,6 +556,15 @@ fn profiled_hole_construction(
     profile: &crate::records::Feature,
     sketch: &SketchId,
     entities: &[SketchEntity],
+) -> Option<ProfiledHoleConstruction> {
+    profiled_hole_construction_with_evidence(profile, sketch, entities, ProfileEvidence::Dimensions)
+}
+
+fn profiled_hole_construction_with_evidence(
+    profile: &crate::records::Feature,
+    sketch: &SketchId,
+    entities: &[SketchEntity],
+    evidence: ProfileEvidence,
 ) -> Option<ProfiledHoleConstruction> {
     let source_dimensions = profile
         .content
@@ -599,43 +614,40 @@ fn profiled_hole_construction(
     angles.dedup_by(|left, right| (*left - *right).abs() <= 1.0e-12);
     lengths.sort_by(f64::total_cmp);
     lengths.dedup_by(|left, right| (*left - *right).abs() <= 1.0e-9);
-    if crate::history::is_hole_profile_construction(profile) {
+    let dimension_only = if crate::history::is_hole_profile_construction(profile) {
         match (diameters.as_slice(), lengths.as_slice(), angles.as_slice()) {
-            ([diameter], [depth], []) => {
-                return Some(ProfiledHoleConstruction {
-                    diameter: Length(*diameter),
-                    extent: Termination::Blind {
-                        length: Length(*depth),
-                    },
-                    kind: HoleKind::Simple,
-                    bottom: Some(HoleBottom::Flat),
-                    taper_angle: None,
-                });
-            }
-            ([diameter], [depth], [drill_point_angle]) => {
-                return Some(ProfiledHoleConstruction {
-                    diameter: Length(*diameter),
-                    extent: Termination::Blind {
-                        length: Length(*depth),
-                    },
-                    kind: HoleKind::SimpleDrilled {
-                        drill_point_angle: Angle(*drill_point_angle),
-                    },
-                    bottom: Some(HoleBottom::Angled {
-                        included_angle: Angle(*drill_point_angle),
-                        depth_to_tip: false,
-                    }),
-                    taper_angle: None,
-                });
-            }
-            _ => {}
+            ([diameter], [depth], []) => Some(ProfiledHoleConstruction {
+                diameter: Length(*diameter),
+                extent: Termination::Blind {
+                    length: Length(*depth),
+                },
+                kind: HoleKind::Simple,
+                bottom: Some(HoleBottom::Flat),
+                taper_angle: None,
+            }),
+            ([diameter], [depth], [drill_point_angle]) => Some(ProfiledHoleConstruction {
+                diameter: Length(*diameter),
+                extent: Termination::Blind {
+                    length: Length(*depth),
+                },
+                kind: HoleKind::SimpleDrilled {
+                    drill_point_angle: Angle(*drill_point_angle),
+                },
+                bottom: Some(HoleBottom::Angled {
+                    included_angle: Angle(*drill_point_angle),
+                    depth_to_tip: false,
+                }),
+                taper_angle: None,
+            }),
+            _ => None,
         }
-    }
-    let [diameter, entry_diameter] = diameters.as_slice() else {
-        return None;
+    } else {
+        None
     };
-    if diameter >= entry_diameter {
-        return None;
+    if evidence == ProfileEvidence::Dimensions {
+        if let Some(construction) = dimension_only.clone() {
+            return Some(construction);
+        }
     }
     let lines = entities
         .iter()
@@ -701,6 +713,47 @@ fn profiled_hole_construction(
             })
         })
     };
+    if let Some(construction) = dimension_only {
+        let Termination::Blind { length } = construction.extent else {
+            unreachable!("dimension-only hole profiles are blind");
+        };
+        let radius = construction.diameter.0 / 2.0;
+        for swap in [false, true] {
+            for axial_sign in [-1.0, 1.0] {
+                for radial_sign in [-1.0, 1.0] {
+                    let point = |axial: f64, radial: f64| {
+                        let axial = axial * axial_sign;
+                        let radial = radial * radial_sign;
+                        if swap {
+                            Point2::new(radial, axial)
+                        } else {
+                            Point2::new(axial, radial)
+                        }
+                    };
+                    let axis_entry = point(0.0, 0.0);
+                    let wall_entry = point(0.0, radius);
+                    let wall_end = point(-length.0, radius);
+                    let axis_end = point(-length.0, 0.0);
+                    let edges = [
+                        (axis_entry, wall_entry),
+                        (wall_entry, wall_end),
+                        (wall_end, axis_end),
+                        (axis_end, axis_entry),
+                    ];
+                    if profile_translation(&edges, 2).is_some() {
+                        return Some(construction);
+                    }
+                }
+            }
+        }
+        return None;
+    }
+    let [diameter, entry_diameter] = diameters.as_slice() else {
+        return None;
+    };
+    if diameter >= entry_diameter {
+        return None;
+    }
     let bore_radius = diameter / 2.0;
     let entry_radius = entry_diameter / 2.0;
     for swap in [false, true] {
@@ -903,6 +956,8 @@ pub(crate) fn project_profiled_hole_constructions(
 ) {
     let mut enriched_histories = histories.to_vec();
     crate::history::enrich_history_parameters_semantic(&mut enriched_histories, lanes);
+    let mut ownership_histories = enriched_histories.clone();
+    enrich_history_hole_constructions(&mut ownership_histories, lanes);
     let histories = enriched_histories.as_slice();
     let incomplete = |diameter: &Option<Length>, extent: &Option<Termination>, kind: &HoleKind| {
         diameter.is_none()
@@ -911,6 +966,24 @@ pub(crate) fn project_profiled_hole_constructions(
                 .is_none_or(|extent| matches!(extent, Termination::Unresolved))
             || matches!(kind, HoleKind::Unresolved { .. })
     };
+    let complete_native_holes = features
+        .iter()
+        .filter_map(|feature| {
+            let FeatureDefinition::Hole {
+                diameter,
+                extent,
+                kind,
+                ..
+            } = &feature.definition
+            else {
+                return None;
+            };
+            if incomplete(diameter, extent, kind) {
+                return None;
+            }
+            feature.native_ref.clone()
+        })
+        .collect::<HashSet<_>>();
     let model_sketches = features
         .iter()
         .filter_map(|feature| {
@@ -981,11 +1054,19 @@ pub(crate) fn project_profiled_hole_constructions(
     }
     let profiled_constructions = histories
         .iter()
-        .map(|history| {
+        .zip(&ownership_histories)
+        .map(|(history, ownership_history)| {
             let claimed_profiles = history
                 .features
                 .iter()
                 .filter_map(|feature| feature.properties.get("DissectableChildren"))
+                .chain(
+                    ownership_history
+                        .features
+                        .iter()
+                        .filter(|feature| complete_native_holes.contains(&feature.id))
+                        .filter_map(|feature| feature.properties.get("DissectableChildren")),
+                )
                 .flat_map(|children| children.split(',').map(str::trim))
                 .filter(|child| !child.is_empty())
                 .filter_map(|child| {
@@ -1004,7 +1085,12 @@ pub(crate) fn project_profiled_hole_constructions(
                     let sketch = model_sketches.get(&profile.id)?;
                     Some((
                         profile.ordinal,
-                        profiled_hole_construction(profile, sketch, entities)?,
+                        profiled_hole_construction_with_evidence(
+                            profile,
+                            sketch,
+                            entities,
+                            ProfileEvidence::AxialTopology,
+                        )?,
                     ))
                 })
                 .collect::<Vec<_>>()
@@ -1502,7 +1588,13 @@ fn direct_hole_position_feature<'a>(
     direct_sketches.dedup_by_key(|child| child.id.as_str());
     let is_axial_profile = |child: &crate::records::Feature| {
         model_sketches.get(&child.id).is_some_and(|sketch| {
-            profiled_hole_construction(child, sketch, sketch_entities).is_some()
+            profiled_hole_construction_with_evidence(
+                child,
+                sketch,
+                sketch_entities,
+                ProfileEvidence::AxialTopology,
+            )
+            .is_some()
         })
     };
     let adjacent_position = || {
