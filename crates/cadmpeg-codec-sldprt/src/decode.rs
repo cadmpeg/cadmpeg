@@ -2372,6 +2372,14 @@ fn build_geometry_ir(
         &histories,
         &native.feature_input_lanes,
     );
+    crate::resolved_features::holes::project_generated_hole_axes(
+        &mut ir.model.features,
+        &histories,
+        &native.feature_input_lanes,
+        &face_identities,
+        &ir.model.faces,
+        &ir.model.surfaces,
+    );
     crate::resolved_features::holes::project_topological_hole_constructions(
         &mut ir.model.features,
         &crate::resolved_features::holes::HoleTopology {

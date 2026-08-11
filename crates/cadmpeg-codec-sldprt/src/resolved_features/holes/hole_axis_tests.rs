@@ -342,6 +342,71 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
 }
 
 #[test]
+fn generated_face_identities_resolve_primary_bore_axes() {
+    let mut surfaces = [
+        cylinder(0, -5.0),
+        cylinder(1, 5.0),
+        cylinder(2, 20.0),
+        cylinder(3, 30.0),
+    ];
+    let SurfaceGeometry::Cylinder { radius, .. } = &mut surfaces[3].geometry else {
+        unreachable!();
+    };
+    *radius = 3.0;
+    let faces = surfaces
+        .iter()
+        .enumerate()
+        .map(|(index, surface)| Face {
+            id: FaceId(format!("face-{index}")),
+            shell: ShellId("shell".into()),
+            surface: surface.id.clone(),
+            sense: Sense::Forward,
+            loops: Vec::new(),
+            name: None,
+            color: None,
+            tolerance: None,
+        })
+        .collect::<Vec<_>>();
+    let identities = [
+        (faces[0].id.0.clone(), 7, 2),
+        (faces[1].id.0.clone(), 7, 2),
+        (faces[2].id.0.clone(), 7, 3),
+        (faces[3].id.0.clone(), 7, 2),
+    ];
+    let mut hole = model_hole();
+    project_generated_hole_axes(
+        std::slice::from_mut(&mut hole),
+        &[native_history()],
+        &[lane()],
+        &identities,
+        &faces,
+        &surfaces,
+    );
+    let FeatureDefinition::Hole { placements, .. } = &mut hole.definition else {
+        unreachable!();
+    };
+    assert_eq!(placements.len(), 2);
+
+    placements.clear();
+    let mut conflicting_lane = lane();
+    for identity in &mut conflicting_lane.generated_surface_identities {
+        identity.local_identity = 3;
+    }
+    project_generated_hole_axes(
+        std::slice::from_mut(&mut hole),
+        &[native_history()],
+        &[lane(), conflicting_lane],
+        &identities,
+        &faces,
+        &surfaces,
+    );
+    let FeatureDefinition::Hole { placements, .. } = &hole.definition else {
+        unreachable!();
+    };
+    assert!(placements.is_empty());
+}
+
+#[test]
 fn topological_hole_projection_uses_a_reversed_bore_span() {
     let surface = Surface {
         id: SurfaceId("surface".into()),
