@@ -5,6 +5,10 @@
 //! functions. The harness enumerates frozen fixtures, runs each branch,
 //! compares against committed goldens, and refuses an empty branch.
 //! `UPDATE_GOLDEN=1` rewrites golden outputs only; fixtures stay frozen.
+//! `GOLDEN_STRICT=1` compares golden text byte-exactly instead of through
+//! [`snapshots_agree`]; use it on one machine to confirm a change is exactly
+//! behavior-preserving. Never enable it in CI — cross-platform libm drift
+//! makes the mode flaky there.
 //!
 //! [`snapshots_agree`] tolerates last-place float drift via
 //! [`crate::compare::values_agree`]. Byte equality is the fast path; the
@@ -196,7 +200,7 @@ impl Harness {
             }
             match read_golden(&path) {
                 Ok(expected) => {
-                    if let Err(mismatch) = snapshots_agree(&expected, &actual) {
+                    if let Err(mismatch) = compare_branch_snapshot(&expected, &actual) {
                         failures.push(format!(
                             "fixture `{name}`: {kind} diverged from {}\n    {mismatch}",
                             path.display()
@@ -252,6 +256,23 @@ fn stems(dir: &Path, extension: &str) -> Vec<String> {
 /// Reads a golden with `\r\n` folded to `\n`.
 fn read_golden(path: &Path) -> std::io::Result<String> {
     Ok(std::fs::read_to_string(path)?.replace("\r\n", "\n"))
+}
+
+/// Compares one branch golden to a fresh snapshot.
+///
+/// When `GOLDEN_STRICT` is set, comparison is byte-exact and reports the first
+/// differing line. Otherwise delegates to [`snapshots_agree`].
+fn compare_branch_snapshot(expected: &str, actual: &str) -> Result<(), String> {
+    if std::env::var_os("GOLDEN_STRICT").is_some() {
+        if expected == actual {
+            return Ok(());
+        }
+        let (line, golden_line, actual_line) = first_line_diff(expected, actual);
+        return Err(format!(
+            "at line {line}\n    golden: {golden_line}\n    actual: {actual_line}"
+        ));
+    }
+    snapshots_agree(expected, actual)
 }
 
 /// Compares a golden against a fresh snapshot, tolerating only last-place
@@ -333,8 +354,54 @@ pub fn snapshot_text(value: &serde_json::Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::snapshots_agree;
+    use std::sync::{Mutex, MutexGuard};
+
+    use super::{compare_branch_snapshot, snapshots_agree};
     use crate::compare::FLOAT_TOLERANCE;
+
+    /// Serializes tests that mutate `GOLDEN_STRICT` so parallel workers cannot
+    /// observe a half-applied environment.
+    static GOLDEN_STRICT_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Sets or clears `GOLDEN_STRICT` for the duration of a test scope.
+    struct GoldenStrictGuard {
+        _lock: MutexGuard<'static, ()>,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl GoldenStrictGuard {
+        fn set(enabled: bool) -> Self {
+            let lock = GOLDEN_STRICT_LOCK
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let previous = std::env::var_os("GOLDEN_STRICT");
+            // SAFETY: exclusive access to this process env key is held via
+            // `GOLDEN_STRICT_LOCK` for the guard lifetime.
+            unsafe {
+                if enabled {
+                    std::env::set_var("GOLDEN_STRICT", "1");
+                } else {
+                    std::env::remove_var("GOLDEN_STRICT");
+                }
+            }
+            Self {
+                _lock: lock,
+                previous,
+            }
+        }
+    }
+
+    impl Drop for GoldenStrictGuard {
+        fn drop(&mut self) {
+            // SAFETY: same exclusive lock as `set`; restores prior value.
+            unsafe {
+                match &self.previous {
+                    Some(value) => std::env::set_var("GOLDEN_STRICT", value),
+                    None => std::env::remove_var("GOLDEN_STRICT"),
+                }
+            }
+        }
+    }
 
     /// The two values one `FreeCAD` conical face produces on Linux against
     /// Windows and macOS. Their difference is platform libm disagreement, not
@@ -356,6 +423,31 @@ mod tests {
             "the texts must differ, or this test proves nothing"
         );
         assert!(snapshots_agree(&golden, &snapshot).is_ok());
+    }
+
+    #[test]
+    fn sub_tolerance_float_fails_only_under_golden_strict() {
+        let golden = format!("{{\"v\": {LINUX_CONE_V:?}}}");
+        let snapshot = format!("{{\"v\": {WINDOWS_CONE_V:?}}}");
+        assert_ne!(
+            golden, snapshot,
+            "the texts must differ, or this test proves nothing"
+        );
+
+        {
+            let _unset = GoldenStrictGuard::set(false);
+            assert!(
+                compare_branch_snapshot(&golden, &snapshot).is_ok(),
+                "default path must tolerate sub-tolerance float drift"
+            );
+        }
+
+        let _strict = GoldenStrictGuard::set(true);
+        let error = compare_branch_snapshot(&golden, &snapshot)
+            .expect_err("GOLDEN_STRICT must reject byte-unequal text");
+        assert!(error.contains("at line 1"), "{error}");
+        assert!(error.contains("golden:"), "{error}");
+        assert!(error.contains("actual:"), "{error}");
     }
 
     #[test]
