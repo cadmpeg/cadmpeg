@@ -284,6 +284,7 @@ struct DesignProjectionGaps {
     native_edge_selections: usize,
     partially_resolved_edge_members: usize,
     unresolved_edge_selections: usize,
+    unrepaired_lost_edge_references: usize,
 }
 
 /// Returns whether a face selection supplies the operation's neutral faces.
@@ -494,6 +495,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         .iter()
         .map(|reference| reference.id.as_str())
         .collect::<HashSet<_>>();
+    let mut complete_edge_selection_native_ids = HashSet::new();
     let projected_constraint_refs = ir
         .model
         .sketch_constraints
@@ -884,11 +886,12 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 .filter(|id| !source_lost_edge_reference_ids.contains(id.as_str()))
                 .count();
         }
-        EdgeSelection::All
-        | EdgeSelection::Edges(_)
-        | EdgeSelection::Resolved { .. }
-        | EdgeSelection::Generated { .. }
-        | EdgeSelection::Historical { .. } => {}
+        EdgeSelection::Resolved { native, .. }
+        | EdgeSelection::Generated { native, .. }
+        | EdgeSelection::Historical { native, .. } => {
+            complete_edge_selection_native_ids.insert(native.clone());
+        }
+        EdgeSelection::All | EdgeSelection::Edges(_) => {}
     };
     let mut face_selection = |selection: &FaceSelection| match selection {
         FaceSelection::Native(_) | FaceSelection::Unresolved => gaps.face_selections += 1,
@@ -1064,6 +1067,17 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             _ => {}
         }
     }
+    let repaired_lost_edge_reference_ids = native
+        .design_construction_operand_groups
+        .iter()
+        .filter(|group| complete_edge_selection_native_ids.contains(group.id.as_str()))
+        .flat_map(|group| group.lost_edge_references.iter().map(String::as_str))
+        .collect::<HashSet<_>>();
+    gaps.unrepaired_lost_edge_references = native
+        .lost_edge_references
+        .iter()
+        .filter(|reference| !repaired_lost_edge_reference_ids.contains(reference.id.as_str()))
+        .count();
     gaps
 }
 
@@ -1130,6 +1144,17 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
             message: format!(
                 "{} decal timeline object(s) retain native image and mapping records because no neutral decal binding was resolved.",
                 gaps.native_decals
+            ),
+            provenance: None,
+        });
+    }
+    if gaps.unrepaired_lost_edge_references != 0 {
+        report.losses.push(LossNote {
+            code: LossKind::AttributesNotTransferred,
+            severity: Severity::Warning,
+            message: format!(
+                "{} source parametric edge reference(s) were marked EDGE_REFERENCE_LOST and have no independent complete selection proof.",
+                gaps.unrepaired_lost_edge_references
             ),
             provenance: None,
         });
@@ -1854,17 +1879,6 @@ fn finish_model_decode<'a>(
     native.act_table_references = act.table_references;
     report_unresolved_dimension_companions(&mut report, &native, &ir);
     report_unresolved_configuration_rules(&mut report, &native, &ir);
-    if !native.lost_edge_references.is_empty() {
-        report.losses.push(LossNote {
-        code: LossKind::AttributesNotTransferred,
-            severity: Severity::Warning,
-            message: format!(
-                "{} source parametric edge reference(s) were marked EDGE_REFERENCE_LOST and cannot be replayed without repair.",
-                native.lost_edge_references.len()
-            ),
-            provenance: None,
-        });
-    }
     ir.model.appearances = decoded_materials.appearances;
     ir.model.appearance_bindings = decoded_materials.bindings;
     resolve_face_appearance_bindings(&mut ir, &decoded_materials.face_assignments)?;
@@ -5332,7 +5346,49 @@ mod tests {
                 native_edge_selections: 2,
                 partially_resolved_edge_members: 1,
                 unresolved_edge_selections: 1,
+                unrepaired_lost_edge_references: 1,
             }
+        );
+
+        native.design_construction_operand_groups.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "native:partial-edges",
+                "scope_record_index": 1,
+                "scope_reference_ordinal": 0,
+                "record_index": 2,
+                "byte_offset": 0,
+                "class_tag": "300",
+                "members": [3],
+                "lost_edge_references": ["f3d:test:lost-edge-reference#2"],
+                "member_offsets": [0],
+                "frame": {
+                    "member_count_offset": 0,
+                    "opaque_index": 1,
+                    "opaque_index_offset": 0,
+                    "opaque_scalar": 1.0,
+                    "opaque_scalar_offset": 0,
+                    "variant": false
+                },
+                "role": 0x10_0000_0000u64,
+                "role_offset": 0,
+                "paired_class_tag": "258",
+                "paired_byte_offset": 0
+            }))
+            .expect("lost-reference construction group"),
+        );
+        let cadmpeg_ir::features::FeatureDefinition::Fillet { groups } =
+            &mut ir.model.features[2].definition
+        else {
+            unreachable!();
+        };
+        groups[2].edges = cadmpeg_ir::features::EdgeSelection::Historical {
+            state: cadmpeg_ir::ids::FeatureInputTopologyId("history-input".into()),
+            edges: vec![cadmpeg_ir::ids::HistoricalEdgeId("history-edge".into())],
+            native: "native:partial-edges".into(),
+        };
+        assert_eq!(
+            design_projection_gaps(&ir, &native).unrepaired_lost_edge_references,
+            0
         );
 
         native.sketch_points[0].owner_reference = None;

@@ -1303,7 +1303,7 @@
       {
         "code": "attributes_not_transferred",
         "severity": "warning",
-        "message": "1 source parametric edge reference(s) were marked EDGE_REFERENCE_LOST and cannot be replayed without repair."
+        "message": "1 source parametric edge reference(s) were marked EDGE_REFERENCE_LOST and have no independent complete selection proof."
       },
       {
         "code": "feature_history_retained",

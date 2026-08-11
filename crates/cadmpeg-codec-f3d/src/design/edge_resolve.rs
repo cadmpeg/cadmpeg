@@ -290,10 +290,14 @@ fn resolved_edge_group_with_transition_chain(
                 || identity_group_transition_slots.is_some()
                 || identity_radius_slots.is_some())
     });
+    let all_member_identities_are_lost =
+        !group.members.is_empty() && group.lost_edge_references.len() == group.members.len();
     if let Some(identity_matches) = identity_matches.as_ref().filter(|_| {
         !has_recipe_operands
             || (has_complete_identity_selection
-                && (!has_concrete_recipe_evidence || identity_transition_is_supported))
+                && (!has_concrete_recipe_evidence
+                    || identity_transition_is_supported
+                    || all_member_identities_are_lost))
     }) {
         if identity_matches.is_empty() {
             return unmatched_selection(previous_state_id);
@@ -2081,6 +2085,72 @@ mod radius_identity_tests {
             &[17, 18],
             2,
             [&first, &second],
+        ));
+    }
+
+    #[test]
+    fn lost_references_preserve_a_complete_compact_transition_chain() {
+        let mut selection_group = group(2, 10);
+        selection_group.members = vec![10, 11];
+        selection_group.member_offsets = vec![0, 0];
+        let first_identity = identity(10, &[(17, 0.0), (18, 0.0)]);
+        let mut second_identity = identity(11, &[(17, 0.0), (18, 0.0)]);
+        second_identity.group_member_ordinal = 1;
+        let recipe_operands = [
+            recipe_edge_operand(10, &[19], &[19]),
+            recipe_edge_operand(11, &[19], &[19]),
+        ];
+        let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#chamfer".into());
+
+        assert!(matches!(
+            resolved_edge_treatment_group(
+                &selection_group,
+                std::slice::from_ref(&selection_group),
+                &recipe_operands,
+                &[first_identity.clone(), second_identity.clone()],
+                Some(7),
+                &feature_id,
+                None,
+            ),
+            cadmpeg_ir::features::EdgeSelection::Native(_)
+        ));
+
+        selection_group.lost_edge_references = vec!["f3d:test:lost#0".into()];
+        assert!(matches!(
+            resolved_edge_treatment_group(
+                &selection_group,
+                std::slice::from_ref(&selection_group),
+                &recipe_operands,
+                &[first_identity.clone(), second_identity.clone()],
+                Some(7),
+                &feature_id,
+                None,
+            ),
+            cadmpeg_ir::features::EdgeSelection::Unresolved
+        ));
+
+        selection_group
+            .lost_edge_references
+            .push("f3d:test:lost#1".into());
+        assert!(matches!(
+            resolved_edge_treatment_group(
+                &selection_group,
+                std::slice::from_ref(&selection_group),
+                &recipe_operands,
+                &[first_identity, second_identity],
+                Some(7),
+                &feature_id,
+                None,
+            ),
+            cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+                if edges == [
+                    cadmpeg_ir::ids::HistoricalEdgeId(
+                        "f3d:history-input:edge#7:chamfer:7:17".into()
+                    ),
+                    cadmpeg_ir::ids::HistoricalEdgeId(
+                        "f3d:history-input:edge#7:chamfer:7:18".into()
+                    ),
+                ]
         ));
     }
 
