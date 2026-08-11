@@ -2891,18 +2891,26 @@ counterbore depth, ID `1` to the bore radius, ID `3` to the counterbore radius,
 and ID `4` to the placement distance. These four rows have millimetre units. ID
 `0` has dimension type `1`; IDs `1`, `3`, and `4` have dimension type `2`. An
 optional fifth row assigns external ID `2` to the included drill-point angle,
-with dimension type `10` and radian units. The depth and radii are positive, the
-ID-3 radius is larger than the ID-1 radius, and a present included angle is
-strictly between zero and π. Each of the two cylinder source groups has two
-type-24 terminal corner envelopes. One group has the ID-1 diameter as a common
-or adjacent-union span on exactly two axes. The other has the ID-3 diameter on
-exactly two axes and the ID-0 depth on the remaining axis. The source assignment
-must be unique. Exactly one class-29 entity table contains materialized
-source-bound cylinders. Additional class-29 tables without materialized
-source-bound cylinders do not participate. Tables whose dimensions do not match
-the patch spans do not participate, and all participating tables supply one
-equal diameter and depth tuple. ID `4` does not participate in this envelope
-binding.
+with dimension type `10` and radian units. The depth is nonzero. Its magnitude
+is the counterbore depth, and its sign is an orientation state. Both radii are
+positive, the ID-3 radius is larger than the ID-1 radius, and a present included
+angle is strictly between zero and π. Each of the two cylinder source groups
+has two type-24 terminal corner envelopes. One group has the ID-1 diameter as
+a common or adjacent-union span on exactly two axes. The other has the ID-3
+diameter on exactly two axes and the ID-0 depth on the remaining axis. The
+source assignment must be unique. Exactly one class-29 entity table contains
+materialized source-bound cylinders. Additional class-29 tables without
+materialized source-bound cylinders do not participate. Tables whose
+dimensions do not match the patch spans do not participate, and all
+participating tables supply one equal diameter and depth tuple. ID `4` does not
+participate in this envelope binding.
+
+When the two cylinder source groups do not supply a complete pair of terminal
+corner envelopes, every complete four-row or five-row class-911 table must have
+this exact dimension signature and must supply one equal diameter and depth
+tuple. A different complete four-row or five-row layout prevents this unbound
+replay selection. This fallback applies only after the paired generated-surface
+recipe identifies counterbore form.
 
 The same terminal envelopes supply directed placement when each assigned
 source has its diameter on exactly two axes through common or adjacent-union

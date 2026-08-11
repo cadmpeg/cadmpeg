@@ -2728,7 +2728,7 @@ fn counterbore_dimensions_require_complete_agreeing_radius_anchored_tables() {
 }
 
 #[test]
-fn counterbore_envelope_dimensions_accept_optional_drill_angle() {
+fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
     let table = |counterbore_depth: f64| crate::feature::FeatureDimensionTable {
         declared_count: 5,
         entity_ref: Some(88),
@@ -2778,6 +2778,18 @@ fn counterbore_envelope_dimensions_accept_optional_drill_angle() {
         ),
         Some((40.0, 120.0, 8.0))
     );
+    let signed_depth = table(-8.0);
+    assert_eq!(
+        counterbore_envelope_dimension_values(
+            std::iter::once(&signed_depth),
+            &[bore_spans, counterbore_spans],
+        ),
+        Some((40.0, 120.0, 8.0))
+    );
+    assert_eq!(
+        counterbore_unenveloped_dimension_values([&signed_depth, &signed_depth].into_iter()),
+        Some((40.0, 120.0, 8.0))
+    );
     assert_eq!(
         counterbore_envelope_dimension_values(
             std::iter::once(&first),
@@ -2820,6 +2832,16 @@ fn counterbore_envelope_dimensions_accept_optional_drill_angle() {
         &[bore_spans, counterbore_spans],
     )
     .is_none());
+    assert!(
+        counterbore_unenveloped_dimension_values([&signed_depth, &conflicting].into_iter())
+            .is_none()
+    );
+    let mut other_layout = table(8.0);
+    other_layout.rows[0].dimension_type = 2;
+    assert!(
+        counterbore_unenveloped_dimension_values([&signed_depth, &other_layout].into_iter())
+            .is_none()
+    );
 }
 
 #[test]
