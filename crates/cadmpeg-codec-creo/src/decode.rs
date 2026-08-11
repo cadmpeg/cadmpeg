@@ -20838,13 +20838,19 @@ fn schema_feature_definition(
                         if approximately_equal(length.0, *drilled_depth))
                     })
             });
+        let drilled_axis = (drilled_placement.is_none())
+            .then(|| {
+                let (recipe, (diameter, _, _)) = drilled_recipe.zip(drilled_dimensions)?;
+                simple_drilled_hole_axis_placement(scan, recipe.table, diameter)
+            })
+            .flatten();
         return IrFeatureDefinition::Hole {
             profile: None,
             profile_filter: None,
             face,
             position,
             direction,
-            placements: stepped_axis.into_iter().collect(),
+            placements: stepped_axis.into_iter().chain(drilled_axis).collect(),
             kind: match (
                 drilled_dimensions,
                 simple_form,
@@ -22182,6 +22188,88 @@ fn simple_drilled_hole_placement(
             depth,
         )
     })
+}
+
+fn simple_drilled_hole_axis_placement(
+    scan: &ContainerScan,
+    table: &crate::feature::FeatureEntityTable,
+    diameter: f64,
+) -> Option<cadmpeg_ir::features::HolePlacement> {
+    let feature_id = table.feature_id?;
+    let cylinder_ids = table
+        .surface_ids
+        .iter()
+        .copied()
+        .filter(|surface_id| {
+            crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id).is_some_and(
+                |row| {
+                    row.feature_id == feature_id
+                        && row.kind == crate::surface::SurfaceKind::Cylinder
+                },
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    let frames =
+        unique_available_positional_cylinder_frames(&cylinder_ids, &scan.surfaces.parameters)?;
+    simple_drilled_axis_placement_from_frames(&frames, diameter)
+}
+
+fn simple_drilled_axis_placement_from_frames(
+    frames: &[crate::surface::PositionalCylinderFrame],
+    diameter: f64,
+) -> Option<cadmpeg_ir::features::HolePlacement> {
+    let first = *frames.first()?;
+    let axis = normalized(first.axis)?;
+    let coordinate_scale = frames
+        .iter()
+        .flat_map(|frame| frame.origin)
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    (diameter.is_finite() && diameter > 0.0 && first.origin.into_iter().all(f64::is_finite))
+        .then_some(())?;
+    let radius = 0.5 * diameter;
+    frames
+        .iter()
+        .all(|frame| {
+            let Some(candidate_axis) = normalized(frame.axis) else {
+                return false;
+            };
+            let radius_scale = frame.radius.abs().max(radius.abs()).max(1.0);
+            if !frame.origin.into_iter().all(f64::is_finite)
+                || !frame.radius.is_finite()
+                || frame.radius <= 0.0
+                || (frame.radius - radius).abs() > 1e-9 * radius_scale
+            {
+                return false;
+            }
+            let alignment = axis
+                .into_iter()
+                .zip(candidate_axis)
+                .map(|(left, right)| left * right)
+                .sum::<f64>();
+            if alignment.abs() < 1.0 - 1e-9 {
+                return false;
+            }
+            let delta =
+                std::array::from_fn::<_, 3, _>(|index| frame.origin[index] - first.origin[index]);
+            let axial_delta = delta
+                .into_iter()
+                .zip(axis)
+                .map(|(component, axis)| component * axis)
+                .sum::<f64>();
+            delta
+                .into_iter()
+                .zip(axis)
+                .map(|(component, axis)| component - axial_delta * axis)
+                .map(|component| component * component)
+                .sum::<f64>()
+                .sqrt()
+                <= 1e-9 * coordinate_scale
+        })
+        .then_some(cadmpeg_ir::features::HolePlacement::Axis {
+            origin: Point3::new(first.origin[0], first.origin[1], first.origin[2]),
+            axis: Vector3::new(axis[0], axis[1], axis[2]),
+        })
 }
 
 #[derive(Debug, Clone, Copy)]

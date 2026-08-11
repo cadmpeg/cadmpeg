@@ -2869,6 +2869,12 @@ selection. All participating tables must supply one equal tuple. When the
 envelope is unavailable, every complete three-row class-911 table in the
 recipe-selected dimension family must supply one equal tuple. The recipe
 transfers as a simple drilled hole with that diameter, angle, and blind depth.
+Each complete positional cylinder frame on the paired cylinder rows must have
+the dimension-assigned bore radius. The available frames must define one
+coaxial line; origins may differ only along that line and axis signs may differ.
+One available frame is sufficient because the recipe binds both rows to one
+cylinder source. This carrier supplies an unoriented hole-axis placement. It
+does not supply the hole entry position or drilling direction.
 The dimension tuple alone does not assign the hole axis, entry position,
 placement face, or depth-to-tip state.
 Unsourced class-200 entries are admitted only when they are rowless

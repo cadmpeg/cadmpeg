@@ -2900,6 +2900,43 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
 }
 
 #[test]
+fn simple_drilled_axis_accepts_only_coaxial_dimension_matched_carriers() {
+    let frame = |origin, axis, radius| crate::surface::PositionalCylinderFrame {
+        origin,
+        axis,
+        ref_direction: [0.0, 1.0, 0.0],
+        radius,
+        length: None,
+    };
+    let first = frame([2.0, -3.0, 4.0], [1.0, 0.0, 0.0], 0.25);
+    let shifted = frame([7.0, -3.0, 4.0], [-1.0, 0.0, 0.0], 0.25);
+
+    assert_eq!(
+        simple_drilled_axis_placement_from_frames(&[first, shifted], 0.5),
+        Some(cadmpeg_ir::features::HolePlacement::Axis {
+            origin: Point3::new(2.0, -3.0, 4.0),
+            axis: Vector3::new(1.0, 0.0, 0.0),
+        })
+    );
+    assert!(simple_drilled_axis_placement_from_frames(&[], 0.5).is_none());
+    assert!(simple_drilled_axis_placement_from_frames(
+        &[first, frame([2.0, -2.9, 4.0], [1.0, 0.0, 0.0], 0.25)],
+        0.5,
+    )
+    .is_none());
+    assert!(simple_drilled_axis_placement_from_frames(
+        &[frame([2.0, -3.0, 4.0], [1.0, 0.0, 0.0], 0.3)],
+        0.5,
+    )
+    .is_none());
+    assert!(simple_drilled_axis_placement_from_frames(
+        &[frame([2.0, -3.0, 4.0], [1.0, 0.0, 0.0], f64::NAN,)],
+        0.5,
+    )
+    .is_none());
+}
+
+#[test]
 fn counterbore_boundary_circles_define_the_directed_full_span() {
     let counterbore = (65, Point3::new(0.0, 2.625, -1.0), [0.0, 0.0, 1.0]);
     let bore = (61, Point3::new(0.0, 2.625, 0.0), [0.0, 0.0, -1.0]);

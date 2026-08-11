@@ -248,6 +248,8 @@ fixtures, claims above L1 remain unproven.
   their two non-shared bounds differ by the bore diameter. A seven-token
   compound-close cone pair supplies a fully clipped radial coordinate only when
   each terminal triple exactly cross-binds the corresponding cylinder corner.
+  Complete dimension-matched positional cylinder frames on the paired rows
+  supply an unoriented hole axis when all available frames are coaxial.
 - Class-911 counterbore recipes bind complete four- or five-row depth,
   bore-radius, and counterbore-radius tuples when the two source cylinder pairs
   uniquely match the two diameters on two axes and the counterbore depth on the
