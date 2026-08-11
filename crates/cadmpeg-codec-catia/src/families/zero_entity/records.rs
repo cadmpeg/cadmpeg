@@ -340,7 +340,7 @@ fn zero_entity_records_in_range(data: &[u8], range: Range<usize>) -> Vec<ZeroEnt
     records
 }
 
-#[cfg(any(test, feature = "fuzzing"))]
+#[cfg(test)]
 fn zero_entity_records(data: &[u8]) -> Vec<ZeroEntityRecord> {
     zero_entity_records_in_range(data, 0..data.len())
 }
