@@ -553,6 +553,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
     let scope_history = crate::design::feature_project::ScopeHistoryGraph::new(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
+        &native.design_body_recipe_operands,
         &native.asm_histories,
     );
     for scope in &native.design_parameter_scopes {
@@ -3777,6 +3778,7 @@ fn extend_related_design_records(
     let scope_histories = crate::history::bind_scope_histories(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
+        &native.design_body_recipe_operands,
         &native.asm_histories,
     );
     crate::history::bind_circular_pattern_axes(

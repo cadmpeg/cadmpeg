@@ -2777,6 +2777,7 @@ fn bound_history_state_pair<'a>(
 pub(crate) fn bind_scope_histories(
     scopes: &[crate::records::DesignParameterScope],
     body_bindings: &[crate::records::DesignBodyBinding],
+    body_recipe_operands: &[crate::records::DesignBodyRecipeOperand],
     histories: &[AsmHistory],
 ) -> HashMap<String, String> {
     let candidates = scopes
@@ -2815,6 +2816,61 @@ pub(crate) fn bind_scope_histories(
         if candidates.len() == 1 {
             resolved.insert(scope.id.clone(), candidates[0].id.clone());
             continue;
+        }
+        let next_scope_record_index = scopes
+            .iter()
+            .filter(|candidate| {
+                crate::ids::same_native_occurrence(&candidate.id, &scope.id)
+                    && candidate.record_index > scope.record_index
+            })
+            .map(|candidate| candidate.record_index)
+            .min();
+        let mut output_bindings = body_bindings.iter().filter(|binding| {
+            crate::ids::same_native_occurrence(&binding.id, &scope.id)
+                && binding.entity_suffix > u64::from(scope.record_index)
+                && next_scope_record_index
+                    .is_none_or(|next| binding.entity_suffix < u64::from(next))
+        });
+        if let Some(binding) = output_bindings.next() {
+            if output_bindings.next().is_none() {
+                let matching = candidates
+                    .iter()
+                    .filter(|history| {
+                        historical_brep_source(&history.id).is_some_and(|source| {
+                            binding.blob_name.strip_prefix("BREP.") == Some(source)
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                if let [history] = matching.as_slice() {
+                    resolved.insert(scope.id.clone(), history.id.clone());
+                    continue;
+                }
+            }
+        }
+        let candidate_faces = body_recipe_operands
+            .iter()
+            .filter(|operand| {
+                crate::ids::same_native_occurrence(&operand.id, &scope.id)
+                    && operand.scope_record_index == scope.record_index
+            })
+            .flat_map(|operand| &operand.references)
+            .flat_map(|reference| &reference.candidate_faces)
+            .collect::<Vec<_>>();
+        if !candidate_faces.is_empty() {
+            let matching = candidates
+                .iter()
+                .filter(|history| {
+                    historical_brep_source(&history.id).is_some_and(|source| {
+                        candidate_faces
+                            .iter()
+                            .any(|face| active_brep_face_matches_source(face, source))
+                    })
+                })
+                .collect::<Vec<_>>();
+            if let [history] = matching.as_slice() {
+                resolved.insert(scope.id.clone(), history.id.clone());
+                continue;
+            }
         }
         let Some(construction) = &scope.base_feature_construction else {
             continue;
@@ -9145,6 +9201,120 @@ mod tests {
     }
 
     #[test]
+    fn ambiguous_scope_histories_use_exact_result_body_sources() {
+        use crate::records::{
+            DesignBodyBinding, DesignBodyRecipeOperand, DesignBodyRecipeOperandOwner,
+            DesignBodyRecipeReference,
+        };
+        use cadmpeg_ir::ids::FaceId;
+
+        let state = |history: &str, state_id: i64, previous_state_id: Option<i64>| AsmDeltaState {
+            id: format!("{history}:asm-delta-state#{state_id}"),
+            parent: history.into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: state_id,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            entity_versions: Vec::new(),
+            record_table_complete: true,
+            topology: Some(AsmHistoricalTopology::default()),
+            transition: previous_state_id.map(|previous_state_id| {
+                crate::history_records::AsmHistoricalTransition {
+                    previous_state_id: Some(previous_state_id),
+                    records: Default::default(),
+                    topology: Default::default(),
+                }
+            }),
+        };
+        let history = |source: &str| {
+            let id = format!("f3d:asset/Breps.BlobParts/BREP.{source}.smbh:asm-history#1");
+            AsmHistory {
+                id: id.clone(),
+                byte_offset: 0,
+                stream_size: None,
+                history_entry_count: None,
+                record_table_binding_budget_exceeded: false,
+                projection_finalized: false,
+                states: vec![state(&id, 9, Some(2)), state(&id, 2, None)],
+            }
+        };
+        let histories = [history("first"), history("second")];
+        let stream = "f3d:Design/BulkStream.dat";
+        let mut scope = crate::records::DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#100"),
+            "Revolve",
+            100,
+        );
+        scope.history_state_id = Some(9);
+        scope.previous_history_state_id = Some(2);
+        let next_scope = crate::records::DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#200"),
+            "Sketch",
+            200,
+        );
+        let binding = DesignBodyBinding {
+            id: format!("{stream}:design-body-binding#150"),
+            stream: stream.into(),
+            pair_count: 1,
+            pair_ordinal: 0,
+            asm_body_key: 1,
+            asm_body_key_offset: 0,
+            entity_suffix: 150,
+            entity_suffix_offset: 0,
+            blob_name: "BREP.second.smbh".into(),
+            blob_name_offset: 0,
+            body: None,
+        };
+        let scopes = [scope.clone(), next_scope];
+        let bindings =
+            bind_scope_histories(&scopes, std::slice::from_ref(&binding), &[], &histories);
+        assert_eq!(bindings[&scope.id], histories[1].id);
+
+        let operand = DesignBodyRecipeOperand {
+            id: format!("{stream}:design-body-recipe-operand#120"),
+            scope_record_index: scope.record_index,
+            owner: DesignBodyRecipeOperandOwner::ScopeReference {
+                scope_reference_ordinal: 0,
+            },
+            record_index: 120,
+            byte_offset: 0,
+            class_tag: "300".into(),
+            asset_id: String::new(),
+            asset_id_offset: 0,
+            context_id: String::new(),
+            context_id_offset: 0,
+            references: vec![DesignBodyRecipeReference {
+                design_reference: 1,
+                design_reference_offset: 0,
+                form: 4,
+                form_offset: 0,
+                candidate_faces: vec![FaceId("f3d:brep/second.smbh/brep:entity#1".into())],
+                preceding_candidate_faces: Vec::new(),
+                preceding_body_slots: Vec::new(),
+            }],
+            nested_record_index: 123,
+            nested_record_index_offset: 0,
+            recipe_id: format!("{stream}:construction-recipe#1"),
+            resolved_face_slot: None,
+            resolved_body_state_id: None,
+            resolved_body_slot: None,
+            resolved_body_face_slots: Vec::new(),
+            next_record_index: 124,
+            next_byte_offset: 0,
+        };
+        let bindings =
+            bind_scope_histories(&scopes, &[], std::slice::from_ref(&operand), &histories);
+        assert_eq!(bindings[&scope.id], histories[1].id);
+    }
+
+    #[test]
     fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         let state = |state_id, node_index, previous_ref, next_ref| AsmDeltaState {
             id: format!("history:state-{state_id}"),
@@ -9204,7 +9374,7 @@ mod tests {
             crate::records::DesignParameterScope::empty("f3d:native:scope#2", "EdgeFlange", 2);
         successor.history_state_id = Some(10);
         successor.previous_history_state_id = Some(6);
-        let bindings = bind_scope_histories(&[root, successor], &[], &histories);
+        let bindings = bind_scope_histories(&[root, successor], &[], &[], &histories);
         assert_eq!(bindings.len(), 2);
         assert_eq!(bindings["f3d:native:scope#1"], "history");
         assert_eq!(bindings["f3d:native:scope#2"], "history");

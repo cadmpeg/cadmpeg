@@ -285,10 +285,15 @@ impl<'a> ScopeHistoryGraph<'a> {
     pub(crate) fn new(
         scopes: &'a [DesignParameterScope],
         body_bindings: &[DesignBodyBinding],
+        body_recipe_operands: &[DesignBodyRecipeOperand],
         histories: &[crate::history_records::AsmHistory],
     ) -> Self {
-        let bound_histories =
-            crate::history::bind_scope_histories(scopes, body_bindings, histories);
+        let bound_histories = crate::history::bind_scope_histories(
+            scopes,
+            body_bindings,
+            body_recipe_operands,
+            histories,
+        );
         let histories_present = !histories.is_empty();
         let mut scopes_by_state = HashMap::new();
         for scope in scopes {
@@ -1337,7 +1342,8 @@ pub fn project_parameter_design_with_edge_identities(
             }
         })
         .collect::<Vec<_>>();
-    let scope_history = ScopeHistoryGraph::new(scopes, body_bindings, histories);
+    let scope_history =
+        ScopeHistoryGraph::new(scopes, body_bindings, body_recipe_operands, histories);
     for feature in &mut features {
         let Some(scope) = feature
             .native_ref

@@ -1254,6 +1254,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let scope_history = crate::design::feature_project::ScopeHistoryGraph::new(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
+        &native.design_body_recipe_operands,
         &native.asm_histories,
     );
     for scope in &native.design_parameter_scopes {
@@ -5249,6 +5250,7 @@ fn validate_edge_identity_operands<'a>(
     let scope_histories = history::bind_scope_histories(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
+        &native.design_body_recipe_operands,
         &native.asm_histories,
     );
     history::bind_edge_identity_history(
@@ -5933,6 +5935,7 @@ fn validate_edge_operands<'a>(
     let scope_histories = history::bind_scope_histories(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
+        &native.design_body_recipe_operands,
         &native.asm_histories,
     );
     history::bind_edge_operand_history_candidates(
