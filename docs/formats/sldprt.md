@@ -815,7 +815,7 @@ Within the current layout, classless `Feature` source ID `6` is the lights-and-c
 
 `moConstraintCoincLineAtAnglePlaneRefplaneData_c` stores a 121-byte matrix reference-plane frame immediately after the class name. Its origin, normal, and byte `1` use offsets `+0` through `+48` of the 97-byte frame. A right-handed orthonormal 3×3 matrix occupies the unaligned f64 fields at offsets `+49` through `+113` in row-major order. The first matrix column is the plane u-axis, and the third column is codirectional with the stored normal.
 
-When no data-class anchor selects a reference-plane frame layout, every structurally valid encoding in the feature interval participates in one uniqueness check. A distinct valid frame leaves the reference plane unresolved; encoding length or a shorter incidental scalar run is not a precedence rule.
+When no data-class anchor selects a reference-plane frame layout, every structurally valid encoding in the feature interval participates in one uniqueness check. A valid 121-byte matrix frame owns the 97-byte prefix at the same byte offset; the prefix is not a separate fixed frame. Distinct frames at different offsets leave the reference plane unresolved.
 
 An offset reference-plane object may store two ordered frame records using the same or different frame layouts. The first frame is the constructed plane and the second is its support plane. Their normals are codirectional, and the support origin equals the constructed origin plus `D1` times the constructed normal. A support frame that does not identify another reference-plane object denotes the coincident planar face. When the second frame is omitted, the same translation recovers the support plane from the constructed frame.
 

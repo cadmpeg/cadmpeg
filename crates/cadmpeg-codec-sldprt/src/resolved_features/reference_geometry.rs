@@ -2139,13 +2139,13 @@ const COMPACT_REFERENCE_PLANE_FRAME_LEN: usize = 82;
 pub(super) fn explicit_reference_plane_frame(
     payload: &[u8],
 ) -> Result<Option<(Point3, Vector3, Vector3)>, ()> {
-    let mut frames = matrix_reference_plane_frames(payload);
-    frames.extend(
-        payload
-            .windows(FIXED_REFERENCE_PLANE_FRAME_LEN)
-            .filter_map(fixed_reference_plane_frame)
-            .collect::<Vec<_>>(),
-    );
+    let matrix_candidates = matrix_reference_plane_frame_candidates(payload);
+    let fixed_candidates = fixed_reference_plane_frame_candidates(payload, &matrix_candidates);
+    let mut frames = matrix_candidates
+        .iter()
+        .map(|(_, frame)| *frame)
+        .collect::<Vec<_>>();
+    frames.extend(fixed_candidates.iter().map(|(_, frame)| *frame));
     frames.extend(angled_reference_plane_frame(payload));
     frames.extend(minimal_reference_plane_frame(payload));
     frames.extend(compact_reference_plane_frame(payload));
@@ -2240,6 +2240,24 @@ pub(super) fn fixed_reference_plane_frame(bytes: &[u8]) -> Option<(Point3, Vecto
 
 type ReferencePlaneFrame = (Point3, Vector3, Vector3);
 
+fn fixed_reference_plane_frame_candidates(
+    payload: &[u8],
+    matrix_candidates: &[(usize, ReferencePlaneFrame)],
+) -> Vec<(usize, ReferencePlaneFrame)> {
+    payload
+        .windows(FIXED_REFERENCE_PLANE_FRAME_LEN)
+        .enumerate()
+        .filter(|(offset, _)| {
+            matrix_candidates
+                .iter()
+                .all(|(matrix_offset, _)| matrix_offset != offset)
+        })
+        .filter_map(|(offset, bytes)| {
+            fixed_reference_plane_frame(bytes).map(|frame| (offset, frame))
+        })
+        .collect()
+}
+
 pub(super) fn offset_reference_plane_frame_pair(
     payload: &[u8],
     distance: f64,
@@ -2248,9 +2266,11 @@ pub(super) fn offset_reference_plane_frame_pair(
         (distance.is_finite() && offset_plane_reference_frame_matches(reference, result, distance))
             .then_some((result, reference))
     };
-    let fixed = payload
-        .windows(FIXED_REFERENCE_PLANE_FRAME_LEN)
-        .filter_map(fixed_reference_plane_frame)
+    let matrix_candidates = matrix_reference_plane_frame_candidates(payload);
+    let fixed_candidates = fixed_reference_plane_frame_candidates(payload, &matrix_candidates);
+    let fixed = fixed_candidates
+        .iter()
+        .map(|(_, frame)| *frame)
         .collect::<Vec<_>>();
     if let [result, reference] = fixed.as_slice() {
         return valid_pair(*result, *reference);
@@ -2261,13 +2281,15 @@ pub(super) fn offset_reference_plane_frame_pair(
     }
     let mut frames = Vec::new();
     for offset in 0..payload.len() {
+        let fixed = fixed_candidates
+            .iter()
+            .find_map(|(fixed_offset, frame)| (*fixed_offset == offset).then_some(*frame));
+        let matrix = matrix_candidates
+            .iter()
+            .find_map(|(matrix_offset, frame)| (*matrix_offset == offset).then_some(*frame));
         let candidates = [
-            payload
-                .get(offset..offset + FIXED_REFERENCE_PLANE_FRAME_LEN)
-                .and_then(fixed_reference_plane_frame),
-            payload
-                .get(offset..offset + MATRIX_REFERENCE_PLANE_FRAME_LEN)
-                .and_then(matrix_reference_plane_frame),
+            fixed,
+            matrix,
             payload
                 .get(offset..offset + MINIMAL_REFERENCE_PLANE_FRAME_LEN)
                 .and_then(minimal_reference_plane_frame),
@@ -2476,6 +2498,18 @@ pub(super) fn matrix_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Ve
 }
 
 fn matrix_reference_plane_frames(payload: &[u8]) -> Vec<ReferencePlaneFrame> {
+    matrix_reference_plane_frame_candidates(payload)
+        .into_iter()
+        .map(|(_, frame)| frame)
+        .fold(Vec::new(), |mut unique, frame| {
+            if !unique.contains(&frame) {
+                unique.push(frame);
+            }
+            unique
+        })
+}
+
+fn matrix_reference_plane_frame_candidates(payload: &[u8]) -> Vec<(usize, ReferencePlaneFrame)> {
     const NATIVE_TO_IR: f64 = 1000.0;
     let scalar = |bytes: &[u8], relative| {
         let value = f64::from_le_bytes(bytes.get(relative..relative + 8)?.try_into().ok()?);
@@ -2492,9 +2526,10 @@ fn matrix_reference_plane_frames(payload: &[u8]) -> Vec<ReferencePlaneFrame> {
             left.x * right.y - left.y * right.x,
         )
     };
-    let frames = payload
+    payload
         .windows(MATRIX_REFERENCE_PLANE_FRAME_LEN)
-        .filter_map(|bytes| {
+        .enumerate()
+        .filter_map(|(offset, bytes)| {
             if bytes[48] != 1 {
                 return None;
             }
@@ -2523,15 +2558,9 @@ fn matrix_reference_plane_frames(payload: &[u8]) -> Vec<ReferencePlaneFrame> {
             {
                 return None;
             }
-            Some((origin, normal, u_axis))
+            Some((offset, (origin, normal, u_axis)))
         })
-        .collect::<Vec<_>>();
-    frames.into_iter().fold(Vec::new(), |mut unique, frame| {
-        if !unique.contains(&frame) {
-            unique.push(frame);
-        }
-        unique
-    })
+        .collect()
 }
 
 pub(super) fn minimal_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {

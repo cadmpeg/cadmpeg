@@ -4922,7 +4922,7 @@ section = "2"
 anchor = "store a 97-byte constructed reference-plane frame immediately after the class name"
 size = 97
 endianness = "little"
-note = "Offsets begin immediately after the data-class name."
+note = "Offsets begin immediately after the data-class name. A valid 121-byte matrix frame at the same offset owns this 97-byte prefix."
 
 [[record.field]]
 name = "origin"

@@ -1314,7 +1314,7 @@ Cross-checked against code:
 
 Spec §2 · layout: byte offsets · size: 97 B
 
-Offsets begin immediately after the data-class name.
+Offsets begin immediately after the data-class name. A valid 121-byte matrix frame at the same offset owns this 97-byte prefix.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
