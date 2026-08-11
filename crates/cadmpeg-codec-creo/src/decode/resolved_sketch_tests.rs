@@ -2149,28 +2149,20 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
     let table = simple_drilled_recipe_table(9);
     let mut rows = simple_drilled_recipe_surface_rows(9);
 
-    assert!(simple_drilled_hole_recipe(
-        9,
-        std::slice::from_ref(&table),
-        &rows,
-    ));
-    assert!(!simple_drilled_hole_recipe(
-        9,
-        &[table.clone(), table.clone()],
-        &rows,
-    ));
+    assert!(simple_drilled_hole_recipe_table(9, std::slice::from_ref(&table), &rows,).is_some());
+    assert!(simple_drilled_hole_recipe_table(9, &[table.clone(), table.clone()], &rows,).is_none());
 
     rows[1].kind = crate::surface::SurfaceKind::Cylinder;
-    assert!(!simple_drilled_hole_recipe(9, &[table], &rows));
+    assert!(simple_drilled_hole_recipe_table(9, &[table], &rows).is_none());
 }
 
 #[test]
 fn simple_drilled_dimensions_require_complete_agreeing_tables() {
-    let table = |diameter: f64, angle: f64, depth: f64| crate::feature::FeatureDimensionTable {
+    let table = |radius: f64, angle: f64, depth: f64| crate::feature::FeatureDimensionTable {
         declared_count: 3,
         entity_ref: Some(88),
         rows: [
-            (2, diameter, 0, crate::feature::DimensionUnit::Millimeters),
+            (2, radius, 0, crate::feature::DimensionUnit::Millimeters),
             (10, angle, 1, crate::feature::DimensionUnit::Radians),
             (2, depth, 2, crate::feature::DimensionUnit::Millimeters),
         ]
@@ -2198,23 +2190,86 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
     let second = table(4.2, angle, -25.0);
 
     assert_eq!(
-        simple_drilled_hole_dimension_values([&first, &second].into_iter()),
+        simple_drilled_hole_dimension_values([&first, &second].into_iter(), None),
         Some((8.4, angle, 25.0))
     );
     let conflicting = table(5.0, angle, -25.0);
     assert_eq!(
-        simple_drilled_hole_dimension_values([&first, &conflicting].into_iter()),
+        simple_drilled_hole_dimension_values([&first, &conflicting].into_iter(), None),
+        None
+    );
+    assert_eq!(
+        simple_drilled_hole_dimension_values(
+            [&first, &conflicting].into_iter(),
+            Some([[Some(8.4), None], [Some(25.0), None], [Some(100.0), None],]),
+        ),
+        Some((8.4, angle, 25.0))
+    );
+    assert_eq!(
+        simple_drilled_hole_dimension_values(
+            [&first, &conflicting].into_iter(),
+            Some([[Some(12.0), None], [Some(30.0), None], [Some(100.0), None],]),
+        ),
         None
     );
     let invalid_angle = table(4.2, std::f64::consts::PI, -25.0);
     assert_eq!(
-        simple_drilled_hole_dimension_values([&invalid_angle].into_iter()),
+        simple_drilled_hole_dimension_values([&invalid_angle].into_iter(), None),
         None
     );
     assert_eq!(
-        simple_drilled_hole_dimension_values([&first, &invalid_angle].into_iter()),
+        simple_drilled_hole_dimension_values(
+            [&first, &invalid_angle].into_iter(),
+            Some([[Some(8.4), None], [Some(25.0), None], [Some(100.0), None],]),
+        ),
         None
     );
+    let invalid_other_angle = table(5.0, std::f64::consts::PI, -25.0);
+    assert_eq!(
+        simple_drilled_hole_dimension_values(
+            [&first, &invalid_other_angle].into_iter(),
+            Some([[Some(8.4), None], [Some(25.0), None], [Some(100.0), None],]),
+        ),
+        Some((8.4, angle, 25.0))
+    );
+    let adjacent_diameter = table(0.125, angle, -0.5);
+    assert_eq!(
+        simple_drilled_hole_dimension_values(
+            [&adjacent_diameter].into_iter(),
+            Some([[Some(6.375), None], [Some(0.5), None], [None, Some(0.25)],]),
+        ),
+        Some((0.25, angle, 0.5))
+    );
+}
+
+#[test]
+fn paired_corner_envelopes_expose_shared_and_union_spans() {
+    assert_eq!(
+        paired_corner_envelope_axis_spans(
+            [[0.0, 0.0, -10.0], [25.0, 8.38, 100.0]],
+            [[0.0, 0.0, 100.0], [25.0, 8.38, 180.0]],
+        ),
+        Some([[Some(25.0), None], [Some(8.38), None], [None, Some(190.0)],])
+    );
+    assert_eq!(
+        paired_corner_envelope_axis_spans(
+            [[0.0, 0.0, 0.0], [6.375, 0.5, 0.125]],
+            [[0.0, 0.0, 0.125], [6.375, 0.5, 0.25]],
+        ),
+        Some([[Some(6.375), None], [Some(0.5), None], [None, Some(0.25)],])
+    );
+    assert_eq!(
+        paired_corner_envelope_axis_spans(
+            [[0.0, 0.0, 0.0], [0.0, 2.0, 3.0]],
+            [[0.0, 0.0, 0.0], [0.0, 2.0, 3.0]],
+        ),
+        Some([[None, None], [Some(2.0), None], [Some(3.0), None],])
+    );
+    assert!(!dimension_pair_matches_envelope_spans(
+        4.0,
+        5.0,
+        [[Some(4.0), Some(5.0)], [Some(2.0), None], [Some(3.0), None]],
+    ));
 }
 
 #[test]

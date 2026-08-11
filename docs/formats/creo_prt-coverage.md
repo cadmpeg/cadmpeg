@@ -198,6 +198,11 @@ fixtures, claims above L1 remain unproven.
 - Class-911 hole cap planes retain their stored surface-row order. The first
   complete outline-backed plane is the placement face, and the second defines
   the signed blind direction and depth.
+- Class-911 table-class-29 simple-drilled recipes transfer complete
+  bore-radius, drill-point-angle, and blind-depth tuples. Paired cylinder
+  type-24 terminal envelopes select among distinct document-level tuples by
+  matching the bore diameter and depth to common or adjacent-union spans on
+  distinct axes.
 - Positional `ActDatums` outlines require exactly one held coordinate. Outlines
   with zero or multiple held coordinate pairs remain unresolved instead of
   selecting an arbitrary plane normal.

@@ -825,6 +825,23 @@ impl SurfaceParameterRecord {
         self.type24_scalar_frame_round_layout()
     }
 
+    /// Decode the final two three-coordinate corners of a type-24 patch.
+    #[must_use]
+    pub fn type24_terminal_corner_envelope(&self, type_byte: u8) -> Option<[[f64; 3]; 2]> {
+        (type_byte == 0x24 && self.boundary == SurfaceBodyBoundary::CompoundClose).then_some(())?;
+        let terminal = self.scalar_frames.last()?;
+        self.terminal_scalar_frame_has_owned_end(terminal)?;
+        let corners = terminal.slots.get(terminal.slots.len().checked_sub(6)?..)?;
+        let values = corners
+            .iter()
+            .map(|slot| slot.value)
+            .collect::<Option<Vec<_>>>()?;
+        values
+            .iter()
+            .all(|value| value.is_finite())
+            .then_some([values[..3].try_into().ok()?, values[3..].try_into().ok()?])
+    }
+
     fn type24_round_frame(
         &self,
         type_byte: u8,
@@ -7435,7 +7452,14 @@ mod tests {
             24, 45, 82, 36, 168, 193, 84, 201, 135, 18, 45, 89, 164, 168, 193, 84, 201, 135, 47,
             34, 0, 47, 32, 0, 47, 20, 0, 47, 36, 0, 47, 67, 0, 47, 24, 0, 247, 24,
         ];
-        let replay_frame = record(&replay_separated)
+        let replay_record = record(&replay_separated);
+        assert!(replay_record
+            .type24_terminal_corner_envelope(0x24)
+            .is_some());
+        assert!(replay_record
+            .type24_terminal_corner_envelope(0x22)
+            .is_none());
+        let replay_frame = replay_record
             .positional_cylinder_frame
             .expect("replay-trailed repeated-diameter carrier");
         assert_eq!(

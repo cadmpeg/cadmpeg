@@ -2716,12 +2716,26 @@ dimension type `2` and millimetre units. ID `1` has dimension type `10` and
 radian units. The bore radius is positive, the depth is nonzero, and the
 included angle is strictly between zero and π. The neutral bore diameter is
 twice the stored radius. The depth magnitude is the blind length; its sign is
-an orientation state and does not change that length. When every complete
-three-row class-911 table in the document supplies one equal tuple, the recipe
-transfers as a simple drilled hole with that diameter, angle, and blind depth.
-An independently derived diameter or blind depth must agree. The dimension
-tuple does not assign the hole axis, entry position, placement face, or
-depth-to-tip state.
+an orientation state and does not change that length.
+
+Each materialized cylinder row in this recipe has a type-24 compound-close
+parameter record. The last six scalar slots in the final frame are two
+three-coordinate envelope corners. Normalize the two endpoint values on each
+axis independently. When the two cylinder rows have equal normalized
+intervals on an axis, their common nonzero interval length is a candidate
+span. When one normalized interval ends where the other starts, the nonzero
+length of their union is a candidate span. A dimension tuple matches the
+generated cylinders when its bore diameter and blind-depth magnitude match
+candidate spans on two distinct axes. The matched candidate may be either the
+common span or the adjacent-interval union for its axis.
+
+When the cylinder envelope is available, complete three-row class-911 tables
+whose diameter and depth do not match it do not participate in template
+selection. All participating tables must supply one equal tuple. When the
+envelope is unavailable, every complete three-row class-911 table in the
+document must supply one equal tuple. The recipe transfers as a simple drilled
+hole with that diameter, angle, and blind depth. The dimension tuple does not
+assign the hole axis, entry position, placement face, or depth-to-tip state.
 Unsourced class-200 entries are admitted only when they are rowless
 non-surface entities; they do not create source section entity groups.
 When a feature owns multiple table-class-29 tables, exactly one table must have

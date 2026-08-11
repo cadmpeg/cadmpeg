@@ -562,19 +562,22 @@ that assign a dimension value to a dimension-driven solver variable.
 
 ### SP-39. Simple-drilled template selection and depth endpoint
 
-**Question.** Which replay identity selects one class-911 three-row
-simple-drilled dimension table when the document stores multiple distinct
-tuples, and does its blind depth terminate at the cylindrical shoulder or the
-conical tip?
+**Question.** Which replay identity distinguishes class-911 three-row
+simple-drilled dimension tables that have the same bore-radius and blind-depth
+envelope, and does the blind depth terminate at the cylindrical shoulder or
+the conical tip?
 
 **Known.** `creo_prt.md` §6 "A class-911 table-class-29 simple-drilled recipe"
 defines the generated-surface recipe and the bore-radius, included-angle, and
-blind-depth dimension roles. Equal complete three-row templates define one
-tuple without a per-feature selector. The neutral hole bottom retains no
+blind-depth dimension roles. The paired cylinder parameter records provide
+per-axis common and adjacent-union spans. Bore diameter and blind depth select
+the complete tables that match those spans on distinct axes. All matching
+tables must define one equal tuple. The neutral hole bottom retains no
 depth-to-tip state.
 
-**Need.** We must identify the per-feature template join and depth endpoint to
-transfer documents with competing tuples and to set `HoleBottom::Angled`.
+**Need.** We must identify the per-feature replay join when competing tuples
+have equal bore-radius and blind-depth envelopes, and identify the depth
+endpoint to set `HoleBottom::Angled`.
 
 ## 4. Topology and appearance
 

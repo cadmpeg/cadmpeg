@@ -20780,13 +20780,14 @@ fn schema_feature_definition(
             && stepped_directed.is_none())
         .then(|| counterbore_axis_placement(scan, ir, feature_id))
         .flatten();
-        let drilled_dimensions = simple_drilled_hole_recipe(
+        let drilled_dimensions = simple_drilled_hole_recipe_table(
             feature_id,
             &scan.features.entity_tables,
             &scan.surfaces.rows,
         )
-        .then(|| simple_drilled_hole_dimensions(scan))
-        .flatten();
+        .and_then(|table| {
+            simple_drilled_hole_dimensions(scan, simple_drilled_hole_envelope_spans(scan, table))
+        });
         let placement = feature_outline_planes(scan, feature_id).and_then(hole_placement);
         let compact_cylinder_id = compact_simple_hole_cylinder_id(
             feature_id,
@@ -22011,16 +22012,20 @@ fn generated_hole_surfaces_by_source(
     Some(generated_by_source)
 }
 
-fn simple_drilled_hole_recipe(
+fn simple_drilled_hole_recipe_table<'a>(
     feature_id: u32,
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &'a [crate::feature::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
-) -> bool {
-    tables
+) -> Option<&'a crate::feature::FeatureEntityTable> {
+    let candidates = tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
-        .filter_map(|table| generated_hole_surfaces_by_source(feature_id, table, rows))
-        .filter(|generated_by_source| {
+        .filter(|table| {
+            let Some(generated_by_source) =
+                generated_hole_surfaces_by_source(feature_id, table, rows)
+            else {
+                return false;
+            };
             let paired = |kind| {
                 generated_by_source
                     .values()
@@ -22036,53 +22041,131 @@ fn simple_drilled_hole_recipe(
                     .count()
                     == 2
         })
-        .count()
-        == 1
+        .collect::<Vec<_>>();
+    let [table] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*table)
 }
 
-fn simple_drilled_hole_dimensions(scan: &ContainerScan) -> Option<(f64, f64, f64)> {
+fn simple_drilled_hole_envelope_spans(
+    scan: &ContainerScan,
+    table: &crate::feature::FeatureEntityTable,
+) -> Option<[[Option<f64>; 2]; 3]> {
+    let feature_id = table.feature_id?;
+    let envelopes = table
+        .surface_ids
+        .iter()
+        .filter_map(|surface_id| {
+            crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id)
+                .filter(|row| row.feature_id == feature_id)
+                .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
+        })
+        .map(|row| {
+            unique_surface_parameter_record(scan, row)?
+                .type24_terminal_corner_envelope(row.type_byte)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let [first, second] = envelopes.as_slice() else {
+        return None;
+    };
+    paired_corner_envelope_axis_spans(*first, *second)
+}
+
+fn paired_corner_envelope_axis_spans(
+    first: [[f64; 3]; 2],
+    second: [[f64; 3]; 2],
+) -> Option<[[Option<f64>; 2]; 3]> {
+    first
+        .iter()
+        .chain(&second)
+        .flatten()
+        .all(|value| value.is_finite())
+        .then_some(())?;
+    let intervals = |corners: [[f64; 3]; 2]| {
+        std::array::from_fn::<_, 3, _>(|axis| {
+            let values = [corners[0][axis], corners[1][axis]];
+            [values[0].min(values[1]), values[0].max(values[1])]
+        })
+    };
+    let first = intervals(first);
+    let second = intervals(second);
+    let spans = std::array::from_fn::<_, 3, _>(|axis| {
+        let shared = approximately_equal(first[axis][0], second[axis][0])
+            && approximately_equal(first[axis][1], second[axis][1]);
+        let shared_span = shared.then(|| {
+            f64::midpoint(
+                first[axis][1] - first[axis][0],
+                second[axis][1] - second[axis][0],
+            )
+        });
+        let shared_span = shared_span.filter(|span| *span > 0.0);
+        let adjacent = approximately_equal(first[axis][1], second[axis][0])
+            || approximately_equal(second[axis][1], first[axis][0]);
+        let union_span = adjacent
+            .then(|| first[axis][1].max(second[axis][1]) - first[axis][0].min(second[axis][0]))
+            .filter(|span| *span > 0.0);
+        [shared_span, union_span]
+    });
+    Some(spans)
+}
+
+fn simple_drilled_hole_dimensions(
+    scan: &ContainerScan,
+    observed_envelope_spans: Option<[[Option<f64>; 2]; 3]>,
+) -> Option<(f64, f64, f64)> {
     simple_drilled_hole_dimension_values(
         scan.features
             .definitions
             .iter()
             .filter(|definition| definition.id == 911)
             .filter_map(|definition| definition.dimensions.as_ref()),
+        observed_envelope_spans,
     )
 }
 
 fn simple_drilled_hole_dimension_values<'a>(
     tables: impl Iterator<Item = &'a crate::feature::FeatureDimensionTable>,
+    observed_envelope_spans: Option<[[Option<f64>; 2]; 3]>,
 ) -> Option<(f64, f64, f64)> {
-    let candidates = tables
-        .filter(|table| feature_dimension_table_complete(table) && table.rows.len() == 3)
-        .map(|table| {
-            let value = |external_id, dimension_type, unit| {
-                let rows = table
-                    .rows
-                    .iter()
-                    .filter(|row| {
-                        row.external_id == external_id
-                            && row.dimension_type == dimension_type
-                            && row.value_unit == unit
-                    })
-                    .collect::<Vec<_>>();
-                let [row] = rows.as_slice() else {
-                    return None;
+    let candidates =
+        tables
+            .filter(|table| feature_dimension_table_complete(table) && table.rows.len() == 3)
+            .map(|table| {
+                let value = |external_id, dimension_type, unit| {
+                    let rows = table
+                        .rows
+                        .iter()
+                        .filter(|row| {
+                            row.external_id == external_id
+                                && row.dimension_type == dimension_type
+                                && row.value_unit == unit
+                        })
+                        .collect::<Vec<_>>();
+                    let [row] = rows.as_slice() else {
+                        return None;
+                    };
+                    row.value.filter(|value| value.is_finite())
                 };
-                row.value.filter(|value| value.is_finite())
-            };
-            let bore_radius = value(0, 2, crate::feature::DimensionUnit::Millimeters)?;
-            let drill_point_angle = value(1, 10, crate::feature::DimensionUnit::Radians)?;
-            let signed_depth = value(2, 2, crate::feature::DimensionUnit::Millimeters)?;
-            let bore_diameter = 2.0 * bore_radius;
-            (bore_diameter.is_finite()
-                && bore_diameter > 0.0
-                && drill_point_angle > 0.0
-                && drill_point_angle < std::f64::consts::PI
-                && signed_depth != 0.0)
-                .then_some((bore_diameter, drill_point_angle, signed_depth.abs()))
-        })
-        .collect::<Option<Vec<_>>>()?;
+                let bore_radius = value(0, 2, crate::feature::DimensionUnit::Millimeters)?;
+                let signed_depth = value(2, 2, crate::feature::DimensionUnit::Millimeters)?;
+                let bore_diameter = 2.0 * bore_radius;
+                (bore_diameter.is_finite() && bore_diameter > 0.0 && signed_depth != 0.0)
+                    .then_some(())?;
+                let blind_depth = signed_depth.abs();
+                if observed_envelope_spans.is_some_and(|spans| {
+                    !dimension_pair_matches_envelope_spans(bore_diameter, blind_depth, spans)
+                }) {
+                    return Some(None);
+                }
+                let drill_point_angle = value(1, 10, crate::feature::DimensionUnit::Radians)?;
+                (drill_point_angle > 0.0 && drill_point_angle < std::f64::consts::PI)
+                    .then_some(Some((bore_diameter, drill_point_angle, blind_depth)))
+            })
+            .collect::<Option<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
     let first = *candidates.first()?;
     candidates
         .iter()
@@ -22093,6 +22176,30 @@ fn simple_drilled_hole_dimension_values<'a>(
                 .all(|(candidate, first)| approximately_equal(candidate, first))
         })
         .then_some(first)
+}
+
+fn dimension_pair_matches_envelope_spans(
+    bore_diameter: f64,
+    blind_depth: f64,
+    spans: [[Option<f64>; 2]; 3],
+) -> bool {
+    for diameter_axis in 0..3 {
+        for depth_axis in 0..3 {
+            if diameter_axis != depth_axis
+                && spans[diameter_axis]
+                    .into_iter()
+                    .flatten()
+                    .any(|span| approximately_equal(span, bore_diameter))
+                && spans[depth_axis]
+                    .into_iter()
+                    .flatten()
+                    .any(|span| approximately_equal(span, blind_depth))
+            {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn counterbore_dimensions(
