@@ -344,10 +344,14 @@ fn decode_sketch_visibility_member(
         || owner.segment.is_some()
         || owner.link_name.is_some()
         || owner.inline_type_guid.is_some()
-        || bytes.get(cursor..cursor + 5) != Some(&[1, 0, 0, 0, 0])
     {
         return None;
     }
+    let stream_ordinal = u32_at(bytes, cursor)?;
+    if stream_ordinal == 0 || bytes.get(cursor + 4) != Some(&0) {
+        return None;
+    }
+    let stream_ordinal_offset = cursor;
     let visible_offset = cursor + 5;
     let visible = match bytes.get(visible_offset) {
         Some(0) => false,
@@ -358,6 +362,8 @@ fn decode_sketch_visibility_member(
         return None;
     }
     Some(DesignSketchVisibility {
+        stream_ordinal,
+        stream_ordinal_offset: stream_ordinal_offset as u64,
         visible_offset: visible_offset as u64,
         visible,
     })
@@ -369,7 +375,7 @@ mod sketch_visibility_member_tests {
 
     const ENTITY_SUFFIX: u64 = 201;
 
-    fn member(visible: u8) -> Vec<u8> {
+    fn member(stream_ordinal: u32, visible: u8) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(b"256");
@@ -378,7 +384,8 @@ mod sketch_visibility_member_tests {
         bytes.push(1);
         bytes.extend_from_slice(&203u64.to_le_bytes());
         bytes.extend_from_slice(&[0, 0]);
-        bytes.extend_from_slice(&[1, 0, 0, 0, 0]);
+        bytes.extend_from_slice(&stream_ordinal.to_le_bytes());
+        bytes.push(0);
         bytes.push(visible);
         bytes.push(1);
         bytes
@@ -386,22 +393,26 @@ mod sketch_visibility_member_tests {
 
     #[test]
     fn sketch_visibility_member_decodes_both_boolean_values() {
-        let hidden =
-            decode_sketch_visibility_member(&member(0), 0, ENTITY_SUFFIX).expect("hidden member");
+        let hidden = decode_sketch_visibility_member(&member(1, 0), 0, ENTITY_SUFFIX)
+            .expect("hidden member");
+        assert_eq!(hidden.stream_ordinal, 1);
+        assert_eq!(hidden.stream_ordinal_offset, 30);
         assert_eq!(hidden.visible_offset, 35);
         assert!(!hidden.visible);
 
-        let visible =
-            decode_sketch_visibility_member(&member(1), 0, ENTITY_SUFFIX).expect("visible member");
+        let visible = decode_sketch_visibility_member(&member(513, 1), 0, ENTITY_SUFFIX)
+            .expect("visible member");
+        assert_eq!(visible.stream_ordinal, 513);
         assert!(visible.visible);
     }
 
     #[test]
-    fn sketch_visibility_member_rejects_invalid_state_or_owner() {
-        assert!(decode_sketch_visibility_member(&member(2), 0, ENTITY_SUFFIX).is_none());
-        assert!(decode_sketch_visibility_member(&member(1), 0, ENTITY_SUFFIX + 1).is_none());
+    fn sketch_visibility_member_rejects_invalid_ordinal_or_owner() {
+        assert!(decode_sketch_visibility_member(&member(1, 2), 0, ENTITY_SUFFIX).is_none());
+        assert!(decode_sketch_visibility_member(&member(0, 1), 0, ENTITY_SUFFIX).is_none());
+        assert!(decode_sketch_visibility_member(&member(1, 1), 0, ENTITY_SUFFIX + 1).is_none());
 
-        let mut external_owner = member(1);
+        let mut external_owner = member(1, 1);
         external_owner[28] = 1;
         assert!(decode_sketch_visibility_member(&external_owner, 0, ENTITY_SUFFIX).is_none());
     }

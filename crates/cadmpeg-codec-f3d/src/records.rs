@@ -4455,6 +4455,10 @@ pub struct DesignFaceRecipeStructure {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignSketchVisibility {
+    /// One-based ordinal among sketch Geometry members in the Design stream.
+    pub stream_ordinal: u32,
+    /// Byte offset of `stream_ordinal`.
+    pub stream_ordinal_offset: u64,
     /// Byte offset of the native visibility flag.
     pub visible_offset: u64,
     /// Direct display visibility.

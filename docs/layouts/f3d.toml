@@ -101,11 +101,18 @@ source = "spec"
 anchor = "one same-segment marked owner reference follow"
 
 [[record.field]]
-name = "state_prefix"
+name = "stream_ordinal"
 offset = 30
-type = "bytes[5]"
+type = "u32"
 source = "spec"
-anchor = "Member offsets 30 through 34 are `01 00 00 00 00`"
+anchor = "u32 at member offset 30"
+
+[[record.field]]
+name = "reserved_zero"
+offset = 34
+type = "u8"
+source = "spec"
+anchor = "Byte 34 is zero"
 
 [[record.field]]
 name = "visible"

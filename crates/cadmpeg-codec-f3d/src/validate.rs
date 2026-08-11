@@ -6641,6 +6641,7 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut placement_records = HashSet::new();
     let mut placement_scopes = HashSet::new();
     let mut visibility_offsets = HashSet::new();
+    let mut visibility_ordinals = HashSet::new();
     for placement in &native.design_sketch_placements {
         let native_stream = design_stream(&placement.id);
         let unique_record = placement_records.insert((native_stream, placement.record_index));
@@ -6675,7 +6676,10 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let visibility_valid = placement.visibility.as_ref().is_none_or(|visibility| {
             ctx.entities_by_suffix
                 .get(&(native_stream, placement.entity_suffix))
-                .is_some_and(|entity| visibility.visible_offset > entity.byte_offset)
+                .is_some_and(|entity| visibility.stream_ordinal_offset > entity.byte_offset)
+                && visibility.stream_ordinal != 0
+                && visibility.visible_offset == visibility.stream_ordinal_offset.saturating_add(5)
+                && visibility_ordinals.insert((native_stream, visibility.stream_ordinal))
                 && visibility_offsets.insert((native_stream, visibility.visible_offset))
         });
         let frame_valid = if placement.member_run_head {
@@ -6718,6 +6722,22 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 severity: Severity::Error,
                 message: "Fusion Design sketch placement has an invalid frame or scope link".into(),
                 entity: Some(placement.id.clone()),
+            });
+        }
+    }
+    let mut visibility_ordinal_ranges = HashMap::<&str, (usize, u32)>::new();
+    for (stream, ordinal) in visibility_ordinals {
+        let (count, maximum) = visibility_ordinal_ranges.entry(stream).or_default();
+        *count += 1;
+        *maximum = (*maximum).max(ordinal);
+    }
+    for (stream, (count, maximum)) in visibility_ordinal_ranges {
+        if usize::try_from(maximum).ok() != Some(count) {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design sketch Geometry member ordinals are not contiguous".into(),
+                entity: Some(stream.to_owned()),
             });
         }
     }

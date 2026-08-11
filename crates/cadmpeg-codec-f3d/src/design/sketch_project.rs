@@ -861,6 +861,8 @@ mod tests {
             entity_id: "Sketch_201".into(),
             entity_suffix: 201,
             visibility: Some(DesignSketchVisibility {
+                stream_ordinal: 1,
+                stream_ordinal_offset: 30,
                 visible_offset: 35,
                 visible: false,
             }),
