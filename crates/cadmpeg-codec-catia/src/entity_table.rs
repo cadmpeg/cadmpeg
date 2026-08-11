@@ -374,6 +374,15 @@ pub enum EntityValuePacket {
         /// Byte offset of the layout code within the value payload.
         layout_offset: usize,
     },
+    /// Exact `83 E9 C0 07 01 E1 E6 <f64le> 88 81{5} 82 E7 81 FE` packet.
+    E9Scalar {
+        /// Byte offset of the leading `83` atom within the value payload.
+        offset: usize,
+        /// Byte offset of the scalar's `E6` opcode within the value payload.
+        scalar_offset: usize,
+        /// Exact stored finite binary64 bits.
+        bits: u64,
+    },
 }
 
 impl EntityValuePacket {
@@ -394,6 +403,7 @@ impl EntityValuePacket {
             }
             Self::Compact { offset, .. } => Some(*offset..offset.checked_add(6)?),
             Self::Layout { offset, .. } => Some(*offset..offset.checked_add(7)?),
+            Self::E9Scalar { offset, .. } => Some(*offset..offset.checked_add(25)?),
         }
     }
 }
@@ -431,6 +441,7 @@ pub fn value_packets(payload: &[u8], fields: &[value_block::ValueField]) -> Vec<
         .collect::<HashSet<_>>();
     let mut packets =
         numeric_value_packets(payload, &e8_opcode_offsets, &marker_offsets, &atom_offsets);
+    packets.extend(e9_scalar_packets(payload, &opcode_offsets, &atom_offsets));
     packets.extend(
         (0..payload.len())
             .filter(|index| opcode_offsets.contains(index))
@@ -457,9 +468,49 @@ pub fn value_packets(payload: &[u8], fields: &[value_block::ValueField]) -> Vec<
     packets.sort_by_key(|packet| match packet {
         EntityValuePacket::Numeric { offset, .. }
         | EntityValuePacket::Compact { offset, .. }
-        | EntityValuePacket::Layout { offset, .. } => *offset,
+        | EntityValuePacket::Layout { offset, .. }
+        | EntityValuePacket::E9Scalar { offset, .. } => *offset,
     });
     packets
+}
+
+fn e9_scalar_packets(
+    payload: &[u8],
+    opcode_offsets: &HashSet<usize>,
+    atom_offsets: &HashSet<usize>,
+) -> Vec<EntityValuePacket> {
+    const PREFIX: [u8; 7] = [0x83, 0xe9, 0xc0, 0x07, 0x01, 0xe1, 0xe6];
+    const TRAILER: [u8; 10] = [0x88, 0x81, 0x81, 0x81, 0x81, 0x81, 0x82, 0xe7, 0x81, 0xfe];
+
+    (0..payload.len())
+        .filter(|offset| {
+            atom_offsets.contains(offset)
+                && offset
+                    .checked_add(1)
+                    .is_some_and(|opcode| opcode_offsets.contains(&opcode))
+        })
+        .filter_map(|offset| {
+            let scalar_offset = offset.checked_add(6)?;
+            let scalar_end = scalar_offset.checked_add(9)?;
+            let packet_end = offset.checked_add(25)?;
+            (payload.get(offset..scalar_offset + 1) == Some(PREFIX.as_slice())
+                && payload.get(scalar_end..packet_end) == Some(TRAILER.as_slice()))
+            .then_some(())?;
+            let bits = u64::from_le_bytes(
+                payload
+                    .get(scalar_offset + 1..scalar_end)?
+                    .try_into()
+                    .ok()?,
+            );
+            f64::from_bits(bits)
+                .is_finite()
+                .then_some(EntityValuePacket::E9Scalar {
+                    offset,
+                    scalar_offset,
+                    bits,
+                })
+        })
+        .collect()
 }
 
 fn numeric_value_packets(
@@ -1575,6 +1626,57 @@ mod tests {
                 layout_offset: 3,
             }]
         );
+    }
+
+    #[test]
+    fn e9_scalar_packet_preserves_the_finite_value_and_offsets() {
+        let mut payload = vec![0xaa, 0x83, 0xe9, 0xc0, 0x07, 0x01, 0xe1, 0xe6];
+        payload.extend_from_slice(&5.5_f64.to_bits().to_le_bytes());
+        payload.extend_from_slice(&[
+            0x88, 0x81, 0x81, 0x81, 0x81, 0x81, 0x82, 0xe7, 0x81, 0xfe, 0xbb,
+        ]);
+        let fields = value_block::tokenize(&payload);
+
+        assert_eq!(
+            value_packets(&payload, &fields),
+            [EntityValuePacket::E9Scalar {
+                offset: 1,
+                scalar_offset: 7,
+                bits: 5.5_f64.to_bits(),
+            }]
+        );
+    }
+
+    #[test]
+    fn e9_scalar_packet_requires_the_exact_finite_production() {
+        let mut valid = vec![0x83, 0xe9, 0xc0, 0x07, 0x01, 0xe1, 0xe6];
+        valid.extend_from_slice(&5.5_f64.to_bits().to_le_bytes());
+        valid.extend_from_slice(&[0x88, 0x81, 0x81, 0x81, 0x81, 0x81, 0x82, 0xe7, 0x81, 0xfe]);
+        for (offset, replacement) in [(0, 0x84), (2, 0xc1), (4, 0x02), (15, 0x89), (23, 0xe8)] {
+            let mut malformed = valid.clone();
+            malformed[offset] = replacement;
+            let fields = value_block::tokenize(&malformed);
+            assert!(value_packets(&malformed, &fields).is_empty());
+        }
+
+        let fields = value_block::tokenize(&valid[..24]);
+        assert!(value_packets(&valid[..24], &fields).is_empty());
+
+        let mut non_finite = valid;
+        non_finite[7..15].copy_from_slice(&f64::NAN.to_bits().to_le_bytes());
+        let fields = value_block::tokenize(&non_finite);
+        assert!(value_packets(&non_finite, &fields).is_empty());
+    }
+
+    #[test]
+    fn e9_scalar_bytes_inside_a_byte_string_do_not_create_a_packet() {
+        let mut payload = vec![0xe5, 25, 0, 0, 0, 0x83, 0xe9, 0xc0, 0x07, 0x01, 0xe1, 0xe6];
+        payload.extend_from_slice(&5.5_f64.to_bits().to_le_bytes());
+        payload.extend_from_slice(&[0x88, 0x81, 0x81, 0x81, 0x81, 0x81, 0x82, 0xe7, 0x81, 0xfe]);
+        payload.push(0xfe);
+        let fields = value_block::tokenize(&payload);
+
+        assert!(value_packets(&payload, &fields).is_empty());
     }
 
     #[test]
