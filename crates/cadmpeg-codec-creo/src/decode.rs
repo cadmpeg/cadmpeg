@@ -32791,6 +32791,22 @@ fn emit_legacy_arenas(
         scan,
         ir,
         annotations,
+        "legacy_type_3_values",
+        &legacy.persistence.type_3_values,
+        "legacy_type_3_value",
+    )?;
+    emit_legacy_value_arena(
+        scan,
+        ir,
+        annotations,
+        "legacy_type_4_values",
+        &legacy.persistence.type_4_values,
+        "legacy_type_4_value",
+    )?;
+    emit_legacy_value_arena(
+        scan,
+        ir,
+        annotations,
         "legacy_string_values",
         &legacy.persistence.string_values,
         "legacy_type_10_string",
@@ -36012,6 +36028,36 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
                 "undecoded_legacy_string_encoding_count".to_string(),
                 undecoded_encodings,
             );
+            for (type_code, records, unresolved) in [
+                (
+                    3u8,
+                    legacy.persistence.type_3_values.as_slice(),
+                    legacy.persistence.unresolved_type_3_value_count,
+                ),
+                (
+                    4u8,
+                    legacy.persistence.type_4_values.as_slice(),
+                    legacy.persistence.unresolved_type_4_value_count,
+                ),
+            ] {
+                let scalars = records.len();
+                let undecoded_encodings = records
+                    .iter()
+                    .map(|record| record.payload.undecoded_encoding_count())
+                    .sum();
+                coverage.insert(
+                    format!("decoded_legacy_type_{type_code}_scalar_count"),
+                    scalars,
+                );
+                coverage.insert(
+                    format!("unresolved_legacy_type_{type_code}_value_count"),
+                    unresolved,
+                );
+                coverage.insert(
+                    format!("undecoded_legacy_type_{type_code}_encoding_count"),
+                    undecoded_encodings,
+                );
+            }
             let mut insert_numbered_numeric_coverage =
                 |type_code: u8, (scalars, arrays, elements), unresolved| {
                     coverage.insert(
@@ -36849,6 +36895,32 @@ fn build_report(
             ),
             provenance: None,
         });
+    }
+    for type_code in [3u8, 4] {
+        let unresolved = count(&format!("unresolved_legacy_type_{type_code}_value_count"));
+        if unresolved != 0 {
+            losses.push(LossNote {
+                code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+                severity: Severity::Warning,
+                message: format!(
+                    "{unresolved} legacy type-{type_code} value row(s) use an undefined \
+                     continuation form."
+                ),
+                provenance: None,
+            });
+        }
+        let undecoded = count(&format!("undecoded_legacy_type_{type_code}_encoding_count"));
+        if undecoded != 0 {
+            losses.push(LossNote {
+                code: cadmpeg_ir::report::LossKind::AttributesNotTransferred,
+                severity: Severity::Warning,
+                message: format!(
+                    "{undecoded} legacy type-{type_code} byte-string value(s) retain exact \
+                     source bytes because their character encoding is not UTF-8."
+                ),
+                provenance: None,
+            });
+        }
     }
     for type_code in [5u8, 7, 9, 11] {
         let unresolved = count(&format!("unresolved_legacy_type_{type_code}_value_count"));

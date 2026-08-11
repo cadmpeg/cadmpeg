@@ -115,6 +115,11 @@ instead store its compact-real token in the immediately following value row at
 depth one greater and with the same attribute identifier. An incomplete array
 does not produce a typed value.
 
+Type 3 stores a nullable byte-string scalar. The exact token `NULL` is null;
+all other payloads, including an empty payload, are stored byte strings. Type 4
+stores its complete scalar payload as a byte string; `NULL` has no special
+meaning for type 4. Neither type uses continuation rows.
+
 Type 6 uses the type-2 compact-real scalar and array grammar. Its array run
 count must equal the product of the declared extents.
 

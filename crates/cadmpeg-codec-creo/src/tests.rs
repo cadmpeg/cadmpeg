@@ -10112,6 +10112,54 @@ fn legacy_numbered_numeric_families_emit_exact_native_values() {
 }
 
 #[test]
+fn legacy_type_3_and_type_4_emit_exact_scalar_bytes() {
+    let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
+        @root 1 0\n@three_null 2 3\n@three_text 3 3\n@four 4 4\n0 1 ->\n\
+        1 2 NULL\n1 3 texture-name\n1 4 NULL\n#END_OF_P_OBJECT\n\
+        #Pro/ENGINEER  TM  Version H-01-21\n";
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("legacy type-3/type-4 decode");
+    assert_eq!(
+        result.report.coverage["decoded_legacy_type_3_scalar_count"],
+        2
+    );
+    assert_eq!(
+        result.report.coverage["decoded_legacy_type_4_scalar_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["unresolved_legacy_type_3_value_count"],
+        0
+    );
+    assert_eq!(
+        result.report.coverage["unresolved_legacy_type_4_value_count"],
+        0
+    );
+
+    let native = result.ir.native.namespace("creo").expect("Creo namespace");
+    assert_eq!(native.arenas["legacy_type_3_values"].len(), 2);
+    assert_eq!(native.arenas["legacy_type_4_values"].len(), 1);
+    assert_eq!(
+        native.arenas["legacy_type_3_values"][0].field("payload"),
+        Some(serde_json::json!({"form": "null"}))
+    );
+    assert_eq!(
+        native.arenas["legacy_type_3_values"][1].field("payload"),
+        Some(serde_json::json!({"form": "utf8", "text": "texture-name"}))
+    );
+    assert_eq!(
+        native.arenas["legacy_type_4_values"][0].field("payload"),
+        Some(serde_json::json!({"form": "utf8", "text": "NULL"}))
+    );
+    assert_eq!(
+        native.arenas["legacy_type_4_values"][0].field("parent"),
+        Some(serde_json::json!(native.arenas["legacy_objects"][0].id()))
+    );
+}
+
+#[test]
 fn incomplete_legacy_values_are_reported() {
     let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
         @values 7 2\n0 7 [2]\n$0\n\
@@ -10120,6 +10168,8 @@ fn incomplete_legacy_values_are_reported() {
         @future 10 0\n0 10 token\n\
         @names 11 10\n0 11 [2]\n1 11 only\n\
         @continued 12 10\n0 12 first\n$second\n\
+        @type_three_continued 13 3\n0 13 first\n$second\n\
+        @type_four_bytes 14 4\n0 14 \xff\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
 
     let result = CreoCodec
@@ -10150,13 +10200,30 @@ fn incomplete_legacy_values_are_reported() {
         1
     );
     assert_eq!(
+        result.report.coverage["unresolved_legacy_type_3_value_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["undecoded_legacy_type_4_encoding_count"],
+        1
+    );
+    assert_eq!(
         result
             .report
             .losses
             .iter()
             .filter(|loss| loss.code == cadmpeg_ir::report::LossKind::RecordNotTyped)
             .count(),
-        6
+        7
+    );
+    assert_eq!(
+        result
+            .report
+            .losses
+            .iter()
+            .filter(|loss| loss.code == cadmpeg_ir::report::LossKind::AttributesNotTransferred)
+            .count(),
+        1
     );
 }
 

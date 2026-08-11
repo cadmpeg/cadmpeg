@@ -32,6 +32,8 @@ const CREO_ARENAS: &[&str] = &[
     "legacy_objects",
     "legacy_real_values",
     "legacy_string_values",
+    "legacy_type_3_values",
+    "legacy_type_4_values",
     "legacy_type_5_values",
     "legacy_type_6_values",
     "legacy_type_7_values",

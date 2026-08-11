@@ -189,7 +189,7 @@ pub struct ObjectRecord {
     pub offset: usize,
 }
 
-/// One type-10 byte string or null element.
+/// One legacy byte string or null element.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub enum StringValue {
@@ -207,7 +207,14 @@ pub enum StringValue {
     },
 }
 
-/// Semantic payload of one legacy type-10 value.
+impl StringValue {
+    /// Whether the exact bytes could not be decoded as UTF-8.
+    pub fn undecoded_encoding_count(&self) -> usize {
+        usize::from(matches!(self, Self::Bytes { .. }))
+    }
+}
+
+/// Semantic payload of one legacy byte-string value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub enum StringPayload {
@@ -238,17 +245,20 @@ impl StringPayload {
 
     /// Number of elements whose character encoding remains uninterpreted.
     pub fn undecoded_encoding_count(&self) -> usize {
-        let undecoded =
-            |value: &StringValue| usize::from(matches!(value, StringValue::Bytes { .. }));
         match self {
-            Self::Scalar { value } => undecoded(value),
-            Self::Array { values, .. } => values.iter().map(undecoded).sum(),
+            Self::Scalar { value } => value.undecoded_encoding_count(),
+            Self::Array { values, .. } => values
+                .iter()
+                .map(StringValue::undecoded_encoding_count)
+                .sum(),
         }
     }
 }
 
-/// One decoded legacy type-10 byte-string value.
+/// One decoded legacy byte-string value.
 pub type StringRecord = ValueRecord<StringPayload>;
+/// One decoded legacy scalar byte-string value.
+pub type ScalarStringRecord = ValueRecord<StringValue>;
 
 /// One unique `@<name> <id> <type-code>` declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -320,6 +330,14 @@ pub struct Persistence {
     pub incomplete_string_array_count: usize,
     /// Type-10 rows that use an undefined continuation form.
     pub unresolved_string_value_count: usize,
+    /// Type-3 nullable byte-string scalars in source order.
+    pub type_3_values: Vec<ScalarStringRecord>,
+    /// Type-3 rows that use an undefined continuation form.
+    pub unresolved_type_3_value_count: usize,
+    /// Type-4 byte-string scalars in source order.
+    pub type_4_values: Vec<ScalarStringRecord>,
+    /// Type-4 rows that use an undefined continuation form.
+    pub unresolved_type_4_value_count: usize,
     /// Type-5 unsigned-decimal scalars and arrays in source order.
     pub type_5_values: Vec<UnsignedRecord>,
     /// Type-5 rows not represented by a complete scalar or array.
@@ -679,8 +697,14 @@ fn object_records(
     (records, incomplete_arrays, unresolved)
 }
 
-fn string_value(bytes: &[u8]) -> StringValue {
-    if bytes == b"NULL" {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NullToken {
+    RepresentsNull,
+    RepresentsBytes,
+}
+
+fn byte_string_value(bytes: &[u8], null_token: NullToken) -> StringValue {
+    if null_token == NullToken::RepresentsNull && bytes == b"NULL" {
         StringValue::Null
     } else if let Ok(text) = std::str::from_utf8(bytes) {
         StringValue::Utf8 {
@@ -691,6 +715,57 @@ fn string_value(bytes: &[u8]) -> StringValue {
             bytes: bytes.to_vec(),
         }
     }
+}
+
+fn string_value(bytes: &[u8]) -> StringValue {
+    byte_string_value(bytes, NullToken::RepresentsNull)
+}
+
+fn scalar_string_records(
+    data: &[u8],
+    scopes: &[Scope],
+    type_code: u8,
+    identity_kind: &str,
+    null_token: NullToken,
+    parents: &BTreeMap<usize, usize>,
+) -> (Vec<ScalarStringRecord>, usize) {
+    let mut records = Vec::new();
+    let mut unresolved = 0usize;
+    for scope in scopes {
+        let declarations = scope
+            .declarations
+            .iter()
+            .map(|declaration| (declaration.id, declaration))
+            .collect::<BTreeMap<_, _>>();
+        for value in &scope.values {
+            let Some(declaration) = declarations
+                .get(&value.attribute_id)
+                .filter(|declaration| declaration.type_code == type_code)
+            else {
+                continue;
+            };
+            let Some(bytes) = (value.continuation_count == 0)
+                .then(|| data.get(value.payload.clone()))
+                .flatten()
+            else {
+                unresolved += 1;
+                continue;
+            };
+            records.push(ValueRecord {
+                id: format!("creo:legacy_ascii:{identity_kind}#{}", value.offset),
+                name: declaration.name.clone(),
+                attribute_id: value.attribute_id,
+                scope_offset: scope.range.start,
+                parent: parents
+                    .get(&value.offset)
+                    .map(|offset| object_node_id(*offset)),
+                depth: value.depth,
+                payload: byte_string_value(bytes, null_token),
+                offset: value.offset,
+            });
+        }
+    }
+    (records, unresolved)
 }
 
 fn string_records(
@@ -1018,6 +1093,22 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         object_records(data, &scopes, &parents);
     let (string_values, incomplete_string_array_count, unresolved_string_value_count) =
         string_records(data, &scopes, &parents);
+    let (type_3_values, unresolved_type_3_value_count) = scalar_string_records(
+        data,
+        &scopes,
+        3,
+        "type_3",
+        NullToken::RepresentsNull,
+        &parents,
+    );
+    let (type_4_values, unresolved_type_4_value_count) = scalar_string_records(
+        data,
+        &scopes,
+        4,
+        "type_4",
+        NullToken::RepresentsBytes,
+        &parents,
+    );
     let (real_values, unresolved_real_value_count) =
         numeric_records(data, &scopes, 2, "real", compact_real, &parents);
     let (integer_values, unresolved_integer_value_count) =
@@ -1044,6 +1135,10 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         string_values,
         incomplete_string_array_count,
         unresolved_string_value_count,
+        type_3_values,
+        unresolved_type_3_value_count,
+        type_4_values,
+        unresolved_type_4_value_count,
         type_5_values,
         unresolved_type_5_value_count,
         type_6_values,
@@ -1322,6 +1417,51 @@ mod tests {
         assert_eq!(persistence.unresolved_type_6_value_count, 1);
         assert!(persistence.type_11_values.is_empty());
         assert_eq!(persistence.unresolved_type_11_value_count, 1);
+    }
+
+    #[test]
+    fn type_3_and_type_4_decode_exact_scalar_bytes() {
+        let data = b"@root 1 0\n@three_null 2 3\n@three_text 3 3\n@three_bytes 4 3\n\
+            @four_null_text 5 4\n@four_empty 6 4\n@continued 7 3\n0 1 ->\n1 2 NULL\n\
+            1 3 texture-name\n1 4 \xff\n1 5 NULL\n1 6\n1 7 first\n$second\n";
+        let root_offset = data
+            .windows(b"0 1 ->".len())
+            .position(|window| window == b"0 1 ->")
+            .expect("root offset");
+        let persistence = scan(data, std::iter::once(0..data.len()));
+
+        assert_eq!(persistence.type_3_values.len(), 3);
+        assert_eq!(persistence.unresolved_type_3_value_count, 1);
+        assert_eq!(persistence.type_3_values[0].payload, StringValue::Null);
+        assert_eq!(
+            persistence.type_3_values[1].payload,
+            StringValue::Utf8 {
+                text: "texture-name".to_string(),
+            }
+        );
+        assert_eq!(
+            persistence.type_3_values[2].payload,
+            StringValue::Bytes { bytes: vec![0xff] }
+        );
+        assert_eq!(
+            persistence.type_3_values[0].parent.as_deref(),
+            Some(object_node_id(root_offset).as_str())
+        );
+
+        assert_eq!(persistence.type_4_values.len(), 2);
+        assert_eq!(persistence.unresolved_type_4_value_count, 0);
+        assert_eq!(
+            persistence.type_4_values[0].payload,
+            StringValue::Utf8 {
+                text: "NULL".to_string(),
+            }
+        );
+        assert_eq!(
+            persistence.type_4_values[1].payload,
+            StringValue::Utf8 {
+                text: String::new(),
+            }
+        );
     }
 
     #[test]
