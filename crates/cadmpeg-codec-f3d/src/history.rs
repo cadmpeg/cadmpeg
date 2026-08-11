@@ -12,8 +12,8 @@
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCylinder, AsmHistoricalEdge,
-    AsmHistoricalEntityDelta, AsmHistoricalOptionalCarrierBinding, AsmHistoricalPlane,
-    AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
+    AsmHistoricalEntityDelta, AsmHistoricalOptionalCarrierBinding, AsmHistoricalPoint,
+    AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
     AsmHistoricalTransition, AsmHistory, AsmHistoryRecord,
 };
 use crate::records::{
@@ -5791,21 +5791,13 @@ pub(crate) fn bind_mirror_selection_planes(
         else {
             continue;
         };
-        let context_histories =
-            entity_selection_face_candidates(operand.primary_identity, histories)
-                .into_iter()
-                .map(|candidate| candidate.history_id)
-                .collect::<HashSet<_>>();
-        let mut candidates = entity_selection_face_candidates(local_id, histories)
-            .into_iter()
-            .filter(|candidate| context_histories.contains(&candidate.history_id))
-            .collect::<Vec<_>>();
-        candidates.sort_by(|left, right| left.history_id.cmp(&right.history_id));
-        candidates.dedup();
-        let [candidate] = candidates.as_slice() else {
+        let Some(candidate) = unique_mirror_plane_candidate(
+            entity_selection_face_candidates(operand.primary_identity, histories),
+            entity_selection_face_candidates(local_id, histories),
+        ) else {
             continue;
         };
-        let Some(plane) = historical_face_plane(candidate, histories) else {
+        let Some(plane) = historical_mirror_plane(&candidate, previous_state_id, histories) else {
             continue;
         };
         let norm = (plane.normal.x * plane.normal.x
@@ -5820,10 +5812,79 @@ pub(crate) fn bind_mirror_selection_planes(
     }
 }
 
-fn historical_face_plane(
+fn unique_mirror_plane_candidate(
+    mut primary: Vec<crate::records::DesignEntitySelectionFaceCandidate>,
+    persistent: Vec<crate::records::DesignEntitySelectionFaceCandidate>,
+) -> Option<crate::records::DesignEntitySelectionFaceCandidate> {
+    primary.sort_by(|left, right| left.history_id.cmp(&right.history_id));
+    primary.dedup();
+    let context_histories = primary
+        .iter()
+        .map(|candidate| candidate.history_id.as_str())
+        .collect::<HashSet<_>>();
+    let mut persistent = persistent
+        .into_iter()
+        .filter(|candidate| context_histories.contains(candidate.history_id.as_str()))
+        .collect::<Vec<_>>();
+    persistent.sort_by(|left, right| left.history_id.cmp(&right.history_id));
+    persistent.dedup();
+    match persistent.as_slice() {
+        [candidate] => Some(candidate.clone()),
+        [] => match primary.as_slice() {
+            [candidate] => Some(candidate.clone()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+#[derive(Clone)]
+struct HistoricalMirrorPlane {
+    origin: cadmpeg_ir::math::Point3,
+    normal: cadmpeg_ir::math::Vector3,
+}
+
+fn historical_mirror_plane(
     candidate: &crate::records::DesignEntitySelectionFaceCandidate,
+    preferred_state_id: i64,
     histories: &[AsmHistory],
-) -> Option<AsmHistoricalPlane> {
+) -> Option<HistoricalMirrorPlane> {
+    if candidate.historical_state_ids.contains(&preferred_state_id) {
+        return historical_mirror_plane_in_state(candidate, preferred_state_id, histories);
+    }
+    let mut resolved = None;
+    for state_id in &candidate.historical_state_ids {
+        let plane = historical_mirror_plane_in_state(candidate, *state_id, histories)?;
+        if resolved
+            .as_ref()
+            .is_some_and(|exact: &HistoricalMirrorPlane| !mirror_planes_coincident(exact, &plane))
+        {
+            return None;
+        }
+        resolved = Some(plane);
+    }
+    resolved
+}
+
+fn mirror_planes_coincident(left: &HistoricalMirrorPlane, right: &HistoricalMirrorPlane) -> bool {
+    let dot = left.normal.x * right.normal.x
+        + left.normal.y * right.normal.y
+        + left.normal.z * right.normal.z;
+    let delta = cadmpeg_ir::math::Vector3::new(
+        right.origin.x - left.origin.x,
+        right.origin.y - left.origin.y,
+        right.origin.z - left.origin.z,
+    );
+    let normal_distance =
+        delta.x * left.normal.x + delta.y * left.normal.y + delta.z * left.normal.z;
+    (dot.abs() - 1.0).abs() <= 1.0e-9 && normal_distance.abs() <= 1.0e-8
+}
+
+fn historical_mirror_plane_in_state(
+    candidate: &crate::records::DesignEntitySelectionFaceCandidate,
+    state_id: i64,
+    histories: &[AsmHistory],
+) -> Option<HistoricalMirrorPlane> {
     let mut matching_histories = histories
         .iter()
         .filter(|history| history.id == candidate.history_id);
@@ -5831,40 +5892,95 @@ fn historical_face_plane(
     if matching_histories.next().is_some() {
         return None;
     }
-    let mut resolved = None;
-    for state_id in &candidate.historical_state_ids {
-        let mut matching_states = history
-            .states
+    let mut matching_states = history
+        .states
+        .iter()
+        .filter(|state| state.state_id == state_id);
+    let state = matching_states.next()?;
+    if matching_states.next().is_some() {
+        return None;
+    }
+    let topology = state.topology.as_ref()?;
+    if candidate.historical_entity_kind == AsmHistoricalEntityKind::Loop {
+        return historical_loop_plane(candidate.historical_entity_ref, topology);
+    }
+    let mut bindings = topology
+        .face_surfaces
+        .iter()
+        .filter(|binding| binding.entity == candidate.face_slot);
+    let binding = bindings.next()?;
+    if bindings.next().is_some() {
+        return None;
+    }
+    let mut planes = topology
+        .surface_planes
+        .iter()
+        .filter(|plane| plane.surface == binding.carrier);
+    let plane = planes.next()?;
+    planes.next().is_none().then_some(HistoricalMirrorPlane {
+        origin: plane.origin,
+        normal: plane.normal,
+    })
+}
+
+fn historical_loop_plane(
+    loop_ref: i64,
+    topology: &AsmHistoricalTopology,
+) -> Option<HistoricalMirrorPlane> {
+    let mut loop_relations = topology
+        .loop_coedges
+        .iter()
+        .filter(|relation| relation.owner_ref == loop_ref);
+    let relation = loop_relations.next()?;
+    if loop_relations.next().is_some() || relation.member_refs.is_empty() {
+        return None;
+    }
+    let mut planes = Vec::with_capacity(relation.member_refs.len());
+    for coedge_ref in &relation.member_refs {
+        let mut coedges = topology
+            .coedge_topology
             .iter()
-            .filter(|state| state.state_id == *state_id);
-        let state = matching_states.next()?;
-        if matching_states.next().is_some() {
+            .filter(|coedge| coedge.coedge == *coedge_ref && coedge.owner_loop == loop_ref);
+        let coedge = coedges.next()?;
+        if coedges.next().is_some() {
             return None;
         }
-        let topology = state.topology.as_ref()?;
         let mut bindings = topology
-            .face_surfaces
+            .edge_curves
             .iter()
-            .filter(|binding| binding.entity == candidate.face_slot);
+            .filter(|binding| binding.entity == coedge.edge);
         let binding = bindings.next()?;
         if bindings.next().is_some() {
             return None;
         }
-        let mut planes = topology
-            .surface_planes
+        let curve = binding.carrier?;
+        let mut axes = topology
+            .curve_axes
             .iter()
-            .filter(|plane| plane.surface == binding.carrier);
-        let plane = planes.next()?;
-        if planes.next().is_some()
-            || resolved.as_ref().is_some_and(|exact: &AsmHistoricalPlane| {
-                exact.origin != plane.origin || exact.normal != plane.normal
-            })
-        {
+            .filter(|axis| axis.curve == curve);
+        let axis = axes.next()?;
+        if axes.next().is_some() {
             return None;
         }
-        resolved = Some(plane.clone());
+        let norm = (axis.direction.x * axis.direction.x
+            + axis.direction.y * axis.direction.y
+            + axis.direction.z * axis.direction.z)
+            .sqrt();
+        if !norm.is_finite() || (norm - 1.0).abs() > 1.0e-9 {
+            return None;
+        }
+        planes.push(HistoricalMirrorPlane {
+            origin: axis.origin,
+            normal: axis.direction,
+        });
     }
-    resolved
+    let [first, remaining @ ..] = planes.as_slice() else {
+        return None;
+    };
+    remaining
+        .iter()
+        .all(|candidate| mirror_planes_coincident(first, candidate))
+        .then_some(first.clone())
 }
 
 fn entity_selection_face_candidates(
@@ -11414,7 +11530,111 @@ mod tests {
     }
 
     #[test]
-    fn historical_face_plane_requires_one_exact_plane_across_identity_states() {
+    fn mirror_plane_candidate_uses_unique_primary_when_persistent_identity_is_absent() {
+        let candidate =
+            |history_id: &str, face_slot| crate::records::DesignEntitySelectionFaceCandidate {
+                history_id: history_id.into(),
+                historical_entity_kind: crate::records::AsmHistoricalEntityKind::Loop,
+                historical_entity_ref: face_slot + 100,
+                historical_state_ids: vec![2, 1],
+                face_slot,
+            };
+        let primary = candidate("history-a", 10);
+        assert_eq!(
+            super::unique_mirror_plane_candidate(vec![primary.clone()], Vec::new()),
+            Some(primary.clone())
+        );
+
+        let second_primary = candidate("history-b", 20);
+        assert_eq!(
+            super::unique_mirror_plane_candidate(
+                vec![primary.clone(), second_primary.clone()],
+                Vec::new(),
+            ),
+            None
+        );
+        assert_eq!(
+            super::unique_mirror_plane_candidate(
+                vec![primary, second_primary.clone()],
+                vec![second_primary.clone()],
+            ),
+            Some(second_primary.clone())
+        );
+        assert_eq!(
+            super::unique_mirror_plane_candidate(
+                vec![candidate("history-a", 10), second_primary.clone()],
+                vec![candidate("history-a", 11), second_primary],
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn historical_loop_plane_requires_coincident_axis_bearing_curves() {
+        use crate::history_records::{
+            AsmHistoricalCoedge, AsmHistoricalCurveAxis, AsmHistoricalOptionalCarrierBinding,
+            AsmHistoricalRelation, AsmHistoricalTopology,
+        };
+        use cadmpeg_ir::math::{Point3, Vector3};
+
+        let mut topology = AsmHistoricalTopology {
+            loop_coedges: vec![AsmHistoricalRelation {
+                owner_ref: 5,
+                member_refs: vec![6, 7],
+            }],
+            coedge_topology: vec![
+                AsmHistoricalCoedge {
+                    coedge: 6,
+                    owner_loop: 5,
+                    edge: 10,
+                    next: 7,
+                    previous: 7,
+                    radial_next: 6,
+                },
+                AsmHistoricalCoedge {
+                    coedge: 7,
+                    owner_loop: 5,
+                    edge: 11,
+                    next: 6,
+                    previous: 6,
+                    radial_next: 7,
+                },
+            ],
+            edge_curves: vec![
+                AsmHistoricalOptionalCarrierBinding {
+                    entity: 10,
+                    carrier: Some(20),
+                },
+                AsmHistoricalOptionalCarrierBinding {
+                    entity: 11,
+                    carrier: Some(21),
+                },
+            ],
+            curve_axes: vec![
+                AsmHistoricalCurveAxis {
+                    curve: 20,
+                    origin: Point3::new(1.0, 2.0, 3.0),
+                    direction: Vector3::new(0.0, 0.0, 1.0),
+                },
+                AsmHistoricalCurveAxis {
+                    curve: 21,
+                    origin: Point3::new(4.0, 5.0, 3.0),
+                    direction: Vector3::new(0.0, 0.0, -1.0),
+                },
+            ],
+            ..Default::default()
+        };
+        let plane = historical_loop_plane(5, &topology).expect("coincident loop curve planes");
+        assert_eq!(plane.origin, Point3::new(1.0, 2.0, 3.0));
+        assert_eq!(plane.normal, Vector3::new(0.0, 0.0, 1.0));
+
+        topology.curve_axes[1].origin.z = 4.0;
+        assert!(historical_loop_plane(5, &topology).is_none());
+    }
+
+    #[test]
+    fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
+        use crate::history_records::AsmHistoricalPlane;
         use cadmpeg_ir::math::{Point3, Vector3};
 
         let topology = || AsmHistoricalTopology {
@@ -11459,7 +11679,7 @@ mod tests {
         };
         let candidate = crate::records::DesignEntitySelectionFaceCandidate {
             history_id: "history".into(),
-            historical_entity_kind: AsmHistoricalEntityKind::Loop,
+            historical_entity_kind: AsmHistoricalEntityKind::Face,
             historical_entity_ref: 69,
             historical_state_ids: vec![2, 1],
             face_slot: 27,
@@ -11474,7 +11694,7 @@ mod tests {
             states: vec![state(2, topology()), state(1, topology())],
         };
 
-        let plane = historical_face_plane(&candidate, std::slice::from_ref(&history))
+        let plane = historical_mirror_plane(&candidate, 1, std::slice::from_ref(&history))
             .expect("stable selected-face plane");
         assert_eq!(
             plane.origin,
@@ -11484,10 +11704,24 @@ mod tests {
                 z: 3.0
             }
         );
-        history.states[1].topology.as_mut().unwrap().surface_planes[0]
+        assert!(historical_mirror_plane(&candidate, 3, std::slice::from_ref(&history)).is_some());
+        history.states[0].topology.as_mut().unwrap().surface_planes[0]
             .normal
             .z = -1.0;
-        assert!(historical_face_plane(&candidate, &[history]).is_none());
+        assert!(historical_mirror_plane(&candidate, 1, std::slice::from_ref(&history)).is_some());
+        assert!(historical_mirror_plane(&candidate, 3, std::slice::from_ref(&history)).is_some());
+        history.states[0].topology.as_mut().unwrap().surface_planes[0]
+            .origin
+            .z = 4.0;
+        assert!(historical_mirror_plane(&candidate, 3, std::slice::from_ref(&history)).is_none());
+        let duplicate = history.states[1].topology.as_ref().unwrap().face_surfaces[0].clone();
+        history.states[1]
+            .topology
+            .as_mut()
+            .unwrap()
+            .face_surfaces
+            .push(duplicate);
+        assert!(historical_mirror_plane(&candidate, 1, &[history]).is_none());
     }
 
     #[test]
