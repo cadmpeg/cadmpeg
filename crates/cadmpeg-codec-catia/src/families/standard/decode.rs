@@ -1957,15 +1957,11 @@ pub(crate) fn standard_object_evidence(
     edge_tags: &HashSet<u32>,
     consolidated_records: &[ConsolidatedRecord],
 ) -> StandardObjectEvidence {
-    let streams = [scan.outer.as_ref(), scan.inner.as_ref()]
-        .into_iter()
-        .flatten()
-        .flat_map(|directory| {
-            directory.descriptors.iter().map(|descriptor| {
-                container::reconstruct_logical_stream(&scan.data, descriptor, directory.inner)
-            })
-        });
-    let mut evidence = standard_object_evidence_from_streams(streams, tags, edge_tags);
+    let mut evidence = standard_object_evidence_from_streams(
+        container::logical_record_streams(scan),
+        tags,
+        edge_tags,
+    );
     merge_standard_limit_curves_from_records(
         &mut evidence.limit_curves,
         &scan.data,
@@ -2004,9 +2000,29 @@ pub(crate) fn standard_object_evidence_from_streams(
     let mut edge_face_candidates = HashMap::<u32, Option<HashSet<u32>>>::new();
     let mut edge_support_candidates = HashMap::<u32, Option<StandardEdgeSupport>>::new();
     let mut limit_curves = Vec::<NurbsCurve>::new();
-    for stream in streams {
-        let records = crate::wire::records::consolidated_records(&stream);
-        merge_standard_limit_curves_from_records(&mut limit_curves, &stream, &records);
+    let streams = streams.into_iter().collect::<Vec<_>>();
+    for stream in &streams {
+        let records = crate::wire::records::consolidated_records(stream);
+        merge_standard_limit_curves_from_records(&mut limit_curves, stream, &records);
+    }
+    let populations = streams
+        .iter()
+        .flat_map(|stream| crate::families::b5::graph::object_stream_populations(stream))
+        .collect::<Vec<_>>();
+    let mut population_ids = HashSet::new();
+    let mut ambiguous_population_ids = HashSet::new();
+    for population in &populations {
+        let ids = crate::families::b5::graph::object_stream_frames(population)
+            .into_iter()
+            .map(|frame| frame.object_id)
+            .collect::<HashSet<_>>();
+        for object_id in ids {
+            if !population_ids.insert(object_id) {
+                ambiguous_population_ids.insert(object_id);
+            }
+        }
+    }
+    for stream in populations {
         let frames = crate::families::b5::graph::object_stream_frames(&stream);
         let face_surfaces =
             crate::families::b5::graph::face_surface_references_from_frames(&stream, &frames);
@@ -2196,6 +2212,23 @@ pub(crate) fn standard_object_evidence_from_streams(
             merge_standard_surface_evidence(&mut surface_candidates, face_id, evidence);
         }
     }
+    surface_candidates.retain(|object_id, _| !ambiguous_population_ids.contains(object_id));
+    support_candidates.retain(|object_id, _| !ambiguous_population_ids.contains(object_id));
+    edge_face_candidates.retain(|edge, owners| {
+        !ambiguous_population_ids.contains(edge)
+            && owners
+                .as_ref()
+                .is_none_or(|owners| owners.is_disjoint(&ambiguous_population_ids))
+    });
+    edge_support_candidates.retain(|edge, support| {
+        !ambiguous_population_ids.contains(edge)
+            && support.as_ref().is_none_or(|support| {
+                support
+                    .surface_object_ids
+                    .iter()
+                    .all(|surface| !ambiguous_population_ids.contains(surface))
+            })
+    });
     StandardObjectEvidence {
         surface_geometries: surface_candidates
             .iter()

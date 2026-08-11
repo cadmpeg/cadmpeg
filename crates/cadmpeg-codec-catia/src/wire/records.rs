@@ -324,7 +324,20 @@ pub(crate) fn b_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> 
 /// Scan every `05 08 01` coordinate row in `bytes`, returning the decoded
 /// vertex points in stream order.
 pub fn scan_vertex_records(bytes: &[u8]) -> Vec<Point3> {
-    let mut out = Vec::new();
+    scan_vertex_record_ranges(bytes)
+        .into_iter()
+        .map(|range| {
+            let x = f32_le(bytes, range.start + 3);
+            let y = f32_le(bytes, range.start + 7);
+            let z = f32_le(bytes, range.start + 11);
+            Point3::new(x as f64, y as f64, z as f64)
+        })
+        .collect()
+}
+
+/// Locate every finite `05 08 01` coordinate row in `bytes`.
+pub(crate) fn scan_vertex_record_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
     let mut p = 0usize;
     while p + 15 <= bytes.len() {
         if bytes[p] == 0x05 && bytes[p + 1] == 0x08 && bytes[p + 2] == 0x01 {
@@ -332,14 +345,14 @@ pub fn scan_vertex_records(bytes: &[u8]) -> Vec<Point3> {
             let y = f32_le(bytes, p + 7);
             let z = f32_le(bytes, p + 11);
             if x.is_finite() && y.is_finite() && z.is_finite() {
-                out.push(Point3::new(x as f64, y as f64, z as f64));
+                ranges.push(p..p + 15);
             }
             p += 15;
         } else {
             p += 1;
         }
     }
-    out
+    ranges
 }
 
 fn f32_le(bytes: &[u8], at: usize) -> f32 {

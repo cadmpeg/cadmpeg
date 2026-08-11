@@ -17,6 +17,7 @@ use cadmpeg_ir::geometry::{
     RollingBallJetSite, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
+use std::ops::Range;
 
 /// Native identity form of one decoded freeform surface carrier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1228,19 +1229,84 @@ pub fn a8_surface_from_external_grid(
     data: &[u8],
     header: &A8SurfaceHeader,
 ) -> Option<FreeformSurface> {
-    if !header.poles_elided {
+    let candidates = a8_external_grid_candidates(data, header);
+    let [ExternalGridCandidate {
+        control_points,
+        weights,
+        ..
+    }] = candidates.as_slice()
+    else {
         return None;
+    };
+    Some(FreeformSurface {
+        pos: header.pos,
+        identity: FreeformSurfaceIdentity::Object(header.object_id),
+        geometry: SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: header.u_degree,
+            v_degree: header.v_degree,
+            u_knots: expand_knots(&header.u_distinct_knots, &header.u_multiplicities)?,
+            v_knots: expand_knots(&header.v_distinct_knots, &header.v_multiplicities)?,
+            u_count: header.u_count,
+            v_count: header.v_count,
+            control_points: control_points.clone(),
+            weights: weights.clone(),
+            u_periodic: false,
+            v_periodic: false,
+        }),
+    })
+}
+
+/// Return every complete support-bound external A8 pole allocation.
+pub(crate) fn a8_external_grid_ranges(data: &[u8]) -> Vec<Range<usize>> {
+    let mut ranges = a8_surface_headers(data)
+        .into_iter()
+        .flat_map(|header| {
+            a8_external_grid_candidates(data, &header)
+                .into_iter()
+                .map(|candidate| candidate.range)
+        })
+        .collect::<Vec<_>>();
+    ranges.sort_unstable_by_key(|range| (range.start, range.end));
+    ranges.dedup();
+    ranges
+}
+
+struct ExternalGridCandidate {
+    range: Range<usize>,
+    control_points: Vec<Point3>,
+    weights: Option<Vec<f64>>,
+}
+
+fn a8_external_grid_candidates(
+    data: &[u8],
+    header: &A8SurfaceHeader,
+) -> Vec<ExternalGridCandidate> {
+    if !header.poles_elided {
+        return Vec::new();
     }
-    let poles = crate::nurbs_surface_control_count(
-        usize::try_from(header.u_count).ok()?,
-        usize::try_from(header.v_count).ok()?,
-    )?;
+    let (Ok(u_count), Ok(v_count)) = (
+        usize::try_from(header.u_count),
+        usize::try_from(header.v_count),
+    ) else {
+        return Vec::new();
+    };
+    let Some(poles) = crate::nurbs_surface_control_count(u_count, v_count) else {
+        return Vec::new();
+    };
     let weight_bytes = if header.rational {
-        poles.checked_mul(8)?
+        let Some(bytes) = poles.checked_mul(8) else {
+            return Vec::new();
+        };
+        bytes
     } else {
         0
     };
-    let grid_bytes = poles.checked_mul(24)?.checked_add(weight_bytes)?;
+    let Some(grid_bytes) = poles
+        .checked_mul(24)
+        .and_then(|bytes| bytes.checked_add(weight_bytes))
+    else {
+        return Vec::new();
+    };
     let mut candidates = Vec::new();
     for frame in object_stream_frames(data)
         .into_iter()
@@ -1253,7 +1319,9 @@ pub fn a8_surface_from_external_grid(
         })
     {
         let start = frame.end;
-        let end = start.checked_add(grid_bytes)?;
+        let Some(end) = start.checked_add(grid_bytes) else {
+            continue;
+        };
         if object_stream_frame(data, end).is_none() {
             continue;
         }
@@ -1291,28 +1359,14 @@ pub fn a8_surface_from_external_grid(
             None
         };
         if at == end {
-            candidates.push((control_points, weights));
+            candidates.push(ExternalGridCandidate {
+                range: start..end,
+                control_points,
+                weights,
+            });
         }
     }
-    let [(control_points, weights)] = candidates.as_slice() else {
-        return None;
-    };
-    Some(FreeformSurface {
-        pos: header.pos,
-        identity: FreeformSurfaceIdentity::Object(header.object_id),
-        geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-            u_degree: header.u_degree,
-            v_degree: header.v_degree,
-            u_knots: expand_knots(&header.u_distinct_knots, &header.u_multiplicities)?,
-            v_knots: expand_knots(&header.v_distinct_knots, &header.v_multiplicities)?,
-            u_count: header.u_count,
-            v_count: header.v_count,
-            control_points: control_points.clone(),
-            weights: weights.clone(),
-            u_periodic: false,
-            v_periodic: false,
-        }),
-    })
+    candidates
 }
 
 /// Decode consolidated `a5 03 34` NURBS surface carriers.  This family uses

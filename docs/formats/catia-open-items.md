@@ -608,16 +608,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Audit note.** Reopened by the 2026-08-10 closure audit. Commit `1182d6612` makes the lane labels part of the spec and retains the parsed fields, but the generated-tail tests only repeat those labels. No independent CATIA witness establishes the range, affine, or extrapolation roles. Confidence: high.
 
-### OS-16. Object-stream run ownership
-
-**Question.** Which contiguous object-stream run owns each complete `b5`/`a8` frame population when the byte image contains more than one such run?
-
-**Known.** `catia.md` §6.7 defines the object stream as a contiguous length-framed run. `object_stream_frames` scans the complete byte image and `parse_from_records` merges every admitted frame by object id.
-
-**Need.** We must know the run boundary and ownership rule to avoid merging records from separate physical regions into one body.
-
-**Note.** Added by the 2026-08-10 hostile sweep. `crates/cadmpeg-codec-catia/src/families/b5/graph.rs:4545-4603` scans all bytes and admits every standalone `b5` frame plus nested A8 children; `freeform/mod.rs:274-286` passes the global collection to one graph. If two valid frame clusters are separated by directory or unrelated bytes, the current parser can combine them, and `b5/transfer/faces.rs:350-376` emits one body with derived regions. The child framing and duplicate-id rejection are counter-evidence for malformed data, not an ownership proof for two valid runs. Confidence: medium-high.
-
 ## 5. Zero-entity `a9 03`
 
 ### ZE-01. Class-`0x5fxx` face terminal control

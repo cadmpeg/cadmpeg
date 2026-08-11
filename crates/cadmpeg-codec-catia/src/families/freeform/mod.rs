@@ -271,16 +271,29 @@ pub(crate) fn try_decode_freeform_surfaces(
     _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Option<FamilyOutput> {
-    let object_frames = crate::families::b5::graph::object_stream_frames(&scan.data);
-    let object_records =
-        crate::families::b5::graph::records_from_frames(&scan.data, &object_frames);
+    let logical_streams = container::logical_record_streams(scan);
+    let census_object_records = logical_streams
+        .iter()
+        .flat_map(|stream| {
+            let frames = crate::families::b5::graph::object_stream_frames(stream);
+            crate::families::b5::graph::records_from_frames(stream, &frames)
+        })
+        .collect::<Vec<_>>();
+    let object_selection =
+        crate::families::b5::graph::select_object_stream_population(&logical_streams);
+    let object_stream_run_count = object_selection.run_count;
+    let selected_object_stream_run_count = usize::from(object_selection.selected);
+    let object_source = object_selection.source;
+    let object_frames = crate::families::b5::graph::object_stream_frames(&object_source);
+    let selected_object_records =
+        crate::families::b5::graph::records_from_frames(&object_source, &object_frames);
     let consolidated_records = crate::wire::records::consolidated_records_in_ranges(
         &scan.data,
         container::consolidated_record_ranges(scan),
     );
     let mut b5_graph = crate::families::b5::graph::parse_from_records(
-        &scan.data,
-        &object_records,
+        &object_source,
+        &selected_object_records,
         &object_frames,
         true,
     );
@@ -298,7 +311,8 @@ pub(crate) fn try_decode_freeform_surfaces(
     let typed_face_counts = if let Some(graph) = &b5_graph {
         Some(typed_face_counts(&graph.face_records, graph.faces.len()))
     } else {
-        let records = crate::families::b5::graph::typed_face_records_from_records(&object_records);
+        let records =
+            crate::families::b5::graph::typed_face_records_from_records(&census_object_records);
         (!records.is_empty()).then(|| typed_face_counts(&records, 0))
     };
     let typed_multi_surface_face_count = b5_graph
@@ -306,7 +320,7 @@ pub(crate) fn try_decode_freeform_surfaces(
         .map(typed_multi_surface_face_count)
         .unwrap_or_default();
     let typed_edge_records =
-        crate::families::b5::graph::typed_edge_records_from_records(&object_records);
+        crate::families::b5::graph::typed_edge_records_from_records(&census_object_records);
     let edge_terminal_controls = (!typed_edge_records.is_empty()).then(|| {
         typed_edge_records
             .values()
@@ -327,7 +341,9 @@ pub(crate) fn try_decode_freeform_surfaces(
             })
     });
     let typed_vertex_incidence_links =
-        crate::families::b5::graph::typed_vertex_incidence_links_from_records(&object_records);
+        crate::families::b5::graph::typed_vertex_incidence_links_from_records(
+            &census_object_records,
+        );
     let vertex_incidence_terminal_controls =
         (!typed_vertex_incidence_links.is_empty()).then(|| {
             typed_vertex_incidence_links
@@ -347,7 +363,7 @@ pub(crate) fn try_decode_freeform_surfaces(
         .as_ref()
         .map(|graph| loop_metadata_counts(graph.loops.values()));
     let typed_loop_records =
-        crate::families::b5::graph::typed_loop_records_from_records(&object_records);
+        crate::families::b5::graph::typed_loop_records_from_records(&census_object_records);
     let typed_loop_metadata_counts = (!typed_loop_records.is_empty()).then(|| {
         let resolved_count = b5_graph.as_ref().map_or(0, |graph| graph.loops.len());
         (
@@ -366,15 +382,18 @@ pub(crate) fn try_decode_freeform_surfaces(
             .count()
     });
     let typed_class_21_pcurve_count =
-        crate::families::b5::graph::typed_class_21_pcurves_from_records(&object_records).len();
+        crate::families::b5::graph::typed_class_21_pcurves_from_records(&census_object_records)
+            .len();
     let typed_parameter_incidences =
-        crate::families::b5::graph::typed_parameter_incidences_from_records(&object_records);
+        crate::families::b5::graph::typed_parameter_incidences_from_records(&census_object_records);
     let typed_parameter_incidence_member_count = typed_parameter_incidences
         .values()
         .map(|incidence| incidence.curves.len())
         .sum();
     let typed_vertex_incidence_rosters =
-        crate::families::b5::graph::typed_vertex_incidence_rosters_from_records(&object_records);
+        crate::families::b5::graph::typed_vertex_incidence_rosters_from_records(
+            &census_object_records,
+        );
     let typed_vertex_incidence_roster_member_count =
         typed_vertex_incidence_rosters.values().map(Vec::len).sum();
     let mut fallback_surfaces = b5_graph
@@ -586,6 +605,18 @@ pub(crate) fn try_decode_freeform_surfaces(
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
     let annotations = annotations.build();
     let mut coverage = std::collections::BTreeMap::new();
+    coverage.insert(
+        "decoded_object_stream_run_count".to_string(),
+        object_stream_run_count,
+    );
+    coverage.insert(
+        "selected_object_stream_run_count".to_string(),
+        selected_object_stream_run_count,
+    );
+    coverage.insert(
+        "unselected_object_stream_run_count".to_string(),
+        object_stream_run_count - selected_object_stream_run_count,
+    );
     coverage.insert(
         "decoded_b2_nurbs_curve_count".to_string(),
         b2_nurbs_curve_count,
@@ -2559,6 +2590,35 @@ mod tests {
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Vertex};
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
+
+    #[test]
+    fn object_stream_selection_uses_the_unique_topology_root_run() {
+        let topology = crate::tests::b5_closed_triangle_stream();
+        let mut unrelated = vec![0xb5, 0x03, 0x5e, 0x01];
+        unrelated.extend_from_slice(&99u32.to_le_bytes());
+        unrelated.push(0x00);
+
+        let selection = crate::families::b5::graph::select_object_stream_population(&[
+            unrelated,
+            topology.clone(),
+        ]);
+        assert_eq!(selection.run_count, 2);
+        assert!(selection.selected);
+        assert_eq!(selection.source, topology);
+    }
+
+    #[test]
+    fn object_stream_selection_refuses_multiple_topology_root_runs() {
+        let topology = crate::tests::b5_closed_triangle_stream();
+        let selection = crate::families::b5::graph::select_object_stream_population(&[
+            topology.clone(),
+            topology,
+        ]);
+
+        assert_eq!(selection.run_count, 2);
+        assert!(!selection.selected);
+        assert!(selection.source.is_empty());
+    }
 
     #[test]
     fn standalone_clamped_curve_becomes_a_valid_wire_edge() {

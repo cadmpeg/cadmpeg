@@ -726,6 +726,30 @@ pub(crate) fn consolidated_record_ranges(scan: &ContainerScan<'_>) -> Vec<Range<
     ranges
 }
 
+/// Reconstruct each catalogued logical stream as an independent record source.
+///
+/// Records cannot establish adjacency or one object-id namespace across two
+/// descriptors. A container without a parsed directory has one unnamed source:
+/// its bounded outer preamble.
+pub(crate) fn logical_record_streams(scan: &ContainerScan<'_>) -> Vec<Vec<u8>> {
+    let mut streams = [scan.outer.as_ref(), scan.inner.as_ref()]
+        .into_iter()
+        .flatten()
+        .flat_map(|directory| {
+            directory.descriptors.iter().filter_map(|descriptor| {
+                let stream = reconstruct_logical_stream(&scan.data, descriptor, directory.inner);
+                (!stream.is_empty()).then_some(stream)
+            })
+        })
+        .collect::<Vec<_>>();
+    if streams.is_empty() {
+        if let Some(range) = outer_preamble_range(&scan.data) {
+            streams.push(scan.data[range].to_vec());
+        }
+    }
+    streams
+}
+
 /// Whether a byte prefix is a `.CATPart`: the `V5_CFV2\0` outer magic is unique
 /// to Dassault's container and is a conclusive signal on its own.
 pub fn looks_like_catia(prefix: &[u8]) -> bool {

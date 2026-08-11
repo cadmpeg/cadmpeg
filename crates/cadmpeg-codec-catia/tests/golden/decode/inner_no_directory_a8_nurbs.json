@@ -341,6 +341,7 @@
       "decoded_object_graph_count": 0,
       "decoded_object_record_count": 0,
       "decoded_object_record_reference_count": 0,
+      "decoded_object_stream_run_count": 1,
       "decoded_opened_boolean_parser_version_relation_expression_count": 0,
       "decoded_ordered_schema_configuration_row_link_count": 0,
       "decoded_other_lead12_relation_program_context_class_count": 0,
@@ -459,6 +460,7 @@
       "partially_resolved_consolidated_edge_run_count": 0,
       "retained_unscoped_object_graph_count": 0,
       "retained_unscoped_object_record_count": 0,
+      "selected_object_stream_run_count": 1,
       "transferred_appearance_asset_count": 0,
       "transferred_appearance_binding_count": 0,
       "transferred_configuration_count": 0,
@@ -522,7 +524,8 @@
       "unresolved_schema_configuration_row_order_count": 0,
       "unresolved_schema_configuration_row_successor_count": 0,
       "unresolved_storage_record_count": 0,
-      "unresolved_unreferenced_relation_expression_count": 0
+      "unresolved_unreferenced_relation_expression_count": 0,
+      "unselected_object_stream_run_count": 0
     },
     "format": "catia",
     "geometry_transferred": true,

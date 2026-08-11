@@ -555,6 +555,13 @@ current scores require those matrices and representative fixtures.
   candidates only. Conflicting candidates for one edge are discarded locally;
   they do not discard other pcurve records or override the edge's serialized
   vertex identities and parameter incidences.
+  Object-stream decoding reconstructs each directory descriptor independently
+  and partitions its A8/B5 records at each byte that is neither a frame nor a
+  complete owned allocation. Object identities, topology roots, and
+  standard-surface evidence do not merge across those run boundaries. A
+  topology run can admit one uniquely referenced isolated geometry frame from
+  its own logical stream. Decode coverage reports decoded, selected, and
+  unselected object-stream run counts.
   Counted object-stream faces require and retain an exact `03` or `05` terminal
   control. Structurally complete face records require a nonempty reference lane
   and retain every ordered reference before target roles resolve; the

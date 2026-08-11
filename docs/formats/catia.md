@@ -553,7 +553,7 @@ validating them as unrelated literals.
 
 The byte after the tail, or after an inline grid when no tail is present, is the end of the `a8` frame or the first owned A/B-family child record. The elided form carries no inline XYZ pole grid or rational-weight grid. Its external pole allocation is an unframed `nu×nv` XYZ grid, followed by the rational-weight grid when `mode=0x05`, occupying the complete gap between a length-closed `b5 <frame_flag> 21` pcurve and the next A/B-family frame. The pcurve's support reference must equal the surface object id. Grid cardinality comes from the elided surface header. A grid binds only when that support reference, its byte length, finite coordinate payload, and following frame boundary select one allocation.
 
-**In-stream object-id resolver:** `a8 <frame_flag>` and `b5 <frame_flag>` records hold an inline `object_id`; references are compact tokens selecting an id width (`18`→u16, `38`→u24). Binding is an **in-stream walk** (index `object_id → record` while walking; resolve each ref), not a byte-offset directory. The `object_id` is a dense creation-order ordinal (monotonic with offset, with clean segment resets), so ids can equivalently be assigned by counting objects.
+**In-stream object-id resolver:** `a8 <frame_flag>` and `b5 <frame_flag>` records hold an inline `object_id`; references are compact tokens selecting an id width (`18`→u16, `38`→u24). Binding is an **in-stream walk** (index `object_id → record` while walking; resolve each ref), not a byte-offset directory. Each contiguous object-record run in one reconstructed logical stream has an independent object-id namespace. A run does not resolve references through another logical-stream descriptor or another run, except for the explicitly referenced isolated geometry frame admitted below. The `object_id` is a dense creation-order ordinal (monotonic with offset, with clean segment resets), so ids can equivalently be assigned by counting objects.
 
 ### 6.7 Object-stream topology (`b5 03`)
 
@@ -561,14 +561,19 @@ Object records occur in length-closed runs containing both common-form A8 and
 B5 frames. The flag byte is `03`, `13`, or `83`; topology-bearing frames use
 `03`, while alternate-flag records can bridge adjacent topology frames in the
 same run. Starting at a frame boundary, advance by the declared frame length;
-the next byte is either another A8/B5 frame or the run terminator. Marker bytes
-inside an accepted frame payload do not start peer records. An A8 wrapper may
+the next byte begins another A8/B5 frame, a complete `05 08 01` coordinate
+allocation, a support-bound external A8 pole allocation, or the run terminator.
+The two complete allocation forms do not end the surrounding object-id
+namespace. Any other non-frame byte ends the run. Marker bytes inside an
+accepted frame payload do not start peer records. An A8 wrapper may
 own a nested length-closed B5 run; that run is walked recursively within the A8
 payload boundary. Repeated byte-identical typed records with the same object id
-are one object. A unique isolated geometry frame is admitted when a retained
-`5f` or `62` topology record references its object id; an unreferenced isolated
-frame is not part of the topology graph. Surface classes `2c`, `2e`, `30`,
-`38` retains its identity and payload as an opaque carrier, so
+in one run are one object. A unique isolated geometry frame in the same
+reconstructed logical stream is admitted
+when a retained `5f` or `62` topology record references its object id and no
+record in the owning run has that id. An unreferenced, conflicting, or
+cross-descriptor isolated frame is not part of the topology graph. Surface classes `2c`, `2e`, `30`,
+and `38` retain their identity and payload as opaque carriers, so
 their faces and loops remain connected without assigning unsupported geometry.
 
 - `b5 03 5f` (per-face node): the counted form is `<0x80+n> <reference>{n} <terminal_control>`, where `terminal_control` is `03` or `05` and exhausts the payload. The first reference names the surface (`b5 03 27` plane / `28` cylinder / `2d` revolution / `a8 03 34` bspline), resolved through the object-id map; the remaining references name its loops. The bspline subset binds injectively to `a8 03 34`. The `5f` stream rank is the native face ordinal.

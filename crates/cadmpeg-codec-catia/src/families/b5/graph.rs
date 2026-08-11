@@ -2,6 +2,7 @@
 //! Object-id topology in the CATIA `b5 03` short-frame family.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::ops::Range;
 
 use cadmpeg_core::le::f64_at;
 use cadmpeg_ir::eval::{nurbs_pcurve_uv, nurbs_surface_point};
@@ -748,6 +749,29 @@ impl B5Loop {
 /// Resolve the dominant object-stream topology graph through inline object ids.
 #[must_use]
 pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
+    let mut graphs = topology_runs(bytes).into_iter().map(|(_, graph)| graph);
+    let graph = graphs.next()?;
+    graphs.next().is_none().then_some(graph)
+}
+
+/// Resolve each contiguous object-stream run independently.
+pub(crate) fn topology_runs(bytes: &[u8]) -> Vec<(Range<usize>, B5Graph)> {
+    let root_runs = topology_root_run_ranges(bytes);
+    let candidates = if root_runs.is_empty() {
+        object_stream_run_ranges(bytes)
+    } else {
+        root_runs
+    };
+    candidates
+        .into_iter()
+        .filter_map(|range| {
+            let population = owned_object_stream_population(bytes, range.clone());
+            parse_flat(&population).map(|graph| (range, graph))
+        })
+        .collect()
+}
+
+fn parse_flat(bytes: &[u8]) -> Option<B5Graph> {
     let frames = object_stream_frames(bytes);
     let records = records_from_frames(bytes, &frames);
     parse_from_records(bytes, &records, &frames, true)
@@ -4602,6 +4626,198 @@ pub(crate) fn object_stream_frames(bytes: &[u8]) -> Vec<ObjectFrame> {
     frames
 }
 
+/// Return maximal contiguous top-level A8/B5 object-frame runs.
+pub(crate) fn object_stream_run_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
+    let external_grids = crate::families::a5a8::records::a8_external_grid_ranges(bytes);
+    let mut ranges = Vec::new();
+    let mut position = 0usize;
+    while position + 8 <= bytes.len() {
+        let Some((end, _, _, _)) = object_frame(bytes, position) else {
+            position += 1;
+            continue;
+        };
+        let start = position;
+        position = end;
+        loop {
+            if let Some((end, _, _, _)) = object_frame(bytes, position) {
+                position = end;
+                continue;
+            }
+            let allocation_end = position
+                .checked_add(15)
+                .filter(|&end| end <= bytes.len())
+                .filter(|&end| {
+                    let rows =
+                        crate::wire::records::scan_vertex_record_ranges(&bytes[position..end]);
+                    matches!(rows.as_slice(), [range] if range.start == 0 && range.end == 15)
+                })
+                .or_else(|| {
+                    external_grids
+                        .iter()
+                        .find(|range| range.start == position)
+                        .map(|range| range.end)
+                });
+            let Some(end) = allocation_end else {
+                break;
+            };
+            position = end;
+        }
+        ranges.push(start..position);
+    }
+    ranges
+}
+
+/// Return runs that declare at least one face or loop topology root.
+pub(crate) fn topology_root_run_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
+    object_stream_run_ranges(bytes)
+        .into_iter()
+        .filter(|range| {
+            let run = &bytes[range.clone()];
+            let frames = object_stream_frames(run);
+            records_from_frames(run, &frames)
+                .iter()
+                .any(|record| matches!(record.class, 0x5f | 0x62))
+        })
+        .collect()
+}
+
+/// Partition one logical stream into independently resolved object populations.
+pub(crate) fn object_stream_populations(stream: &[u8]) -> Vec<Vec<u8>> {
+    let runs = object_stream_run_ranges(stream);
+    let topology_runs = topology_root_run_ranges(stream);
+    let mut owned_populations = HashMap::new();
+    let mut claimed_isolated_ids = HashSet::new();
+    for range in &topology_runs {
+        let root_ids = object_stream_frames(&stream[range.clone()])
+            .into_iter()
+            .map(|frame| frame.object_id)
+            .collect::<HashSet<_>>();
+        let population = owned_object_stream_population(stream, range.clone());
+        claimed_isolated_ids.extend(
+            object_stream_frames(&population)
+                .into_iter()
+                .map(|frame| frame.object_id)
+                .filter(|object_id| !root_ids.contains(object_id)),
+        );
+        owned_populations.insert(range.start, population);
+    }
+    runs.into_iter()
+        .filter_map(|range| {
+            if let Some(population) = owned_populations.remove(&range.start) {
+                return Some(population);
+            }
+            let claimed =
+                object_frame(stream, range.start).is_some_and(|(end, family, class, object_id)| {
+                    end == range.end
+                        && is_referenced_geometry_class(family, class)
+                        && claimed_isolated_ids.contains(&object_id)
+                });
+            (!claimed).then(|| stream[range].to_vec())
+        })
+        .collect()
+}
+
+/// Unique object population selected across reconstructed logical streams.
+pub(crate) struct ObjectStreamSelection {
+    pub(crate) source: Vec<u8>,
+    pub(crate) run_count: usize,
+    pub(crate) selected: bool,
+}
+
+/// Select one topology-root population, or one unrooted run when it is the
+/// only object run in the reconstructed logical streams.
+pub(crate) fn select_object_stream_population(streams: &[Vec<u8>]) -> ObjectStreamSelection {
+    let runs = streams
+        .iter()
+        .enumerate()
+        .flat_map(|(stream_index, stream)| {
+            object_stream_run_ranges(stream)
+                .into_iter()
+                .map(move |range| (stream_index, range))
+        })
+        .collect::<Vec<_>>();
+    let topology_runs = streams
+        .iter()
+        .enumerate()
+        .flat_map(|(stream_index, stream)| {
+            topology_root_run_ranges(stream)
+                .into_iter()
+                .map(move |range| (stream_index, range))
+        })
+        .collect::<Vec<_>>();
+    let selected_run = match topology_runs.as_slice() {
+        [(stream_index, range)] => Some((*stream_index, range.clone(), true)),
+        [] if runs.len() == 1 => {
+            let (stream_index, range) = &runs[0];
+            Some((*stream_index, range.clone(), false))
+        }
+        _ => None,
+    };
+    ObjectStreamSelection {
+        source: selected_run
+            .as_ref()
+            .map(|(stream_index, range, topology)| {
+                if *topology {
+                    owned_object_stream_population(&streams[*stream_index], range.clone())
+                } else {
+                    streams[*stream_index][range.clone()].to_vec()
+                }
+            })
+            .unwrap_or_default(),
+        run_count: runs.len(),
+        selected: selected_run.is_some(),
+    }
+}
+
+/// Build one topology population from its owning run and uniquely referenced
+/// isolated geometry frames in the same logical stream.
+pub(crate) fn owned_object_stream_population(stream: &[u8], topology_run: Range<usize>) -> Vec<u8> {
+    let run = &stream[topology_run.clone()];
+    let run_frames = object_stream_frames(run);
+    let run_records = records_from_frames(run, &run_frames);
+    let referenced = topology_surface_references(&run_records);
+    let owned_ids = run_records
+        .iter()
+        .map(|record| record.object_id)
+        .collect::<HashSet<_>>();
+    let mut isolated = HashMap::<u32, Option<(usize, u8, u8, Vec<u8>)>>::new();
+    for range in object_stream_run_ranges(stream) {
+        if range == topology_run {
+            continue;
+        }
+        let Some((end, frame_family, frame_class, object_id)) = object_frame(stream, range.start)
+        else {
+            continue;
+        };
+        if end != range.end
+            || owned_ids.contains(&object_id)
+            || !referenced.contains(&object_id)
+            || !is_referenced_geometry_class(frame_family, frame_class)
+        {
+            continue;
+        }
+        let bytes = stream[range.clone()].to_vec();
+        isolated
+            .entry(object_id)
+            .and_modify(|stored| {
+                if stored.as_ref().is_some_and(|(_, family, class, stored)| {
+                    *family != frame_family || *class != frame_class || *stored != bytes
+                }) {
+                    *stored = None;
+                }
+            })
+            .or_insert(Some((range.start, frame_family, frame_class, bytes)));
+    }
+    let mut isolated = isolated.into_values().flatten().collect::<Vec<_>>();
+    isolated.sort_by_key(|(offset, _, _, _)| *offset);
+
+    let mut population = run.to_vec();
+    for (_, _, _, frame) in isolated {
+        population.extend(frame);
+    }
+    population
+}
+
 fn record_references(record: &B5Record) -> Vec<u32> {
     let mut position = 0;
     let Some(count) = counted_cardinality(&record.payload, &mut position) else {
@@ -8038,6 +8254,105 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(0xa8, 0x34, 0xdeca_fbad), (0xb5, 0x5e, 7)]
         );
+    }
+
+    #[test]
+    fn object_stream_runs_end_at_non_frame_bytes() {
+        let frame = |object_id: u32| {
+            let mut bytes = vec![0xb5, 0x03, 0x5e, 0x01];
+            bytes.extend_from_slice(&object_id.to_le_bytes());
+            bytes.push(0x00);
+            bytes
+        };
+        let first = frame(7);
+        let second = frame(9);
+        let mut bytes = first.clone();
+        bytes.push(0xff);
+        bytes.extend_from_slice(&second);
+
+        assert_eq!(
+            object_stream_run_ranges(&bytes),
+            vec![0..first.len(), first.len() + 1..bytes.len()]
+        );
+    }
+
+    #[test]
+    fn object_stream_runs_cross_complete_vertex_allocations() {
+        let mut bytes = crate::tests::b5_closed_triangle_stream();
+        crate::tests::append_b5_record(&mut bytes, 0x5e, 900, &[]);
+
+        assert_eq!(object_stream_run_ranges(&bytes), vec![0..bytes.len()]);
+    }
+
+    #[test]
+    fn object_stream_runs_cross_support_bound_external_pole_allocations() {
+        let bytes = crate::tests::a8_elided_surface_stream_with_native_vertex_chain();
+
+        assert_eq!(object_stream_run_ranges(&bytes), vec![0..bytes.len()]);
+    }
+
+    #[test]
+    fn topology_parse_does_not_join_records_across_object_stream_runs() {
+        let original = crate::tests::b5_closed_triangle_stream();
+        let frames = object_stream_frames(&original);
+        let split = frames[frames.len() / 2].start;
+        let mut separated = original.clone();
+        separated.insert(split, 0xff);
+
+        let merged = parse_flat(&separated).expect("flat scan can join the separated records");
+        assert!(merged.complete);
+        assert_ne!(parse(&separated), Some(merged));
+    }
+
+    #[test]
+    fn topology_runs_retain_only_their_own_vertex_allocations() {
+        let first = crate::tests::b5_closed_triangle_stream();
+        let mut bytes = first.clone();
+        bytes.push(0xff);
+        bytes.extend_from_slice(&first);
+
+        let graphs = topology_runs(&bytes);
+        assert_eq!(graphs.len(), 2);
+        assert!(graphs
+            .iter()
+            .all(|(_, graph)| graph.vertex_points.len() == 3));
+    }
+
+    #[test]
+    fn topology_parse_admits_one_referenced_isolated_geometry_frame() {
+        let original = crate::tests::b5_closed_triangle_stream();
+        let expected = parse(&original).expect("closed source graph");
+        let isolated = object_stream_frames(&original)
+            .into_iter()
+            .find(|frame| is_referenced_geometry_class(frame.family, frame.class))
+            .expect("referenced geometry frame");
+        let isolated_bytes = original[isolated.start..isolated.end].to_vec();
+        let mut separated = original.clone();
+        separated.drain(isolated.start..isolated.end);
+        separated.push(0xff);
+        separated.extend_from_slice(&isolated_bytes);
+
+        assert_eq!(parse(&separated), Some(expected));
+        assert_eq!(object_stream_populations(&separated).len(), 1);
+    }
+
+    #[test]
+    fn topology_parse_does_not_borrow_geometry_from_another_population() {
+        let original = crate::tests::b5_closed_triangle_stream();
+        let expected = parse(&original).expect("closed source graph");
+        let geometry = object_stream_frames(&original)
+            .into_iter()
+            .find(|frame| is_referenced_geometry_class(frame.family, frame.class))
+            .expect("referenced geometry frame");
+        let geometry_bytes = original[geometry.start..geometry.end].to_vec();
+        let mut separated = original.clone();
+        separated.drain(geometry.start..geometry.end);
+        separated.push(0xff);
+        separated.extend_from_slice(&geometry_bytes);
+        crate::tests::append_b5_record(&mut separated, 0x5e, 900, &[]);
+
+        assert_ne!(parse(&separated), Some(expected));
+        assert_eq!(object_stream_populations(&separated).len(), 2);
     }
 
     #[test]

@@ -7841,6 +7841,37 @@ mod record_decoders {
     }
 
     #[test]
+    fn standard_object_evidence_rejects_repeated_topology_namespaces() {
+        let stream = b5_closed_triangle_stream();
+        let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
+            [stream.clone(), stream],
+            &HashSet::new(),
+            &HashSet::new(),
+        );
+
+        assert!(evidence.edge_owner_faces.is_empty());
+        assert!(evidence.surface_geometries.is_empty());
+    }
+
+    #[test]
+    fn standard_object_evidence_does_not_join_topology_across_runs() {
+        let mut stream = b5_closed_triangle_stream();
+        let loop_start = crate::families::b5::graph::object_stream_frames(&stream)
+            .into_iter()
+            .find(|frame| frame.class == 0x62)
+            .expect("loop frame")
+            .start;
+        stream.insert(loop_start, 0xff);
+
+        let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
+            [stream],
+            &HashSet::new(),
+            &HashSet::new(),
+        );
+        assert!(evidence.edge_owner_faces.is_empty());
+    }
+
+    #[test]
     fn standard_face_resolves_a_rolling_ball_result_carrier() {
         let mut stream = b5_closed_triangle_stream();
         let vertex_start = stream
