@@ -2832,17 +2832,17 @@ size = 147
 note = "The carrier tail is not assigned a semantic field."
 
 [[record]]
-name = "compact_revolve_prologue"
+name = "marker_one_revolve_prologue"
 kind = "byte"
 section = "3.1"
-anchor = "The compact six-reference form uses class 409 paired with class 257"
+anchor = "The marker-one form uses class 409 paired with class 257"
 size = 38
-note = "Offsets are relative to the compact Revolve primary indexed header. Both compact class pairs use the same fixed prologue."
+note = "Offsets are relative to the Revolve primary indexed header. Every marker-one class pair uses the same fixed prologue."
 
 [[record.gap]]
 offset = 0
 size = 20
-note = "The indexed header and the preceding compact Revolve envelope are outside this field run."
+note = "The indexed header and the preceding marker-one Revolve envelope are outside this field run."
 
 [[record.field]]
 name = "marker"

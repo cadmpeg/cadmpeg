@@ -4000,27 +4000,19 @@ pub(crate) fn exact_path_feature_construction(
     };
     match design_feature_family(&scope.kind)? {
         DesignFeatureFamily::Revolve
-            if matches!(
-                (
-                    scope.class_tag.as_str(),
-                    scope.paired_class_tag.as_str(),
-                    parameter_scope_payload_length(scope),
-                ),
-                ("409", "257", Some(345)) | ("385", "262", Some(355))
-            ) && scope.reference_members.len() == 6
+            if matches!(scope.reference_members.len(), 6 | 8)
                 && bytes.get(start + 20) == Some(&1)
                 && u32_at(bytes, start + 21) == Some(0)
                 && u32_at(bytes, start + 29) == Some(2)
                 && bytes.get(start + 33) == Some(&0)
                 && u32_at(bytes, start + 34) == Some(1) =>
         {
-            let angle_record_index = *scope.reference_members.get(4)?;
             let candidates = parameter_owners
                 .iter()
                 .filter(|owner| {
                     native_stream(&owner.id) == native_stream(&scope.id)
                         && owner.scope_record_index == scope.record_index
-                        && owner.record_index == angle_record_index
+                        && scope.reference_members.contains(&owner.record_index)
                         && owner.local_ordinal == 0
                         && owner.evaluated_value.is_finite()
                         && owner.evaluated_value > 0.0
@@ -4033,7 +4025,7 @@ pub(crate) fn exact_path_feature_construction(
                 operation: operation(start + 25)?,
                 operation_offset: u64::try_from(start + 25).ok()?,
                 angle: angle.evaluated_value,
-                angle_record_index,
+                angle_record_index: angle.record_index,
                 angle_offset: angle.evaluated_value_offset,
                 opposite_angle_record_index: None,
                 opposite_angle_offset: None,

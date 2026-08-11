@@ -7049,9 +7049,33 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             opposite_angle_offset: None,
         })
     );
+    legacy_revolve_scope.class_tag = "323".into();
+    legacy_revolve_scope.paired_class_tag = "260".into();
+    legacy_revolve_scope.frame_length = 381;
+    legacy_revolve_scope.reference_members =
+        vec![legacy_angle_record_index, 200, 201, 202, 203, 204, 205, 206];
+    assert_eq!(
+        exact_path_feature_construction(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &legacy_revolve_scope,
+            std::slice::from_ref(&legacy_angle),
+        ),
+        Some(DesignPathFeatureConstruction::Revolve {
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: (legacy_revolve_start + 25) as u64,
+            angle: std::f64::consts::TAU,
+            angle_record_index: legacy_angle_record_index,
+            angle_offset: 55,
+            opposite_angle_record_index: None,
+            opposite_angle_offset: None,
+        })
+    );
     legacy_revolve_scope.class_tag = "385".into();
     legacy_revolve_scope.paired_class_tag = "262".into();
     legacy_revolve_scope.frame_length = 369;
+    legacy_revolve_scope.reference_members =
+        vec![200, 201, 202, 203, legacy_angle_record_index, 204];
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
