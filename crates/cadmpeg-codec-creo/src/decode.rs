@@ -22071,14 +22071,16 @@ fn simple_drilled_hole_dimension_values<'a>(
                 };
                 row.value.filter(|value| value.is_finite())
             };
-            let diameter = value(0, 2, crate::feature::DimensionUnit::Millimeters)?;
+            let bore_radius = value(0, 2, crate::feature::DimensionUnit::Millimeters)?;
             let drill_point_angle = value(1, 10, crate::feature::DimensionUnit::Radians)?;
             let signed_depth = value(2, 2, crate::feature::DimensionUnit::Millimeters)?;
-            (diameter > 0.0
+            let bore_diameter = 2.0 * bore_radius;
+            (bore_diameter.is_finite()
+                && bore_diameter > 0.0
                 && drill_point_angle > 0.0
                 && drill_point_angle < std::f64::consts::PI
                 && signed_depth != 0.0)
-                .then_some((diameter, drill_point_angle, signed_depth.abs()))
+                .then_some((bore_diameter, drill_point_angle, signed_depth.abs()))
         })
         .collect::<Option<Vec<_>>>()?;
     let first = *candidates.first()?;

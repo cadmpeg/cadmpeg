@@ -568,7 +568,7 @@ tuples, and does its blind depth terminate at the cylindrical shoulder or the
 conical tip?
 
 **Known.** `creo_prt.md` §6 "A class-911 table-class-29 simple-drilled recipe"
-defines the generated-surface recipe and the diameter, included-angle, and
+defines the generated-surface recipe and the bore-radius, included-angle, and
 blind-depth dimension roles. Equal complete three-row templates define one
 tuple without a per-feature selector. The neutral hole bottom retains no
 depth-to-tip state.

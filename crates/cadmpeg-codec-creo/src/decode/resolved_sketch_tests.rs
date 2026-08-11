@@ -2199,7 +2199,7 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
 
     assert_eq!(
         simple_drilled_hole_dimension_values([&first, &second].into_iter()),
-        Some((4.2, angle, 25.0))
+        Some((8.4, angle, 25.0))
     );
     let conflicting = table(5.0, angle, -25.0);
     assert_eq!(
@@ -2287,7 +2287,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
             kind: HoleKind::SimpleDrilled {
                 drill_point_angle: Angle(angle),
             },
-            diameter: Some(Length(4.2)),
+            diameter: Some(Length(8.4)),
             extent: Some(Termination::Blind {
                 length: Length(25.0),
             }),
