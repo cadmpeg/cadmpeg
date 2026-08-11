@@ -190,11 +190,11 @@ fixtures, claims above L1 remain unproven.
   rows with compact-width identifiers, `geom_type = 22`, `boundary_type = 01`,
   and `next_geom_ptr = 0`; each row body is bounded at the next validated row
   or its containing frame boundary.
-- Unique feature-owned class-200 materialized surfaces now emit feature-result
-  topology face identities. Hole placement, thicken inputs, and knit inputs
-  use generated face references only when those identities and their producer
-  dependencies are declared; ambiguous, rowless, or foreign-owned surfaces
-  remain native selections.
+- Unique feature-owned materialized table surfaces emit feature-result topology
+  face identities, including class-203 caps and class-210 transition results.
+  Hole placement, thicken inputs, and knit inputs use generated face references
+  only when those identities and their producer dependencies are declared;
+  ambiguous, rowless, or foreign-owned surfaces remain native selections.
 - Class-911 hole cap planes retain their stored surface-row order. The first
   complete outline-backed plane is the placement face, and the second defines
   the signed blind direction and depth.

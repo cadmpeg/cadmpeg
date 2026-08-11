@@ -3085,13 +3085,15 @@ feature depends on that generating feature. A self-reference does not add a
 history dependency. Competing generating owners leave the dependency
 unresolved.
 
-For each feature, a regenerated-result face identity is declared only when an
-owned class-200 entry is a materialized surface, that identifier has exactly
-one surface row, and the row's `feat_id` is the owning feature. The result
-state names that face as `surface#<geom_id>`. Duplicate entries, missing rows,
-and rows owned by another feature do not declare a result state. A generated
-face selection is valid only when its producer feature and `surface#<geom_id>`
-identity occur in that producer's result state.
+For each feature, every materialized surface identifier in its owned
+generated-entity tables declares a regenerated-result face identity when that
+identifier has exactly one surface row and the row's `feat_id` is the owning
+feature. This includes materialized cap and transition entries as well as
+class-`200` entries. The result state names that face as
+`surface#<geom_id>`. Duplicate identifiers, missing rows, and rows owned by
+another feature invalidate the feature's complete face-result state. A
+generated face selection is valid only when its producer feature and
+`surface#<geom_id>` identity occur in that producer's result state.
 
 A regenerated-result edge identity is declared for each unique `crv_array`
 topology row whose `feat_id` is the producing feature. The topology row is

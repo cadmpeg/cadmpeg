@@ -20532,9 +20532,9 @@ fn thicken_plane_offset(
 /// Return the materialized surface identities that one feature can expose as
 /// faces in its regenerated result.
 ///
-/// A class-200 generated entry is a result-face identity only when the entry
-/// is a materialized surface, that surface row is unique, and the row names
-/// the same owning feature. Duplicate entries or malformed materialized rows
+/// Every materialized surface in an owned generated-entity table is a
+/// result-face identity when its surface row is unique and names the same
+/// owning feature. Duplicate identifiers or malformed materialized rows
 /// invalidate the complete result state for that feature.
 fn feature_result_surface_ids(
     tables: &[crate::feature::FeatureEntityTable],
@@ -20547,15 +20547,12 @@ fn feature_result_surface_ids(
         .iter()
         .filter(|table| table.feature_id == Some(feature_id))
     {
-        for entry in table.entries.iter().filter(|entry| entry.class_id == 200) {
-            if !table.surface_ids.contains(&entry.entity_id) {
-                continue;
-            }
-            let row = crate::surface::unique_surface_row(rows, entry.entity_id)?;
-            if row.feature_id != feature_id || !seen.insert(entry.entity_id) {
+        for &surface_id in &table.surface_ids {
+            let row = crate::surface::unique_surface_row(rows, surface_id)?;
+            if row.feature_id != feature_id || !seen.insert(surface_id) {
                 return None;
             }
-            surface_ids.push(entry.entity_id);
+            surface_ids.push(surface_id);
         }
     }
     (!surface_ids.is_empty()).then_some(surface_ids)

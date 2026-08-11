@@ -777,7 +777,7 @@ fn generated_surface_faces_require_unique_rows_and_materialized_producers() {
 }
 
 #[test]
-fn feature_result_faces_require_owned_materialized_class_200_entries() {
+fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
     let row = |id, feature_id| crate::surface::SurfaceRow {
         id,
         type_byte: 0x22,
@@ -788,10 +788,10 @@ fn feature_result_faces_require_owned_materialized_class_200_entries() {
         next_surface: 0,
         offset: 0,
     };
-    let entry = |entity_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
         entity_id,
-        class_id: 200,
-        source_entity_id: Some(source_entity_id),
+        class_id,
+        source_entity_id,
         related_entity_id: None,
         related_entity_state: None,
         prefixed: false,
@@ -802,7 +802,7 @@ fn feature_result_faces_require_owned_materialized_class_200_entries() {
         feature_id: Some(97),
         table_class_id: 29,
         entry_ids: vec![98, 145],
-        entries: vec![entry(98, 1), entry(145, 2)],
+        entries: vec![entry(98, 200, Some(1)), entry(145, 203, None)],
         surface_ids: vec![98, 145],
         non_surface_entity_ids: Vec::new(),
         offset: 0,
@@ -845,15 +845,26 @@ fn feature_result_faces_require_owned_materialized_class_200_entries() {
 
     let mut duplicate = table.clone();
     duplicate.entry_ids.push(98);
-    duplicate.entries.push(entry(98, 1));
+    duplicate.entries.push(entry(98, 204, None));
     duplicate.surface_ids.push(98);
     assert!(feature_result_surface_ids(&[duplicate], &rows, 97).is_none());
 
     let mut missing = table;
     missing.entry_ids[1] = 146;
-    missing.entries[1] = entry(146, 2);
+    missing.entries[1] = entry(146, 203, None);
     missing.surface_ids[1] = 146;
     assert!(feature_result_surface_ids(&[missing], &rows, 97).is_none());
+
+    let foreign = crate::feature::FeatureEntityTable {
+        feature_id: Some(97),
+        table_class_id: 29,
+        entry_ids: vec![145],
+        entries: vec![entry(145, 203, None)],
+        surface_ids: vec![145],
+        non_surface_entity_ids: Vec::new(),
+        offset: 0,
+    };
+    assert!(feature_result_surface_ids(&[foreign], &[row(145, 144)], 97).is_none());
 }
 
 #[test]
