@@ -301,6 +301,22 @@ fn face_selection_is_resolved(selection: &cadmpeg_ir::features::FaceSelection) -
     }
 }
 
+fn body_selection_is_resolved(selection: &cadmpeg_ir::features::BodySelection) -> bool {
+    use cadmpeg_ir::features::BodySelection;
+
+    match selection {
+        BodySelection::Bodies(bodies)
+        | BodySelection::Resolved { bodies, .. }
+        | BodySelection::ResolvedSet { bodies, .. } => !bodies.is_empty(),
+        BodySelection::Historical { bodies, .. }
+        | BodySelection::HistoricalSet { bodies, .. }
+        | BodySelection::HistoricalUnorderedSet { bodies, .. } => !bodies.is_empty(),
+        BodySelection::Generated { bodies, .. } => !bodies.is_empty(),
+        BodySelection::Local { bodies, .. } => !bodies.is_empty(),
+        BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => false,
+    }
+}
+
 fn profile_ref_is_resolved(profile: &cadmpeg_ir::features::ProfileRef) -> bool {
     use cadmpeg_ir::features::ProfileRef;
 
@@ -386,6 +402,21 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 }
             };
             !profile_ref_is_resolved(profile) || !start_is_resolved || !extent_is_resolved
+        }
+        FeatureDefinition::Coil {
+            construction,
+            result,
+        } => {
+            use cadmpeg_ir::features::{BooleanOp, CoilPlacement, CoilResult};
+
+            matches!(construction.placement, CoilPlacement::Native { .. })
+                || match result {
+                    CoilResult::NewBody => false,
+                    CoilResult::Boolean { operation, targets } => {
+                        matches!(operation, BooleanOp::Unresolved | BooleanOp::NewBody)
+                            || !body_selection_is_resolved(targets)
+                    }
+                }
         }
         // The draft angle remains available when face recipes fail, but replay
         // also requires resolved selections and the material-side convention.
@@ -976,6 +1007,10 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 gaps.body_selections +=
                     native_body_selection_count(target) + native_body_selection_count(tools);
             }
+            FeatureDefinition::Coil {
+                result: cadmpeg_ir::features::CoilResult::Boolean { targets, .. },
+                ..
+            } => gaps.body_selections += native_body_selection_count(targets),
             FeatureDefinition::Extrude {
                 profile,
                 start,
@@ -4910,6 +4945,90 @@ mod tests {
             sketch_profile,
             profile_start,
             serde_json::json!({"kind": "to_face", "face": {"kind": "unresolved"}}),
+        )));
+    }
+
+    #[test]
+    fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
+        use cadmpeg_ir::features::{
+            Angle, BodySelection, BooleanOp, CoilConstruction, CoilExtent, CoilPlacement,
+            CoilResult, CoilSection, CoilSectionPlacement, FeatureDefinition, Length,
+        };
+        use cadmpeg_ir::ids::BodyId;
+        use cadmpeg_ir::math::{Point3, Vector3};
+
+        let construction = CoilConstruction {
+            placement: CoilPlacement::Explicit {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                radial: Vector3::new(1.0, 0.0, 0.0),
+            },
+            diameter: Length(10.0),
+            extent: CoilExtent::RevolutionsHeight {
+                revolutions: 2.0,
+                height: Length(5.0),
+            },
+            section: CoilSection::Circular {
+                diameter: Length(1.0),
+            },
+            section_placement: CoilSectionPlacement::Center,
+            clockwise: false,
+            taper: Angle(0.0),
+        };
+        let definition = |construction, result| FeatureDefinition::Coil {
+            construction,
+            result,
+        };
+
+        assert!(!feature_definition_is_incomplete(&definition(
+            construction.clone(),
+            CoilResult::NewBody,
+        )));
+
+        let mut native_placement = construction.clone();
+        native_placement.placement = CoilPlacement::Native {
+            native_ref: "native:placement".into(),
+        };
+        assert!(feature_definition_is_incomplete(&definition(
+            native_placement,
+            CoilResult::NewBody,
+        )));
+
+        let native_target = definition(
+            construction.clone(),
+            CoilResult::Boolean {
+                operation: BooleanOp::Join,
+                targets: BodySelection::Native("native:target".into()),
+            },
+        );
+        assert!(feature_definition_is_incomplete(&native_target));
+
+        let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+        ir.model.features.push(cadmpeg_ir::features::Feature {
+            id: cadmpeg_ir::features::FeatureId("feature:coil".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: Some("CoilPrimitive".into()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: native_target,
+            native_ref: None,
+        });
+        let gaps = design_projection_gaps(&ir, &F3dNative::default());
+        assert_eq!(gaps.incomplete_features, 1);
+        assert_eq!(gaps.body_selections, 1);
+
+        assert!(!feature_definition_is_incomplete(&definition(
+            construction,
+            CoilResult::Boolean {
+                operation: BooleanOp::Cut,
+                targets: BodySelection::Bodies(vec![BodyId("body:1".into())]),
+            },
         )));
     }
 
