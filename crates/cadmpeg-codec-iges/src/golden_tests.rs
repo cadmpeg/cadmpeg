@@ -14,7 +14,7 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::golden::{elide_local_digests, snapshot_text, Branch, Harness};
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, EncodeInput, Encoder};
 
-use super::IgesCodec;
+use super::{IgesCodec, IgesEncoder};
 
 /// Extension of the committed fixture inputs.
 const FIXTURE_EXTENSION: &str = "igs";
@@ -85,7 +85,7 @@ fn encode_snapshot(bytes: &[u8]) -> String {
             }
         };
     let outcome = Encoder::plan(
-        &IgesCodec,
+        &IgesEncoder::default(),
         EncodeInput {
             ir: &decoded.ir,
             fidelity: None,

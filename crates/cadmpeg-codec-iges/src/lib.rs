@@ -149,16 +149,6 @@ impl Codec for IgesCodec {
     }
 }
 
-impl Encoder for IgesCodec {
-    fn id(&self) -> &'static str {
-        "iges"
-    }
-
-    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
-        writer::plan(input, IgesWriteOptions::default())
-    }
-}
-
 /// IGES encoder with explicit target-version options.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct IgesEncoder {

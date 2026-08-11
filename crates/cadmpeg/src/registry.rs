@@ -5,15 +5,6 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{CadirEncoder, Codec, Confidence, Encoder};
 use cadmpeg_ir::{CadIr, Finding};
 
-/// User-visible capabilities of one format.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Capabilities {
-    /// Whether neutral geometry can be exported to the format.
-    pub geometry_export: bool,
-    /// Whether decode-time source fidelity can be replayed.
-    pub fidelity_replay: bool,
-}
-
 /// Format-specific options accepted by encoder factories.
 #[derive(Debug, Clone)]
 pub enum TargetOptions {
@@ -37,14 +28,8 @@ type NativeValidator = fn(&CadIr) -> Vec<Finding>;
 pub struct FormatDescriptor {
     /// Stable format identifier.
     pub id: &'static str,
-    /// Human-readable format name.
-    pub display_name: &'static str,
     /// Recognized lowercase filename extensions.
     pub extensions: &'static [&'static str],
-    /// Tie-break priority among equal detection confidences.
-    pub detection_priority: i32,
-    /// User-visible format capabilities.
-    pub capabilities: Capabilities,
     /// Decoder and inspector implementation.
     pub codec: Option<Box<dyn Codec>>,
     /// Encoder constructor.
@@ -86,130 +71,98 @@ impl Registry {
                 #[cfg(feature = "fcstd")]
                 descriptor(
                     "fcstd",
-                    "FreeCAD",
                     &["fcstd"],
                     Some(Box::new(cadmpeg_codec_freecad::FcstdCodec)),
                     Some(neutral_fcstd),
                     Some(cadmpeg_codec_freecad::validate_native),
-                    true,
                 ),
                 #[cfg(feature = "f3d")]
                 descriptor(
                     "f3d",
-                    "Autodesk Fusion",
                     &["f3d", "f3z"],
                     Some(Box::new(cadmpeg_codec_f3d::F3dCodec)),
                     Some(neutral_f3d),
                     Some(cadmpeg_codec_f3d::validate::validate_native),
-                    true,
                 ),
                 #[cfg(feature = "inventor")]
                 descriptor(
                     "inventor",
-                    "Autodesk Inventor",
                     &["ipt", "iam"],
                     Some(Box::new(cadmpeg_codec_inventor::InventorCodec)),
                     None,
                     Some(cadmpeg_codec_inventor::validate_native),
-                    false,
                 ),
                 #[cfg(feature = "sldprt")]
                 descriptor(
                     "sldprt",
-                    "SolidWorks Part",
                     &["sldprt"],
                     Some(Box::new(cadmpeg_codec_sldprt::SldprtCodec)),
                     Some(neutral_sldprt),
                     Some(cadmpeg_codec_sldprt::validate_native),
-                    true,
                 ),
                 #[cfg(feature = "catia")]
                 descriptor(
                     "catia",
-                    "CATIA V5 Part",
                     &["catpart"],
                     Some(Box::new(cadmpeg_codec_catia::CatiaCodec)),
                     None,
                     None,
-                    false,
                 ),
                 #[cfg(feature = "creo")]
                 descriptor(
                     "creo",
-                    "Creo Parametric Part",
                     &["prt"],
                     Some(Box::new(cadmpeg_codec_creo::CreoCodec)),
                     None,
                     None,
-                    false,
                 ),
                 #[cfg(feature = "nx")]
                 descriptor(
                     "nx",
-                    "Siemens NX Part",
                     &["prt"],
                     Some(Box::new(cadmpeg_codec_nx::NxCodec)),
                     None,
                     None,
-                    false,
                 ),
                 #[cfg(feature = "rhino")]
                 descriptor(
                     "rhino",
-                    "Rhino 3DM",
                     &["3dm"],
                     Some(Box::new(cadmpeg_codec_rhino::RhinoCodec)),
                     Some(rhino),
                     None,
-                    false,
                 ),
                 #[cfg(feature = "step")]
                 descriptor(
                     "step",
-                    "STEP",
                     &["step", "stp"],
                     Some(Box::new(cadmpeg_codec_step::StepCodec::default())),
                     Some(step),
                     None,
-                    false,
                 ),
                 #[cfg(feature = "iges")]
                 descriptor(
                     "iges",
-                    "IGES",
                     &["iges", "igs"],
                     Some(Box::new(cadmpeg_codec_iges::IgesCodec)),
                     Some(iges),
                     None,
-                    true,
                 ),
                 #[cfg(feature = "sat")]
                 descriptor(
                     "sat",
-                    "ASM SAT/SAB stream",
                     &["sat", "sab", "smt", "smb"],
                     Some(Box::new(cadmpeg_codec_sat::SatCodec)),
                     None,
                     None,
-                    false,
                 ),
-                descriptor(
-                    "cadir",
-                    "CADIR JSON",
-                    &["cadir", "json"],
-                    None,
-                    Some(neutral_cadir),
-                    None,
-                    false,
-                ),
+                descriptor("cadir", &["cadir", "json"], None, Some(neutral_cadir), None),
             ],
         };
-        debug_assert!(registry.descriptors.iter().all(|descriptor| {
-            !descriptor.display_name.is_empty()
-                && !descriptor.extensions.is_empty()
-                && (!descriptor.capabilities.fidelity_replay || descriptor.encoder.is_some())
-                && (!descriptor.capabilities.geometry_export || descriptor.encoder.is_some())
-        }));
+        debug_assert!(registry
+            .descriptors
+            .iter()
+            .all(|descriptor| !descriptor.extensions.is_empty()));
         registry
     }
 
@@ -227,12 +180,6 @@ impl Registry {
             return DetectionOutcome::None;
         };
         matches.retain(|(_, confidence)| *confidence == best_confidence);
-        let best_priority = matches
-            .iter()
-            .map(|(descriptor, _)| descriptor.detection_priority)
-            .max()
-            .expect("nonempty detection candidates");
-        matches.retain(|(descriptor, _)| descriptor.detection_priority == best_priority);
         if matches.len() == 1 {
             DetectionOutcome::Detected {
                 descriptor: matches[0].0,
@@ -283,22 +230,14 @@ impl Registry {
 
 fn descriptor(
     id: &'static str,
-    display_name: &'static str,
     extensions: &'static [&'static str],
     codec: Option<Box<dyn Codec>>,
     encoder: Option<EncoderFactory>,
     native_validator: Option<NativeValidator>,
-    fidelity_replay: bool,
 ) -> FormatDescriptor {
     FormatDescriptor {
         id,
-        display_name,
         extensions,
-        detection_priority: 0,
-        capabilities: Capabilities {
-            geometry_export: matches!(id, "fcstd" | "f3d" | "sldprt" | "rhino" | "step" | "iges"),
-            fidelity_replay,
-        },
         codec,
         encoder,
         native_validator,

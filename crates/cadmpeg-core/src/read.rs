@@ -49,12 +49,6 @@ macro_rules! readers {
             Some([f64_at(bytes, offset)?, f64_at(bytes, offset.checked_add(8)?)?, f64_at(bytes, offset.checked_add(16)?)?])
         }
 
-        #[doc = concat!("Takes three consecutive ", $endian, " `f64` values.")]
-        pub fn take_vec3(bytes: &[u8], position: &mut usize) -> Option<[f64; 3]> {
-            let value = vec3_at(bytes, *position)?;
-            *position += 24;
-            Some(value)
-        }
     };
 }
 

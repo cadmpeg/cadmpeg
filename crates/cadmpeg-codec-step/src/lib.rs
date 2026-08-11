@@ -583,15 +583,6 @@ impl<'a> Builder<'a> {
         });
     }
 
-    fn omit(&mut self, code: LossKind, severity: Severity, message: String) {
-        self.losses.push(LossNote {
-            code,
-            severity,
-            message,
-            provenance: None,
-        });
-    }
-
     fn topology_relation_loss(&mut self, identity: String, severity: Severity, message: String) {
         if self.topology_relation_losses.insert(identity) {
             self.loss(LossKind::TopologyNotTransferred, severity, message);
@@ -1973,7 +1964,7 @@ impl<'a> Builder<'a> {
             });
             if let Some(body) = &mesh.body {
                 if linked_body.is_none() {
-                    self.omit(
+                    self.loss(
                         LossKind::TopologyNotTransferred,
                         Severity::Warning,
                         format!(
@@ -1994,7 +1985,7 @@ impl<'a> Builder<'a> {
                 reduced_fields.push(format!("{} data channel(s)", mesh.channels.len()));
             }
             if !reduced_fields.is_empty() {
-                self.omit(
+                self.loss(
                     LossKind::AttributesNotTransferred,
                     Severity::Info,
                     format!(
@@ -3532,7 +3523,7 @@ impl<'a> Builder<'a> {
                 .map(|(kind, count)| format!("{count} {kind}(s)"))
                 .collect::<Vec<_>>()
                 .join(", ");
-            self.omit(
+            self.loss(
                 LossKind::TopologyNotTransferred,
                 Severity::Warning,
                 format!("topology not reachable from any emitted region shape item: {details}"),
@@ -3597,7 +3588,7 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.curveless_edges.is_empty() {
-            self.omit(
+            self.loss(
                 LossKind::CurvelessEdgeOmitted,
                 Severity::Warning,
                 format!(
@@ -3608,7 +3599,7 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.unknown_surface_faces.is_empty() {
-            self.omit(
+            self.loss(
                 LossKind::UnknownSurfaceFaceOmitted,
                 Severity::Warning,
                 format!(
@@ -3642,7 +3633,7 @@ impl<'a> Builder<'a> {
                 .map(|id| format!("'{id}'"))
                 .collect::<Vec<_>>()
                 .join(", ");
-            self.omit(
+            self.loss(
                 LossKind::PcurveOmitted,
                 Severity::Warning,
                 format!(
@@ -3658,7 +3649,7 @@ impl<'a> Builder<'a> {
                 .map(|id| format!("'{id}'"))
                 .collect::<Vec<_>>()
                 .join(", ");
-            self.omit(
+            self.loss(
                 LossKind::AssemblyPlacementsNotTransferred,
                 Severity::Warning,
                 format!(
@@ -3674,7 +3665,7 @@ impl<'a> Builder<'a> {
                 .map(|id| format!("'{id}'"))
                 .collect::<Vec<_>>()
                 .join(", ");
-            self.omit(
+            self.loss(
                 LossKind::TopologyNotTransferred,
                 Severity::Error,
                 format!(
@@ -3690,7 +3681,7 @@ impl<'a> Builder<'a> {
                 .map(|id| format!("'{id}'"))
                 .collect::<Vec<_>>()
                 .join(", ");
-            self.omit(
+            self.loss(
                 LossKind::TopologyNotTransferred,
                 Severity::Warning,
                 format!(
@@ -3706,7 +3697,7 @@ impl<'a> Builder<'a> {
                 .map(|(region, shell)| format!("'{region}' -> '{shell}'"))
                 .collect::<Vec<_>>()
                 .join(", ");
-            self.omit(
+            self.loss(
                 LossKind::TopologyNotTransferred,
                 Severity::Warning,
                 format!(
@@ -3722,7 +3713,7 @@ impl<'a> Builder<'a> {
                 .map(|id| format!("'{id}'"))
                 .collect::<Vec<_>>()
                 .join(", ");
-            self.omit(
+            self.loss(
                 LossKind::HiddenBodyOmitted,
                 Severity::Warning,
                 format!(
@@ -3738,7 +3729,7 @@ impl<'a> Builder<'a> {
                 .map(|(binding, appearance)| format!("'{binding}' -> '{appearance}'"))
                 .collect::<Vec<_>>()
                 .join(", ");
-            self.omit(
+            self.loss(
                 LossKind::MaterialNotTransferred,
                 Severity::Warning,
                 format!(
@@ -3754,7 +3745,7 @@ impl<'a> Builder<'a> {
                 .map(|(binding, appearance)| format!("'{binding}' -> '{appearance}'"))
                 .collect::<Vec<_>>()
                 .join(", ");
-            self.omit(
+            self.loss(
                 LossKind::MaterialNotTransferred,
                 Severity::Warning,
                 format!(
@@ -3772,7 +3763,7 @@ impl<'a> Builder<'a> {
             .filter(|use_| !self.pcurves.contains_key(use_.pcurve.as_str()))
             .count();
         if missing_pcurve_count > 0 {
-            self.omit(
+            self.loss(
                 LossKind::PcurveOmitted,
                 Severity::Warning,
                 format!(
@@ -3795,7 +3786,7 @@ impl<'a> Builder<'a> {
             })
             .count();
         if reduced_pcurve_count > 0 {
-            self.omit(
+            self.loss(
                 LossKind::PcurveOmitted,
                 Severity::Info,
                 format!(
@@ -3820,7 +3811,7 @@ impl<'a> Builder<'a> {
             .filter(|use_| use_.isoparametric.is_some() || use_.parameter_range.is_some())
             .count();
         if pcurve_use_metadata_count > 0 {
-            self.omit(
+            self.loss(
                 LossKind::PcurveOmitted,
                 Severity::Info,
                 format!(
@@ -3898,7 +3889,7 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.ir.model.subds.is_empty() {
-            self.omit(
+            self.loss(
                 LossKind::SubdOmitted,
                 Severity::Warning,
                 format!(
@@ -3978,7 +3969,7 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.ir.model.semantic_annotations.is_empty() {
-            self.omit(
+            self.loss(
                 LossKind::PmiOmitted,
                 Severity::Warning,
                 format!(
@@ -3988,7 +3979,7 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.ir.model.assets.is_empty() {
-            self.omit(
+            self.loss(
                 LossKind::AssetNotTransferred,
                 Severity::Info,
                 format!(
@@ -3998,7 +3989,7 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.ir.model.assembly_joints.is_empty() {
-            self.omit(
+            self.loss(
                 LossKind::AssemblyPlacementsNotTransferred,
                 Severity::Info,
                 format!(
@@ -4057,7 +4048,7 @@ impl<'a> Builder<'a> {
             })
             .count();
         if external_occurrences > 0 {
-            self.omit(
+            self.loss(
                 LossKind::AssemblyComponentsExternal,
                 Severity::Warning,
                 format!(
@@ -4078,7 +4069,7 @@ impl<'a> Builder<'a> {
             })
             .count();
         if unresolved_occurrences > 0 {
-            self.omit(
+            self.loss(
                 LossKind::MetadataNotTransferred,
                 Severity::Warning,
                 format!(
@@ -4113,7 +4104,7 @@ impl<'a> Builder<'a> {
         }
         let unwritten_pmi = self.ir.model.pmi.len().saturating_sub(self.written_pmi);
         if unwritten_pmi > 0 {
-            self.omit(
+            self.loss(
                 LossKind::PmiOmitted,
                 Severity::Warning,
                 format!("{unwritten_pmi} PMI annotation(s) were not written to STEP"),

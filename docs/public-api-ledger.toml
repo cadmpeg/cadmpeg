@@ -21,36 +21,78 @@ measured_at = "2bb9a14d97e376495b3137a878c4de34c1eef8ed"
 # reason = "..."
 
 [[change]]
-commit = "PENDING"
+commit = "5c122163b4c7308a36378c994bafa7139542b005"
 crate = "cadmpeg-core"
 kind = "deletion"
 item = "cadmpeg_core::cursor::Cursor"
 reason = "replaced by View::read_counted; FreeCAD and sldprt ports complete"
 
 [[change]]
-commit = "PENDING"
+commit = "5c122163b4c7308a36378c994bafa7139542b005"
 crate = "cadmpeg-core"
 kind = "deletion"
 item = "cadmpeg_core::cursor"
 reason = "module deleted; bounded_len re-homed to cadmpeg_core::decode"
 
 [[change]]
-commit = "PENDING"
+commit = "5c122163b4c7308a36378c994bafa7139542b005"
 crate = "cadmpeg-core"
 kind = "move"
 item = "cadmpeg_core::cursor::bounded_len -> cadmpeg_core::decode::bounded_len"
 reason = "keep adopted bounded_len after Cursor deletion"
 
 [[change]]
-commit = "PENDING"
+commit = "5c122163b4c7308a36378c994bafa7139542b005"
 crate = "cadmpeg-core"
 kind = "signature"
 item = "cadmpeg_core::decode::View::read_counted"
 reason = "absorb Cursor::read_counted for FreeCAD/sldprt counted reads"
 
 [[change]]
-commit = "PENDING"
+commit = "5c122163b4c7308a36378c994bafa7139542b005"
 crate = "cadmpeg-core"
 kind = "signature"
 item = "cadmpeg_core::decode::{SpaceDescriptor,SpaceDerivation,ResolvedAddress,resolve_address,DecodeContext::resolve_location,DecodeContext::register_slice_as,DecodeContext::begin_expand_as}"
 reason = "stable space descriptors and sealed-boundary address resolution for inspect replay"
+
+[[change]]
+commit = "PENDING"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::math::Aabb"
+reason = "zero production callers"
+
+[[change]]
+commit = "PENDING"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::draft::BrepAssembly"
+reason = "zero production callers; assembly tests removed with the type"
+
+[[change]]
+commit = "PENDING"
+crate = "cadmpeg-container"
+kind = "deletion"
+item = "cadmpeg_container::compression::{inflate_zlib_prefix,inflate_raw_prefix}"
+reason = "unused outside own tests"
+
+[[change]]
+commit = "PENDING"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::{le,be}::take_vec3"
+reason = "unused outside own tests"
+
+[[change]]
+commit = "PENDING"
+crate = "cadmpeg-codec-iges"
+kind = "trait_impl"
+item = "Encoder for IgesCodec"
+reason = "duplicate encoder surface; keep IgesEncoder"
+
+[[change]]
+commit = "PENDING"
+crate = "cadmpeg"
+kind = "field"
+item = "FormatDescriptor::{display_name,capabilities,detection_priority} and Capabilities"
+reason = "debug-assert-only or all-zero noop; extensions retained"

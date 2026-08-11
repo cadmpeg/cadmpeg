@@ -11,7 +11,7 @@ use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, EncodeInput, Encoder};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::SourceFidelity;
 
-use super::IgesCodec;
+use super::{IgesCodec, IgesEncoder};
 
 /// Extension of the committed fixture inputs (matches `golden_tests`).
 const FIXTURE_EXTENSION: &str = "igs";
@@ -29,7 +29,7 @@ fn try_lossless_round_trip(
     ir: &CadIr,
     fidelity: Option<&SourceFidelity>,
 ) -> bool {
-    let Ok(plan) = Encoder::plan(&IgesCodec, EncodeInput { ir, fidelity }) else {
+    let Ok(plan) = Encoder::plan(&IgesEncoder::default(), EncodeInput { ir, fidelity }) else {
         return false;
     };
     let mut produced = Vec::new();
