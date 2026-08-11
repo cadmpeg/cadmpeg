@@ -16,8 +16,7 @@ use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 /// A stable, machine-readable identifier for one `.3dm` transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
-/// string form (via [`RhinoLossCode::code`]) is the stable contract; the Rust
-/// variant name may be refactored freely.
+/// string form (via [`RhinoLossCode::code`]) is the stable contract.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RhinoLossCode {
@@ -82,7 +81,7 @@ pub enum RhinoLossCode {
 }
 
 impl RhinoLossCode {
-    /// Every code, in declaration order. Used by tests to assert stability.
+    /// Every code, in declaration order.
     pub const ALL: &'static [RhinoLossCode] = &[
         Self::ContainerScanDiagnostic,
         Self::IntegrityFailure,

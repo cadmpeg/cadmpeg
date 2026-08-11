@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native-arena emission layer for the `creo` namespace.
-//!
-//! `build_ir` preserves each undecoded source structure as a typed record and
-//! publishes it into a source-format namespace. Every publish attaches
-//! per-record provenance annotations, bumps the namespace schema version, and
-//! serializes the records under a stable arena key.
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -17,8 +12,7 @@ const CREO_NATIVE_VERSION: u32 = 1;
 
 /// Native arena keys `build_ir` and `attach_expanded_sections` may populate.
 ///
-/// [`store_arena`] asserts the key appears here. Order is documentation only;
-/// arenas are sorted by identity at store time.
+/// [`store_arena`] asserts the key appears here.
 const CREO_ARENAS: &[&str] = &[
     "expanded_sections",
     "double_xar_tables",
@@ -131,11 +125,6 @@ pub(super) fn store_arena<T: Serialize>(
 }
 
 /// Annotate each record with `annotate_each`, then store them as arena `key`.
-///
-/// The generic emission path: on non-empty input every record gets its provenance
-/// annotation before the arena is stored, preserving the exact per-record
-/// annotation tuple each site supplies through the closure. Empty input is a
-/// no-op, matching [`store_arena`].
 pub(super) fn emit_arena<T, F>(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -154,9 +143,6 @@ where
 }
 
 /// Emit an arena whose provenance comes entirely from each record's own fields.
-///
-/// Sites whose provenance is not a function of the record alone stay on
-/// [`emit_arena`].
 #[expect(clippy::too_many_arguments)]
 pub(super) fn emit_uniform<T: Serialize>(
     ir: &mut CadIr,

@@ -9810,12 +9810,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .iter()
         .map(|body| body.id.clone())
         .collect::<Vec<_>>();
-    // A retained segment-body input is represented as a BaseFeature so that
-    // the saved body census has an explicit replay boundary. It is not an
-    // evaluated history writer. Do not use a closure rooted only in that
-    // boundary to suppress losses for the retained operation stream: without
-    // a non-BaseFeature writer, the body-to-history relation is still
-    // unproven and conservative accounting is required.
+    // Require a non-BaseFeature writer before treating body-to-history as proven.
     let active_features = crate::native::history::active_feature_closure(ir, &current_body_ids)
         .filter(|active| {
             active.iter().any(|id| {

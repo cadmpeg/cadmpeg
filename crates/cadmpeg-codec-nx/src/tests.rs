@@ -9713,7 +9713,7 @@ mod golden {
 
     use super::*;
 
-    /// Arena names the native catalogue can emit; coverage denominator.
+    /// Arena names the native catalogue can emit.
     const KNOWN_ARENAS: &[&str] = &[
         "class_definitions",
         "configuration_attribute_uses",
@@ -10581,7 +10581,6 @@ mod golden {
     }
 
     /// Every arena a fixture populates must be a name production actually writes.
-    /// A failure here means `KNOWN_ARENAS` (the coverage denominator) is stale.
     #[test]
     fn arena_coverage_is_a_subset() {
         let known: BTreeSet<&str> = KNOWN_ARENAS.iter().copied().collect();
@@ -10620,13 +10619,8 @@ mod golden {
         );
     }
 
-    /// The catalogue is the single source of truth for arena names: every arena
-    /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (230), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
-    /// equality is the relationship the fixtures confirm — every arena a fixture
-    /// can populate is a catalogue arena, and every catalogue arena is a name
-    /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
-    /// arenas, all of them catalogue-driven, so no non-catalogued arena exists.
+    /// Every catalogue arena appears once, and the catalogue arena set equals
+    /// `KNOWN_ARENAS`.
     #[test]
     fn catalogue_arenas_match_known_arenas() {
         use cadmpeg_ir::native::catalogue::Phase;

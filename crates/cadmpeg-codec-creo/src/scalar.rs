@@ -385,9 +385,7 @@ pub fn decode_tabulated_cylinder_second_coordinate(
 /// Decode a model-space coordinate in a named `ActDatums` outline.
 ///
 /// Named datum outlines use the same bounded positive/negative DICT lattice as
-/// the second coordinate of a tabulated-cylinder directrix. Keeping this
-/// entry point separate from the tabulated-cylinder API makes the shared byte
-/// grammar explicit at the call site.
+/// the second coordinate of a tabulated-cylinder directrix.
 pub(crate) fn decode_named_datum_outline_coordinate(
     data: &[u8],
     offset: usize,

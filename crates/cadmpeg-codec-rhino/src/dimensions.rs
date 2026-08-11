@@ -1053,17 +1053,8 @@ pub(crate) fn apply_userdata(
 
 /// Projects a decoded dimension into one measured semantic annotation.
 ///
-/// Maps to `model.semantic_annotations` with `SemanticAnnotationKind::Dimension`.
-///
-/// `object` is the identity of the 3DM object record that persists the
-/// annotation. In 3DM the application object and the source record are the same
-/// record, so `object` and `native_ref` coincide; `SemanticAnnotation` requires
-/// both to resolve against document identities, and the object record's native
-/// unknown identity is the only Rhino identity that does.
-///
-/// `order` must be a globally unique `u32`. Rhino's natural ordinal is the
-/// record's byte offset, which is a `u64` and not dense, so the caller supplies
-/// a dense arena index instead.
+/// `object` is the 3DM object-record identity (also used as `native_ref`).
+/// `order` must be a globally unique dense `u32`.
 ///
 /// Returns the annotation and the codes for every reference the annotation could
 /// not carry.
@@ -1370,10 +1361,6 @@ pub(crate) fn project(
 }
 
 /// Serializes one decoded dimension without source-record identity.
-///
-/// History records embed a dimension inline rather than referencing an object
-/// record, so the projected annotation has no resolvable `object`. The
-/// serialized form therefore drops the identity fields and keeps the semantics.
 pub(crate) fn semantic_json(dimension: &Dimension) -> Option<String> {
     let (annotation, _) = project(dimension, "embedded-history-dimension", None, "", 0);
     serde_json::to_string(&serde_json::json!({

@@ -382,9 +382,7 @@ mod tests {
             .collect()
     }
 
-    /// Index of a point whose `x` is at unit magnitude or above, so a relative
-    /// perturbation of it is a real perturbation. A zero coordinate would make
-    /// either direction of these tests vacuous.
+    /// Index of a point whose `x` is at unit magnitude or above.
     fn scaled_point(ir: &crate::CadIr) -> usize {
         ir.model
             .points

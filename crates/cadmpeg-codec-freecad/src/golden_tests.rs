@@ -8,8 +8,7 @@
 //!
 //! `tests/golden/inspect/` pins the container summary and
 //! `tests/golden/decode/` pins the decoded document: the IR, the decode
-//! report's losses, and source fidelity. A feature-typing or loss-accounting
-//! change moves the decode branch; inspect cannot see it.
+//! report's losses, and source fidelity.
 
 use std::collections::BTreeSet;
 use std::io::Cursor;
@@ -142,8 +141,7 @@ fn encode_once(bytes: &[u8]) -> Result<(cadmpeg_ir::ExportReport, Vec<u8>), Stri
 ///
 /// # Panics
 ///
-/// Panics when the bytes are not a readable ZIP or an entry cannot be inflated,
-/// which is a defect in the writer rather than drift.
+/// Panics when the bytes are not a readable ZIP or an entry cannot be inflated.
 fn archive_entries(archive: &[u8]) -> serde_json::Value {
     let mut zip = zip::ZipArchive::new(Cursor::new(archive.to_vec()))
         .expect("the FCStd writer produced a readable ZIP");

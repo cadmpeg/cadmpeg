@@ -71,14 +71,9 @@ fn decode_snapshot(bytes: &[u8]) -> String {
 
 /// Decodes `bytes`, then re-encodes through the semantic writer path.
 ///
-/// `fidelity: None` forces synthesis — with retained source attached,
-/// `replay_bytes` would short-circuit to `VerbatimReplay` and the writer under
-/// test would never run. Decode and encode refusals freeze as
-/// `decode_error` / `encode_error`.
-///
-/// The writer stamps `SystemTime::now()` into G-section field 18
-/// (`15HYYYYMMDD.HHMMSS`); that wall-clock value is replaced before freeze so
-/// goldens stay deterministic across runs.
+/// `fidelity: None` forces synthesis. Decode and encode refusals freeze as
+/// `decode_error` / `encode_error`. The writer stamps `SystemTime::now()` into
+/// G-section field 18; that wall-clock value is replaced before freeze.
 fn encode_snapshot(bytes: &[u8]) -> String {
     let decoded =
         match IgesCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {

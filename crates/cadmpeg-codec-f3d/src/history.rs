@@ -461,9 +461,8 @@ fn bind_complete_record_tables(
     });
     if complete {
         bind_historical_transitions(states);
-        // Version tables are the reconstruction workspace for the sparse
-        // transitions. Keeping every cumulative table after the transitions
-        // exist makes history memory quadratic in states × active entities.
+        // Drop version tables once sparse transitions exist; retaining them is
+        // quadratic in states × active entities.
         for state in states {
             state.entity_versions.clear();
         }

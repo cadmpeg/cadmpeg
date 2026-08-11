@@ -1687,7 +1687,6 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
 fn legacy_law_intcurve_round_trips_byte_exactly() {
     use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition};
 
-    // The pre-stamp layout must keep decoding and re-emitting without regression.
     let smbh = synthetic_geometry_with_law_curve_smbh();
     let decoded = F3dCodec
         .decode(

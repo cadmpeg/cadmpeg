@@ -97,8 +97,7 @@ pub enum SemanticOutcome {
 ///
 /// Panics when the decode fails, when the document carries no baseline to
 /// remove, when the write fails after planning succeeded, or when the encoder
-/// still took [`WritePath::VerbatimReplay`] — which would mean it replayed bytes
-/// it could no longer show were current.
+/// still took [`WritePath::VerbatimReplay`].
 pub fn semantic_roundtrip<C>(
     codec: &C,
     label: &str,
@@ -185,19 +184,16 @@ pub enum MutationOutcome {
 /// Decodes `fixture`, applies `mutate` to the decoded document, encodes it with
 /// the write baseline left in place, and hands the outcome to `check`.
 ///
-/// Returns whether `mutate` reported an edit. Denies verbatim replay the way a
-/// user does: keep the baseline, change a value. `check` can decode the output
-/// and demand that change back.
+/// Returns whether `mutate` reported an edit. Keeps the baseline and changes a
+/// value; `check` can decode the output and demand that change back.
 ///
 /// # Panics
 ///
 /// Panics when the decode fails, when `mutate` reports an edit that left the
-/// document equal to the decode, when `mutate` removed the baseline (which would
-/// make this [`semantic_roundtrip`] under another name), when the write fails
-/// after planning succeeded, or when the encoder took a write path other than
-/// `expected_path`. Also panics when `expected_path` is
-/// [`WritePath::VerbatimReplay`]: the document was edited, so replaying the
-/// retained bytes would discard the edit and no caller may expect it.
+/// document equal to the decode, when `mutate` removed the baseline, when the
+/// write fails after planning succeeded, when the encoder took a write path
+/// other than `expected_path`, or when `expected_path` is
+/// [`WritePath::VerbatimReplay`].
 pub fn mutation_roundtrip<C>(
     codec: &C,
     label: &str,

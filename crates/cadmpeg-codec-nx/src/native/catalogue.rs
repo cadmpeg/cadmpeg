@@ -20,8 +20,7 @@ use super::{
 pub(crate) type CatalogueRow =
     FamilyRow<NativeModel, AnnotationBuilder, NativeNamespace, Exactness>;
 
-/// Serialize a record family into its arena when non-empty. The single shape
-/// every `emit` row shares; each row supplies its family slice and arena name.
+/// Serialize a record family into its arena when non-empty.
 fn emit_arena<T: Serialize>(
     records: &[T],
     catalogue_row: &CatalogueRow,

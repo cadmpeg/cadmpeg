@@ -77,11 +77,8 @@ pub fn document_local_sha256(ir: &CadIr, format: &str, source_image_id: &str) ->
 /// `source_image_id`, in canonical order.
 ///
 /// Each record is deserialized, filtered, and converted back before the next is
-/// read, so the retained population — hundreds of thousands of records — is
-/// never resident in typed and reduced form at once. A scratch namespace puts
-/// the records through the same conversion and ordering a stored arena goes
-/// through, which is what keeps the digest equal to the one a normalized copy of
-/// the document produces.
+/// read, so the retained population is never resident in typed and reduced form
+/// at once.
 fn reduced_unknowns(ir: &CadIr, format: &str, source_image_id: &str) -> Vec<NativeRecord> {
     let mut unreadable = false;
     let mut projected = NativeNamespace::default();
@@ -105,10 +102,7 @@ fn reduced_unknowns(ir: &CadIr, format: &str, source_image_id: &str) -> Vec<Nati
 
 /// A document as the semantic digest sees it.
 ///
-/// Mirrors [`CadIr`]'s serialized shape field for field, borrowing what it can
-/// so that normalizing a document for hashing does not copy it. A field added
-/// to [`CadIr`] must be added here too; the equivalence test that hashes a
-/// normalized copy of a document fails when the two shapes drift.
+/// Mirrors [`CadIr`]'s serialized shape field for field, borrowing what it can.
 #[derive(Serialize)]
 struct NormalizedDocument<'a> {
     ir_version: &'a str,
@@ -369,8 +363,7 @@ mod tests {
     }
 
     /// Pins both digest entry points over one fixed, platform-independent
-    /// document. A failure means the digest algorithm or its serialized inputs
-    /// changed; stored write-path baselines are then stale.
+    /// document.
     #[test]
     fn pins_document_digests() {
         let ir = pinned_document();

@@ -41,15 +41,10 @@ pub(super) fn field(json: &str, name: &str) -> Option<Value> {
     found
 }
 
-/// Serializer errors surface to the deserializer driving the replay, and the
-/// deserializer's error surfaces back to the serializer that asked for the
-/// value. Neither trait lets a foreign error type through, so the message
-/// crosses each boundary and the concrete type does not.
 fn ser_to_de<S: ser::Error, D: de::Error>(error: S) -> D {
     de::Error::custom(error)
 }
 
-/// See [`ser_to_de`].
 fn de_to_ser<D: de::Error, S: ser::Error>(error: D) -> S {
     ser::Error::custom(error)
 }

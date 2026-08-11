@@ -1220,9 +1220,7 @@ pub(crate) fn global_parameter_owners(
 
 /// Replace evaluable expressions with canonical literals in a temporary history projection.
 ///
-/// Retained native histories keep their source expressions. This normalization exists only so
-/// typed feature projectors consume the same evaluated values exposed in the neutral parameter
-/// arena.
+/// Retained native histories keep their source expressions.
 pub(crate) fn apply_evaluated_parameters(histories: &mut [FeatureHistory]) {
     let evaluated = project_parameters(histories)
         .into_iter()
@@ -7501,11 +7499,8 @@ const EQUATION_DRIVEN_TOKEN: &str = "EquationDriven";
 
 /// The equations container identified by its Keywords operation-family token.
 ///
-/// The token is a role code, so it identifies the container without a native
-/// class or a reserved source identifier. Both the decode projection and the
-/// writer's retained-role map resolve node roles through
-/// [`feature_tree_node_role`], so the token satisfies the read and write sides
-/// together.
+/// The token is a role code: it identifies the container without a native class
+/// or a reserved source identifier.
 fn equation_container_role(feature: &Feature) -> Option<FeatureTreeNodeRole> {
     (feature.input_class.is_none()
         && feature.xml_tag.eq_ignore_ascii_case("Feature")
@@ -7790,10 +7785,7 @@ fn feature_family(feature: &Feature, family: &str) -> bool {
 
 /// Reject a neutral edit that retargets an existing native record to an
 /// operation family it did not originate in. A missing record (a freshly
-/// synthesized feature) always passes. The accepted native families are part of
-/// each feature type's write schema; centralizing them keeps the read
-/// classification and the write guard from drifting apart. The emitted
-/// `NotImplemented` message is byte-identical to the historical per-arm guard.
+/// synthesized feature) always passes.
 fn require_same_family(
     existing: Option<&Feature>,
     feature_id: &FeatureId,

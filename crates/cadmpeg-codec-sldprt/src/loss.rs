@@ -15,8 +15,7 @@ use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 /// A stable, machine-readable identifier for one `.sldprt` transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
-/// string form (via [`SldprtLossCode::code`]) is the stable contract; the Rust
-/// variant name may be refactored freely.
+/// string form (via [`SldprtLossCode::code`]) is the stable contract.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SldprtLossCode {
@@ -97,7 +96,7 @@ pub enum SldprtLossCode {
 }
 
 impl SldprtLossCode {
-    /// Every code, in declaration order. Used by tests to assert stability.
+    /// Every code, in declaration order.
     pub const ALL: &'static [SldprtLossCode] = &[
         Self::ConfigActiveIdentityUnresolved,
         Self::ConfigActivePartitionMismatch,
@@ -231,8 +230,7 @@ mod tests {
     use super::SldprtLossCode;
     use std::collections::BTreeSet;
 
-    /// Value-level golden: the stable string form of every code, pinned. A
-    /// diff here is an intentional contract change to a gating identifier.
+    /// Value-level golden: the stable string form of every code, pinned.
     #[test]
     fn code_strings_are_pinned() {
         let codes: Vec<&str> = SldprtLossCode::ALL.iter().map(|c| c.code()).collect();
