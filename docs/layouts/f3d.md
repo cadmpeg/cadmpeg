@@ -15,7 +15,7 @@ the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, the
 compact `Loft` prefix and nested profile-region frames, the class-418
 `SplitFace` prefix, the grouped recipe-reference prefix, the three `Combine`
 operation prologues and cross-document selector, the axial `Assemble` carrier
-and selector prefixes, the non-axial `Assemble` operand-path locator run,
+and selector prefixes, the non-axial assembly-operation operand-path locator run,
 locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
 (§3.1). ASM stream records are tabulated in `docs/layouts/asm.toml`.
 Container and manifest layers are text grammars and are listed under "Not
@@ -329,7 +329,7 @@ Cross-checked against code:
 
 Spec §Assembly operands · layout: byte offsets · size: 26 B
 
-Offsets are relative to the count. The run starts at scope offset 362 in the 627-, 637-, and 692-byte forms and at scope offset 358 in the 633- and 732-byte forms.
+Offsets are relative to the count. The run starts at scope offset 47 in the 399-byte As-built form, offset 362 in the 627-, 637-, and 692-byte forms, and offset 358 in the 633- and 732-byte forms.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -339,6 +339,7 @@ Offsets are relative to the count. The run starts at scope offset 362 in the 627
 
 Cross-checked against code:
 
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The As-built form uses the two tabulated scope-relative locator-reference offsets.
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The standard assembly forms use the two tabulated scope-relative locator-reference offsets.
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The compact assembly forms use the two tabulated scope-relative locator-reference offsets.
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The parser locates the count immediately before the first locator reference.
@@ -357,7 +358,7 @@ Offsets are relative to the locator's indexed header. The variable-length occurr
 | 32 | 1 | `zero_32` | `u8` | little | spec | one zero byte at offset 32 |
 | 33 | 128 | `transform` | `f64[16]` | little | spec | a row-major rigid 4×4 transform at offset 33 |
 | 161 | 1 | `zero_161` | `u8` | little | spec | one zero byte at offset 161 |
-| 162 | 11 | `scope_backlink` | `bytes[11]` | little | spec | a marked backlink to the `Assemble` scope at offset 162 |
+| 162 | 11 | `scope_backlink` | `bytes[11]` | little | spec | a marked backlink to the assembly-operation scope at offset 162 |
 | 173 | 11 | `wrapper_reference` | `bytes[11]` | little | spec | a marked reference to record index `N+2` at offset 173 |
 | 184 | 4 | `constant_two` | `u32` | little | spec | u32 value 2 at offset 184 |
 | 188 | 2 | `zero_tail_2` | `bytes[2]` | little | spec | two zero bytes at offset 188 |

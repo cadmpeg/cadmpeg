@@ -1136,7 +1136,7 @@ pub(crate) fn exact_assembly_alignment(
     let alignment_lanes = lanes.get(alignment_start..alignment_end)?;
     let (angle, offset, owner_record_indices, value_offsets) = match alignment_lanes {
         [angle, offset_x, offset_y, offset_z] => (
-            *angle,
+            angle.evaluated_value,
             [
                 offset_x.evaluated_value,
                 offset_y.evaluated_value,
@@ -1156,7 +1156,7 @@ pub(crate) fn exact_assembly_alignment(
             ],
         ),
         [angle, axial_offset] => (
-            *angle,
+            angle.evaluated_value,
             [0.0, 0.0, axial_offset.evaluated_value],
             vec![angle.record_index, axial_offset.record_index],
             vec![
@@ -1170,7 +1170,7 @@ pub(crate) fn exact_assembly_alignment(
         return None;
     }
     let mut alignment = DesignAssemblyAlignment {
-        angle: angle.evaluated_value,
+        angle,
         offset,
         owner_record_indices,
         value_offsets,
@@ -1179,9 +1179,17 @@ pub(crate) fn exact_assembly_alignment(
         axial_operand_targets: None,
         joint_origin_scope_record_index: None,
     };
-    alignment.operand_frames = exact_assembly_operand_frames(bytes, scope);
-    if alignment.operand_frames.is_some() {
+    if scope.kind == "As-built" {
         alignment.operand_paths = exact_assembly_operand_paths(bytes, records, scope);
+        alignment.operand_frames = alignment
+            .operand_paths
+            .as_ref()
+            .and_then(|paths| exact_as_built_operand_frames(bytes, paths));
+    } else {
+        alignment.operand_frames = exact_assembly_operand_frames(bytes, scope);
+        if alignment.operand_frames.is_some() {
+            alignment.operand_paths = exact_assembly_operand_paths(bytes, records, scope);
+        }
     }
     Some(alignment)
 }
@@ -1648,6 +1656,27 @@ fn exact_assembly_operand_frames(
     };
     let first = frame(start + frame_offsets.0, start + frame_offsets.1)?;
     let second = frame(start + frame_offsets.2, start + frame_offsets.3)?;
+    (first.reference_record_index != second.reference_record_index).then_some([first, second])
+}
+
+fn exact_as_built_operand_frames(
+    bytes: &[u8],
+    paths: &[DesignAssemblyOperandPath; 2],
+) -> Option<[DesignAssemblyOperandFrame; 2]> {
+    let frames = paths.each_ref().map(|path| {
+        let locator_at = usize::try_from(path.link.locator_byte_offset).ok()?;
+        let reference_at = locator_at.checked_add(21)?;
+        let transform_at = locator_at.checked_add(33)?;
+        Some(DesignAssemblyOperandFrame {
+            reference_record_index: marked_record_reference(bytes, reference_at)?,
+            reference_offset: u64::try_from(reference_at.checked_add(1)?).ok()?,
+            transform: rigid_transform_at(bytes, transform_at)?,
+            transform_offset: u64::try_from(transform_at).ok()?,
+        })
+    });
+    let [Some(first), Some(second)] = frames else {
+        return None;
+    };
     (first.reference_record_index != second.reference_record_index).then_some([first, second])
 }
 
