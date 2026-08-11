@@ -1039,6 +1039,17 @@ fn project_all_dimension_constraints(
             linear_tolerance,
         )
         .or_else(|| {
+            preceding_incident_angular_dimension_definition(
+                scope,
+                points,
+                curves,
+                &projected,
+                &sketch,
+                parameter,
+                &parameter_id,
+            )
+        })
+        .or_else(|| {
             owner_scoped_angular_dimension_definition(entities, &sketch, parameter, &parameter_id)
         })
         .or_else(|| {
@@ -1120,6 +1131,90 @@ fn project_all_dimension_constraints(
     }));
     constraints.sort_by_key(|constraint| constraint.id.clone());
     constraints
+}
+
+/// Resolve an angular parameter from the unique two-line point incidence
+/// serialized before the parameter in its owning sketch.
+pub(crate) fn preceding_incident_angular_dimension_definition(
+    scope: &str,
+    points: &[SketchPoint],
+    curves: &[SketchCurveIdentity],
+    projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
+    sketch: &cadmpeg_ir::sketches::SketchId,
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+
+    if !parameter.source_kind.starts_with("Angular Dimension")
+        || !design_dimension_unit(parameter)
+        || !parameter.evaluated_value.is_finite()
+    {
+        return None;
+    }
+    let preceding_curves = curves
+        .iter()
+        .filter(|curve| {
+            native_stream(&curve.id) == Some(scope) && curve.byte_offset < parameter.byte_offset
+        })
+        .map(|curve| (curve.record_index, curve))
+        .collect::<HashMap<_, _>>();
+    let mut matched = None::<(
+        u32,
+        u32,
+        &cadmpeg_ir::sketches::SketchEntity,
+        &cadmpeg_ir::sketches::SketchEntity,
+    )>;
+    for point in points.iter().filter(|point| {
+        native_stream(&point.id) == Some(scope) && point.byte_offset < parameter.byte_offset
+    }) {
+        let Some(companion) = point.companion.as_ref() else {
+            continue;
+        };
+        let [first_record, second_record] = companion.incident_curves.as_slice() else {
+            continue;
+        };
+        if first_record == second_record {
+            continue;
+        }
+        if !preceding_curves.contains_key(first_record)
+            || !preceding_curves.contains_key(second_record)
+        {
+            continue;
+        }
+        let (Some(first), Some(second)) = (
+            projected.get(&(scope, *first_record)).copied(),
+            projected.get(&(scope, *second_record)).copied(),
+        ) else {
+            continue;
+        };
+        if &first.sketch != sketch
+            || &second.sketch != sketch
+            || !matches!(first.geometry, SketchGeometry::Line { .. })
+            || !matches!(second.geometry, SketchGeometry::Line { .. })
+            || !line_angle_matches(&first.geometry, &second.geometry, parameter.evaluated_value)
+        {
+            continue;
+        }
+        let key = if first_record < second_record {
+            (*first_record, *second_record)
+        } else {
+            (*second_record, *first_record)
+        };
+        if matched
+            .as_ref()
+            .is_some_and(|(left, right, _, _)| (*left, *right) != key)
+        {
+            return None;
+        }
+        matched = Some((key.0, key.1, first, second));
+    }
+    let (_, _, first, second) = matched?;
+    Some(Definition::Angle {
+        first: first.id.clone(),
+        second: second.id.clone(),
+        parameter: parameter_id.clone(),
+    })
 }
 
 /// Resolve an angular parameter when exactly one unordered line pair in its

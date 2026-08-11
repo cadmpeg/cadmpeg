@@ -60,8 +60,9 @@ use crate::design::dimensions::{
     null_locus_dimension_definition, offset_parameter_factor,
     owner_scoped_angular_dimension_definition, owner_scoped_line_length_dimension_definition,
     owner_scoped_radial_dimension_definition, point_lies_on_sketch_geometry,
-    radial_dimension_definition, radial_extension_annotation_group,
-    radial_locus_dimension_definition, remove_dimension_frame_relations, repeated_linear_dimension,
+    preceding_incident_angular_dimension_definition, radial_dimension_definition,
+    radial_extension_annotation_group, radial_locus_dimension_definition,
+    remove_dimension_frame_relations, repeated_linear_dimension,
     spatial_counted_offset_dimension_definition, spatial_parallel_line_distance_matches,
     spatial_point_distance_matches, two_locus_distance_dimension,
     unique_point_class_dimension_definition, unresolved_parameter_expression_dependency_count,
@@ -4246,6 +4247,109 @@ fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
         &parameter_id,
     )
     .is_none());
+}
+
+#[test]
+fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
+    let stream = "f3d:A";
+    let sketch = SketchId("f3d:model:sketch#angular-incidence".into());
+    let curve = |record_index, byte_offset, angle: f64| SketchCurveIdentity {
+        id: format!("{stream}:sketch-curve#{record_index}"),
+        record_index,
+        owner_reference: Some(100),
+        class_tag: "301".into(),
+        byte_offset,
+        geometry_offset: 0,
+        entity_genesis: None,
+        primary_id: u64::from(record_index),
+        secondary_id: 0,
+        geometry: Some(SketchCurveGeometry::Line {
+            start: Point3::new(0.0, 0.0, 0.0),
+            end: Point3::new(angle.cos(), angle.sin(), 0.0),
+            direction: Vector3::new(angle.cos(), angle.sin(), 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+        }),
+    };
+    let curves = vec![
+        curve(10, 10, 0.0),
+        curve(11, 20, 3.0 * std::f64::consts::FRAC_PI_4),
+        curve(12, 110, std::f64::consts::FRAC_PI_2),
+        curve(13, 120, -std::f64::consts::FRAC_PI_4),
+    ];
+    let point = |record_index, byte_offset, incident_curves| SketchPoint {
+        id: format!("{stream}:sketch-point#{record_index}"),
+        record_index,
+        owner_reference: Some(100),
+        class_tag: "300".into(),
+        byte_offset,
+        coordinate_offset: 0,
+        entity_genesis: None,
+        record_form: crate::records::SketchPointRecordForm::default(),
+        persistent_id: Some(u64::from(record_index)),
+        paired_reference: 0,
+        flags: [0; 8],
+        coordinates: Point2::new(0.0, 0.0),
+        depth: 0.0,
+        closure: None,
+        companion: Some(crate::records::SketchPointCompanion {
+            prefix_present_zero: false,
+            reference_encoding: Default::default(),
+            incident_curves,
+        }),
+    };
+    let points = vec![point(20, 30, vec![10, 11]), point(21, 130, vec![12, 13])];
+    let entity = |record_index, angle: f64| SketchEntity {
+        id: SketchEntityId(format!("f3d:model:sketch-entity#line-{record_index}")),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(angle.cos(), angle.sin()),
+        },
+    };
+    let entities = [
+        entity(10, 0.0),
+        entity(11, 3.0 * std::f64::consts::FRAC_PI_4),
+        entity(12, std::f64::consts::FRAC_PI_2),
+        entity(13, -std::f64::consts::FRAC_PI_4),
+    ];
+    let projected = HashMap::from([
+        ((stream, 10), &entities[0]),
+        ((stream, 11), &entities[1]),
+        ((stream, 12), &entities[2]),
+        ((stream, 13), &entities[3]),
+    ]);
+    let mut parameter = parse_design_parameter(&parameter_record(
+        Some(1),
+        "135 deg",
+        "Angular Dimension-2",
+        Some("deg"),
+        "d1",
+        3.0 * std::f64::consts::FRAC_PI_4,
+    ))
+    .expect("angular parameter");
+    parameter.byte_offset = 100;
+    let parameter_id = ParameterId("parameter#angle".into());
+
+    assert!(matches!(
+        preceding_incident_angular_dimension_definition(
+            stream,
+            &points,
+            &curves,
+            &projected,
+            &sketch,
+            &parameter,
+            &parameter_id,
+        ),
+        Some(SketchConstraintDefinition::Angle {
+            first,
+            second,
+            parameter,
+        }) if first == entities[0].id && second == entities[1].id && parameter == parameter_id
+    ));
 }
 
 #[test]
