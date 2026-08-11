@@ -294,10 +294,28 @@ fn face_selection_is_resolved(selection: &cadmpeg_ir::features::FaceSelection) -
     use cadmpeg_ir::features::FaceSelection;
 
     match selection {
-        FaceSelection::Faces(faces) => !faces.is_empty(),
-        FaceSelection::Resolved { faces, .. } => !faces.is_empty(),
+        FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => !faces.is_empty(),
         FaceSelection::Historical { faces, .. } => !faces.is_empty(),
-        _ => false,
+        FaceSelection::Generated { faces, .. } => !faces.is_empty(),
+        FaceSelection::HistoricalPartial {
+            faces, unresolved, ..
+        } => !faces.is_empty() && unresolved.is_empty(),
+        FaceSelection::Unresolved | FaceSelection::Native(_) => false,
+    }
+}
+
+fn edge_selection_is_resolved(selection: &cadmpeg_ir::features::EdgeSelection) -> bool {
+    use cadmpeg_ir::features::EdgeSelection;
+
+    match selection {
+        EdgeSelection::All => true,
+        EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => !edges.is_empty(),
+        EdgeSelection::Historical { edges, .. } => !edges.is_empty(),
+        EdgeSelection::Generated { edges, .. } => !edges.is_empty(),
+        EdgeSelection::HistoricalPartial {
+            edges, unresolved, ..
+        } => !edges.is_empty() && unresolved.is_empty(),
+        EdgeSelection::Unresolved | EdgeSelection::Native(_) => false,
     }
 }
 
@@ -543,6 +561,36 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || centerline
                     .as_ref()
                     .is_some_and(|path| !loft_path_is_resolved(path))
+        }
+        FeatureDefinition::FilledSurface {
+            boundary,
+            support_faces,
+            continuity,
+            boundary_continuities,
+            merge_result,
+        } => {
+            use cadmpeg_ir::features::{SurfaceBoundary, SurfaceContinuity};
+
+            let boundary_is_resolved = match boundary {
+                SurfaceBoundary::Edges(edges) => edge_selection_is_resolved(edges),
+                SurfaceBoundary::Path(path) => loft_path_is_resolved(path),
+            };
+            let continuity_is_resolved = continuity.is_some() || !boundary_continuities.is_empty();
+            let support_is_required =
+                continuity
+                    .iter()
+                    .chain(boundary_continuities)
+                    .any(|continuity| {
+                        matches!(
+                            continuity,
+                            SurfaceContinuity::Tangent | SurfaceContinuity::Curvature
+                        )
+                    });
+
+            !boundary_is_resolved
+                || !continuity_is_resolved
+                || (support_is_required && !face_selection_is_resolved(support_faces))
+                || merge_result.is_none()
         }
         FeatureDefinition::FullRoundFillet { groups } => {
             groups.is_empty()
@@ -1141,6 +1189,19 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 }) {
                     gaps.path_selections += 1;
                 }
+            }
+            FeatureDefinition::FilledSurface {
+                boundary,
+                support_faces,
+                ..
+            } => {
+                match boundary {
+                    cadmpeg_ir::features::SurfaceBoundary::Edges(edges) => edge_selection(edges),
+                    cadmpeg_ir::features::SurfaceBoundary::Path(path) => {
+                        gaps.path_selections += usize::from(!loft_path_is_resolved(path));
+                    }
+                }
+                face_selection(support_faces);
             }
             FeatureDefinition::Loft {
                 sections,
@@ -4754,7 +4815,7 @@ fn apply_appearance_base_colors(ir: &mut CadIr) {
 mod tests {
     use super::{
         apply_appearance_base_colors, bind_mesh_feature_definitions,
-        container_only_dimension_parameters, design_projection_gaps,
+        container_only_dimension_parameters, design_projection_gaps, face_selection_is_resolved,
         feature_definition_is_incomplete, incomplete_feature_families, mesh_attribute_channels,
         mesh_texture_assignments, unresolved_dimension_companion_count, DesignProjectionGaps,
         MeshProjection,
@@ -5030,6 +5091,73 @@ mod tests {
         };
         *extent = None;
         assert!(feature_definition_is_incomplete(&missing_extent));
+    }
+
+    #[test]
+    fn face_selection_resolution_accepts_complete_generated_and_partial_members() {
+        use cadmpeg_ir::features::{FaceSelection, FeatureId, GeneratedFaceRef};
+        use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalFaceId};
+
+        assert!(face_selection_is_resolved(&FaceSelection::Generated {
+            faces: vec![GeneratedFaceRef {
+                feature: FeatureId("feature:source".into()),
+                local_id: "face:1".into(),
+            }],
+            native: "native:generated-face".into(),
+        }));
+        assert!(face_selection_is_resolved(
+            &FaceSelection::HistoricalPartial {
+                state: FeatureInputTopologyId("state:1".into()),
+                faces: vec![HistoricalFaceId("face:1".into())],
+                unresolved: Vec::new(),
+                native: "native:historical-face".into(),
+            }
+        ));
+        assert!(!face_selection_is_resolved(
+            &FaceSelection::HistoricalPartial {
+                state: FeatureInputTopologyId("state:1".into()),
+                faces: vec![HistoricalFaceId("face:1".into())],
+                unresolved: vec!["native:missing-face".into()],
+                native: "native:historical-face".into(),
+            }
+        ));
+    }
+
+    #[test]
+    fn filled_surface_completeness_requires_boundary_conditions_support_and_merge() {
+        use cadmpeg_ir::features::{
+            FaceSelection, FeatureDefinition, PathRef, SurfaceBoundary, SurfaceContinuity,
+        };
+        use cadmpeg_ir::ids::{EdgeId, FaceId};
+
+        let surface = |support_faces, continuity, merge_result| FeatureDefinition::FilledSurface {
+            boundary: SurfaceBoundary::Path(PathRef::Edges(vec![EdgeId("edge:1".into())])),
+            support_faces,
+            continuity: Some(continuity),
+            boundary_continuities: Vec::new(),
+            merge_result,
+        };
+
+        assert!(!feature_definition_is_incomplete(&surface(
+            FaceSelection::Faces(Vec::new()),
+            SurfaceContinuity::Contact,
+            Some(false),
+        )));
+        assert!(feature_definition_is_incomplete(&surface(
+            FaceSelection::Faces(Vec::new()),
+            SurfaceContinuity::Contact,
+            None,
+        )));
+        assert!(feature_definition_is_incomplete(&surface(
+            FaceSelection::Faces(Vec::new()),
+            SurfaceContinuity::Tangent,
+            Some(true),
+        )));
+        assert!(!feature_definition_is_incomplete(&surface(
+            FaceSelection::Faces(vec![FaceId("face:support".into())]),
+            SurfaceContinuity::Curvature,
+            Some(true),
+        )));
     }
 
     #[test]
