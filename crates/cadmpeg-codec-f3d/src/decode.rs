@@ -441,6 +441,12 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         | FeatureDefinition::FreeformSurfaceUnresolved
         | FeatureDefinition::BoundarySurfaceUnresolved
         | FeatureDefinition::DraftUnresolved => true,
+        // F3D WorkPlane projection currently retains only the solved frame.
+        // Its construction rule and operands are required for replay.
+        FeatureDefinition::DatumPlane { .. } => true,
+        FeatureDefinition::DatumOffsetPlane { reference, .. } => reference
+            .as_ref()
+            .is_none_or(|reference| !datum_plane_reference_is_resolved(reference)),
         FeatureDefinition::Extrude {
             profile,
             start,
@@ -5334,6 +5340,42 @@ mod tests {
                 "fraction": 0.5
             }),
         ))));
+    }
+
+    #[test]
+    fn datum_plane_completeness_distinguishes_frames_from_construction_rules() {
+        let definition = |value| {
+            serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
+                .expect("datum-plane definition")
+        };
+
+        assert!(feature_definition_is_incomplete(&definition(
+            serde_json::json!({
+                "definition": "datum_plane",
+                "origin": {"x": 0.0, "y": 0.0, "z": 5.0},
+                "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
+                "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}
+            }),
+        )));
+        assert!(!feature_definition_is_incomplete(&definition(
+            serde_json::json!({
+                "definition": "datum_principal_plane",
+                "plane": "top"
+            }),
+        )));
+        assert!(!feature_definition_is_incomplete(&definition(
+            serde_json::json!({
+                "definition": "datum_offset_plane",
+                "reference": "feature:plane",
+                "distance": 5.0
+            }),
+        )));
+        assert!(feature_definition_is_incomplete(&definition(
+            serde_json::json!({
+                "definition": "datum_offset_plane",
+                "distance": 5.0
+            }),
+        )));
     }
 
     #[test]
