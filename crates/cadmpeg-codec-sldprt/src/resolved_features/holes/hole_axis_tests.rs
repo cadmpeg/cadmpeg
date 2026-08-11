@@ -2284,6 +2284,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         id: SketchId("position-geometry".into()),
         name: Some("Position".into()),
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(10.0, 20.0, 30.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -2502,6 +2503,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         id: sketch_id.clone(),
         name: Some("Position".into()),
         configuration: None,
+        visible: None,
         profiles: Vec::new(),
         native_ref: Some("lane".into()),
     };
@@ -2629,6 +2631,7 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         id: sketch_id.clone(),
         name: Some("Position".into()),
         configuration: None,
+        visible: None,
         profiles: Vec::new(),
         native_ref: Some("lane".into()),
     };

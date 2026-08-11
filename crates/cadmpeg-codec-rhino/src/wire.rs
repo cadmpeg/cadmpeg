@@ -76,11 +76,7 @@ impl Uuid {
         Self { bytes: canonical }
     }
 
-    /// Renders the mixed-endian UUID wire representation.
-    ///
-    /// Inverse of [`Uuid::from_wire`]. Only synthesized archives need it, so it
-    /// exists for tests that build object records from a canonical class
-    /// constant instead of a hand-transposed byte literal.
+    /// Inverse of [`Uuid::from_wire`].
     #[cfg(test)]
     pub(crate) fn to_wire(self) -> [u8; 16] {
         let mut wire = [0; 16];

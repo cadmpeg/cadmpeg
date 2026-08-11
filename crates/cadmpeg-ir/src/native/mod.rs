@@ -53,12 +53,6 @@ impl From<NativeConvertError> for cadmpeg_core::CodecError {
     }
 }
 
-// The wire and schema shape of a native record: `id`, then the codec-owned
-// fields in the order `Map` iterates. It is what writes a record's stored text
-// and what describes a record to the schema generator, and serializing a record
-// replays that text member for member, so one type fixes the document shape
-// instead of every path that builds, serializes, or describes a record. Its doc
-// comments are the ones that reach the generated JSON Schema.
 /// One source-native record with a stable identity and codec-owned fields.
 #[derive(Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -156,9 +150,6 @@ impl NativeRecord {
     }
 }
 
-/// Two records are equal when their canonical texts are equal. Canonicalizing
-/// on every construction makes that the same relation as comparing the parsed
-/// identity and field map.
 impl PartialEq for NativeRecord {
     fn eq(&self, other: &Self) -> bool {
         self.json == other.json

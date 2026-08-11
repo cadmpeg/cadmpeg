@@ -13,29 +13,33 @@ storage as `standard_nested`, `fbb_only`, `zero_entity`, `e5_stream`,
 
 The current primary envelope is `standard_nested`: a nested `V5_CFV2` stream
 with an FBB spine and the standard edge-table delimiter. Its implementation
-score is L2 claimed. The other recognized geometry layouts form separate
-envelopes and currently score L1 claimed. `unknown` is an inspection and
+score is L2. The other recognized geometry layouts form separate
+envelopes and currently score L1. `unknown` is an inspection and
 retention envelope and does not inherit geometry support.
 
 These envelopes are not closed release bands. Supported CATIA release bounds,
 required and optional container segments, and the admitted carrier, topology,
-appearance, and feature-family matrices have not been fixed. Claims above the
-current scores require those matrices and representative fixtures.
+appearance, and feature-family matrices have not been fixed. Scores above the
+current levels require those matrices and representative fixtures.
 
 ## Cumulative gates
 
-| Level | Required evidence                                                                                                                                             | Current result                                                  | Remaining gate                                                                                                                                                                                         |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| L0    | `V5_CFV2` detection; part-kind and layout classification; bounded metadata; exact preview extraction when stored                                              | Pass in implementation                                          | Representative release-band fixtures and explicit preview-present/absent coverage                                                                                                                      |
-| L1    | Nested-stream, directory, segment, extent, and record navigation; layout dispatch; external-reference and embedded-asset enumeration; named undecoded content | Claimed across recognized layouts                               | Close the release/layout envelope and verify every admitted container combination                                                                                                                      |
-| L2    | Placed points; analytic curves and surfaces; NURBS; correct units, parameterization, and model-space placement throughout one envelope                        | Claimed for `standard_nested`; incomplete for the other layouts | Close every admitted carrier branch, persistent carrier binding, parameter chart, placement, and unit path                                                                                             |
-| L3    | Connected bodies through vertices with exact ownership, orientation, trimming, placement, and transforms; structurally valid topology throughout one envelope | Incomplete                                                      | Resolve every admitted face group, endpoint registry, edge incidence, loop orientation, body/shell ownership, and cross-group membership case without topology gauges standing in for source semantics |
-| L4    | Ordered feature operations with complete profiles, directions, extents, outputs, dependencies, and solved sketch geometry                                     | Incomplete                                                      | Decode construction order and dependencies, sketch membership and geometry, and complete operands for every admitted operation family                                                                  |
-| L5    | Every admitted carrier and topology case; typed mainstream bodies throughout; body and face colors with source ownership and precedence                       | Incomplete                                                      | Close L2/L3 matrices, appearance bindings, and precedence, then demonstrate zero shape-domain loss across the envelope                                                                                 |
-| L6    | Complete sketch constraints, dimensions, parameters, expressions, configurations, feature semantics, and re-derivable history                                 | Incomplete                                                      | Complete relation and constraint incidence, parameter values and types, feature families, configuration state, and history replay coherence                                                            |
+| Level | Required evidence                                                                                                                                             | Current result                                               | Remaining gate                                                                                                                                                                                         |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| L0    | `V5_CFV2` detection; part-kind and layout classification; bounded metadata; exact preview extraction when stored                                              | Pass in implementation                                       | Representative release-band fixtures and explicit preview-present/absent coverage                                                                                                                      |
+| L1    | Nested-stream, directory, segment, extent, and record navigation; layout dispatch; external-reference and embedded-asset enumeration; named undecoded content | Pass across recognized layouts                               | Close the release/layout envelope and verify every admitted container combination                                                                                                                      |
+| L2    | Placed points; analytic curves and surfaces; NURBS; correct units, parameterization, and model-space placement throughout one envelope                        | Pass for `standard_nested`; incomplete for the other layouts | Close every admitted carrier branch, persistent carrier binding, parameter chart, placement, and unit path                                                                                             |
+| L3    | Connected bodies through vertices with exact ownership, orientation, trimming, placement, and transforms; structurally valid topology throughout one envelope | Incomplete                                                   | Resolve every admitted face group, endpoint registry, edge incidence, loop orientation, body/shell ownership, and cross-group membership case without topology gauges standing in for source semantics |
+| L4    | Ordered feature operations with complete profiles, directions, extents, outputs, dependencies, and solved sketch geometry                                     | Incomplete                                                   | Decode construction order and dependencies, sketch membership and geometry, and complete operands for every admitted operation family                                                                  |
+| L5    | Every admitted carrier and topology case; typed mainstream bodies throughout; body and face colors with source ownership and precedence                       | Incomplete                                                   | Close L2/L3 matrices, appearance bindings, and precedence, then demonstrate zero shape-domain loss across the envelope                                                                                 |
+| L6    | Complete sketch constraints, dimensions, parameters, expressions, configurations, feature semantics, and re-derivable history                                 | Incomplete                                                   | Complete relation and constraint incidence, parameter values and types, feature families, configuration state, and history replay coherence                                                            |
 
 ## Implemented slices above the score
 
+- Outer-body FINJPL inventory and E5 candidate selection use the header-defined
+  `[directory_length,directory_offset)` range. The trailing stream directory
+  cannot contribute FINJPL segments, E5 census markers, E5 candidates,
+  previews, version metadata, or external references.
 - Stream-directory inspection retains every extent's raw flags word in logical
   extent order.
 - Admitted outer `Data` declarations bind canonical or leading-underscore
@@ -197,7 +201,8 @@ current scores require those matrices and representative fixtures.
   uniquely bind all distinct declared inputs, the instance retains complete
   inputs in signature order with declared types and selected entity incidences.
   Coverage partitions typed instances with complete and incomplete input
-  bindings and counts resolved inputs.
+  bindings, resolved input occurrences, and distinct selected input entity
+  identities.
   Each complete input whose selected entity carries a compatible finite or unset
   evaluation transfers as a typed document parameter independently of program
   output binding. Conflicting type assignments prevent transfer.
@@ -234,6 +239,14 @@ current scores require those matrices and representative fixtures.
   `rad`, `grad`, and `deg` to radians.
   Complete constraint-range productions are counted separately as dimension or
   complex-constraint ranges and finite or unset evaluations. Coverage retains
+  complete schema-selected `Range` intervals independently of constraint roles.
+  It counts no-slot productions and finite and unset interval slots separately.
+  The native interval retains the exact prefix form, nullable lower and upper
+  slots, scalar bits, payload-relative offsets, incoming payload references,
+  and incoming object-head storage selectors. Coverage partitions payload and
+  storage incidences, classified and unclassified source entities, and
+  intervals with zero, one, or multiple total incoming incidences.
+  Constraint-range coverage retains
   every exact incoming payload-reference occurrence with its source object,
   paired source entity identity and class when present, payload offset, and
   field or list position. Object-head storage selectors targeting the range are
@@ -250,11 +263,12 @@ current scores require those matrices and representative fixtures.
   native operand. The transfer assigns no neutral sketch entity, locus,
   parameter, driving state, or dimensional role; exact selector, framing,
   evaluation, and opcode-offset properties remain available on the constraint.
-  Exact `Configuration` records retain the first reference's payload-relative
-  byte offset, selected value-schema ordinal, entry, and name, and retain the
-  second reference as an independently resolved, terminal-null, or unresolved
-  same-graph entity identity with its payload-relative byte offset and selected
-  object class when present. Exact `configrow` successor links retain their
+  Exact schema-configuration `Configuration` records retain the first
+  reference's payload-relative byte offset, selected value-schema ordinal,
+  entry, and name, and retain the second reference as an independently resolved,
+  terminal-null, or unresolved same-graph entity identity with its
+  payload-relative byte offset and selected object class when present. Exact
+  `configrow` successor links retain their
   class and successor identities and the successor atom's payload-relative byte
   offset.
   Coverage partitions schema references, resolved, terminal-null, and
@@ -266,9 +280,9 @@ current scores require those matrices and representative fixtures.
   row-to-successor identity intervals. Coverage
   partitions resolved, terminal-null, and unresolved terminals, partitions
   their ordered links from links whose order remains unresolved, and counts
-  source-ordered chains, intervening entities, and complete `Configuration`
-  records among those entities. These records do not count as transferred
-  neutral configurations.
+  source-ordered chains, intervening entities, and complete
+  schema-configuration `Configuration` records among those entities. These
+  records do not count as transferred neutral configurations.
 - A separator-form owner declaration with the exact class `Sketch` transfers
   one sketch identity and one unresolved sketch history node. The transfer
   does not assign placement, geometry, profiles, or constraints. A `PRTSketch`
@@ -280,20 +294,22 @@ current scores require those matrices and representative fixtures.
   class as native geometry. Coordinates, placement, construction state,
   profiles, and constraints remain unresolved under DI-15 through DI-22.
 - A transferred typed parameter receives a feature owner only when its exact
-  entity record selects an object record whose complete design-object owner
-  chain resolves to exactly one transferred feature identity. A missing
-  object, non-reflexive cycle, or ambiguous feature identity leaves the
-  parameter at document scope.
+  entity record selects an object record whose design-object owner chain
+  reaches a transferred feature through a complete acyclic prefix. The nearest
+  transferred feature owns the parameter; an outer feature later in the chain
+  does not make that ownership ambiguous. A missing object or cycle before the
+  first feature leaves the parameter at document scope.
 - Exact feature-owned parameters receive feature-local ordinals in serialized
   object-record order, with the entity-record position as a deterministic
   tie-breaker. This records parameter order and ownership only; it does not
   assign a parameter to an operation role such as profile, direction, extent,
   or output.
 - Opaque native operation definitions expose exact feature-owned parameter
-  expressions in their source-name keyed `parameters` map when every source
-  name is non-empty and unique within that feature. A name collision omits the
-  complete map rather than merging or renaming inputs. The map records generic
-  feature inputs only; it does not assign operation roles.
+  expressions in their scope-unique neutral-name keyed `parameters` map. The
+  first nonempty source name is retained. Empty names and later collisions use
+  deterministic `Parameter` or `#n` suffix names and retain the original
+  spelling in `source_name`. The map records generic feature inputs only; it
+  does not assign operation roles.
 - A transferred feature receives a structural `parent` only when its exact
   `owner_design_object` incidence selects another design object that also
   transfers as a feature. Self-links and owner cycles do not create neutral
@@ -448,7 +464,9 @@ current scores require those matrices and representative fixtures.
   intervals, and centered periodic arc domains. A revolution transfers only
   when its profile interval equals the referenced profile's complete interval.
   Its exact NURBS cache uses the stored ranges directly rather than deriving a
-  patch from available pcurves.
+  patch from available pcurves. Its neutral revolution construction maps the
+  stored angular surface-parameter interval affinely to the physical radian
+  interval, so the construction and cache share the native chart.
   Consolidated and object-stream tori retain independent active major- and
   minor-angle intervals and their centered full-turn chart domains.
   Object-stream tori additionally require the complete lead, right-handed
@@ -549,6 +567,13 @@ current scores require those matrices and representative fixtures.
   candidates only. Conflicting candidates for one edge are discarded locally;
   they do not discard other pcurve records or override the edge's serialized
   vertex identities and parameter incidences.
+  Object-stream decoding reconstructs each directory descriptor independently
+  and partitions its A8/B5 records at each byte that is neither a frame nor a
+  complete owned allocation. Object identities, topology roots, and
+  standard-surface evidence do not merge across those run boundaries. A
+  topology run can admit one uniquely referenced isolated geometry frame from
+  its own logical stream. Decode coverage reports decoded, selected, and
+  unselected object-stream run counts.
   Counted object-stream faces require and retain an exact `03` or `05` terminal
   control. Structurally complete face records require a nonempty reference lane
   and retain every ordered reference before target roles resolve; the
@@ -664,12 +689,12 @@ current scores require those matrices and representative fixtures.
 4. Validate semantic fingerprints for units, placements, curve and surface
    evaluation, body ownership, orientation, trimming, feature order,
    dependencies, sketches, constraints, dimensions, expressions,
-   configurations, and recomputed model identity as required by the claimed
+   configurations, and recomputed model identity as required by the scored
    level.
 5. Run deterministic malformed-input, resource-limit, and fuzz gates for every
    admitted parser family.
 
-The current public scores remain L2 claimed for `standard_nested` and L1
-claimed for the other recognized layouts. Capabilities above those scores are
+The current public scores remain L2 for `standard_nested` and L1
+for the other recognized layouts. Capabilities above those scores are
 extras until every cumulative gate through the target level passes for a
 closed envelope.

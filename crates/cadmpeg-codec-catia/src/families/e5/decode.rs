@@ -1280,10 +1280,7 @@ fn resolve_e5_ownership(topology: &crate::families::e5::graph::E5Topology) -> Op
 }
 
 /// Emits the boundary curve, intersection/surface-curve procedural, and edge layers.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn emit_e5_curves_and_edges(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -1523,10 +1520,7 @@ fn emit_e5_bodies(
 ///
 /// Returns `false` when the lowering plan is not total for a serialized loop
 /// member.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Face lowering keeps one parameter per independent arena, table, or control plan rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn emit_e5_faces_loops_coedges(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,

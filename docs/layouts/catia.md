@@ -417,12 +417,12 @@ Cross-checked against code:
 
 Spec §7.5 · layout: byte offsets · size: 24 B
 
-Offsets are row-relative; the `01 00 04 00` marker sits at row offset 4. The low 24 bits of `tag` are the persistent roster tag and the high byte remains part of the stored word. Exact lead values `0x8e` and `0x8f` are ordinal-linked storage forms.
+Offsets are row-relative; the `01 00 04 00` marker sits at row offset 4. The lead is a u32 whose low byte is `0x01`, exact `0x8e`, or exact `0x8f`. The low 24 bits of `tag` are the persistent roster tag and the high byte remains part of the stored word.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `lead` | `u32` | little | spec | alias_row := <lead:u32le> 01 00 04 00 |
-| 4 | 4 | `marker` | `bytes[4]` | little | spec | <lead:u32le> 01 00 04 00 <tag:u32le> |
+| 0 | 4 | `lead` | `u32` | little | spec | surface_alias_lead := <u32le whose low byte is 01> \| 8e 00 00 00 \| 8f 00 00 00 |
+| 4 | 4 | `marker` | `bytes[4]` | little | spec | alias_row := surface_alias_lead 01 00 04 00 <tag:u32le> |
 | 8 | 4 | `tag` | `u32` | little | spec | 01 00 04 00 <tag:u32le> <flag:u8> |
 | 12 | 1 | `flag` | `u8` | little | spec | <tag:u32le> <flag:u8> <f1:3B> |
 | 13 | 3 | `f1` | `bytes[3]` | little | spec | <flag:u8> <f1:3B> <f2:u32le> <f3:u32le> |

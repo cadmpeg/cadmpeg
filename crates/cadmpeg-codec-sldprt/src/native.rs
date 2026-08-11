@@ -49,7 +49,7 @@ pub(crate) const SLDPRT_ARENA_NAMES: &[&str] = &[
 
 type SldprtFamilyRow = FamilyRow<SldprtNative, (), cadmpeg_ir::NativeNamespace, ()>;
 
-#[allow(clippy::needless_pass_by_value)] // Callers materialize flattened temporary arenas.
+#[allow(clippy::needless_pass_by_value)]
 fn emit_owned<T: Serialize>(
     records: Vec<T>,
     row: &SldprtFamilyRow,

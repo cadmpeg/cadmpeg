@@ -280,7 +280,6 @@ pub(super) fn relation_instances(
     instances
 }
 
-// Keep the focused relation-group tests beside the grouping algorithm.
 #[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod relation_records_tests {

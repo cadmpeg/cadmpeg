@@ -2213,6 +2213,7 @@ mod tests {
             id: SketchId(format!("inventor:design:sketch#{SEGMENT}-50")),
             name: None,
             configuration: None,
+            visible: None,
             placement: SketchPlacement::Resolved {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),

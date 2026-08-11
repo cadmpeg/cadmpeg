@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Segment-index, stream-link, and body-lineage extractors and record types.
 
-#[allow(
-    clippy::wildcard_imports,
-    reason = "Split check modules share a private orchestration prelude via wildcard import."
-)]
+#[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::native::features::{
     FeatureBodyDataBlockUse, FeatureBodyReference, FeatureBooleanOperation, FeatureInputBlock,
@@ -216,10 +213,7 @@ pub struct SegmentOmLink {
 /// body ordinals or duplicate primary-body fields. The label arena is
 /// source/newest-first; all history positions below use oldest-first order
 /// within each section.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "The lineage rule consumes independent native relation arenas; keeping them explicit preserves those format-level dependencies."
-)]
+#[allow(clippy::too_many_arguments)]
 pub fn terminal_feature_body_indices(
     labels: &[FeatureOperationLabel],
     references: &[FeatureBodyReference],
@@ -357,10 +351,7 @@ pub fn terminal_feature_body_indices(
 }
 
 /// Resolve one atomic terminal status for every segment-bound body image.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "The lineage rule consumes independent native relation arenas; keeping them explicit preserves those format-level dependencies."
-)]
+#[allow(clippy::too_many_arguments)]
 pub fn segment_body_lineage_statuses(
     labels: &[FeatureOperationLabel],
     references: &[FeatureBodyReference],

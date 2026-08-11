@@ -1,6 +1,6 @@
 # IGES open items
 
-IGES L9 is not achieved. The current score is L8 tested. The bounded semantic
+IGES L9 is not achieved. The current score is L8. The bounded semantic
 writer and its independent-application checks are extras above L8; they do not
 close the L9 gate while decode can time out, return invalid `CadIr`, or omit
 semantic records from transfer.

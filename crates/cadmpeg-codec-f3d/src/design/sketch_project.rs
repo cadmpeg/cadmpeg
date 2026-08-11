@@ -89,6 +89,10 @@ pub fn project_sketch_design(
             id: neutral_sketch_id(placement),
             name: Some(placement.entity_id.clone()),
             configuration: None,
+            visible: placement
+                .visibility
+                .as_ref()
+                .map(|visibility| visibility.visible),
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin: Point3::new(
                     placement.transform[0][3] * placement_origin_scale(placement),
@@ -554,6 +558,10 @@ pub fn project_spatial_sketch_design(
                 id,
                 name: Some(placement.entity_id.clone()),
                 configuration: None,
+                visible: placement
+                    .visibility
+                    .as_ref()
+                    .map(|visibility| visibility.visible),
                 native_ref: Some(placement.id.clone()),
             }
         })
@@ -802,7 +810,10 @@ pub fn project_spatial_sketch_constraints(
 
 #[cfg(test)]
 mod tests {
-    use super::{sketch_text_horizontal_alignment, sketch_text_vertical_alignment};
+    use super::{
+        project_sketch_design, sketch_text_horizontal_alignment, sketch_text_vertical_alignment,
+    };
+    use crate::records::{DesignSketchPlacement, DesignSketchVisibility};
     use cadmpeg_ir::sketches::{
         SketchTextHorizontalAlignment as Horizontal, SketchTextVerticalAlignment as Vertical,
     };
@@ -840,5 +851,40 @@ mod tests {
         );
         assert_eq!(sketch_text_horizontal_alignment(None), None);
         assert_eq!(sketch_text_vertical_alignment(None), None);
+    }
+
+    #[test]
+    fn sketch_container_visibility_projects_to_the_neutral_sketch() {
+        let placement = DesignSketchPlacement {
+            id: "f3d:design:design-sketch-placement#1".into(),
+            scope_record_index: None,
+            entity_id: "Sketch_201".into(),
+            entity_suffix: 201,
+            visibility: Some(DesignSketchVisibility {
+                stream_ordinal: 1,
+                stream_ordinal_offset: 30,
+                visible_offset: 35,
+                visible: false,
+            }),
+            byte_offset: 0,
+            class_tag: "256".into(),
+            record_index: 1,
+            frame_length: 34,
+            transform: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            transform_offset: None,
+            paired_class_tag: "257".into(),
+            paired_byte_offset: 34,
+            member_run_head: true,
+        };
+
+        let (sketches, entities) = project_sketch_design(&[placement], &[], &[], &[], 1.0e-6);
+        assert!(entities.is_empty());
+        assert_eq!(sketches.len(), 1);
+        assert_eq!(sketches[0].visible, Some(false));
     }
 }

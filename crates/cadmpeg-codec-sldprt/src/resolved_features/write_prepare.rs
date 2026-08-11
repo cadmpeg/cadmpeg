@@ -33,12 +33,9 @@ use super::write_generate::{
 
 /// Reject unsupported neutral sketch edits before native lane replay.
 ///
-/// The neutral baseline is a machine-local content digest and the comparison
-/// against it is bitwise, which is what an edit-detection question needs and all
-/// it can be; see [`cadmpeg_ir::hash::document_local_sha256`]. An absent baseline
-/// means the question cannot be answered, and the no-baseline branch below
-/// synchronizes the lanes from the neutral side rather than assuming either side
-/// is unedited.
+/// Bitwise comparison against the machine-local document baseline; see
+/// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
+/// the neutral side.
 pub fn prepare_sketches_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
@@ -1439,6 +1436,7 @@ mod source_less_lane_tests {
             id: SketchId("sketch".into()),
             name: Some("Sketch".into()),
             configuration: None,
+            visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),

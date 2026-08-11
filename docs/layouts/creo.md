@@ -9,8 +9,9 @@ Table source: `docs/layouts/creo.toml`.
 
 Creo `.prt` is a token stream, not a fixed-record format. `creo_prt.md` states
 literal byte offsets in exactly two places — the two type-24 bounded-round
-surface bodies in §3.3 — plus three ASCII or magic framings in §1. Those five
-are tabled as byte layouts.
+surface bodies in §3.3. The fixed-width Unix-compress and CMNM prefixes in §1
+are also tabled as byte layouts. The other ASCII container records are
+variable-width delimiters or whitespace-delimited fields.
 
 The rest of what is tabulatable is the PSB primitive encoding: the compact
 integer, structural token, and three-byte IEEE-fill tables of §2. Those are
@@ -157,7 +158,7 @@ Cross-checked against code:
 
 | Area | Spec | Reason |
 | ---- | ---- | ------ |
-| UGC container header and TOC rows (§1, §1.2) | §1.2 | ASCII, whitespace-delimited. The TOC header declares a fixed row width, but the specification states the field order inside a row rather than its column positions, so neither a byte nor a column layout can be stated. |
+| UGC container header and TOC rows (§1, §1.2) | §1.2 | ASCII, whitespace-delimited. The legacy P_OBJECT schema and body are variable-width. The TOC header declares a fixed row width, but the specification states the field order inside a row rather than its column positions, so neither a byte nor a column layout can be stated. |
 | Surface bodies of §3.2 and §3.3 other than the two type-24 bounded rounds | §3.3 | About twenty positional cylinder variants plus plane and type-26 forms. The specification identifies them by opener bytes and arithmetic invariants over decoded scalars, not by field offsets; they are recognition predicates rather than layouts. |
 | Seven-byte DICT scalar forms (§2.3, Seven-byte DICT form) | §Seven-byte DICT form | About ninety prefix-to-IEEE-prefix mappings stated as prose rather than a table, and the specification states outright that each record grammar defines the DICT lane for its scalar slots, so a single flat table would be unsound. |
 | Section, feature, and DEPDB record grammars (§5-§8) | §5 | Variable-length token grammars over self-delimiting fields. About twenty-five of them state a complete ordered slot list and are transcribable as slot layouts; they are not covered in this pass. The rest are named but unspecified, and their gaps are already tracked in `creo_prt-open-items.md`. |

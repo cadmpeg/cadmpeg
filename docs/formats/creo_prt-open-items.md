@@ -320,11 +320,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How must a simultaneous-solve block evaluate when an unknown does not have a previous numeric value?
 
-**Known.** The defined affine solver uses the ordered equations, declared unknowns, dimensions, and previous numeric values.
+**Known.** The defined affine solver uses the ordered equations, declared unknowns, and previous or uniquely constrained physical dimensions. An underdetermined dimension system remains unresolved. A nonlinear block without a preceding finite numeric value for every unknown remains unresolved.
 
 **Need.** We must know the initialization rule to evaluate the block deterministically.
-
-**Note.** The closure commit adds symbolic dimension inference and hand-built expression tests. It does not provide a native Creo witness, an external parser, or an authoritative rule for initialization. The specification records that implementation choice as a PSB rule. Reopen until evidence settles the initialization rule.
 
 ### SP-03. Section-to-datum joins
 
@@ -435,7 +433,9 @@ The selected complete dimension supplies that sentinel's resolved scalar. A
 function-2 type-3/type-0 pair binds a positive type-3 radius row to a type-3
 dimension row when the inline scalar agrees or the type-0 row is
 dimension-driven; the selected dimension supplies the resolved scalar and
-radius value.
+radius value. A function-5 type-6/type-6/type-5 row with a zero type-5 selector
+transfers direct equality between the two type-6 scalars; either finite scalar
+supplies the other row's dimension-driven sentinel.
 
 **Need.** We must know the remaining non-equality equation and relation joins
 that assign a dimension value to a dimension-driven solver variable.
@@ -463,8 +463,6 @@ that assign a dimension value to a dimension-driven solver variable.
 **Known.** The decoder retains the type, flags, sense, and bounded-curve identity.
 
 **Need.** We must know the constraint to transfer its design intent.
-
-**Note.** The closure commit only constructs this tuple in a unit test and asserts the intended neutral mapping. It supplies no native file witness or independent evidence that kind 33, flags 34, and sense 10 mean `Fixed`. The specification records the implementation's guess as settled. Reopen until the constraint meaning is evidenced.
 
 ### SP-16. Other `skamp_ptr` geometry families
 
@@ -530,15 +528,13 @@ that assign a dimension value to a dimension-driven solver variable.
 
 **Need.** We must know the alternate datum to complete the sketch frame.
 
-### SP-24. Named `ActDatums` outline tokens
+### SP-24. `ActDatums` outline tokens
 
-**Question.** What scalar value does each `a5`, `9f`, `5c`, and `45` token encode in a named `ActDatums` outline?
+**Question.** What scalar value does each `5c` and `45` token encode in an `ActDatums` outline?
 
-**Known.** `creo_prt.md` §6 "`ActDatums` stores datum-plane geometry as `act_datum_geoms → srf_array` records. Each section" defines the two-corner outline and its held-coordinate plane rule.
+**Known.** `creo_prt.md` §6 "`ActDatums` stores datum-plane geometry as `act_datum_geoms → srf_array` records. Each section" defines the two-corner outline and its held-coordinate plane rule. Named and positional outlines use the same bounded model-coordinate lane. A `5c` or `45` token consumes one seven-byte coordinate slot without supplying a numeric value.
 
 **Need.** We must know the values to construct nonzero datum offsets and extents.
-
-**Note.** The closure assumes that the named-outline lane is identical to the tabulated-cylinder second-coordinate lane. The only evidence is a hand-built test decoded by that implementation; no native PSB sample or independent grammar establishes the prefix mapping. The specification records the lane reuse as settled. Reopen until the named-outline mapping is evidenced.
 
 ### SP-25. Other revolution termination selectors
 
@@ -556,7 +552,31 @@ that assign a dimension value to a dimension-driven solver variable.
 
 **Need.** We must know the recipe discriminator and conflict rule to assign the feature family and Boolean effect.
 
-**Note.** `crates/cadmpeg-codec-creo/src/feature/operations.rs:287-303` falls back to `FEATURE_RECIPES.iter().find_map` when the binding count is not one. It accepts the first name in the static list, not a unique byte-backed candidate. If a record contains two recipe names or two bindings for one feature, the selected recipe can assign the wrong sweep family or Boolean effect.
+### SP-39. Simple-drilled template selection and depth endpoint
+
+**Question.** Which replay identity distinguishes class-911 three-row
+simple-drilled dimension tables that have the same bore-radius and blind-depth
+envelope, and does the blind depth terminate at the cylindrical shoulder or
+the conical tip?
+
+**Known.** `creo_prt.md` §6 "A class-911 table-class-29 simple-drilled recipe"
+defines the generated-surface recipe and the bore-radius, included-angle, and
+blind-depth dimension roles. The paired cylinder parameter records provide
+per-axis common and adjacent-union spans. Bore diameter and blind depth select
+the complete tables that match those spans on distinct axes. All matching
+tables must define one equal tuple. Two rowless materialization-source pairs
+select the external-ID-2 depth family; three select the external-ID-4 depth
+family. Complementary envelopes define placement
+directly. A one-sided envelope pair defines the second radial coordinate when
+the patches share exactly one normalized bound and their non-shared bounds
+differ by the bore diameter. A clipped envelope pair defines its missing radial
+coordinate when the corresponding seven-token compound-close cone bodies
+cross-bind the cylinder corners in generated order. The neutral hole bottom
+retains no depth-to-tip state.
+
+**Need.** We must identify the per-feature replay join when competing tuples
+have equal bore-radius and blind-depth envelopes, and identify the depth
+endpoint to set `HoleBottom::Angled`.
 
 ## 4. Topology and appearance
 
@@ -700,13 +720,11 @@ that assign a dimension value to a dimension-driven solver variable.
 
 ### TP-18. `MdlStatus` prefix meanings
 
-**Question.** What stored-name state does each `MdlStatus` prefix `o`, `x`, `y`, and `z` represent?
+**Question.** What stored-name state does each `MdlStatus` prefix `o`, `x`, `y`, and `z` represent, and which field selects the current same-ID candidate?
 
-**Known.** `creo_prt.md` §6 "Operation names end in" states that the prefix is not part of the operation-family name and does not select the current same-ID state. Byte order selects the current state.
+**Known.** `creo_prt.md` §6 "Operation names end in" states that the prefix is not part of the operation-family name. Same-ID state candidates retain their byte order and exact prefixes. No candidate is projected as current without a selector.
 
-**Need.** We must know the prefix meanings to preserve the native state semantics.
-
-**Note.** The closure test only confirms that the current parser preserves prefixes and chooses the last hand-built record. It does not establish what `o`, `x`, `y`, and `z` mean or prove byte-order precedence in native `MdlStatus` data. The specification promotes that behavior without format evidence. Reopen until the state meanings and current-state selector are evidenced.
+**Need.** We must know the prefix meanings and current-state selector to preserve the native state semantics and project one current candidate.
 
 ## 5. Packed persistence data
 
@@ -784,12 +802,39 @@ that assign a dimension value to a dimension-driven solver variable.
 
 **Need.** We must know the row semantics to transfer configuration parameters and values.
 
-### PP-12. Triangle-strip position-array selection
+### PP-13. Legacy persistence bodies
 
-**Question.** When one `prim_tristripsetwithatt` record contains complete `mv_p_xyz` and `mv_p_NxNyNzxyz` arrays, which array supplies the positions and normals?
+**Question.** What type and value grammar does each legacy ASCII `@<name>`
+field declaration select, and how do its object references and arrays compose
+the geometry, topology, and design-history graphs? What record grammar applies
+to named legacy sections that do not begin with an attribute declaration?
 
-**Known.** `creo_prt.md` §8.4 defines `mv_p_xyz` as consecutive XYZ positions and `mv_p_NxNyNzxyz` as normal-position tuples. Both arrays can satisfy their declared scalar counts independently; the specification gives no conflict rule.
+**Known.** `creo_prt.md` §1 defines the complete legacy ASCII layout
+discriminator, its outer `P_OBJECT` boundary, its decimal schema token, its
+product-release banner forms, and its monolithic and named-section forms. The
+named-section directory defines banner-relative offsets and stored extents.
+Attribute declarations and value rows use section-local identifiers; an
+immediately following `$` row continues a value payload.
+The unique type-10 `principal_sys_units` scalar selects either millimeter or
+inch coordinate lengths; inch lengths scale by `25.4` to canonical
+millimeters.
+Type 1 selects signed decimal 32-bit integer scalars and dimensioned run-length
+arrays. Type 2 selects finite IEEE-754 binary64 scalars and dimensioned
+run-length arrays with the compact hexadecimal grammar in `creo_prt.md` §1.
+Type 0 selects null, arrow, inline, and dimensioned-array object nodes; row
+depth supplies their scoped ownership tree.
+Type 10 selects null and byte-string scalars and direct-row arrays. The first
+array extent gives the number of string rows; later extents do not multiply
+that count. Valid UTF-8 strings transfer as text, and other encodings retain
+their exact bytes.
+Type 3 selects nullable byte-string scalars. Type 4 selects byte-string scalars
+without a null token. Neither type uses continuation rows.
+Type 6 uses the type-2 compact-real scalar and array grammar. Types 5, 7, 9,
+and 11 use unsigned decimal 32-bit scalars and dimension-complete run-length
+arrays; their one-element arrays can store the element in a direct child row.
 
-**Need.** We must know the ownership and precedence rule to transfer the correct tessellation positions and normals.
-
-**Note.** `crates/cadmpeg-codec-creo/src/primdata.rs:69-95` scans complete arrays in byte order and accepts the first one. If both arrays contain different positions, the first array supplies the strip and the other representation is discarded; the normal-bearing array is ignored when `mv_p_xyz` appears first. No current item records this selection rule.
+**Need.** We must know the semantic axis order of multidimensional type-2
+arrays, the character-set selection for non-UTF-8 type-10 strings, type-10
+continuation semantics,
+geometry and design-history graph joins, and non-attribute section grammar to
+transfer the rest of legacy persistence.

@@ -179,13 +179,20 @@ pub fn standard_surface_records(
             StandardSurfaceRecord::Freeform { .. } => None,
         })
         .collect::<Vec<_>>();
+    let mut next_analytic = analytic_ranges.iter().copied().peekable();
     for pos in 0..brep.len().saturating_sub(46) {
         if brep.get(pos + 3..pos + 6) != Some(&[0, 0, 0]) {
             continue;
         }
-        if analytic_ranges
-            .iter()
-            .any(|&(start, end)| pos < end && pos + 47 > start)
+        while next_analytic
+            .peek()
+            .is_some_and(|(_, analytic_end)| *analytic_end <= pos)
+        {
+            next_analytic.next();
+        }
+        if next_analytic
+            .peek()
+            .is_some_and(|(analytic_start, _)| *analytic_start < pos + 47)
         {
             continue;
         }
@@ -212,24 +219,66 @@ pub fn standard_surface_records(
         );
     }
 
-    let mut solutions = Vec::new();
-    for &start in records.keys() {
-        let mut at = start;
-        let mut chain = Vec::with_capacity(face_count);
-        for _ in 0..face_count {
-            let Some(record) = records.get(&at) else {
-                break;
-            };
-            chain.push(record.clone());
-            at = record.end();
+    if face_count > records.len() {
+        return None;
+    }
+    let record_indices = records
+        .keys()
+        .enumerate()
+        .map(|(index, &start)| (start, index))
+        .collect::<HashMap<_, _>>();
+    let ordered_records = records.values().collect::<Vec<_>>();
+    let successors = ordered_records
+        .iter()
+        .map(|record| record_indices.get(&record.end()).copied())
+        .collect::<Vec<_>>();
+    let remaining_steps = face_count - 1;
+    let level_count = usize::BITS as usize - remaining_steps.leading_zeros() as usize;
+    let mut jumps = Vec::new();
+    if level_count > 0 {
+        jumps.push(successors.clone());
+    }
+    while jumps.len() < level_count {
+        let previous = jumps.last().expect("one lower jump level");
+        jumps.push(
+            previous
+                .iter()
+                .map(|next| next.and_then(|middle| previous[middle]))
+                .collect(),
+        );
+    }
+
+    let mut solution_start = None;
+    for start in 0..ordered_records.len() {
+        let mut current = Some(start);
+        let mut steps = remaining_steps;
+        let mut level = 0;
+        while steps != 0 {
+            if steps & 1 != 0 {
+                current = current.and_then(|index| jumps[level][index]);
+            }
+            steps >>= 1;
+            level += 1;
         }
-        if chain.len() == face_count && brep.get(at) == Some(&0x60) {
-            solutions.push(chain);
+        let Some(last) = current else {
+            continue;
+        };
+        if brep.get(ordered_records[last].end()) == Some(&0x60)
+            && solution_start.replace(start).is_some()
+        {
+            return None;
         }
     }
-    <[Vec<StandardSurfaceRecord>; 1]>::try_from(solutions)
-        .ok()
-        .map(|[records]| records)
+
+    let mut current = solution_start?;
+    let mut chain = Vec::with_capacity(face_count);
+    for ordinal in 0..face_count {
+        chain.push(ordered_records[current].clone());
+        if ordinal + 1 < face_count {
+            current = successors[current]?;
+        }
+    }
+    Some(chain)
 }
 
 /// Read the trailing per-face orientation byte from a complete analytic

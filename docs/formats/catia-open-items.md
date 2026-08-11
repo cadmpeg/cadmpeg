@@ -16,14 +16,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container and roster
 
-### CR-01. Non-surface outer alias rows
-
-**Question.** What grammar and role do outer `01 00 04 00 <tag>` rows have when they do not satisfy the surface-alias production?
-
-**Known.** `catia.md` §7.5 `alias_row` defines the complete outer surface-alias row. Each freeform surface tag has one matching alias row. Vertex tags do not use that alias.
-
-**Need.** We must distinguish other row classes from surface aliases and vertex registrations.
-
 ### CR-02. Extent flags
 
 **Question.** What does each bit of the extent `flags` word control?
@@ -31,26 +23,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `catia.md` §3.4 "ds+0x54 : k extent structs" defines the extent directory and the position of `flags`. The decoder retains the word and reports it as `extent_flags`.
 
 **Need.** We must know the bit assignments to validate an extent and to write its flags.
-
-### CR-03. Zero-entity record ownership boundary
-
-**Question.** Which byte range owns zero-entity `a9 03` records when matching records also occur in the trailing directory or another outer region?
-
-**Known.** `catia.md` §1 and §8 describe zero-entity records as an outer-preamble family. The container census and zero-entity record inventory currently scan the complete byte image.
-
-**Need.** We must bind the record census and topology transfer to the owning outer preamble so directory records cannot become geometry.
-
-**Note.** Added by the 2026-08-10 hostile sweep. `container.rs:1220-1257` counts `a9 03` markers over the complete image, and `zero_entity/records.rs:286-337` walks every complete-looking record from offset zero. A valid-looking `a9` record in a trailing directory is therefore emitted with the preamble records; tag-specific lengths and geometry checks validate the record shape but not its ownership. Confidence: high for code behavior; medium for real-file occurrence.
-
-### CR-04. E5 precedence with inner records but no BREP
-
-**Question.** What precedence resolves a coherent E5 stream when a nested container has no BREP body, or when zero-entity records coexist with a coherent E5 stream?
-
-**Known.** `catia.md` §1 lists E5, zero-entity, and inner-no-directory variants as distinct families. `identify_variant` considers `coherent_e5` only when both an inner directory and a BREP stream exist.
-
-**Need.** We must prove these populations are mutually exclusive or define the ownership and refusal rule before choosing a decoder family.
-
-**Note.** Added by the 2026-08-10 hostile sweep. `container.rs:1185-1215` returns `InnerNoDirectory` for `(Some(inner), None)` and `ZeroEntity` for `(None, _)` with any `a9` marker, without using `coherent_e5`. The route table then sends `InnerNoDirectory` to the freeform path. A file containing both a coherent E5 walk and one of these populations can be assigned a different family solely from branch order. No committed fixture proves the populations are exclusive. Confidence: medium.
 
 ## 2. Design intent
 
@@ -82,7 +54,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each reference in an inline `7C09` body select?
 
-**Known.** `catia.md` §7.3 "The fixed bytes in the inline production are structural" defines the inline body boundary and retains each reference identity.
+**Known.** `catia.md` §7.3 "The fixed bytes in the inline production are structural" defines the complete inline production. An exact paired entity-table boundary and equal entity/object cardinality admit other nonempty childless bodies as opaque bytes without reference-role assignment.
 
 **Need.** We must know the reference roles to bind objects and fields.
 
@@ -160,19 +132,19 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DI-13. Active configuration state
 
-**Question.** Which field selects the active configuration state?
+**Question.** Which production defines document design configurations, and which field selects the active state?
 
-**Known.** `catia.md` §7.3 "A self-defining configuration record is" and `catia.md` §7.3 "A configuration-row link is" defines `Configuration` records, `configrow` successor chains, selected value schemas, and the source-ordered open intervals between rows. These incidences do not assign active state.
+**Known.** `catia.md` §7.3 "A self-defining schema-configuration record is" and `catia.md` §7.3 "A schema-configuration-row link is" defines schema-local `Configuration` records, `configrow` successor chains, selected value schemas, and the source-ordered open intervals between rows. These productions do not define document design configurations or assign active state. `Configuration`, `configrow`, and `DesignTable` catalog entries can remain unselected by every object record and value record; catalog vocabulary alone does not establish an instance production.
 
-**Need.** We must know the selector to transfer the active configuration.
+**Need.** We must identify the document design-configuration production before we can transfer configuration identities or active state.
 
-### DI-14. Configuration row semantics
+### DI-14. Schema-configuration row semantics
 
 **Question.** What does each entity in an open `configrow`-to-successor interval represent?
 
 **Known.** Complete successor chains fix row order. The decoder retains each intervening entity in source order.
 
-**Need.** We must know these roles to assign row names, parameter overrides, body membership, and feature replay order.
+**Need.** We must know these schema-local roles. They do not assign document configuration names, parameter overrides, body membership, or feature replay order.
 
 ### DI-15. Sketch instance binding
 
@@ -198,15 +170,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the roles to transfer sketch membership and geometry.
 
-### DI-18. Constraint-range owner
+### DI-18. Range semantic owner
 
-**Question.** Which individual constraint owns each complete `Range`/`CstAttr_Dimension` or `Range`/`ComplexCst` value?
+**Question.** Which sketch constraint, feature/model-tolerance object, or product-manufacturing-information object owns each complete schema-selected `Range` interval?
 
-**Known.** `catia.md` §7.3 "A lead-`2` constraint-range entity has exactly two value selectors" defines both range forms and retains incoming payload references and object-head storage selectors as distinct incidences. `ListAggregator` references can include unrelated and repeated identities. A range transfers as one opaque sketch constraint only when exactly one total incoming incidence resolves to its same-graph paired source entity and object record, and that source object's complete owner chain reaches one transferred `Sketch` before another transferred feature. The source object record is retained as one unresolved native operand; neutral sketch entities, loci, parameters, and dimensional roles remain unresolved.
+**Known.** `catia.md` §7.3 "A catalog-resolved value selection named `Range`" defines the complete interval independently of selector cardinality and suffix framing and retains every incoming payload reference and storage selector. Range intervals occur with no slots or with finite and unset lower and upper tolerance-deviation slots. They occur in `Range`-only, `Range`/`CstAttr_Dimension`, and larger selector sequences. Exact `D8`/`81 93` and `DC`/`81 DB` scalar suffix dialects supply the nominal independently of selector cardinality. A `Range`-only interval can carry both deviations and its nominal. Range intervals can occupy a stable `MechanicalPart` aggregate slot selected by a `_SpecList`/`FeatureFSUR` relation whose other operand carries `UserPattern` and `SimpleLimit`; sketch-versus-PMI is not an exhaustive ownership choice. Their paired and incoming classes also include presentation, TPS capture-link, limiting-element, Boolean, geometry, and catalog-manager classes. Some intervals have no incoming incidence, one incidence, duplicate references from one object, or references from multiple objects. The narrower two-selector constraint-range production retains four exact selector/code/trailer tuples. `ListAggregator` references can include unrelated and repeated identities. A shared structural design-object owner can contain feature, geometry, and presentation classes. These incidences do not distinguish sketch, feature/model-tolerance, and product-manufacturing-information ownership. A two-selector range transfers as one opaque sketch constraint only when exactly one total incoming incidence resolves to its same-graph paired source entity and object record, and that source object's complete owner chain reaches one transferred `Sketch` before another transferred feature. The source object record is retained as one unresolved native operand; neutral sketch entities, loci, parameters, dimensional roles, and other Range-bearing selector sequences remain unresolved.
 
-**Need.** We must know the owner to assign a range to a neutral constraint.
-
-**Note.** Reopened by the 2026-08-10 closure audit. Commit `b9e11131b` changed only the ledger. The current transfer gate uses a unique incoming incidence and an owner-chain check; synthetic native-sketch fixtures exercise that gate, but neither establishes that the incidence is the CATIA ownership field. Repeated or unrelated `ListAggregator` references remain unresolved. Confidence: high.
+**Need.** We must identify the owning incidence and distinguish a sketch dimension, a feature/model tolerance, and a semantic PMI dimension before neutral transfer.
 
 ### DI-19. Sketch placement
 
@@ -244,7 +214,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How do operation fields, definition-bound values, and structurally owned operand objects form one feature instance?
 
-**Known.** `catia.md` §7.3 "All `7C09` records in one graph carrying the same `owner_ref`" defines each incidence independently. A complete two-definition value chain with a supported second role transfers one typed parameter, but it does not assign that parameter to an operation role. An operation-named field class or field vocabulary does not assign feature identity, operands, outputs, or replay order. An exact separator-form owner declaration for an admitted operation class, with matching class entry, owner entity, and structural owner, establishes one opaque feature identity and its source order; it does not assign the operation's semantic inputs.
+**Known.** `catia.md` §7.3 "All `7C09` records in one graph carrying the same `owner_ref`" defines each incidence independently. Paired entity tables admit opaque childless object records and preserve their complete bodies, but do not assign roles inside those bodies. A complete two-definition value chain with a supported second role transfers one typed parameter, but it does not assign that parameter to an operation role. Operation-named field records can share one class identity across several structural owner groups. A `Hole` class cohort contains one empty self-classified record plus list, atom-vector, mixed, or empty records under other owners. The shared class identity does not establish whether the cohort is a schema object, one feature instance, or a field program reused by multiple instances. An operation-named field class or field vocabulary does not assign feature identity, operands, outputs, or replay order. An exact separator-form owner declaration for an admitted operation class, with matching class entry, owner entity, and structural owner, establishes one opaque feature identity and its source order; it does not assign the operation's semantic inputs.
 
 **Need.** We must know the operation-specific binding that transfers profiles, directions, extents, outputs, and regeneration dependencies for each admitted feature family.
 
@@ -482,11 +452,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which parameter occurrence on a standard degree-5 limit curve names a serialized endpoint when more than one parameter is within the point tolerance?
 
-**Known.** `standard_limit_curve_point_parameter` collects parameter candidates within the endpoint tolerance and sorts them by residual. It rejects only candidates with a separated parameter and nearly identical residual; otherwise it returns the smallest-residual candidate.
+**Known.** `catia.md` §5.8 "A standard spline edge with two distinct adjacent face carriers" requires every within-tolerance candidate for one endpoint to occupy one parameter-tolerance cluster. The decoder rejects any separated occurrence, independent of residual ordering.
 
-**Need.** We must know the endpoint-occurrence identity or reject competing parameter candidates before binding a limit-curve interval.
-
-**Note.** Added by the 2026-08-10 hostile sweep. At `crates/cadmpeg-codec-catia/src/families/standard/decode.rs:2783-2830`, unequal residuals select the nearest candidate. If one curve passes within tolerance at two separated parameters, reordering or changing the curve shape can change the selected endpoint parameter while the discarded occurrence remains geometrically valid. Later endpoint-pair uniqueness does not recover the discarded parameter. The specification requires unique endpoint parameters, but the code does not enforce that invariant. Confidence: medium-high.
+**Need.** We must know the endpoint-occurrence identity to bind a curve that has separated candidates instead of retaining it natively.
 
 ## 4. Object stream
 
@@ -618,23 +586,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Audit note.** Reopened by the 2026-08-10 closure audit. Commit `1182d6612` makes the lane labels part of the spec and retains the parsed fields, but the generated-tail tests only repeat those labels. No independent CATIA witness establishes the range, affine, or extrapolation roles. Confidence: high.
 
-### OS-16. Object-stream run ownership
-
-**Question.** Which contiguous object-stream run owns each complete `b5`/`a8` frame population when the byte image contains more than one such run?
-
-**Known.** `catia.md` §6.7 defines the object stream as a contiguous length-framed run. `object_stream_frames` scans the complete byte image and `parse_from_records` merges every admitted frame by object id.
-
-**Need.** We must know the run boundary and ownership rule to avoid merging records from separate physical regions into one body.
-
-**Note.** Added by the 2026-08-10 hostile sweep. `crates/cadmpeg-codec-catia/src/families/b5/graph.rs:4545-4603` scans all bytes and admits every standalone `b5` frame plus nested A8 children; `freeform/mod.rs:274-286` passes the global collection to one graph. If two valid frame clusters are separated by directory or unrelated bytes, the current parser can combine them, and `b5/transfer/faces.rs:350-376` emits one body with derived regions. The child framing and duplicate-id rejection are counter-evidence for malformed data, not an ownership proof for two valid runs. Confidence: medium-high.
-
 ## 5. Zero-entity `a9 03`
 
 ### ZE-01. Class-`0x5fxx` face terminal control
 
 **Question.** What does the terminal control byte in each `0x5fxx` face record control?
 
-**Known.** `catia.md` §8 "Record framing `a9 03 XX YY <payload[YY+8]>`, `record_length = YY + 12`; records reference each" defines the zero-entity face roster and support incidences.
+**Known.** `catia.md` §8 "Record framing `a9 03 XX YY <payload[YY+8]>`, `record_length = YY + 12`" defines the zero-entity face roster and support incidences.
 
 **Need.** We must know the control to validate and write the face.
 
@@ -766,16 +724,6 @@ The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−
 
 **Need.** The sign reverses the cyclic member order of every loop in the component and toggles every member sense, which gives an inverted shell. The result stays radially coherent, so no gate rejects it, and the transfer loss note affirms that face and loop orientation transfer. We must know the field to fix the sign without a vote.
 
-### E5-11. E5 candidate boundary
-
-**Question.** What boundary excludes trailing-directory bytes from the E5 candidate scan?
-
-**Known.** `e5_record_stream_in_segments` scans FINJPL segments through the complete byte image and admits any coherent segment whose start is at or after the preamble start. The outer directory has a separate offset and length.
-
-**Need.** We must constrain E5 candidates to the owning outer body or prove that directory bytes cannot contain a competing coherent E5 walk.
-
-**Note.** Added by the 2026-08-10 hostile sweep. At `crates/cadmpeg-codec-catia/src/container.rs:393-440`, `finjpl_segments(data, 0, data.len())` includes the trailing directory and the filter checks `segment.range.start >= directory_length`, not containment before `directory_offset`. A directory segment with ten plausible E5 records can therefore compete with the body candidate; the coherent-walk and tie checks validate candidates but do not establish physical ownership. Confidence: high for code behavior; medium for real-file occurrence.
-
 ### E5-12. E5 occurrence-side fallback
 
 **Question.** Which intersection side is authoritative when an E5 edge has zero, one, or conflicting occurrence-side candidates?
@@ -856,7 +804,7 @@ The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−
 
 **Question.** Does a face whose `a8 03 34` carrier stores no inline pole grid join the transferred B-rep?
 
-**Known.** `catia.md` §6.7 "**Object-stream topology:**" fixes loop membership. `catia.md` §6.6 "The elided-pole form places the fixed 141-byte" gives the external pole allocation, and `a5a8::records::a8_surface_from_external_grid` binds it when its byte length is unique in the stream. A carrier that keeps no grid stays an identity-bearing surface node, so a class-`21` pcurve on it lifts to no 3D endpoint, no `5e` edge on it takes a vertex locus, its `62` loop fails the endpoint conjunct, and the owning `5f` face leaves the connected graph.
+**Known.** `catia.md` §6.7 "**Object-stream topology:**" fixes loop membership. `catia.md` §6.6 "The elided-pole form places a fixed 141-byte" gives the external pole allocation, and `a5a8::records::a8_surface_from_external_grid` binds it when its byte length is unique in the stream. A carrier that keeps no grid stays an identity-bearing surface node, so a class-`21` pcurve on it lifts to no 3D endpoint, no `5e` edge on it takes a vertex locus, its `62` loop fails the endpoint conjunct, and the owning `5f` face leaves the connected graph.
 
 **Need.** We must know whether the external allocation transfers the face, and we must hold the exclusion when it does not. Transferring the face without a grid needs invented vertex coordinates.
 

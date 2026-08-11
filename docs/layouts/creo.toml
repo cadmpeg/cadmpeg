@@ -6,8 +6,9 @@ spec = "docs/formats/creo_prt.md"
 note = """
 Creo `.prt` is a token stream, not a fixed-record format. `creo_prt.md` states
 literal byte offsets in exactly two places — the two type-24 bounded-round
-surface bodies in §3.3 — plus three ASCII or magic framings in §1. Those five
-are tabled as byte layouts.
+surface bodies in §3.3. The fixed-width Unix-compress and CMNM prefixes in §1
+are also tabled as byte layouts. The other ASCII container records are
+variable-width delimiters or whitespace-delimited fields.
 
 The rest of what is tabulatable is the PSB primitive encoding: the compact
 integer, structural token, and three-byte IEEE-fill tables of §2. Those are
@@ -436,7 +437,7 @@ note = "The parser gates the local-system frame on exactly twelve decoded slots.
 
 [[not_applicable]]
 area = "UGC container header and TOC rows (§1, §1.2)"
-reason = "ASCII, whitespace-delimited. The TOC header declares a fixed row width, but the specification states the field order inside a row rather than its column positions, so neither a byte nor a column layout can be stated."
+reason = "ASCII, whitespace-delimited. The legacy P_OBJECT schema and body are variable-width. The TOC header declares a fixed row width, but the specification states the field order inside a row rather than its column positions, so neither a byte nor a column layout can be stated."
 section = "1.2"
 anchor = "### 1.2 Section map"
 

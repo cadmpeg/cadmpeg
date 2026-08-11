@@ -141,7 +141,9 @@ Procedural entities retain construction semantics either as a surface or curve c
 Procedural surface definitions are:
 
 - `extrusion`: directrix and sweep direction;
-- `revolution`: directrix, axis, `angular_interval`, optional source-carried `parameter_interval`, and `transposed`;
+- `revolution`: directrix, axis, radian `angular_interval`, optional source-carried
+  `angular_parameter_interval` mapped affinely to that angular interval, optional
+  source-carried directrix `parameter_interval`, and `transposed`;
 - `sum`: ordered curves `first` and `second` with `basepoint`; the surface is `basepoint + first(u) + second(v)`;
 - `sweep`: profile and spine;
 - `offset`: support surface, signed distance, and optional source-carried U/V sense enums;
@@ -184,9 +186,21 @@ more than once when the source serializes repeated consumption slots.
 
 ## Native namespaces
 
-`native.f3d` and `native.sldprt`, when present, each contain `version: 1`. `native.nx` contains `version: 146`.
+When present, native namespace versions are:
 
-Fusion native data includes ACT, Design, persistent-reference, sketch-link, construction-recipe, and ASM-history records. SOLIDWORKS native data includes feature histories and feature-input lanes.
+| Namespace         | Version |
+| ----------------- | ------- |
+| `native.f3d`      | 12      |
+| `native.sldprt`   | 13      |
+| `native.nx`       | 189     |
+| `native.inventor` | 25      |
+| `native.fcstd`    | 22      |
+| `native.catia`    | 271     |
+| `native.creo`     | 1       |
+| `native.rhino`    | 2       |
+| `native.sat`      | 1       |
+
+Fusion native data includes ACT, Design, persistent-reference, sketch-link, construction-recipe, and ASM-history records. SOLIDWORKS native data includes feature histories and feature-input lanes. Inventor native data includes RSe segment inventories, OLE property sets, Protein package assets, external-reference records, presentation joins, and design-parameter, sketch, and feature arenas. Bare SAT streams retain ASM-native topology and unknown SAB records under `native.sat`.
 
 NX native data retains the ordered UG_PART segment index with validated compressed-stream, body-image alias, and role-classified OM-section links. Parasolid attribute-class declarations keep exact field descriptors, topology attribute-list ownership, and counted integer, binary64, and string value records. OM retention covers internally pointed record-area headers and byte identities; object-ID-bounded records; section-scoped class and member declarations with bounded registry suffixes and structured class-layout fingerprints; offset-only store control and column blocks with atomic store-local class-selection lanes; ordered references to uniquely resolved object records and parameter declarations; product-terminated control indices; and complete counted same-store block-index lanes.
 

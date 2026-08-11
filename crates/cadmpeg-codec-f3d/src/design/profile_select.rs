@@ -280,6 +280,7 @@ pub(crate) fn bind_extrude_profile_selections(
     groups: &[DesignExtrudeSelectionGroup],
     members: &[DesignExtrudeSelectionMember],
     sketches: &[cadmpeg_ir::sketches::Sketch],
+    curve_resolution: &SketchCurveSelectionResolution<'_>,
     resolution: ExtrudeProfileResolution<'_>,
 ) {
     use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
@@ -301,13 +302,23 @@ pub(crate) fn bind_extrude_profile_selections(
             })
             .collect::<Vec<_>>();
         matching_groups.sort_by_key(|group| group.scope_reference_ordinal);
-        if matching_groups.is_empty() {
-            continue;
-        }
         let FeatureDefinition::Extrude { profile, .. } = &mut feature.definition else {
             continue;
         };
-        if matches!(profile, ProfileRef::Native(_)) {
+        if let ProfileRef::Native(native) = profile {
+            let mut entity_groups = curve_resolution.groups.iter().filter(|group| {
+                group.id == *native
+                    && native_stream(&group.id) == native_stream(&scope.id)
+                    && group.scope_record_index == scope.record_index
+            });
+            if let (Some(group), None) = (entity_groups.next(), entity_groups.next()) {
+                if let Some(selection) =
+                    resolve_entity_selection_profile(group, &curve_resolution.path_resolution())
+                {
+                    *profile = selection;
+                    continue;
+                }
+            }
             if let Some(selection) = historical_face_profile_selection(
                 &matching_groups,
                 members,
@@ -317,6 +328,9 @@ pub(crate) fn bind_extrude_profile_selections(
             ) {
                 *profile = selection;
             }
+            continue;
+        }
+        if matching_groups.is_empty() {
             continue;
         }
         let ProfileRef::Sketch(sketch_id) = profile else {
@@ -403,6 +417,76 @@ pub(crate) fn bind_extrude_profile_selections(
             }
         });
     }
+}
+
+fn resolve_entity_selection_profile(
+    group: &DesignConstructionOperandGroup,
+    resolution: &EntitySelectionPathResolution<'_>,
+) -> Option<cadmpeg_ir::features::ProfileRef> {
+    use cadmpeg_ir::features::{PathRef, ProfileRef};
+
+    if group.role != 0x41_0000_0000 {
+        return None;
+    }
+    match resolve_entity_selection_path(group, resolution)? {
+        PathRef::SketchCurves { sketch, curves } => {
+            let source = resolution
+                .sketches
+                .iter()
+                .find(|source| source.id == sketch)?;
+            let profiles = selected_profile_indices(
+                curves.iter(),
+                source.profiles.iter().map(|profile| {
+                    profile
+                        .iter()
+                        .map(|use_| &use_.entity)
+                        .collect::<HashSet<_>>()
+                }),
+            )?;
+            Some(ProfileRef::SketchProfiles { sketch, profiles })
+        }
+        PathRef::SpatialSketchCurves { sketch, curves } => {
+            let source = resolution
+                .spatial_sketches
+                .iter()
+                .find(|source| source.id == sketch)?;
+            let profiles = selected_profile_indices(
+                curves.iter(),
+                source.profiles.iter().map(|profile| {
+                    profile
+                        .boundary
+                        .iter()
+                        .map(|use_| &use_.entity)
+                        .collect::<HashSet<_>>()
+                }),
+            )?;
+            Some(ProfileRef::SpatialSketchProfiles { sketch, profiles })
+        }
+        _ => None,
+    }
+}
+
+fn selected_profile_indices<'a, Id: Eq + std::hash::Hash + 'a>(
+    selected: impl IntoIterator<Item = &'a Id>,
+    profiles: impl IntoIterator<Item = HashSet<&'a Id>>,
+) -> Option<Vec<u32>> {
+    let profiles = profiles.into_iter().collect::<Vec<_>>();
+    let mut selected_profiles = Vec::new();
+    for entity in selected {
+        let mut matches = profiles
+            .iter()
+            .enumerate()
+            .filter(|(_, profile)| profile.contains(entity));
+        let (index, _) = matches.next()?;
+        if matches.next().is_some() {
+            return None;
+        }
+        let index = u32::try_from(index).ok()?;
+        if !selected_profiles.contains(&index) {
+            selected_profiles.push(index);
+        }
+    }
+    (!selected_profiles.is_empty()).then_some(selected_profiles)
 }
 
 fn historical_face_profile_selection(
@@ -1837,7 +1921,15 @@ fn resolved_spatial_sketch_profile_regions(
     spatial_sketch: &cadmpeg_ir::sketches::SpatialSketch,
     resolution: &LoftSketchResolution<'_>,
 ) -> Option<Vec<u32>> {
-    let selection = profile.region_selection.as_ref()?;
+    let Some(selection) = profile.region_selection.as_ref() else {
+        if spatial_sketch.profiles.is_empty() {
+            return None;
+        }
+        return (0..spatial_sketch.profiles.len())
+            .map(u32::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .ok();
+    };
     let owner_reference = u32::try_from(profile.entity_suffix).ok()?;
     let mut resolved = Vec::with_capacity(selection.regions.len());
     for region in &selection.regions {
@@ -1907,6 +1999,22 @@ fn resolved_spatial_sketch_profile_regions(
         resolved.push(profile_index);
     }
     (!resolved.is_empty()).then_some(resolved)
+}
+
+fn spatial_profile_containing_entity(
+    sketch: &cadmpeg_ir::sketches::SpatialSketch,
+    entity: &cadmpeg_ir::sketches::SpatialSketchEntityId,
+) -> Option<u32> {
+    let mut profiles = sketch
+        .profiles
+        .iter()
+        .enumerate()
+        .filter(|(_, profile)| profile.boundary.iter().any(|use_| use_.entity == *entity));
+    let (index, _) = profiles.next()?;
+    if profiles.next().is_some() {
+        return None;
+    }
+    u32::try_from(index).ok()
 }
 
 pub(crate) fn bind_loft_sketch_selections(
@@ -2030,36 +2138,46 @@ pub(crate) fn bind_loft_sketch_selections(
         if matching_placements.next().is_some() {
             continue;
         }
-        let spatial_sketch = neutral_spatial_sketch_id(placement);
-        if !resolution
+        let spatial_sketch_id = neutral_spatial_sketch_id(placement);
+        let Some(spatial_sketch) = resolution
             .spatial_sketches
             .iter()
-            .any(|sketch| sketch.id == spatial_sketch)
-        {
+            .find(|sketch| sketch.id == spatial_sketch_id)
+        else {
             continue;
-        }
+        };
         let Ok(owner_reference) = u32::try_from(operand.primary_identity) else {
             continue;
         };
-        let geometry_matches = resolution
-            .curve_identities
-            .iter()
-            .filter(|curve| {
-                native_stream(&curve.id) == Some(stream)
-                    && curve.owner_reference == Some(owner_reference)
-                    && entity_selection_matches_curve(operand, curve)
-            })
-            .count();
-        if geometry_matches != 1 {
+        let mut geometry_matches = resolution.curve_identities.iter().filter(|curve| {
+            native_stream(&curve.id) == Some(stream)
+                && curve.owner_reference == Some(owner_reference)
+                && entity_selection_matches_curve(operand, curve)
+        });
+        let Some(curve) = geometry_matches.next() else {
+            continue;
+        };
+        if geometry_matches.next().is_some() {
             continue;
         }
-        let selections = vec![operand.id.clone()];
+        let entity = neutral_spatial_sketch_curve_id(
+            &spatial_sketch_id,
+            curve.primary_id,
+            curve.secondary_id,
+        );
+        let profile = spatial_profile_containing_entity(spatial_sketch, &entity);
         resolved_profiles.insert(
             group.id.clone(),
-            ProfileRef::SpatialSketchSelection {
-                sketch: spatial_sketch.clone(),
-                selections,
-            },
+            profile.map_or_else(
+                || ProfileRef::SpatialSketchSelection {
+                    sketch: spatial_sketch_id.clone(),
+                    selections: vec![operand.id.clone()],
+                },
+                |profile| ProfileRef::SpatialSketchProfiles {
+                    sketch: spatial_sketch_id.clone(),
+                    profiles: vec![profile],
+                },
+            ),
         );
     }
     for feature in features.iter_mut() {
@@ -2100,9 +2218,10 @@ pub(crate) fn bind_loft_sketch_selections(
 #[cfg(test)]
 mod tests {
     use super::{
-        resolve_entity_selection_path, resolved_loft_entity_selection_path,
-        resolved_spatial_extrude_profile_selection, resolved_spatial_sketch_profile_regions,
-        spatial_polyline_profile_containing_points, transition_spatial_profile_selection,
+        resolve_entity_selection_path, resolve_entity_selection_profile,
+        resolved_loft_entity_selection_path, resolved_spatial_extrude_profile_selection,
+        resolved_spatial_sketch_profile_regions, spatial_polyline_profile_containing_points,
+        spatial_profile_containing_entity, transition_spatial_profile_selection,
         EntitySelectionPathResolution, ExtrudeProfileResolution, LoftSketchResolution,
     };
     use crate::history_records::{
@@ -2121,11 +2240,11 @@ mod tests {
         DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection, SketchCurveIdentity,
         SketchRelationOperand,
     };
-    use cadmpeg_ir::features::{Angle, Length, PathRef};
+    use cadmpeg_ir::features::{Angle, Length, PathRef, ProfileRef};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
-        Sketch, SketchEntity, SketchGeometry, SketchPlacement, SpatialSketch, SpatialSketchEntity,
-        SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchProfile,
+        Sketch, SketchEntity, SketchEntityUse, SketchGeometry, SketchPlacement, SpatialSketch,
+        SpatialSketchEntity, SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchProfile,
     };
 
     fn group() -> DesignConstructionOperandGroup {
@@ -2203,6 +2322,7 @@ mod tests {
             scope_record_index: Some(7),
             entity_id: "Sketch:42".into(),
             entity_suffix: 42,
+            visibility: None,
             byte_offset: 0,
             class_tag: "277".into(),
             record_index: 20,
@@ -2310,6 +2430,7 @@ mod tests {
             id: sketch_id.clone(),
             name: None,
             configuration: None,
+            visible: None,
             profiles: vec![
                 spatial_profile(&sketch_id, &[100, 101, 102]),
                 spatial_profile(&sketch_id, &[200, 201, 202]),
@@ -2486,6 +2607,7 @@ mod tests {
             id: sketch_id.clone(),
             name: None,
             configuration: None,
+            visible: None,
             profiles: vec![
                 spatial_profile(&sketch_id, &[100, 101, 102]),
                 spatial_profile(&sketch_id, &[200, 201, 202]),
@@ -2637,6 +2759,7 @@ mod tests {
             id: sketch_id.clone(),
             name: None,
             configuration: None,
+            visible: None,
             profiles: vec![
                 spatial_profile(&sketch_id, &[100, 101, 102]),
                 SpatialSketchProfile {
@@ -2709,6 +2832,7 @@ mod tests {
             id: sketch_id.clone(),
             name: None,
             configuration: None,
+            visible: None,
             profiles: vec![profile(100), profile(200), profile(201)],
             native_ref: None,
         }];
@@ -2771,6 +2895,32 @@ mod tests {
             Some(vec![0, 1])
         );
 
+        let whole_sketch_operand = DesignSketchProfileOperand {
+            region_selection: None,
+            ..profile_operand.clone()
+        };
+        assert_eq!(
+            resolved_spatial_sketch_profile_regions(
+                "stream",
+                &whole_sketch_operand,
+                &spatial_sketches[0],
+                &resolution,
+            ),
+            Some(vec![0, 1, 2])
+        );
+        assert_eq!(
+            spatial_profile_containing_entity(&spatial_sketches[0], &entity_id(100)),
+            Some(0)
+        );
+        let repeated_profile = SpatialSketch {
+            profiles: vec![profile(100), profile(100)],
+            ..spatial_sketches[0].clone()
+        };
+        assert_eq!(
+            spatial_profile_containing_entity(&repeated_profile, &entity_id(100)),
+            None
+        );
+
         let mut noncoincident_entities = spatial_entities.to_vec();
         let SpatialSketchGeometry::Circle { center, .. } = &mut noncoincident_entities[2].geometry
         else {
@@ -2827,6 +2977,7 @@ mod tests {
             id: sketch.clone(),
             name: None,
             configuration: None,
+            visible: None,
             placement: SketchPlacement::Unresolved,
             profiles: Vec::new(),
             native_ref: None,
@@ -2904,6 +3055,7 @@ mod tests {
             id: spatial_sketch.clone(),
             name: None,
             configuration: None,
+            visible: None,
             profiles: Vec::new(),
             native_ref: Some(placement.id.clone()),
         }];
@@ -2933,5 +3085,95 @@ mod tests {
                     .collect(),
             })
         );
+    }
+
+    #[test]
+    fn entity_selection_profile_requires_unique_profile_membership() {
+        let placement = placement();
+        let sketch = neutral_sketch_id(&placement);
+        let curves = [curve(30, 100, 101), curve(31, 200, 201)];
+        let curve_ids = curves
+            .iter()
+            .map(|curve| neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id))
+            .collect::<Vec<_>>();
+        let sketch_entities = [
+            SketchEntity {
+                id: curve_ids[0].clone(),
+                sketch: sketch.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line {
+                    start: Point2::new(0.0, 0.0),
+                    end: Point2::new(1.0, 0.0),
+                },
+            },
+            SketchEntity {
+                id: curve_ids[1].clone(),
+                sketch: sketch.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line {
+                    start: Point2::new(1.0, 0.0),
+                    end: Point2::new(0.0, 0.0),
+                },
+            },
+        ];
+        let mut sketches = [Sketch {
+            id: sketch.clone(),
+            name: None,
+            configuration: None,
+            visible: None,
+            placement: SketchPlacement::Unresolved,
+            profiles: vec![
+                Vec::new(),
+                curve_ids
+                    .iter()
+                    .cloned()
+                    .map(|entity| SketchEntityUse {
+                        entity,
+                        reversed: false,
+                    })
+                    .collect(),
+            ],
+            native_ref: None,
+        }];
+        let mut group = group();
+        group.role = 0x41_0000_0000;
+        let operands = [operand(10, 0, 100), operand(11, 1, 200)];
+        let resolution = EntitySelectionPathResolution {
+            operands: &operands,
+            placements: std::slice::from_ref(&placement),
+            curve_identities: &curves,
+            sketches: &sketches,
+            sketch_entities: &sketch_entities,
+            spatial_sketches: &[],
+            spatial_sketch_entities: &[],
+        };
+        assert_eq!(
+            resolve_entity_selection_profile(&group, &resolution),
+            Some(ProfileRef::SketchProfiles {
+                sketch: sketch.clone(),
+                profiles: vec![1],
+            })
+        );
+
+        sketches[0].profiles[0].push(SketchEntityUse {
+            entity: curve_ids[0].clone(),
+            reversed: false,
+        });
+        let ambiguous_resolution = EntitySelectionPathResolution {
+            operands: &operands,
+            placements: std::slice::from_ref(&placement),
+            curve_identities: &curves,
+            sketches: &sketches,
+            sketch_entities: &sketch_entities,
+            spatial_sketches: &[],
+            spatial_sketch_entities: &[],
+        };
+        assert!(resolve_entity_selection_profile(&group, &ambiguous_resolution).is_none());
     }
 }

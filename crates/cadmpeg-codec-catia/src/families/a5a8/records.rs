@@ -17,6 +17,7 @@ use cadmpeg_ir::geometry::{
     RollingBallJetSite, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
+use std::ops::Range;
 
 /// Native identity form of one decoded freeform surface carrier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -234,16 +235,11 @@ pub(crate) fn a8_nested_b5_run_start(
             .checked_add(pole_bytes)?
             .checked_add(weight_bytes)?
     };
-    let child_start = a8_surface_suffix_start(
-        data,
-        suffix_start,
-        frame_end,
-        &parsed.header.v_distinct_knots,
-    )?;
+    let child_start = a8_surface_suffix_start(data, suffix_start, frame_end)?;
     (child_start < frame_end).then_some(child_start)
 }
 
-fn parse_a8_surface_tail(
+fn parse_a8_elided_surface_tail(
     data: &[u8],
     at: usize,
     v_knots: &[f64],
@@ -298,36 +294,30 @@ fn parse_a8_surface_tail(
         })
 }
 
-fn valid_a5_surface_tail(data: &[u8], at: usize, end: usize) -> bool {
-    let Some(tail_len) = end.checked_sub(at) else {
-        return false;
-    };
+fn parse_surface_tail(data: &[u8], at: usize, end: usize) -> Option<A8SurfaceParameterTail> {
+    let tail_len = end.checked_sub(at)?;
     let continuation_bytes = match tail_len {
         133 => 56,
         141 | 142 => 64,
-        _ => return false,
+        _ => return None,
     };
-    let Some(tail) = data.get(at..end) else {
-        return false;
-    };
+    let tail = data.get(at..end)?;
     if tail[0] != 0x05
         || tail[2] != 0x05
         || tail[1] % 4 != 1
         || tail[3] % 4 != 1
         || !matches!(tail[68..71], [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01])
     {
-        return false;
+        return None;
     }
-    let Some(parameters) = read_f64_array::<8>(tail, 4) else {
-        return false;
-    };
+    let parameters = read_f64_array::<8>(tail, 4)?;
     if parameters.iter().any(|value| !value.is_finite())
         || parameters[0] >= parameters[1]
         || parameters[2] >= parameters[3]
         || parameters[4] == 0.0
         || parameters[6] == 0.0
     {
-        return false;
+        return None;
     }
     let continuation_start = 71;
     let continuation_end = continuation_start + continuation_bytes;
@@ -336,34 +326,70 @@ fn valid_a5_surface_tail(data: &[u8], at: usize, end: usize) -> bool {
         .map(|bytes| f64::from_le_bytes(bytes.try_into().expect("eight-byte f64")))
         .collect::<Vec<_>>();
     if continuation.iter().any(|value| !value.is_finite()) {
-        return false;
+        return None;
     }
     let suffix = &tail[continuation_end..];
-    match (tail_len, &tail[68..71]) {
-        (133 | 141, [0x01, 0x01, 0x01]) => {
+    let valid_suffix = match (tail_len, &tail[68..71]) {
+        (133, [0x01, 0x01, 0x01]) => {
             continuation.iter().all(|value| *value == 0.0)
                 && suffix == [0x01, 0x00, 0x01, 0x00, 0x07, 0x07]
         }
-        (141, [0x05, 0x05, 0x01]) => suffix == [0x09, 0x00, 0x09, 0x00, 0x07, 0x07],
-        (142, [0x05, 0x05, 0x01]) => {
+        (141, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]) => matches!(
+            suffix,
+            [0x01, 0x00, 0x01, 0x00, 0x07, 0x07] | [0x09, 0x00, 0x09, 0x00, 0x07, 0x07]
+        ),
+        (142, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]) => {
             suffix.len() == 7
-                && suffix[..4] == [0x09, 0x00, 0x09, 0x01]
+                && suffix[0] % 4 == 1
+                && suffix[1..4] == [0x00, 0x09, 0x01]
                 && suffix[4] % 4 == 1
                 && suffix[5..] == [0x07, 0x07]
         }
         _ => false,
-    }
+    };
+    valid_suffix.then_some(())?;
+    let mut continuation_values = [0.0; 8];
+    continuation_values[..continuation.len()].copy_from_slice(&continuation);
+    Some(A8SurfaceParameterTail {
+        u_control: tail[1],
+        v_control: tail[3],
+        u_range: [parameters[0], parameters[1]],
+        v_range: [parameters[2], parameters[3]],
+        u_affine: [parameters[4], parameters[5]],
+        v_affine: [parameters[6], parameters[7]],
+        flags: tail[68..71].try_into().ok()?,
+        continuation: continuation_values,
+    })
 }
 
-fn a8_surface_suffix_start(data: &[u8], at: usize, end: usize, v_knots: &[f64]) -> Option<usize> {
+fn valid_a5_surface_tail(data: &[u8], at: usize, end: usize) -> bool {
+    parse_surface_tail(data, at, end).is_some()
+}
+
+fn a8_inline_surface_tail(
+    data: &[u8],
+    at: usize,
+    end: usize,
+) -> Option<(A8SurfaceParameterTail, usize)> {
+    for tail_len in [133, 141, 142] {
+        let Some(tail_end) = at.checked_add(tail_len).filter(|tail_end| *tail_end <= end) else {
+            continue;
+        };
+        let Some(tail) = parse_surface_tail(data, at, tail_end) else {
+            continue;
+        };
+        if closed_a8_child_run(data, tail_end, end) {
+            return Some((tail, tail_end));
+        }
+    }
+    None
+}
+
+fn a8_surface_suffix_start(data: &[u8], at: usize, end: usize) -> Option<usize> {
     if closed_a8_child_run(data, at, end) {
         return Some(at);
     }
-    let tail_end = at.checked_add(141)?;
-    (tail_end <= end
-        && parse_a8_surface_tail(data, at, v_knots).is_some()
-        && closed_a8_child_run(data, tail_end, end))
-    .then_some(tail_end)
+    a8_inline_surface_tail(data, at, end).map(|(_, tail_end)| tail_end)
 }
 
 fn object_stream_frames(data: &[u8]) -> Vec<ObjectStreamFrame> {
@@ -1193,20 +1219,12 @@ pub fn a8_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
 /// allocation.
 #[must_use]
 pub fn resolved_a8_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
-    let mut surfaces = Vec::new();
-    for frame in a8_frames(data, 0x34) {
-        let Some(parsed) = parse_a8_surface_header(data, frame) else {
-            continue;
-        };
-        if parsed.header.poles_elided {
-            if let Some(surface) = a8_surface_from_external_grid(data, &parsed.header) {
-                surfaces.push(surface);
-            }
-        } else if let Some(surface) = a8_surface_from_parsed(data, parsed) {
-            surfaces.push(surface);
-        }
-    }
-    surfaces
+    a8_frames(data, 0x34)
+        .into_iter()
+        .filter_map(|frame| {
+            resolved_a8_surface_from_object_frame(data, frame.pos, frame.end, frame.object_id)
+        })
+        .collect()
 }
 
 /// Decode every structurally complete `a8 <flag> 34` parameter lattice, including
@@ -1215,8 +1233,35 @@ pub fn resolved_a8_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
 pub fn a8_surface_headers(data: &[u8]) -> Vec<A8SurfaceHeader> {
     a8_frames(data, 0x34)
         .into_iter()
-        .filter_map(|frame| parse_a8_surface_header(data, frame).map(|parsed| parsed.header))
+        .filter_map(|frame| {
+            a8_surface_header_from_object_frame(data, frame.pos, frame.end, frame.object_id)
+        })
         .collect()
+}
+
+/// Decode one selected `a8 <flag> 34` frame's parameter lattice.
+pub(crate) fn a8_surface_header_from_object_frame(
+    data: &[u8],
+    start: usize,
+    end: usize,
+    object_id: u32,
+) -> Option<A8SurfaceHeader> {
+    parse_selected_a8_surface_header(data, start, end, object_id).map(|parsed| parsed.header)
+}
+
+/// Decode one selected `a8 <flag> 34` frame and its complete pole grid.
+pub(crate) fn resolved_a8_surface_from_object_frame(
+    data: &[u8],
+    start: usize,
+    end: usize,
+    object_id: u32,
+) -> Option<FreeformSurface> {
+    let parsed = parse_selected_a8_surface_header(data, start, end, object_id)?;
+    if parsed.header.poles_elided {
+        a8_surface_from_external_grid(data, &parsed.header)
+    } else {
+        a8_surface_from_parsed(data, parsed)
+    }
 }
 
 /// Resolve an elided-pole `a8 <flag> 34` carrier from its support-referenced
@@ -1228,19 +1273,84 @@ pub fn a8_surface_from_external_grid(
     data: &[u8],
     header: &A8SurfaceHeader,
 ) -> Option<FreeformSurface> {
-    if !header.poles_elided {
+    let candidates = a8_external_grid_candidates(data, header);
+    let [ExternalGridCandidate {
+        control_points,
+        weights,
+        ..
+    }] = candidates.as_slice()
+    else {
         return None;
+    };
+    Some(FreeformSurface {
+        pos: header.pos,
+        identity: FreeformSurfaceIdentity::Object(header.object_id),
+        geometry: SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: header.u_degree,
+            v_degree: header.v_degree,
+            u_knots: expand_knots(&header.u_distinct_knots, &header.u_multiplicities)?,
+            v_knots: expand_knots(&header.v_distinct_knots, &header.v_multiplicities)?,
+            u_count: header.u_count,
+            v_count: header.v_count,
+            control_points: control_points.clone(),
+            weights: weights.clone(),
+            u_periodic: false,
+            v_periodic: false,
+        }),
+    })
+}
+
+/// Return every complete support-bound external A8 pole allocation.
+pub(crate) fn a8_external_grid_ranges(data: &[u8]) -> Vec<Range<usize>> {
+    let mut ranges = a8_surface_headers(data)
+        .into_iter()
+        .flat_map(|header| {
+            a8_external_grid_candidates(data, &header)
+                .into_iter()
+                .map(|candidate| candidate.range)
+        })
+        .collect::<Vec<_>>();
+    ranges.sort_unstable_by_key(|range| (range.start, range.end));
+    ranges.dedup();
+    ranges
+}
+
+struct ExternalGridCandidate {
+    range: Range<usize>,
+    control_points: Vec<Point3>,
+    weights: Option<Vec<f64>>,
+}
+
+fn a8_external_grid_candidates(
+    data: &[u8],
+    header: &A8SurfaceHeader,
+) -> Vec<ExternalGridCandidate> {
+    if !header.poles_elided {
+        return Vec::new();
     }
-    let poles = crate::nurbs_surface_control_count(
-        usize::try_from(header.u_count).ok()?,
-        usize::try_from(header.v_count).ok()?,
-    )?;
+    let (Ok(u_count), Ok(v_count)) = (
+        usize::try_from(header.u_count),
+        usize::try_from(header.v_count),
+    ) else {
+        return Vec::new();
+    };
+    let Some(poles) = crate::nurbs_surface_control_count(u_count, v_count) else {
+        return Vec::new();
+    };
     let weight_bytes = if header.rational {
-        poles.checked_mul(8)?
+        let Some(bytes) = poles.checked_mul(8) else {
+            return Vec::new();
+        };
+        bytes
     } else {
         0
     };
-    let grid_bytes = poles.checked_mul(24)?.checked_add(weight_bytes)?;
+    let Some(grid_bytes) = poles
+        .checked_mul(24)
+        .and_then(|bytes| bytes.checked_add(weight_bytes))
+    else {
+        return Vec::new();
+    };
     let mut candidates = Vec::new();
     for frame in object_stream_frames(data)
         .into_iter()
@@ -1253,7 +1363,9 @@ pub fn a8_surface_from_external_grid(
         })
     {
         let start = frame.end;
-        let end = start.checked_add(grid_bytes)?;
+        let Some(end) = start.checked_add(grid_bytes) else {
+            continue;
+        };
         if object_stream_frame(data, end).is_none() {
             continue;
         }
@@ -1291,28 +1403,14 @@ pub fn a8_surface_from_external_grid(
             None
         };
         if at == end {
-            candidates.push((control_points, weights));
+            candidates.push(ExternalGridCandidate {
+                range: start..end,
+                control_points,
+                weights,
+            });
         }
     }
-    let [(control_points, weights)] = candidates.as_slice() else {
-        return None;
-    };
-    Some(FreeformSurface {
-        pos: header.pos,
-        identity: FreeformSurfaceIdentity::Object(header.object_id),
-        geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-            u_degree: header.u_degree,
-            v_degree: header.v_degree,
-            u_knots: expand_knots(&header.u_distinct_knots, &header.u_multiplicities)?,
-            v_knots: expand_knots(&header.v_distinct_knots, &header.v_multiplicities)?,
-            u_count: header.u_count,
-            v_count: header.v_count,
-            control_points: control_points.clone(),
-            weights: weights.clone(),
-            u_periodic: false,
-            v_periodic: false,
-        }),
-    })
+    candidates
 }
 
 /// Decode consolidated `a5 03 34` NURBS surface carriers.  This family uses
@@ -1409,6 +1507,29 @@ struct ParsedA8SurfaceHeader {
     end: usize,
 }
 
+fn parse_selected_a8_surface_header(
+    data: &[u8],
+    start: usize,
+    end: usize,
+    object_id: u32,
+) -> Option<ParsedA8SurfaceHeader> {
+    let frame = object_stream_frame(data, start)?;
+    (frame.family == 0xa8
+        && frame.class == 0x34
+        && frame.end == end
+        && frame.object_id == object_id)
+        .then_some(())?;
+    parse_a8_surface_header(
+        data,
+        A8Frame {
+            pos: start,
+            payload: frame.payload,
+            end,
+            object_id,
+        },
+    )
+}
+
 fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8SurfaceHeader> {
     let A8Frame {
         pos,
@@ -1451,7 +1572,7 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
     }
     let tail_end = at.checked_add(141)?;
     let elided_tail = (tail_end <= end && closed_a8_child_run(data, tail_end, end))
-        .then(|| parse_a8_surface_tail(data, at, &v_distinct))
+        .then(|| parse_a8_elided_surface_tail(data, at, &v_distinct))
         .flatten();
     let poles_elided = elided_tail.is_some();
     let inline_tail = || {
@@ -1466,10 +1587,7 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
             0
         };
         let tail_start = at.checked_add(pole_bytes)?.checked_add(weight_bytes)?;
-        let tail_end = tail_start.checked_add(141)?;
-        (tail_end <= end && closed_a8_child_run(data, tail_end, end))
-            .then(|| parse_a8_surface_tail(data, tail_start, &v_distinct))
-            .flatten()
+        a8_inline_surface_tail(data, tail_start, end).map(|(tail, _)| tail)
     };
     let parameter_tail = elided_tail.or_else(inline_tail);
     Some(ParsedA8SurfaceHeader {
@@ -1543,7 +1661,7 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
     } else {
         Vec::new()
     };
-    a8_surface_suffix_start(data, pole_start, end, &v_distinct_knots)?;
+    a8_surface_suffix_start(data, pole_start, end)?;
     Some(FreeformSurface {
         pos,
         identity: FreeformSurfaceIdentity::Object(object_id),

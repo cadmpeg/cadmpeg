@@ -35,7 +35,7 @@ use crate::records::{
     ActEntity, ActGuid, ActRegistryChannel, ActRootComponent, ActTableReference, BodyVisibility,
     ConstructionRecipe, CreationTimestamp, DesignBodyBinding, DesignBodyBounds, DesignBodyMember,
     DesignBodyRecipeOperand, DesignCanvasImage, DesignComponentOccurrence, DesignConfiguration,
-    DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
+    DesignConstructionOperandGroup, DesignConstructionOperandIdentity, DesignDecalImage,
     DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionLocusPair,
     DesignDimensionNullLocusPair, DesignDimensionRecipeRecord, DesignEdgeIdentityOperand,
     DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
@@ -77,7 +77,7 @@ fn group_by_owner<T>(
 }
 
 /// Current schema version for the Autodesk Fusion native namespace.
-pub const F3D_NATIVE_VERSION: u32 = 12;
+pub const F3D_NATIVE_VERSION: u32 = 13;
 
 pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "act_entities",
@@ -103,6 +103,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_configurations",
     "design_construction_operand_groups",
     "design_construction_operand_identities",
+    "design_decal_images",
     "design_dimension_annotation_frames",
     "design_dimension_locus_groups",
     "design_dimension_locus_pairs",
@@ -419,6 +420,16 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
         note: None,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_canvas_images),
         len: |model| model.design_canvas_images.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "design_decal_images",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_decal_images),
+        len: |model| model.design_decal_images.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -1144,6 +1155,9 @@ pub struct F3dNative {
     /// Exact image-plane bindings owned by Canvas timeline objects.
     #[serde(default)]
     pub design_canvas_images: Vec<DesignCanvasImage>,
+    /// Exact image and target bindings owned by Decal timeline objects.
+    #[serde(default)]
+    pub design_decal_images: Vec<DesignDecalImage>,
     /// Complete typed `Base Mesh Feature` Design graphs.
     #[serde(default)]
     pub design_mesh_features: Vec<DesignMeshFeature>,
@@ -1327,6 +1341,7 @@ impl Default for F3dNative {
             design_types: Vec::new(),
             design_body_recipe_operands: Vec::new(),
             design_canvas_images: Vec::new(),
+            design_decal_images: Vec::new(),
             design_mesh_features: Vec::new(),
             design_component_occurrences: Vec::new(),
             design_dimension_annotation_frames: Vec::new(),
@@ -1403,6 +1418,7 @@ impl F3dNative {
             body_visibilities: namespace.arena_as("body_visibilities")?,
             design_types: namespace.arena_as("design_types")?,
             design_canvas_images: namespace.arena_as("design_canvas_images")?,
+            design_decal_images: namespace.arena_as("design_decal_images")?,
             design_mesh_features: namespace.arena_as("design_mesh_features")?,
             design_component_occurrences: namespace.arena_as("design_component_occurrences")?,
             design_body_recipe_operands: namespace.arena_as("design_body_recipe_operands")?,

@@ -1043,9 +1043,9 @@ pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfigu
                     .unwrap_or(&configuration.id)
             )),
             ordinal: configuration.ordinal,
-            active: false,
+            active: false.into(),
             source_index: configuration.source_index,
-            name: configuration.name.clone(),
+            name: configuration.name.clone().into(),
             material: configuration.material.clone(),
             properties: configuration.properties.clone(),
             bodies: ConfigurationBodies::Unresolved,
@@ -1220,9 +1220,7 @@ pub(crate) fn global_parameter_owners(
 
 /// Replace evaluable expressions with canonical literals in a temporary history projection.
 ///
-/// Retained native histories keep their source expressions. This normalization exists only so
-/// typed feature projectors consume the same evaluated values exposed in the neutral parameter
-/// arena.
+/// Retained native histories keep their source expressions.
 pub(crate) fn apply_evaluated_parameters(histories: &mut [FeatureHistory]) {
     let evaluated = project_parameters(histories)
         .into_iter()
@@ -3315,7 +3313,7 @@ mod history_reference_tests {
             .push(cadmpeg_ir::features::DesignConfiguration {
                 id: cadmpeg_ir::features::ConfigurationId("configuration".into()),
                 ordinal: 0,
-                active: true,
+                active: true.into(),
                 source_index: None,
                 name: "configuration".into(),
                 material: None,
@@ -4926,7 +4924,7 @@ mod history_reference_tests {
         DesignConfiguration {
             id: ConfigurationId(id.into()),
             ordinal,
-            active: false,
+            active: false.into(),
             source_index,
             name: id.into(),
             material: None,
@@ -5324,7 +5322,7 @@ mod history_reference_tests {
         .into();
         let mut configuration =
             design_configuration("configuration", 0, Some(0), Some("native-configuration"));
-        configuration.active = true;
+        configuration.active = true.into();
         sync_neutral_configurations(&[configuration], &mut native);
 
         let native = native.expect("required invariant");
@@ -5517,7 +5515,7 @@ mod history_reference_tests {
             if let Some(id) = id {
                 configuration = with_configuration_id(configuration, id);
             }
-            configuration.active = true;
+            configuration.active = true.into();
             sync_neutral_configurations(&[configuration], &mut native);
 
             assert_eq!(
@@ -5595,6 +5593,7 @@ mod history_reference_tests {
             id: sketch_id.clone(),
             name: Some("sketch-native".into()),
             configuration: Some("0".into()),
+            visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -5619,13 +5618,14 @@ mod history_reference_tests {
             id: spatial_sketch_id.clone(),
             name: Some("spatial-native".into()),
             configuration: Some("0".into()),
+            visible: None,
             profiles: Vec::new(),
             native_ref: Some("lane".into()),
         });
         ir.model.configurations.push(DesignConfiguration {
             id: cadmpeg_ir::features::ConfigurationId("configuration".into()),
             ordinal: 0,
-            active: true,
+            active: true.into(),
             source_index: Some(0),
             name: "Default".into(),
             material: None,
@@ -5843,6 +5843,7 @@ mod history_reference_tests {
             id: sketch_id.clone(),
             name: Some("spatial".into()),
             configuration: None,
+            visible: None,
             profiles: Vec::new(),
             native_ref: Some("first-lane".into()),
         });
@@ -5850,6 +5851,7 @@ mod history_reference_tests {
             id: planar_sketch_id.clone(),
             name: Some("planar-state".into()),
             configuration: None,
+            visible: None,
             profiles: Vec::new(),
             native_ref: Some("first-lane".into()),
         });
@@ -5857,9 +5859,9 @@ mod history_reference_tests {
             ir.model.configurations.push(DesignConfiguration {
                 id: cadmpeg_ir::features::ConfigurationId(format!("configuration-{ordinal}")),
                 ordinal,
-                active: ordinal == 0,
+                active: (ordinal == 0).into(),
                 source_index: Some(ordinal),
-                name: format!("Configuration {ordinal}"),
+                name: format!("Configuration {ordinal}").into(),
                 material: None,
                 properties: BTreeMap::new(),
                 bodies: ConfigurationBodies::Resolved(Vec::new()),
@@ -5966,7 +5968,7 @@ mod history_reference_tests {
         ir.model.configurations.push(DesignConfiguration {
             id: cadmpeg_ir::features::ConfigurationId("configuration".into()),
             ordinal: 0,
-            active: true,
+            active: true.into(),
             source_index: Some(1),
             name: "Default".into(),
             material: None,
@@ -6162,7 +6164,7 @@ mod history_reference_tests {
             native_ref: None,
         });
         let mut configuration = design_configuration("configuration", 0, Some(0), None);
-        configuration.active = true;
+        configuration.active = true.into();
         configuration.feature_states.insert(
             id.clone(),
             ConfigurationFeatureState {
@@ -6302,7 +6304,7 @@ mod history_reference_tests {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId("test:model:configuration#default".into()),
             ordinal: 0,
-            active: true,
+            active: true.into(),
             source_index: Some(0),
             name: "Default".into(),
             material: None,
@@ -7465,11 +7467,8 @@ const EQUATION_DRIVEN_TOKEN: &str = "EquationDriven";
 
 /// The equations container identified by its Keywords operation-family token.
 ///
-/// The token is a role code, so it identifies the container without a native
-/// class or a reserved source identifier. Both the decode projection and the
-/// writer's retained-role map resolve node roles through
-/// [`feature_tree_node_role`], so the token satisfies the read and write sides
-/// together.
+/// The token is a role code: it identifies the container without a native class
+/// or a reserved source identifier.
 fn equation_container_role(feature: &Feature) -> Option<FeatureTreeNodeRole> {
     (feature.input_class.is_none()
         && feature.xml_tag.eq_ignore_ascii_case("Feature")
@@ -7754,10 +7753,7 @@ fn feature_family(feature: &Feature, family: &str) -> bool {
 
 /// Reject a neutral edit that retargets an existing native record to an
 /// operation family it did not originate in. A missing record (a freshly
-/// synthesized feature) always passes. The accepted native families are part of
-/// each feature type's write schema; centralizing them keeps the read
-/// classification and the write guard from drifting apart. The emitted
-/// `NotImplemented` message is byte-identical to the historical per-arm guard.
+/// synthesized feature) always passes.
 fn require_same_family(
     existing: Option<&Feature>,
     feature_id: &FeatureId,
@@ -8159,6 +8155,7 @@ fn project_datum_axis(feature: &Feature) -> Option<FeatureDefinition> {
 fn project_datum_point(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::DatumPoint {
         position: parse_point3_mm(feature.properties.get("Position")?)?,
+        construction: None,
     })
 }
 
@@ -10487,7 +10484,9 @@ fn face_selection_value(selection: &FaceSelection) -> Option<String> {
 
 fn vertex_selection_value(selection: &VertexSelection) -> Option<String> {
     match selection {
-        VertexSelection::Native(native) | VertexSelection::Generated { native, .. }
+        VertexSelection::Native(native)
+        | VertexSelection::Generated { native, .. }
+        | VertexSelection::Historical { native, .. }
             if !native.trim().is_empty() =>
         {
             Some(native.clone())
@@ -11777,12 +11776,9 @@ pub(crate) fn apply_feature_name_changes(
 
 /// Resolve neutral/native feature edit authority and update the write history.
 ///
-/// The neutral baseline is a machine-local content digest and the comparison
-/// against it is bitwise, which is what an edit-detection question needs and all
-/// it can be; see [`cadmpeg_ir::hash::document_local_sha256`]. An absent baseline
-/// means the question cannot be answered, and the no-baseline branch below
-/// synchronizes the lanes from the neutral side rather than assuming either side
-/// is unedited.
+/// Bitwise comparison against the machine-local document baseline; see
+/// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
+/// the neutral side.
 pub fn prepare_features_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
@@ -12237,12 +12233,9 @@ fn validate_compact_surface_selection_edits(
 
 /// Resolve neutral/native configuration edit authority before writing.
 ///
-/// The neutral baseline is a machine-local content digest and the comparison
-/// against it is bitwise, which is what an edit-detection question needs and all
-/// it can be; see [`cadmpeg_ir::hash::document_local_sha256`]. An absent baseline
-/// means the question cannot be answered, and the no-baseline branch below
-/// synchronizes the lanes from the neutral side rather than assuming either side
-/// is unedited.
+/// Bitwise comparison against the machine-local document baseline; see
+/// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
+/// the neutral side.
 pub fn prepare_configurations_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
@@ -12553,12 +12546,9 @@ fn patch_configuration_parameter_scalars(
 
 /// Resolve neutral/native parameter edit authority before writing.
 ///
-/// The neutral baseline is a machine-local content digest and the comparison
-/// against it is bitwise, which is what an edit-detection question needs and all
-/// it can be; see [`cadmpeg_ir::hash::document_local_sha256`]. An absent baseline
-/// means the question cannot be answered, and the no-baseline branch below
-/// synchronizes the lanes from the neutral side rather than assuming either side
-/// is unedited.
+/// Bitwise comparison against the machine-local document baseline; see
+/// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
+/// the neutral side.
 pub fn prepare_parameters_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
@@ -13004,6 +12994,9 @@ fn sync_neutral_configurations(
     }
     let mut lane_configuration_remaps = HashMap::<String, String>::new();
     for configuration in configurations {
+        let Some(configuration_name) = configuration.name.resolved() else {
+            continue;
+        };
         let existing = native
             .feature_histories
             .iter_mut()
@@ -13014,7 +13007,7 @@ fn sync_neutral_configurations(
             let previous_slot = configuration_slot(&existing.properties, existing.ordinal);
             existing.ordinal = configuration.ordinal;
             existing.source_index = configuration.source_index;
-            existing.name.clone_from(&configuration.name);
+            existing.name = configuration_name.to_string();
             existing.material.clone_from(&configuration.material);
             existing.properties.clone_from(&configuration.properties);
             let configuration_slot =
@@ -13039,7 +13032,7 @@ fn sync_neutral_configurations(
                     parent,
                     ordinal: configuration.ordinal,
                     source_index: configuration.source_index,
-                    name: configuration.name.clone(),
+                    name: configuration_name.to_string(),
                     material: configuration.material.clone(),
                     properties: configuration.properties.clone(),
                 });
@@ -13957,7 +13950,7 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
-            FeatureDefinition::DatumPoint { position } => {
+            FeatureDefinition::DatumPoint { position, .. } => {
                 if ![position.x, position.y, position.z]
                     .iter()
                     .all(|value| value.is_finite())
@@ -14376,10 +14369,8 @@ pub fn sync_neutral_features(
                 length_along_profile_normal,
                 allow_multi_profile_faces,
             } => {
-                // Drafts and offsets live per side. The writer expresses only a
-                // first-side draft; a second-side draft or any side offset is
-                // rejected exactly as the removed `second_draft`/`first_offset`/
-                // `second_offset` fields were.
+                // Writer accepts only a first-side draft; second-side draft or
+                // any side offset is rejected.
                 let (first_draft, second_side_draft, any_side_offset) = match extent {
                     ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
                         (side.draft, None, side.offset.is_some())

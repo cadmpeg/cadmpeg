@@ -3325,6 +3325,7 @@ pub(crate) fn project_bore_backed_position_sketches(
                 id: sketch_id,
                 name: model_position.name.clone(),
                 configuration: lane.configuration.clone(),
+                visible: None,
                 placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                     origin: *origin,
                     normal: *normal,
@@ -4000,10 +4001,7 @@ fn compact_position_loci(
     Some(solution.clone())
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn compact_position_assignments(
     node_index: usize,
     nodes: &[u16],

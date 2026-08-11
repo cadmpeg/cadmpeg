@@ -63,7 +63,7 @@ pub(crate) enum DesignFeatureFamily {
 pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
     match kind {
         "Sketch" | "Esquisse" | "Skizze" | "Esboço" => Some(DesignFeatureFamily::Sketch),
-        "Assemble" => Some(DesignFeatureFamily::Assemble),
+        "Assemble" | "As-built" => Some(DesignFeatureFamily::Assemble),
         "Extrude" | "Extrusion" | "Extrusão" => Some(DesignFeatureFamily::Extrude),
         "Fillet" | "Congé" | "Abrundung" | "Arredondamento" => Some(DesignFeatureFamily::Fillet),
         "Chamfer" | "Chanfrein" => Some(DesignFeatureFamily::Chamfer),

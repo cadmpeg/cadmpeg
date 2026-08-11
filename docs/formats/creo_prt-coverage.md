@@ -12,14 +12,14 @@ DEPDB section layouts recognized by the container scanner. This is not yet a
 closed support envelope: supported Creo release bounds, required and optional
 section combinations, and the admitted geometry and feature-family matrix have
 not been fixed. Until that matrix is closed and exercised by representative
-fixtures, claims above L1 remain unproven.
+fixtures, scores above L1 remain blocked.
 
 ## Cumulative gates
 
 | Level | Required evidence                                                                                                                  | Current result         | Remaining gate                                                                                                                                                                                  |
 | ----- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | L0    | Signature and part-kind detection; bounded container metadata; preview or tessellation when present                                | Pass in implementation | Representative release-band fixtures                                                                                                                                                            |
-| L1    | Section/stream navigation; ND and DEPDB dispatch; bounded Unix-compress expansion; version/layout reporting; named opaque sections | Claimed                | Close the release and layout envelope and verify every admitted section combination                                                                                                             |
+| L1    | Section/stream navigation; ND and DEPDB dispatch; bounded Unix-compress expansion; version/layout reporting; named opaque sections | Pass                   | Close the release and layout envelope and verify every admitted section combination                                                                                                             |
 | L2    | Placed points; analytic and NURBS curves and surfaces; correct units and parameterization across the envelope                      | Incomplete             | Remaining positional curve and surface bodies, prototype-instance joins, spline joins, type-26 placements, and lane-specific scalar forms                                                       |
 | L3    | Connected bodies through vertices with ownership, orientation, trimming, placements, and transforms; unknown carriers permitted    | Incomplete             | Complete face-instance partitioning, rowless face-use binding, loop classification, vertex coordinates, and shell-to-body ownership                                                             |
 | L4    | Typed feature operations, sketches, ordering, dependencies, profiles, directions, and extents                                      | Incomplete             | Resolve the remaining operation families and incomplete operands, including chamfer, draft, mirror, boundary, ambiguous surface-merge quilt-to-surface joins, and non-default sweep termination |
@@ -91,8 +91,38 @@ fixtures, claims above L1 remain unproven.
 - Layout dispatch uses the exact `DEPDB_DATA` root record; embedded `ND:` names
   do not override the persistence-layout discriminator, and missing
   discriminators remain unknown.
+- Header-adjacent `P_OBJECT` start, end, and product-banner markers classify
+  the legacy ASCII persistence family without interpreting its attribute
+  payload as ND or DEPDB byte grammar. The decimal persistence schema and the
+  `Version`/`Release` product token, including the concatenated `Release` form,
+  are preserved as source metadata. Legacy `@Toc` rows enumerate exact
+  banner-relative named-section extents; monolithic framing markers are not
+  exposed as sections. Attribute declarations, locally resolved depth/value
+  rows, and immediate `$` continuations are structurally enumerated. A unique
+  legacy type-10 `principal_sys_units` scalar transfers the active length
+  system and its canonical millimeter scale. Complete finite type-2 scalars and
+  dimensioned run-length arrays transfer as exact typed native records without
+  expanding repeated elements. Complete type-1 signed-integer scalars and
+  arrays transfer with the same scoped identity and retained run
+  representation. Declared type-1 arrays without stored elements remain
+  unresolved and are counted as typed-record losses; the decoder does not
+  synthesize zero elements. Type-3 nullable byte strings and type-4 byte
+  strings transfer as exact scalar records. Type-6 compact-real values and
+  type-5, type-7, type-9, and type-11 unsigned-decimal values transfer with the
+  same exact scalar and run-length-array representation. Type-0 null, arrow,
+  inline, and array nodes transfer with depth-defined parent links and direct
+  array-element identities. Incomplete object arrays retain their headers and
+  existing elements and produce a typed-record loss. Type-10 null,
+  UTF-8, opaque-byte, and direct-row array values transfer as exact native
+  records. Incomplete string arrays retain their headers and present elements.
+  Non-UTF-8 values retain their exact bytes and report the missing character
+  encoding.
 - Compressed `THMB_IMG_MAIN` payloads expand to the JPEG marker before preview
   detection and retain the JPEG bytes as a derived native record.
+- Primitive triangle strips accept position-only and normal-position arrays in
+  either source order when every complete position representation agrees.
+  Agreeing normal-position arrays transfer their normals. Conflicting position
+  or normal representations withhold the strip and produce a geometry loss.
 - Axis-aligned coaxial cone-cylinder intersections transfer the unique circle
   whose axial center coordinate agrees with the repeated `fc 14` held
   world-coordinate token.
@@ -110,15 +140,19 @@ fixtures, claims above L1 remain unproven.
   dependencies, block-local auxiliary assignments, and unknowns. Auxiliary
   assignments retain ordinary target, namespace, dependency, and evaluation
   semantics; simultaneous equations do not become sequential assignments.
-  Complete dimensionally valid affine systems over previously valued numeric
-  unknowns evaluate in canonical relation units when they have one finite
-  consistent solution. Fixed Boolean annihilators, equal conditional branches,
+  Complete dimensionally valid affine systems over previously valued or
+  uniquely dimension-constrained numeric unknowns evaluate in canonical
+  relation units when they have one finite consistent solution. Fixed Boolean
+  annihilators, equal conditional branches,
   signed zero, and identity or zero powers reduce within affine equations even
   when the controlling operand remains unknown. Unknowns may have different
   physical dimensions, and
   known dimensioned coefficients participate in the affine system. Nonlinear,
   dimensionally inconsistent, dependency-unresolved, underdetermined, and
   inconsistent systems retain absent aligned solution values.
+  Smooth nonlinear systems require one preceding finite numeric value of the
+  resolved dimension for each unknown. That value initializes the accepted
+  root; additional diagnostic starts can only reject competing roots.
   Constructs prohibited in datum-curve equations are retained but do not
   evaluate or generate a derived curve. Positive
   `exists()` queries resolve against the complete local assignment namespace
@@ -163,6 +197,9 @@ fixtures, claims above L1 remain unproven.
   identities when neutral semantics remain incomplete. A class-100 generated
   entity reference adds a history dependency when that entity has exactly one
   preceding feature-generated class-200 producer.
+- Same-ID operation display states retain their exact stored candidates. The
+  neutral operation projection retains only fields on which all candidates
+  agree and does not select a current candidate without a stored selector.
 - `AllFeatur` rows are discovered at section start, after the raw section
   header, or after an `e3` boundary only when a known feature identifier and
   the complete bounded `e3 f6 <compact-class> e1` root prefix are present.
@@ -180,21 +217,67 @@ fixtures, claims above L1 remain unproven.
 - `ActDatums` positional datum promotion is limited to counted `srf_array`
   rows with compact-width identifiers, `geom_type = 22`, `boundary_type = 01`,
   and `next_geom_ptr = 0`; each row body is bounded at the next validated row
-  or its containing frame boundary.
-- Unique feature-owned class-200 materialized surfaces now emit feature-result
-  topology face identities. Hole placement, thicken inputs, and knit inputs
-  use generated face references only when those identities and their producer
-  dependencies are declared; ambiguous, rowless, or foreign-owned surfaces
-  remain native selections.
+  or its containing frame boundary. Named and positional outline coordinates
+  use the same bounded model-coordinate scalar lane.
+- Unique feature-owned materialized table surfaces emit feature-result topology
+  face identities, including class-203 caps and class-210 transition results.
+  Hole placement, thicken inputs, and knit inputs use generated face references
+  only when those identities and their producer dependencies are declared;
+  ambiguous, rowless, or foreign-owned surfaces remain native selections.
 - Class-911 hole cap planes retain their stored surface-row order. The first
   complete outline-backed plane is the placement face, and the second defines
   the signed blind direction and depth.
+- Compact class-911 simple holes select the materialized cylinder in exact
+  four-entry tables and in extended tables that retain non-materialized
+  regeneration rows. The adjacent class-204 and class-203 topology pair is
+  rowless or has exactly one owned plane; either member can own that plane. The
+  positional cylinder frame supplies the simple-hole position, direction,
+  blind extent, and diameter. This structure does not identify a placement
+  face.
+- Class-911 table-class-29 simple-drilled recipes transfer complete
+  bore-radius, drill-point-angle, and blind-depth tuples. Paired cylinder
+  type-24 terminal envelopes select among distinct document-level tuples by
+  matching the bore diameter and depth to common, adjacent-union, or one-sided
+  non-shared-bound spans on distinct axes. An optional rowless source-zero
+  bottom precedes the four recipe groups, and exact `f7 17` compound-close
+  trailers terminate the corner frame. Complementary half-cylinder envelopes
+  with one common radial diameter, one adjacent-union radial diameter, and one
+  common blind-depth span supply the hole position and signed direction. A
+  one-sided pair with one common radial diameter and one common blind-depth
+  span supplies the other radial coordinate when the patches share exactly one
+  normalized bound and their two non-shared bounds differ by the bore diameter.
+  A seven-token
+  compound-close cone pair supplies a fully clipped radial coordinate only when
+  each terminal triple exactly cross-binds the corresponding cylinder corner.
+  Complete dimension-matched positional cylinder frames on the paired rows
+  supply an unoriented hole axis when all available frames are coaxial.
+- Class-911 counterbore recipes bind complete four- or five-row depth,
+  bore-radius, and counterbore-radius tuples when the two source cylinder pairs
+  uniquely match the two diameters on two axes and the counterbore depth on the
+  remaining axis. One complete source pair can bind the tuple when it matches
+  exactly one bore or stepped-counterbore role. Four-row tables admit both the
+  retained-ID and shifted-ID layouts; the fifth row is the drill-point angle.
+  Nonmatching document-level replays and class-29 tables without materialized
+  source cylinders do not participate. Coaxial radial centers and adjacent
+  counterbore and bore intervals supply the entry position, direction, and full
+  blind extent without assigning a placement face. A complete frame on the
+  recipe's axis-normal step plane supplies an unoriented hole axis without
+  assigning the entry position or drilling direction.
+- Fill boundaries use the unique feature-bound section transform when present
+  and otherwise the unique feature-owned section definition. The sketch
+  identity remains available when its placement or profile geometry is
+  unresolved; ambiguous joins remain unresolved.
 - Positional `ActDatums` outlines require exactly one held coordinate. Outlines
   with zero or multiple held coordinate pairs remain unresolved instead of
   selecting an arbitrary plane normal.
-- Named `ActDatums` outlines decode their bounded model-coordinate DICT forms,
-  including `a5`, `9f`, `5c`, and `45`, into complete corner coordinates while
-  retaining positional `a5`/`9f` tokens as opaque held-coordinate values.
+- Bounded plane-support prefixes `0f 18 e6 0f 18 10 18` and
+  `18 e4 10 e4 18 e5 0f 18` transfer their X-normal rank-two charts and three
+  following origin coordinates. Incomplete frames and frames with trailing
+  bytes remain unresolved.
+- Named and positional `ActDatums` outlines decode their shared bounded
+  model-coordinate forms, including `73`, `9f`, `a5`, and `bb`, into complete
+  corner coordinates. Both forms retain `45` and `5c` tokens as bounded slots
+  with unresolved numeric values.
 - Unique feature-owned `crv_array` topology rows now emit feature-result edge
   identities. Fillet and chamfer affected-edge selections use generated edge
   references only when the topology row is unique and its producer result
@@ -253,6 +336,10 @@ fixtures, claims above L1 remain unproven.
   relation-incidence join rows. A zero relation allocation count is counted
   separately. Diagnostics report every nonzero row shortfall, malformed
   relation allocation, and active native discriminator.
+- Positional solver-incidence rows retain their nested items when an auxiliary
+  frame occurs between solver status and the item array. Matching item-table
+  and item-row classes delimit the auxiliary body and prevent an embedded
+  counted value from becoming the item array.
 - Every decoded non-null `segtab.verhor` field transfers as a distinct source
   constraint. Values zero and one on a line use the defined neutral vertical
   and horizontal forms; other segment families and selector values retain the
@@ -339,7 +426,7 @@ fixtures, claims above L1 remain unproven.
 2. Manifest representative fixtures for every admitted matrix cell, including
    negative and ambiguity cases.
 3. Record per-fixture geometry, topology, design, and configuration loss
-   expectations and require no blocking loss through the claimed level.
+   expectations and require no blocking loss through the scored level.
    The decode report's coverage map records unique, transferred, and
    untransferred visible surface- and curve-row counts. Surface counts are
    partitioned by family; curve counts are partitioned by raw type byte because
@@ -390,10 +477,11 @@ fixtures, claims above L1 remain unproven.
    boundaries, support faces, continuity, and merge controls. Knit-surface
    coverage partitions unresolved faces, entity merging, and solid creation.
    Thicken coverage partitions unresolved faces, thickness, and side. Any
-   incomplete surface construction raises a decode loss note. Pattern coverage
-   partitions unresolved seed selections and transform operands. Analytic
-   helices whose axis remains source-native are counted separately. Either
-   condition raises a decode loss note.
+   incomplete surface construction raises a decode loss note. Section-shape
+   coverage counts operations and operations with unresolved input shape sets.
+   Pattern coverage partitions unresolved seed selections and transform
+   operands. Analytic helices whose axis remains source-native are counted
+   separately. Each incomplete construction raises a decode loss note.
 4. Validate semantic fingerprints for units, placements, carrier parameters,
    connected topology, feature order, dependencies, sketches, constraints,
    dimensions, expressions, and configuration state. The coverage map counts
@@ -424,5 +512,5 @@ fixtures, claims above L1 remain unproven.
    unresolved reference raises a decode loss note.
 5. Run malformed-input and fuzz gates for every admitted parser family.
 
-The current public score remains L1 claimed. Capabilities above L1 are extras
+The current public score remains L1. Capabilities above L1 are extras
 until every cumulative gate through their level passes for a closed envelope.

@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::items_after_test_module,
-    reason = "Blend decoders stay grouped by native operation after focused tests."
-)]
+#![allow(clippy::items_after_test_module)]
 //! Blend spline-surface decoders (cylindrical, rolling-ball, variable, vertex, and rb blends).
 
 use crate::nurbs::core::{

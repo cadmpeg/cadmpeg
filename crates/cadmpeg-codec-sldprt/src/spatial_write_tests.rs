@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Spatial-sketch semantic write-back integration tests.
 //!
-//! These drive the crate through its public `Encoder`/`CodecEntry` surface, so
-//! they read like an integration test, but they live in the library's own test
-//! tree on purpose. A file under `tests/` becomes a separate harness binary and
-//! links the whole dependency graph again; this crate already has a lib test
-//! binary, so folding the module in costs nothing to link.
+//! These drive the crate through its public `Encoder`/`CodecEntry` surface and
+//! live in the library test tree so they share the existing lib test binary.
 
 use std::{collections::BTreeMap, io::Cursor};
 
@@ -33,6 +30,7 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
         id: sketch_id.clone(),
         name: Some("Spatial path".into()),
         configuration: Some("0".into()),
+        visible: None,
         profiles: Vec::new(),
         native_ref: None,
     });

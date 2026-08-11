@@ -12,8 +12,8 @@
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCylinder, AsmHistoricalEdge,
-    AsmHistoricalEntityDelta, AsmHistoricalOptionalCarrierBinding, AsmHistoricalPlane,
-    AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
+    AsmHistoricalEntityDelta, AsmHistoricalOptionalCarrierBinding, AsmHistoricalPoint,
+    AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
     AsmHistoricalTransition, AsmHistory, AsmHistoryRecord,
 };
 use crate::records::{
@@ -25,6 +25,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 const DELTA: &[u8] = b"\x11\x0d\x0bdelta_state";
 const PREAMBLE: &[u8] = b"\x0d\x0ehistory_stream";
+/// Relative tolerance for matching independently decoded millimetre point carriers.
+const WORK_POINT_POSITION_TOLERANCE: f64 = 1.0e-9;
 
 pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
     if history.states.is_empty()
@@ -461,9 +463,8 @@ fn bind_complete_record_tables(
     });
     if complete {
         bind_historical_transitions(states);
-        // Version tables are the reconstruction workspace for the sparse
-        // transitions. Keeping every cumulative table after the transitions
-        // exist makes history memory quadratic in states × active entities.
+        // Drop version tables once sparse transitions exist; retaining them is
+        // quadratic in states × active entities.
         for state in states {
             state.entity_versions.clear();
         }
@@ -1044,6 +1045,30 @@ pub(crate) fn bind_feature_body_selections(
                     }
                 };
             } else {
+                let tool_record_indices = operation
+                    .tools
+                    .iter()
+                    .map(|tool| tool.record_index)
+                    .collect::<Vec<_>>();
+                if let Some(tool_slots) = combine_recipe_family_tool_slots(
+                    stream,
+                    scope.record_index,
+                    &tool_record_indices,
+                    previous_state_id,
+                    body,
+                    body_recipe_operands,
+                    inputs.construction_recipes,
+                ) {
+                    *tools = BodySelection::HistoricalUnorderedSet {
+                        state: input_state,
+                        bodies: tool_slots
+                            .into_iter()
+                            .map(|slot| crate::ids::history_input_body_id(&prefix, slot))
+                            .collect(),
+                        native: native_tools,
+                    };
+                    continue;
+                }
                 let dependency_sets = feature
                     .dependencies
                     .iter()
@@ -1168,6 +1193,115 @@ fn pattern_combine_tool_slots(
     let mut tool_bodies = pattern_bodies.clone();
     tool_bodies.remove(&target_body).then_some(())?;
     (tool_bodies.len() == native_tool_count).then(|| tool_bodies.into_iter().collect())
+}
+
+fn combine_recipe_family_tool_slots(
+    stream: &str,
+    scope_record_index: u32,
+    tool_record_indices: &[u32],
+    previous_state_id: i64,
+    target_body: i64,
+    operands: &[crate::records::DesignBodyRecipeOperand],
+    recipes: &[crate::records::ConstructionRecipe],
+) -> Option<Vec<i64>> {
+    type FamilyKey = (String, String, u64, u32, String);
+    type FamilyMember = (u32, Option<i64>, BTreeSet<i64>);
+
+    if tool_record_indices.is_empty()
+        || tool_record_indices.iter().collect::<HashSet<_>>().len() != tool_record_indices.len()
+    {
+        return None;
+    }
+    let mut recipes_by_id = HashMap::<&str, Option<&crate::records::ConstructionRecipe>>::new();
+    for recipe in recipes.iter().filter(|recipe| {
+        recipe.kind == crate::records::ConstructionRecipeKind::Body
+            && crate::ids::native_stream(&recipe.id) == Some(stream)
+    }) {
+        recipes_by_id
+            .entry(recipe.id.as_str())
+            .and_modify(|recipe| *recipe = None)
+            .or_insert(Some(recipe));
+    }
+    let mut families = BTreeMap::<FamilyKey, Vec<FamilyMember>>::new();
+    for record_index in tool_record_indices {
+        let mut matching = operands.iter().filter(|operand| {
+            crate::ids::native_stream(&operand.id) == Some(stream)
+                && operand.scope_record_index == scope_record_index
+                && matches!(
+                    operand.owner,
+                    crate::records::DesignBodyRecipeOperandOwner::ScopeReference { .. }
+                )
+                && operand.record_index == *record_index
+        });
+        let operand = matching.next()?;
+        if matching.next().is_some() || operand.references.len() != 1 {
+            return None;
+        }
+        let recipe = recipes_by_id
+            .get(operand.recipe_id.as_str())
+            .and_then(|recipe| *recipe)?;
+        let design_id = recipe.design_id.clone()?;
+        let selector = recipe.design_selector?.value;
+        if selector == 0 {
+            return None;
+        }
+        let resolved = match (operand.resolved_body_state_id, operand.resolved_body_slot) {
+            (Some(state), Some(body)) if state == previous_state_id => Some(body),
+            (None, None) => None,
+            _ => return None,
+        };
+        let reference = &operand.references[0];
+        let key = (
+            operand.asset_id.clone(),
+            operand.context_id.clone(),
+            reference.design_reference,
+            reference.form,
+            design_id,
+        );
+        families.entry(key).or_default().push((
+            selector,
+            resolved,
+            reference.preceding_body_slots.iter().copied().collect(),
+        ));
+    }
+
+    let mut selected = BTreeSet::new();
+    for family in families.into_values() {
+        let exact = family
+            .iter()
+            .filter_map(|(_, body, _)| *body)
+            .collect::<BTreeSet<_>>();
+        if family.iter().all(|(_, body, _)| body.is_some()) {
+            if exact.len() != family.len() {
+                return None;
+            }
+            selected.extend(exact);
+            continue;
+        }
+        let selectors = family
+            .iter()
+            .map(|(selector, _, _)| *selector)
+            .collect::<BTreeSet<_>>();
+        let expected_selectors = (1..=u32::try_from(family.len()).ok()?).collect::<BTreeSet<_>>();
+        if selectors != expected_selectors {
+            return None;
+        }
+        let mut candidate_sets = family
+            .iter()
+            .map(|(_, _, candidates)| candidates)
+            .filter(|candidates| !candidates.is_empty());
+        let candidates = candidate_sets.next()?.clone();
+        if candidates.len() != family.len()
+            || candidates.contains(&target_body)
+            || !exact.is_subset(&candidates)
+            || candidate_sets.any(|other| other != &candidates)
+        {
+            return None;
+        }
+        selected.extend(candidates);
+    }
+    (selected.len() == tool_record_indices.len() && !selected.contains(&target_body))
+        .then(|| selected.into_iter().collect())
 }
 
 fn combine_external_local_tools(
@@ -1720,12 +1854,7 @@ fn body_revision_without_topology_change(
     Some(body)
 }
 
-// Each slice is a distinct decoded arena or mutable IR arena; grouping them
-// would hide the binding contract without reducing its state dependencies.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn bind_feature_face_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
@@ -1839,10 +1968,7 @@ pub(crate) fn bind_feature_face_selections(
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn bind_entity_face_selection(
     selection: &mut cadmpeg_ir::features::FaceSelection,
     feature_id: &cadmpeg_ir::features::FeatureId,
@@ -2092,20 +2218,9 @@ pub(crate) fn project_feature_input_topologies(
             let previous_state_id = scope
                 .previous_history_state_id
                 .or_else(|| {
-                    let stream = crate::ids::native_stream(&scope.id);
-                    let operands = edge_operands
-                        .iter()
-                        .filter(|operand| {
-                            operand.scope_record_index == scope.record_index
-                                && crate::ids::native_stream(&operand.id) == stream
-                        })
-                        .collect::<Vec<_>>();
-                    let state = operands.first()?.recipe_state_id?;
-                    operands
-                        .iter()
-                        .all(|operand| operand.recipe_state_id == Some(state))
-                        .then_some(state)
+                    crate::design::feature_project::work_point_recipe_state_id(scope, edge_operands)
                 })
+                .or_else(|| crate::design::feature_project::work_plane_recipe_state_id(scope))
                 .or_else(|| effective_scope_previous_history_state_id(scope, histories))?;
             let state = scope
                 .history_state_id
@@ -2139,10 +2254,265 @@ pub(crate) fn project_feature_input_topologies(
                     .iter()
                     .map(|slot| crate::ids::history_input_edge_id(&prefix, slot))
                     .collect(),
+                vertices: topology
+                    .vertices
+                    .iter()
+                    .map(|slot| crate::ids::history_input_vertex_id(&prefix, slot))
+                    .collect(),
                 native_ref: Some(state.id.clone()),
             })
         })
         .collect()
+}
+
+/// Resolve persistent vertex recipes in the last history-bearing feature state
+/// that precedes their owning construction in authored timeline order.
+pub(crate) fn bind_vertex_recipe_history(
+    scopes: &mut [crate::records::DesignParameterScope],
+    timelines: &[crate::records::DesignFeatureTimeline],
+    histories: &[AsmHistory],
+) -> Result<(), cadmpeg_core::CodecError> {
+    let source_ordinals =
+        crate::design::feature_project::authored_scope_ordinals_per_stream(scopes, timelines)?;
+    let input_states = scopes
+        .iter()
+        .filter(|scope| matches!(scope.kind.as_str(), "WorkPlane" | "WorkPoint"))
+        .filter_map(|scope| {
+            let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+            let ordinal = *source_ordinals.get(&(stream, scope.record_index))?;
+            let mut predecessors = scopes.iter().filter_map(|candidate| {
+                let candidate_stream =
+                    crate::ids::native_stream(&candidate.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+                let candidate_ordinal =
+                    *source_ordinals.get(&(candidate_stream, candidate.record_index))?;
+                (candidate_stream == stream && candidate_ordinal < ordinal)
+                    .then_some((candidate_ordinal, candidate.history_state_id?))
+            });
+            let predecessor = predecessors.next()?;
+            let predecessor = predecessors.fold(predecessor, |latest, candidate| {
+                if candidate.0 > latest.0 {
+                    candidate
+                } else {
+                    latest
+                }
+            });
+            Some((scope.id.clone(), predecessor.1))
+        })
+        .collect::<HashMap<_, _>>();
+
+    for scope in scopes.iter_mut().filter(|scope| scope.kind == "WorkPoint") {
+        let Some(construction) = &mut scope.work_point_construction else {
+            continue;
+        };
+        let solved_position = cadmpeg_ir::math::Point3::new(
+            construction.position[0] * 10.0,
+            construction.position[1] * 10.0,
+            construction.position[2] * 10.0,
+        );
+        for input in construction.rule.inputs_mut() {
+            let Some(crate::records::DesignWorkPointInputCarrier::VertexRecipe { recipe }) =
+                input.carrier.as_deref_mut()
+            else {
+                continue;
+            };
+            recipe.recipe_state_id = None;
+            recipe.resolved_vertex_slot = None;
+            let Some(state_id) = input_states.get(&scope.id).copied() else {
+                continue;
+            };
+            let Some((_, state)) = unique_history_state(histories, state_id) else {
+                continue;
+            };
+            let Some(topology) = state.topology.as_ref() else {
+                continue;
+            };
+            let Some((vertex, position)) = vertex_recipe_candidate(recipe, topology) else {
+                continue;
+            };
+            if !point_matches(position, solved_position) {
+                continue;
+            }
+            recipe.recipe_state_id = Some(state_id);
+            recipe.resolved_vertex_slot = Some(vertex);
+        }
+    }
+
+    for scope in scopes.iter_mut().filter(|scope| scope.kind == "WorkPlane") {
+        let Some(crate::records::DesignWorkPlaneConstruction::ThreePoint { inputs, .. }) =
+            &mut scope.work_plane_construction
+        else {
+            continue;
+        };
+        for recipe in inputs.iter_mut() {
+            recipe.recipe_state_id = None;
+            recipe.resolved_vertex_slot = None;
+        }
+        let Some(state_id) = input_states.get(&scope.id).copied() else {
+            continue;
+        };
+        let Some((_, state)) = unique_history_state(histories, state_id) else {
+            continue;
+        };
+        let Some(topology) = state.topology.as_ref() else {
+            continue;
+        };
+        let candidates = inputs
+            .iter()
+            .map(|recipe| vertex_recipe_candidate(recipe, topology))
+            .collect::<Option<Vec<_>>>();
+        let Some(candidates) = candidates else {
+            continue;
+        };
+        let Ok(candidates): Result<[(i64, cadmpeg_ir::math::Point3); 3], _> = candidates.try_into()
+        else {
+            continue;
+        };
+        let [first, second, third] = candidates;
+        if first.0 == second.0
+            || first.0 == third.0
+            || second.0 == third.0
+            || !three_point_plane_matches(scope.work_plane_transform, [first.1, second.1, third.1])
+        {
+            continue;
+        }
+        for (recipe, (vertex, _)) in inputs.iter_mut().zip(candidates) {
+            recipe.recipe_state_id = Some(state_id);
+            recipe.resolved_vertex_slot = Some(vertex);
+        }
+    }
+    Ok(())
+}
+
+fn vertex_recipe_candidate(
+    recipe: &crate::records::DesignVertexRecipe,
+    topology: &AsmHistoricalTopology,
+) -> Option<(i64, cadmpeg_ir::math::Point3)> {
+    let face_slots = recipe
+        .recipe_references
+        .iter()
+        .map(|reference| {
+            let mut slots = reference
+                .candidate_faces
+                .iter()
+                .filter_map(|face| stable_ref(&face.0))
+                .filter(|face| topology.faces.contains(face))
+                .collect::<Vec<_>>();
+            slots.sort_unstable();
+            slots.dedup();
+            let [slot] = slots.as_slice() else {
+                return None;
+            };
+            Some(*slot)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if face_slots.is_empty() {
+        return None;
+    }
+    let vertex = common_face_vertex(&face_slots, topology)?;
+    let position = unique_historical_vertex_position(vertex, topology)?;
+    Some((vertex, position))
+}
+
+fn three_point_plane_matches(
+    transform: Option<[[f64; 4]; 4]>,
+    points: [cadmpeg_ir::math::Point3; 3],
+) -> bool {
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let Some(transform) = transform else {
+        return false;
+    };
+    let origin = Point3::new(
+        transform[0][3] * 10.0,
+        transform[1][3] * 10.0,
+        transform[2][3] * 10.0,
+    );
+    let Some(normal) = Vector3::new(transform[0][2], transform[1][2], transform[2][2]).unit()
+    else {
+        return false;
+    };
+    let Some(point_normal) = points[1]
+        .vector_from(points[0])
+        .cross(points[2].vector_from(points[0]))
+        .unit()
+    else {
+        return false;
+    };
+    let scale = points
+        .iter()
+        .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
+        .fold(1.0_f64, f64::max);
+    (normal.dot(point_normal).abs() - 1.0).abs() <= WORK_POINT_POSITION_TOLERANCE
+        && points.iter().all(|point| {
+            point.vector_from(origin).dot(normal).abs() <= WORK_POINT_POSITION_TOLERANCE * scale
+        })
+}
+
+fn common_face_vertex(face_slots: &[i64], topology: &AsmHistoricalTopology) -> Option<i64> {
+    let boundary_edges = face_boundary_edge_index(topology);
+    let mut sets = face_slots.iter().map(|face| {
+        boundary_edges
+            .get(face)?
+            .iter()
+            .map(|edge_slot| {
+                let mut edges = topology
+                    .edge_vertices
+                    .iter()
+                    .filter(|candidate| candidate.edge == *edge_slot);
+                let edge = edges.next()?;
+                (edges.next().is_none()
+                    && topology.vertices.contains(&edge.start_vertex)
+                    && topology.vertices.contains(&edge.end_vertex))
+                .then_some([edge.start_vertex, edge.end_vertex])
+            })
+            .collect::<Option<Vec<_>>>()
+            .map(|endpoints| endpoints.into_iter().flatten().collect::<HashSet<_>>())
+            .filter(|vertices| !vertices.is_empty())
+    });
+    let mut common = sets.next()??;
+    for vertices in sets {
+        let vertices = vertices?;
+        common.retain(|vertex| vertices.contains(vertex));
+    }
+    let mut common = common.into_iter().collect::<Vec<_>>();
+    common.sort_unstable();
+    let [vertex] = common.as_slice() else {
+        return None;
+    };
+    Some(*vertex)
+}
+
+fn unique_historical_vertex_position(
+    vertex: i64,
+    topology: &AsmHistoricalTopology,
+) -> Option<cadmpeg_ir::math::Point3> {
+    let mut bindings = topology
+        .vertex_points
+        .iter()
+        .filter(|binding| binding.entity == vertex);
+    let point = bindings.next()?.carrier;
+    if bindings.next().is_some() {
+        return None;
+    }
+    let mut positions = topology
+        .point_positions
+        .iter()
+        .filter(|position| position.point == point);
+    let position = positions.next()?.position;
+    (positions.next().is_none()
+        && position.x.is_finite()
+        && position.y.is_finite()
+        && position.z.is_finite())
+    .then_some(position)
+}
+
+fn point_matches(left: cadmpeg_ir::math::Point3, right: cadmpeg_ir::math::Point3) -> bool {
+    [(left.x, right.x), (left.y, right.y), (left.z, right.z)]
+        .into_iter()
+        .all(|(left, right)| {
+            let scale = left.abs().max(right.abs()).max(1.0);
+            (left - right).abs() <= WORK_POINT_POSITION_TOLERANCE * scale
+        })
 }
 
 fn feature_input_prefix(
@@ -2477,13 +2847,14 @@ fn bound_history_state_pair<'a>(
         bound_scope_history(scope_id, scope_histories, histories)?,
         state_id,
         previous_state_id,
-        true,
+        false,
     )
 }
 
 pub(crate) fn bind_scope_histories(
     scopes: &[crate::records::DesignParameterScope],
     body_bindings: &[crate::records::DesignBodyBinding],
+    body_recipe_operands: &[crate::records::DesignBodyRecipeOperand],
     histories: &[AsmHistory],
 ) -> HashMap<String, String> {
     let candidates = scopes
@@ -2522,6 +2893,61 @@ pub(crate) fn bind_scope_histories(
         if candidates.len() == 1 {
             resolved.insert(scope.id.clone(), candidates[0].id.clone());
             continue;
+        }
+        let next_scope_record_index = scopes
+            .iter()
+            .filter(|candidate| {
+                crate::ids::same_native_occurrence(&candidate.id, &scope.id)
+                    && candidate.record_index > scope.record_index
+            })
+            .map(|candidate| candidate.record_index)
+            .min();
+        let mut output_bindings = body_bindings.iter().filter(|binding| {
+            crate::ids::same_native_occurrence(&binding.id, &scope.id)
+                && binding.entity_suffix > u64::from(scope.record_index)
+                && next_scope_record_index
+                    .is_none_or(|next| binding.entity_suffix < u64::from(next))
+        });
+        if let Some(binding) = output_bindings.next() {
+            if output_bindings.next().is_none() {
+                let matching = candidates
+                    .iter()
+                    .filter(|history| {
+                        historical_brep_source(&history.id).is_some_and(|source| {
+                            binding.blob_name.strip_prefix("BREP.") == Some(source)
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                if let [history] = matching.as_slice() {
+                    resolved.insert(scope.id.clone(), history.id.clone());
+                    continue;
+                }
+            }
+        }
+        let candidate_faces = body_recipe_operands
+            .iter()
+            .filter(|operand| {
+                crate::ids::same_native_occurrence(&operand.id, &scope.id)
+                    && operand.scope_record_index == scope.record_index
+            })
+            .flat_map(|operand| &operand.references)
+            .flat_map(|reference| &reference.candidate_faces)
+            .collect::<Vec<_>>();
+        if !candidate_faces.is_empty() {
+            let matching = candidates
+                .iter()
+                .filter(|history| {
+                    historical_brep_source(&history.id).is_some_and(|source| {
+                        candidate_faces
+                            .iter()
+                            .any(|face| active_brep_face_matches_source(face, source))
+                    })
+                })
+                .collect::<Vec<_>>();
+            if let [history] = matching.as_slice() {
+                resolved.insert(scope.id.clone(), history.id.clone());
+                continue;
+            }
         }
         let Some(construction) = &scope.base_feature_construction else {
             continue;
@@ -2641,11 +3067,8 @@ fn history_state_reaches(
 
 /// Return the state ID reached by a delta state's `next` link.
 ///
-/// The derived transition carries the same predecessor after complete
-/// historical topology projection. Before that projection, the raw chain is
-/// still sufficient to bind Design feature state identities. Reject a
-/// disagreement instead of allowing either representation to hide a corrupt
-/// history graph.
+/// Reject disagreement between the derived transition predecessor and the raw
+/// `next` chain.
 fn linked_previous_state_id(history: &AsmHistory, state: &AsmDeltaState) -> Option<i64> {
     let linked = state.next_ref.and_then(|node_index| {
         let mut states = history
@@ -2706,9 +3129,6 @@ pub(crate) fn bind_face_operand_history_candidates(
     operand_groups: &[crate::records::DesignConstructionOperandGroup],
     histories: &[AsmHistory],
 ) {
-    // These fields already contain the projection result after the complete
-    // historical snapshots have been released. Rebinding without those
-    // snapshots would erase that result rather than validate or refine it.
     if projection_was_finalized(histories) {
         return;
     }
@@ -2868,6 +3288,15 @@ pub(crate) fn bind_face_operand_history_candidates(
                 crate::design::face_resolve::resolve_face_operand_history_candidate_from(
                     operand, candidates,
                 )
+                .or_else(|| {
+                    resolve_thread_face_by_transition(
+                        scope,
+                        candidates,
+                        history,
+                        topology,
+                        &changed_faces,
+                    )
+                })
                 .into_iter()
                 .collect();
         }
@@ -3001,6 +3430,65 @@ fn effective_faces(
     } else {
         &reference.candidate_faces
     }
+}
+
+fn resolve_thread_face_by_transition(
+    scope: &crate::records::DesignParameterScope,
+    candidates: &[cadmpeg_ir::ids::FaceId],
+    history: &AsmHistory,
+    topology: &AsmHistoricalTopology,
+    changed_faces: &HashSet<i64>,
+) -> Option<i64> {
+    let construction = scope.thread_construction.as_ref()?;
+    let source = historical_brep_source(&history.id)?;
+    let mut source_candidates = candidates
+        .iter()
+        .filter(|face| active_brep_face_matches_source(face, source));
+    source_candidates.next()?;
+    if source_candidates.next().is_some() {
+        return None;
+    }
+    let minimum_radius = construction.minor_diameter * 5.0;
+    let maximum_radius = construction.major_diameter * 5.0;
+    if !minimum_radius.is_finite()
+        || !maximum_radius.is_finite()
+        || minimum_radius <= 0.0
+        || maximum_radius < minimum_radius
+    {
+        return None;
+    }
+    let tolerance = 1.0e-9 * (1.0 + maximum_radius.abs());
+    let mut matching_faces = topology
+        .faces
+        .iter()
+        .copied()
+        .filter(|face| changed_faces.contains(face))
+        .filter_map(|face| {
+            let mut bindings = topology
+                .face_surfaces
+                .iter()
+                .filter(|binding| binding.entity == face);
+            let binding = bindings.next()?;
+            if bindings.next().is_some() {
+                return None;
+            }
+            let mut cylinders = topology
+                .surface_cylinders
+                .iter()
+                .filter(|cylinder| cylinder.surface == binding.carrier);
+            let cylinder = cylinders.next()?;
+            (cylinders.next().is_none()
+                && cylinder.radius + tolerance >= minimum_radius
+                && cylinder.radius <= maximum_radius + tolerance)
+                .then_some(face)
+        })
+        .collect::<Vec<_>>();
+    matching_faces.sort_unstable();
+    matching_faces.dedup();
+    let [face] = matching_faces.as_slice() else {
+        return None;
+    };
+    Some(*face)
 }
 
 fn grouped_reference_face_candidate(
@@ -3683,6 +4171,27 @@ fn face_changes_across_state_chain<'a>(
     Some(changed)
 }
 
+fn edge_changes_across_state_chain<'a>(
+    state: &'a AsmDeltaState,
+    previous_state_id: i64,
+    states: &HashMap<i64, Option<&'a AsmDeltaState>>,
+) -> Option<(HashSet<i64>, HashSet<i64>)> {
+    let mut current = state;
+    let mut visited = HashSet::new();
+    let mut deleted = HashSet::new();
+    let mut updated = HashSet::new();
+    while current.state_id != previous_state_id {
+        if !visited.insert(current.state_id) {
+            return None;
+        }
+        let transition = current.transition.as_ref()?;
+        deleted.extend(transition.topology.edges.deleted.iter().copied());
+        updated.extend(transition.topology.edges.updated.iter().copied());
+        current = states.get(&transition.previous_state_id?)?.as_ref()?;
+    }
+    Some((deleted, updated))
+}
+
 fn historical_face_support_contexts(
     candidates: &[cadmpeg_ir::ids::FaceId],
     histories: &[AsmHistory],
@@ -4104,7 +4613,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
             bind_active_edge_operand_for_scope(operand, scope, &terminal_topologies);
             continue;
         };
-        let Some((_, state, previous)) = bound_history_state_pair(
+        let Some((history, state, previous)) = bound_history_state_pair(
             &scope.id,
             state_id,
             previous_state_id,
@@ -4113,30 +4622,64 @@ pub(crate) fn bind_edge_operand_history_candidates(
         ) else {
             continue;
         };
-        let (Some(transition), Some(result_topology), Some(topology)) =
-            (&state.transition, &state.topology, &previous.topology)
+        let (Some(result_topology), Some(topology)) = (&state.topology, &previous.topology) else {
+            continue;
+        };
+        let states = history_state_index(history);
+        let Some(changed_faces) =
+            face_changes_across_state_chain(state, previous_state_id, &states)
         else {
             continue;
         };
+        let Some((chain_deleted_edges, chain_updated_edges)) =
+            edge_changes_across_state_chain(state, previous_state_id, &states)
+        else {
+            continue;
+        };
+        let preceding_faces = topology.faces.iter().copied().collect::<HashSet<_>>();
+        let inserted_faces = result_topology
+            .faces
+            .iter()
+            .copied()
+            .filter(|face| !preceding_faces.contains(face))
+            .collect::<Vec<_>>();
+        let result_edges = result_topology
+            .edges
+            .iter()
+            .copied()
+            .collect::<HashSet<_>>();
+        let deleted_edges = topology
+            .edges
+            .iter()
+            .copied()
+            .filter(|edge| !result_edges.contains(edge) && chain_deleted_edges.contains(edge))
+            .collect::<Vec<_>>();
+        let updated_edges = topology
+            .edges
+            .iter()
+            .copied()
+            .filter(|edge| {
+                result_edges.contains(edge)
+                    && (chain_deleted_edges.contains(edge) || chain_updated_edges.contains(edge))
+            })
+            .collect::<Vec<_>>();
         operand.recipe_state_id = Some(previous_state_id);
         operand.result_candidate_faces =
             faces_in_topology(&operand.candidate_faces, result_topology);
         operand.result_boundary_edge_slots =
             face_boundary_edges(&operand.result_candidate_faces, result_topology);
         operand.preceding_candidate_faces = faces_in_topology(&operand.candidate_faces, topology);
-        operand.changed_candidate_faces =
-            faces_changed_by_transition(&operand.preceding_candidate_faces, transition)
-                .into_iter()
-                .cloned()
-                .collect();
+        operand.changed_candidate_faces = operand
+            .preceding_candidate_faces
+            .iter()
+            .filter(|face| stable_ref(&face.0).is_some_and(|slot| changed_faces.contains(&slot)))
+            .cloned()
+            .collect();
         operand.preceding_boundary_edge_slots =
             face_boundary_edges(&operand.preceding_candidate_faces, topology);
-        let changed_edges = transition
-            .topology
-            .edges
-            .deleted
+        let changed_edges = deleted_edges
             .iter()
-            .chain(&transition.topology.edges.updated)
+            .chain(&updated_edges)
             .copied()
             .collect::<HashSet<_>>();
         operand.changed_boundary_edge_slots = operand
@@ -4145,20 +4688,16 @@ pub(crate) fn bind_edge_operand_history_candidates(
             .copied()
             .filter(|edge| changed_edges.contains(edge))
             .collect();
-        operand.deleted_boundary_edge_slots = boundary_edges_in_changes(
-            &operand.preceding_boundary_edge_slots,
-            &transition.topology.edges.deleted,
-        );
-        operand.updated_boundary_edge_slots = boundary_edges_in_changes(
-            &operand.preceding_boundary_edge_slots,
-            &transition.topology.edges.updated,
-        );
+        operand.deleted_boundary_edge_slots =
+            boundary_edges_in_changes(&operand.preceding_boundary_edge_slots, &deleted_edges);
+        operand.updated_boundary_edge_slots =
+            boundary_edges_in_changes(&operand.preceding_boundary_edge_slots, &updated_edges);
         operand.treatment_radius_candidates = treatment_radius_candidates(
             Some(&operand.result_candidate_faces),
-            &transition.topology.faces.inserted,
+            &inserted_faces,
             result_topology,
             topology,
-            &transition.topology.edges.deleted,
+            &deleted_edges,
         );
         operand.changed_boundary_edge_contexts = operand
             .changed_boundary_edge_slots
@@ -4272,9 +4811,9 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 scope_operand_counts.get(&(stream.to_owned(), operand.scope_record_index))
                     == Some(&1)
             })
-            && transition.topology.edges.deleted.len() == 1
+            && deleted_edges.len() == 1
         {
-            operand.resolved_edge_slot = transition.topology.edges.deleted.first().copied();
+            operand.resolved_edge_slot = deleted_edges.first().copied();
         }
     }
 }
@@ -5038,24 +5577,6 @@ fn bind_body_recipe_face_selection(
     };
 }
 
-fn faces_changed_by_transition<'a>(
-    candidates: &'a [cadmpeg_ir::ids::FaceId],
-    transition: &crate::history_records::AsmHistoricalTransition,
-) -> Vec<&'a cadmpeg_ir::ids::FaceId> {
-    let changed = transition
-        .topology
-        .faces
-        .deleted
-        .iter()
-        .chain(&transition.topology.faces.updated)
-        .copied()
-        .collect::<HashSet<_>>();
-    candidates
-        .iter()
-        .filter(|face| stable_ref(&face.0).is_some_and(|slot| changed.contains(&slot)))
-        .collect()
-}
-
 fn faces_in_topology(
     candidates: &[cadmpeg_ir::ids::FaceId],
     topology: &AsmHistoricalTopology,
@@ -5127,6 +5648,36 @@ impl HistoricalIdentityIndex {
                 }
             }
         }
+        let versioned_revisions = revisions.keys().copied().collect::<HashSet<_>>();
+        let mut reconstructed_revisions = HashSet::new();
+        for history in histories.iter().filter(|history| {
+            !history.states.is_empty()
+                && history
+                    .states
+                    .iter()
+                    .all(|state| state.record_table_complete && state.topology.is_some())
+        }) {
+            for change in history
+                .states
+                .iter()
+                .flat_map(|state| &state.bulletin_boards)
+                .flat_map(|board| &board.changes)
+            {
+                let Some(record_ref) = change.old_ref.filter(|old| record_refs.contains(old))
+                else {
+                    continue;
+                };
+                let entity_ref = change.new_ref.unwrap_or(record_ref);
+                revisions
+                    .entry(record_ref)
+                    .or_default()
+                    .entity_refs
+                    .insert(entity_ref);
+                if !versioned_revisions.contains(&record_ref) {
+                    reconstructed_revisions.insert(record_ref);
+                }
+            }
+        }
         let entity_refs = record_refs
             .iter()
             .copied()
@@ -5170,6 +5721,19 @@ impl HistoricalIdentityIndex {
                     }
                 }
             }
+        }
+        for record_ref in reconstructed_revisions {
+            let Some(revision) = revisions.get_mut(&record_ref) else {
+                continue;
+            };
+            revision.states = revision
+                .entity_refs
+                .iter()
+                .filter_map(|entity_ref| identities.get(entity_ref))
+                .flat_map(|membership| membership.states.iter().copied())
+                .collect();
+            revision.states.sort_unstable();
+            revision.states.dedup();
         }
         Self {
             identities,
@@ -5540,7 +6104,7 @@ fn historical_surface_axis(
     Some(*candidate)
 }
 
-fn same_axis_line(
+pub(crate) fn same_axis_line(
     left: (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3),
     right: (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3),
 ) -> bool {
@@ -5631,21 +6195,13 @@ pub(crate) fn bind_mirror_selection_planes(
         else {
             continue;
         };
-        let context_histories =
-            entity_selection_face_candidates(operand.primary_identity, histories)
-                .into_iter()
-                .map(|candidate| candidate.history_id)
-                .collect::<HashSet<_>>();
-        let mut candidates = entity_selection_face_candidates(local_id, histories)
-            .into_iter()
-            .filter(|candidate| context_histories.contains(&candidate.history_id))
-            .collect::<Vec<_>>();
-        candidates.sort_by(|left, right| left.history_id.cmp(&right.history_id));
-        candidates.dedup();
-        let [candidate] = candidates.as_slice() else {
+        let Some(candidate) = unique_mirror_plane_candidate(
+            entity_selection_face_candidates(operand.primary_identity, histories),
+            entity_selection_face_candidates(local_id, histories),
+        ) else {
             continue;
         };
-        let Some(plane) = historical_face_plane(candidate, histories) else {
+        let Some(plane) = historical_mirror_plane(&candidate, previous_state_id, histories) else {
             continue;
         };
         let norm = (plane.normal.x * plane.normal.x
@@ -5660,10 +6216,79 @@ pub(crate) fn bind_mirror_selection_planes(
     }
 }
 
-fn historical_face_plane(
+fn unique_mirror_plane_candidate(
+    mut primary: Vec<crate::records::DesignEntitySelectionFaceCandidate>,
+    persistent: Vec<crate::records::DesignEntitySelectionFaceCandidate>,
+) -> Option<crate::records::DesignEntitySelectionFaceCandidate> {
+    primary.sort_by(|left, right| left.history_id.cmp(&right.history_id));
+    primary.dedup();
+    let context_histories = primary
+        .iter()
+        .map(|candidate| candidate.history_id.as_str())
+        .collect::<HashSet<_>>();
+    let mut persistent = persistent
+        .into_iter()
+        .filter(|candidate| context_histories.contains(candidate.history_id.as_str()))
+        .collect::<Vec<_>>();
+    persistent.sort_by(|left, right| left.history_id.cmp(&right.history_id));
+    persistent.dedup();
+    match persistent.as_slice() {
+        [candidate] => Some(candidate.clone()),
+        [] => match primary.as_slice() {
+            [candidate] => Some(candidate.clone()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+#[derive(Clone)]
+struct HistoricalMirrorPlane {
+    origin: cadmpeg_ir::math::Point3,
+    normal: cadmpeg_ir::math::Vector3,
+}
+
+fn historical_mirror_plane(
     candidate: &crate::records::DesignEntitySelectionFaceCandidate,
+    preferred_state_id: i64,
     histories: &[AsmHistory],
-) -> Option<AsmHistoricalPlane> {
+) -> Option<HistoricalMirrorPlane> {
+    if candidate.historical_state_ids.contains(&preferred_state_id) {
+        return historical_mirror_plane_in_state(candidate, preferred_state_id, histories);
+    }
+    let mut resolved = None;
+    for state_id in &candidate.historical_state_ids {
+        let plane = historical_mirror_plane_in_state(candidate, *state_id, histories)?;
+        if resolved
+            .as_ref()
+            .is_some_and(|exact: &HistoricalMirrorPlane| !mirror_planes_coincident(exact, &plane))
+        {
+            return None;
+        }
+        resolved = Some(plane);
+    }
+    resolved
+}
+
+fn mirror_planes_coincident(left: &HistoricalMirrorPlane, right: &HistoricalMirrorPlane) -> bool {
+    let dot = left.normal.x * right.normal.x
+        + left.normal.y * right.normal.y
+        + left.normal.z * right.normal.z;
+    let delta = cadmpeg_ir::math::Vector3::new(
+        right.origin.x - left.origin.x,
+        right.origin.y - left.origin.y,
+        right.origin.z - left.origin.z,
+    );
+    let normal_distance =
+        delta.x * left.normal.x + delta.y * left.normal.y + delta.z * left.normal.z;
+    (dot.abs() - 1.0).abs() <= 1.0e-9 && normal_distance.abs() <= 1.0e-8
+}
+
+fn historical_mirror_plane_in_state(
+    candidate: &crate::records::DesignEntitySelectionFaceCandidate,
+    state_id: i64,
+    histories: &[AsmHistory],
+) -> Option<HistoricalMirrorPlane> {
     let mut matching_histories = histories
         .iter()
         .filter(|history| history.id == candidate.history_id);
@@ -5671,40 +6296,95 @@ fn historical_face_plane(
     if matching_histories.next().is_some() {
         return None;
     }
-    let mut resolved = None;
-    for state_id in &candidate.historical_state_ids {
-        let mut matching_states = history
-            .states
+    let mut matching_states = history
+        .states
+        .iter()
+        .filter(|state| state.state_id == state_id);
+    let state = matching_states.next()?;
+    if matching_states.next().is_some() {
+        return None;
+    }
+    let topology = state.topology.as_ref()?;
+    if candidate.historical_entity_kind == AsmHistoricalEntityKind::Loop {
+        return historical_loop_plane(candidate.historical_entity_ref, topology);
+    }
+    let mut bindings = topology
+        .face_surfaces
+        .iter()
+        .filter(|binding| binding.entity == candidate.face_slot);
+    let binding = bindings.next()?;
+    if bindings.next().is_some() {
+        return None;
+    }
+    let mut planes = topology
+        .surface_planes
+        .iter()
+        .filter(|plane| plane.surface == binding.carrier);
+    let plane = planes.next()?;
+    planes.next().is_none().then_some(HistoricalMirrorPlane {
+        origin: plane.origin,
+        normal: plane.normal,
+    })
+}
+
+fn historical_loop_plane(
+    loop_ref: i64,
+    topology: &AsmHistoricalTopology,
+) -> Option<HistoricalMirrorPlane> {
+    let mut loop_relations = topology
+        .loop_coedges
+        .iter()
+        .filter(|relation| relation.owner_ref == loop_ref);
+    let relation = loop_relations.next()?;
+    if loop_relations.next().is_some() || relation.member_refs.is_empty() {
+        return None;
+    }
+    let mut planes = Vec::with_capacity(relation.member_refs.len());
+    for coedge_ref in &relation.member_refs {
+        let mut coedges = topology
+            .coedge_topology
             .iter()
-            .filter(|state| state.state_id == *state_id);
-        let state = matching_states.next()?;
-        if matching_states.next().is_some() {
+            .filter(|coedge| coedge.coedge == *coedge_ref && coedge.owner_loop == loop_ref);
+        let coedge = coedges.next()?;
+        if coedges.next().is_some() {
             return None;
         }
-        let topology = state.topology.as_ref()?;
         let mut bindings = topology
-            .face_surfaces
+            .edge_curves
             .iter()
-            .filter(|binding| binding.entity == candidate.face_slot);
+            .filter(|binding| binding.entity == coedge.edge);
         let binding = bindings.next()?;
         if bindings.next().is_some() {
             return None;
         }
-        let mut planes = topology
-            .surface_planes
+        let curve = binding.carrier?;
+        let mut axes = topology
+            .curve_axes
             .iter()
-            .filter(|plane| plane.surface == binding.carrier);
-        let plane = planes.next()?;
-        if planes.next().is_some()
-            || resolved.as_ref().is_some_and(|exact: &AsmHistoricalPlane| {
-                exact.origin != plane.origin || exact.normal != plane.normal
-            })
-        {
+            .filter(|axis| axis.curve == curve);
+        let axis = axes.next()?;
+        if axes.next().is_some() {
             return None;
         }
-        resolved = Some(plane.clone());
+        let norm = (axis.direction.x * axis.direction.x
+            + axis.direction.y * axis.direction.y
+            + axis.direction.z * axis.direction.z)
+            .sqrt();
+        if !norm.is_finite() || (norm - 1.0).abs() > 1.0e-9 {
+            return None;
+        }
+        planes.push(HistoricalMirrorPlane {
+            origin: axis.origin,
+            normal: axis.direction,
+        });
     }
-    resolved
+    let [first, remaining @ ..] = planes.as_slice() else {
+        return None;
+    };
+    remaining
+        .iter()
+        .all(|candidate| mirror_planes_coincident(first, candidate))
+        .then_some(first.clone())
 }
 
 fn entity_selection_face_candidates(
@@ -6890,6 +7570,354 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
 #[cfg(test)]
 mod tests {
     #[test]
+    fn three_point_recipe_vertices_must_define_the_solved_plane() {
+        use cadmpeg_ir::math::Point3;
+
+        let transform = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        assert!(super::three_point_plane_matches(
+            Some(transform),
+            [
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(10.0, 0.0, 0.0),
+                Point3::new(0.0, 10.0, 0.0),
+            ],
+        ));
+        assert!(!super::three_point_plane_matches(
+            Some(transform),
+            [
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(10.0, 0.0, 0.0),
+                Point3::new(20.0, 0.0, 0.0),
+            ],
+        ));
+        assert!(!super::three_point_plane_matches(
+            Some(transform),
+            [
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(10.0, 0.0, 0.0),
+                Point3::new(0.0, 10.0, 1.0),
+            ],
+        ));
+    }
+
+    #[test]
+    fn work_point_vertex_recipe_resolves_common_historical_vertex() {
+        use crate::history_records::{
+            AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge,
+            AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology, AsmHistory,
+        };
+        use crate::records::{
+            DesignFeatureTimeline, DesignRecipeReference, DesignVertexRecipe,
+            DesignWorkPointConstruction, DesignWorkPointInput, DesignWorkPointInputCarrier,
+            DesignWorkPointRule,
+        };
+        use cadmpeg_ir::ids::FaceId;
+        use cadmpeg_ir::math::Point3;
+
+        let stream = "f3d:Design/BulkStream.dat";
+        let mut extrude = crate::records::DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#100"),
+            "Extrude",
+            100,
+        );
+        extrude.history_state_id = Some(4);
+        let reference = |face: i64| DesignRecipeReference {
+            selector: 1,
+            selector_offset: 0,
+            token: face.to_string(),
+            token_offset: 0,
+            design_reference: 200,
+            design_reference_offset: 0,
+            candidate_faces: vec![FaceId(crate::ids::brep_entity_id(face))],
+            candidate_edges: Vec::new(),
+            alternate_selector_faces: Vec::new(),
+            alternate_selector_edges: Vec::new(),
+        };
+        let recipe = DesignVertexRecipe {
+            record_index: 202,
+            byte_offset: 0,
+            class_tag: "369".into(),
+            paired_byte_offset: 1,
+            paired_class_tag: "261".into(),
+            recipe_record_index: 203,
+            recipe_record_byte_offset: 2,
+            recipe_id: format!("{stream}:construction-recipe#vertex"),
+            recipe_prefix_offset: 3,
+            recipe_prefix_bytes: Vec::new(),
+            recipe_references: vec![reference(10), reference(11), reference(12)],
+            recipe_program_offset: 4,
+            recipe_program: vec![0],
+            recipe_state_id: None,
+            resolved_vertex_slot: None,
+            next_record_index: 205,
+            next_byte_offset: 5,
+        };
+        let mut work_point = crate::records::DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#200"),
+            "WorkPoint",
+            200,
+        );
+        work_point.work_point_construction = Some(DesignWorkPointConstruction {
+            point_record_index: 201,
+            point_record_byte_offset: 0,
+            position: [4.0, 3.0, 0.0],
+            position_offset: 0,
+            rule: DesignWorkPointRule::Vertex {
+                input: DesignWorkPointInput {
+                    record_index: 202,
+                    reference_offset: 0,
+                    carrier: Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
+                        recipe,
+                    })),
+                },
+            },
+            reference_type_offset: 0,
+        });
+        let relation = |owner_ref, member_refs| AsmHistoricalRelation {
+            owner_ref,
+            member_refs,
+        };
+        let coedge = |coedge, owner_loop, edge| AsmHistoricalCoedge {
+            coedge,
+            owner_loop,
+            edge,
+            next: coedge,
+            previous: coedge,
+            radial_next: coedge,
+        };
+        let edge = |edge, start_vertex, end_vertex| AsmHistoricalEdge {
+            edge,
+            start_vertex,
+            end_vertex,
+        };
+        let topology = AsmHistoricalTopology {
+            faces: vec![10, 11, 12],
+            loops: vec![110, 111, 112],
+            coedges: (1000..1009).collect(),
+            edges: (2000..2009).collect(),
+            vertices: vec![40, 41, 42, 43, 44, 45, 46],
+            points: vec![50],
+            face_loops: vec![
+                relation(10, vec![110]),
+                relation(11, vec![111]),
+                relation(12, vec![112]),
+            ],
+            loop_coedges: vec![
+                relation(110, vec![1000, 1001, 1002]),
+                relation(111, vec![1003, 1004, 1005]),
+                relation(112, vec![1006, 1007, 1008]),
+            ],
+            coedge_topology: vec![
+                coedge(1000, 110, 2000),
+                coedge(1001, 110, 2001),
+                coedge(1002, 110, 2002),
+                coedge(1003, 111, 2003),
+                coedge(1004, 111, 2004),
+                coedge(1005, 111, 2005),
+                coedge(1006, 112, 2006),
+                coedge(1007, 112, 2007),
+                coedge(1008, 112, 2008),
+            ],
+            edge_vertices: vec![
+                edge(2000, 40, 41),
+                edge(2001, 41, 42),
+                edge(2002, 42, 40),
+                edge(2003, 40, 43),
+                edge(2004, 43, 44),
+                edge(2005, 44, 40),
+                edge(2006, 40, 45),
+                edge(2007, 45, 46),
+                edge(2008, 46, 40),
+            ],
+            vertex_points: vec![AsmHistoricalCarrierBinding {
+                entity: 40,
+                carrier: 50,
+            }],
+            point_positions: vec![AsmHistoricalPoint {
+                point: 50,
+                position: Point3::new(40.0, 30.0, 0.0),
+            }],
+            ..AsmHistoricalTopology::default()
+        };
+        let history = AsmHistory {
+            id: "f3d:history".into(),
+            byte_offset: 0,
+            stream_size: None,
+            history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
+            states: vec![AsmDeltaState {
+                id: "f3d:history:state#4".into(),
+                parent: "f3d:history".into(),
+                byte_offset: 0,
+                state_id: 4,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: 0,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                entity_versions: Vec::new(),
+                record_table_complete: true,
+                topology: Some(topology),
+                transition: None,
+            }],
+        };
+        let timeline = DesignFeatureTimeline {
+            id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+            byte_offset: 0,
+            class_tag: "256".into(),
+            record_index: 1,
+            source_ordinal: 0,
+            frame_length: 0,
+            context_record_index: 1,
+            context_record_index_offset: 0,
+            item_count_offset: 0,
+            item_record_indices: vec![100, 200],
+            item_record_index_offsets: vec![0, 0],
+        };
+        let mut scopes = vec![extrude, work_point];
+
+        super::bind_vertex_recipe_history(
+            &mut scopes,
+            std::slice::from_ref(&timeline),
+            std::slice::from_ref(&history),
+        )
+        .expect("authored WorkPoint history");
+        let construction = scopes[1]
+            .work_point_construction
+            .as_ref()
+            .expect("WorkPoint construction");
+        let DesignWorkPointRule::Vertex { input } = &construction.rule else {
+            unreachable!("test construction is vertex-based")
+        };
+        let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier.as_deref()
+        else {
+            unreachable!("test input carries a vertex recipe")
+        };
+        assert_eq!(recipe.recipe_state_id, Some(4));
+        assert_eq!(recipe.resolved_vertex_slot, Some(40));
+
+        let mut ambiguous = scopes;
+        let construction = ambiguous[1]
+            .work_point_construction
+            .as_mut()
+            .expect("WorkPoint construction");
+        let DesignWorkPointRule::Vertex { input } = &mut construction.rule else {
+            unreachable!("test construction is vertex-based")
+        };
+        let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) =
+            input.carrier.as_deref_mut()
+        else {
+            unreachable!("test input carries a vertex recipe")
+        };
+        recipe.recipe_references[0]
+            .candidate_faces
+            .push(FaceId(crate::ids::brep_entity_id(11)));
+        super::bind_vertex_recipe_history(
+            &mut ambiguous,
+            std::slice::from_ref(&timeline),
+            std::slice::from_ref(&history),
+        )
+        .expect("authored WorkPoint history");
+        let construction = ambiguous[1]
+            .work_point_construction
+            .as_ref()
+            .expect("WorkPoint construction");
+        let DesignWorkPointRule::Vertex { input } = &construction.rule else {
+            unreachable!("test construction is vertex-based")
+        };
+        let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier.as_deref()
+        else {
+            unreachable!("test input carries a vertex recipe")
+        };
+        assert_eq!(recipe.recipe_state_id, None);
+        assert_eq!(recipe.resolved_vertex_slot, None);
+    }
+
+    #[test]
+    fn feature_input_topology_projects_historical_vertices() {
+        use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
+        use cadmpeg_ir::features::{Feature, FeatureDefinition};
+
+        let mut scope = crate::records::DesignParameterScope::empty(
+            "f3d:design:scope#work-point",
+            "WorkPoint",
+            7,
+        );
+        scope.previous_history_state_id = Some(4);
+        let feature = Feature {
+            id: cadmpeg_ir::features::FeatureId("f3d:model:feature#work-point".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: Some("WorkPoint".into()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::DatumPointUnresolved,
+            native_ref: Some(scope.id.clone()),
+        };
+        let history = AsmHistory {
+            id: "f3d:history".into(),
+            byte_offset: 0,
+            stream_size: None,
+            history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
+            states: vec![AsmDeltaState {
+                id: "f3d:history:state#4".into(),
+                parent: "f3d:history".into(),
+                byte_offset: 0,
+                state_id: 4,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: 0,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                entity_versions: Vec::new(),
+                record_table_complete: true,
+                topology: Some(AsmHistoricalTopology {
+                    vertices: vec![43, 59],
+                    ..AsmHistoricalTopology::default()
+                }),
+                transition: None,
+            }],
+        };
+
+        let projected = super::project_feature_input_topologies(
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&scope),
+            std::slice::from_ref(&history),
+            &[],
+        );
+        let prefix = super::feature_input_prefix(&feature.id, 4);
+        assert_eq!(projected.len(), 1);
+        assert_eq!(
+            projected[0].vertices,
+            [
+                crate::ids::history_input_vertex_id(&prefix, 43),
+                crate::ids::history_input_vertex_id(&prefix, 59),
+            ]
+        );
+    }
+
+    #[test]
     fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
         use crate::history_records::{
             AsmHistoricalCoedge, AsmHistoricalRelation, AsmHistoricalTopology,
@@ -7780,14 +8808,16 @@ mod tests {
     #[test]
     fn thread_face_group_uses_first_reference_transition_candidates() {
         use crate::history_records::{
-            AsmDeltaState, AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory,
+            AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalCylinder,
+            AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory,
         };
         use crate::records::{
             ConstructionRecipeKind, DesignConstructionOperandGroup,
             DesignConstructionOperandGroupFrame, DesignFaceOperand, DesignParameterScope,
-            DesignRecipeReference,
+            DesignRecipeReference, DesignThreadConstruction, DesignThreadForm,
         };
         use cadmpeg_ir::ids::FaceId;
+        use cadmpeg_ir::math::{Point3, Vector3};
 
         let face = |slot| FaceId(format!("f3d:brep:entity#{slot}"));
         let scope_id = "f3d:Design/BulkStream.dat:scope#42";
@@ -7928,6 +8958,104 @@ mod tests {
         assert_eq!(operands[0].preceding_candidate_faces, [face(7), face(8)]);
         assert_eq!(operands[0].changed_candidate_faces, [face(7)]);
         assert_eq!(operands[0].resolved_face_slots, [7]);
+
+        let mut cylinder_scope = scope.clone();
+        cylinder_scope.thread_construction = Some(DesignThreadConstruction {
+            form: DesignThreadForm::Standard,
+            designation_offset: 0,
+            designation: "M4x0.7".into(),
+            nominal_size_text: "4.0".into(),
+            nominal_size: 4.0,
+            profile: "ISO Metric profile".into(),
+            major_diameter: 0.4,
+            minor_diameter: 0.2,
+            pitch: 0.07,
+            pitch_diameter: 0.3,
+            face_group_record_indices: vec![100],
+        });
+        let mut cylinder_operand = operand.clone();
+        cylinder_operand.recipe_references[0].candidate_faces =
+            vec![FaceId("f3d:brep/input/brep:entity#999".into())];
+        cylinder_operand.candidate_faces = cylinder_operand.recipe_references[0]
+            .candidate_faces
+            .clone();
+        let mut cylinder_history = history.clone();
+        cylinder_history.id = "f3d:Breps.BlobParts/BREP.input:asm-history#1".into();
+        let cylinder_topology = cylinder_history.states[1]
+            .topology
+            .as_mut()
+            .expect("preceding topology");
+        cylinder_topology.face_surfaces = vec![
+            AsmHistoricalCarrierBinding {
+                entity: 7,
+                carrier: 70,
+            },
+            AsmHistoricalCarrierBinding {
+                entity: 8,
+                carrier: 80,
+            },
+        ];
+        cylinder_topology.surface_cylinders = vec![
+            AsmHistoricalCylinder {
+                surface: 70,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                radius: 1.5,
+            },
+            AsmHistoricalCylinder {
+                surface: 80,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                radius: 3.0,
+            },
+        ];
+        let mut cylinder_operands = vec![cylinder_operand];
+        bind_face_operand_history_candidates(
+            &mut cylinder_operands,
+            std::slice::from_ref(&cylinder_scope),
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&cylinder_history),
+        );
+        assert_eq!(cylinder_operands[0].resolved_face_slots, [7]);
+
+        let mut ambiguous_source_operand = cylinder_operands[0].clone();
+        ambiguous_source_operand.recipe_references[0]
+            .candidate_faces
+            .push(FaceId("f3d:brep/input/brep:entity#998".into()));
+        let mut ambiguous_source_operands = vec![ambiguous_source_operand];
+        bind_face_operand_history_candidates(
+            &mut ambiguous_source_operands,
+            std::slice::from_ref(&cylinder_scope),
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&cylinder_history),
+        );
+        assert!(ambiguous_source_operands[0].resolved_face_slots.is_empty());
+
+        let mut ambiguous_geometry_history = cylinder_history;
+        ambiguous_geometry_history.states[0]
+            .transition
+            .as_mut()
+            .expect("result transition")
+            .topology
+            .faces
+            .updated
+            .push(8);
+        ambiguous_geometry_history.states[1]
+            .topology
+            .as_mut()
+            .expect("preceding topology")
+            .surface_cylinders[1]
+            .radius = 1.6;
+        let mut ambiguous_geometry_operands = vec![cylinder_operands.remove(0)];
+        bind_face_operand_history_candidates(
+            &mut ambiguous_geometry_operands,
+            &[cylinder_scope],
+            std::slice::from_ref(&group),
+            &[ambiguous_geometry_history],
+        );
+        assert!(ambiguous_geometry_operands[0]
+            .resolved_face_slots
+            .is_empty());
 
         let mut unrelated_group = group;
         unrelated_group.role = 0x0000_0011_0000_0000;
@@ -8182,6 +9310,120 @@ mod tests {
     }
 
     #[test]
+    fn ambiguous_scope_histories_use_exact_result_body_sources() {
+        use crate::records::{
+            DesignBodyBinding, DesignBodyRecipeOperand, DesignBodyRecipeOperandOwner,
+            DesignBodyRecipeReference,
+        };
+        use cadmpeg_ir::ids::FaceId;
+
+        let state = |history: &str, state_id: i64, previous_state_id: Option<i64>| AsmDeltaState {
+            id: format!("{history}:asm-delta-state#{state_id}"),
+            parent: history.into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: state_id,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            entity_versions: Vec::new(),
+            record_table_complete: true,
+            topology: Some(AsmHistoricalTopology::default()),
+            transition: previous_state_id.map(|previous_state_id| {
+                crate::history_records::AsmHistoricalTransition {
+                    previous_state_id: Some(previous_state_id),
+                    records: Default::default(),
+                    topology: Default::default(),
+                }
+            }),
+        };
+        let history = |source: &str| {
+            let id = format!("f3d:asset/Breps.BlobParts/BREP.{source}.smbh:asm-history#1");
+            AsmHistory {
+                id: id.clone(),
+                byte_offset: 0,
+                stream_size: None,
+                history_entry_count: None,
+                record_table_binding_budget_exceeded: false,
+                projection_finalized: false,
+                states: vec![state(&id, 9, Some(2)), state(&id, 2, None)],
+            }
+        };
+        let histories = [history("first"), history("second")];
+        let stream = "f3d:Design/BulkStream.dat";
+        let mut scope = crate::records::DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#100"),
+            "Revolve",
+            100,
+        );
+        scope.history_state_id = Some(9);
+        scope.previous_history_state_id = Some(2);
+        let next_scope = crate::records::DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#200"),
+            "Sketch",
+            200,
+        );
+        let binding = DesignBodyBinding {
+            id: format!("{stream}:design-body-binding#150"),
+            stream: stream.into(),
+            pair_count: 1,
+            pair_ordinal: 0,
+            asm_body_key: 1,
+            asm_body_key_offset: 0,
+            entity_suffix: 150,
+            entity_suffix_offset: 0,
+            blob_name: "BREP.second.smbh".into(),
+            blob_name_offset: 0,
+            body: None,
+        };
+        let scopes = [scope.clone(), next_scope];
+        let bindings =
+            bind_scope_histories(&scopes, std::slice::from_ref(&binding), &[], &histories);
+        assert_eq!(bindings[&scope.id], histories[1].id);
+
+        let operand = DesignBodyRecipeOperand {
+            id: format!("{stream}:design-body-recipe-operand#120"),
+            scope_record_index: scope.record_index,
+            owner: DesignBodyRecipeOperandOwner::ScopeReference {
+                scope_reference_ordinal: 0,
+            },
+            record_index: 120,
+            byte_offset: 0,
+            class_tag: "300".into(),
+            asset_id: String::new(),
+            asset_id_offset: 0,
+            context_id: String::new(),
+            context_id_offset: 0,
+            references: vec![DesignBodyRecipeReference {
+                design_reference: 1,
+                design_reference_offset: 0,
+                form: 4,
+                form_offset: 0,
+                candidate_faces: vec![FaceId("f3d:brep/second.smbh/brep:entity#1".into())],
+                preceding_candidate_faces: Vec::new(),
+                preceding_body_slots: Vec::new(),
+            }],
+            nested_record_index: 123,
+            nested_record_index_offset: 0,
+            recipe_id: format!("{stream}:construction-recipe#1"),
+            resolved_face_slot: None,
+            resolved_body_state_id: None,
+            resolved_body_slot: None,
+            resolved_body_face_slots: Vec::new(),
+            next_record_index: 124,
+            next_byte_offset: 0,
+        };
+        let bindings =
+            bind_scope_histories(&scopes, &[], std::slice::from_ref(&operand), &histories);
+        assert_eq!(bindings[&scope.id], histories[1].id);
+    }
+
+    #[test]
     fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         let state = |state_id, node_index, previous_ref, next_ref| AsmDeltaState {
             id: format!("history:state-{state_id}"),
@@ -8241,7 +9483,7 @@ mod tests {
             crate::records::DesignParameterScope::empty("f3d:native:scope#2", "EdgeFlange", 2);
         successor.history_state_id = Some(10);
         successor.previous_history_state_id = Some(6);
-        let bindings = bind_scope_histories(&[root, successor], &[], &histories);
+        let bindings = bind_scope_histories(&[root, successor], &[], &[], &histories);
         assert_eq!(bindings.len(), 2);
         assert_eq!(bindings["f3d:native:scope#1"], "history");
         assert_eq!(bindings["f3d:native:scope#2"], "history");
@@ -8885,7 +10127,11 @@ mod tests {
             history_entry_count: None,
             record_table_binding_budget_exceeded: false,
             projection_finalized: false,
-            states: vec![state(id, 11, Some(9)), state(id, 9, None)],
+            states: vec![
+                state(id, 11, Some(10)),
+                state(id, 10, Some(9)),
+                state(id, 9, None),
+            ],
         };
         let histories = [history("history-a"), history("history-b")];
         let bindings = HashMap::from([("scope".into(), "history-b".into())]);
@@ -9035,7 +10281,7 @@ mod tests {
     }
 
     #[test]
-    fn face_changes_span_complete_intermediate_state_chain() {
+    fn topology_changes_span_only_complete_acyclic_state_chains() {
         let state = |state_id| AsmDeltaState {
             id: format!("state-{state_id}"),
             parent: "history".into(),
@@ -9064,6 +10310,7 @@ mod tests {
             topology: AsmHistoricalTopologyDelta::default(),
         };
         first.topology.faces.updated = vec![10];
+        first.topology.edges.updated = vec![20];
         intermediate.transition = Some(first);
         let mut second = AsmHistoricalTransition {
             previous_state_id: Some(2),
@@ -9071,6 +10318,7 @@ mod tests {
             topology: AsmHistoricalTopologyDelta::default(),
         };
         second.topology.faces.deleted = vec![11];
+        second.topology.edges.deleted = vec![21];
         result.transition = Some(second);
         let states = HashMap::from([
             (1, Some(&preceding)),
@@ -9087,6 +10335,27 @@ mod tests {
             face_changes_across_state_chain(&result, 1, &incomplete),
             None
         );
+        assert_eq!(
+            edge_changes_across_state_chain(&result, 1, &states),
+            Some((HashSet::from([21]), HashSet::from([20])))
+        );
+        assert_eq!(
+            edge_changes_across_state_chain(&result, 1, &incomplete),
+            None
+        );
+        let mut cyclic_intermediate = intermediate.clone();
+        cyclic_intermediate
+            .transition
+            .as_mut()
+            .unwrap()
+            .previous_state_id = Some(3);
+        let cyclic = HashMap::from([
+            (1, Some(&preceding)),
+            (2, Some(&cyclic_intermediate)),
+            (3, Some(&result)),
+        ]);
+        assert_eq!(face_changes_across_state_chain(&result, 1, &cyclic), None);
+        assert_eq!(edge_changes_across_state_chain(&result, 1, &cyclic), None);
     }
 
     #[test]
@@ -9307,18 +10576,6 @@ mod tests {
             ),
             [FaceId(id(4))]
         );
-        let mut transition = AsmHistoricalTransition {
-            previous_state_id: Some(1),
-            records: AsmHistoricalEntityDelta::default(),
-            topology: AsmHistoricalTopologyDelta::default(),
-        };
-        transition.topology.faces.updated = vec![4];
-        transition.topology.faces.inserted = vec![99];
-        let candidates = [FaceId(id(4)), FaceId(id(99))];
-        assert_eq!(
-            faces_changed_by_transition(&candidates, &transition),
-            [&candidates[0]]
-        );
         let mut reference = crate::records::DesignRecipeReference {
             selector: 1,
             selector_offset: 0,
@@ -9491,6 +10748,49 @@ mod tests {
         assert_eq!(
             historical_selection_identity_kind(std::slice::from_ref(&revision_history), 701),
             Some((AsmHistoricalEntityKind::Edge, 42, vec![5]))
+        );
+        let revision_change = |new_ref| AsmEntityChange {
+            id: format!("revision-700-to-{new_ref}"),
+            parent: "board".into(),
+            byte_offset: 0,
+            kind: AsmEntityChangeKind::Update,
+            old_ref: Some(700),
+            new_ref: Some(new_ref),
+        };
+        let mut reconstructed_revision_history = history.clone();
+        reconstructed_revision_history.states[0].bulletin_boards = vec![AsmBulletinBoard {
+            id: "board".into(),
+            parent: reconstructed_revision_history.states[0].id.clone(),
+            byte_offset: 0,
+            owner_ref: 0,
+            number: 2,
+            changes: vec![revision_change(42)],
+        }];
+        assert_eq!(
+            historical_selection_identity_kind(
+                std::slice::from_ref(&reconstructed_revision_history),
+                700,
+            ),
+            Some((AsmHistoricalEntityKind::Edge, 42, vec![3, 5]))
+        );
+        let mut incomplete_revision_history = reconstructed_revision_history.clone();
+        incomplete_revision_history.states[1].record_table_complete = false;
+        assert_eq!(
+            historical_selection_identity_kind(
+                std::slice::from_ref(&incomplete_revision_history),
+                700,
+            ),
+            None
+        );
+        reconstructed_revision_history.states[0].bulletin_boards[0]
+            .changes
+            .push(revision_change(90));
+        assert_eq!(
+            historical_selection_identity_kind(
+                std::slice::from_ref(&reconstructed_revision_history),
+                700,
+            ),
+            None
         );
         revision_history.states[0].entity_versions = vec![AsmEntityVersion {
             entity_ref: 90,
@@ -9957,6 +11257,121 @@ mod tests {
             Some(2)
         );
         assert_eq!(historical_body_slot("f3d:brep:entity#2"), None);
+    }
+
+    #[test]
+    fn combine_recipe_family_proves_unordered_generated_tools() {
+        use crate::records::{
+            ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector,
+            DesignBodyRecipeOperand, DesignBodyRecipeOperandOwner, DesignBodyRecipeReference,
+        };
+
+        let stream = "f3d:Design/BulkStream.dat";
+        let recipe = |record_index, design_id: &str, selector| ConstructionRecipe {
+            id: format!("{stream}:construction-recipe#{record_index}"),
+            byte_offset: 0,
+            record_index_offset: None,
+            kind: ConstructionRecipeKind::Body,
+            design_id: Some(design_id.into()),
+            design_id_offset: None,
+            design_selector: Some(ConstructionRecipeSelector {
+                value: selector,
+                byte_offset: 0,
+            }),
+            recipe_index: 0,
+            record_index: 0,
+        };
+        let recipes = [
+            recipe(101, "exact", 6),
+            recipe(102, "family", 3),
+            recipe(103, "family", 1),
+            recipe(104, "family", 2),
+        ];
+        let operand =
+            |record_index, recipe: &ConstructionRecipe, body: Option<i64>, candidates: &[i64]| {
+                DesignBodyRecipeOperand {
+                    id: format!("{stream}:design-body-recipe-operand#{record_index}"),
+                    scope_record_index: 10,
+                    owner: DesignBodyRecipeOperandOwner::ScopeReference {
+                        scope_reference_ordinal: record_index,
+                    },
+                    record_index,
+                    byte_offset: 0,
+                    class_tag: "389".into(),
+                    asset_id: "asset".into(),
+                    asset_id_offset: 0,
+                    context_id: "context".into(),
+                    context_id_offset: 0,
+                    references: vec![DesignBodyRecipeReference {
+                        design_reference: if recipe.design_id.as_deref() == Some("family") {
+                            413
+                        } else {
+                            409
+                        },
+                        design_reference_offset: 0,
+                        form: 3,
+                        form_offset: 0,
+                        candidate_faces: Vec::new(),
+                        preceding_candidate_faces: Vec::new(),
+                        preceding_body_slots: candidates.to_vec(),
+                    }],
+                    nested_record_index: 0,
+                    nested_record_index_offset: 0,
+                    recipe_id: recipe.id.clone(),
+                    resolved_face_slot: None,
+                    resolved_body_state_id: body.map(|_| 317),
+                    resolved_body_slot: body,
+                    resolved_body_face_slots: Vec::new(),
+                    next_record_index: 0,
+                    next_byte_offset: 0,
+                }
+            };
+        let family = [6, 7, 8];
+        let mut operands = vec![
+            operand(1, &recipes[0], Some(5), &[]),
+            operand(2, &recipes[1], None, &[]),
+            operand(3, &recipes[2], None, &family),
+            operand(4, &recipes[3], None, &[]),
+        ];
+
+        assert_eq!(
+            combine_recipe_family_tool_slots(
+                stream,
+                10,
+                &[1, 2, 3, 4],
+                317,
+                1,
+                &operands,
+                &recipes,
+            ),
+            Some(vec![5, 6, 7, 8])
+        );
+
+        operands[1].references[0].preceding_body_slots = vec![6, 7, 9];
+        assert!(combine_recipe_family_tool_slots(
+            stream,
+            10,
+            &[1, 2, 3, 4],
+            317,
+            1,
+            &operands,
+            &recipes,
+        )
+        .is_none());
+
+        operands[1].references[0].preceding_body_slots.clear();
+        let mut duplicate_selector = recipes.clone();
+        duplicate_selector[1].design_selector = duplicate_selector[2].design_selector;
+        assert!(combine_recipe_family_tool_slots(
+            stream,
+            10,
+            &[1, 2, 3, 4],
+            317,
+            1,
+            &operands,
+            &duplicate_selector,
+        )
+        .is_none());
     }
 
     #[test]
@@ -10944,7 +12359,111 @@ mod tests {
     }
 
     #[test]
-    fn historical_face_plane_requires_one_exact_plane_across_identity_states() {
+    fn mirror_plane_candidate_uses_unique_primary_when_persistent_identity_is_absent() {
+        let candidate =
+            |history_id: &str, face_slot| crate::records::DesignEntitySelectionFaceCandidate {
+                history_id: history_id.into(),
+                historical_entity_kind: crate::records::AsmHistoricalEntityKind::Loop,
+                historical_entity_ref: face_slot + 100,
+                historical_state_ids: vec![2, 1],
+                face_slot,
+            };
+        let primary = candidate("history-a", 10);
+        assert_eq!(
+            super::unique_mirror_plane_candidate(vec![primary.clone()], Vec::new()),
+            Some(primary.clone())
+        );
+
+        let second_primary = candidate("history-b", 20);
+        assert_eq!(
+            super::unique_mirror_plane_candidate(
+                vec![primary.clone(), second_primary.clone()],
+                Vec::new(),
+            ),
+            None
+        );
+        assert_eq!(
+            super::unique_mirror_plane_candidate(
+                vec![primary, second_primary.clone()],
+                vec![second_primary.clone()],
+            ),
+            Some(second_primary.clone())
+        );
+        assert_eq!(
+            super::unique_mirror_plane_candidate(
+                vec![candidate("history-a", 10), second_primary.clone()],
+                vec![candidate("history-a", 11), second_primary],
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn historical_loop_plane_requires_coincident_axis_bearing_curves() {
+        use crate::history_records::{
+            AsmHistoricalCoedge, AsmHistoricalCurveAxis, AsmHistoricalOptionalCarrierBinding,
+            AsmHistoricalRelation, AsmHistoricalTopology,
+        };
+        use cadmpeg_ir::math::{Point3, Vector3};
+
+        let mut topology = AsmHistoricalTopology {
+            loop_coedges: vec![AsmHistoricalRelation {
+                owner_ref: 5,
+                member_refs: vec![6, 7],
+            }],
+            coedge_topology: vec![
+                AsmHistoricalCoedge {
+                    coedge: 6,
+                    owner_loop: 5,
+                    edge: 10,
+                    next: 7,
+                    previous: 7,
+                    radial_next: 6,
+                },
+                AsmHistoricalCoedge {
+                    coedge: 7,
+                    owner_loop: 5,
+                    edge: 11,
+                    next: 6,
+                    previous: 6,
+                    radial_next: 7,
+                },
+            ],
+            edge_curves: vec![
+                AsmHistoricalOptionalCarrierBinding {
+                    entity: 10,
+                    carrier: Some(20),
+                },
+                AsmHistoricalOptionalCarrierBinding {
+                    entity: 11,
+                    carrier: Some(21),
+                },
+            ],
+            curve_axes: vec![
+                AsmHistoricalCurveAxis {
+                    curve: 20,
+                    origin: Point3::new(1.0, 2.0, 3.0),
+                    direction: Vector3::new(0.0, 0.0, 1.0),
+                },
+                AsmHistoricalCurveAxis {
+                    curve: 21,
+                    origin: Point3::new(4.0, 5.0, 3.0),
+                    direction: Vector3::new(0.0, 0.0, -1.0),
+                },
+            ],
+            ..Default::default()
+        };
+        let plane = historical_loop_plane(5, &topology).expect("coincident loop curve planes");
+        assert_eq!(plane.origin, Point3::new(1.0, 2.0, 3.0));
+        assert_eq!(plane.normal, Vector3::new(0.0, 0.0, 1.0));
+
+        topology.curve_axes[1].origin.z = 4.0;
+        assert!(historical_loop_plane(5, &topology).is_none());
+    }
+
+    #[test]
+    fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
+        use crate::history_records::AsmHistoricalPlane;
         use cadmpeg_ir::math::{Point3, Vector3};
 
         let topology = || AsmHistoricalTopology {
@@ -10989,7 +12508,7 @@ mod tests {
         };
         let candidate = crate::records::DesignEntitySelectionFaceCandidate {
             history_id: "history".into(),
-            historical_entity_kind: AsmHistoricalEntityKind::Loop,
+            historical_entity_kind: AsmHistoricalEntityKind::Face,
             historical_entity_ref: 69,
             historical_state_ids: vec![2, 1],
             face_slot: 27,
@@ -11004,7 +12523,7 @@ mod tests {
             states: vec![state(2, topology()), state(1, topology())],
         };
 
-        let plane = historical_face_plane(&candidate, std::slice::from_ref(&history))
+        let plane = historical_mirror_plane(&candidate, 1, std::slice::from_ref(&history))
             .expect("stable selected-face plane");
         assert_eq!(
             plane.origin,
@@ -11014,10 +12533,24 @@ mod tests {
                 z: 3.0
             }
         );
-        history.states[1].topology.as_mut().unwrap().surface_planes[0]
+        assert!(historical_mirror_plane(&candidate, 3, std::slice::from_ref(&history)).is_some());
+        history.states[0].topology.as_mut().unwrap().surface_planes[0]
             .normal
             .z = -1.0;
-        assert!(historical_face_plane(&candidate, &[history]).is_none());
+        assert!(historical_mirror_plane(&candidate, 1, std::slice::from_ref(&history)).is_some());
+        assert!(historical_mirror_plane(&candidate, 3, std::slice::from_ref(&history)).is_some());
+        history.states[0].topology.as_mut().unwrap().surface_planes[0]
+            .origin
+            .z = 4.0;
+        assert!(historical_mirror_plane(&candidate, 3, std::slice::from_ref(&history)).is_none());
+        let duplicate = history.states[1].topology.as_ref().unwrap().face_surfaces[0].clone();
+        history.states[1]
+            .topology
+            .as_mut()
+            .unwrap()
+            .face_surfaces
+            .push(duplicate);
+        assert!(historical_mirror_plane(&candidate, 1, &[history]).is_none());
     }
 
     #[test]

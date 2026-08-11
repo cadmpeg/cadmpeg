@@ -399,6 +399,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
         id: SketchId("sketch".into()),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, -1.0, 0.0),
@@ -560,6 +561,7 @@ fn compact_profile_construction_role_places_a_revolution_axis() {
         id: SketchId("sketch".into()),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, -1.0, 0.0),
@@ -639,6 +641,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
         id: SketchId("sketch".into()),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, -1.0, 0.0),

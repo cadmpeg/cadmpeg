@@ -872,6 +872,7 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1134,6 +1135,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
         id,
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -2300,6 +2302,7 @@ fn endpoint_incidence_binds_an_existing_profile_line() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -2380,6 +2383,7 @@ fn point_marker_materializing_a_circle_binds_its_center() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -2451,6 +2455,7 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -6279,6 +6284,7 @@ fn axis_aligned_sketch_frame_projects_native_plane_coordinates() {
         id: SketchId("sketch".into()),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(28.65, -35.0, 0.35),
             normal: Vector3::new(0.0, -1.0, 0.0),
@@ -6325,6 +6331,7 @@ fn rotated_sketch_frame_projects_native_plane_coordinates() {
         id: SketchId("sketch".into()),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(10.0, 3.0, 20.0),
             normal: Vector3::new(0.0, -1.0, 0.0),
@@ -6710,6 +6717,7 @@ fn nested_profile_must_contain_its_declared_entity_handle_circular_carrier() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -6890,6 +6898,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -8395,6 +8404,7 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
         id: sketch.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -8536,6 +8546,7 @@ fn cylinder_centers_resolve_dimensioned_circle_frame() {
         id: SketchId("sketch".into()),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(20.0, 20.0, 0.0),
             normal: Vector3::new(-1.0, 0.0, 0.0),
@@ -8619,6 +8630,7 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         id: sketch_id.clone(),
         name: Some("Sketch2".into()),
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),

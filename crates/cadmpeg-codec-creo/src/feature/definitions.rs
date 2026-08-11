@@ -4183,6 +4183,7 @@ pub(crate) fn positional_feature_skamps(
     };
     cursor = after_row_class;
     let mut rows = Vec::new();
+    let mut item_classes = None::<(Vec<u8>, Vec<u8>)>;
     'rows: while rows.len() < usize::try_from(count).unwrap_or(usize::MAX) {
         let row_offset = cursor;
         let Some(id) = next_solver_int(payload, &mut cursor) else {
@@ -4197,26 +4198,19 @@ pub(crate) fn positional_feature_skamps(
         let Some(status) = next_solver_int(payload, &mut cursor) else {
             break;
         };
-        if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
-            break;
-        }
-        let (item_count, after_item_count) = psb::compact_int(payload, cursor + 1);
-        if payload.get(after_item_count) != Some(&psb::token::ENTITY_REF) {
-            break;
-        }
-        let item_class_start = after_item_count + 1;
-        let Ok((_, after_item_class)) = psb::reference_id(payload, item_class_start) else {
-            break;
-        };
-        let item_class_encoding = &payload[after_item_count..after_item_class];
-        if payload.get(after_item_class..after_item_class + 2) != Some(&[0xfb, 0xe2])
-            || payload.get(after_item_class + 2) != Some(&psb::token::ENTITY_REF)
-        {
-            break;
-        }
-        let Ok((_, after_item_row_class)) = psb::reference_id(payload, after_item_class + 3) else {
+        let Some((item_count, after_item_row_class, item_table_class, item_row_class)) =
+            positional_skamp_item_array(
+                payload,
+                cursor,
+                end,
+                &table_class_encoding,
+                item_classes.as_ref().map(|classes| classes.0.as_slice()),
+                item_classes.as_ref().map(|classes| classes.1.as_slice()),
+            )
+        else {
             break;
         };
+        item_classes.get_or_insert((item_table_class, item_row_class));
         cursor = after_item_row_class;
         let mut items = Vec::new();
         while items.len() < usize::try_from(item_count).unwrap_or(usize::MAX) {
@@ -4232,7 +4226,11 @@ pub(crate) fn positional_feature_skamps(
                     payload,
                     cursor,
                     end,
-                    item_class_encoding,
+                    item_classes
+                        .as_ref()
+                        .expect("item classes established")
+                        .0
+                        .as_slice(),
                     &[0xf1],
                 ) else {
                     break 'rows;
@@ -4259,6 +4257,52 @@ pub(crate) fn positional_feature_skamps(
         rows.push(row);
     }
     rows
+}
+
+fn positional_skamp_item_array(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    outer_table_class: &[u8],
+    expected_table_class: Option<&[u8]>,
+    expected_row_class: Option<&[u8]>,
+) -> Option<(u32, usize, Vec<u8>, Vec<u8>)> {
+    let mut row_separator = Vec::with_capacity(outer_table_class.len() + 2);
+    row_separator.push(0xf3);
+    row_separator.extend_from_slice(outer_table_class);
+    row_separator.push(0xe2);
+    let row_end = find_bytes(payload, &row_separator, start, end).unwrap_or(end);
+    let candidates = (start..row_end)
+        .filter_map(|array| {
+            (payload.get(array) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+            let (count, after_count) = psb::compact_int(payload, array + 1);
+            (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+            let (_, after_table_class) = psb::reference_id(payload, after_count + 1).ok()?;
+            let table_class = payload.get(after_count..after_table_class)?;
+            expected_table_class
+                .is_none_or(|expected| expected == table_class)
+                .then_some(())?;
+            (payload.get(after_table_class..after_table_class + 2) == Some(&[0xfb, 0xe2]))
+                .then_some(())?;
+            let row_class_start = after_table_class + 2;
+            (payload.get(row_class_start) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+            let (_, after_row_class) = psb::reference_id(payload, row_class_start + 1).ok()?;
+            let row_class = payload.get(row_class_start..after_row_class)?;
+            expected_row_class
+                .is_none_or(|expected| expected == row_class)
+                .then_some(())?;
+            Some((
+                count,
+                after_row_class,
+                table_class.to_vec(),
+                row_class.to_vec(),
+            ))
+        })
+        .collect::<Vec<_>>();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
 }
 
 pub(crate) fn feature_relation_triples(

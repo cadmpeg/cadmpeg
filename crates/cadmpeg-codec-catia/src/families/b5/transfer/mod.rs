@@ -54,6 +54,7 @@ struct RevolutionPlan {
     axis_origin: Point3,
     axis_direction: Vector3,
     angular_interval: [f64; 2],
+    angular_parameter_interval: [f64; 2],
     parameter_interval: [f64; 2],
 }
 
@@ -92,6 +93,7 @@ struct OwnershipPlan {
     body_kind: BodyKind,
     components: Vec<Vec<usize>>,
     face_components: Vec<usize>,
+    loop_owners: HashMap<u32, usize>,
 }
 
 struct OrientedLoop {
@@ -324,12 +326,8 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
         if loop_.pcurves.len() != loop_.edges.len() || loop_.pcurves.is_empty() {
             return None;
         }
-        if graph
-            .faces
-            .iter()
-            .filter(|face| face.loops.contains(&loop_.object_id))
-            .any(|face| face.surface != loop_.surface)
-        {
+        let owner = ownership.loop_owners.get(&loop_.object_id).copied()?;
+        if graph.faces.get(owner)?.surface != loop_.surface {
             return None;
         }
         if !loop_chain_closes(loop_, &graph.edge_vertices) {
@@ -641,6 +639,8 @@ pub(crate) struct ResolvedRevolutionSurface {
     pub(crate) axis_direction: Vector3,
     /// Angular interval in radians.
     pub(crate) angular_interval: [f64; 2],
+    /// Native angular surface-parameter interval mapped to `angular_interval`.
+    pub(crate) angular_parameter_interval: [f64; 2],
     /// Native profile parameter interval.
     pub(crate) parameter_interval: [f64; 2],
 }
@@ -669,6 +669,7 @@ pub(crate) fn resolved_revolution_surface(
         axis_origin: plan.axis_origin,
         axis_direction: plan.axis_direction,
         angular_interval: plan.angular_interval,
+        angular_parameter_interval: plan.angular_parameter_interval,
         parameter_interval: plan.parameter_interval,
     })
 }
@@ -1810,28 +1811,39 @@ mod tests {
 
     #[test]
     fn procedural_support_requires_physical_edge_endpoint_agreement() {
-        let surfaces = BTreeMap::from([(
-            10,
-            SurfacePlan {
-                geometry: SurfaceGeometry::Plane {
-                    origin: Point3::new(0.0, 0.0, 0.0),
-                    normal: Vector3::new(0.0, 0.0, 1.0),
-                    u_axis: Vector3::new(1.0, 0.0, 0.0),
-                },
-                procedure: None,
+        let plane = || SurfacePlan {
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
             },
-        )]);
-        let pcurves = BTreeMap::from([(
-            20,
+            procedure: None,
+        };
+        let surfaces = BTreeMap::from([(10, plane()), (11, plane())]);
+        let pcurves = BTreeMap::from([
             (
-                PcurveGeometry::Line {
-                    origin: Point2::new(0.0, 0.0),
-                    direction: Point2::new(1.0, 0.0),
-                },
-                false,
-                [0.0, 1.0],
+                20,
+                (
+                    PcurveGeometry::Line {
+                        origin: Point2::new(0.0, 0.0),
+                        direction: Point2::new(1.0, 0.0),
+                    },
+                    false,
+                    [0.0, 1.0],
+                ),
             ),
-        )]);
+            (
+                21,
+                (
+                    PcurveGeometry::Line {
+                        origin: Point2::new(1.0, 0.0),
+                        direction: Point2::new(-1.0, 0.0),
+                    },
+                    false,
+                    [0.0, 1.0],
+                ),
+            ),
+        ]);
         let supports = [(10, 20, [0.0, 1.0])];
         assert!(b5_supports_follow_edge(
             &supports,
@@ -1867,6 +1879,29 @@ mod tests {
             &reversed_supports,
             [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
             [1.5e-3; 2],
+            &surfaces,
+            &pcurves,
+        ));
+        let mut tolerance_ambiguous_supports = [(10, 20, [1.0, 0.0])];
+        orient_b5_supports_to_edge(
+            &mut tolerance_ambiguous_supports,
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            [1.01; 2],
+            &surfaces,
+            &pcurves,
+        );
+        assert_eq!(tolerance_ambiguous_supports[0].2, [0.0, 1.0]);
+        let mut oppositely_parameterized_supports = [(10, 20, [0.0, 1.0]), (11, 21, [0.0, 1.0])];
+        orient_b5_supports_to_edge(
+            &mut oppositely_parameterized_supports,
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            [1.01; 2],
+            &surfaces,
+            &pcurves,
+        );
+        assert_eq!(oppositely_parameterized_supports[1].2, [1.0, 0.0]);
+        assert!(b5_supports_agree(
+            &oppositely_parameterized_supports,
             &surfaces,
             &pcurves,
         ));
@@ -2008,6 +2043,8 @@ mod tests {
         assert_eq!(ownership.face_components, vec![0, 1]);
         assert_eq!(ownership.components.len(), 2);
         assert_eq!(ownership.body_kind, BodyKind::Sheet);
+        assert_eq!(ownership.loop_owners.get(&2), Some(&0));
+        assert_eq!(ownership.loop_owners.get(&6), Some(&1));
 
         graph
             .loops
@@ -2233,18 +2270,18 @@ mod tests {
             Some(&profile),
             [0.0, 0.0, 0.0],
             [0.0, 0.0, 1.0],
-            1.0,
-            [[-1.0, 1.0], [0.0, std::f64::consts::PI]],
+            2.0,
+            [[-1.0, 1.0], [0.0, 2.0 * std::f64::consts::PI]],
         )
         .expect("exact revolution cache");
         assert_eq!(plan.parameter_interval, [-1.0, 1.0]);
         assert_eq!(plan.angular_interval, [0.0, std::f64::consts::PI]);
-        let evaluated = surface_point(
-            &SurfaceGeometry::Nurbs(surface),
-            0.5,
-            std::f64::consts::FRAC_PI_2,
-        )
-        .expect("surface point");
+        assert_eq!(
+            plan.angular_parameter_interval,
+            [0.0, 2.0 * std::f64::consts::PI]
+        );
+        let evaluated = surface_point(&SurfaceGeometry::Nurbs(surface), 0.5, std::f64::consts::PI)
+            .expect("surface point");
         assert!(evaluated.x.abs() < 1e-12);
         assert!((evaluated.y - 2.0).abs() < 1e-12);
         assert!((evaluated.z - 0.5).abs() < 1e-12);
@@ -2252,8 +2289,8 @@ mod tests {
             Some(&profile),
             [0.0, 0.0, 0.0],
             [0.0, 0.0, 1.0],
-            1.0,
-            [[-0.5, 1.0], [0.0, std::f64::consts::PI]],
+            2.0,
+            [[-0.5, 1.0], [0.0, 2.0 * std::f64::consts::PI]],
         )
         .is_none());
     }
@@ -3264,13 +3301,7 @@ mod tests {
 
     /// B5 object ids carry an unpadded decimal key, so a face pair such as
     /// `#9`/`#10` reaches the neutral model in ascending native order while
-    /// sorting the other way. The route must still produce an admissible model:
-    /// every cross-reference is an id string, so canonical arena order is a
-    /// property the pipeline restores rather than one the emit passes owe.
-    ///
-    /// Two ownership components put several arenas out of sorted order at once,
-    /// which one face cannot do. The container-level counterpart is
-    /// `tests::decode_float_packed_stream_transfers_topology_under_decimal_object_ids`.
+    /// sorting the other way. The route must still produce an admissible model.
     #[test]
     fn decimal_object_id_keys_transfer_to_an_admissible_model() {
         let graph = synthetic_spherical_graph(&[

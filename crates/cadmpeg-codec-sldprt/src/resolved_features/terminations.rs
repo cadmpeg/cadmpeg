@@ -1490,11 +1490,7 @@ pub(super) fn legacy_single_face_reference_path_at(
                         .is_some_and(|source| source != 0)
             })
     };
-    #[allow(
-        clippy::items_after_statements,
-        clippy::too_many_arguments,
-        reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-    )]
+    #[allow(clippy::items_after_statements, clippy::too_many_arguments)]
     fn parse_entries(
         payload: &[u8],
         entry_at: &impl Fn(usize) -> Option<FeatureInputComponentPathEntry>,

@@ -3,21 +3,9 @@
 //! fixtures.
 //!
 //! `tests/golden/fixtures/*.sldprt` are the frozen inputs.
-//! This harness never writes them: a snapshot test can only tell a decoder
-//! change apart from an input change while the inputs hold still, so
-//! regenerating an input destroys the evidence the snapshot exists to carry.
-//! `UPDATE_GOLDEN=1` rewrites `tests/golden/decode/` and
-//! `tests/golden/inspect/`, and nothing else.
-//!
-//! `tests/golden/inspect/` pins the container summary and
-//! `tests/golden/decode/` pins the decoded document: the IR, the decode
-//! report's losses, and source fidelity. A feature-typing or loss-accounting
-//! change moves the decode branch and `inspect` cannot see it, because an
-//! inspect summary describes the container, not what was transferred out of it.
-//!
-//! [`cadmpeg_core::golden`] holds the enumeration, comparison, and
-//! reporting shared with every other codec; this module supplies only this
-//! codec's branches.
+//! Fixtures stay frozen; `UPDATE_GOLDEN=1` rewrites goldens only.
+//! `inspect` pins the container summary; `decode` pins the IR, losses, and
+//! source fidelity. Shared harness: [`cadmpeg_core::golden`].
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
@@ -105,11 +93,8 @@ fn split_key(key: &str) -> (&str, Option<&str>) {
 
 /// The identifier scopes whose key head is a container section ordinal.
 ///
-/// `container::Section::ordinal` supplies the head for every record read out of
-/// a named container section, and these are the scopes that carry one. The
-/// `brep` and `appearance` scopes are deliberately absent: their heads are
-/// Parasolid entity and attribute tags, which live inside a payload the writer
-/// replays unchanged, so they must compare exactly.
+/// `brep` and `appearance` are absent: their heads are Parasolid tags inside
+/// replayed payloads and must compare exactly.
 const SECTION_SCOPED_IDENTIFIERS: [&str; 6] = [
     "sldprt:displaylist:",
     "sldprt:feature-input:",
@@ -120,15 +105,8 @@ const SECTION_SCOPED_IDENTIFIERS: [&str; 6] = [
 ];
 
 /// Every container byte position one identifier carries, as
-/// `(family, position)` pairs sharing a rank space.
-///
-/// This codec mints two of them, and only two:
-///
-/// | component | what it locates | minted at |
-/// | --- | --- | --- |
-/// | key head, in a [`SECTION_SCOPED_IDENTIFIERS`] scope | the marker byte offset of the block the record was read from | `container::Section::ordinal` |
-/// Only the key head is normalized. Every remaining component, including a
-/// metadata record's payload offset, is compared exactly.
+/// `(family, position)` pairs sharing a rank space. Only the section-ordinal
+/// key head is normalized; remaining components compare exactly.
 fn byte_positions(id: &str) -> Vec<(String, u64)> {
     let Some(key) = identifier_key(id) else {
         return Vec::new();
@@ -197,30 +175,10 @@ fn walk_identifiers(value: &mut serde_json::Value, visit: &mut impl FnMut(&str) 
 /// Serializes the neutral document a byte string decodes to, with every
 /// container byte position an identifier carries replaced by its rank.
 ///
-/// # Why the identifiers need normalizing at all
-///
-/// This codec derives an identifier from where in the container it read the
-/// record: see [`byte_positions`] for the two components that hold one and where
-/// each is minted. Repacking the container moves those bytes without changing
-/// what they say — re-deflating one block to five more bytes shifts every later
-/// block — so a rewrite that changed nothing still renames the entities. Their
-/// *order* survives, and that is what the rank captures: two documents agree
-/// here when their records sit in the same relative order, whatever the repack
-/// did to the offsets. A record that moved past another, appeared, or vanished
-/// still fails.
-///
-/// # What is compared and what is not
-///
-/// The neutral model, the units, and the tolerances — the document. Two parts of
-/// the decode describe the *container* the writer just rebuilt rather than the
-/// document it carries, and neither is a claim about the write:
-///
-/// - `ir.native`, which retains that container's records. A rewrite adds the
-///   `Contents/SolidWorks` document envelope whenever the document names an
-///   active configuration and no retained block carries one, because that
-///   envelope is where the container states which configuration is active.
-/// - `ir.source.attributes`, which counts those records and repeats the envelope
-///   fields the writer just materialized.
+/// Identifiers embed container byte offsets, so a repack renames entities
+/// without changing relative order; ranks capture that order. The snapshot
+/// covers the model, units, and tolerances only — not `ir.native` or
+/// `ir.source.attributes`, which describe the rebuilt container.
 fn neutral_document(bytes: &[u8]) -> String {
     let value =
         match SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
@@ -254,14 +212,6 @@ fn normalized_document(ir: &cadmpeg_ir::CadIr) -> serde_json::Value {
     document
 }
 
-/// [`normalize_identifier`] replaces container byte positions and nothing else.
-///
-/// A normalization broad enough to absorb a repack would, if it reached one
-/// component too far, also absorb a writer that dropped a record or renumbered
-/// entities — and [`fixtures_survive_the_semantic_write_path`] would then pass on
-/// a document the writer had changed. This pins the boundary: distinct positions
-/// take distinct ranks, indices survive untouched, and a scope whose head is a
-/// Parasolid tag is left alone.
 #[test]
 fn normalization_replaces_only_container_positions() {
     let ranks = BTreeMap::from([
@@ -318,16 +268,6 @@ fn golden_output_is_deterministic() {
 
 /// Every fixture survives a decode and comes back byte for byte through the
 /// verbatim-replay path.
-///
-/// This covers container fidelity and nothing about the writer: on this path the
-/// encoder copies the retained source image and no writer code runs.
-/// [`cadmpeg_ir::roundtrip::verbatim_replay_holds`] asserts the path as well as
-/// the bytes, so the day a fixture stops replaying, this fails rather than
-/// quietly changing what it measures.
-///
-/// The comparison target is the fixture on disk. A stored copy of each expected
-/// output would be byte-identical to its own input and would read as writer
-/// evidence while carrying none.
 #[test]
 fn fixtures_replay_verbatim() {
     for (name, bytes) in harness().fixture_inputs() {
@@ -337,22 +277,6 @@ fn fixtures_replay_verbatim() {
 
 /// The semantic write path either reproduces a fixture's document or declares
 /// the edit it cannot make.
-///
-/// [`cadmpeg_ir::roundtrip::semantic_roundtrip`] removes the
-/// `document_local_sha256` baseline first, so the encoder cannot show the
-/// retained image is still current and must run the writer.
-///
-/// Two outcomes are contract-conforming and both are asserted. A write must
-/// decode back to the same document — see [`neutral_document`] for the one
-/// normalization that comparison applies and why. A byte comparison is not the
-/// contract here: the writer repacks the container, and a stored byte golden
-/// would pin one packing forever.
-///
-/// A refusal must be `NotImplemented`, which names a capability this codec has
-/// not built. Any other refusal means the writer misread or corrupted records it
-/// retained itself, which is a defect rather than a gap. Which fixtures land in
-/// which arm is not pinned here; pinning it would freeze today's gaps as the
-/// specification.
 #[test]
 fn fixtures_survive_the_semantic_write_path() {
     let mut written_count = 0usize;
@@ -387,22 +311,9 @@ fn fixtures_survive_the_semantic_write_path() {
 }
 
 /// How far the mutation lane moves an extrusion depth, in millimetres.
-///
-/// Far enough that the tolerant comparator cannot mistake a dropped edit for
-/// last-place disagreement.
 const MUTATION_MM: f64 = 3.0;
 
 /// Every statement of a one-sided blind extrusion depth in `ir`.
-///
-/// A blind depth is the plainest dimensional edit this codec has: one number a
-/// user types into a feature dialog, carried by the neutral feature arena and by
-/// a retained history record at once, which is what makes the write interesting.
-///
-/// The document states it in two places, and an edit means both: the feature's
-/// own definition, and each configuration's evaluated state for that feature.
-/// Moving only the first leaves the document self-inconsistent, and the writer
-/// then re-derives the configuration state from the feature and the output
-/// disagrees with the input for a reason that is not a lost edit.
 fn blind_extrude_lengths(ir: &mut cadmpeg_ir::CadIr) -> Vec<&mut Length> {
     fn depth(definition: &mut FeatureDefinition) -> Option<&mut Length> {
         let FeatureDefinition::Extrude {
@@ -432,34 +343,6 @@ fn blind_extrude_lengths(ir: &mut cadmpeg_ir::CadIr) -> Vec<&mut Length> {
 }
 
 /// An edited extrusion depth survives the semantic write path.
-///
-/// [`fixtures_survive_the_semantic_write_path`] removes the document baseline and
-/// leaves the document itself alone. `prepare_features_for_write` then finds the
-/// per-lane `sldprt_neutral_feature_local_sha256` baseline still present and still
-/// matching and returns on its unchanged-baseline branch, so `sync_neutral_features`
-/// — the pass that carries a neutral feature edit into the retained history
-/// records — is not reached from the fixture corpus at all. Editing a depth is
-/// what reaches it: the neutral feature hash moves, the native history hash does
-/// not, and the write runs the synchronization.
-///
-/// # What this asserts, and what it cannot
-///
-/// It asserts that the edit comes back: every place the document states the depth
-/// states the edited value after the write. It also asserts that no B-rep arena
-/// changed size, so a face or edge lost during the rewrite still fails here.
-///
-/// It does not compare the written document as a whole, because the written
-/// B-rep is not the retained one. `retained_partition` replays the source
-/// Parasolid payload only while `brep_local_sha256` still matches, and that digest
-/// covers the whole `model` rather than the B-rep arenas its name refers to. A
-/// depth edit touches no B-rep entity and still moves it, so the writer discards
-/// the retained payload and re-authors the geometry from neutral IR, minting fresh
-/// Parasolid entity tags in a different order. The geometry survives; the tags and
-/// the arena order do not. Rank-normalizing them the way [`byte_positions`]
-/// normalizes container offsets would not rescue the comparison, because the
-/// re-authored tags do not preserve the original relative order either — and a
-/// normalization wide enough to absorb that would also absorb a writer that
-/// dropped a record, which is the thing this suite must not do.
 #[test]
 fn an_edited_depth_survives_the_semantic_write_path() {
     let mut edited_count = 0usize;
@@ -551,8 +434,4 @@ fn arena_sizes(ir: &cadmpeg_ir::CadIr) -> [usize; 8] {
 }
 
 /// How many committed fixtures carry a one-sided blind extrusion.
-///
-/// Most of this corpus covers geometry and container structure and holds no
-/// feature history at all, so the lane above is narrow by construction rather
-/// than by omission.
 const FIXTURES_WITH_A_BLIND_DEPTH: usize = 1;

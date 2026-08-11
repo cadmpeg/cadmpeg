@@ -6,7 +6,8 @@ use std::collections::BTreeMap;
 use crate::assets::AssetId;
 use crate::ids::{
     BodyId, CurveId, EdgeId, FaceId, FeatureInputTopologyId, FeatureResultTopologyId,
-    HistoricalBodyId, HistoricalEdgeId, HistoricalFaceId, OccurrenceId, SubdId, VertexId,
+    HistoricalBodyId, HistoricalEdgeId, HistoricalFaceId, HistoricalVertexId, OccurrenceId, SubdId,
+    VertexId,
 };
 use crate::math::{Point2, Point3, Vector3};
 use crate::products::JointId;
@@ -46,6 +47,114 @@ impl<S: Into<String>> From<S> for FeatureId {
 pub struct ConfigurationId(
     #[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String,
 );
+
+/// Resolution state of a configuration's source display name.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(untagged)]
+pub enum ConfigurationName {
+    /// Source display name.
+    Resolved(String),
+    /// Source configuration exists but its display name is not established.
+    #[default]
+    Unresolved,
+}
+
+impl ConfigurationName {
+    /// Return the source display name when resolved.
+    pub fn resolved(&self) -> Option<&str> {
+        match self {
+            Self::Resolved(value) => Some(value),
+            Self::Unresolved => None,
+        }
+    }
+
+    /// Return the mutable source display name when resolved.
+    pub fn resolved_mut(&mut self) -> Option<&mut String> {
+        match self {
+            Self::Resolved(value) => Some(value),
+            Self::Unresolved => None,
+        }
+    }
+
+    /// Whether the source display name remains unresolved.
+    pub fn is_unresolved(&self) -> bool {
+        matches!(self, Self::Unresolved)
+    }
+}
+
+impl From<String> for ConfigurationName {
+    fn from(value: String) -> Self {
+        Self::Resolved(value)
+    }
+}
+
+impl From<&str> for ConfigurationName {
+    fn from(value: &str) -> Self {
+        Self::Resolved(value.to_string())
+    }
+}
+
+impl PartialEq<str> for ConfigurationName {
+    fn eq(&self, other: &str) -> bool {
+        self.resolved() == Some(other)
+    }
+}
+
+impl PartialEq<&str> for ConfigurationName {
+    fn eq(&self, other: &&str) -> bool {
+        self == *other
+    }
+}
+
+impl PartialEq<String> for ConfigurationName {
+    fn eq(&self, other: &String) -> bool {
+        self == other.as_str()
+    }
+}
+
+/// Resolution state of a configuration's active-model status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(untagged)]
+pub enum ConfigurationActivation {
+    /// Whether this configuration supplies the document's active model state.
+    Resolved(bool),
+    /// Source configuration exists but its active-model status is not established.
+    Unresolved,
+}
+
+impl Default for ConfigurationActivation {
+    fn default() -> Self {
+        Self::Resolved(false)
+    }
+}
+
+impl ConfigurationActivation {
+    /// Return the active-model status when resolved.
+    pub fn resolved(&self) -> Option<bool> {
+        match self {
+            Self::Resolved(value) => Some(*value),
+            Self::Unresolved => None,
+        }
+    }
+
+    /// Whether this configuration is known to supply the active model state.
+    pub fn is_active(&self) -> bool {
+        self.resolved() == Some(true)
+    }
+
+    /// Whether this configuration is known not to supply the active model state.
+    pub fn is_inactive(&self) -> bool {
+        self.resolved() == Some(false)
+    }
+}
+
+impl From<bool> for ConfigurationActivation {
+    fn from(value: bool) -> Self {
+        Self::Resolved(value)
+    }
+}
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -109,13 +218,14 @@ pub struct DesignConfiguration {
     #[serde(default)]
     pub ordinal: u32,
     /// Whether this configuration supplies the document's active model state.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub active: bool,
+    #[serde(default, skip_serializing_if = "ConfigurationActivation::is_inactive")]
+    pub active: ConfigurationActivation,
     /// Format-native configuration slot, when distinct from list order.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_index: Option<u32>,
-    /// Source display name.
-    pub name: String,
+    /// Source display name, when established.
+    #[serde(default, skip_serializing_if = "ConfigurationName::is_unresolved")]
+    pub name: ConfigurationName,
     /// Material override, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub material: Option<String>,
@@ -346,6 +456,9 @@ pub struct FeatureInputTopology {
     /// Edges present in this state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub edges: Vec<HistoricalEdgeId>,
+    /// Vertices present in this state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub vertices: Vec<HistoricalVertexId>,
     /// Full-fidelity source state reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
@@ -417,6 +530,83 @@ pub enum DatumPlaneReference {
     },
 }
 
+/// Construction rule used to derive one datum point.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DatumPointConstruction {
+    /// Center of one selected circular edge.
+    CircleCenter {
+        /// Selected circular edge.
+        edge: EdgeSelection,
+    },
+    /// Intersection of two selected edges.
+    TwoEdgeIntersection {
+        /// Selected edges in source order.
+        edges: [EdgeSelection; 2],
+    },
+    /// Intersection of three selected planes.
+    ThreePlaneIntersection {
+        /// Selected planes in source order.
+        planes: Box<[DatumPlaneReference; 3]>,
+    },
+    /// One selected topological vertex.
+    Vertex {
+        /// Selected vertex.
+        vertex: VertexSelection,
+    },
+    /// Intersection of one selected edge and one selected plane.
+    EdgePlaneIntersection {
+        /// Selected edge.
+        edge: EdgeSelection,
+        /// Selected plane.
+        plane: DatumPlaneReference,
+    },
+    /// Point at a normalized position along one selected edge.
+    DistanceOnEdge {
+        /// Selected edge.
+        edge: EdgeSelection,
+        /// Fraction from the path start in the closed interval from zero through one.
+        fraction: f64,
+    },
+}
+
+/// Rule that maps a raster decal onto its selected faces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum DecalMapping {
+    /// Scale the complete raster to the selected faces' native parameter domain.
+    FitToFaces,
+}
+
+impl DatumPointConstruction {
+    /// Return construction features referenced by this rule.
+    pub fn feature_references(&self) -> Vec<&FeatureId> {
+        match self {
+            Self::ThreePlaneIntersection { planes } => planes
+                .iter()
+                .filter_map(|plane| match plane {
+                    DatumPlaneReference::Feature(feature) => Some(feature),
+                    DatumPlaneReference::Face { .. } => None,
+                })
+                .collect(),
+            Self::EdgePlaneIntersection {
+                plane: DatumPlaneReference::Feature(feature),
+                ..
+            } => vec![feature],
+            Self::Vertex {
+                vertex: VertexSelection::Generated { vertex, .. },
+            } => vec![&vertex.feature],
+            Self::CircleCenter { .. }
+            | Self::TwoEdgeIntersection { .. }
+            | Self::Vertex { .. }
+            | Self::EdgePlaneIntersection { .. }
+            | Self::DistanceOnEdge { .. } => Vec::new(),
+        }
+    }
+}
+
 /// Neutral construction semantics, with an explicit native escape hatch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -478,6 +668,15 @@ pub enum FeatureDefinition {
     ReferenceImage {
         /// Embedded or external raster resource.
         asset: AssetId,
+        /// Whether the raster is visible in the source presentation.
+        #[serde(default = "default_true")]
+        visible: bool,
+        /// Whether image u increases toward decreasing plane-local u.
+        #[serde(default)]
+        mirror_u: bool,
+        /// Whether image v increases toward decreasing plane-local v.
+        #[serde(default)]
+        mirror_v: bool,
         /// Origin of the image plane in model space.
         origin: Point3,
         /// Unit direction of increasing image u coordinate.
@@ -487,6 +686,18 @@ pub enum FeatureDefinition {
         /// Opposite corners of the image rectangle in plane-local millimeters.
         bounds: [Point2; 2],
         /// Normalized image opacity.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        opacity: Option<f64>,
+    },
+    /// Raster image applied to model faces.
+    Decal {
+        /// Embedded or external raster resource.
+        asset: AssetId,
+        /// Faces receiving the raster image.
+        faces: FaceSelection,
+        /// Rule relating image coordinates to the selected faces.
+        mapping: DecalMapping,
+        /// Normalized image opacity, or the source format's default when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         opacity: Option<f64>,
     },
@@ -503,6 +714,17 @@ pub enum FeatureDefinition {
         normal: Vector3,
         /// In-plane u-axis.
         u_axis: Vector3,
+    },
+    /// Reference plane constructed through three selected vertices.
+    DatumThreePointPlane {
+        /// Plane origin in model space.
+        origin: Point3,
+        /// Plane normal.
+        normal: Vector3,
+        /// In-plane u-axis.
+        u_axis: Vector3,
+        /// Construction vertices in source order.
+        points: Box<[VertexSelection; 3]>,
     },
     /// Constructed reference-plane family whose model-space frame is unresolved.
     DatumPlaneUnresolved,
@@ -525,6 +747,9 @@ pub enum FeatureDefinition {
     DatumPoint {
         /// Point position in model space.
         position: Point3,
+        /// Rule that derives the point from preceding construction geometry.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        construction: Option<Box<DatumPointConstruction>>,
     },
     /// Datum point whose model-space position is unresolved.
     DatumPointUnresolved,
@@ -2354,6 +2579,15 @@ pub enum VertexSelection {
     Generated {
         /// Feature-local vertex identity.
         vertex: GeneratedVertexRef,
+        /// Format-native persistent selection reference.
+        native: String,
+    },
+    /// Vertex resolved in the containing feature's input topology.
+    Historical {
+        /// Input topology containing the selected vertex.
+        state: FeatureInputTopologyId,
+        /// State-local vertex identity.
+        vertex: HistoricalVertexId,
         /// Format-native persistent selection reference.
         native: String,
     },

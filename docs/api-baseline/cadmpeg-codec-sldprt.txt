@@ -1,0 +1,1114 @@
+# generated at dbbb6f9e0
+pub mod cadmpeg_codec_sldprt
+pub mod cadmpeg_codec_sldprt::brep
+pub struct cadmpeg_codec_sldprt::brep::Brep
+pub cadmpeg_codec_sldprt::brep::Brep::annotations: cadmpeg_ir::annotations::Annotations
+pub cadmpeg_codec_sldprt::brep::Brep::bodies: alloc::vec::Vec<cadmpeg_ir::topology::Body>
+pub cadmpeg_codec_sldprt::brep::Brep::body_modifiers: alloc::vec::Vec<cadmpeg_codec_sldprt::brep::attrib::BodyModifier>
+pub cadmpeg_codec_sldprt::brep::Brep::coedges: alloc::vec::Vec<cadmpeg_ir::topology::Coedge>
+pub cadmpeg_codec_sldprt::brep::Brep::curves: alloc::vec::Vec<cadmpeg_ir::geometry::Curve>
+pub cadmpeg_codec_sldprt::brep::Brep::edges: alloc::vec::Vec<cadmpeg_ir::topology::Edge>
+pub cadmpeg_codec_sldprt::brep::Brep::face_atoms: alloc::vec::Vec<cadmpeg_codec_sldprt::brep::attrib::FaceAtom>
+pub cadmpeg_codec_sldprt::brep::Brep::face_colors: alloc::vec::Vec<cadmpeg_codec_sldprt::brep::entity::FaceColor>
+pub cadmpeg_codec_sldprt::brep::Brep::faces: alloc::vec::Vec<cadmpeg_ir::topology::Face>
+pub cadmpeg_codec_sldprt::brep::Brep::loops: alloc::vec::Vec<cadmpeg_ir::topology::Loop>
+pub cadmpeg_codec_sldprt::brep::Brep::pcurves: alloc::vec::Vec<cadmpeg_ir::geometry::Pcurve>
+pub cadmpeg_codec_sldprt::brep::Brep::points: alloc::vec::Vec<cadmpeg_ir::topology::Point>
+pub cadmpeg_codec_sldprt::brep::Brep::procedural_surfaces: alloc::vec::Vec<cadmpeg_ir::geometry::ProceduralSurface>
+pub cadmpeg_codec_sldprt::brep::Brep::regions: alloc::vec::Vec<cadmpeg_ir::topology::Region>
+pub cadmpeg_codec_sldprt::brep::Brep::shells: alloc::vec::Vec<cadmpeg_ir::topology::Shell>
+pub cadmpeg_codec_sldprt::brep::Brep::stats: cadmpeg_codec_sldprt::brep::Stats
+pub cadmpeg_codec_sldprt::brep::Brep::surfaces: alloc::vec::Vec<cadmpeg_ir::geometry::Surface>
+pub cadmpeg_codec_sldprt::brep::Brep::unknowns: alloc::vec::Vec<cadmpeg_ir::unknown::UnknownRecord>
+pub cadmpeg_codec_sldprt::brep::Brep::vertices: alloc::vec::Vec<cadmpeg_ir::topology::Vertex>
+impl core::default::Default for cadmpeg_codec_sldprt::brep::Brep
+pub fn cadmpeg_codec_sldprt::brep::Brep::default() -> cadmpeg_codec_sldprt::brep::Brep
+impl core::marker::Freeze for cadmpeg_codec_sldprt::brep::Brep
+impl core::marker::Send for cadmpeg_codec_sldprt::brep::Brep
+impl core::marker::Sync for cadmpeg_codec_sldprt::brep::Brep
+impl core::marker::Unpin for cadmpeg_codec_sldprt::brep::Brep
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::brep::Brep
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::brep::Brep
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::brep::Brep
+pub struct cadmpeg_codec_sldprt::brep::Stats
+pub cadmpeg_codec_sldprt::brep::Stats::ambiguous_body_assignments: usize
+pub cadmpeg_codec_sldprt::brep::Stats::ambiguous_face_owners: usize
+pub cadmpeg_codec_sldprt::brep::Stats::ambiguous_pcurve_parameters: usize
+pub cadmpeg_codec_sldprt::brep::Stats::source_entity_records: usize
+pub cadmpeg_codec_sldprt::brep::Stats::synthetic_body_grouping: bool
+pub cadmpeg_codec_sldprt::brep::Stats::unclaimed_faces: usize
+pub cadmpeg_codec_sldprt::brep::Stats::unknown_curve_edges: usize
+pub cadmpeg_codec_sldprt::brep::Stats::unknown_procedural_supports: usize
+pub cadmpeg_codec_sldprt::brep::Stats::unknown_surface_faces: usize
+pub cadmpeg_codec_sldprt::brep::Stats::unresolved_face_colors: usize
+impl core::default::Default for cadmpeg_codec_sldprt::brep::Stats
+pub fn cadmpeg_codec_sldprt::brep::Stats::default() -> cadmpeg_codec_sldprt::brep::Stats
+impl core::marker::Freeze for cadmpeg_codec_sldprt::brep::Stats
+impl core::marker::Send for cadmpeg_codec_sldprt::brep::Stats
+impl core::marker::Sync for cadmpeg_codec_sldprt::brep::Stats
+impl core::marker::Unpin for cadmpeg_codec_sldprt::brep::Stats
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::brep::Stats
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::brep::Stats
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::brep::Stats
+pub fn cadmpeg_codec_sldprt::brep::decode(&[u8], &cadmpeg_codec_sldprt::parasolid::StreamHeader, &str) -> cadmpeg_codec_sldprt::brep::Brep
+pub fn cadmpeg_codec_sldprt::brep::decode_bodies(&[(&[u8], &cadmpeg_codec_sldprt::parasolid::StreamHeader)], &str) -> cadmpeg_codec_sldprt::brep::Brep
+pub mod cadmpeg_codec_sldprt::container
+pub mod cadmpeg_codec_sldprt::container::role
+pub const cadmpeg_codec_sldprt::container::role::BLOCK: &str
+pub const cadmpeg_codec_sldprt::container::role::CACHE_CELL: &str
+pub const cadmpeg_codec_sldprt::container::role::COMPOUND_STREAM: &str
+pub const cadmpeg_codec_sldprt::container::role::DIRECTORY_ENTRY: &str
+pub struct cadmpeg_codec_sldprt::container::Block
+pub cadmpeg_codec_sldprt::container::Block::comp_sz: u32
+pub cadmpeg_codec_sldprt::container::Block::family: &'static str
+pub cadmpeg_codec_sldprt::container::Block::offset: usize
+pub cadmpeg_codec_sldprt::container::Block::payload: alloc::vec::Vec<u8>
+pub cadmpeg_codec_sldprt::container::Block::ps_stream: core::option::Option<alloc::vec::Vec<u8>>
+pub cadmpeg_codec_sldprt::container::Block::ps_stream_offsets: alloc::vec::Vec<usize>
+pub cadmpeg_codec_sldprt::container::Block::ps_streams: alloc::vec::Vec<alloc::vec::Vec<u8>>
+pub cadmpeg_codec_sldprt::container::Block::section: core::option::Option<alloc::string::String>
+pub cadmpeg_codec_sldprt::container::Block::type_id: u32
+pub cadmpeg_codec_sldprt::container::Block::uncomp_sz: u32
+impl core::clone::Clone for cadmpeg_codec_sldprt::container::Block
+pub fn cadmpeg_codec_sldprt::container::Block::clone(&self) -> cadmpeg_codec_sldprt::container::Block
+impl core::fmt::Debug for cadmpeg_codec_sldprt::container::Block
+pub fn cadmpeg_codec_sldprt::container::Block::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for cadmpeg_codec_sldprt::container::Block
+impl core::marker::Send for cadmpeg_codec_sldprt::container::Block
+impl core::marker::Sync for cadmpeg_codec_sldprt::container::Block
+impl core::marker::Unpin for cadmpeg_codec_sldprt::container::Block
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::container::Block
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::container::Block
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::container::Block
+pub struct cadmpeg_codec_sldprt::container::CacheCell
+pub cadmpeg_codec_sldprt::container::CacheCell::logical_len: u32
+pub cadmpeg_codec_sldprt::container::CacheCell::name: alloc::string::String
+pub cadmpeg_codec_sldprt::container::CacheCell::offset: usize
+impl core::clone::Clone for cadmpeg_codec_sldprt::container::CacheCell
+pub fn cadmpeg_codec_sldprt::container::CacheCell::clone(&self) -> cadmpeg_codec_sldprt::container::CacheCell
+impl core::fmt::Debug for cadmpeg_codec_sldprt::container::CacheCell
+pub fn cadmpeg_codec_sldprt::container::CacheCell::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for cadmpeg_codec_sldprt::container::CacheCell
+impl core::marker::Send for cadmpeg_codec_sldprt::container::CacheCell
+impl core::marker::Sync for cadmpeg_codec_sldprt::container::CacheCell
+impl core::marker::Unpin for cadmpeg_codec_sldprt::container::CacheCell
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::container::CacheCell
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::container::CacheCell
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::container::CacheCell
+pub struct cadmpeg_codec_sldprt::container::CompoundStream
+pub cadmpeg_codec_sldprt::container::CompoundStream::decoded_payload: core::option::Option<alloc::vec::Vec<u8>>
+pub cadmpeg_codec_sldprt::container::CompoundStream::directory_id: u32
+pub cadmpeg_codec_sldprt::container::CompoundStream::path: alloc::string::String
+pub cadmpeg_codec_sldprt::container::CompoundStream::payload: alloc::vec::Vec<u8>
+pub cadmpeg_codec_sldprt::container::CompoundStream::ps_stream_offsets: alloc::vec::Vec<usize>
+pub cadmpeg_codec_sldprt::container::CompoundStream::ps_streams: alloc::vec::Vec<alloc::vec::Vec<u8>>
+pub cadmpeg_codec_sldprt::container::CompoundStream::start_sector: u32
+impl core::clone::Clone for cadmpeg_codec_sldprt::container::CompoundStream
+pub fn cadmpeg_codec_sldprt::container::CompoundStream::clone(&self) -> cadmpeg_codec_sldprt::container::CompoundStream
+impl core::fmt::Debug for cadmpeg_codec_sldprt::container::CompoundStream
+pub fn cadmpeg_codec_sldprt::container::CompoundStream::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for cadmpeg_codec_sldprt::container::CompoundStream
+impl core::marker::Send for cadmpeg_codec_sldprt::container::CompoundStream
+impl core::marker::Sync for cadmpeg_codec_sldprt::container::CompoundStream
+impl core::marker::Unpin for cadmpeg_codec_sldprt::container::CompoundStream
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::container::CompoundStream
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::container::CompoundStream
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::container::CompoundStream
+pub struct cadmpeg_codec_sldprt::container::ContainerScan<'a>
+pub cadmpeg_codec_sldprt::container::ContainerScan::blocks: alloc::vec::Vec<cadmpeg_codec_sldprt::container::Block>
+pub cadmpeg_codec_sldprt::container::ContainerScan::cache_cells: alloc::vec::Vec<cadmpeg_codec_sldprt::container::CacheCell>
+pub cadmpeg_codec_sldprt::container::ContainerScan::compound_streams: alloc::vec::Vec<cadmpeg_codec_sldprt::container::CompoundStream>
+pub cadmpeg_codec_sldprt::container::ContainerScan::directory: alloc::vec::Vec<cadmpeg_codec_sldprt::container::DirectoryEntry>
+pub cadmpeg_codec_sldprt::container::ContainerScan::source_image: &'a [u8]
+pub cadmpeg_codec_sldprt::container::ContainerScan::version: u32
+impl<'a> core::marker::Freeze for cadmpeg_codec_sldprt::container::ContainerScan<'a>
+impl<'a> core::marker::Send for cadmpeg_codec_sldprt::container::ContainerScan<'a>
+impl<'a> core::marker::Sync for cadmpeg_codec_sldprt::container::ContainerScan<'a>
+impl<'a> core::marker::Unpin for cadmpeg_codec_sldprt::container::ContainerScan<'a>
+impl<'a> core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::container::ContainerScan<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::container::ContainerScan<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::container::ContainerScan<'a>
+pub struct cadmpeg_codec_sldprt::container::DirectoryEntry
+pub cadmpeg_codec_sldprt::container::DirectoryEntry::descriptor: [u8; 14]
+pub cadmpeg_codec_sldprt::container::DirectoryEntry::name: alloc::string::String
+pub cadmpeg_codec_sldprt::container::DirectoryEntry::offset: usize
+pub cadmpeg_codec_sldprt::container::DirectoryEntry::size: u32
+pub cadmpeg_codec_sldprt::container::DirectoryEntry::trailer: [u8; 6]
+pub cadmpeg_codec_sldprt::container::DirectoryEntry::type_id: u32
+impl core::clone::Clone for cadmpeg_codec_sldprt::container::DirectoryEntry
+pub fn cadmpeg_codec_sldprt::container::DirectoryEntry::clone(&self) -> cadmpeg_codec_sldprt::container::DirectoryEntry
+impl core::fmt::Debug for cadmpeg_codec_sldprt::container::DirectoryEntry
+pub fn cadmpeg_codec_sldprt::container::DirectoryEntry::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for cadmpeg_codec_sldprt::container::DirectoryEntry
+impl core::marker::Send for cadmpeg_codec_sldprt::container::DirectoryEntry
+impl core::marker::Sync for cadmpeg_codec_sldprt::container::DirectoryEntry
+impl core::marker::Unpin for cadmpeg_codec_sldprt::container::DirectoryEntry
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::container::DirectoryEntry
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::container::DirectoryEntry
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::container::DirectoryEntry
+pub const cadmpeg_codec_sldprt::container::MARKER: [u8; 6]
+pub fn cadmpeg_codec_sldprt::container::has_parasolid_body_stream(&cadmpeg_codec_sldprt::container::ContainerScan<'_>) -> bool
+pub fn cadmpeg_codec_sldprt::container::looks_like_compound_file(&[u8]) -> bool
+pub fn cadmpeg_codec_sldprt::container::looks_like_sldprt(&[u8]) -> bool
+pub fn cadmpeg_codec_sldprt::container::nibble_swap_name(&[u8]) -> core::option::Option<alloc::string::String>
+pub fn cadmpeg_codec_sldprt::container::parasolid_offset(&[u8]) -> core::option::Option<usize>
+pub fn cadmpeg_codec_sldprt::container::payload_family(&[u8]) -> &'static str
+pub fn cadmpeg_codec_sldprt::container::scan<'a>(&cadmpeg_core::decode::context::DecodeContext<'a>, cadmpeg_core::decode::view::View<'a>) -> core::result::Result<cadmpeg_codec_sldprt::container::ContainerScan<'a>, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_sldprt::container::scan_bytes(&[u8]) -> cadmpeg_codec_sldprt::container::ContainerScan<'_>
+pub fn cadmpeg_codec_sldprt::container::select_active_parasolid<'a>(&'a cadmpeg_codec_sldprt::container::ContainerScan<'_>) -> core::option::Option<(&'a cadmpeg_codec_sldprt::container::Block, cadmpeg_codec_sldprt::parasolid::StreamHeader)>
+pub fn cadmpeg_codec_sldprt::container::summarize(&cadmpeg_codec_sldprt::container::ContainerScan<'_>) -> cadmpeg_core::container::ContainerSummary
+pub mod cadmpeg_codec_sldprt::decode
+pub fn cadmpeg_codec_sldprt::decode::decode(&cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
+pub mod cadmpeg_codec_sldprt::loss
+#[non_exhaustive] pub enum cadmpeg_codec_sldprt::loss::SldprtLossCode
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::AppearanceFaceColorUnresolved
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::ConfigActiveIdentityUnresolved
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::ConfigActivePartitionMismatch
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::ConfigAmbiguousNaming
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::ConfigAmbiguousPartition
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::ConfigIncoherentBodyRefs
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::ConfigIncompleteSnapshot
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::ConfigInferredWithoutNative
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::ConfigLaneIdentityUnresolved
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::ContainerNoParasolidStream
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::FeatureBodyRetentionUnresolved
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::FeatureIncoherentContent
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::FeatureIncoherentEdges
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::FeatureIncoherentOutputs
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::FeatureInputObjectUnbound
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::FeatureNativeKindRetained
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::FeatureTypedOperandIncomplete
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::FeatureUnresolvedOutputScope
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::GeometryEdgeSupportCurveUntyped
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::GeometryFaceSupportSurfaceUntyped
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::GeometryParasolidNotTransferred
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::GeometryPcurveAmbiguous
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::HistoryIncompleteReferences
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::MaterialMetadataNotTransferred
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::ParameterAmbiguousIdentity
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::ParameterUnevaluated
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::PmiDimensionUnbound
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::SketchNativeConstraint
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::SketchNativeGeometry
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::SketchRelationMultiplyProjected
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::SketchRelationUnprojected
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::TessellationFaceOwnershipUnresolved
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::TopologyBodyAssignmentAmbiguous
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::TopologyBodyHierarchyDerived
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::TopologyFaceOwnerAmbiguous
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::TopologyFaceUnclaimed
+pub cadmpeg_codec_sldprt::loss::SldprtLossCode::TopologyGraphNotTransferred
+impl cadmpeg_codec_sldprt::loss::SldprtLossCode
+pub const cadmpeg_codec_sldprt::loss::SldprtLossCode::ALL: &'static [cadmpeg_codec_sldprt::loss::SldprtLossCode]
+pub const fn cadmpeg_codec_sldprt::loss::SldprtLossCode::code(self) -> &'static str
+pub fn cadmpeg_codec_sldprt::loss::SldprtLossCode::note(self, impl core::convert::Into<alloc::string::String>) -> cadmpeg_ir::report::LossNote
+pub const fn cadmpeg_codec_sldprt::loss::SldprtLossCode::severity(self) -> cadmpeg_ir::report::Severity
+impl core::clone::Clone for cadmpeg_codec_sldprt::loss::SldprtLossCode
+pub fn cadmpeg_codec_sldprt::loss::SldprtLossCode::clone(&self) -> cadmpeg_codec_sldprt::loss::SldprtLossCode
+impl core::cmp::Eq for cadmpeg_codec_sldprt::loss::SldprtLossCode
+impl core::cmp::Ord for cadmpeg_codec_sldprt::loss::SldprtLossCode
+pub fn cadmpeg_codec_sldprt::loss::SldprtLossCode::cmp(&self, &cadmpeg_codec_sldprt::loss::SldprtLossCode) -> core::cmp::Ordering
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::loss::SldprtLossCode
+pub fn cadmpeg_codec_sldprt::loss::SldprtLossCode::eq(&self, &cadmpeg_codec_sldprt::loss::SldprtLossCode) -> bool
+impl core::cmp::PartialOrd for cadmpeg_codec_sldprt::loss::SldprtLossCode
+pub fn cadmpeg_codec_sldprt::loss::SldprtLossCode::partial_cmp(&self, &cadmpeg_codec_sldprt::loss::SldprtLossCode) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for cadmpeg_codec_sldprt::loss::SldprtLossCode
+pub fn cadmpeg_codec_sldprt::loss::SldprtLossCode::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for cadmpeg_codec_sldprt::loss::SldprtLossCode
+pub fn cadmpeg_codec_sldprt::loss::SldprtLossCode::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for cadmpeg_codec_sldprt::loss::SldprtLossCode
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::loss::SldprtLossCode
+impl core::marker::Freeze for cadmpeg_codec_sldprt::loss::SldprtLossCode
+impl core::marker::Send for cadmpeg_codec_sldprt::loss::SldprtLossCode
+impl core::marker::Sync for cadmpeg_codec_sldprt::loss::SldprtLossCode
+impl core::marker::Unpin for cadmpeg_codec_sldprt::loss::SldprtLossCode
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::loss::SldprtLossCode
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::loss::SldprtLossCode
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::loss::SldprtLossCode
+pub mod cadmpeg_codec_sldprt::parasolid
+pub struct cadmpeg_codec_sldprt::parasolid::StreamHeader
+pub cadmpeg_codec_sldprt::parasolid::StreamHeader::body_offset: usize
+pub cadmpeg_codec_sldprt::parasolid::StreamHeader::description: alloc::string::String
+pub cadmpeg_codec_sldprt::parasolid::StreamHeader::schema: alloc::string::String
+impl core::clone::Clone for cadmpeg_codec_sldprt::parasolid::StreamHeader
+pub fn cadmpeg_codec_sldprt::parasolid::StreamHeader::clone(&self) -> cadmpeg_codec_sldprt::parasolid::StreamHeader
+impl core::fmt::Debug for cadmpeg_codec_sldprt::parasolid::StreamHeader
+pub fn cadmpeg_codec_sldprt::parasolid::StreamHeader::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for cadmpeg_codec_sldprt::parasolid::StreamHeader
+impl core::marker::Send for cadmpeg_codec_sldprt::parasolid::StreamHeader
+impl core::marker::Sync for cadmpeg_codec_sldprt::parasolid::StreamHeader
+impl core::marker::Unpin for cadmpeg_codec_sldprt::parasolid::StreamHeader
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::parasolid::StreamHeader
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::parasolid::StreamHeader
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::parasolid::StreamHeader
+pub fn cadmpeg_codec_sldprt::parasolid::direct_streams_with_offsets(&[u8]) -> alloc::vec::Vec<(usize, alloc::vec::Vec<u8>)>
+pub fn cadmpeg_codec_sldprt::parasolid::extract_streams(&[u8]) -> alloc::vec::Vec<alloc::vec::Vec<u8>>
+pub fn cadmpeg_codec_sldprt::parasolid::extract_streams_with_offsets(&[u8]) -> alloc::vec::Vec<(usize, alloc::vec::Vec<u8>)>
+pub fn cadmpeg_codec_sldprt::parasolid::is_body_stream(&cadmpeg_codec_sldprt::parasolid::StreamHeader) -> bool
+pub fn cadmpeg_codec_sldprt::parasolid::is_parasolid_stream(&[u8]) -> bool
+pub fn cadmpeg_codec_sldprt::parasolid::stream_header(&[u8]) -> core::option::Option<cadmpeg_codec_sldprt::parasolid::StreamHeader>
+pub fn cadmpeg_codec_sldprt::parasolid::wrapped_member_offsets(&[u8]) -> alloc::vec::Vec<usize>
+pub mod cadmpeg_codec_sldprt::records
+pub enum cadmpeg_codec_sldprt::records::FeatureContent
+pub cadmpeg_codec_sldprt::records::FeatureContent::Dimension(alloc::string::String)
+pub cadmpeg_codec_sldprt::records::FeatureContent::Feature(alloc::string::String)
+pub cadmpeg_codec_sldprt::records::FeatureContent::Text(alloc::string::String)
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::FeatureContent
+pub fn cadmpeg_codec_sldprt::records::FeatureContent::clone(&self) -> cadmpeg_codec_sldprt::records::FeatureContent
+impl core::cmp::Eq for cadmpeg_codec_sldprt::records::FeatureContent
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::FeatureContent
+pub fn cadmpeg_codec_sldprt::records::FeatureContent::eq(&self, &cadmpeg_codec_sldprt::records::FeatureContent) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::FeatureContent
+pub fn cadmpeg_codec_sldprt::records::FeatureContent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::FeatureContent
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::FeatureContent
+pub fn cadmpeg_codec_sldprt::records::FeatureContent::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::FeatureContent
+pub fn cadmpeg_codec_sldprt::records::FeatureContent::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::FeatureContent
+impl core::marker::Send for cadmpeg_codec_sldprt::records::FeatureContent
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::FeatureContent
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::FeatureContent
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::FeatureContent
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::FeatureContent
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::FeatureContent
+pub enum cadmpeg_codec_sldprt::records::FeatureInputClassRole
+pub cadmpeg_codec_sldprt::records::FeatureInputClassRole::Auxiliary
+pub cadmpeg_codec_sldprt::records::FeatureInputClassRole::Dimension
+pub cadmpeg_codec_sldprt::records::FeatureInputClassRole::Feature
+pub cadmpeg_codec_sldprt::records::FeatureInputClassRole::Native
+pub cadmpeg_codec_sldprt::records::FeatureInputClassRole::Parameter
+pub cadmpeg_codec_sldprt::records::FeatureInputClassRole::Reference
+pub cadmpeg_codec_sldprt::records::FeatureInputClassRole::Sketch
+pub cadmpeg_codec_sldprt::records::FeatureInputClassRole::SketchConstraint
+pub cadmpeg_codec_sldprt::records::FeatureInputClassRole::SketchEntity
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::FeatureInputClassRole
+pub fn cadmpeg_codec_sldprt::records::FeatureInputClassRole::clone(&self) -> cadmpeg_codec_sldprt::records::FeatureInputClassRole
+impl core::cmp::Eq for cadmpeg_codec_sldprt::records::FeatureInputClassRole
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::FeatureInputClassRole
+pub fn cadmpeg_codec_sldprt::records::FeatureInputClassRole::eq(&self, &cadmpeg_codec_sldprt::records::FeatureInputClassRole) -> bool
+impl core::default::Default for cadmpeg_codec_sldprt::records::FeatureInputClassRole
+pub fn cadmpeg_codec_sldprt::records::FeatureInputClassRole::default() -> cadmpeg_codec_sldprt::records::FeatureInputClassRole
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::FeatureInputClassRole
+pub fn cadmpeg_codec_sldprt::records::FeatureInputClassRole::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_codec_sldprt::records::FeatureInputClassRole
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::FeatureInputClassRole
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::FeatureInputClassRole
+pub fn cadmpeg_codec_sldprt::records::FeatureInputClassRole::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::FeatureInputClassRole
+pub fn cadmpeg_codec_sldprt::records::FeatureInputClassRole::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::FeatureInputClassRole
+impl core::marker::Send for cadmpeg_codec_sldprt::records::FeatureInputClassRole
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::FeatureInputClassRole
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::FeatureInputClassRole
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::FeatureInputClassRole
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputClassRole
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputClassRole
+pub enum cadmpeg_codec_sldprt::records::FeatureInputOperandKind
+pub cadmpeg_codec_sldprt::records::FeatureInputOperandKind::D6
+pub cadmpeg_codec_sldprt::records::FeatureInputOperandKind::E1
+pub cadmpeg_codec_sldprt::records::FeatureInputOperandKind::Native(u16)
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::FeatureInputOperandKind
+pub fn cadmpeg_codec_sldprt::records::FeatureInputOperandKind::clone(&self) -> cadmpeg_codec_sldprt::records::FeatureInputOperandKind
+impl core::cmp::Eq for cadmpeg_codec_sldprt::records::FeatureInputOperandKind
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::FeatureInputOperandKind
+pub fn cadmpeg_codec_sldprt::records::FeatureInputOperandKind::eq(&self, &cadmpeg_codec_sldprt::records::FeatureInputOperandKind) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::FeatureInputOperandKind
+pub fn cadmpeg_codec_sldprt::records::FeatureInputOperandKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_codec_sldprt::records::FeatureInputOperandKind
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::FeatureInputOperandKind
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::FeatureInputOperandKind
+pub fn cadmpeg_codec_sldprt::records::FeatureInputOperandKind::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::FeatureInputOperandKind
+pub fn cadmpeg_codec_sldprt::records::FeatureInputOperandKind::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::FeatureInputOperandKind
+impl core::marker::Send for cadmpeg_codec_sldprt::records::FeatureInputOperandKind
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::FeatureInputOperandKind
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::FeatureInputOperandKind
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::FeatureInputOperandKind
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputOperandKind
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputOperandKind
+pub enum cadmpeg_codec_sldprt::records::FeatureInputRelationFamily
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationFamily::Angle
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationFamily::CircleDiameter
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationFamily::LineLineDistance
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationFamily::PointLineDistance
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationFamily::PointPointDistance
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationFamily::PointPointHorizontalDistance
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationFamily::PointPointVerticalDistance
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::FeatureInputRelationFamily
+pub fn cadmpeg_codec_sldprt::records::FeatureInputRelationFamily::clone(&self) -> cadmpeg_codec_sldprt::records::FeatureInputRelationFamily
+impl core::cmp::Eq for cadmpeg_codec_sldprt::records::FeatureInputRelationFamily
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::FeatureInputRelationFamily
+pub fn cadmpeg_codec_sldprt::records::FeatureInputRelationFamily::eq(&self, &cadmpeg_codec_sldprt::records::FeatureInputRelationFamily) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::FeatureInputRelationFamily
+pub fn cadmpeg_codec_sldprt::records::FeatureInputRelationFamily::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for cadmpeg_codec_sldprt::records::FeatureInputRelationFamily
+pub fn cadmpeg_codec_sldprt::records::FeatureInputRelationFamily::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for cadmpeg_codec_sldprt::records::FeatureInputRelationFamily
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::FeatureInputRelationFamily
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::FeatureInputRelationFamily
+pub fn cadmpeg_codec_sldprt::records::FeatureInputRelationFamily::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::FeatureInputRelationFamily
+pub fn cadmpeg_codec_sldprt::records::FeatureInputRelationFamily::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::FeatureInputRelationFamily
+impl core::marker::Send for cadmpeg_codec_sldprt::records::FeatureInputRelationFamily
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::FeatureInputRelationFamily
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::FeatureInputRelationFamily
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::FeatureInputRelationFamily
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputRelationFamily
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputRelationFamily
+pub enum cadmpeg_codec_sldprt::records::FeatureInputScalarRole
+pub cadmpeg_codec_sldprt::records::FeatureInputScalarRole::Display
+pub cadmpeg_codec_sldprt::records::FeatureInputScalarRole::Driving
+pub cadmpeg_codec_sldprt::records::FeatureInputScalarRole::Native
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::FeatureInputScalarRole
+pub fn cadmpeg_codec_sldprt::records::FeatureInputScalarRole::clone(&self) -> cadmpeg_codec_sldprt::records::FeatureInputScalarRole
+impl core::cmp::Eq for cadmpeg_codec_sldprt::records::FeatureInputScalarRole
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::FeatureInputScalarRole
+pub fn cadmpeg_codec_sldprt::records::FeatureInputScalarRole::eq(&self, &cadmpeg_codec_sldprt::records::FeatureInputScalarRole) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::FeatureInputScalarRole
+pub fn cadmpeg_codec_sldprt::records::FeatureInputScalarRole::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_codec_sldprt::records::FeatureInputScalarRole
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::FeatureInputScalarRole
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::FeatureInputScalarRole
+pub fn cadmpeg_codec_sldprt::records::FeatureInputScalarRole::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::FeatureInputScalarRole
+pub fn cadmpeg_codec_sldprt::records::FeatureInputScalarRole::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::FeatureInputScalarRole
+impl core::marker::Send for cadmpeg_codec_sldprt::records::FeatureInputScalarRole
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::FeatureInputScalarRole
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::FeatureInputScalarRole
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::FeatureInputScalarRole
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputScalarRole
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputScalarRole
+pub enum cadmpeg_codec_sldprt::records::HistoryContent
+pub cadmpeg_codec_sldprt::records::HistoryContent::Configuration(alloc::string::String)
+pub cadmpeg_codec_sldprt::records::HistoryContent::Feature(alloc::string::String)
+pub cadmpeg_codec_sldprt::records::HistoryContent::Text(alloc::string::String)
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::HistoryContent
+pub fn cadmpeg_codec_sldprt::records::HistoryContent::clone(&self) -> cadmpeg_codec_sldprt::records::HistoryContent
+impl core::cmp::Eq for cadmpeg_codec_sldprt::records::HistoryContent
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::HistoryContent
+pub fn cadmpeg_codec_sldprt::records::HistoryContent::eq(&self, &cadmpeg_codec_sldprt::records::HistoryContent) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::HistoryContent
+pub fn cadmpeg_codec_sldprt::records::HistoryContent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::HistoryContent
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::HistoryContent
+pub fn cadmpeg_codec_sldprt::records::HistoryContent::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::HistoryContent
+pub fn cadmpeg_codec_sldprt::records::HistoryContent::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::HistoryContent
+impl core::marker::Send for cadmpeg_codec_sldprt::records::HistoryContent
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::HistoryContent
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::HistoryContent
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::HistoryContent
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::HistoryContent
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::HistoryContent
+pub enum cadmpeg_codec_sldprt::records::SketchInputKind
+pub cadmpeg_codec_sldprt::records::SketchInputKind::Arc
+pub cadmpeg_codec_sldprt::records::SketchInputKind::ConstrainedPoint
+pub cadmpeg_codec_sldprt::records::SketchInputKind::LineOrCircle
+pub cadmpeg_codec_sldprt::records::SketchInputKind::Native(u32)
+pub cadmpeg_codec_sldprt::records::SketchInputKind::Point
+pub cadmpeg_codec_sldprt::records::SketchInputKind::Relation(cadmpeg_codec_sldprt::records::SketchRelationKind)
+impl cadmpeg_codec_sldprt::records::SketchInputKind
+pub fn cadmpeg_codec_sldprt::records::SketchInputKind::from_native_code(u32) -> Self
+pub fn cadmpeg_codec_sldprt::records::SketchInputKind::from_native_code_and_layout(u32, bool) -> Self
+pub fn cadmpeg_codec_sldprt::records::SketchInputKind::native_code(self) -> u32
+pub fn cadmpeg_codec_sldprt::records::SketchInputKind::owns_constraint(self) -> bool
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::SketchInputKind
+pub fn cadmpeg_codec_sldprt::records::SketchInputKind::clone(&self) -> cadmpeg_codec_sldprt::records::SketchInputKind
+impl core::cmp::Eq for cadmpeg_codec_sldprt::records::SketchInputKind
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::SketchInputKind
+pub fn cadmpeg_codec_sldprt::records::SketchInputKind::eq(&self, &cadmpeg_codec_sldprt::records::SketchInputKind) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::SketchInputKind
+pub fn cadmpeg_codec_sldprt::records::SketchInputKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_codec_sldprt::records::SketchInputKind
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::SketchInputKind
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::SketchInputKind
+pub fn cadmpeg_codec_sldprt::records::SketchInputKind::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::SketchInputKind
+pub fn cadmpeg_codec_sldprt::records::SketchInputKind::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::SketchInputKind
+impl core::marker::Send for cadmpeg_codec_sldprt::records::SketchInputKind
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::SketchInputKind
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::SketchInputKind
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::SketchInputKind
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::SketchInputKind
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::SketchInputKind
+pub enum cadmpeg_codec_sldprt::records::SketchRelationKind
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::AlongX
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::AlongX3d
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::AlongXPoints
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::AlongXPoints3d
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::AlongY
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::AlongY3d
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::AlongYPoints
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::AlongYPoints3d
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::AlongZ
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::AlongZPoints
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::Angle
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::AngleThreePoint
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::ArcAngle180
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::ArcAngle270
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::ArcAngle90
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::ArcAngleBottom
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::ArcAngleLeft
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::ArcAngleRight
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::ArcAngleTop
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::ArcLength
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::AtIntersection
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::AtPierce
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::BeltTraction
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::BlockFixedLock
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::BlockNormalLock
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::BlockRotateLock
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::C3Touch
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::CircularPatternCount
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::Coincident
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::Collinear
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::Concentric
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::ConicRho
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::Coradial
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::Diameter
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::Distance
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::DoubleAngle
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::DoubleDistance
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::EllipseAngle180
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::EllipseAngle270
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::EllipseAngle90
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::EllipseAngleBottom
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::EllipseAngleLeft
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::EllipseAngleRight
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::EllipseAngleTop
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::Equal
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::EqualCurvature
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::EqualCurvature3dAligned
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::EqualTangent
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::FakeSlotConstraint
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::FitSpline
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::Fixed
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::FixedSlot
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::FlangeFaceDistance
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::Horizontal
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::HorizontalPoints
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::Intersection
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::IsoByPoint
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::LinearPatternCount
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::MergePoints
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::Midpoint
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::Normal
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::NormalPoints
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::OffsetEdge
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::Parallel
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::ParallelYz
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::ParallelZx
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::Patterned
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::Perpendicular
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::PlanarOffset
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::RadialOffset
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::Radius
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::SameCurveLength
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::SameIsoparametric
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::SameSlots
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::SketchOffset
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::SnapAngle
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::SnapGrid
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::SnapLength
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::Symmetric
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::Tangent
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::TangentFace
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::Traction
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::UseEdge
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::Vertical
+pub cadmpeg_codec_sldprt::records::SketchRelationKind::VerticalPoints
+impl cadmpeg_codec_sldprt::records::SketchRelationKind
+pub fn cadmpeg_codec_sldprt::records::SketchRelationKind::from_native_code(u32) -> core::option::Option<Self>
+pub fn cadmpeg_codec_sldprt::records::SketchRelationKind::native_code(self) -> u32
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::SketchRelationKind
+pub fn cadmpeg_codec_sldprt::records::SketchRelationKind::clone(&self) -> cadmpeg_codec_sldprt::records::SketchRelationKind
+impl core::cmp::Eq for cadmpeg_codec_sldprt::records::SketchRelationKind
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::SketchRelationKind
+pub fn cadmpeg_codec_sldprt::records::SketchRelationKind::eq(&self, &cadmpeg_codec_sldprt::records::SketchRelationKind) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::SketchRelationKind
+pub fn cadmpeg_codec_sldprt::records::SketchRelationKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_codec_sldprt::records::SketchRelationKind
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::SketchRelationKind
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::SketchRelationKind
+pub fn cadmpeg_codec_sldprt::records::SketchRelationKind::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::SketchRelationKind
+pub fn cadmpeg_codec_sldprt::records::SketchRelationKind::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::SketchRelationKind
+impl core::marker::Send for cadmpeg_codec_sldprt::records::SketchRelationKind
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::SketchRelationKind
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::SketchRelationKind
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::SketchRelationKind
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::SketchRelationKind
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::SketchRelationKind
+pub struct cadmpeg_codec_sldprt::records::Configuration
+pub cadmpeg_codec_sldprt::records::Configuration::id: alloc::string::String
+pub cadmpeg_codec_sldprt::records::Configuration::material: core::option::Option<alloc::string::String>
+pub cadmpeg_codec_sldprt::records::Configuration::name: alloc::string::String
+pub cadmpeg_codec_sldprt::records::Configuration::ordinal: u32
+pub cadmpeg_codec_sldprt::records::Configuration::parent: alloc::string::String
+pub cadmpeg_codec_sldprt::records::Configuration::properties: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
+pub cadmpeg_codec_sldprt::records::Configuration::source_index: core::option::Option<u32>
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::Configuration
+pub fn cadmpeg_codec_sldprt::records::Configuration::clone(&self) -> cadmpeg_codec_sldprt::records::Configuration
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::Configuration
+pub fn cadmpeg_codec_sldprt::records::Configuration::eq(&self, &cadmpeg_codec_sldprt::records::Configuration) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::Configuration
+pub fn cadmpeg_codec_sldprt::records::Configuration::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::Configuration
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::Configuration
+pub fn cadmpeg_codec_sldprt::records::Configuration::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::Configuration
+pub fn cadmpeg_codec_sldprt::records::Configuration::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::Configuration
+impl core::marker::Send for cadmpeg_codec_sldprt::records::Configuration
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::Configuration
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::Configuration
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::Configuration
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::Configuration
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::Configuration
+pub struct cadmpeg_codec_sldprt::records::Feature
+pub cadmpeg_codec_sldprt::records::Feature::content: alloc::vec::Vec<cadmpeg_codec_sldprt::records::FeatureContent>
+pub cadmpeg_codec_sldprt::records::Feature::dimension_properties: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>>
+pub cadmpeg_codec_sldprt::records::Feature::id: alloc::string::String
+pub cadmpeg_codec_sldprt::records::Feature::input_class: core::option::Option<alloc::string::String>
+pub cadmpeg_codec_sldprt::records::Feature::kind: alloc::string::String
+pub cadmpeg_codec_sldprt::records::Feature::name: alloc::string::String
+pub cadmpeg_codec_sldprt::records::Feature::ordinal: u32
+pub cadmpeg_codec_sldprt::records::Feature::parameters: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
+pub cadmpeg_codec_sldprt::records::Feature::parent: alloc::string::String
+pub cadmpeg_codec_sldprt::records::Feature::parent_source_id: core::option::Option<alloc::string::String>
+pub cadmpeg_codec_sldprt::records::Feature::properties: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
+pub cadmpeg_codec_sldprt::records::Feature::source_id: core::option::Option<alloc::string::String>
+pub cadmpeg_codec_sldprt::records::Feature::suppressed: bool
+pub cadmpeg_codec_sldprt::records::Feature::text: core::option::Option<alloc::string::String>
+pub cadmpeg_codec_sldprt::records::Feature::tree_parent: core::option::Option<alloc::string::String>
+pub cadmpeg_codec_sldprt::records::Feature::xml_tag: alloc::string::String
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::Feature
+pub fn cadmpeg_codec_sldprt::records::Feature::clone(&self) -> cadmpeg_codec_sldprt::records::Feature
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::Feature
+pub fn cadmpeg_codec_sldprt::records::Feature::eq(&self, &cadmpeg_codec_sldprt::records::Feature) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::Feature
+pub fn cadmpeg_codec_sldprt::records::Feature::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::Feature
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::Feature
+pub fn cadmpeg_codec_sldprt::records::Feature::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::Feature
+pub fn cadmpeg_codec_sldprt::records::Feature::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::Feature
+impl core::marker::Send for cadmpeg_codec_sldprt::records::Feature
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::Feature
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::Feature
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::Feature
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::Feature
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::Feature
+pub struct cadmpeg_codec_sldprt::records::FeatureHistory
+pub cadmpeg_codec_sldprt::records::FeatureHistory::configurations: alloc::vec::Vec<cadmpeg_codec_sldprt::records::Configuration>
+pub cadmpeg_codec_sldprt::records::FeatureHistory::content: alloc::vec::Vec<cadmpeg_codec_sldprt::records::HistoryContent>
+pub cadmpeg_codec_sldprt::records::FeatureHistory::features: alloc::vec::Vec<cadmpeg_codec_sldprt::records::Feature>
+pub cadmpeg_codec_sldprt::records::FeatureHistory::id: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureHistory::part_name: core::option::Option<alloc::string::String>
+pub cadmpeg_codec_sldprt::records::FeatureHistory::properties: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::FeatureHistory
+pub fn cadmpeg_codec_sldprt::records::FeatureHistory::clone(&self) -> cadmpeg_codec_sldprt::records::FeatureHistory
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::FeatureHistory
+pub fn cadmpeg_codec_sldprt::records::FeatureHistory::eq(&self, &cadmpeg_codec_sldprt::records::FeatureHistory) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::FeatureHistory
+pub fn cadmpeg_codec_sldprt::records::FeatureHistory::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::FeatureHistory
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::FeatureHistory
+pub fn cadmpeg_codec_sldprt::records::FeatureHistory::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::FeatureHistory
+pub fn cadmpeg_codec_sldprt::records::FeatureHistory::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::FeatureHistory
+impl core::marker::Send for cadmpeg_codec_sldprt::records::FeatureHistory
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::FeatureHistory
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::FeatureHistory
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::FeatureHistory
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::FeatureHistory
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::FeatureHistory
+pub struct cadmpeg_codec_sldprt::records::FeatureInputBodySelection
+pub cadmpeg_codec_sldprt::records::FeatureInputBodySelection::body_state_ids: alloc::vec::Vec<u32>
+pub cadmpeg_codec_sldprt::records::FeatureInputBodySelection::feature_ref: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputBodySelection::id: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputBodySelection::local_body_ids: alloc::vec::Vec<u32>
+pub cadmpeg_codec_sldprt::records::FeatureInputBodySelection::mode: core::option::Option<cadmpeg_ir::features::BodyRetentionMode>
+pub cadmpeg_codec_sldprt::records::FeatureInputBodySelection::object_name_ref: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputBodySelection::offset: u64
+pub cadmpeg_codec_sldprt::records::FeatureInputBodySelection::ordinal: u32
+pub cadmpeg_codec_sldprt::records::FeatureInputBodySelection::parent: alloc::string::String
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::FeatureInputBodySelection
+pub fn cadmpeg_codec_sldprt::records::FeatureInputBodySelection::clone(&self) -> cadmpeg_codec_sldprt::records::FeatureInputBodySelection
+impl core::cmp::Eq for cadmpeg_codec_sldprt::records::FeatureInputBodySelection
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::FeatureInputBodySelection
+pub fn cadmpeg_codec_sldprt::records::FeatureInputBodySelection::eq(&self, &cadmpeg_codec_sldprt::records::FeatureInputBodySelection) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::FeatureInputBodySelection
+pub fn cadmpeg_codec_sldprt::records::FeatureInputBodySelection::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::FeatureInputBodySelection
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::FeatureInputBodySelection
+pub fn cadmpeg_codec_sldprt::records::FeatureInputBodySelection::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::FeatureInputBodySelection
+pub fn cadmpeg_codec_sldprt::records::FeatureInputBodySelection::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::FeatureInputBodySelection
+impl core::marker::Send for cadmpeg_codec_sldprt::records::FeatureInputBodySelection
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::FeatureInputBodySelection
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::FeatureInputBodySelection
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::FeatureInputBodySelection
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputBodySelection
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputBodySelection
+pub struct cadmpeg_codec_sldprt::records::FeatureInputClass
+pub cadmpeg_codec_sldprt::records::FeatureInputClass::id: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputClass::name: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputClass::offset: u64
+pub cadmpeg_codec_sldprt::records::FeatureInputClass::ordinal: u32
+pub cadmpeg_codec_sldprt::records::FeatureInputClass::parent: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputClass::role: cadmpeg_codec_sldprt::records::FeatureInputClassRole
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::FeatureInputClass
+pub fn cadmpeg_codec_sldprt::records::FeatureInputClass::clone(&self) -> cadmpeg_codec_sldprt::records::FeatureInputClass
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::FeatureInputClass
+pub fn cadmpeg_codec_sldprt::records::FeatureInputClass::eq(&self, &cadmpeg_codec_sldprt::records::FeatureInputClass) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::FeatureInputClass
+pub fn cadmpeg_codec_sldprt::records::FeatureInputClass::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::FeatureInputClass
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::FeatureInputClass
+pub fn cadmpeg_codec_sldprt::records::FeatureInputClass::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::FeatureInputClass
+pub fn cadmpeg_codec_sldprt::records::FeatureInputClass::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::FeatureInputClass
+impl core::marker::Send for cadmpeg_codec_sldprt::records::FeatureInputClass
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::FeatureInputClass
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::FeatureInputClass
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::FeatureInputClass
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputClass
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputClass
+pub struct cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry
+pub cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry::instance: core::option::Option<u16>
+pub cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry::local_id: core::option::Option<u32>
+pub cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry::type_signature: [u8; 12]
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry
+pub fn cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry::clone(&self) -> cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry
+impl core::cmp::Eq for cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry
+pub fn cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry::eq(&self, &cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry
+pub fn cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry
+pub fn cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry
+pub fn cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry
+impl core::marker::Send for cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry
+pub struct cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection
+pub cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection::components: alloc::vec::Vec<cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry>
+pub cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection::feature_ref: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection::id: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection::local_edge_ids: alloc::vec::Vec<u32>
+pub cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection::object_name_ref: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection::offset: u64
+pub cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection::ordinal: u32
+pub cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection::parent: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection::producer_feature_refs: alloc::vec::Vec<alloc::string::String>
+pub cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection::terminal_feature_ref: core::option::Option<alloc::string::String>
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection
+pub fn cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection::clone(&self) -> cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection
+impl core::cmp::Eq for cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection
+pub fn cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection::eq(&self, &cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection
+pub fn cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection
+pub fn cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection
+pub fn cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection
+impl core::marker::Send for cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection
+pub struct cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity
+pub cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity::components: alloc::vec::Vec<cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry>
+pub cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity::feature_source_id: u32
+pub cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity::id: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity::local_identity: u32
+pub cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity::offset: u64
+pub cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity::ordinal: u32
+pub cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity::parent: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity::type_prefix: [u8; 4]
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity
+pub fn cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity::clone(&self) -> cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity
+impl core::cmp::Eq for cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity
+pub fn cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity::eq(&self, &cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity
+pub fn cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity
+pub fn cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity
+pub fn cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity
+impl core::marker::Send for cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity
+pub struct cadmpeg_codec_sldprt::records::FeatureInputLane
+pub cadmpeg_codec_sldprt::records::FeatureInputLane::body_selections: alloc::vec::Vec<cadmpeg_codec_sldprt::records::FeatureInputBodySelection>
+pub cadmpeg_codec_sldprt::records::FeatureInputLane::classes: alloc::vec::Vec<cadmpeg_codec_sldprt::records::FeatureInputClass>
+pub cadmpeg_codec_sldprt::records::FeatureInputLane::configuration: core::option::Option<alloc::string::String>
+pub cadmpeg_codec_sldprt::records::FeatureInputLane::edge_selections: alloc::vec::Vec<cadmpeg_codec_sldprt::records::FeatureInputEdgeSelection>
+pub cadmpeg_codec_sldprt::records::FeatureInputLane::generated_surface_identities: alloc::vec::Vec<cadmpeg_codec_sldprt::records::FeatureInputGeneratedSurfaceIdentity>
+pub cadmpeg_codec_sldprt::records::FeatureInputLane::id: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputLane::names: alloc::vec::Vec<cadmpeg_codec_sldprt::records::FeatureInputName>
+pub cadmpeg_codec_sldprt::records::FeatureInputLane::native_payload: alloc::vec::Vec<u8>
+pub cadmpeg_codec_sldprt::records::FeatureInputLane::references: alloc::vec::Vec<cadmpeg_codec_sldprt::records::FeatureInputReference>
+pub cadmpeg_codec_sldprt::records::FeatureInputLane::relation_bindings: alloc::vec::Vec<cadmpeg_codec_sldprt::records::FeatureInputRelationBinding>
+pub cadmpeg_codec_sldprt::records::FeatureInputLane::relation_instances: alloc::vec::Vec<cadmpeg_codec_sldprt::records::FeatureInputRelationInstance>
+pub cadmpeg_codec_sldprt::records::FeatureInputLane::scalars: alloc::vec::Vec<cadmpeg_codec_sldprt::records::FeatureInputScalar>
+pub cadmpeg_codec_sldprt::records::FeatureInputLane::sketch_entities: alloc::vec::Vec<cadmpeg_codec_sldprt::records::SketchInputEntity>
+pub cadmpeg_codec_sldprt::records::FeatureInputLane::surface_selections: alloc::vec::Vec<cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection>
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::FeatureInputLane
+pub fn cadmpeg_codec_sldprt::records::FeatureInputLane::clone(&self) -> cadmpeg_codec_sldprt::records::FeatureInputLane
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::FeatureInputLane
+pub fn cadmpeg_codec_sldprt::records::FeatureInputLane::eq(&self, &cadmpeg_codec_sldprt::records::FeatureInputLane) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::FeatureInputLane
+pub fn cadmpeg_codec_sldprt::records::FeatureInputLane::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::FeatureInputLane
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::FeatureInputLane
+pub fn cadmpeg_codec_sldprt::records::FeatureInputLane::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::FeatureInputLane
+pub fn cadmpeg_codec_sldprt::records::FeatureInputLane::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::FeatureInputLane
+impl core::marker::Send for cadmpeg_codec_sldprt::records::FeatureInputLane
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::FeatureInputLane
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::FeatureInputLane
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::FeatureInputLane
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputLane
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputLane
+pub struct cadmpeg_codec_sldprt::records::FeatureInputName
+pub cadmpeg_codec_sldprt::records::FeatureInputName::id: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputName::object_id: core::option::Option<u32>
+pub cadmpeg_codec_sldprt::records::FeatureInputName::offset: u64
+pub cadmpeg_codec_sldprt::records::FeatureInputName::ordinal: u32
+pub cadmpeg_codec_sldprt::records::FeatureInputName::parent: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputName::value: alloc::string::String
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::FeatureInputName
+pub fn cadmpeg_codec_sldprt::records::FeatureInputName::clone(&self) -> cadmpeg_codec_sldprt::records::FeatureInputName
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::FeatureInputName
+pub fn cadmpeg_codec_sldprt::records::FeatureInputName::eq(&self, &cadmpeg_codec_sldprt::records::FeatureInputName) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::FeatureInputName
+pub fn cadmpeg_codec_sldprt::records::FeatureInputName::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::FeatureInputName
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::FeatureInputName
+pub fn cadmpeg_codec_sldprt::records::FeatureInputName::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::FeatureInputName
+pub fn cadmpeg_codec_sldprt::records::FeatureInputName::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::FeatureInputName
+impl core::marker::Send for cadmpeg_codec_sldprt::records::FeatureInputName
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::FeatureInputName
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::FeatureInputName
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::FeatureInputName
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputName
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputName
+pub struct cadmpeg_codec_sldprt::records::FeatureInputOperand
+pub cadmpeg_codec_sldprt::records::FeatureInputOperand::entity_index: u16
+pub cadmpeg_codec_sldprt::records::FeatureInputOperand::entity_ref: core::option::Option<alloc::string::String>
+pub cadmpeg_codec_sldprt::records::FeatureInputOperand::kind: cadmpeg_codec_sldprt::records::FeatureInputOperandKind
+pub cadmpeg_codec_sldprt::records::FeatureInputOperand::offset: u64
+pub cadmpeg_codec_sldprt::records::FeatureInputOperand::reference_ref: alloc::string::String
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::FeatureInputOperand
+pub fn cadmpeg_codec_sldprt::records::FeatureInputOperand::clone(&self) -> cadmpeg_codec_sldprt::records::FeatureInputOperand
+impl core::cmp::Eq for cadmpeg_codec_sldprt::records::FeatureInputOperand
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::FeatureInputOperand
+pub fn cadmpeg_codec_sldprt::records::FeatureInputOperand::eq(&self, &cadmpeg_codec_sldprt::records::FeatureInputOperand) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::FeatureInputOperand
+pub fn cadmpeg_codec_sldprt::records::FeatureInputOperand::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::FeatureInputOperand
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::FeatureInputOperand
+pub fn cadmpeg_codec_sldprt::records::FeatureInputOperand::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::FeatureInputOperand
+pub fn cadmpeg_codec_sldprt::records::FeatureInputOperand::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::FeatureInputOperand
+impl core::marker::Send for cadmpeg_codec_sldprt::records::FeatureInputOperand
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::FeatureInputOperand
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::FeatureInputOperand
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::FeatureInputOperand
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputOperand
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputOperand
+pub struct cadmpeg_codec_sldprt::records::FeatureInputReference
+pub cadmpeg_codec_sldprt::records::FeatureInputReference::feature_ref: core::option::Option<alloc::string::String>
+pub cadmpeg_codec_sldprt::records::FeatureInputReference::id: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputReference::kind: cadmpeg_codec_sldprt::records::FeatureInputOperandKind
+pub cadmpeg_codec_sldprt::records::FeatureInputReference::object_index: u16
+pub cadmpeg_codec_sldprt::records::FeatureInputReference::offset: u64
+pub cadmpeg_codec_sldprt::records::FeatureInputReference::ordinal: u32
+pub cadmpeg_codec_sldprt::records::FeatureInputReference::parent: alloc::string::String
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::FeatureInputReference
+pub fn cadmpeg_codec_sldprt::records::FeatureInputReference::clone(&self) -> cadmpeg_codec_sldprt::records::FeatureInputReference
+impl core::cmp::Eq for cadmpeg_codec_sldprt::records::FeatureInputReference
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::FeatureInputReference
+pub fn cadmpeg_codec_sldprt::records::FeatureInputReference::eq(&self, &cadmpeg_codec_sldprt::records::FeatureInputReference) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::FeatureInputReference
+pub fn cadmpeg_codec_sldprt::records::FeatureInputReference::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::FeatureInputReference
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::FeatureInputReference
+pub fn cadmpeg_codec_sldprt::records::FeatureInputReference::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::FeatureInputReference
+pub fn cadmpeg_codec_sldprt::records::FeatureInputReference::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::FeatureInputReference
+impl core::marker::Send for cadmpeg_codec_sldprt::records::FeatureInputReference
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::FeatureInputReference
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::FeatureInputReference
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::FeatureInputReference
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputReference
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputReference
+pub struct cadmpeg_codec_sldprt::records::FeatureInputRelationBinding
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationBinding::class_ref: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationBinding::family: cadmpeg_codec_sldprt::records::FeatureInputRelationFamily
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationBinding::feature_ref: core::option::Option<alloc::string::String>
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationBinding::id: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationBinding::offset: u64
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationBinding::ordinal: u32
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationBinding::parent: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationBinding::scalar_ref: alloc::string::String
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::FeatureInputRelationBinding
+pub fn cadmpeg_codec_sldprt::records::FeatureInputRelationBinding::clone(&self) -> cadmpeg_codec_sldprt::records::FeatureInputRelationBinding
+impl core::cmp::Eq for cadmpeg_codec_sldprt::records::FeatureInputRelationBinding
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::FeatureInputRelationBinding
+pub fn cadmpeg_codec_sldprt::records::FeatureInputRelationBinding::eq(&self, &cadmpeg_codec_sldprt::records::FeatureInputRelationBinding) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::FeatureInputRelationBinding
+pub fn cadmpeg_codec_sldprt::records::FeatureInputRelationBinding::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::FeatureInputRelationBinding
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::FeatureInputRelationBinding
+pub fn cadmpeg_codec_sldprt::records::FeatureInputRelationBinding::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::FeatureInputRelationBinding
+pub fn cadmpeg_codec_sldprt::records::FeatureInputRelationBinding::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::FeatureInputRelationBinding
+impl core::marker::Send for cadmpeg_codec_sldprt::records::FeatureInputRelationBinding
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::FeatureInputRelationBinding
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::FeatureInputRelationBinding
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::FeatureInputRelationBinding
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputRelationBinding
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputRelationBinding
+pub struct cadmpeg_codec_sldprt::records::FeatureInputRelationInstance
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationInstance::class_ref: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationInstance::display_scalar_ref: core::option::Option<alloc::string::String>
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationInstance::family: cadmpeg_codec_sldprt::records::FeatureInputRelationFamily
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationInstance::feature_ref: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationInstance::id: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationInstance::offset: u64
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationInstance::operands: alloc::vec::Vec<cadmpeg_codec_sldprt::records::FeatureInputOperand>
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationInstance::ordinal: u32
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationInstance::parameter_scalar_ref: core::option::Option<alloc::string::String>
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationInstance::parent: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputRelationInstance::scalar_refs: alloc::vec::Vec<alloc::string::String>
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::FeatureInputRelationInstance
+pub fn cadmpeg_codec_sldprt::records::FeatureInputRelationInstance::clone(&self) -> cadmpeg_codec_sldprt::records::FeatureInputRelationInstance
+impl core::cmp::Eq for cadmpeg_codec_sldprt::records::FeatureInputRelationInstance
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::FeatureInputRelationInstance
+pub fn cadmpeg_codec_sldprt::records::FeatureInputRelationInstance::eq(&self, &cadmpeg_codec_sldprt::records::FeatureInputRelationInstance) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::FeatureInputRelationInstance
+pub fn cadmpeg_codec_sldprt::records::FeatureInputRelationInstance::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::FeatureInputRelationInstance
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::FeatureInputRelationInstance
+pub fn cadmpeg_codec_sldprt::records::FeatureInputRelationInstance::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::FeatureInputRelationInstance
+pub fn cadmpeg_codec_sldprt::records::FeatureInputRelationInstance::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::FeatureInputRelationInstance
+impl core::marker::Send for cadmpeg_codec_sldprt::records::FeatureInputRelationInstance
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::FeatureInputRelationInstance
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::FeatureInputRelationInstance
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::FeatureInputRelationInstance
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputRelationInstance
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputRelationInstance
+pub struct cadmpeg_codec_sldprt::records::FeatureInputScalar
+pub cadmpeg_codec_sldprt::records::FeatureInputScalar::entity_indices: alloc::vec::Vec<u16>
+pub cadmpeg_codec_sldprt::records::FeatureInputScalar::feature_ref: core::option::Option<alloc::string::String>
+pub cadmpeg_codec_sldprt::records::FeatureInputScalar::id: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputScalar::name: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputScalar::object_id: u32
+pub cadmpeg_codec_sldprt::records::FeatureInputScalar::offset: u64
+pub cadmpeg_codec_sldprt::records::FeatureInputScalar::operands: alloc::vec::Vec<cadmpeg_codec_sldprt::records::FeatureInputOperand>
+pub cadmpeg_codec_sldprt::records::FeatureInputScalar::ordinal: u32
+pub cadmpeg_codec_sldprt::records::FeatureInputScalar::parent: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputScalar::role: cadmpeg_codec_sldprt::records::FeatureInputScalarRole
+pub cadmpeg_codec_sldprt::records::FeatureInputScalar::value: f64
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::FeatureInputScalar
+pub fn cadmpeg_codec_sldprt::records::FeatureInputScalar::clone(&self) -> cadmpeg_codec_sldprt::records::FeatureInputScalar
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::FeatureInputScalar
+pub fn cadmpeg_codec_sldprt::records::FeatureInputScalar::eq(&self, &cadmpeg_codec_sldprt::records::FeatureInputScalar) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::FeatureInputScalar
+pub fn cadmpeg_codec_sldprt::records::FeatureInputScalar::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::FeatureInputScalar
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::FeatureInputScalar
+pub fn cadmpeg_codec_sldprt::records::FeatureInputScalar::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::FeatureInputScalar
+pub fn cadmpeg_codec_sldprt::records::FeatureInputScalar::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::FeatureInputScalar
+impl core::marker::Send for cadmpeg_codec_sldprt::records::FeatureInputScalar
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::FeatureInputScalar
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::FeatureInputScalar
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::FeatureInputScalar
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputScalar
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputScalar
+pub struct cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection
+pub cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection::components: alloc::vec::Vec<cadmpeg_codec_sldprt::records::FeatureInputComponentPathEntry>
+pub cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection::feature_ref: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection::id: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection::object_name_ref: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection::offset: u64
+pub cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection::ordinal: u32
+pub cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection::parent: alloc::string::String
+pub cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection::producer_feature_refs: alloc::vec::Vec<alloc::string::String>
+pub cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection::terminal_feature_ref: core::option::Option<alloc::string::String>
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection
+pub fn cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection::clone(&self) -> cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection
+impl core::cmp::Eq for cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection
+pub fn cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection::eq(&self, &cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection
+pub fn cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection
+pub fn cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection
+pub fn cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection
+impl core::marker::Send for cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::FeatureInputSurfaceSelection
+pub struct cadmpeg_codec_sldprt::records::PmiDimension
+pub cadmpeg_codec_sldprt::records::PmiDimension::basic: bool
+pub cadmpeg_codec_sldprt::records::PmiDimension::basic_offset: u64
+pub cadmpeg_codec_sldprt::records::PmiDimension::cad_text: alloc::string::String
+pub cadmpeg_codec_sldprt::records::PmiDimension::display_text: core::option::Option<alloc::string::String>
+pub cadmpeg_codec_sldprt::records::PmiDimension::display_text_offset: core::option::Option<u64>
+pub cadmpeg_codec_sldprt::records::PmiDimension::guid: alloc::string::String
+pub cadmpeg_codec_sldprt::records::PmiDimension::id: alloc::string::String
+pub cadmpeg_codec_sldprt::records::PmiDimension::inspection: bool
+pub cadmpeg_codec_sldprt::records::PmiDimension::inspection_offset: u64
+pub cadmpeg_codec_sldprt::records::PmiDimension::item_count: u32
+pub cadmpeg_codec_sldprt::records::PmiDimension::offset: u64
+pub cadmpeg_codec_sldprt::records::PmiDimension::parent: alloc::string::String
+pub cadmpeg_codec_sldprt::records::PmiDimension::precision: i64
+pub cadmpeg_codec_sldprt::records::PmiDimension::precision_offset: u64
+pub cadmpeg_codec_sldprt::records::PmiDimension::reference_only: bool
+pub cadmpeg_codec_sldprt::records::PmiDimension::reference_only_offset: u64
+pub cadmpeg_codec_sldprt::records::PmiDimension::subtype: alloc::string::String
+pub cadmpeg_codec_sldprt::records::PmiDimension::value: f64
+pub cadmpeg_codec_sldprt::records::PmiDimension::value_offset: u64
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::PmiDimension
+pub fn cadmpeg_codec_sldprt::records::PmiDimension::clone(&self) -> cadmpeg_codec_sldprt::records::PmiDimension
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::PmiDimension
+pub fn cadmpeg_codec_sldprt::records::PmiDimension::eq(&self, &cadmpeg_codec_sldprt::records::PmiDimension) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::PmiDimension
+pub fn cadmpeg_codec_sldprt::records::PmiDimension::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::PmiDimension
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::PmiDimension
+pub fn cadmpeg_codec_sldprt::records::PmiDimension::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::PmiDimension
+pub fn cadmpeg_codec_sldprt::records::PmiDimension::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::PmiDimension
+impl core::marker::Send for cadmpeg_codec_sldprt::records::PmiDimension
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::PmiDimension
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::PmiDimension
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::PmiDimension
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::PmiDimension
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::PmiDimension
+pub struct cadmpeg_codec_sldprt::records::SketchInputEntity
+pub cadmpeg_codec_sldprt::records::SketchInputEntity::coordinates_m: core::option::Option<[f64; 2]>
+pub cadmpeg_codec_sldprt::records::SketchInputEntity::feature_ref: core::option::Option<alloc::string::String>
+pub cadmpeg_codec_sldprt::records::SketchInputEntity::id: alloc::string::String
+pub cadmpeg_codec_sldprt::records::SketchInputEntity::kind: cadmpeg_codec_sldprt::records::SketchInputKind
+pub cadmpeg_codec_sldprt::records::SketchInputEntity::link_selector: core::option::Option<u16>
+pub cadmpeg_codec_sldprt::records::SketchInputEntity::links: alloc::vec::Vec<cadmpeg_codec_sldprt::records::SketchInputLink>
+pub cadmpeg_codec_sldprt::records::SketchInputEntity::local_id: core::option::Option<u32>
+pub cadmpeg_codec_sldprt::records::SketchInputEntity::object_index: core::option::Option<u32>
+pub cadmpeg_codec_sldprt::records::SketchInputEntity::offset: u64
+pub cadmpeg_codec_sldprt::records::SketchInputEntity::ordinal: u32
+pub cadmpeg_codec_sldprt::records::SketchInputEntity::parent: alloc::string::String
+pub cadmpeg_codec_sldprt::records::SketchInputEntity::state_value: core::option::Option<f64>
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::SketchInputEntity
+pub fn cadmpeg_codec_sldprt::records::SketchInputEntity::clone(&self) -> cadmpeg_codec_sldprt::records::SketchInputEntity
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::SketchInputEntity
+pub fn cadmpeg_codec_sldprt::records::SketchInputEntity::eq(&self, &cadmpeg_codec_sldprt::records::SketchInputEntity) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::SketchInputEntity
+pub fn cadmpeg_codec_sldprt::records::SketchInputEntity::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::SketchInputEntity
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::SketchInputEntity
+pub fn cadmpeg_codec_sldprt::records::SketchInputEntity::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::SketchInputEntity
+pub fn cadmpeg_codec_sldprt::records::SketchInputEntity::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::SketchInputEntity
+impl core::marker::Send for cadmpeg_codec_sldprt::records::SketchInputEntity
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::SketchInputEntity
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::SketchInputEntity
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::SketchInputEntity
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::SketchInputEntity
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::SketchInputEntity
+pub struct cadmpeg_codec_sldprt::records::SketchInputLink
+pub cadmpeg_codec_sldprt::records::SketchInputLink::entity_ref: alloc::string::String
+pub cadmpeg_codec_sldprt::records::SketchInputLink::local_id: u16
+impl core::clone::Clone for cadmpeg_codec_sldprt::records::SketchInputLink
+pub fn cadmpeg_codec_sldprt::records::SketchInputLink::clone(&self) -> cadmpeg_codec_sldprt::records::SketchInputLink
+impl core::cmp::Eq for cadmpeg_codec_sldprt::records::SketchInputLink
+impl core::cmp::PartialEq for cadmpeg_codec_sldprt::records::SketchInputLink
+pub fn cadmpeg_codec_sldprt::records::SketchInputLink::eq(&self, &cadmpeg_codec_sldprt::records::SketchInputLink) -> bool
+impl core::fmt::Debug for cadmpeg_codec_sldprt::records::SketchInputLink
+pub fn cadmpeg_codec_sldprt::records::SketchInputLink::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_codec_sldprt::records::SketchInputLink
+impl serde_core::ser::Serialize for cadmpeg_codec_sldprt::records::SketchInputLink
+pub fn cadmpeg_codec_sldprt::records::SketchInputLink::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_codec_sldprt::records::SketchInputLink
+pub fn cadmpeg_codec_sldprt::records::SketchInputLink::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_codec_sldprt::records::SketchInputLink
+impl core::marker::Send for cadmpeg_codec_sldprt::records::SketchInputLink
+impl core::marker::Sync for cadmpeg_codec_sldprt::records::SketchInputLink
+impl core::marker::Unpin for cadmpeg_codec_sldprt::records::SketchInputLink
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::records::SketchInputLink
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::records::SketchInputLink
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::records::SketchInputLink
+pub struct cadmpeg_codec_sldprt::SldprtCodec
+impl cadmpeg_codec_sldprt::SldprtCodec
+pub fn cadmpeg_codec_sldprt::SldprtCodec::write_preserved_with_source_fidelity(&self, &cadmpeg_ir::document::CadIr, &cadmpeg_ir::source_fidelity::SourceFidelity, &mut dyn std::io::Write) -> core::result::Result<cadmpeg_ir::report::WritePath, cadmpeg_core::error::CodecError>
+impl cadmpeg_ir::codec::Codec for cadmpeg_codec_sldprt::SldprtCodec
+pub fn cadmpeg_codec_sldprt::SldprtCodec::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_codec_sldprt::SldprtCodec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
+pub fn cadmpeg_codec_sldprt::SldprtCodec::id(&self) -> &'static str
+pub fn cadmpeg_codec_sldprt::SldprtCodec::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_core::container::ContainerSummary, cadmpeg_core::error::CodecError>
+impl cadmpeg_ir::codec::Encoder for cadmpeg_codec_sldprt::SldprtCodec
+pub fn cadmpeg_codec_sldprt::SldprtCodec::id(&self) -> &'static str
+pub fn cadmpeg_codec_sldprt::SldprtCodec::plan<'a>(&self, cadmpeg_ir::codec::EncodeInput<'a>) -> core::result::Result<cadmpeg_ir::codec::ExportPlan<'a>, cadmpeg_core::error::CodecError>
+impl core::clone::Clone for cadmpeg_codec_sldprt::SldprtCodec
+pub fn cadmpeg_codec_sldprt::SldprtCodec::clone(&self) -> cadmpeg_codec_sldprt::SldprtCodec
+impl core::default::Default for cadmpeg_codec_sldprt::SldprtCodec
+pub fn cadmpeg_codec_sldprt::SldprtCodec::default() -> cadmpeg_codec_sldprt::SldprtCodec
+impl core::fmt::Debug for cadmpeg_codec_sldprt::SldprtCodec
+pub fn cadmpeg_codec_sldprt::SldprtCodec::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for cadmpeg_codec_sldprt::SldprtCodec
+impl core::marker::Freeze for cadmpeg_codec_sldprt::SldprtCodec
+impl core::marker::Send for cadmpeg_codec_sldprt::SldprtCodec
+impl core::marker::Sync for cadmpeg_codec_sldprt::SldprtCodec
+impl core::marker::Unpin for cadmpeg_codec_sldprt::SldprtCodec
+impl core::marker::UnsafeUnpin for cadmpeg_codec_sldprt::SldprtCodec
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_codec_sldprt::SldprtCodec
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_codec_sldprt::SldprtCodec
+pub fn cadmpeg_codec_sldprt::validate_native(&cadmpeg_ir::document::CadIr) -> alloc::vec::Vec<cadmpeg_ir::report::Finding>

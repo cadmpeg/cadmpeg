@@ -2,6 +2,42 @@ use super::*;
 use cadmpeg_ir::topology::Body;
 
 #[test]
+fn numbered_intersect_name_identifies_section_shape_feature() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    assert_eq!(
+        surface_intersect_feature_definition(&scan, 50, "Intersect 1"),
+        None
+    );
+    scan.features
+        .entity_tables
+        .push(crate::feature::FeatureEntityTable {
+            feature_id: Some(50),
+            table_class_id: 29,
+            entry_ids: vec![61, 75],
+            entries: Vec::new(),
+            surface_ids: vec![61, 75],
+            non_surface_entity_ids: Vec::new(),
+            offset: 0,
+        });
+    assert_eq!(
+        surface_intersect_feature_definition(&scan, 50, "Intersect 1"),
+        Some(IrFeatureDefinition::SectionShape {
+            first: BodySelection::Unresolved,
+            second: BodySelection::Unresolved,
+            approximate: None,
+        })
+    );
+    assert_eq!(
+        surface_intersect_feature_definition(&scan, 50, "Intersect"),
+        None
+    );
+    assert_eq!(
+        surface_intersect_feature_definition(&scan, 50, "Intersect copy"),
+        None
+    );
+}
+
+#[test]
 fn equal_distance_chamfer_setback_uses_nearest_forward_parallel_support() {
     let cone = |origin, axis| ConeEquation {
         origin,
@@ -777,7 +813,7 @@ fn generated_surface_faces_require_unique_rows_and_materialized_producers() {
 }
 
 #[test]
-fn feature_result_faces_require_owned_materialized_class_200_entries() {
+fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
     let row = |id, feature_id| crate::surface::SurfaceRow {
         id,
         type_byte: 0x22,
@@ -788,10 +824,10 @@ fn feature_result_faces_require_owned_materialized_class_200_entries() {
         next_surface: 0,
         offset: 0,
     };
-    let entry = |entity_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
         entity_id,
-        class_id: 200,
-        source_entity_id: Some(source_entity_id),
+        class_id,
+        source_entity_id,
         related_entity_id: None,
         related_entity_state: None,
         prefixed: false,
@@ -802,7 +838,7 @@ fn feature_result_faces_require_owned_materialized_class_200_entries() {
         feature_id: Some(97),
         table_class_id: 29,
         entry_ids: vec![98, 145],
-        entries: vec![entry(98, 1), entry(145, 2)],
+        entries: vec![entry(98, 200, Some(1)), entry(145, 203, None)],
         surface_ids: vec![98, 145],
         non_surface_entity_ids: Vec::new(),
         offset: 0,
@@ -845,15 +881,26 @@ fn feature_result_faces_require_owned_materialized_class_200_entries() {
 
     let mut duplicate = table.clone();
     duplicate.entry_ids.push(98);
-    duplicate.entries.push(entry(98, 1));
+    duplicate.entries.push(entry(98, 204, None));
     duplicate.surface_ids.push(98);
     assert!(feature_result_surface_ids(&[duplicate], &rows, 97).is_none());
 
     let mut missing = table;
     missing.entry_ids[1] = 146;
-    missing.entries[1] = entry(146, 2);
+    missing.entries[1] = entry(146, 203, None);
     missing.surface_ids[1] = 146;
     assert!(feature_result_surface_ids(&[missing], &rows, 97).is_none());
+
+    let foreign = crate::feature::FeatureEntityTable {
+        feature_id: Some(97),
+        table_class_id: 29,
+        entry_ids: vec![145],
+        entries: vec![entry(145, 203, None)],
+        surface_ids: vec![145],
+        non_surface_entity_ids: Vec::new(),
+        offset: 0,
+    };
+    assert!(feature_result_surface_ids(&[foreign], &[row(145, 144)], 97).is_none());
 }
 
 #[test]
@@ -2015,10 +2062,10 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
 
 #[test]
 fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
-    let entry = |entity_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
         entity_id,
-        class_id: 200,
-        source_entity_id: Some(source_entity_id),
+        class_id,
+        source_entity_id,
         related_entity_id: None,
         related_entity_state: None,
         prefixed: false,
@@ -2026,12 +2073,21 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
         end_offset: 0,
     };
     let entries = vec![
-        entry(11, 4),
-        entry(12, 4),
-        entry(13, 6),
-        entry(14, 6),
-        entry(15, 7),
-        entry(16, 7),
+        entry(21, 204, None),
+        entry(22, 203, None),
+        entry(11, 200, Some(4)),
+        entry(13, 200, Some(6)),
+        entry(15, 200, Some(7)),
+        entry(23, 204, None),
+        entry(24, 203, None),
+        entry(12, 200, Some(4)),
+        entry(14, 200, Some(6)),
+        entry(16, 200, Some(7)),
+        entry(31, 204, None),
+        entry(32, 203, None),
+        entry(33, 200, Some(4)),
+        entry(34, 200, Some(6)),
+        entry(35, 200, Some(7)),
     ];
     let table = crate::feature::FeatureEntityTable {
         feature_id: Some(9),
@@ -2039,7 +2095,7 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
         entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
         entries,
         surface_ids: vec![11, 12, 13, 15, 16],
-        non_surface_entity_ids: vec![14],
+        non_surface_entity_ids: vec![21, 22, 23, 24, 14, 31, 32, 33, 34, 35],
         offset: 0,
     };
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
@@ -2064,12 +2120,517 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
         stepped_hole_form(9, std::slice::from_ref(&table), &rows),
         Some(HoleForm::Counterbore)
     );
+    assert_eq!(
+        stepped_hole_form(9, &[table.clone(), table.clone()], &rows),
+        None
+    );
 
     rows[4].kind = crate::surface::SurfaceKind::Cone;
     assert_eq!(
         stepped_hole_form(9, std::slice::from_ref(&table), &rows),
         None
     );
+}
+
+fn class_911_surface_row(
+    feature_id: u32,
+    id: u32,
+    kind: crate::surface::SurfaceKind,
+) -> crate::surface::SurfaceRow {
+    crate::surface::SurfaceRow {
+        id,
+        type_byte: kind.canonical_type_byte(),
+        kind,
+        feature_id,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 0,
+    }
+}
+
+fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::FeatureEntityTable {
+    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        entity_id,
+        class_id,
+        source_entity_id,
+        related_entity_id: None,
+        related_entity_state: None,
+        prefixed: false,
+        offset: 0,
+        end_offset: 0,
+    };
+    let entries = vec![
+        entry(21, 204, None),
+        entry(22, 203, None),
+        entry(19, 200, None),
+        entry(11, 200, Some(1)),
+        entry(13, 200, Some(2)),
+        entry(15, 200, Some(3)),
+        entry(17, 200, Some(4)),
+        entry(23, 204, None),
+        entry(24, 203, None),
+        entry(12, 200, Some(1)),
+        entry(14, 200, Some(2)),
+        entry(16, 200, Some(3)),
+        entry(18, 200, Some(4)),
+        entry(31, 204, None),
+        entry(32, 203, None),
+        entry(33, 200, Some(1)),
+        entry(34, 200, Some(2)),
+        entry(35, 200, Some(3)),
+        entry(36, 200, Some(4)),
+    ];
+    crate::feature::FeatureEntityTable {
+        feature_id: Some(feature_id),
+        table_class_id: 29,
+        entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
+        entries,
+        surface_ids: vec![11, 12, 13, 14],
+        non_surface_entity_ids: vec![21, 22, 19, 15, 17, 23, 24, 16, 18, 31, 32, 33, 34, 35, 36],
+        offset: 0,
+    }
+}
+
+fn simple_drilled_recipe_surface_rows(feature_id: u32) -> Vec<crate::surface::SurfaceRow> {
+    vec![
+        class_911_surface_row(feature_id, 11, crate::surface::SurfaceKind::Cone),
+        class_911_surface_row(feature_id, 12, crate::surface::SurfaceKind::Cone),
+        class_911_surface_row(feature_id, 13, crate::surface::SurfaceKind::Cylinder),
+        class_911_surface_row(feature_id, 14, crate::surface::SurfaceKind::Cylinder),
+    ]
+}
+
+#[test]
+fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
+    let mut table = simple_drilled_recipe_table(9);
+    let mut rows = simple_drilled_recipe_surface_rows(9);
+
+    assert_eq!(
+        simple_drilled_hole_recipe(9, std::slice::from_ref(&table), &rows)
+            .map(|recipe| recipe.dimension_family),
+        Some(SimpleDrilledDimensionFamily::ExternalId2Depth)
+    );
+    assert!(simple_drilled_hole_recipe(9, &[table.clone(), table.clone()], &rows,).is_none());
+
+    let mut extended = table.clone();
+    let mut extra = extended.entries[3].clone();
+    extra.entity_id = 26;
+    extra.source_entity_id = Some(5);
+    extended.entry_ids.insert(7, extra.entity_id);
+    extended.non_surface_entity_ids.push(extra.entity_id);
+    extended.entries.insert(7, extra.clone());
+    extra.entity_id = 27;
+    extended.entry_ids.insert(14, extra.entity_id);
+    extended.non_surface_entity_ids.push(extra.entity_id);
+    extended.entries.insert(14, extra);
+    assert_eq!(
+        simple_drilled_hole_recipe(9, std::slice::from_ref(&extended), &rows)
+            .map(|recipe| recipe.dimension_family),
+        Some(SimpleDrilledDimensionFamily::ExternalId4Depth)
+    );
+    let mut unknown_family = extended;
+    let mut extra = unknown_family.entries[7].clone();
+    extra.entity_id = 28;
+    extra.source_entity_id = Some(6);
+    unknown_family.entry_ids.insert(8, extra.entity_id);
+    unknown_family.non_surface_entity_ids.push(extra.entity_id);
+    unknown_family.entries.insert(8, extra.clone());
+    extra.entity_id = 29;
+    unknown_family.entry_ids.insert(16, extra.entity_id);
+    unknown_family.non_surface_entity_ids.push(extra.entity_id);
+    unknown_family.entries.insert(16, extra);
+    assert!(simple_drilled_hole_recipe(9, std::slice::from_ref(&unknown_family), &rows).is_none());
+
+    let mut bottom = table.entries[2].clone();
+    bottom.entity_id = 20;
+    bottom.source_entity_id = Some(0);
+    table.entry_ids.insert(2, bottom.entity_id);
+    table.non_surface_entity_ids.push(bottom.entity_id);
+    table.entries.insert(2, bottom.clone());
+    assert!(simple_drilled_hole_recipe(9, std::slice::from_ref(&table), &rows).is_some());
+    bottom.entity_id = 25;
+    table.entry_ids.insert(3, bottom.entity_id);
+    table.non_surface_entity_ids.push(bottom.entity_id);
+    table.entries.insert(3, bottom);
+    assert!(simple_drilled_hole_recipe(9, std::slice::from_ref(&table), &rows).is_none());
+
+    let table = simple_drilled_recipe_table(9);
+    rows[1].kind = crate::surface::SurfaceKind::Cylinder;
+    assert!(simple_drilled_hole_recipe(9, &[table], &rows).is_none());
+}
+
+#[test]
+fn simple_drilled_dimensions_require_complete_agreeing_tables() {
+    let table = |radius: f64, angle: f64, depth: f64| crate::feature::FeatureDimensionTable {
+        declared_count: 3,
+        entity_ref: Some(88),
+        rows: [
+            (2, radius, 0, crate::feature::DimensionUnit::Millimeters),
+            (10, angle, 1, crate::feature::DimensionUnit::Radians),
+            (2, depth, 2, crate::feature::DimensionUnit::Millimeters),
+        ]
+        .into_iter()
+        .map(
+            |(dimension_type, value, external_id, value_unit)| crate::feature::FeatureDimension {
+                dimension_type,
+                value: Some(value),
+                value_body: Vec::new(),
+                unresolved_value_token: None,
+                value_unit,
+                direction_byte: 0,
+                auxiliary_value: Some(0.0),
+                auxiliary_body: Vec::new(),
+                external_id,
+                references: None,
+                offset: 0,
+            },
+        )
+        .collect(),
+        offset: 0,
+    };
+    let angle = 118.0_f64.to_radians();
+    let id2 = SimpleDrilledDimensionFamily::ExternalId2Depth;
+    let first = table(4.2, angle, -25.0);
+    let second = table(4.2, angle, -25.0);
+
+    assert_eq!(
+        simple_drilled_hole_dimension_values([&first, &second].into_iter(), None, id2),
+        Some((8.4, angle, 25.0))
+    );
+    let conflicting = table(5.0, angle, -25.0);
+    assert_eq!(
+        simple_drilled_hole_dimension_values([&first, &conflicting].into_iter(), None, id2),
+        None
+    );
+    assert_eq!(
+        simple_drilled_hole_dimension_values(
+            [&first, &conflicting].into_iter(),
+            Some([[Some(8.4), None], [Some(25.0), None], [Some(100.0), None],]),
+            id2,
+        ),
+        Some((8.4, angle, 25.0))
+    );
+    assert_eq!(
+        simple_drilled_hole_dimension_values(
+            [&first, &conflicting].into_iter(),
+            Some([[Some(12.0), None], [Some(30.0), None], [Some(100.0), None],]),
+            id2,
+        ),
+        None
+    );
+    let mut other_layout = table(5.0, angle, -30.0);
+    other_layout.rows[2].external_id = 4;
+    assert_eq!(
+        simple_drilled_hole_dimension_values([&first, &other_layout].into_iter(), None, id2),
+        Some((8.4, angle, 25.0))
+    );
+    assert_eq!(
+        simple_drilled_hole_dimension_values(
+            [&first, &other_layout].into_iter(),
+            None,
+            SimpleDrilledDimensionFamily::ExternalId4Depth,
+        ),
+        Some((10.0, angle, 30.0))
+    );
+    assert_eq!(
+        simple_drilled_hole_dimension_values(
+            [&first, &other_layout].into_iter(),
+            Some([[Some(8.4), None], [Some(25.0), None], [Some(100.0), None],]),
+            id2,
+        ),
+        Some((8.4, angle, 25.0))
+    );
+    let invalid_angle = table(4.2, std::f64::consts::PI, -25.0);
+    assert_eq!(
+        simple_drilled_hole_dimension_values([&invalid_angle].into_iter(), None, id2),
+        None
+    );
+    assert_eq!(
+        simple_drilled_hole_dimension_values(
+            [&first, &invalid_angle].into_iter(),
+            Some([[Some(8.4), None], [Some(25.0), None], [Some(100.0), None],]),
+            id2,
+        ),
+        None
+    );
+    let invalid_other_angle = table(5.0, std::f64::consts::PI, -25.0);
+    assert_eq!(
+        simple_drilled_hole_dimension_values(
+            [&first, &invalid_other_angle].into_iter(),
+            Some([[Some(8.4), None], [Some(25.0), None], [Some(100.0), None],]),
+            id2,
+        ),
+        Some((8.4, angle, 25.0))
+    );
+    let adjacent_diameter = table(0.125, angle, -0.5);
+    assert_eq!(
+        simple_drilled_hole_dimension_values(
+            [&adjacent_diameter].into_iter(),
+            Some([[Some(6.375), None], [Some(0.5), None], [None, Some(0.25)],]),
+            id2,
+        ),
+        Some((0.25, angle, 0.5))
+    );
+}
+
+#[test]
+fn paired_corner_envelopes_expose_dimension_candidate_spans() {
+    assert_eq!(
+        paired_corner_envelope_axis_spans(
+            [[0.0, 0.0, -10.0], [25.0, 8.38, 100.0]],
+            [[0.0, 0.0, 100.0], [25.0, 8.38, 180.0]],
+        ),
+        Some([[Some(25.0), None], [Some(8.38), None], [None, Some(190.0)],])
+    );
+    assert_eq!(
+        paired_corner_envelope_axis_spans(
+            [[0.0, 0.0, 0.0], [6.375, 0.5, 0.125]],
+            [[0.0, 0.0, 0.125], [6.375, 0.5, 0.25]],
+        ),
+        Some([[Some(6.375), None], [Some(0.5), None], [None, Some(0.25)],])
+    );
+    assert_eq!(
+        paired_corner_envelope_axis_spans(
+            [[1.9375, 0.75, 0.6875], [2.5625, 1.25, 0.0]],
+            [[1.9375, 0.75, 0.0], [2.5625, 1.25, 1.3125]],
+        ),
+        Some([[Some(0.625), None], [Some(0.5), None], [None, Some(0.625)],])
+    );
+    assert_eq!(
+        paired_corner_envelope_axis_spans(
+            [[0.0, -15.0, 0.0], [10.0, 20.0, 30.0]],
+            [[0.0, 20.0, 0.0], [10.0, -25.0, 30.0]],
+        ),
+        Some([[Some(10.0), None], [None, Some(10.0)], [Some(30.0), None],])
+    );
+    assert_eq!(
+        paired_corner_envelope_axis_spans(
+            [[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]],
+            [[0.0, 4.0, 0.0], [1.0, 6.0, 3.0]],
+        ),
+        Some([[Some(1.0), None], [None, None], [Some(3.0), None],])
+    );
+    assert_eq!(
+        paired_corner_envelope_axis_spans(
+            [[0.0, 0.0, 0.0], [0.0, 2.0, 3.0]],
+            [[0.0, 0.0, 0.0], [0.0, 2.0, 3.0]],
+        ),
+        Some([[None, None], [Some(2.0), None], [Some(3.0), None],])
+    );
+    assert!(!dimension_pair_matches_envelope_spans(
+        4.0,
+        5.0,
+        [[Some(4.0), Some(5.0)], [Some(2.0), None], [Some(3.0), None]],
+    ));
+}
+
+#[test]
+fn complementary_drilled_hole_envelopes_define_axis_placement() {
+    let corners = [
+        [[-10.0, 0.0, -10.0], [10.0, 45.0, 0.0]],
+        [[-10.0, 0.0, 0.0], [10.0, 45.0, 10.0]],
+    ];
+    assert_eq!(
+        drilled_hole_placement_from_corner_envelopes(corners, 20.0, 45.0),
+        Some((Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0)))
+    );
+
+    let reversed = corners.map(|[first, second]| [second, first]);
+    assert_eq!(
+        drilled_hole_placement_from_corner_envelopes(reversed, 20.0, 45.0),
+        Some((Point3::new(0.0, 45.0, 0.0), Vector3::new(0.0, -1.0, 0.0)))
+    );
+    assert!(drilled_hole_placement_from_corner_envelopes(corners, 10.0, 45.0).is_none());
+    let mut opposed = corners;
+    opposed[1].reverse();
+    assert!(drilled_hole_placement_from_corner_envelopes(opposed, 20.0, 45.0).is_none());
+    let mut diagonal_quadrants = corners;
+    diagonal_quadrants[1][0][0] = 0.0;
+    assert!(drilled_hole_placement_from_corner_envelopes(diagonal_quadrants, 20.0, 45.0).is_none());
+}
+
+#[test]
+fn one_sided_drilled_hole_envelopes_define_the_missing_radial_coordinate() {
+    let corners = [
+        [[-5.0, -15.0, -30.0], [5.0, 20.0, 0.0]],
+        [[-5.0, -25.0, -30.0], [5.0, 20.0, 0.0]],
+    ];
+    assert_eq!(
+        drilled_hole_placement_from_corner_envelopes(corners, 10.0, 30.0),
+        Some((Point3::new(0.0, -20.0, -30.0), Vector3::new(0.0, 0.0, 1.0)))
+    );
+    let common_lower_bound = [
+        [[-5.0, -20.0, -30.0], [5.0, 25.0, 0.0]],
+        [[-5.0, -20.0, -30.0], [5.0, 15.0, 0.0]],
+    ];
+    assert_eq!(
+        drilled_hole_placement_from_corner_envelopes(common_lower_bound, 10.0, 30.0),
+        Some((Point3::new(0.0, 20.0, -30.0), Vector3::new(0.0, 0.0, 1.0)))
+    );
+
+    let wrong_diameter = [corners[0], [[-5.0, -26.0, -30.0], [5.0, 20.0, 0.0]]];
+    assert!(drilled_hole_placement_from_corner_envelopes(wrong_diameter, 10.0, 30.0).is_none());
+    let no_common_bound = [corners[0], [[-5.0, -25.0, -30.0], [5.0, 19.0, 0.0]]];
+    assert!(drilled_hole_placement_from_corner_envelopes(no_common_bound, 10.0, 30.0).is_none());
+}
+
+#[test]
+fn drill_tip_cone_points_define_a_clipped_radial_coordinate() {
+    let corners = [
+        [[0.461_241_074, 749.0, -25.0], [-144.0, 755.0, 0.0]],
+        [[0.461_241_074, 755.0, -25.0], [-144.0, 761.0, 0.0]],
+    ];
+    let cone_points = [[-144.0, 755.0, -25.0], [-144.0, 761.0, -25.0]];
+    assert_eq!(
+        clipped_drilled_hole_placement_from_cone_points(corners, cone_points, 12.0, 25.0),
+        Some((
+            Point3::new(-144.0, 755.0, -25.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ))
+    );
+
+    let mut wrong_entry = cone_points;
+    wrong_entry[1][2] = 0.0;
+    assert!(
+        clipped_drilled_hole_placement_from_cone_points(corners, wrong_entry, 12.0, 25.0,)
+            .is_none()
+    );
+    let mut wrong_radial_corner = cone_points;
+    wrong_radial_corner[0][0] = -143.0;
+    assert!(clipped_drilled_hole_placement_from_cone_points(
+        corners,
+        wrong_radial_corner,
+        12.0,
+        25.0,
+    )
+    .is_none());
+    assert!(
+        clipped_drilled_hole_placement_from_cone_points(corners, cone_points, 10.0, 25.0,)
+            .is_none()
+    );
+}
+
+#[test]
+fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features
+        .entity_tables
+        .push(simple_drilled_recipe_table(9));
+    scan.surfaces
+        .rows
+        .extend(simple_drilled_recipe_surface_rows(9));
+    let drill_point_angle = 118.0_f64.to_radians();
+    let dimension =
+        |dimension_type, external_id, value, value_unit| crate::feature::FeatureDimension {
+            dimension_type,
+            value: Some(value),
+            value_body: Vec::new(),
+            unresolved_value_token: None,
+            value_unit,
+            direction_byte: 0,
+            auxiliary_value: Some(0.0),
+            auxiliary_body: Vec::new(),
+            external_id,
+            references: None,
+            offset: 0,
+        };
+    scan.features
+        .definitions
+        .push(crate::feature::FeatureDefinition {
+            id: 911,
+            owner_feature_id: None,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: Some(crate::feature::FeatureDimensionTable {
+                declared_count: 3,
+                entity_ref: Some(88),
+                rows: vec![
+                    dimension(2, 0, 4.2, crate::feature::DimensionUnit::Millimeters),
+                    dimension(
+                        10,
+                        1,
+                        drill_point_angle,
+                        crate::feature::DimensionUnit::Radians,
+                    ),
+                    dimension(2, 2, -25.0, crate::feature::DimensionUnit::Millimeters),
+                ],
+                offset: 0,
+            }),
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        });
+
+    assert!(matches!(
+        schema_feature_definition(
+            &scan,
+            &CadIr::empty(Units::default()),
+            9,
+            911,
+            "Hole"
+        ),
+        IrFeatureDefinition::Hole {
+            kind: HoleKind::SimpleDrilled {
+                drill_point_angle: Angle(angle),
+            },
+            diameter: Some(Length(8.4)),
+            extent: Some(Termination::Blind {
+                length: Length(25.0),
+            }),
+            bottom: None,
+            ..
+        } if approximately_equal(angle, drill_point_angle)
+    ));
+
+    let compact_entry =
+        |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+            entity_id,
+            class_id,
+            source_entity_id,
+            related_entity_id: None,
+            related_entity_state: None,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
+    scan.features
+        .entity_tables
+        .push(crate::feature::FeatureEntityTable {
+            feature_id: Some(9),
+            table_class_id: 29,
+            entry_ids: vec![21, 22, 23, 24],
+            entries: vec![
+                compact_entry(21, 204, None),
+                compact_entry(22, 203, None),
+                compact_entry(23, 200, Some(0)),
+                compact_entry(24, 200, None),
+            ],
+            surface_ids: vec![24],
+            non_surface_entity_ids: Vec::new(),
+            offset: 0,
+        });
+    scan.surfaces.rows.push(class_911_surface_row(
+        9,
+        24,
+        crate::surface::SurfaceKind::Cylinder,
+    ));
+    assert!(matches!(
+        schema_feature_definition(&scan, &CadIr::empty(Units::default()), 9, 911, "Hole"),
+        IrFeatureDefinition::Hole {
+            kind: HoleKind::Simple,
+            diameter: None,
+            extent: None,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -2105,7 +2666,28 @@ fn counterbore_sources_require_materialized_table_membership() {
         offset: 0,
     };
     let mut scan = crate::container::scan_bytes(Vec::new());
+    let duplicate_productive_table = table.clone();
     scan.features.entity_tables.push(table);
+    scan.features
+        .entity_tables
+        .push(crate::feature::FeatureEntityTable {
+            feature_id: Some(9),
+            table_class_id: 29,
+            entry_ids: vec![99],
+            entries: vec![crate::feature::FeatureEntityTableEntry {
+                entity_id: 99,
+                class_id: 0,
+                source_entity_id: None,
+                related_entity_id: None,
+                related_entity_state: None,
+                prefixed: true,
+                offset: 1,
+                end_offset: 2,
+            }],
+            surface_ids: Vec::new(),
+            non_surface_entity_ids: vec![99],
+            offset: 1,
+        });
     scan.surfaces
         .rows
         .extend([row(11), row(12), row(15), row(16)]);
@@ -2114,6 +2696,8 @@ fn counterbore_sources_require_materialized_table_membership() {
         counterbore_cylinder_sources(&scan, 9),
         Some(vec![vec![15, 16]])
     );
+    scan.features.entity_tables.push(duplicate_productive_table);
+    assert!(counterbore_cylinder_sources(&scan, 9).is_none());
 }
 
 #[test]
@@ -2161,6 +2745,165 @@ fn counterbore_dimensions_require_complete_agreeing_radius_anchored_tables() {
     assert_eq!(
         counterbore_dimension_values([&first, &conflicting].into_iter(), &[0.3125]),
         None
+    );
+}
+
+#[test]
+fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
+    let table = |counterbore_depth: f64| crate::feature::FeatureDimensionTable {
+        declared_count: 5,
+        entity_ref: Some(88),
+        rows: [
+            (
+                0,
+                1,
+                counterbore_depth,
+                crate::feature::DimensionUnit::Millimeters,
+            ),
+            (1, 2, 20.0, crate::feature::DimensionUnit::Millimeters),
+            (
+                2,
+                10,
+                118.0_f64.to_radians(),
+                crate::feature::DimensionUnit::Radians,
+            ),
+            (3, 2, 60.0, crate::feature::DimensionUnit::Millimeters),
+            (4, 2, -295.661, crate::feature::DimensionUnit::Millimeters),
+        ]
+        .into_iter()
+        .map(
+            |(external_id, dimension_type, value, value_unit)| crate::feature::FeatureDimension {
+                dimension_type,
+                value: Some(value),
+                value_body: Vec::new(),
+                unresolved_value_token: None,
+                value_unit,
+                direction_byte: 0,
+                auxiliary_value: Some(0.0),
+                auxiliary_body: Vec::new(),
+                external_id,
+                references: None,
+                offset: 0,
+            },
+        )
+        .collect(),
+        offset: 0,
+    };
+    let bore_spans = [[Some(40.0), None], [Some(49.0), None], [None, Some(40.0)]];
+    let counterbore_spans = [[Some(120.0), None], [Some(8.0), None], [None, Some(120.0)]];
+    let first = table(8.0);
+    assert_eq!(
+        counterbore_envelope_dimension_values(
+            std::iter::once(&first),
+            &[Some(bore_spans), Some(counterbore_spans)],
+        ),
+        Some((40.0, 120.0, 8.0))
+    );
+    let signed_depth = table(-8.0);
+    assert_eq!(
+        counterbore_envelope_dimension_values(
+            std::iter::once(&signed_depth),
+            &[Some(bore_spans), Some(counterbore_spans)],
+        ),
+        Some((40.0, 120.0, 8.0))
+    );
+    assert_eq!(
+        counterbore_unenveloped_dimension_values([&signed_depth, &signed_depth].into_iter()),
+        Some((40.0, 120.0, 8.0))
+    );
+    assert_eq!(
+        counterbore_envelope_dimension_values(
+            std::iter::once(&first),
+            &[Some(counterbore_spans), Some(bore_spans)],
+        ),
+        Some((40.0, 120.0, 8.0))
+    );
+    let mut without_drill_angle = table(8.0);
+    without_drill_angle.declared_count = 4;
+    without_drill_angle.rows.retain(|row| row.external_id != 2);
+    assert_eq!(
+        counterbore_envelope_dimension_values(
+            std::iter::once(&without_drill_angle),
+            &[Some(bore_spans), Some(counterbore_spans)],
+        ),
+        Some((40.0, 120.0, 8.0))
+    );
+    let mut shifted_four_row = without_drill_angle.clone();
+    for row in &mut shifted_four_row.rows {
+        if row.external_id >= 3 {
+            row.external_id -= 1;
+        }
+    }
+    assert_eq!(
+        counterbore_envelope_dimension_values(
+            std::iter::once(&shifted_four_row),
+            &[None, Some(counterbore_spans)],
+        ),
+        Some((40.0, 120.0, 8.0))
+    );
+    let one_sided_counterbore_spans = paired_corner_envelope_axis_spans(
+        [[0.0, 0.0, 68.0], [120.0, 8.0, 0.0]],
+        [[0.0, 0.0, 0.0], [120.0, 8.0, 188.0]],
+    )
+    .expect("finite one-sided envelope pair");
+    assert_eq!(
+        counterbore_envelope_dimension_values(
+            std::iter::once(&shifted_four_row),
+            &[None, Some(one_sided_counterbore_spans)],
+        ),
+        Some((40.0, 120.0, 8.0))
+    );
+    assert_eq!(
+        counterbore_envelope_dimension_values(
+            std::iter::once(&shifted_four_row),
+            &[Some(bore_spans), None],
+        ),
+        Some((40.0, 120.0, 8.0))
+    );
+    let dual_role_spans = [
+        [Some(40.0), Some(120.0)],
+        [Some(40.0), Some(120.0)],
+        [Some(8.0), None],
+    ];
+    assert!(counterbore_envelope_dimension_values(
+        std::iter::once(&shifted_four_row),
+        &[Some(dual_role_spans), None],
+    )
+    .is_none());
+    let mut invalid_drill_angle = table(8.0);
+    invalid_drill_angle
+        .rows
+        .iter_mut()
+        .find(|row| row.external_id == 2)
+        .expect("the five-row test table has a drill-angle row")
+        .value = Some(std::f64::consts::PI);
+    assert!(counterbore_envelope_dimension_values(
+        std::iter::once(&invalid_drill_angle),
+        &[Some(bore_spans), Some(counterbore_spans)],
+    )
+    .is_none());
+    let conflicting = table(9.0);
+    assert_eq!(
+        counterbore_envelope_dimension_values(
+            [&first, &conflicting].into_iter(),
+            &[Some(bore_spans), Some(counterbore_spans)],
+        ),
+        Some((40.0, 120.0, 8.0))
+    );
+    assert!(counterbore_envelope_dimension_values(
+        std::iter::once(&conflicting),
+        &[Some(bore_spans), Some(counterbore_spans)],
+    )
+    .is_none());
+    assert!(
+        counterbore_unenveloped_dimension_values([&signed_depth, &conflicting].into_iter())
+            .is_none()
+    );
+    let mut other_layout = table(8.0);
+    other_layout.rows[0].dimension_type = 2;
+    assert!(
+        counterbore_unenveloped_dimension_values([&signed_depth, &other_layout].into_iter())
+            .is_none()
     );
 }
 
@@ -2220,6 +2963,96 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
 }
 
 #[test]
+fn counterbore_step_support_supplies_only_its_unoriented_normal_axis() {
+    let table = crate::feature::FeatureEntityTable {
+        feature_id: Some(9),
+        table_class_id: 29,
+        entry_ids: Vec::new(),
+        entries: Vec::new(),
+        surface_ids: vec![11, 13, 15],
+        non_surface_entity_ids: Vec::new(),
+        offset: 0,
+    };
+    let rows = [
+        class_911_surface_row(9, 11, crate::surface::SurfaceKind::Cylinder),
+        class_911_surface_row(9, 13, crate::surface::SurfaceKind::Plane),
+        class_911_surface_row(9, 15, crate::surface::SurfaceKind::Cylinder),
+    ];
+    let frame = crate::surface::PlaneLocalSystem {
+        surface_id: 13,
+        body: Vec::new(),
+        slots: vec![Some(0.0); 12],
+        origin: Some([2.0, 3.0, 4.0]),
+        u_axis: Some([0.0, 0.0, 1.0]),
+        normal: Some([0.0, -2.0, 0.0]),
+        classification: crate::surface::LocalSystemClassification::Simple,
+        row_offset: 0,
+        offset: 0,
+    };
+
+    assert_eq!(
+        counterbore_support_axis_placement(9, &table, &rows, std::slice::from_ref(&frame)),
+        Some(cadmpeg_ir::features::HolePlacement::Axis {
+            origin: Point3::new(2.0, 3.0, 4.0),
+            axis: Vector3::new(0.0, -1.0, 0.0),
+        })
+    );
+    assert!(
+        counterbore_support_axis_placement(10, &table, &rows, std::slice::from_ref(&frame),)
+            .is_none()
+    );
+    let mut incomplete = frame.clone();
+    incomplete.normal = None;
+    assert!(counterbore_support_axis_placement(
+        9,
+        &table,
+        &rows,
+        std::slice::from_ref(&incomplete),
+    )
+    .is_none());
+    assert!(
+        counterbore_support_axis_placement(9, &table, &rows, &[frame.clone(), frame]).is_none()
+    );
+}
+
+#[test]
+fn simple_drilled_axis_accepts_only_coaxial_dimension_matched_carriers() {
+    let frame = |origin, axis, radius| crate::surface::PositionalCylinderFrame {
+        origin,
+        axis,
+        ref_direction: [0.0, 1.0, 0.0],
+        radius,
+        length: None,
+    };
+    let first = frame([2.0, -3.0, 4.0], [1.0, 0.0, 0.0], 0.25);
+    let shifted = frame([7.0, -3.0, 4.0], [-1.0, 0.0, 0.0], 0.25);
+
+    assert_eq!(
+        simple_drilled_axis_placement_from_frames(&[first, shifted], 0.5),
+        Some(cadmpeg_ir::features::HolePlacement::Axis {
+            origin: Point3::new(2.0, -3.0, 4.0),
+            axis: Vector3::new(1.0, 0.0, 0.0),
+        })
+    );
+    assert!(simple_drilled_axis_placement_from_frames(&[], 0.5).is_none());
+    assert!(simple_drilled_axis_placement_from_frames(
+        &[first, frame([2.0, -2.9, 4.0], [1.0, 0.0, 0.0], 0.25)],
+        0.5,
+    )
+    .is_none());
+    assert!(simple_drilled_axis_placement_from_frames(
+        &[frame([2.0, -3.0, 4.0], [1.0, 0.0, 0.0], 0.3)],
+        0.5,
+    )
+    .is_none());
+    assert!(simple_drilled_axis_placement_from_frames(
+        &[frame([2.0, -3.0, 4.0], [1.0, 0.0, 0.0], f64::NAN,)],
+        0.5,
+    )
+    .is_none());
+}
+
+#[test]
 fn counterbore_boundary_circles_define_the_directed_full_span() {
     let counterbore = (65, Point3::new(0.0, 2.625, -1.0), [0.0, 0.0, 1.0]);
     let bore = (61, Point3::new(0.0, 2.625, 0.0), [0.0, 0.0, -1.0]);
@@ -2247,6 +3080,74 @@ fn counterbore_boundary_circles_define_the_directed_full_span() {
         0.15,
     )
     .is_none());
+}
+
+#[test]
+fn counterbore_corner_envelopes_define_the_directed_stepped_span() {
+    let bore = [
+        [[-20.0, -32.0, -160.0], [20.0, 17.0, -140.0]],
+        [[-20.0, -32.0, -140.0], [20.0, 17.0, -120.0]],
+    ];
+    let counterbore = [
+        [[-60.0, -40.0, -200.0], [60.0, -32.0, -140.0]],
+        [[-60.0, -40.0, -140.0], [60.0, -32.0, -80.0]],
+    ];
+    let expected = Some((
+        Point3::new(0.0, -40.0, -140.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        Termination::Blind {
+            length: Length(57.0),
+        },
+    ));
+    assert_eq!(
+        counterbore_placement_from_corner_envelopes(&[bore, counterbore], 40.0, 120.0, 8.0),
+        expected
+    );
+    assert_eq!(
+        counterbore_placement_from_corner_envelopes(&[counterbore, bore], 40.0, 120.0, 8.0),
+        expected
+    );
+
+    let reverse_bore = [
+        [[225.0, 174.0, -211.0], [257.0, 226.0, -185.0]],
+        [[225.0, 174.0, -185.0], [257.0, 226.0, -159.0]],
+    ];
+    let reverse_counterbore = [
+        [[257.0, 150.0, -235.0], [265.0, 250.0, -185.0]],
+        [[257.0, 150.0, -185.0], [265.0, 250.0, -135.0]],
+    ];
+    assert_eq!(
+        counterbore_placement_from_corner_envelopes(
+            &[reverse_bore, reverse_counterbore],
+            52.0,
+            100.0,
+            8.0,
+        ),
+        Some((
+            Point3::new(265.0, 200.0, -185.0),
+            Vector3::new(-1.0, 0.0, 0.0),
+            Termination::Blind {
+                length: Length(40.0),
+            },
+        ))
+    );
+
+    let mut separated_counterbore = counterbore;
+    for patch in &mut separated_counterbore {
+        patch[0][1] -= 1.0;
+        patch[1][1] -= 1.0;
+    }
+    assert!(counterbore_placement_from_corner_envelopes(
+        &[bore, separated_counterbore],
+        40.0,
+        120.0,
+        8.0,
+    )
+    .is_none());
+    assert!(
+        counterbore_placement_from_corner_envelopes(&[bore, counterbore], 40.0, 120.0, 9.0,)
+            .is_none()
+    );
 }
 
 #[test]
@@ -2739,6 +3640,7 @@ fn circle_remains_a_closed_extrusion_profile() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
         profiles: vec![vec![SketchEntityUse {
             entity: entity_id.clone(),
@@ -2849,6 +3751,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
         profiles: vec![vec![
             SketchEntityUse {
@@ -3130,6 +4033,33 @@ fn cap_proof_classifies_section_sweeps_without_overriding_revolves() {
 }
 
 #[test]
+fn unresolved_display_state_family_blocks_schema_sweep_fallback() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features
+        .operations
+        .push(crate::feature::FeatureOperation {
+            feature_id: 917,
+            kind: "Native Feature".to_string(),
+            display_name_stored: false,
+            stored_name: None,
+            stored_name_bytes: None,
+            identifier_keyword: None,
+            stored_name_prefix: None,
+            recipe: None,
+            recipe_conflict: false,
+            display_state_conflict: true,
+            root_schema_class: Some(917),
+            parent_feature_id: None,
+            offset: 0,
+            state_offset: 0,
+        });
+
+    assert!(!feature_allows_linear_extrusion(&scan, 917));
+    scan.features.operations[0].kind = "Extrude".to_string();
+    assert!(feature_allows_linear_extrusion(&scan, 917));
+}
+
+#[test]
 fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features
@@ -3143,6 +4073,8 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
             identifier_keyword: Some("id".to_string()),
             stored_name_prefix: None,
             recipe: None,
+            recipe_conflict: false,
+            display_state_conflict: false,
             root_schema_class: Some(942),
             parent_feature_id: None,
             offset: 0,
@@ -3203,6 +4135,8 @@ fn class_942_schema_state_precedes_surface_body_tree_fallback() {
             identifier_keyword: Some("id".to_string()),
             stored_name_prefix: None,
             recipe: None,
+            recipe_conflict: false,
+            display_state_conflict: false,
             root_schema_class: Some(942),
             parent_feature_id: None,
             offset: 0,
@@ -3229,6 +4163,8 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
             identifier_keyword: Some("id".to_string()),
             stored_name_prefix: None,
             recipe: None,
+            recipe_conflict: false,
+            display_state_conflict: false,
             root_schema_class: Some(942),
             parent_feature_id: None,
             offset: 0,
@@ -3579,7 +4515,7 @@ fn thicken_plane_offsets_require_parallel_agreeing_oriented_distances() {
 }
 
 #[test]
-fn transformed_feature_definition_requires_unique_owner_and_exact_transform_owner() {
+fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
     let definition = crate::feature::FeatureDefinition {
         id: 822,
         owner_feature_id: Some(822),
@@ -3616,37 +4552,10 @@ fn transformed_feature_definition_requires_unique_owner_and_exact_transform_owne
         offset: 90,
     };
 
-    assert_eq!(
-        unique_owned_transformed_definition(
-            std::slice::from_ref(&definition),
-            std::slice::from_ref(&transform),
-            822,
-        )
-        .map(|definition| definition.id),
-        Some(822)
-    );
-    assert!(unique_owned_transformed_definition(
-        &[definition.clone(), definition.clone()],
-        std::slice::from_ref(&transform),
-        822,
-    )
-    .is_none());
-    assert!(unique_owned_transformed_definition(
-        std::slice::from_ref(&definition),
-        &[transform.clone(), transform.clone()],
-        822,
-    )
-    .is_none());
     let mismatched_transform = crate::placement::FeatureSectionTransform {
         feature_id: Some(900),
-        ..transform
+        ..transform.clone()
     };
-    assert!(unique_owned_transformed_definition(
-        std::slice::from_ref(&definition),
-        std::slice::from_ref(&mismatched_transform),
-        822,
-    )
-    .is_none());
     assert_eq!(
         unique_feature_profile_definition(
             std::slice::from_ref(&definition),
@@ -3661,9 +4570,13 @@ fn transformed_feature_definition_requires_unique_owner_and_exact_transform_owne
             .map(|definition| definition.id),
         Some(822)
     );
+    assert!(
+        unique_feature_profile_definition(&[definition.clone(), definition.clone()], &[], 822,)
+            .is_none()
+    );
     assert!(unique_feature_profile_definition(
         std::slice::from_ref(&definition),
-        &[transform.clone(), transform],
+        &[transform.clone(), transform.clone()],
         822,
     )
     .is_none());
@@ -3677,9 +4590,21 @@ fn transformed_feature_definition_requires_unique_owner_and_exact_transform_owne
         Some(822)
     );
 
+    let mismatched_section_transform = crate::placement::FeatureSectionTransform {
+        definition_id: 900,
+        feature_id: Some(822),
+        ..transform
+    };
+    assert!(unique_feature_profile_definition(
+        std::slice::from_ref(&definition),
+        std::slice::from_ref(&mismatched_section_transform),
+        822,
+    )
+    .is_none());
+
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.definitions.push(definition);
-    let ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty(Units::default());
     for kind in ["Revolve", "Revolve 2"] {
         assert!(matches!(
             named_feature_definition(&scan, &ir, 822, kind),
@@ -3694,6 +4619,35 @@ fn transformed_feature_definition_requires_unique_owner_and_exact_transform_owne
             }) if profile == "creo:featdefs:sketch#822"
         ));
     }
+
+    let sketch = SketchId("creo:model:sketch#822".to_string());
+    ir.model.sketches.push(Sketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
+        profiles: Vec::new(),
+        native_ref: Some("creo:featdefs:sketch#822".to_string()),
+    });
+    assert!(matches!(
+        filled_surface_feature_definition(&scan, &ir, 822),
+        IrFeatureDefinition::FilledSurface {
+            boundary: SurfaceBoundary::Path(PathRef::Sketch(boundary)),
+            ..
+        } if boundary == sketch
+    ));
+
+    scan.features
+        .definitions
+        .push(scan.features.definitions[0].clone());
+    assert!(matches!(
+        filled_surface_feature_definition(&scan, &ir, 822),
+        IrFeatureDefinition::FilledSurface {
+            boundary: SurfaceBoundary::Edges(EdgeSelection::Unresolved),
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -4189,6 +5143,8 @@ fn current_feature_state_controls_recipe_and_parent_projection() {
         identifier_keyword: None,
         stored_name_prefix: None,
         recipe: Some(recipe),
+        recipe_conflict: false,
+        display_state_conflict: false,
         root_schema_class: Some(917),
         parent_feature_id: Some(parent_feature_id),
         offset,
@@ -4358,6 +5314,7 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
         id: SketchId("creo:model:sketch#offset:40".to_string()),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -4395,6 +5352,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
         profiles: vec![vec![
             SketchEntityUse {
@@ -4789,7 +5747,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
 }
 
 #[test]
-fn compact_hole_table_establishes_the_simple_form_without_metric_geometry() {
+fn compact_hole_materialized_core_establishes_the_simple_form() {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
         entity_id,
         class_id,
@@ -4833,6 +5791,26 @@ fn compact_hole_table_establishes_the_simple_form_without_metric_geometry() {
         ),
         Some(117)
     );
+    let mut exact_class_203_plane = table.clone();
+    exact_class_203_plane.surface_ids.push(112);
+    let topology_plane = crate::surface::SurfaceRow {
+        id: 112,
+        type_byte: 0x22,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 107,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 0,
+    };
+    assert_eq!(
+        compact_simple_hole_cylinder_id(
+            107,
+            std::slice::from_ref(&exact_class_203_plane),
+            &[topology_plane, row.clone()],
+        ),
+        Some(117)
+    );
     table.entries[2].source_entity_id = None;
     assert!(compact_simple_hole_cylinder_id(
         107,
@@ -4841,8 +5819,84 @@ fn compact_hole_table_establishes_the_simple_form_without_metric_geometry() {
     )
     .is_none());
     table.entries[2].source_entity_id = Some(0);
+    table.table_class_id = 28;
+    assert!(compact_simple_hole_cylinder_id(
+        107,
+        std::slice::from_ref(&table),
+        std::slice::from_ref(&row),
+    )
+    .is_none());
+    table.table_class_id = 29;
     table.entries[3].class_id = 201;
-    assert!(compact_simple_hole_cylinder_id(107, std::slice::from_ref(&table), &[row]).is_none());
+    assert!(compact_simple_hole_cylinder_id(
+        107,
+        std::slice::from_ref(&table),
+        std::slice::from_ref(&row),
+    )
+    .is_none());
+    table.entries[3].class_id = 200;
+    table.surface_ids.push(109);
+    assert!(compact_simple_hole_cylinder_id(
+        107,
+        std::slice::from_ref(&table),
+        std::slice::from_ref(&row),
+    )
+    .is_none());
+
+    let mut extended = crate::feature::FeatureEntityTable {
+        feature_id: Some(107),
+        table_class_id: 29,
+        entry_ids: vec![109, 112, 120, 121, 115, 117],
+        entries: vec![
+            entry(109, 204, None),
+            entry(112, 203, None),
+            entry(120, 204, None),
+            entry(121, 203, None),
+            entry(115, 200, Some(0)),
+            entry(117, 200, None),
+        ],
+        surface_ids: vec![109, 117],
+        non_surface_entity_ids: vec![112, 120, 121, 115],
+        offset: 0,
+    };
+    for (index, entry) in extended.entries.iter_mut().enumerate() {
+        entry.offset = index;
+        entry.end_offset = index + 1;
+    }
+    let plane = crate::surface::SurfaceRow {
+        id: 109,
+        type_byte: 0x22,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 107,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 0,
+    };
+    let rows = [plane.clone(), row.clone()];
+    assert_eq!(
+        compact_simple_hole_cylinder_id(107, std::slice::from_ref(&extended), &rows),
+        Some(117)
+    );
+    let mut class_203_plane = extended.clone();
+    class_203_plane.surface_ids[0] = 112;
+    class_203_plane
+        .non_surface_entity_ids
+        .retain(|id| *id != 112);
+    class_203_plane.non_surface_entity_ids.push(109);
+    let mut second_topology_plane = plane;
+    second_topology_plane.id = 112;
+    let second_topology_rows = [second_topology_plane, row];
+    assert_eq!(
+        compact_simple_hole_cylinder_id(
+            107,
+            std::slice::from_ref(&class_203_plane),
+            &second_topology_rows,
+        ),
+        Some(117)
+    );
+    extended.surface_ids.push(120);
+    assert!(compact_simple_hole_cylinder_id(107, std::slice::from_ref(&extended), &rows).is_none());
 }
 
 #[test]
@@ -6534,6 +7588,70 @@ fn equation_function_two_propagates_non_coordinate_scalar_components() {
 }
 
 #[test]
+fn equation_function_five_propagates_direct_type_six_equality() {
+    let row = |variable_type, key, value, dimension_driven| crate::feature::FeatureVariableRow {
+        variable_type,
+        key,
+        value,
+        value_body: Vec::new(),
+        guess: value,
+        guess_body: Vec::new(),
+        guess_dimension_driven: dimension_driven,
+        known: Some(0),
+        homogeneity: Some(0),
+        uvar_id: None,
+        dimension_driven,
+        offset: 0,
+    };
+    let definition =
+        |first_value, second_value, selector_value| crate::feature::FeatureDefinition {
+            id: 40,
+            owner_feature_id: None,
+            body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+                    \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                    \x01\x05\xf8\x03\x00\x01\x02\xf6\xe2"
+                .to_vec(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: Some(crate::feature::FeatureVariableTable {
+                declared_count: 3,
+                entity_ref: None,
+                rows: vec![
+                    row(6, 10, first_value, first_value.is_none()),
+                    row(6, 11, second_value, second_value.is_none()),
+                    row(5, 0, selector_value, false),
+                ],
+                points: Vec::new(),
+                offset: 0,
+            }),
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+
+    let resolved = resolved_section_scalar_values(&definition(None, Some(2.5), Some(0.0)));
+    assert_eq!(resolved.get(&(6, 10)), Some(&2.5));
+    assert_eq!(resolved.get(&(6, 11)), Some(&2.5));
+
+    let conflicting = resolved_section_scalar_values(&definition(Some(2.5), Some(3.5), Some(0.0)));
+    assert!(!conflicting.contains_key(&(6, 10)));
+    assert!(!conflicting.contains_key(&(6, 11)));
+    assert!(
+        !resolved_section_scalar_values(&definition(None, Some(2.5), None)).contains_key(&(6, 10))
+    );
+    assert!(
+        !resolved_section_scalar_values(&definition(None, Some(2.5), Some(1.0)))
+            .contains_key(&(6, 10))
+    );
+}
+
+#[test]
 fn equation_function_two_propagates_radius_components() {
     let row = |key, value| crate::feature::FeatureVariableRow {
         variable_type: 3,
@@ -7738,6 +8856,8 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         identifier_keyword: Some("id".to_string()),
         stored_name_prefix: None,
         recipe: Some(crate::feature::FeatureRecipe::ProtrudeExtrude),
+        recipe_conflict: false,
+        display_state_conflict: false,
         root_schema_class: Some(917),
         parent_feature_id: None,
         offset: 10,
@@ -11169,8 +12289,8 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             SketchConstraintDefinition::Native { .. }
         ));
     }
-    let mut fixed_bounded_curve = definition.clone();
-    fixed_bounded_curve
+    let mut type_33_bounded_curve = definition.clone();
+    type_33_bounded_curve
         .segments
         .as_mut()
         .expect("segments")
@@ -11185,12 +12305,12 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         external_id: 18,
         offset: 86,
     }];
-    fixed_bounded_curve
+    type_33_bounded_curve
         .segments
         .as_mut()
         .expect("segments")
         .declared_count = 6;
-    fixed_bounded_curve
+    type_33_bounded_curve
         .relations
         .as_mut()
         .expect("relations")
@@ -11205,36 +12325,54 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         }],
         offset: 87,
     }];
-    synchronize_skamp_count(&mut fixed_bounded_curve);
-    let fixed_constraints = section_skamp_constraints(
-        &fixed_bounded_curve,
+    synchronize_skamp_count(&mut type_33_bounded_curve);
+    let type_33_constraints = section_skamp_constraints(
+        &type_33_bounded_curve,
         &SketchId("creo:model:sketch#917".into()),
     );
+    let SketchConstraintDefinition::Native {
+        native_kind,
+        native_state,
+        native_flags,
+        entities,
+        operands,
+        ..
+    } = &type_33_constraints[0].0.definition
+    else {
+        panic!("native type-33 incidence");
+    };
+    assert_eq!(native_kind, "creo:skamp:33");
+    assert_eq!(*native_state, Some(35));
+    assert_eq!(*native_flags, Some(34));
     assert_eq!(
-        fixed_constraints[0].0.definition,
-        SketchConstraintDefinition::Fixed {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#917:18".to_string()),
-        }
+        entities,
+        &[SketchEntityId(
+            "creo:featdefs:sketch_entity#917:18".to_string()
+        )]
     );
-    assert_eq!(fixed_constraints[0].0.active, Some(true));
-    fixed_bounded_curve
+    assert_eq!(operands.len(), 1);
+    assert_eq!(operands[0].native_role, Some(10));
+    assert_eq!(type_33_constraints[0].0.active, Some(true));
+    type_33_bounded_curve
         .relations
         .as_mut()
         .expect("relations")
         .skamps[0]
         .status = 34;
-    let inactive_fixed = section_skamp_constraints(
-        &fixed_bounded_curve,
+    let inactive_type_33 = section_skamp_constraints(
+        &type_33_bounded_curve,
         &SketchId("creo:model:sketch#917".into()),
     );
-    assert_eq!(
-        inactive_fixed[0].0.definition,
-        SketchConstraintDefinition::Fixed {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#917:18".to_string()),
+    assert!(matches!(
+        inactive_type_33[0].0.definition,
+        SketchConstraintDefinition::Native {
+            native_state: Some(34),
+            native_flags: Some(34),
+            ..
         }
-    );
-    assert_eq!(inactive_fixed[0].0.active, Some(false));
-    fixed_bounded_curve
+    ));
+    assert_eq!(inactive_type_33[0].0.active, Some(false));
+    type_33_bounded_curve
         .relations
         .as_mut()
         .expect("relations")
@@ -11242,20 +12380,23 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .flags = 0;
     assert!(matches!(
         section_skamp_constraints(
-            &fixed_bounded_curve,
+            &type_33_bounded_curve,
             &SketchId("creo:model:sketch#917".into()),
         )[0]
         .0
         .definition,
-        SketchConstraintDefinition::Fixed { .. }
+        SketchConstraintDefinition::Native {
+            native_flags: Some(0),
+            ..
+        }
     ));
-    fixed_bounded_curve
+    type_33_bounded_curve
         .relations
         .as_mut()
         .expect("relations")
         .skamps[0]
         .flags = 34;
-    fixed_bounded_curve
+    type_33_bounded_curve
         .relations
         .as_mut()
         .expect("relations")
@@ -11264,21 +12405,21 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .sense = 0;
     assert!(matches!(
         section_skamp_constraints(
-            &fixed_bounded_curve,
+            &type_33_bounded_curve,
             &SketchId("creo:model:sketch#917".into()),
         )[0]
         .0
         .definition,
         SketchConstraintDefinition::Native { .. }
     ));
-    fixed_bounded_curve
+    type_33_bounded_curve
         .relations
         .as_mut()
         .expect("relations")
         .skamps[0]
         .items[0]
         .sense = 10;
-    fixed_bounded_curve
+    type_33_bounded_curve
         .segments
         .as_mut()
         .expect("segments")
@@ -11286,59 +12427,65 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .clear();
     assert!(matches!(
         section_skamp_constraints(
-            &fixed_bounded_curve,
+            &type_33_bounded_curve,
             &SketchId("creo:model:sketch#917".into()),
         )[0]
         .0
         .definition,
         SketchConstraintDefinition::Native { .. }
     ));
-    let emitted_fixed_geometry = BTreeMap::from([(
+    let emitted_type_33_geometry = BTreeMap::from([(
         SketchEntityId("creo:featdefs:sketch_entity#917:18".to_string()),
         SketchGeometry::Native {
             native_kind: "bounded_curve".to_string(),
         },
     )]);
-    let emitted_fixed_constraints = section_skamp_constraints_for_geometry(
-        &fixed_bounded_curve,
+    let emitted_type_33_constraints = section_skamp_constraints_for_geometry(
+        &type_33_bounded_curve,
         &SketchId("creo:model:sketch#917".into()),
-        Some(&emitted_fixed_geometry),
+        Some(&emitted_type_33_geometry),
     );
-    assert_eq!(
-        emitted_fixed_constraints[0].0.definition,
-        SketchConstraintDefinition::Fixed {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#917:18".to_string()),
-        }
-    );
-
-    let mut fixed_line = definition.clone();
-    fixed_line.relations.as_mut().expect("relations").skamps = vec![crate::feature::FeatureSkamp {
-        id: 20,
-        kind: 33,
-        flags: 393_216,
-        status: 35,
-        items: vec![crate::feature::FeatureSkampItem {
-            entity_id: 12,
-            sense: 10,
-        }],
-        offset: 88,
-    }];
-    synchronize_skamp_count(&mut fixed_line);
-    assert_eq!(
-        section_skamp_constraints(&fixed_line, &SketchId("creo:model:sketch#917".into()),)[0]
-            .0
-            .definition,
-        SketchConstraintDefinition::Fixed {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
-        }
-    );
-
-    fixed_line.relations.as_mut().expect("relations").skamps[0].flags = 0;
     assert!(matches!(
-        section_skamp_constraints(&fixed_line, &SketchId("creo:model:sketch#917".into()),)[0]
+        &emitted_type_33_constraints[0].0.definition,
+        SketchConstraintDefinition::Native { entities, .. }
+            if entities == &[SketchEntityId(
+                "creo:featdefs:sketch_entity#917:18".to_string()
+            )]
+    ));
+
+    let mut type_33_line = definition.clone();
+    type_33_line.relations.as_mut().expect("relations").skamps =
+        vec![crate::feature::FeatureSkamp {
+            id: 20,
+            kind: 33,
+            flags: 393_216,
+            status: 35,
+            items: vec![crate::feature::FeatureSkampItem {
+                entity_id: 12,
+                sense: 10,
+            }],
+            offset: 88,
+        }];
+    synchronize_skamp_count(&mut type_33_line);
+    assert!(matches!(
+        section_skamp_constraints(&type_33_line, &SketchId("creo:model:sketch#917".into()),)[0]
             .0
             .definition,
-        SketchConstraintDefinition::Fixed { .. }
+        SketchConstraintDefinition::Native {
+            native_flags: Some(393_216),
+            ..
+        }
+    ));
+
+    type_33_line.relations.as_mut().expect("relations").skamps[0].flags = 0;
+    assert!(matches!(
+        section_skamp_constraints(&type_33_line, &SketchId("creo:model:sketch#917".into()),)[0]
+            .0
+            .definition,
+        SketchConstraintDefinition::Native {
+            native_flags: Some(0),
+            ..
+        }
     ));
     let point_entity = crate::feature::FeatureSkampItem {
         entity_id: 14,

@@ -561,6 +561,11 @@ pub enum ProceduralSurfaceDefinition {
         axis_direction: Vector3,
         /// Angular start and end parameters, in radians.
         angular_interval: [f64; 2],
+        /// Surface-parameter interval that maps affinely to
+        /// `angular_interval`. Absence means the surface parameter is already
+        /// the revolution angle in radians.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        angular_parameter_interval: Option<[f64; 2]>,
         /// Directrix surface-parameter start and end values, when carried by
         /// the source representation.
         #[serde(default, skip_serializing_if = "Option::is_none")]

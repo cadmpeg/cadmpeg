@@ -415,8 +415,6 @@ fn read(args: &ReadArgs) -> Result<()> {
 }
 
 fn find(args: &FindArgs) -> Result<()> {
-    // With `--input FILE`, a filled positional slot caught a search pattern,
-    // not a file: shift it into the misplaced-pattern teaching below.
     let (file, misplaced) = match (&args.input_flag, &args.file) {
         (Some(input), Some(stray)) => (input, Some(stray.display().to_string())),
         (Some(input), None) => (input, args.misplaced_pattern.clone()),

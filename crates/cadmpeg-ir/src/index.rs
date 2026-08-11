@@ -30,6 +30,7 @@ macro_rules! define_model_index {
         pub struct ModelIndex<'a> {
             ir: &'a CadIr,
             $($field: HashMap<&'a str, &'a $element>,)*
+            procedural_surface_by_surface: HashMap<&'a str, &'a ProceduralSurface>,
             identities: HashSet<&'a str>,
             native_identities: HashSet<&'a str>,
         }
@@ -56,9 +57,17 @@ macro_rules! define_model_index {
                 }).collect::<HashSet<_>>();
                 native_identities.extend(additional);
                 identities.extend(native_identities.iter().copied());
+                let mut procedural_surface_by_surface =
+                    HashMap::with_capacity(ir.model.procedural_surfaces.len());
+                for procedural in &ir.model.procedural_surfaces {
+                    procedural_surface_by_surface
+                        .entry(procedural.surface.0.as_str())
+                        .or_insert(procedural);
+                }
                 Self {
                     ir,
                     $($field,)*
+                    procedural_surface_by_surface,
                     identities,
                     native_identities,
                 }
@@ -84,6 +93,14 @@ macro_rules! define_model_index {
                 self.identities.iter().copied()
             }
 
+            /// Looks up the procedural construction that owns a surface.
+            pub fn procedural_surface_for_surface(
+                &self,
+                surface: &str,
+            ) -> Option<&'a ProceduralSurface> {
+                self.procedural_surface_by_surface.get(surface).copied()
+            }
+
             $(
                 #[doc = concat!("Looks up an entity in the `", stringify!($field), "` arena.")]
                 pub fn $field(&self, identity: &str) -> Option<&'a $element> {
@@ -95,3 +112,34 @@ macro_rules! define_model_index {
 }
 
 crate::document::arena_registry!(define_model_index);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geometry::ProceduralSurfaceDefinition;
+    use crate::ids::{ProceduralSurfaceId, SurfaceId};
+    use crate::units::Units;
+
+    #[test]
+    fn procedural_surface_owner_index_preserves_arena_precedence() {
+        let mut ir = CadIr::empty(Units::default());
+        for id in ["first", "second"] {
+            ir.model.procedural_surfaces.push(ProceduralSurface {
+                id: ProceduralSurfaceId(format!("test:procedural-surface#{id}")),
+                surface: SurfaceId("test:surface#owner".to_string()),
+                definition: ProceduralSurfaceDefinition::Unknown { record: None },
+                cache_fit_tolerance: None,
+                record_bounds: None,
+            });
+        }
+
+        let index = ModelIndex::new(&ir);
+
+        assert_eq!(
+            index
+                .procedural_surface_for_surface("test:surface#owner")
+                .map(|procedural| procedural.id.0.as_str()),
+            Some("test:procedural-surface#first")
+        );
+    }
+}

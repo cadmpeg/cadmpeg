@@ -114,8 +114,8 @@ IR and STEP:
 - `step_geometry_degenerate` parses IR and exercises STEP export with any
   degenerate geometry present in the document.
 - `decode_pipeline_mutated` uses the first byte to mutate the remaining
-  container bytes, then runs F3D, SolidWorks, CATIA, Creo, NX, and Rhino
-  detection, inspection, and decoding.
+  container bytes, then runs F3D, Inventor, FreeCAD, SolidWorks, CATIA, Creo,
+  NX, and Rhino detection, inspection, and decoding.
 
 Every harness treats a panic, abort, sanitizer finding, or libFuzzer timeout as
 a failure. Parse and validation errors are expected results for malformed

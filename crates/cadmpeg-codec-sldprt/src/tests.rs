@@ -1098,10 +1098,7 @@ fn loop_head(attr: u16, first_coedge: u16, bridge_attr: u16) -> Vec<u8> {
 
 /// Coedge `00 11`: `refs[1]` owner loop, `refs[3]` next, `refs[4]` start
 /// vertex-use, `refs[5]` twin, `refs[6]` edge-use; marker is the local sense.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn coedge(
     attr: u16,
     owner_loop: u16,
@@ -1285,7 +1282,7 @@ fn suffix_prefixed_edge_triangle_body() -> Vec<u8> {
 
 /// One triangular planar face: a plane carrier, a bridge, a loop, three coedges
 /// forming a closed ring, three edge-uses, three vertex-uses, and three points.
-fn triangle_body() -> Vec<u8> {
+pub(crate) fn triangle_body() -> Vec<u8> {
     let mut b = Vec::new();
     b.extend(plane_carrier(
         100,
@@ -1405,7 +1402,7 @@ fn untyped_triangle(x: f64) -> Vec<u8> {
 }
 
 /// A `.sldprt` whose partition block carries `triangle_body`.
-fn sldprt_with_body(body: &[u8]) -> Vec<u8> {
+pub(crate) fn sldprt_with_body(body: &[u8]) -> Vec<u8> {
     let mut f = outer_header();
     f.extend_from_slice(&make_block(
         0x20,
@@ -2882,6 +2879,7 @@ fn encoder_writes_source_less_line_sketches() {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -3251,6 +3249,7 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
         id: sketch_id.clone(),
         name: Some("Spatial path".into()),
         configuration: Some("0".into()),
+        visible: None,
         profiles: Vec::new(),
         native_ref: None,
     });
@@ -3393,6 +3392,7 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -3622,6 +3622,7 @@ fn encoder_writes_source_less_curved_sketches() {
         id: sketch_id.clone(),
         name: Some("Curves".into()),
         configuration: Some("Main".into()),
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -4261,6 +4262,7 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
             id: sketch_id.clone(),
             name: Some(name.into()),
             configuration: None,
+            visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin: Point3::new(0.0, 0.0, ordinal as f64),
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -5324,6 +5326,7 @@ fn encoder_writes_source_less_datum_features() {
         },
         FeatureDefinition::DatumPoint {
             position: Point3::new(7.0, 8.0, 9.0),
+            construction: None,
         },
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
@@ -5384,7 +5387,7 @@ fn encoder_writes_source_less_neutral_configurations() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("sldprt:model:configuration#generated:z".into()),
         ordinal: 0,
-        active: true,
+        active: true.into(),
         source_index: None,
         name: "Metric".into(),
         material: Some("Steel".into()),
@@ -5399,7 +5402,7 @@ fn encoder_writes_source_less_neutral_configurations() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("sldprt:model:configuration#generated:a".into()),
         ordinal: 1,
-        active: false,
+        active: false.into(),
         source_index: None,
         name: "Empty".into(),
         material: None,
@@ -5439,7 +5442,7 @@ fn encoder_writes_source_less_neutral_configurations() {
             .model
             .configurations
             .iter()
-            .map(|configuration| configuration.name.as_str())
+            .filter_map(|configuration| configuration.name.resolved())
             .collect::<Vec<_>>(),
         vec!["Metric", "Empty"]
     );
@@ -5461,7 +5464,7 @@ fn encoder_writes_source_less_neutral_configurations() {
     assert_eq!(configuration.name, "Metric");
     assert_eq!(configuration.material.as_deref(), Some("Steel"));
     assert_eq!(configuration.properties["Finish"], "Ground");
-    assert!(configuration.active);
+    assert!(configuration.active.is_active());
     assert_eq!(
         configuration.bodies,
         decoded
@@ -5479,7 +5482,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         .model
         .configurations
         .iter_mut()
-        .for_each(|configuration| configuration.active = false);
+        .for_each(|configuration| configuration.active = false.into());
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(&inactive, &decoded.source_fidelity, &mut Vec::new())
         .unwrap_err();
@@ -5504,11 +5507,11 @@ fn semantic_writer_round_trips_active_configuration() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(decoded.ir.model.configurations[0].active);
-    assert!(!decoded.ir.model.configurations[1].active);
+    assert!(decoded.ir.model.configurations[0].active.is_active());
+    assert!(decoded.ir.model.configurations[1].active.is_inactive());
 
-    decoded.ir.model.configurations[0].active = false;
-    decoded.ir.model.configurations[1].active = true;
+    decoded.ir.model.configurations[0].active = false.into();
+    decoded.ir.model.configurations[1].active = true.into();
     let mut encoded = Vec::new();
     SldprtCodec
         .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
@@ -5516,8 +5519,8 @@ fn semantic_writer_round_trips_active_configuration() {
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    assert!(!regenerated.ir.model.configurations[0].active);
-    assert!(regenerated.ir.model.configurations[1].active);
+    assert!(regenerated.ir.model.configurations[0].active.is_inactive());
+    assert!(regenerated.ir.model.configurations[1].active.is_active());
     assert_eq!(
         regenerated.ir.source.as_ref().unwrap().attributes["sw_configuration_name"],
         "Manufacturing & QA"
@@ -5551,7 +5554,7 @@ fn decode_preserves_unresolved_active_configuration() {
         .model
         .configurations
         .iter()
-        .all(|configuration| !configuration.active));
+        .all(|configuration| configuration.active.is_inactive()));
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.message
             == "active configuration identity is unresolved; 0 of 3 configuration records are active."
@@ -5646,9 +5649,9 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .map(|(index, body)| DesignConfiguration {
             id: ConfigurationId(format!("synthetic:test:configuration#config-{index}")),
             ordinal: index as u32,
-            active: false,
+            active: false.into(),
             source_index: None,
-            name: format!("Config {index}"),
+            name: format!("Config {index}").into(),
             material: None,
             properties: BTreeMap::new(),
             bodies: cadmpeg_ir::ConfigurationBodies::Resolved(vec![body.clone()]),
@@ -5659,7 +5662,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
             native_ref: None,
         })
         .collect();
-    ir.model.configurations[1].active = true;
+    ir.model.configurations[1].active = true.into();
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -5693,7 +5696,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
     assert_eq!(decoded.ir.model.bodies.len(), 2);
     assert_eq!(decoded.ir.model.configurations[0].bodies.len(), 1);
     assert_eq!(decoded.ir.model.configurations[1].bodies.len(), 1);
-    assert!(decoded.ir.model.configurations[1].active);
+    assert!(decoded.ir.model.configurations[1].active.is_active());
     assert_ne!(
         decoded.ir.model.configurations[0].bodies,
         decoded.ir.model.configurations[1].bodies
@@ -5721,7 +5724,7 @@ fn decode_assigns_selected_partition_bodies_to_configuration() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.configurations.len(), 1);
-    assert!(decoded.ir.model.configurations[0].active);
+    assert!(decoded.ir.model.configurations[0].active.is_active());
     assert_eq!(
         decoded.ir.model.configurations[0].bodies,
         decoded
@@ -5770,7 +5773,7 @@ fn decode_synthesizes_sparse_partition_configuration() {
     let configuration = &decoded.ir.model.configurations[0];
     assert_eq!(configuration.ordinal, 0);
     assert_eq!(configuration.source_index, Some(3));
-    assert!(configuration.active);
+    assert!(configuration.active.is_active());
     assert_eq!(configuration.name, "Config-3");
     assert_eq!(
         configuration.bodies,
@@ -5827,7 +5830,7 @@ fn semantic_writer_remaps_partition_without_remapping_resolved_features() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.configurations[0].source_index, Some(3));
-    assert!(decoded.ir.model.configurations[0].active);
+    assert!(decoded.ir.model.configurations[0].active.is_active());
 
     decoded.ir.model.configurations[0].source_index = Some(5);
     let mut written = Vec::new();
@@ -5942,7 +5945,11 @@ fn semantic_writer_rejects_duplicate_configuration_source_indices() {
     let mut duplicate = decoded.ir.model.configurations[0].clone();
     duplicate.id.0.push_str("-duplicate");
     duplicate.ordinal += 1;
-    duplicate.name.push_str(" Duplicate");
+    duplicate
+        .name
+        .resolved_mut()
+        .expect("resolved configuration name")
+        .push_str(" Duplicate");
     duplicate.native_ref = None;
     decoded.ir.model.configurations.push(duplicate);
 
@@ -5969,7 +5976,11 @@ fn semantic_writer_rejects_empty_and_duplicate_configuration_names() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    decoded.ir.model.configurations[0].name.clear();
+    decoded.ir.model.configurations[0]
+        .name
+        .resolved_mut()
+        .expect("resolved configuration name")
+        .clear();
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
             &decoded.ir,
@@ -5985,7 +5996,7 @@ fn semantic_writer_rejects_empty_and_duplicate_configuration_names() {
     duplicate.ordinal += 1;
     duplicate.source_index = None;
     duplicate.native_ref = None;
-    duplicate.active = false;
+    duplicate.active = false.into();
     decoded.ir.model.configurations.push(duplicate);
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
@@ -11183,10 +11194,6 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
     assert_eq!(depth.dependencies, vec![width.id.clone()]);
     assert_eq!(depth.value, Some(ParameterValue::Length(Length(8.0))));
 
-    // Edit both arenas so the write path enters `sync_neutral_features` (which
-    // checks the retained tree-node role) and `sync_neutral_parameters` (which
-    // recomputes dependency edges against the global-owner set) instead of the
-    // unchanged-baseline short circuits.
     let extrusion = decoded
         .ir
         .model
@@ -14025,10 +14032,6 @@ fn semantic_writer_round_trips_extrusion_with_unrecognized_end_condition() {
         }
     ));
 
-    // The retained record still spells the draft angle as authored; only the
-    // neutral write path canonicalizes it to radians. Asserting both spellings
-    // proves this round trip reached `sync_neutral_features` instead of the
-    // unchanged-baseline short circuit.
     assert_eq!(
         sldprt_native(&decoded.ir).feature_histories[0].features[0].parameters["Draft"],
         "3deg"
@@ -14493,7 +14496,7 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let feature_id = decoded.ir.model.features[0].id.clone();
-    assert!(decoded.ir.model.configurations[0].active);
+    assert!(decoded.ir.model.configurations[0].active.is_active());
     assert_eq!(decoded.ir.model.configurations[0].source_index, Some(1));
     assert!(matches!(
         &decoded.ir.model.configurations[0].feature_states[&feature_id].definition,
@@ -15350,6 +15353,7 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
                 y: 5.0,
                 z: 6.0
             },
+            ..
         }
     ));
 
@@ -15360,7 +15364,8 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
     };
     *origin = Point3::new(-1.0, 0.0, 2.0);
     *direction = Vector3::new(0.0, 1.0, 0.0);
-    let FeatureDefinition::DatumPoint { position } = &mut decoded.ir.model.features[1].definition
+    let FeatureDefinition::DatumPoint { position, .. } =
+        &mut decoded.ir.model.features[1].definition
     else {
         panic!("typed reference point");
     };
@@ -15400,6 +15405,7 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
                 y: 8.0,
                 z: 9.0
             },
+            ..
         }
     ));
 }
@@ -22182,6 +22188,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
         configuration: None,
+        visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),

@@ -1721,6 +1721,162 @@ pub fn nurbs_pcurve_uv(
         .map(|differential| differential.point)
 }
 
+/// Return the signed endpoint-frame offset between two fitted sketch NURBS.
+///
+/// Both curves must be nonperiodic and clamped. Their corresponding endpoint
+/// tangents must be parallel, and both result endpoints must have the same
+/// normal displacement from the source. The result curve can have the opposite
+/// stored traversal and can use a different degree or knot vector. This checks
+/// the boundary-frame invariant of a fitted offset relation; it does not assert
+/// pointwise equality between independently fitted interior parameterizations.
+pub fn fitted_nurbs_offset_frame_distance(
+    source: &crate::sketches::SketchGeometry,
+    result: &crate::sketches::SketchGeometry,
+    linear_tolerance: f64,
+) -> Option<f64> {
+    use crate::sketches::SketchGeometry;
+
+    if !linear_tolerance.is_finite() || linear_tolerance < 0.0 {
+        return None;
+    }
+    let (
+        SketchGeometry::Nurbs {
+            degree: source_degree,
+            knots: source_knots,
+            control_points: source_points,
+            weights: source_weights,
+            periodic: false,
+        },
+        SketchGeometry::Nurbs {
+            degree: result_degree,
+            knots: result_knots,
+            control_points: result_points,
+            weights: result_weights,
+            periodic: false,
+        },
+    ) = (source, result)
+    else {
+        return None;
+    };
+    let source_frames = clamped_nurbs_pcurve_endpoint_frames(
+        *source_degree,
+        source_knots,
+        source_points,
+        source_weights.as_deref(),
+    )?;
+    let result_frames = clamped_nurbs_pcurve_endpoint_frames(
+        *result_degree,
+        result_knots,
+        result_points,
+        result_weights.as_deref(),
+    )?;
+    let same = fitted_nurbs_offset_candidate(source_frames, result_frames, linear_tolerance);
+    let reversed = fitted_nurbs_offset_candidate(
+        source_frames,
+        [
+            (
+                result_frames[1].0,
+                Point2::new(-result_frames[1].1.u, -result_frames[1].1.v),
+            ),
+            (
+                result_frames[0].0,
+                Point2::new(-result_frames[0].1.u, -result_frames[0].1.v),
+            ),
+        ],
+        linear_tolerance,
+    );
+    match (same, reversed) {
+        (Some(distance), None) | (None, Some(distance)) => Some(distance),
+        _ => None,
+    }
+}
+
+fn clamped_nurbs_pcurve_endpoint_frames(
+    degree: u32,
+    knots: &[f64],
+    control_points: &[Point2],
+    weights: Option<&[f64]>,
+) -> Option<[(Point2, Point2); 2]> {
+    let [lower, upper] = nurbs_pcurve_parameter_domain(degree, knots, control_points.len())?;
+    let degree = usize::try_from(degree).ok()?;
+    if degree == 0
+        || control_points.len() < 2
+        || knots.iter().take(degree + 1).any(|knot| *knot != lower)
+        || knots
+            .iter()
+            .skip(control_points.len())
+            .take(degree + 1)
+            .any(|knot| *knot != upper)
+        || weights.is_some_and(|weights| {
+            weights.len() != control_points.len()
+                || weights
+                    .iter()
+                    .any(|weight| !weight.is_finite() || *weight <= 0.0)
+        })
+    {
+        return None;
+    }
+    let start = control_points[0];
+    let end = *control_points.last()?;
+    let start_tangent = control_points
+        .iter()
+        .skip(1)
+        .map(|point| Point2::new(point.u - start.u, point.v - start.v))
+        .find(|tangent| tangent.u.hypot(tangent.v) > 1.0e-12)?;
+    let end_tangent = control_points
+        .iter()
+        .rev()
+        .skip(1)
+        .map(|point| Point2::new(end.u - point.u, end.v - point.v))
+        .find(|tangent| tangent.u.hypot(tangent.v) > 1.0e-12)?;
+    Some([(start, start_tangent), (end, end_tangent)])
+}
+
+fn fitted_nurbs_offset_candidate(
+    source: [(Point2, Point2); 2],
+    result: [(Point2, Point2); 2],
+    linear_tolerance: f64,
+) -> Option<f64> {
+    let mut distances = [0.0; 2];
+    for ordinal in 0..2 {
+        let (source_point, source_tangent) = source[ordinal];
+        let (result_point, result_tangent) = result[ordinal];
+        let source_length = source_tangent.u.hypot(source_tangent.v);
+        let result_length = result_tangent.u.hypot(result_tangent.v);
+        if source_length <= 1.0e-12 || result_length <= 1.0e-12 {
+            return None;
+        }
+        let parallel_error =
+            (source_tangent.u * result_tangent.v - source_tangent.v * result_tangent.u).abs()
+                / (source_length * result_length);
+        if parallel_error > 1.0e-9 {
+            return None;
+        }
+        let offset = Point2::new(
+            result_point.u - source_point.u,
+            result_point.v - source_point.v,
+        );
+        let tangential =
+            (offset.u * source_tangent.u + offset.v * source_tangent.v) / source_length;
+        let coordinate_scale = 1.0
+            + source_point
+                .u
+                .abs()
+                .max(source_point.v.abs())
+                .max(result_point.u.abs())
+                .max(result_point.v.abs());
+        if tangential.abs() > linear_tolerance.max(1.0e-9 * coordinate_scale) {
+            return None;
+        }
+        distances[ordinal] =
+            (-source_tangent.v * offset.u + source_tangent.u * offset.v) / source_length;
+    }
+    let scale = 1.0 + distances[0].abs().max(distances[1].abs());
+    ((distances[0] - distances[1]).abs() <= linear_tolerance.max(1.0e-9 * scale)
+        && distances[0].abs() > linear_tolerance.max(1.0e-9))
+    .then_some((distances[0] + distances[1]) * 0.5)
+}
+
 struct PcurveDifferential {
     point: Point2,
     tangent: Option<Point2>,
@@ -2761,6 +2917,7 @@ fn model_native_revolution_partials(
     axis_origin: Point3,
     axis_direction: Vector3,
     angular_interval: [f64; 2],
+    angular_parameter_interval: Option<[f64; 2]>,
     parameter_interval: Option<[f64; 2]>,
     transposed: bool,
     u: f64,
@@ -2769,9 +2926,28 @@ fn model_native_revolution_partials(
     if !angular_interval.iter().all(|value| value.is_finite()) {
         return None;
     }
-    let (directrix_parameter, angle) = if transposed { (v, u) } else { (u, v) };
+    let (directrix_parameter, angular_parameter) = if transposed { (v, u) } else { (u, v) };
     let (directrix_parameter, derivative) =
         construction_curve_parameter(index, directrix, directrix_parameter, parameter_interval)?;
+    let (angle, angular_derivative) = angular_parameter_interval.map_or_else(
+        || Some((angular_parameter, 1.0)),
+        |parameter_interval| {
+            let parameter_span = parameter_interval[1] - parameter_interval[0];
+            let angular_span = angular_interval[1] - angular_interval[0];
+            if !parameter_interval.iter().all(|value| value.is_finite())
+                || parameter_span == 0.0
+                || !angular_span.is_finite()
+            {
+                return None;
+            }
+            let angular_derivative = angular_span / parameter_span;
+            Some((
+                (angular_parameter - parameter_interval[0])
+                    .mul_add(angular_derivative, angular_interval[0]),
+                angular_derivative,
+            ))
+        },
+    )?;
     let partials = model_axis_revolution_partials(
         index,
         directrix,
@@ -2784,20 +2960,20 @@ fn model_native_revolution_partials(
     if transposed {
         Some(SurfaceSecondPartials {
             point: partials.point,
-            du: partials.du,
+            du: scale_vector(partials.du, angular_derivative),
             dv: scale_vector(partials.dv, derivative),
-            duu: partials.duu,
-            duv: scale_vector(partials.duv, derivative),
+            duu: scale_vector(partials.duu, angular_derivative * angular_derivative),
+            duv: scale_vector(partials.duv, derivative * angular_derivative),
             dvv: scale_vector(partials.dvv, derivative * derivative),
         })
     } else {
         Some(SurfaceSecondPartials {
             point: partials.point,
             du: scale_vector(partials.dv, derivative),
-            dv: partials.du,
+            dv: scale_vector(partials.du, angular_derivative),
             duu: scale_vector(partials.dvv, derivative * derivative),
-            duv: scale_vector(partials.duv, derivative),
-            dvv: partials.duu,
+            duv: scale_vector(partials.duv, derivative * angular_derivative),
+            dvv: scale_vector(partials.duu, angular_derivative * angular_derivative),
         })
     }
 }
@@ -3716,6 +3892,7 @@ pub fn model_surface_point(
             axis_origin,
             axis_direction,
             angular_interval,
+            angular_parameter_interval,
             parameter_interval,
             transposed,
             ..
@@ -3725,6 +3902,7 @@ pub fn model_surface_point(
             *axis_origin,
             *axis_direction,
             *angular_interval,
+            *angular_parameter_interval,
             *parameter_interval,
             *transposed,
             u,
@@ -3764,12 +3942,7 @@ pub fn model_surface_point_by_id(
         }
         visiting.push(surface_id.clone());
         let surface = index.surfaces(&surface_id.0)?;
-        let procedural = index
-            .ir()
-            .model
-            .procedural_surfaces
-            .iter()
-            .find(|procedural| procedural.surface == *surface_id);
+        let procedural = index.procedural_surface_for_surface(&surface_id.0);
         let result = match procedural.map(|procedural| &procedural.definition) {
             Some(ProceduralSurfaceDefinition::AxisRevolution {
                 directrix,
@@ -3811,6 +3984,7 @@ pub fn model_surface_point_by_id(
                 axis_origin,
                 axis_direction,
                 angular_interval,
+                angular_parameter_interval,
                 parameter_interval,
                 transposed,
                 ..
@@ -3820,6 +3994,7 @@ pub fn model_surface_point_by_id(
                 *axis_origin,
                 *axis_direction,
                 *angular_interval,
+                *angular_parameter_interval,
                 *parameter_interval,
                 *transposed,
                 u,
@@ -3981,12 +4156,7 @@ fn model_surface_mapping(
     }
     visiting.push(surface.clone());
     let carrier = index.surfaces(&surface.0)?;
-    let procedural = index
-        .ir()
-        .model
-        .procedural_surfaces
-        .iter()
-        .find(|procedural| procedural.surface == *surface);
+    let procedural = index.procedural_surface_for_surface(&surface.0);
     let result = match procedural.map(|procedural| &procedural.definition) {
         Some(ProceduralSurfaceDefinition::AxisRevolution {
             directrix,
@@ -4051,6 +4221,7 @@ fn model_surface_mapping(
             axis_origin,
             axis_direction,
             angular_interval,
+            angular_parameter_interval,
             parameter_interval,
             transposed,
             ..
@@ -4061,6 +4232,7 @@ fn model_surface_mapping(
                 *axis_origin,
                 *axis_direction,
                 *angular_interval,
+                *angular_parameter_interval,
                 *parameter_interval,
                 *transposed,
                 u,
@@ -5456,6 +5628,55 @@ mod tests {
         assert!((second_partials.duu.y + 2.0).abs() < 1.0e-12);
         assert!(second_partials.duv.norm() < 1.0e-12);
         assert!(second_partials.dvv.norm() < 1.0e-12);
+    }
+
+    #[test]
+    fn revolution_surface_maps_its_angular_parameter_interval() {
+        let directrix_id = CurveId("mapped-profile".into());
+        let surface_id = SurfaceId("mapped-revolution".into());
+        let mut ir = CadIr::empty(crate::units::Units::default());
+        ir.model.curves.push(Curve {
+            id: directrix_id.clone(),
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(2.0, 0.0, 0.0),
+                direction: Vector3::new(0.0, 0.0, 1.0),
+            },
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId("mapped-revolution-construction".into()),
+            surface: surface_id.clone(),
+            definition: ProceduralSurfaceDefinition::Revolution {
+                directrix: directrix_id,
+                axis_origin: Point3::new(0.0, 0.0, 0.0),
+                axis_direction: Vector3::new(0.0, 0.0, 1.0),
+                angular_interval: [0.0, std::f64::consts::PI],
+                angular_parameter_interval: Some([10.0, 14.0]),
+                parameter_interval: None,
+                transposed: false,
+                revision_form: None,
+            },
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        });
+
+        let index = crate::index::ModelIndex::new(&ir);
+        let partials = model_surface_second_partials_by_id(&index, &surface_id, 1.5, 12.0)
+            .expect("mapped revolution partials");
+        assert!(partials.point.x.abs() < 1.0e-12);
+        assert!((partials.point.y - 2.0).abs() < 1.0e-12);
+        assert!((partials.point.z - 1.5).abs() < 1.0e-12);
+        assert_eq!(partials.du, Vector3::new(0.0, 0.0, 1.0));
+        assert!((partials.dv.x + std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+        assert!(partials.dv.y.abs() < 1.0e-12);
+        assert!(partials.dvv.x.abs() < 1.0e-12);
+        assert!((partials.dvv.y + std::f64::consts::PI.powi(2) / 8.0).abs() < 1.0e-12);
+        assert!(partials.duv.norm() < 1.0e-12);
     }
 
     #[test]

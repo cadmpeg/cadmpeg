@@ -1,0 +1,28 @@
+{
+  "container_kind": "iso-10303-21-clear-text",
+  "entries": [
+    {
+      "attributes": {},
+      "compressed_size": 0,
+      "compression": "none",
+      "name": "HEADER",
+      "role": "metadata",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "entity_count": "1",
+        "unknown_entities": "EXAMPLE_STRINGS:1"
+      },
+      "compressed_size": 0,
+      "compression": "none",
+      "name": "DATA[0]",
+      "role": "entity_records",
+      "uncompressed_size": 0
+    }
+  ],
+  "format": "step",
+  "notes": [
+    "schema AP214; edition unspecified"
+  ]
+}

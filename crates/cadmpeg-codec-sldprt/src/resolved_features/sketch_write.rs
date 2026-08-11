@@ -844,10 +844,7 @@ fn compressed_member(payload: &[u8], target: &[u8]) -> Option<(usize, usize)> {
         }
         // Cap inflation at `target.len() + 1` bytes: this scan only accepts a member
         // whose inflated body equals `target`, so any stream that expands past the
-        // target length can never match and need not be materialized. Bounding the
-        // reader here keeps a crafted zlib member from expanding without limit
-        // (present-primitive floor; the general uncapped `inflate_zlib_prefix` path
-        // still awaits the platform `begin_expand`/`ExpandWriter` API).
+        // target length can never match and need not be materialized.
         let ceiling = target.len().saturating_add(1);
         let mut decoder = flate2::read::ZlibDecoder::new(&payload[start..]).take(ceiling as u64);
         let mut inflated = Vec::with_capacity(ceiling);

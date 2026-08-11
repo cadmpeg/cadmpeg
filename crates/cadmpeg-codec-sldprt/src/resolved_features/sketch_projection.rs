@@ -60,10 +60,7 @@ pub fn sketches(
     (sketches, entities, constraints)
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn project_brep(
     brep: &crate::brep::Brep,
     block_offset: usize,
@@ -261,6 +258,7 @@ fn project_brep(
             id: sketch_id,
             name: (!sketch_name.is_empty()).then(|| sketch_name.to_string()),
             configuration: configuration.map(str::to_string),
+            visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin: *origin,
                 normal: *normal,

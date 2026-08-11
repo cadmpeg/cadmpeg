@@ -1151,13 +1151,8 @@ fn extended_geometry_json(
 
 /// Accounting for geometry decoded out of a history record's values.
 ///
-/// History values carry complete `ON_Curve` and `ON_Surface` payloads that this
-/// codec decodes and then stringifies into a native property. Pushing them into
-/// `model.curves` and `model.surfaces` is a hard `Check::CarrierReachability`
-/// error: a free-standing carrier is only reachable through a native *unknown*
-/// record's `links`, and a history record lives in the `history_records` arena.
-/// `untyped` counts every such value so the caller charges the retention once
-/// instead of reporting a clean transfer.
+/// History curves/surfaces are stringified into native properties; putting them
+/// in `model.curves`/`surfaces` fails `Check::CarrierReachability`.
 struct GeometrySink {
     untyped: usize,
     failed: usize,

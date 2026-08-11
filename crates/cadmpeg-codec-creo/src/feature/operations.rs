@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-state recipes, operation names, and model reference names.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::psb;
 
@@ -91,6 +91,10 @@ pub struct FeatureOperation {
     pub stored_name_prefix: Option<u8>,
     /// Procedural recipe name stored in the same current-state record.
     pub recipe: Option<FeatureRecipe>,
+    /// Multiple complete recipe candidates prevent a unique feature projection.
+    pub recipe_conflict: bool,
+    /// Multiple stored display states prevent a unique current-state selection.
+    pub display_state_conflict: bool,
     /// Root feature-definition schema class from a DEPDB recipe prefix.
     pub root_schema_class: Option<u32>,
     /// Previous or parent feature identifier from a DEPDB recipe prefix.
@@ -225,6 +229,51 @@ fn recipe_bindings(payload: &[u8]) -> Vec<(u32, FeatureRecipeBinding)> {
     bindings
 }
 
+fn agreeing_recipe_binding(bindings: &[FeatureRecipeBinding]) -> Option<FeatureRecipeBinding> {
+    let first = *bindings.first()?;
+    bindings
+        .iter()
+        .all(|binding| {
+            binding.recipe == first.recipe
+                && binding.root_schema_class == first.root_schema_class
+                && binding.parent_feature_id == first.parent_feature_id
+        })
+        .then_some(first)
+}
+
+fn inline_recipe_resolution(record: &[u8]) -> (Option<FeatureRecipe>, bool) {
+    let mut found = None;
+    for (name, recipe) in FEATURE_RECIPES {
+        for _ in record.windows(name.len()).filter(|window| *window == *name) {
+            if found.is_some() {
+                return (None, true);
+            }
+            found = Some(*recipe);
+        }
+    }
+    (found, false)
+}
+
+fn conflicting_recipe_features(bindings: &[(u32, FeatureRecipeBinding)]) -> BTreeSet<u32> {
+    let mut by_feature = BTreeMap::<u32, Vec<FeatureRecipeBinding>>::new();
+    for (feature_id, binding) in bindings {
+        by_feature.entry(*feature_id).or_default().push(*binding);
+    }
+    by_feature
+        .into_iter()
+        .filter_map(|(feature_id, bindings)| {
+            agreeing_recipe_binding(&bindings)
+                .is_none()
+                .then_some(feature_id)
+        })
+        .collect()
+}
+
+fn agreeing_value<T: Clone + Eq>(mut values: impl Iterator<Item = T>) -> Option<T> {
+    let first = values.next()?;
+    values.all(|value| value == first).then_some(first)
+}
+
 /// Decode every NUL-terminated `<Kind> id <N>` operation state and bounded
 /// procedural-recipe record from one feature-state namespace, in byte order.
 pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
@@ -235,6 +284,7 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
             || matches!(byte, b' ' | b'_' | b'-' | b'/' | b'(' | b')')
     };
     let bound_recipes = recipe_bindings(payload);
+    let conflicting_features = conflicting_recipe_features(&bound_recipes);
     let recipe_binding_counts = bound_recipes.iter().fold(
         BTreeMap::<u32, usize>::new(),
         |mut counts, (feature_id, _)| {
@@ -289,18 +339,15 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
             .filter(|(candidate, _)| *candidate == feature_id)
             .map(|(_, binding)| *binding)
             .collect::<Vec<_>>();
-        let bound_recipe = match matching_recipes.as_slice() {
-            [binding] => Some(*binding),
-            _ => None,
+        let bound_recipe = agreeing_recipe_binding(&matching_recipes);
+        let (recipe, recipe_conflict) = if matching_recipes.is_empty() {
+            inline_recipe_resolution(record)
+        } else {
+            (
+                bound_recipe.map(|binding| binding.recipe),
+                bound_recipe.is_none(),
+            )
         };
-        let recipe = bound_recipe.map(|binding| binding.recipe).or_else(|| {
-            FEATURE_RECIPES.iter().copied().find_map(|(name, recipe)| {
-                record
-                    .windows(name.len())
-                    .any(|window| window == name)
-                    .then_some(recipe)
-            })
-        });
         result.push(FeatureOperation {
             feature_id,
             kind: String::from_utf8_lossy(family).into_owned(),
@@ -320,6 +367,8 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
             ),
             stored_name_prefix,
             recipe,
+            recipe_conflict,
+            display_state_conflict: false,
             root_schema_class: bound_recipe.map(|binding| binding.root_schema_class),
             parent_feature_id: bound_recipe.map(|binding| binding.parent_feature_id),
             offset,
@@ -350,6 +399,8 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
             identifier_keyword: None,
             stored_name_prefix: None,
             recipe: Some(binding.recipe),
+            recipe_conflict: conflicting_features.contains(&feature_id),
+            display_state_conflict: false,
             root_schema_class: Some(binding.root_schema_class),
             parent_feature_id: Some(binding.parent_feature_id),
             offset: binding.offset,
@@ -357,17 +408,91 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
         });
     }
     result.sort_by_key(|operation| operation.offset);
+    let conflicting_display_features = result
+        .iter()
+        .filter(|operation| operation.display_name_stored)
+        .fold(BTreeMap::<u32, usize>::new(), |mut counts, operation| {
+            *counts.entry(operation.feature_id).or_default() += 1;
+            counts
+        })
+        .into_iter()
+        .filter_map(|(feature_id, count)| (count > 1).then_some(feature_id))
+        .collect::<BTreeSet<_>>();
+    for operation in &mut result {
+        operation.display_state_conflict =
+            conflicting_display_features.contains(&operation.feature_id);
+    }
     result
 }
 
-/// Decode the current operation state for each feature identifier.
+/// Decode one unambiguous or consensus operation projection per feature identifier.
 pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
-    let mut current = operation_states(payload)
-        .into_iter()
-        .map(|operation| (operation.feature_id, operation))
-        .collect::<BTreeMap<_, _>>()
+    let bindings = recipe_bindings(payload);
+    let conflicting_features = conflicting_recipe_features(&bindings);
+    let mut by_feature = BTreeMap::<u32, Vec<FeatureOperation>>::new();
+    for operation in operation_states(payload) {
+        by_feature
+            .entry(operation.feature_id)
+            .or_default()
+            .push(operation);
+    }
+    let mut current = by_feature
         .into_values()
+        .filter_map(|states| {
+            let display_states = states
+                .iter()
+                .filter(|state| state.display_name_stored)
+                .collect::<Vec<_>>();
+            match display_states.as_slice() {
+                [] => states.first().cloned(),
+                [display] => Some((*display).clone()),
+                displays => {
+                    let mut projection = (*displays.last()?).clone();
+                    projection.offset = displays.first()?.offset;
+                    projection.state_offset = displays.first()?.state_offset;
+                    projection.recipe_conflict = displays.iter().any(|state| state.recipe_conflict);
+                    projection.display_state_conflict = true;
+                    projection.kind =
+                        agreeing_value(displays.iter().map(|state| state.kind.clone()))
+                            .or_else(|| {
+                                agreeing_value(displays.iter().map(|state| state.recipe))
+                                    .flatten()
+                                    .map(|recipe| match recipe.kind() {
+                                        FeatureRecipeKind::Extrude => "Extrude".to_string(),
+                                        FeatureRecipeKind::Revolve => "Revolve".to_string(),
+                                    })
+                            })
+                            .unwrap_or_else(|| "Native Feature".to_string());
+                    projection.display_name_stored = false;
+                    projection.stored_name = None;
+                    projection.stored_name_bytes = None;
+                    projection.identifier_keyword = None;
+                    projection.stored_name_prefix = None;
+                    projection.recipe =
+                        agreeing_value(displays.iter().map(|state| state.recipe)).flatten();
+                    projection.root_schema_class =
+                        agreeing_value(displays.iter().map(|state| state.root_schema_class))
+                            .flatten();
+                    projection.parent_feature_id =
+                        agreeing_value(displays.iter().map(|state| state.parent_feature_id))
+                            .flatten();
+                    Some(projection)
+                }
+            }
+        })
         .collect::<Vec<_>>();
+    for operation in &mut current {
+        if !conflicting_features.contains(&operation.feature_id) {
+            continue;
+        }
+        operation.recipe = None;
+        operation.recipe_conflict = true;
+        operation.root_schema_class = None;
+        operation.parent_feature_id = None;
+        if !operation.display_name_stored {
+            operation.kind = "Native Feature".to_string();
+        }
+    }
     current.sort_by_key(|operation| operation.offset);
     current
 }

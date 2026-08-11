@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Focused validation checks for sketches.
-#![allow(
-    clippy::wildcard_imports,
-    reason = "Split checks share private orchestration context."
-)]
+#![allow(clippy::wildcard_imports)]
 
 use super::*;
 use crate::sketches::{
@@ -117,6 +114,7 @@ fn sketch_curve_offset_matches(
     source: &SketchGeometry,
     result: &SketchGeometry,
     expected: f64,
+    linear_tolerance: f64,
 ) -> bool {
     if let (
         SketchGeometry::Arc {
@@ -143,16 +141,43 @@ fn sketch_curve_offset_matches(
                 .max(source_radius.0)
                 .max(result_radius.0)
                 .max(expected.abs());
-        let sweep = source_end.0 - source_start.0;
+        let source_sweep = source_end.0 - source_start.0;
+        let result_sweep = result_end.0 - result_start.0;
+        let angle_in_sweep = |angle: f64, start: f64, end: f64| {
+            let sweep = end - start;
+            if sweep.abs() >= std::f64::consts::TAU - 1.0e-9 {
+                return true;
+            }
+            if sweep.is_sign_positive() {
+                (angle - start).rem_euclid(std::f64::consts::TAU) <= sweep + 1.0e-9
+            } else {
+                (start - angle).rem_euclid(std::f64::consts::TAU) <= -sweep + 1.0e-9
+            }
+        };
+        let angular_overlap = [source_start.0, source_end.0]
+            .into_iter()
+            .any(|angle| angle_in_sweep(angle, result_start.0, result_end.0))
+            || [result_start.0, result_end.0]
+                .into_iter()
+                .any(|angle| angle_in_sweep(angle, source_start.0, source_end.0));
         return source_radius.0 > 0.0
             && result_radius.0 > 0.0
-            && sweep.abs() > 1.0e-12
+            && source_sweep.abs() > 1.0e-12
+            && result_sweep.abs() > 1.0e-12
+            && source_sweep.signum() == result_sweep.signum()
+            && angular_overlap
             && (source_center.u - result_center.u).abs() <= 1.0e-9 * scale
             && (source_center.v - result_center.v).abs() <= 1.0e-9 * scale
-            && (source_start.0 - result_start.0).abs() <= 1.0e-9
-            && (source_end.0 - result_end.0).abs() <= 1.0e-9
-            && (sweep.signum() * (source_radius.0 - result_radius.0) - expected).abs()
+            && (source_sweep.signum() * (source_radius.0 - result_radius.0) - expected).abs()
                 <= 1.0e-9 * scale;
+    }
+
+    if let Some(distance) =
+        crate::eval::fitted_nurbs_offset_frame_distance(source, result, linear_tolerance)
+    {
+        let scale = 1.0 + distance.abs().max(expected.abs());
+        return expected.is_finite()
+            && (distance - expected).abs() <= linear_tolerance.max(1.0e-9 * scale);
     }
 
     let (
@@ -1629,7 +1654,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         } else {
                             distance.0
                         };
-                        sketch_curve_offset_matches(source, result, expected)
+                        sketch_curve_offset_matches(source, result, expected, ir.tolerances.linear)
                     });
                 if !valid {
                     finding(
@@ -1845,5 +1870,39 @@ fn constraint_loci(definition: &Constraint) -> Vec<&SketchLocus> {
             elements.iter().collect()
         }
         _ => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sketch_curve_offset_matches;
+    use crate::features::{Angle, Length};
+    use crate::math::Point2;
+    use crate::sketches::SketchGeometry;
+
+    #[test]
+    fn trimmed_concentric_arcs_validate_as_offsets() {
+        let arc = |radius, start, end| SketchGeometry::Arc {
+            center: Point2::new(3.0, -4.0),
+            radius: Length(radius),
+            start_angle: Angle(start),
+            end_angle: Angle(end),
+        };
+        let source = arc(2.0, 0.0, std::f64::consts::FRAC_PI_2);
+        let trimmed_result = arc(5.0, 0.1, 1.4);
+        let disjoint_result = arc(5.0, std::f64::consts::PI, 3.0 * std::f64::consts::FRAC_PI_2);
+
+        assert!(sketch_curve_offset_matches(
+            &source,
+            &trimmed_result,
+            -3.0,
+            1.0e-6,
+        ));
+        assert!(!sketch_curve_offset_matches(
+            &source,
+            &disjoint_result,
+            -3.0,
+            1.0e-6,
+        ));
     }
 }

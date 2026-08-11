@@ -8,7 +8,9 @@ Record offsets, field widths, and endianness are also maintained as a machine-ch
 
 ## 1. Container
 
-A PSB file begins with an ASCII UGC header and table of contents, followed by named binary sections.
+A PSB file begins with an ASCII UGC header. The legacy persistence generation
+uses an ASCII `P_OBJECT` body, either monolithic or followed by named sections.
+Later generations use a table of contents followed by named binary sections.
 
 ```text
 #UGC:2 P ...
@@ -26,6 +28,120 @@ current relation model name after removing that padding and suffix.
 `hhh` is a three-digit ASCII hexadecimal byte count for `name`; padding after
 those bytes is not part of the name. Exactly one record establishes model
 identity; an absent or repeated record leaves model identity undefined.
+
+In the legacy ASCII layout, the byte immediately after
+`#-END_OF_UGC_HEADER\n` begins `#P_OBJECT <schema>\n`. `schema` is one or more
+ASCII decimal digits. The object ends with `#END_OF_P_OBJECT`, followed
+immediately by `\n#Pro/ENGINEER`. These header-adjacent start, end, and banner
+markers together select the legacy ASCII layout. The same marker bytes later
+in a payload do not select the layout. The banner's `Version <release>`,
+`Release <release>`, and `Release<release>` forms store the product release.
+A banner without one of these forms has no product release token. Legacy ASCII
+data uses `@<name>` field declarations and ASCII value rows. It can continue as
+one object or use an undecorated named-section directory.
+
+The named-section form stores its directory after the product banner:
+
+```text
+@Toc <toc-id> 0
+0 <toc-id> ->
+@entry <entry-id> 10
+1 <entry-id> [<capacity>]
+2 <entry-id> <name> <offset-hex> <stored-length-hex> 0 <version>###...
+```
+
+`#` bytes pad each entry row. A row containing only padding is unused. Each
+section offset is relative to the first byte of the `#Pro/ENGINEER` banner.
+The field before `version` is zero, and `version` is ASCII decimal. The stored
+length includes the `#<name>\n` header. A populated entry is valid only when
+its computed offset contains that exact header and its stored extent is inside
+the file. Valid directory entries are authoritative and ordered by their
+computed offsets. A monolithic legacy body has no named sections; its outer
+`END_OF_P_OBJECT` and `END_OF_UGC` markers are framing, not sections.
+
+The outer object and each named ASCII attribute section define independent
+attribute-ID scopes. An ASCII attribute scope contains these line records:
+
+```text
+@<name> <attribute-id> <type-code>
+<depth> <attribute-id> <payload>
+$<continued-payload>
+```
+
+The declaration binds its decimal attribute identifier to a name and decimal
+type code in the current scope. A value row stores a decimal object-tree depth,
+a locally declared attribute identifier, and the remaining bytes of the line
+as its payload. A `$` row continues the immediately preceding value row; a
+`$`-prefixed line in any other context is not a continuation record. Attribute
+identifiers can be reused in another scope. Named sections with a byte payload
+that does not begin with an attribute declaration do not use this line grammar.
+
+Type 0 stores object nodes. `->` and an empty payload are distinct non-null
+object forms, and `NULL` is the null form. A positive dimension header stores an
+object array. Its direct elements are the following rows at depth one greater
+with the same attribute identifier; element subtrees can contain rows at still
+greater depths. The direct-element count must equal the product of the extents
+for a complete array. A header without direct element rows stores no default
+objects.
+
+Within one attribute scope, a row at depth `d > 0` is owned by the most recent
+preceding type-0 row at depth `d - 1`. A row at depth zero has no parent. A new
+row at a depth closes the prior node at that depth and all of its deeper
+descendants. This parent relation applies independently of the row's value
+type.
+
+A type-1 scalar payload is a signed decimal 32-bit integer. A type-1 array uses
+the positive decimal extent header, continuation rows, comma separators,
+terminal-comma rule, and `n*value` run-length form defined below for type 2,
+with signed decimal integers in place of compact reals. A one-element `[1]`
+array can instead store its integer in the immediately following value row at
+depth one greater and with the same attribute identifier. The sum of run counts
+must equal the product of the extents. A type-1 array header without element
+rows stores no integer elements; its declared extents do not supply default
+values.
+
+A type-2 scalar payload is one through sixteen uppercase hexadecimal digits.
+The digits are the most-significant nibbles of an IEEE-754 binary64 bit word.
+Missing low nibbles are zero. A terminal `R` instead repeats the last written
+nibble through the low end of the word. Thus `3FF` is `3FF0000000000000` and
+`40396R` is `4039666666666666`. Only finite decoded values are semantic reals.
+
+A type-2 array header is one or more positive decimal extents written as
+`[d0][d1]...`. Immediately following `$` rows store its linear element sequence
+as comma-separated compact-real tokens. A token `n*H` repeats compact real `H`
+`n` times. A terminal comma before the line break adds no element. The sum of
+run counts must equal the product of the extents. A one-element `[1]` array can
+instead store its compact-real token in the immediately following value row at
+depth one greater and with the same attribute identifier. An incomplete array
+does not produce a typed value.
+
+Type 3 stores a nullable byte-string scalar. The exact token `NULL` is null;
+all other payloads, including an empty payload, are stored byte strings. Type 4
+stores its complete scalar payload as a byte string; `NULL` has no special
+meaning for type 4. Neither type uses continuation rows.
+
+Type 6 uses the type-2 compact-real scalar and array grammar. Its array run
+count must equal the product of the declared extents.
+
+Types 5, 7, 9, and 11 store unsigned decimal 32-bit scalars. Their arrays use
+the positive decimal extent headers, `$` continuation rows, comma separators,
+terminal-comma rule, and `n*value` run-length form defined for type 1. The sum
+of run counts must equal the product of the extents. A one-element `[1]` array
+can instead store its unsigned decimal value in the immediately following row
+at depth one greater and with the same attribute identifier. A header without
+element rows stores no default values.
+
+A type-10 scalar stores the remaining line payload as a byte string. The exact
+token `NULL` is a null string, while an empty payload is a stored zero-length
+string. The payload has no in-band character-set selector or normalization
+marker; its byte sequence is authoritative.
+
+A type-10 array header is one or more positive decimal extents. The first
+extent gives the number of direct string elements. Later extents do not
+multiply the element-row count. The direct elements are the following rows at
+depth one greater with the same attribute identifier. Each direct row stores
+one scalar type-10 value. An incomplete array retains its declared dimensions
+and present elements; missing rows do not supply default strings.
 
 A body-section header is `#<name>\n`. The first header follows the TOC's
 newline. Later headers follow either the text delimiter `#\n` or the PSB
@@ -72,17 +188,19 @@ PSB does not use the Parasolid neutral-binary encoding. Parasolid terminology ma
 
 ### 1.1 Layout families
 
-| Layout |            Section count | Geometry representation                                               |
-| ------ | -----------------------: | --------------------------------------------------------------------- |
-| ND     | approximately 40 or more | Dense PSB rows in `VisibGeom`, including `srf_array` and `crv_array`. |
-| DEPDB  |         approximately 12 | Sparse PSB views and feature/section records.                         |
+| Layout       |            Section count | Geometry representation                                               |
+| ------------ | -----------------------: | --------------------------------------------------------------------- |
+| Legacy ASCII |            0 or multiple | ASCII attribute persistence, optionally partitioned into named sections. |
+| ND           | approximately 40 or more | Dense PSB rows in `VisibGeom`, including `srf_array` and `crv_array`. |
+| DEPDB        |         approximately 12 | Sparse PSB views and feature/section records.                         |
 
 The outer layout discriminator is the first record in `DEPDB_DATA`. A
 `DEPDB_DATA` payload that begins with `e0 00 p_dep_db\0 e3` is a DEPDB layout.
 Names of embedded records may carry an `ND:` decoration; that decoration does
 not change the outer layout. An `ND:` decoration on an outer section identifies
-an ND layout. A file with neither discriminator is an unknown layout. Section
-cardinality is descriptive and does not select a layout.
+an ND layout. The complete header-adjacent `P_OBJECT` framing identifies the
+legacy ASCII layout. A file with none of these discriminators is an unknown
+layout. Section cardinality is descriptive and does not select a layout.
 
 ### 1.2 Section map
 
@@ -108,6 +226,13 @@ cardinality is descriptive and does not select a layout.
 | ----: | ----------------------------------- |
 |  `51` | millimeter-Newton-Second (`mmNs`)   |
 |  `55` | millimeter-Kilogram-Second (`mmKs`) |
+
+In legacy ASCII persistence, the unique type-10 `principal_sys_units` scalar
+identifies the active system. `millimeter Newton Second (mmNs)` stores lengths
+in millimeters. `Inch lbm Second (Pro/E Default)` stores lengths in inches, so
+lengths are multiplied by `25.4` for canonical millimeters. An absent,
+repeated, differently typed, continued, or unrecognized scalar does not select
+a coordinate unit system.
 
 Unit-definition records can include inactive units. `history_scale` is a version/history array and does not scale coordinates.
 
@@ -365,6 +490,10 @@ component. The resulting support directions are `(a, 0, b)` and
 The compact axis form begins `18 0f 18 e5 0f e4 18 e4`; that prefix defines
 support directions `(1, 0, 0)` and `(0, 0, -1)` with a zero middle rank. Its
 three following scalars are the origin coordinates.
+The prefixes `0f 18 e6 0f 18 10 18` and
+`18 e4 10 e4 18 e5 0f 18` each define support directions `(0, 1, 0)` and
+`(0, 0, 1)` with a zero middle rank. Their three following scalars are the
+origin coordinates. The resulting plane normal is `(1, 0, 0)`.
 A trailing-rank orthogonal form stores `a, 0, b, e4, 0, m`, a zero-rank
 triple, and three origin coordinates. It has the same `a² + b² = 1`,
 `|m| = |a|`, copied-`b`, and negated-`a` semantics as the prefixed form.
@@ -1524,6 +1653,11 @@ coordinate type `2` and identify distinct point keys. The final row has type
 `7` and scalar value zero. The equation asserts equality of the selected
 ordinates. An incomplete auxiliary row, a nonzero auxiliary value, a mixed
 coordinate type, or an ambiguous point key leaves the equation native.
+Function `5` has a direct scalar-equality form with two type-6 rows followed by
+a type-5 selector row whose value is zero. The first two scalar values are
+equal. A finite value on either type-6 row supplies a missing value on the
+other row. Conflicting finite values, a missing or nonzero selector, another
+type sequence, or an inactive solver incidence leaves this form native.
 Function `33` has nine argument slots. The first eight slots are four type-1 and
 type-2 coordinate pairs. The first two pairs identify one endpoint pair and the
 next two pairs identify the other. The final row has type `7` and scalar value
@@ -1727,14 +1861,8 @@ stored endpoint roles. In the affine section solver, an active type-twelve
 form equates the two endpoint `v` ordinates and an active type-thirteen form
 equates their `u` ordinates. A nonzero sense or a non-arc entity does not
 satisfy either form.
-A one-item type-thirty-three incidence with sense `10` fixes the uniquely
-emitted sketch entity with that external identity in sketch coordinates. The
-entity may have typed or native geometry, and the source `segtab` need not be
-complete once the emitted entity identity is unique. The `flags` value does not
-change this interpretation. It maps to the neutral fixed-entity constraint.
-The constraint activity is the low bit of the stored status; the entity
-identity remains the constraint entity for either activity state. An ambiguous
-or non-emitted entity identity, or any other sense, remains a native incidence.
+A one-item type-thirty-three incidence retains its type, flags, status, entity
+identity, and item sense.
 A one-item type-one incidence with sense zero makes the referenced line
 horizontal. A one-item type-two incidence with sense zero makes the referenced
 line vertical. The unary incidence establishes the referenced entity's line
@@ -2229,6 +2357,12 @@ rather than performing a solid boolean.
 The fill operation creates a planar quilt from one closed sketch boundary. It
 has no adjacent support faces, imposes positional continuity at the boundary,
 and does not merge the result into an existing quilt.
+Exactly one section transform bound to a Fill feature selects its section
+definition by definition identifier and section offset. If the Fill has no
+bound section transform, exactly one definition owned by the Fill supplies the
+sketch boundary. Multiple bound transforms, an unmatched bound transform, or
+competing owned definitions leave the boundary unresolved. The selected sketch
+identity transfers independently of sketch placement and profile resolution.
 `Merge <decimal-ordinal>` identifies a surface-merge operation.
 Root feature-definition class `946` identifies the same surface-merge family
 when the current-state record omits its display name. The class value does not
@@ -2254,6 +2388,9 @@ inherits its count from the preceding class-`946` row in the same feature
 stream when its `f8 <count>` opener is omitted. A named row supplies the same
 state through `geoms_affected`, `edgs_affected`, and `qlts_affected`.
 `Extrude <decimal-ordinal>` identifies an extrusion operation.
+`Intersect <decimal-ordinal>` with exactly one feature-owned class-`29` entity
+table containing materialized surfaces identifies a section-shape operation
+that creates curves at the intersections of two selected shape sets.
 `Boundary Blend <decimal-ordinal>` identifies a boundary-surface operation.
 `Protrusion` identifies a linear extrusion operation; absent section operands
 leave its profile, direction, and extent unresolved without changing its family.
@@ -2291,12 +2428,13 @@ identifies a reflection operation.
 Operation names end in ` id <N>` or ` ID <N>`; the stored case follows the
 name's localization. An ASCII `o`, `x`, `y`, or `z` byte immediately preceding
 an uppercase operation-family name is a stored-name prefix, not part of the
-family name and not a current-state selector. Multiple operation names with the same feature identifier are ordered
-stored states; the last occurrence is the current state. Decoding the current
-state does not discard the preceding state records. State ordinals are local to
-one feature identifier and increase in byte order from zero. A stored state
-retains the prefix-inclusive name bytes, the `id`/`ID` spelling, and the offset
-of the optional prefix; a recipe-only state has no stored operation name.
+family name. Multiple operation names with the same feature identifier are
+ordered stored-state candidates. No candidate is the current state without a
+state selector. State ordinals are local to one feature identifier and increase
+in byte order from zero. Each candidate retains the prefix-inclusive name
+bytes, the `id`/`ID` spelling, and the offset of the optional prefix. The
+neutral projection retains only operation fields on which all candidates
+agree. A recipe-only state has no stored operation name.
 
 `MdlRefInfo` feature-reference entries encode
 `f7 0x71 <own-ref-id> <reference-type> <feature-id> <name> 00 <own-ref-id> <own-ref-id>`.
@@ -2312,15 +2450,19 @@ Feature rows supply a schema class only when the current-state record does not
 carry one and all rows for that feature agree on one class. Row order does not
 override the current-state class. The current state's recipe and parent
 identifier likewise define the neutral operation family, Boolean effect,
-source tag, parent, and dependency. A differing recipe or parent in an earlier
-stored state remains history and does not veto the current projection.
+source tag, parent, and dependency. Multiple recipe bindings for one feature
+must agree on the recipe, root schema class, and parent identifier.
 
 Within one current-state record, `protextrude` identifies an additive linear
 section sweep, `cutextrude` identifies a subtractive linear section sweep,
 `protrevolve` identifies an additive rotational section sweep, and
 `cutrevolve` identifies a subtractive rotational section sweep. The recipe
 name precedes the `<Kind> id <N>` operation name and applies to that feature
-state.
+state when it is the sole complete recipe name in the bounded record. Multiple
+DEPDB bindings for one feature apply only when their recipe, schema class, and
+parent identifier agree. Conflicting recipe candidates leave the recipe,
+recipe-bound schema class, parent, operation family, and Boolean effect
+unresolved.
 DEPDB stores the same join in
 `f7 <record-ref> <feature-id> <schema-class> f6 <parent-id> <display-name> 00 f6 00 <recipe> 00`.
 The feature identifier owns the operation even when no localized `ID <N>` name
@@ -2641,14 +2783,111 @@ the neutral hole position, twice the square half-span is its diameter, and the
 four-entry form is a simple cylindrical hole.
 The termination plane is the flat blind bottom of that simple hole.
 
-In a class-911 table-class-29 generated table, a cylindrical stepped entry has
-two distinct source section entities that each generate exactly two
-materialized cylinder rows and one other source entity that generates one
-materialized plane row plus one rowless face use. The paired cylinder rows are
-the two patches of each cylindrical step. The plane is an axis-containing
-support and does not define the step depth. When the feature generates no conical surface, this structure
-selects counterbore form independently of whether both cylinder carriers and
-the counterbore dimensions are evaluable.
+In the paired-replay form of a class-911 table-class-29 generated table, an
+adjacent class-204 and class-203 pair opens a replay run of the contiguous
+class-200 entries that follow it. The next class-204 entry or the next
+non-class-200 entry closes the run. Exactly two runs contain materialized
+surfaces. These two materialization runs have the same nonzero source roster
+and pair entries by source identifier. Additional replay runs contain only
+rowless topology uses. Reuse of a source identifier in those topology runs
+does not add an entry to its materialization pair. An optional source-zero
+entry is rowless and occurs at most once. An entry without a source identifier
+is also rowless. Neither form participates in the paired source roster.
+
+A cylindrical stepped entry has two source section entities whose paired
+materialization entries are both cylinder rows and one other source whose pair
+contains one materialized plane row and one rowless face use. The paired
+cylinder rows are the two patches of each cylindrical step. The plane is an
+axis-normal step support. A complete local-system frame on that plane stores a
+point on the hole axis as its origin, and its normal supplies the unoriented
+hole axis. The frame alone does not assign the entry position, drilling
+direction, or step depth. When the feature generates no conical surface, this
+structure selects counterbore form independently of whether both cylinder
+carriers and the counterbore dimensions are evaluable.
+
+A class-911 table-class-29 simple-drilled recipe has one paired source that
+materializes two cone rows, one paired source that materializes two cylinder
+rows, and either two or three other paired sources that each contain two
+rowless face uses. Every source in the materialization roster has one of these
+forms. A complete three-row class-911 external-ID-2 dimension table assigns
+external ID `0` to the bore radius, ID `1` to the included drill-point angle,
+and ID `2` to the blind depth. IDs `0` and `2` have
+dimension type `2` and millimetre units. ID `1` has dimension type `10` and
+radian units. The bore radius is positive, the depth is nonzero, and the
+included angle is strictly between zero and π. The neutral bore diameter is
+twice the stored radius. The depth magnitude is the blind length; its sign is
+an orientation state and does not change that length. Only a table with these
+exact three row signatures participates in the external-ID-2 family. Other
+three-row layouts are independent template families.
+
+The recipe with exactly two rowless source pairs selects the external-ID-2
+depth family. The recipe with exactly three rowless source pairs selects the
+external-ID-4 depth family. The external-ID-4 family assigns ID `0` to the bore
+radius, ID `1` to the included drill-point angle, and ID `4` to the blind
+depth. Its types, units, value invariants, and neutral conversions are the same
+as the external-ID-2 family. A different rowless-pair count does not define a
+simple-drilled recipe.
+
+Each materialized cylinder row in this recipe has a type-24 compound-close
+parameter record. The last six scalar slots in the final frame are two
+three-coordinate envelope corners. An entity-reference suffix or exact
+`f7 17` compound-close suffix terminates this frame. Normalize the two endpoint
+values on each axis independently. When the two cylinder rows have equal
+normalized intervals on an axis, their common nonzero interval length is a
+candidate span. When one normalized interval ends where the other starts, the
+nonzero length of their union is a candidate span. When the intervals share
+exactly one lower or upper bound, the nonzero difference between their other
+bounds is a candidate span. A dimension tuple matches the generated cylinders
+when its bore diameter and blind-depth magnitude match candidate spans on two
+distinct axes.
+
+When the blind depth is the unique common span on one axis, the two remaining
+axes define the bore cross-section only if one has a common diameter span and
+the other has two adjacent intervals whose union has the same diameter. The
+two raw corner pairs have the same signed depth delta. Their first axial
+coordinate is the hole entry coordinate, the radial union midpoint is the hole
+axis position, and the sign of the depth delta is the hole direction.
+
+A one-sided cylinder-patch pair shares exactly one normalized bound on a radial
+axis. Its two non-shared bounds differ by the bore diameter. The midpoint of
+those non-shared bounds is the hole-axis coordinate on that radial axis. The
+other radial axis has one common span equal to the bore diameter and supplies
+its midpoint. The blind depth remains the unique common axial span, and the two
+raw corner pairs have the same signed depth delta. Their first axial coordinate
+and signed delta supply the hole entry coordinate and direction as in the
+complementary form. Pairs whose non-shared bounds do not differ by the bore
+diameter do not supply placement.
+
+A clipped radial cylinder-patch pair has the blind depth as its unique common
+axial span, one adjacent-union radial span equal to the bore diameter, and one
+common nonzero radial span that is not the bore diameter. Its two corresponding
+cone rows each have a compound-close parameter body with exactly seven scalar
+tokens. In generated order, the final three cone tokens equal the corresponding
+cylinder envelope's second radial coordinates and first axial coordinate. The
+cone coordinate on the clipped radial axis must be equal in both rows. That
+coordinate is the missing hole-axis coordinate. The adjacent-union midpoint is
+the other radial coordinate. The first axial coordinate and the common signed
+axial delta supply the entry coordinate and direction. This cross-record form
+does not make other cone terminal triples model-space origins.
+
+When the cylinder envelope is available, complete three-row class-911 tables
+whose diameter and depth do not match it do not participate in template
+selection. All participating tables must supply one equal tuple. When the
+envelope is unavailable, every complete three-row class-911 table in the
+recipe-selected dimension family must supply one equal tuple. The recipe
+transfers as a simple drilled hole with that diameter, angle, and blind depth.
+Each complete positional cylinder frame on the paired cylinder rows must have
+the dimension-assigned bore radius. The available frames must define one
+coaxial line; origins may differ only along that line and axis signs may differ.
+One available frame is sufficient because the recipe binds both rows to one
+cylinder source. This carrier supplies an unoriented hole-axis placement. It
+does not supply the hole entry position or drilling direction.
+The dimension tuple alone does not assign the hole axis, entry position,
+placement face, or depth-to-tip state.
+Unsourced class-200 entries are admitted only when they are rowless
+non-surface entities; they do not create source section entity groups.
+When a feature owns multiple table-class-29 tables, exactly one table must have
+the simple-drilled recipe. Zero or multiple matching tables do not select it.
 
 An instantiated class-911 positional definition inherits schema identifier
 `911` from its preceding `feat_defs_911` template. Its complete four-row
@@ -2658,22 +2897,69 @@ counterbore radius. IDs `0`, `1`, and `3` have dimension type `2`; ID `2` has
 dimension type `1`. Bore and counterbore diameters are twice their stored
 radii. A replay supplies neutral hole dimensions only when its ID-3 radius
 equals a generated larger-cylinder radius for that hole and all matching
-replays agree. A counterbore-form hole with this complete dimensional tuple has
-a resolved counterbore entry; otherwise the identified counterbore form remains
+replays agree.
+
+A complete five-row envelope-bound counterbore table assigns external ID `0`
+to the counterbore depth, ID `1` to the bore radius, ID `2` to the included
+drill-point angle, ID `3` to the counterbore radius, and ID `4` to the placement
+distance. A four-row table either omits ID `2` and retains IDs `0`, `1`, `3`,
+and `4`, or shifts the last two fields down so that ID `2` is the counterbore
+radius and ID `3` is the placement distance. Linear rows have millimetre units.
+The depth has dimension type `1`; radii and placement distances have dimension
+type `2`. The included angle has dimension type `10` and radian units. The
+depth is nonzero. Its magnitude is the counterbore depth, and its sign is an
+orientation state. Both radii are positive, the counterbore radius is larger
+than the bore radius, and a present included angle is strictly between zero and
+π.
+
+Each of the two cylinder source groups has two type-24 terminal corner
+envelopes. One group has the bore diameter as a candidate span on exactly two
+axes. The other has the counterbore diameter on exactly two axes and the
+counterbore depth on the remaining axis. Candidate spans are common spans,
+adjacent-union spans, and one-sided non-shared-bound differences. When both
+groups have complete envelopes, the source assignment must be unique. When
+exactly one group has complete envelopes, it must match exactly one of these
+two roles. Exactly one class-29 entity table contains materialized source-bound
+cylinders. Additional class-29 tables without materialized source-bound
+cylinders do not participate. Tables whose dimensions do not match the
+available patch spans do not participate, and all participating tables supply
+one equal diameter and depth tuple. Placement distance does not participate in
+this envelope binding.
+
+When neither cylinder source group supplies complete terminal corner envelopes,
+every complete four-row or five-row class-911 table must have this exact
+dimension signature and must supply one equal diameter and depth tuple. A
+different complete four-row or five-row layout prevents this unbound replay
+selection. This fallback applies only after the paired generated-surface recipe
+identifies counterbore form.
+
+The same terminal envelopes supply directed placement when each assigned
+source has its diameter on exactly two axes through common or adjacent-union
+spans. The remaining axis has one common nonzero interval in each source. The
+counterbore interval length equals the counterbore depth. Both sources have the
+same axial axis and equal radial centers, and their axial intervals are exactly
+adjacent. The outer counterbore bound is the entry position. The direction is
+from that bound through the counterbore interval into the bore interval. The
+union of the two axial intervals is the full blind extent. This envelope form
+does not identify a placement face.
+
+A counterbore-form hole with a complete bound dimensional tuple has a resolved
+counterbore entry; otherwise the identified counterbore form remains
 unresolved. The two source-entity cylinder pairs are coaxial. The pair whose
-materialized carrier radius equals ID `3` uses the counterbore cylinder; the
-other pair uses the same origin, axis, and reference direction with radius ID
-`0`. When both patches of the ID-3 cylinder have the same complete carrier,
-that carrier supplies the hole's unoriented axis placement. This carrier
-derivation does not assign an axial trim, entry position, or hole direction.
+materialized carrier radius equals the dimension-assigned counterbore radius
+uses the counterbore cylinder; the other pair uses the same origin, axis, and
+reference direction with the dimension-assigned bore radius. When both patches
+of the counterbore cylinder have the same complete carrier, that carrier
+supplies the hole's unoriented axis placement. This carrier derivation does not
+assign an axial trim, entry position, or hole direction.
 When both patches of each cylinder pair have one type-0 circular
-boundary on the same axis-normal plane, the two equal ID-3 circles define the
-counterbore entry and the two equal ID-0 circles define the bore exit. The
-ID-3 circle center is the entry position. The normalized vector from the ID-3
-center to the ID-0 center is the hole direction, and the center distance is
-the full blind span. The circles must have their dimension-assigned radii,
-their axes must be parallel to the span, and the counterbore depth must not
-exceed the full span.
+boundary on the same axis-normal plane, the two equal counterbore-radius circles
+define the counterbore entry and the two equal bore-radius circles define the
+bore exit. The counterbore circle center is the entry position. The normalized
+vector from the counterbore center to the bore center is the hole direction,
+and the center distance is the full blind span. The circles must have their
+dimension-assigned radii, their axes must be parallel to the span, and the
+counterbore depth must not exceed the full span.
 
 A cylinder patch may end with two scalar coordinate pairs separated by
 `00 0c 98`, followed by orientation scalar `-1`. The pairs are opposite
@@ -2685,13 +2971,22 @@ cylinder axis, the plane origin fixes its axial coordinate, the square
 midpoint fixes its radial center, and half the square span is the radius. The
 two rows are complementary patches of that carrier.
 
-A compact class-911 simple-hole table contains class-204 and class-203 topology
-entries followed by two class-200 generated-geometry entries. The first
-class-200 entry has source section entity zero and no surface row; it is the
-rowless bottom. The second has no source section entity and uniquely names an
-owned cylinder row; it is the hole side. This structure establishes the simple
-cylindrical form independently of whether the cylinder parameters are
-evaluable.
+A compact class-911 simple-hole table has class `29`. Its exact four-entry form
+has class-204 and class-203 topology entries, a rowless class-200 entry whose
+source section entity is zero, and a materialized class-200 entry with no source
+section entity. The class-200 entries are the bottom and hole side,
+respectively. The side uniquely names an owned cylinder row. The topology pair
+is either wholly rowless or has exactly one entry that names an owned plane row.
+An extended form has the same adjacent class-204, class-203 topology pair and
+can retain other non-materialized regeneration states. Exactly one topology
+pair in the extended form contains one owned plane row and one rowless entry.
+The cylinder and optional plane are the only materialized surfaces, and the
+bottom and side are the unique class-200 entries with their respective source
+states. In both forms, the ordered table identifiers equal the entry
+identifiers. This structure establishes the simple cylindrical form
+independently of whether the cylinder parameters are evaluable. A complete
+positional cylinder frame supplies the stored hole-axis position, axis, blind
+length, and diameter. The table does not identify a placement face.
 
 A class-917 circular section sweep uses the same four-entry order: first cap
 plane, second cap plane, first cylinder use, and second cylinder use. The cap
@@ -2988,13 +3283,15 @@ feature depends on that generating feature. A self-reference does not add a
 history dependency. Competing generating owners leave the dependency
 unresolved.
 
-For each feature, a regenerated-result face identity is declared only when an
-owned class-200 entry is a materialized surface, that identifier has exactly
-one surface row, and the row's `feat_id` is the owning feature. The result
-state names that face as `surface#<geom_id>`. Duplicate entries, missing rows,
-and rows owned by another feature do not declare a result state. A generated
-face selection is valid only when its producer feature and `surface#<geom_id>`
-identity occur in that producer's result state.
+For each feature, every materialized surface identifier in its owned
+generated-entity tables declares a regenerated-result face identity when that
+identifier has exactly one surface row and the row's `feat_id` is the owning
+feature. This includes materialized cap and transition entries as well as
+class-`200` entries. The result state names that face as
+`surface#<geom_id>`. Duplicate identifiers, missing rows, and rows owned by
+another feature invalidate the feature's complete face-result state. A
+generated face selection is valid only when its producer feature and
+`surface#<geom_id>` identity occur in that producer's result state.
 
 A regenerated-result edge identity is declared for each unique `crv_array`
 topology row whose `feat_id` is the producing feature. The topology row is
@@ -3196,26 +3493,29 @@ contiguous and consume the bounded field body. A complete outline with
 exactly one equal coordinate pair defines the corresponding axis-aligned plane
 and offset.
 
-The positional datum scalar lane treats `a5` and `9f` as seven-byte opaque
-tokens. Their numeric values are not required by the held-coordinate rule:
-identical raw tokens compare equal and distinct raw tokens compare unequal.
+Named and positional datum outlines use the same bounded model-coordinate
+lane. In this lane, `73 <tail6>` reconstructs
+`[3f e8 <tail6>]`, `bb <tail6>` reconstructs `[bf e8 <tail6>]`,
+`a5 <tail6>` reconstructs `[bf d0 <tail6>]`, and `9f <tail6>` reconstructs
+`[40 14 <tail6>]`.
 
 In a named datum outline, exactly one pair of standalone-zero slots at
 positions `k` and `k+3` identifies coordinate axis `k` and plane offset zero.
 Zero pairs or multiple pairs do not define a plane equation.
-Named-outline coordinates use the bounded model-coordinate DICT lane. `5c`
-and `5e..a3` set the two-byte IEEE prefix to `0x3f75 + prefix`; `a4..a6`,
+Datum-outline nonzero coordinates use the bounded model-coordinate DICT lane. `5e..a3`
+set the two-byte IEEE prefix to `0x3f75 + prefix`; `a4..a6`,
 `a7..b1`, `b2..cf`, `d0..dc`, `dd`, and `de..df` set it to
 `0xbf2b + prefix`, `0xbf2c + prefix`, `0xbf2d + prefix`, `0xbf2e + prefix`,
 `0xbf2f + prefix`, and `0xbf32 + prefix`, respectively. Each prefix is
 followed by `tail6`.
-`45` reconstructs `[bf, tail6, 00]`. The `28` and `41` forms reconstruct
-`[3f, tail7]`; the fixed `2c`, `4c..4d`, `50`, and `54` forms reconstruct
+The `28` and `41` forms reconstruct `[3f, tail7]`; the fixed `2c`, `4c..4d`,
+`50`, and `54` forms reconstruct
 `[3f, tail6, 00]`. The `46` and `2d` forms retain their eight-byte
 `[40, tail7]` and `[c0, tail7]` forms. Each complete token consumes one
 coordinate slot; a missing or incomplete token leaves the outline unresolved.
 The `41` scalar form therefore occupies eight bytes: the prefix followed by
-seven payload bytes.
+seven payload bytes. The seven-byte `45` and `5c` tokens consume one slot but
+retain an unresolved numeric value.
 
 `ref_planes` stores an outer reference followed by a nested `plane_id`. The nested identifier is the geometric datum identifier and joins `ActDatums.srf_array.geom_id`. A referenced datum normal orients a sketch in-plane axis only when it is perpendicular to the sketch-plane normal.
 
@@ -3298,6 +3598,14 @@ class in `f8 <count> f7 <table-class> fb e2`. Each row replays `id`, `type`,
 array repeats its own table and row classes and stores ordered `ent_id`/`sense`
 pairs. `f1 f7 <item-table-class> e2` separates nested items, and
 `f3 f7 <table-class> e2` separates incidence rows.
+An incidence row can store an auxiliary frame between `status` and the nested
+item array. The first such frame uses the labelled `aux` counted form; later
+rows replay the auxiliary body positionally. The nested item array retains the
+same item-table and item-row classes across these rows. A repeated item-table
+class reference can immediately precede the array opener. The auxiliary frame
+does not replace or reorder `id`, `type`, `flags`, `status`, or the incidence
+items. Exactly one matching nested item array must occur before the incidence
+row separator.
 
 The positional relation-join table repeats the labelled `triples_ptr` table
 class and stores exactly its `f8` count of `rel_id`, `eqn_id`, and `skamp_id`
@@ -3669,18 +3977,22 @@ At the terminating `FOR` line, a declared unknown takes the physical dimension
 of its preceding value when that value is defined. An unknown without a
 preceding value receives dimensions from unit-qualified operands, dimensioned
 reserved constants, known quantities, and dimension-equality constraints imposed
-by the equation expressions. Free dimension exponents are zero. A dimension
-constraint is inconsistent when it has no integral solution in the five
-canonical axes: length, mass, time, angle, and temperature. A dimensionally
-valid affine equality is then evaluated after known dependencies and block-local
-auxiliary relations are applied. When the complete affine system has one finite
-consistent solution, the solution in canonical relation units replaces the
-unknown values at `FOR` and supplies following assignments. Unknowns may have
-different physical dimensions; multiplication or division by a known
-dimensioned value supplies the corresponding affine coefficient. A nonlinear
-system uses the same dimension checks and replaces the unknown values only when
-its numeric residual equations have one finite root with a full-rank local
-Jacobian. A root is not a solution when any residual is nonnumeric,
+by the equation expressions. Every exponent of every previously untyped
+unknown must have one integral solution in the five canonical axes: length,
+mass, time, angle, and temperature. An inconsistent or underdetermined
+dimension system remains unresolved. A dimensionally valid affine equality is
+then evaluated after known dependencies and block-local auxiliary relations are
+applied. When the complete affine system has one finite consistent solution,
+the solution in canonical relation units replaces the unknown values at `FOR`
+and supplies following assignments. Unknowns may have different physical
+dimensions; multiplication or division by a known dimensioned value supplies
+the corresponding affine coefficient. A nonlinear system requires one
+preceding finite numeric value of the resolved physical dimension for each
+unknown. Those values initialize the solve. The system uses the same dimension
+checks and replaces the unknown values only when its numeric residual equations
+have one finite root with a full-rank local Jacobian. Other diagnostic starting
+points can reject competing roots but cannot supply the accepted root. A root
+is not a solution when any residual is nonnumeric,
 dimensionally inconsistent, outside a function domain, or non-finite. Multiple
 roots, a rank-deficient root, an underdetermined system, an inconsistent system,
 or an unresolved dependency retains absent solution values. Non-smooth,
@@ -3906,7 +4218,10 @@ differences are triangle-strip lengths and each is at least three.
 `mv_p_xyz` supplies exactly the final cumulative count of XYZ positions. An
 `mv_p_NxNyNzxyz` array supplies the same position count through complete
 normal-position tuples and transfers its first three tuple values as vertex
-normals.
+normals. When a record contains multiple complete position representations,
+their position sequences must be equal. Multiple complete normal-position
+arrays must also have equal normal sequences. A disagreement invalidates the
+triangle-strip record; source order does not select one representation.
 Strip triangles alternate winding: `[i,i+1,i+2]`, then `[i,i+2,i+1]`.
 
 ### 8.5 Model reference geometry

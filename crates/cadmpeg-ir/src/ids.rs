@@ -101,6 +101,10 @@ local_id_type!(
     /// Identifies an edge within one feature-input topology state.
     HistoricalEdgeId
 );
+local_id_type!(
+    /// Identifies a vertex within one feature-input topology state.
+    HistoricalVertexId
+);
 id_type!(
     /// Identifies a [`crate::topology::Region`].
     RegionId

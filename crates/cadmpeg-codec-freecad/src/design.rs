@@ -1184,6 +1184,7 @@ fn parse_sketch(
             id,
             name: Some(object.name.clone()),
             configuration: None,
+            visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
                 origin,
                 normal,
@@ -3721,7 +3722,10 @@ fn datum_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Featur
             origin,
             direction: z_axis,
         },
-        "PartDesign::Point" => FeatureDefinition::DatumPoint { position: origin },
+        "PartDesign::Point" => FeatureDefinition::DatumPoint {
+            position: origin,
+            construction: None,
+        },
         "PartDesign::CoordinateSystem" => FeatureDefinition::DatumCoordinateSystem {
             origin,
             x_axis,

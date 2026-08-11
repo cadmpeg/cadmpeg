@@ -3,12 +3,14 @@
 //!
 //! A `.prt` begins with an ASCII header block (`#UGC:2 …` through
 //! `#-END_OF_UGC_HEADER`), an ASCII table of contents (`#UGC_TOC` …
-//! `#END_OF_TOC_HEADER`), then a sequence of named binary sections. A real body
-//! section header is `#\n#<name>\n`. The preceding `#` terminator and printable
-//! name distinguish section boundaries from similar bytes in feature data.
+//! `#END_OF_TOC_HEADER`), then a sequence of named binary sections. Earlier
+//! files instead begin an ASCII `P_OBJECT` persistence record immediately after
+//! the UGC header. A real body section header is `#\n#<name>\n`. The preceding
+//! `#` terminator and printable name distinguish section boundaries from
+//! similar bytes in feature data.
 //!
 //! [`scan`] reads the stream and returns a [`ContainerScan`] containing section
-//! metadata, the ND or DEPDB layout, namespace counts, typed structural rows,
+//! metadata, the persistence layout, namespace counts, typed structural rows,
 //! native loops, units, feature identifiers, and datum planes. [`summarize`]
 //! converts that scan into the codec-neutral container summary.
 
@@ -30,6 +32,7 @@ use crate::feature::{
     FeatureLoopRestoreDirection, FeatureOperation, FeatureRecipe, FeatureReferenceName,
     FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow,
 };
+use crate::legacy;
 use crate::placement::{self, FeatureSectionTransform};
 use crate::primdata::{self, PrimitiveScalarArray, PrimitiveTriangleStrip};
 use crate::psb;
@@ -51,15 +54,22 @@ const UGC_HEADER_END: &[u8] = b"#-END_OF_UGC_HEADER";
 const TOC_START: &[u8] = b"#UGC_TOC";
 /// End of the ASCII table of contents.
 const TOC_END: &[u8] = b"#END_OF_TOC_HEADER";
+/// Start of the legacy ASCII persistence object.
+const LEGACY_OBJECT_START: &[u8] = b"#P_OBJECT ";
+/// End of the legacy ASCII persistence object.
+const LEGACY_OBJECT_END: &[u8] = b"#END_OF_P_OBJECT";
+/// Banner following a complete legacy ASCII persistence object.
+const LEGACY_BANNER_START: &[u8] = b"#Pro/ENGINEER";
 /// JPEG SOI magic, marking the `THMB_IMG_MAIN` preview payload (never geometry).
 pub(crate) const JPEG_MAGIC: &[u8] = &[0xff, 0xd8, 0xff];
 /// Unix `compress` payload prefix.
 pub(crate) const UNIX_COMPRESS_MAGIC: &[u8] = &[0x1f, 0x9d];
 
 /// ASCII names that appear in the header/TOC framing and look like section
-/// headers but are structural markers, not binary sections ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)).
+/// headers but are structural markers, not body sections ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)).
 const FRAMING_NAMES: &[&str] = &[
     "-END_OF_UGC_HEADER",
+    "END_OF_P_OBJECT",
     "END_OF_UGC",
     "UGC_TOC",
     "END_OF_TOC_HEADER",
@@ -89,15 +99,32 @@ const VISIBGEOM: &str = "VisibGeom";
 /// authoritative.
 const PRINCIPAL_UNIT_ID: &[u8] = b"_principal_sys_units_id\0";
 
-/// The two layout families ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). Dispatched structurally, not per-file.
+/// The persistence layout families ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). Dispatched structurally, not per-file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Layout {
     /// Dense PSB rows in `VisibGeom` (~40+ sections; `ND:` name decoration).
     Nd,
     /// Sparse PSB views plus a persistence database (`DEPDB_DATA`, ~12 sections).
     Depdb,
+    /// ASCII `P_OBJECT` persistence used before the ND and DEPDB byte grammars.
+    LegacyAscii,
     /// Neither signature was conclusive.
     Unknown,
+}
+
+/// Header metadata from a complete legacy ASCII `P_OBJECT` frame.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyAsciiFraming {
+    /// Decimal persistence-schema token following `#P_OBJECT`.
+    pub schema: String,
+    /// Product release token in a `Version` or `Release` banner form.
+    pub product_release: Option<String>,
+    /// Byte offset of the `#Pro/ENGINEER` banner and legacy TOC offset base.
+    pub banner_offset: usize,
+    /// Byte offset of the header-adjacent `#P_OBJECT` line.
+    pub object_offset: usize,
+    /// Structurally resolved attribute declarations and value rows.
+    pub persistence: legacy::Persistence,
 }
 
 impl Layout {
@@ -106,6 +133,7 @@ impl Layout {
         match self {
             Layout::Nd => "ND",
             Layout::Depdb => "DEPDB",
+            Layout::LegacyAscii => "LEGACY_ASCII",
             Layout::Unknown => "unknown",
         }
     }
@@ -224,11 +252,13 @@ pub struct FramingScan<'a> {
     pub expanded_sections: Vec<ExpandedSection>,
     /// Identified layout family.
     pub layout: Layout,
+    /// Legacy ASCII header metadata, present only for that layout family.
+    pub legacy_ascii: Option<LegacyAsciiFraming>,
     /// Visible-geometry namespace census, when a `VisibGeom` section was found.
     pub census: GeomCensus,
     /// Active Creo principal coordinate unit system, when its selector is
-    /// present. Both currently defined systems store model lengths in mm.
-    pub principal_unit: Option<String>,
+    /// present and unambiguous.
+    pub principal_unit: Option<legacy::PrincipalUnitSystem>,
     /// Configuration driver-table pointer from `FamilyInf`.
     pub family_table: Option<FamilyTableRecord>,
     /// Declared `Geomlists.n_bodies` cardinality, when present.
@@ -246,6 +276,8 @@ pub struct PrimitiveScan {
     pub scalar_arrays: Vec<PrimitiveScalarArray>,
     /// Complete named position-only triangle strips from expanded primitive data.
     pub triangle_strips: Vec<PrimitiveTriangleStrip>,
+    /// Triangle-strip records whose complete position or normal representations disagree.
+    pub conflicting_triangle_strip_representation_count: usize,
 }
 
 /// Model-space reference entities decoded from `MdlRefInfo`.
@@ -398,7 +430,7 @@ pub struct FeatureScan {
     pub section_transforms: Vec<FeatureSectionTransform>,
     /// Every stored feature-operation state from `MdlStatus`, in byte order.
     pub operation_states: Vec<FeatureOperation>,
-    /// Current feature-operation state for each feature identifier.
+    /// Unambiguous or consensus feature-operation projection for each identifier.
     pub operations: Vec<FeatureOperation>,
     /// Feature names joined to model feature identifiers by reference data.
     pub reference_names: Vec<FeatureReferenceName>,
@@ -621,6 +653,136 @@ fn toc_sections(data: &[u8], header_base: usize) -> Vec<Section> {
     sections
 }
 
+fn legacy_toc_sections(data: &[u8], banner_offset: usize) -> Vec<Section> {
+    const MAX_LEGACY_TOC_ENTRIES: usize = 4096;
+
+    let Some(toc_offset) = find(data, b"\n@Toc ", banner_offset).map(|offset| offset + 1) else {
+        return Vec::new();
+    };
+    let Some((toc_declaration, after_toc_declaration)) = legacy::line(data, toc_offset) else {
+        return Vec::new();
+    };
+    let Some(toc_declaration) = legacy::parse_declaration(toc_declaration, toc_offset)
+        .filter(|declaration| declaration.name == "Toc" && declaration.type_code == 0)
+    else {
+        return Vec::new();
+    };
+    let toc_id = toc_declaration.id;
+    let Some((toc_value, after_toc_value)) = legacy::line(data, after_toc_declaration) else {
+        return Vec::new();
+    };
+    let Ok(toc_value) = std::str::from_utf8(toc_value) else {
+        return Vec::new();
+    };
+    let mut toc_fields = toc_value.split_ascii_whitespace();
+    if toc_fields.next() != Some("0")
+        || toc_fields.next().and_then(|id| id.parse::<u32>().ok()) != Some(toc_id)
+        || toc_fields.next() != Some("->")
+        || toc_fields.next().is_some()
+    {
+        return Vec::new();
+    }
+
+    let Some((entry_declaration, after_entry_declaration)) = legacy::line(data, after_toc_value)
+    else {
+        return Vec::new();
+    };
+    let Some(entry_declaration) = legacy::parse_declaration(entry_declaration, after_toc_value)
+        .filter(|declaration| declaration.name == "entry" && declaration.type_code == 10)
+    else {
+        return Vec::new();
+    };
+    let entry_id = entry_declaration.id;
+    let Some((entry_array, mut next)) = legacy::line(data, after_entry_declaration) else {
+        return Vec::new();
+    };
+    let Ok(entry_array) = std::str::from_utf8(entry_array) else {
+        return Vec::new();
+    };
+    let mut array_fields = entry_array.split_ascii_whitespace();
+    if array_fields.next() != Some("1")
+        || array_fields.next().and_then(|id| id.parse::<u32>().ok()) != Some(entry_id)
+    {
+        return Vec::new();
+    }
+    let Some(count) = array_fields
+        .next()
+        .and_then(|count| count.strip_prefix('['))
+        .and_then(|count| count.strip_suffix(']'))
+        .and_then(|count| count.parse::<usize>().ok())
+        .filter(|count| *count <= MAX_LEGACY_TOC_ENTRIES)
+    else {
+        return Vec::new();
+    };
+    if array_fields.next().is_some() {
+        return Vec::new();
+    }
+
+    let mut sections = Vec::new();
+    for _ in 0..count {
+        let Some((entry, after_entry)) = legacy::line(data, next) else {
+            break;
+        };
+        next = after_entry;
+        let Ok(entry) = std::str::from_utf8(entry) else {
+            continue;
+        };
+        let entry = entry.trim_end_matches('#').trim_end();
+        let fields = entry.split_ascii_whitespace().collect::<Vec<_>>();
+        if fields.len() == 2 {
+            continue;
+        }
+        if fields.len() != 7
+            || fields[0] != "2"
+            || fields[1].parse::<u32>().ok() != Some(entry_id)
+            || fields[5] != "0"
+            || fields[6].parse::<u32>().is_err()
+        {
+            continue;
+        }
+        let raw_name = fields[2];
+        if raw_name.len() < 2
+            || !raw_name.bytes().all(is_name_byte)
+            || !raw_name.bytes().any(|byte| byte.is_ascii_alphanumeric())
+        {
+            continue;
+        }
+        let (Ok(relative_offset), Ok(length)) = (
+            usize::from_str_radix(fields[3], 16),
+            usize::from_str_radix(fields[4], 16),
+        ) else {
+            continue;
+        };
+        let Some(offset) = banner_offset.checked_add(relative_offset) else {
+            continue;
+        };
+        let marker = [b"#".as_slice(), raw_name.as_bytes(), b"\n"].concat();
+        let Some(marker_end) = offset.checked_add(marker.len()) else {
+            continue;
+        };
+        if length < marker.len()
+            || data.get(offset..marker_end) != Some(marker.as_slice())
+            || offset
+                .checked_add(length)
+                .is_none_or(|end| end > data.len())
+        {
+            continue;
+        }
+        let normalized = normalize_name(raw_name);
+        sections.push(Section {
+            role: classify(&normalized),
+            name: normalized,
+            raw_name: raw_name.to_string(),
+            offset,
+            length,
+            expanded_length: None,
+        });
+    }
+    sections.sort_by_key(|section| section.offset);
+    sections.dedup_by_key(|section| section.offset);
+    sections
+}
+
 fn expanded_sections(data: &[u8], sections: &[Section]) -> Vec<ExpandedSection> {
     const MAX_EXPANDED_SECTION: usize = 256 * 1024 * 1024;
     sections
@@ -674,11 +836,71 @@ fn is_name_byte(b: u8) -> bool {
 
 const DEPDB_ROOT_RECORD: &[u8] = b"\xe0\x00p_dep_db\0\xe3";
 
+fn legacy_product_release(banner: &[u8]) -> Option<String> {
+    let mut words = banner
+        .split(u8::is_ascii_whitespace)
+        .filter(|word| !word.is_empty());
+    while let Some(word) = words.next() {
+        if word == b"Version" || word == b"Release" {
+            let release = words.next()?;
+            if release.iter().all(u8::is_ascii_graphic) {
+                return String::from_utf8(release.to_vec()).ok();
+            }
+            return None;
+        }
+        if let Some(release) = word.strip_prefix(b"Release") {
+            if !release.is_empty() && release.iter().all(u8::is_ascii_graphic) {
+                return String::from_utf8(release.to_vec()).ok();
+            }
+        }
+    }
+    None
+}
+
+fn legacy_ascii_framing(data: &[u8]) -> Option<LegacyAsciiFraming> {
+    let header_end = find(data, UGC_HEADER_END, 0)
+        .and_then(|offset| offset.checked_add(UGC_HEADER_END.len()))?;
+    let body = data
+        .get(header_end..)
+        .and_then(|tail| tail.strip_prefix(b"\n"))?;
+    if !body.starts_with(LEGACY_OBJECT_START) {
+        return None;
+    }
+    let object_header_end = find(body, b"\n", LEGACY_OBJECT_START.len())?;
+    let schema = &body[LEGACY_OBJECT_START.len()..object_header_end];
+    if schema.is_empty() || !schema.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    let schema = String::from_utf8(schema.to_vec()).ok()?;
+    let mut from = object_header_end + 1;
+    while let Some(object_end) = find(body, LEGACY_OBJECT_END, from) {
+        if let Some(banner) = object_end
+            .checked_add(LEGACY_OBJECT_END.len())
+            .and_then(|banner| body.get(banner..))
+            .and_then(|tail| tail.strip_prefix(b"\n"))
+            .filter(|tail| tail.starts_with(LEGACY_BANNER_START))
+        {
+            let banner_end = find(banner, b"\n", 0).unwrap_or(banner.len());
+            let banner_offset = data.len() - banner.len();
+            return Some(LegacyAsciiFraming {
+                schema,
+                product_release: legacy_product_release(&banner[..banner_end]),
+                banner_offset,
+                object_offset: header_end + 1,
+                persistence: legacy::Persistence::default(),
+            });
+        }
+        from = object_end + 1;
+    }
+    None
+}
+
 /// Identify the layout family structurally ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). The
 /// `DEPDB_DATA` root record is authoritative because a persistence payload can
 /// contain embedded names with the `ND:` decoration. An undecorated file with
-/// neither a valid root record nor an outer `ND:` name remains unknown.
-fn identify_layout(data: &[u8], sections: &[Section]) -> Layout {
+/// neither a valid root record, an outer `ND:` name, nor a complete legacy
+/// ASCII object remains unknown.
+fn identify_layout(data: &[u8], sections: &[Section], has_legacy_ascii_object: bool) -> Layout {
     let has_depdb_root = sections.iter().any(|section| {
         if section.name != "DEPDB_DATA" {
             return false;
@@ -702,6 +924,8 @@ fn identify_layout(data: &[u8], sections: &[Section]) -> Layout {
         }
     } else if has_nd_decoration {
         Layout::Nd
+    } else if has_legacy_ascii_object {
+        Layout::LegacyAscii
     } else {
         Layout::Unknown
     }
@@ -758,12 +982,12 @@ fn geom_census(data: &[u8], sections: &[Section]) -> GeomCensus {
 
 /// Decode the active unit-system selector. `51` is millimeter-Newton-Second
 /// and `55` is millimeter-Kilogram-Second; both use millimeters for lengths.
-fn principal_unit(data: &[u8]) -> Option<String> {
+fn binary_principal_unit(data: &[u8]) -> Option<legacy::PrincipalUnitSystem> {
     let start = find(data, PRINCIPAL_UNIT_ID, 0)? + PRINCIPAL_UNIT_ID.len();
     match *data.get(start)? {
-        51 => Some("mmNs".to_string()),
-        55 => Some("mmKs".to_string()),
-        value => Some(format!("unknown:{value}")),
+        51 => Some(legacy::PrincipalUnitSystem::MillimeterNewtonSecond),
+        55 => Some(legacy::PrincipalUnitSystem::MillimeterKilogramSecond),
+        value => Some(legacy::PrincipalUnitSystem::UnknownBinarySelector(value)),
     }
 }
 
@@ -1785,8 +2009,7 @@ fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u3
     (after > value_offset).then_some(count)
 }
 
-/// Parse a whole `.prt` byte image. Split out so tests drive it from a synthetic
-/// buffer without a reader.
+/// Parse a whole `.prt` byte image.
 pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let data = data.into();
     let version_line = line_at(&data, 0);
@@ -1804,12 +2027,36 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         .map(|nl| nl + 1);
     let body_start = toc_end.or(header_end).unwrap_or(0);
 
-    let sections = toc_sections(&data, header_end.unwrap_or(0));
+    let mut legacy_ascii = legacy_ascii_framing(&data);
+    let sections = legacy_ascii.as_ref().map_or_else(
+        || toc_sections(&data, header_end.unwrap_or(0)),
+        |legacy| legacy_toc_sections(&data, legacy.banner_offset),
+    );
     let sections = if sections.is_empty() {
         scan_sections(&data, body_start)
     } else {
         sections
     };
+    if let Some(framing) = &mut legacy_ascii {
+        let initial_end = sections
+            .first()
+            .map_or(data.len(), |section| section.offset);
+        let mut scopes = Vec::with_capacity(sections.len() + 1);
+        scopes.push(framing.object_offset..initial_end);
+        scopes.extend(sections.iter().filter_map(|section| {
+            let payload_start = section
+                .offset
+                .checked_add(section.raw_name.len().checked_add(2)?)?;
+            legacy::starts_with_declaration(&data, payload_start).then(|| {
+                section.offset
+                    ..section
+                        .offset
+                        .saturating_add(section.length)
+                        .min(data.len())
+            })
+        }));
+        framing.persistence = legacy::scan(&data, scopes);
+    }
     let expanded_sections = expanded_sections(&data, &sections);
     let double_xar_tables = expanded_sections
         .iter()
@@ -1830,11 +2077,18 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         .filter(|section| section.name == "SolidPrimdata")
         .flat_map(|section| primdata::scalar_arrays(&section.data))
         .collect();
-    let primitive_triangle_strips = expanded_sections
-        .iter()
-        .filter(|section| section.name == "SolidPrimdata")
-        .flat_map(|section| primdata::triangle_strips(&section.data))
-        .collect();
+    let (primitive_triangle_strips, conflicting_triangle_strip_representation_count) =
+        expanded_sections
+            .iter()
+            .filter(|section| section.name == "SolidPrimdata")
+            .map(|section| primdata::triangle_strips(&section.data))
+            .fold((Vec::new(), 0usize), |(mut strips, conflicts), scan| {
+                strips.extend(scan.strips);
+                (
+                    strips,
+                    conflicts.saturating_add(scan.conflicting_representation_count),
+                )
+            });
     let reference_lines = sections
         .iter()
         .filter(|section| section.name == "MdlRefInfo")
@@ -1886,10 +2140,16 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         })
         .collect();
     let reference_ellipses = reference::ellipse_carriers(&reference_conics);
-    let layout = identify_layout(&data, &sections);
+    let layout = identify_layout(&data, &sections, legacy_ascii.is_some());
+    let legacy_ascii = if layout == Layout::LegacyAscii {
+        legacy_ascii
+    } else {
+        None
+    };
     let model_geometry_sections = model_geometry_sections(&data, &sections);
     let census = geom_census(&data, &sections);
-    let principal_unit = principal_unit(&data);
+    let principal_unit = binary_principal_unit(&data)
+        .or_else(|| legacy_ascii.as_ref()?.persistence.principal_unit_system());
     let family_table = family_table(&data, &sections);
     let nonvisible_geometry_sections = sections
         .iter()
@@ -2079,6 +2339,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             sections,
             expanded_sections,
             layout,
+            legacy_ascii,
             census,
             principal_unit,
             family_table,
@@ -2089,6 +2350,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             double_xar_tables,
             scalar_arrays: primitive_scalar_arrays,
             triangle_strips: primitive_triangle_strips,
+            conflicting_triangle_strip_representation_count,
         },
         references: ReferenceScan {
             lines: reference_lines,
@@ -2240,6 +2502,27 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     if let Some(name) = &scan.framing.model_name {
         notes.push(format!("native model name: {name}"));
     }
+    if let Some(legacy) = &scan.framing.legacy_ascii {
+        let release = legacy.product_release.as_deref().unwrap_or("unspecified");
+        let continuation_count = legacy.persistence.continuation_count();
+        notes.push(format!(
+            "legacy ASCII persistence: schema {}; product release {release}; {} attribute \
+             declarations, {} resolved values, {continuation_count} continuation rows in {} scopes",
+            legacy.schema,
+            legacy.persistence.declaration_count(),
+            legacy.persistence.value_count(),
+            legacy.persistence.scopes.len(),
+        ));
+        if legacy.persistence.unresolved_value_count() != 0
+            || legacy.persistence.conflicting_declaration_count() != 0
+        {
+            notes.push(format!(
+                "legacy ASCII structural gaps: {} unresolved values, {} conflicting declarations",
+                legacy.persistence.unresolved_value_count(),
+                legacy.persistence.conflicting_declaration_count(),
+            ));
+        }
+    }
 
     match (
         scan.framing.census.srf_array_count,
@@ -2332,6 +2615,8 @@ mod feature_row_definition_tests {
             identifier_keyword: Some("id".to_string()),
             stored_name_prefix: None,
             recipe: None,
+            recipe_conflict: false,
+            display_state_conflict: false,
             root_schema_class: None,
             parent_feature_id: None,
             offset: 0,
@@ -2442,6 +2727,8 @@ mod feature_row_definition_tests {
             identifier_keyword: None,
             stored_name_prefix: None,
             recipe,
+            recipe_conflict: false,
+            display_state_conflict: false,
             root_schema_class: None,
             parent_feature_id: None,
             offset,

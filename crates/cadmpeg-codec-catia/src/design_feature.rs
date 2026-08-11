@@ -70,9 +70,11 @@ impl DesignFeatureTransfer {
             let Some(design_object) = object_record.design_object.as_deref() else {
                 continue;
             };
-            let Some(feature_id) =
-                feature_owner_for_design_object(design_object, &design_objects, &self.feature_ids)
-            else {
+            let Some(feature_id) = nearest_feature_for_design_object(
+                design_object,
+                &design_objects,
+                &self.feature_ids,
+            ) else {
                 continue;
             };
             if parameter.owner.is_none() {
@@ -124,7 +126,7 @@ impl DesignFeatureTransfer {
                 let native_ref = feature.native_ref.as_deref()?;
                 let object = design_objects.get(native_ref)?;
                 let parent_object = object.owner_design_object.as_deref()?;
-                let parent = feature_parent_for_design_object(
+                let parent = nearest_feature_for_design_object(
                     parent_object,
                     &design_objects,
                     &self.feature_ids,
@@ -270,13 +272,9 @@ fn assign_native_operation_parameter_values(
 
 /// Give every neutral parameter a unique name within its ownership scope.
 ///
-/// CATIA permits several source parameters with the same name under one
-/// feature. The IR uses names as scope-local keys, so retaining those names
-/// verbatim would produce an invalid model. Keep the first source name and
-/// append a deterministic suffix to later collisions. Reserve every source
-/// name before choosing a suffix so a generated name cannot hide a later
-/// source parameter with that name. The original spelling remains available
-/// in `properties["source_name"]` whenever the neutral name changes.
+/// Keep the first source name; suffix later collisions. Reserve every source
+/// name before choosing a suffix. Original spelling stays in
+/// `properties["source_name"]` when the neutral name changes.
 fn normalize_parameter_names(ir: &mut CadIr) {
     let mut reserved_by_scope = HashMap::<Option<FeatureId>, HashSet<String>>::new();
     for parameter in &ir.model.parameters {
@@ -341,7 +339,7 @@ fn feature_parent_chain_is_acyclic(
 /// feature object. Stop at the first transferred feature so a nested feature
 /// keeps its immediate structural parent. A missing link or a cycle rejects
 /// the chain instead of inferring a relationship from field vocabulary.
-fn feature_parent_for_design_object(
+fn nearest_feature_for_design_object(
     start: &str,
     design_objects: &HashMap<&str, &CatiaDesignObject>,
     feature_ids: &HashMap<String, FeatureId>,
@@ -397,41 +395,6 @@ pub(crate) fn neutral_history_id(native_id: &str, kind: &str) -> String {
         return format!("{native_id}:{kind}");
     }
     format!("{format}:{scope}:{kind}#{key}")
-}
-
-/// Resolve one unique transferred feature on a complete structural owner chain.
-///
-/// An immediate field group is not always the semantic feature object. CATIA
-/// may store a feature's parameter in a child design object. The parent links
-/// are exact object-graph incidences, so following them is safe when the chain
-/// is complete, has no non-reflexive cycle, and reaches exactly one transferred
-/// feature.
-fn feature_owner_for_design_object(
-    design_object_id: &str,
-    design_objects: &HashMap<&str, &CatiaDesignObject>,
-    feature_ids: &HashMap<String, FeatureId>,
-) -> Option<FeatureId> {
-    let mut current = Some(design_object_id);
-    let mut visited = HashSet::new();
-    let mut feature = None;
-
-    while let Some(current_id) = current {
-        if !visited.insert(current_id) {
-            return None;
-        }
-        let object = design_objects.get(current_id).copied()?;
-        if let Some(candidate) = feature_ids.get(current_id) {
-            if feature.replace(candidate.clone()).is_some() {
-                return None;
-            }
-        }
-        current = object
-            .owner_design_object
-            .as_deref()
-            .filter(|parent| *parent != current_id);
-    }
-
-    feature
 }
 
 /// Transfer exact owner-bound reference history nodes.
@@ -547,6 +510,7 @@ fn transfer_sketch(
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        visible: None,
         placement: SketchPlacement::Unresolved,
         profiles: Vec::new(),
         native_ref: Some(object.id.clone()),
@@ -1229,6 +1193,7 @@ mod tests {
             byte_offset,
             byte_len: 0,
             lead: 0,
+            inline_body: None,
             definition_len: 0,
             definition_prefix: Vec::new(),
             definition_schema_selections: Vec::new(),
@@ -1240,12 +1205,13 @@ mod tests {
             value_schema_selections: Vec::new(),
             relation_expression: None,
             parameter_value: None,
+            range_interval: None,
             constraint_range: None,
             definition_value: None,
             definition_chain_value: None,
             relation_program_instance: None,
-            configuration_record: None,
-            configuration_row_link: None,
+            schema_configuration_record: None,
+            schema_configuration_row_link: None,
             formula_relation: None,
             value_packets: Vec::new(),
             numeric_pair: None,
@@ -2132,6 +2098,89 @@ mod tests {
                 ("early-parameter".to_string(), "1 mm".to_string()),
                 ("late-parameter".to_string(), "1 mm".to_string()),
             ])
+        );
+    }
+
+    #[test]
+    fn assigns_a_nested_parameter_to_the_nearest_operation() {
+        let mut parent = native_operation_object(
+            "parent-operation",
+            None,
+            1,
+            "parent-record",
+            "Prism_ThickThin1",
+            "parent-entry",
+        );
+        parent.first_field_byte_offset = 10;
+        let mut child = native_operation_object(
+            "child-operation",
+            Some("parent-operation"),
+            2,
+            "child-record",
+            "Prism_ThickThin2",
+            "child-entry",
+        );
+        child.first_field_byte_offset = 20;
+        let parent_record = object_record(
+            "parent-record",
+            None,
+            Some(1),
+            None,
+            Some("Prism_ThickThin1"),
+            Some("parent-entry"),
+        );
+        let child_record = object_record(
+            "child-record",
+            Some("parent-operation"),
+            Some(2),
+            Some(1),
+            Some("Prism_ThickThin2"),
+            Some("child-entry"),
+        );
+        let mut parameter_record = object_record(
+            "parameter-record",
+            Some("child-operation"),
+            Some(3),
+            Some(2),
+            None,
+            None,
+        );
+        parameter_record.entity_record = Some("parameter-entity".to_string());
+        let native = CatiaNative {
+            design_objects: vec![parent, child],
+            object_graphs: vec![CatiaObjectGraph {
+                id: "graph".to_string(),
+                byte_offset: 0,
+                byte_len: 0,
+                finjpl_segment: None,
+                outer_container: None,
+                catalog_byte_offset: None,
+                catalog: None,
+                records: vec![parent_record, child_record, parameter_record],
+            }],
+            entity_records: vec![entity_record("parameter-entity", "parameter-record", 30, 3)],
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty(Units::default());
+        ir.model
+            .parameters
+            .push(parameter("parameter", "parameter-entity"));
+
+        let transfer = transfer_design_features(&mut ir, &native, None);
+        transfer.assign_parameter_owners(&mut ir, &native);
+
+        let child_feature = FeatureId::from("child-operation:feature");
+        assert_eq!(ir.model.parameters[0].owner, Some(child_feature.clone()));
+        assert_eq!(
+            ir.model.features[1].parent,
+            Some(FeatureId::from("parent-operation:feature"))
+        );
+        let FeatureDefinition::Native { parameters, .. } = &ir.model.features[1].definition else {
+            panic!("expected child native operation");
+        };
+        assert_eq!(
+            parameters.get("parameter").map(String::as_str),
+            Some("1 mm")
         );
     }
 

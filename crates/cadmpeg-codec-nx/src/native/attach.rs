@@ -1,11 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IR-writing attachment of the native object model.
-//!
-//! This module is the sole IR-mutation surface inside `native/`: it walks the
-//! extracted [`NativeModel`], emits source annotations in the legacy note order,
-//! serializes each record family into an `nx` namespace arena, and attaches the
-//! semantic islands (tessellations, source attributes, feature operations). The
-//! IR-free domain modules, `model.rs`, and `catalogue.rs` never write IR.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -258,9 +252,9 @@ pub(crate) fn attach(
             ir.model.configurations.push(DesignConfiguration {
                 id,
                 ordinal: ordinal as u32,
-                active: active_attribute_use.is_some(),
+                active: active_attribute_use.is_some().into(),
                 source_index: Some(ordinal as u32),
-                name: configuration.name.clone(),
+                name: configuration.name.clone().into(),
                 material: None,
                 properties: active_attribute_use
                     .map(|relation| {
@@ -749,9 +743,7 @@ fn attach_jpeg_preview_assets(
     }
 }
 
-/// Transfer the complete validated TIFF set atomically. A partial transfer
-/// would make native catalog links appear usable when one of their targets is
-/// absent from the neutral asset arena.
+/// Transfer the complete validated TIFF set atomically.
 fn attach_material_texture_assets(
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
@@ -941,7 +933,7 @@ fn unique_active_configuration_index(configurations: &[DesignConfiguration]) -> 
     let active = configurations
         .iter()
         .enumerate()
-        .filter_map(|(index, configuration)| configuration.active.then_some(index))
+        .filter_map(|(index, configuration)| configuration.active.is_active().then_some(index))
         .collect::<Vec<_>>();
     let [index] = active.as_slice() else {
         return None;
@@ -3582,6 +3574,7 @@ fn attach_sketch_points(
         id: sketch_id.clone(),
         name: Some(label.value.clone()),
         configuration: None,
+        visible: None,
         placement: SketchPlacement::Unresolved,
         profiles: Vec::new(),
         native_ref: Some(label.id.clone()),
@@ -3655,8 +3648,6 @@ fn operation_source_properties(
     properties.insert("operation_terminal_frame".to_string(), frame.id.clone());
     properties
 }
-
-// ===== Feature-semantics and attachment helpers (moved from decode.rs) =====
 
 struct ParasolidStringAttributeSources<'a> {
     topology_references: &'a [crate::native::parasolid::ParasolidTopologyAttributeListReference],
@@ -8308,7 +8299,7 @@ mod tests {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId("active".into()),
             ordinal: 0,
-            active: true,
+            active: true.into(),
             source_index: Some(0),
             name: "Model".into(),
             material: None,
@@ -8357,7 +8348,7 @@ mod tests {
         let configuration = || DesignConfiguration {
             id: ConfigurationId("active".into()),
             ordinal: 0,
-            active: true,
+            active: true.into(),
             source_index: Some(0),
             name: "Model".into(),
             material: None,
@@ -8454,7 +8445,7 @@ mod tests {
             feature.ordinal = ordinal as u64;
         }
         ir.model.configurations = vec![configuration(
-            true,
+            true.into(),
             ConfigurationBodies::Resolved(vec![body]),
         )];
         let mut annotations = AnnotationBuilder::new();
@@ -8573,7 +8564,7 @@ mod tests {
         missing_dependency.model.features = vec![producer("missing")];
         missing_dependency.model.configurations = vec![configuration(
             "active",
-            true,
+            true.into(),
             ConfigurationBodies::Resolved(vec![BodyId("body".into())]),
         )];
         let mut annotations = AnnotationBuilder::new();
@@ -8591,7 +8582,7 @@ mod tests {
         unresolved_bodies.model.features[0].dependencies.clear();
         unresolved_bodies.model.configurations = vec![configuration(
             "active",
-            true,
+            true.into(),
             ConfigurationBodies::Unresolved,
         )];
         super::attach_active_configuration_feature_states(&mut unresolved_bodies, &mut annotations);
@@ -8606,7 +8597,7 @@ mod tests {
         contradicted.model.features[0].suppressed = Some(true);
         contradicted.model.configurations = vec![configuration(
             "active",
-            true,
+            true.into(),
             ConfigurationBodies::Resolved(vec![BodyId("body".into())]),
         )];
         super::attach_active_configuration_feature_states(&mut contradicted, &mut annotations);
@@ -8621,12 +8612,12 @@ mod tests {
         ambiguous.model.configurations = vec![
             configuration(
                 "first",
-                true,
+                true.into(),
                 ConfigurationBodies::Resolved(vec![BodyId("body".into())]),
             ),
             configuration(
                 "second",
-                true,
+                true.into(),
                 ConfigurationBodies::Resolved(vec![BodyId("body".into())]),
             ),
         ];

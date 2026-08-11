@@ -46,7 +46,6 @@ fn b5_analytic_line_pcurve_resolves_to_clamped_linear_form() {
         602,
         &b5_transverse_isoparametric_line_pcurve_payload(100, -4.0, [1.0, 7.0]),
     );
-    // Keep the appended record in a length-closed run.
     append_b5_record(&mut bytes, 0x5e, 603, &[]);
     let graph = crate::families::b5::graph::parse(&bytes).expect("length-closed B5 graph");
     let pcurve = graph.pcurves.get(&600).expect("analytic line pcurve");

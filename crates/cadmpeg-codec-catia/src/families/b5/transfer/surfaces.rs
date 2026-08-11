@@ -198,6 +198,7 @@ pub(super) fn revolution_surface(
             axis_origin: point(axis_origin),
             axis_direction: vector(axis_direction),
             angular_interval,
+            angular_parameter_interval: native_angular_interval,
             parameter_interval,
         },
     ))
@@ -543,6 +544,7 @@ pub(super) fn emit_surfaces(
                         axis_origin: revolution.axis_origin,
                         axis_direction: revolution.axis_direction,
                         angular_interval: revolution.angular_interval,
+                        angular_parameter_interval: Some(revolution.angular_parameter_interval),
                         parameter_interval: Some(revolution.parameter_interval),
                         transposed: false,
                         revision_form: None,
