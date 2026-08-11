@@ -1194,20 +1194,12 @@ pub fn a8_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
 /// allocation.
 #[must_use]
 pub fn resolved_a8_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
-    let mut surfaces = Vec::new();
-    for frame in a8_frames(data, 0x34) {
-        let Some(parsed) = parse_a8_surface_header(data, frame) else {
-            continue;
-        };
-        if parsed.header.poles_elided {
-            if let Some(surface) = a8_surface_from_external_grid(data, &parsed.header) {
-                surfaces.push(surface);
-            }
-        } else if let Some(surface) = a8_surface_from_parsed(data, parsed) {
-            surfaces.push(surface);
-        }
-    }
-    surfaces
+    a8_frames(data, 0x34)
+        .into_iter()
+        .filter_map(|frame| {
+            resolved_a8_surface_from_object_frame(data, frame.pos, frame.end, frame.object_id)
+        })
+        .collect()
 }
 
 /// Decode every structurally complete `a8 <flag> 34` parameter lattice, including
@@ -1216,8 +1208,35 @@ pub fn resolved_a8_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
 pub fn a8_surface_headers(data: &[u8]) -> Vec<A8SurfaceHeader> {
     a8_frames(data, 0x34)
         .into_iter()
-        .filter_map(|frame| parse_a8_surface_header(data, frame).map(|parsed| parsed.header))
+        .filter_map(|frame| {
+            a8_surface_header_from_object_frame(data, frame.pos, frame.end, frame.object_id)
+        })
         .collect()
+}
+
+/// Decode one selected `a8 <flag> 34` frame's parameter lattice.
+pub(crate) fn a8_surface_header_from_object_frame(
+    data: &[u8],
+    start: usize,
+    end: usize,
+    object_id: u32,
+) -> Option<A8SurfaceHeader> {
+    parse_selected_a8_surface_header(data, start, end, object_id).map(|parsed| parsed.header)
+}
+
+/// Decode one selected `a8 <flag> 34` frame and its complete pole grid.
+pub(crate) fn resolved_a8_surface_from_object_frame(
+    data: &[u8],
+    start: usize,
+    end: usize,
+    object_id: u32,
+) -> Option<FreeformSurface> {
+    let parsed = parse_selected_a8_surface_header(data, start, end, object_id)?;
+    if parsed.header.poles_elided {
+        a8_surface_from_external_grid(data, &parsed.header)
+    } else {
+        a8_surface_from_parsed(data, parsed)
+    }
 }
 
 /// Resolve an elided-pole `a8 <flag> 34` carrier from its support-referenced
@@ -1461,6 +1480,29 @@ struct ParsedA8SurfaceHeader {
     header: A8SurfaceHeader,
     pole_start: usize,
     end: usize,
+}
+
+fn parse_selected_a8_surface_header(
+    data: &[u8],
+    start: usize,
+    end: usize,
+    object_id: u32,
+) -> Option<ParsedA8SurfaceHeader> {
+    let frame = object_stream_frame(data, start)?;
+    (frame.family == 0xa8
+        && frame.class == 0x34
+        && frame.end == end
+        && frame.object_id == object_id)
+        .then_some(())?;
+    parse_a8_surface_header(
+        data,
+        A8Frame {
+            pos: start,
+            payload: frame.payload,
+            end,
+            object_id,
+        },
+    )
 }
 
 fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8SurfaceHeader> {

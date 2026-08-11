@@ -836,11 +836,18 @@ pub(crate) fn parse_from_records(
         .iter()
         .map(|(&object_id, pcurve)| (object_id, pcurve.surface))
         .collect::<HashMap<_, _>>();
-    let a8_headers: BTreeMap<u32, crate::families::a5a8::records::A8SurfaceHeader> =
-        crate::families::a5a8::records::a8_surface_headers(bytes)
-            .into_iter()
-            .map(|header| (header.object_id, header))
-            .collect();
+    let a8_headers: BTreeMap<u32, crate::families::a5a8::records::A8SurfaceHeader> = frames
+        .iter()
+        .filter_map(|frame| {
+            crate::families::a5a8::records::a8_surface_header_from_object_frame(
+                bytes,
+                frame.start,
+                frame.end,
+                frame.object_id,
+            )
+        })
+        .map(|header| (header.object_id, header))
+        .collect();
     let mut surfaces: BTreeMap<u32, B5Surface> = records
         .iter()
         .filter_map(|record| {
@@ -868,7 +875,14 @@ pub(crate) fn parse_from_records(
             },
         );
     }
-    for surface in crate::families::a5a8::records::resolved_a8_surfaces(bytes) {
+    for surface in frames.iter().filter_map(|frame| {
+        crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
+            bytes,
+            frame.start,
+            frame.end,
+            frame.object_id,
+        )
+    }) {
         if let (Some(object_id), SurfaceGeometry::Nurbs(nurbs)) =
             (surface.object_id(), surface.geometry)
         {
@@ -1597,7 +1611,14 @@ pub(crate) fn targeted_surfaces_from_frames(
     frames: &[ObjectFrame],
 ) -> BTreeMap<u32, B5Surface> {
     let mut resolved = HashMap::<u32, Option<B5Surface>>::new();
-    for surface in crate::families::a5a8::records::resolved_a8_surfaces(bytes) {
+    for surface in frames.iter().filter_map(|frame| {
+        crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
+            bytes,
+            frame.start,
+            frame.end,
+            frame.object_id,
+        )
+    }) {
         let Some(object_id) = surface.object_id() else {
             continue;
         };
@@ -1606,8 +1627,16 @@ pub(crate) fn targeted_surfaces_from_frames(
         };
         merge_targeted_surface(&mut resolved, object_id, B5Surface::Nurbs(nurbs));
     }
-    let headers = crate::families::a5a8::records::a8_surface_headers(bytes)
-        .into_iter()
+    let headers = frames
+        .iter()
+        .filter_map(|frame| {
+            crate::families::a5a8::records::a8_surface_header_from_object_frame(
+                bytes,
+                frame.start,
+                frame.end,
+                frame.object_id,
+            )
+        })
         .map(|header| (header.object_id, header))
         .collect::<HashMap<_, _>>();
     let mut records = HashMap::<u32, Option<B5Record>>::new();

@@ -32,6 +32,48 @@ fn a8_surface_parser_reads_common_form_nurbs() {
 }
 
 #[test]
+fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
+    let inner = a8_surface_stream();
+    let inner_object_id = u32::from_le_bytes(inner[7..11].try_into().unwrap());
+    let mut bytes = vec![0xa8, 0x03, 0x62];
+    bytes.extend_from_slice(&u32::try_from(inner.len()).unwrap().to_le_bytes());
+    bytes.extend_from_slice(&0x1234_u32.to_le_bytes());
+    let inner_start = bytes.len();
+    bytes.extend_from_slice(&inner);
+    let inner_end = bytes.len();
+
+    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
+    let header = crate::families::a5a8::records::a8_surface_header_from_object_frame(
+        &bytes,
+        inner_start,
+        inner_end,
+        inner_object_id,
+    )
+    .expect("selected nested surface header");
+    assert_eq!((header.u_count, header.v_count), (3, 3));
+    let surface = crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
+        &bytes,
+        inner_start,
+        inner_end,
+        inner_object_id,
+    )
+    .expect("selected nested surface");
+    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
+        panic!("NURBS surface");
+    };
+    assert_eq!(surface.control_points[8].x, 8.0);
+    assert!(
+        crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
+            &bytes,
+            inner_start,
+            inner_end - 1,
+            inner_object_id,
+        )
+        .is_none()
+    );
+}
+
+#[test]
 fn a8_surface_parser_accepts_frame_bounded_knot_and_pole_counts() {
     let surfaces =
         crate::families::a5a8::records::a8_surfaces(&a8_surface_stream_with_u_count(20_001));
