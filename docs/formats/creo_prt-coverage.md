@@ -91,6 +91,9 @@ fixtures, claims above L1 remain unproven.
 - Layout dispatch uses the exact `DEPDB_DATA` root record; embedded `ND:` names
   do not override the persistence-layout discriminator, and missing
   discriminators remain unknown.
+- Header-adjacent `P_OBJECT` start, end, and product-banner markers classify
+  the legacy ASCII persistence family without interpreting its attribute
+  payload as ND or DEPDB byte grammar.
 - Compressed `THMB_IMG_MAIN` payloads expand to the JPEG marker before preview
   detection and retain the JPEG bytes as a derived native record.
 - Axis-aligned coaxial cone-cylinder intersections transfer the unique circle

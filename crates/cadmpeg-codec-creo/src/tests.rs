@@ -3,7 +3,7 @@
 //!
 //! No external CAD file is used; every fixture is a hand-built PSB byte image
 //! exercising the `#UGC:2` framing, the `#\n#<name>\n` section-boundary rule, the
-//! ND/DEPDB layout signals, and the `srf_array`/`crv_array` count headers.
+//! persistence-layout signals, and the `srf_array`/`crv_array` count headers.
 #![allow(clippy::unwrap_used)]
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -10074,6 +10074,44 @@ fn depdb_layout_requires_root_record() {
     );
     let scan = container::scan_bytes(data);
     assert_eq!(scan.framing.layout, Layout::Unknown);
+}
+
+#[test]
+fn complete_header_adjacent_p_object_selects_legacy_ascii_layout() {
+    let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n\
+        #P_OBJECT 6\n@P_object 1 0\n@value #END_OF_P_OBJECT\n\
+        #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
+    let scan = container::scan_bytes(data);
+
+    assert_eq!(scan.framing.layout, Layout::LegacyAscii);
+    assert_eq!(scan.framing.layout.token(), "LEGACY_ASCII");
+}
+
+#[test]
+fn incomplete_or_payload_embedded_p_object_does_not_select_legacy_ascii_layout() {
+    let incomplete = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n@P_object 1 0\n".to_vec();
+    assert_eq!(
+        container::scan_bytes(incomplete).framing.layout,
+        Layout::Unknown
+    );
+    let empty_schema = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT \n\
+        #END_OF_P_OBJECT\n#Pro/ENGINEER";
+    assert_eq!(
+        container::scan_bytes(empty_schema).framing.layout,
+        Layout::Unknown
+    );
+
+    let embedded = build_prt_raw(
+        "c",
+        &[(
+            "VisibGeom",
+            b"#P_OBJECT 6\n#END_OF_P_OBJECT\n#Pro/ENGINEER".to_vec(),
+        )],
+    );
+    assert_eq!(
+        container::scan_bytes(embedded).framing.layout,
+        Layout::Unknown
+    );
 }
 
 #[test]

@@ -793,3 +793,16 @@ that assign a dimension value to a dimension-driven solver variable.
 **Need.** We must know the ownership and precedence rule to transfer the correct tessellation positions and normals.
 
 **Note.** `crates/cadmpeg-codec-creo/src/primdata.rs:69-95` scans complete arrays in byte order and accepts the first one. If both arrays contain different positions, the first array supplies the strip and the other representation is discarded; the normal-bearing array is ignored when `mv_p_xyz` appears first. No current item records this selection rule.
+
+### PP-13. Legacy ASCII attribute bodies
+
+**Question.** What type and value grammar does each legacy ASCII `@<name>`
+field declaration select, and how do its object references and arrays compose
+the geometry, topology, and design-history graphs?
+
+**Known.** `creo_prt.md` §1 defines the complete legacy ASCII layout
+discriminator, its outer `P_OBJECT` boundary, and its monolithic and
+named-section forms.
+
+**Need.** We must know the attribute grammar and graph joins to transfer legacy
+ASCII payloads beyond container structure.

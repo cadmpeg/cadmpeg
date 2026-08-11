@@ -8,7 +8,9 @@ Record offsets, field widths, and endianness are also maintained as a machine-ch
 
 ## 1. Container
 
-A PSB file begins with an ASCII UGC header and table of contents, followed by named binary sections.
+A PSB file begins with an ASCII UGC header. The persistence generation selects
+either an ASCII `P_OBJECT` body or a table of contents followed by named binary
+sections.
 
 ```text
 #UGC:2 P ...
@@ -26,6 +28,15 @@ current relation model name after removing that padding and suffix.
 `hhh` is a three-digit ASCII hexadecimal byte count for `name`; padding after
 those bytes is not part of the name. Exactly one record establishes model
 identity; an absent or repeated record leaves model identity undefined.
+
+In the legacy ASCII layout, the byte immediately after
+`#-END_OF_UGC_HEADER\n` begins `#P_OBJECT <schema>\n`. `schema` is one or more
+ASCII decimal digits. The object ends with `#END_OF_P_OBJECT`, followed
+immediately by `\n#Pro/ENGINEER`. These header-adjacent start, end, and banner
+markers together select the legacy ASCII layout. The same marker bytes later
+in a payload do not select the layout. Legacy ASCII data uses `@<name>` field
+declarations and ASCII value rows. It can continue as one object or use an
+undecorated named-section directory.
 
 A body-section header is `#<name>\n`. The first header follows the TOC's
 newline. Later headers follow either the text delimiter `#\n` or the PSB
@@ -72,17 +83,19 @@ PSB does not use the Parasolid neutral-binary encoding. Parasolid terminology ma
 
 ### 1.1 Layout families
 
-| Layout |            Section count | Geometry representation                                               |
-| ------ | -----------------------: | --------------------------------------------------------------------- |
-| ND     | approximately 40 or more | Dense PSB rows in `VisibGeom`, including `srf_array` and `crv_array`. |
-| DEPDB  |         approximately 12 | Sparse PSB views and feature/section records.                         |
+| Layout       |            Section count | Geometry representation                                               |
+| ------------ | -----------------------: | --------------------------------------------------------------------- |
+| Legacy ASCII |            1 or multiple | ASCII attribute persistence in one object or undecorated sections.     |
+| ND           | approximately 40 or more | Dense PSB rows in `VisibGeom`, including `srf_array` and `crv_array`. |
+| DEPDB        |         approximately 12 | Sparse PSB views and feature/section records.                         |
 
 The outer layout discriminator is the first record in `DEPDB_DATA`. A
 `DEPDB_DATA` payload that begins with `e0 00 p_dep_db\0 e3` is a DEPDB layout.
 Names of embedded records may carry an `ND:` decoration; that decoration does
 not change the outer layout. An `ND:` decoration on an outer section identifies
-an ND layout. A file with neither discriminator is an unknown layout. Section
-cardinality is descriptive and does not select a layout.
+an ND layout. The complete header-adjacent `P_OBJECT` framing identifies the
+legacy ASCII layout. A file with none of these discriminators is an unknown
+layout. Section cardinality is descriptive and does not select a layout.
 
 ### 1.2 Section map
 

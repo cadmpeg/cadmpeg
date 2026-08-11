@@ -3,12 +3,14 @@
 //!
 //! A `.prt` begins with an ASCII header block (`#UGC:2 …` through
 //! `#-END_OF_UGC_HEADER`), an ASCII table of contents (`#UGC_TOC` …
-//! `#END_OF_TOC_HEADER`), then a sequence of named binary sections. A real body
-//! section header is `#\n#<name>\n`. The preceding `#` terminator and printable
-//! name distinguish section boundaries from similar bytes in feature data.
+//! `#END_OF_TOC_HEADER`), then a sequence of named binary sections. Earlier
+//! files instead begin an ASCII `P_OBJECT` persistence record immediately after
+//! the UGC header. A real body section header is `#\n#<name>\n`. The preceding
+//! `#` terminator and printable name distinguish section boundaries from
+//! similar bytes in feature data.
 //!
 //! [`scan`] reads the stream and returns a [`ContainerScan`] containing section
-//! metadata, the ND or DEPDB layout, namespace counts, typed structural rows,
+//! metadata, the persistence layout, namespace counts, typed structural rows,
 //! native loops, units, feature identifiers, and datum planes. [`summarize`]
 //! converts that scan into the codec-neutral container summary.
 
@@ -51,6 +53,12 @@ const UGC_HEADER_END: &[u8] = b"#-END_OF_UGC_HEADER";
 const TOC_START: &[u8] = b"#UGC_TOC";
 /// End of the ASCII table of contents.
 const TOC_END: &[u8] = b"#END_OF_TOC_HEADER";
+/// Start of the legacy ASCII persistence object.
+const LEGACY_OBJECT_START: &[u8] = b"#P_OBJECT ";
+/// End of the legacy ASCII persistence object.
+const LEGACY_OBJECT_END: &[u8] = b"#END_OF_P_OBJECT";
+/// Banner following a complete legacy ASCII persistence object.
+const LEGACY_BANNER_START: &[u8] = b"#Pro/ENGINEER";
 /// JPEG SOI magic, marking the `THMB_IMG_MAIN` preview payload (never geometry).
 pub(crate) const JPEG_MAGIC: &[u8] = &[0xff, 0xd8, 0xff];
 /// Unix `compress` payload prefix.
@@ -89,13 +97,15 @@ const VISIBGEOM: &str = "VisibGeom";
 /// authoritative.
 const PRINCIPAL_UNIT_ID: &[u8] = b"_principal_sys_units_id\0";
 
-/// The two layout families ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). Dispatched structurally, not per-file.
+/// The persistence layout families ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). Dispatched structurally, not per-file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Layout {
     /// Dense PSB rows in `VisibGeom` (~40+ sections; `ND:` name decoration).
     Nd,
     /// Sparse PSB views plus a persistence database (`DEPDB_DATA`, ~12 sections).
     Depdb,
+    /// ASCII `P_OBJECT` persistence used before the ND and DEPDB byte grammars.
+    LegacyAscii,
     /// Neither signature was conclusive.
     Unknown,
 }
@@ -106,6 +116,7 @@ impl Layout {
         match self {
             Layout::Nd => "ND",
             Layout::Depdb => "DEPDB",
+            Layout::LegacyAscii => "LEGACY_ASCII",
             Layout::Unknown => "unknown",
         }
     }
@@ -674,10 +685,49 @@ fn is_name_byte(b: u8) -> bool {
 
 const DEPDB_ROOT_RECORD: &[u8] = b"\xe0\x00p_dep_db\0\xe3";
 
+fn has_legacy_ascii_object(data: &[u8]) -> bool {
+    let Some(header_end) =
+        find(data, UGC_HEADER_END, 0).and_then(|offset| offset.checked_add(UGC_HEADER_END.len()))
+    else {
+        return false;
+    };
+    let Some(body) = data
+        .get(header_end..)
+        .and_then(|tail| tail.strip_prefix(b"\n"))
+    else {
+        return false;
+    };
+    if !body.starts_with(LEGACY_OBJECT_START) {
+        return false;
+    }
+    let Some(object_header_end) = find(body, b"\n", LEGACY_OBJECT_START.len()) else {
+        return false;
+    };
+    let schema = &body[LEGACY_OBJECT_START.len()..object_header_end];
+    if schema.is_empty() || !schema.iter().all(u8::is_ascii_digit) {
+        return false;
+    }
+    let mut from = object_header_end + 1;
+    while let Some(object_end) = find(body, LEGACY_OBJECT_END, from) {
+        if object_end
+            .checked_add(LEGACY_OBJECT_END.len())
+            .and_then(|banner| body.get(banner..))
+            .is_some_and(|tail| {
+                tail.starts_with(b"\n") && tail[1..].starts_with(LEGACY_BANNER_START)
+            })
+        {
+            return true;
+        }
+        from = object_end + 1;
+    }
+    false
+}
+
 /// Identify the layout family structurally ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). The
 /// `DEPDB_DATA` root record is authoritative because a persistence payload can
 /// contain embedded names with the `ND:` decoration. An undecorated file with
-/// neither a valid root record nor an outer `ND:` name remains unknown.
+/// neither a valid root record, an outer `ND:` name, nor a complete legacy
+/// ASCII object remains unknown.
 fn identify_layout(data: &[u8], sections: &[Section]) -> Layout {
     let has_depdb_root = sections.iter().any(|section| {
         if section.name != "DEPDB_DATA" {
@@ -702,6 +752,8 @@ fn identify_layout(data: &[u8], sections: &[Section]) -> Layout {
         }
     } else if has_nd_decoration {
         Layout::Nd
+    } else if has_legacy_ascii_object(data) {
+        Layout::LegacyAscii
     } else {
         Layout::Unknown
     }
