@@ -1086,10 +1086,6 @@ pub(crate) fn project(
     };
     use std::collections::BTreeMap;
 
-    // The family token is the codec's exact typing of the decoded record. 3DM
-    // stores class UUIDs rather than runtime class names, so this is the most
-    // specific runtime type the archive supports; it keeps the radius/diameter
-    // distinction that `DimensionDisplay` used to carry.
     let (runtime_type, value) = match dimension.definition {
         Definition::Linear { .. } => ("linear_dimension", dimension.measurement),
         Definition::Angular { .. } => ("angular_dimension", dimension.measurement),

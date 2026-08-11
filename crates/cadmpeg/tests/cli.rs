@@ -1700,8 +1700,6 @@ fn export_and_convert_refuse_binary_output_to_stdout() {
     let model = fixture(dir.path(), "cube.cadir.json", &ir);
     let path = model.to_str().unwrap();
 
-    // The hazard reproduction: an output-format flag with no -o used to
-    // stream ZIP bytes to stdout, where they were mistaken for JSON.
     for command in ["convert", "export"] {
         Command::cargo_bin("cadmpeg")
             .unwrap()
@@ -1741,7 +1739,6 @@ fn export_and_convert_refuse_binary_output_to_stdout() {
     let written = fs::read(&out).unwrap();
     assert!(written.starts_with(b"3D Geometry File Format"));
 
-    // The escape hatch streams the same bytes to stdout deliberately.
     let streamed = Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([

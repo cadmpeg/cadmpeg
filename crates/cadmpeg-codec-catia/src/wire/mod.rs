@@ -1,7 +1,7 @@
 //! Shared low-level byte-reading primitives for the CATIA codec.
 //!
 //! `wire` owns the checked [`Cursor`] and the compact-int / reference-token
-//! readers that were previously duplicated across the `b5` and `e5` families.
+//! readers shared by the `b5` and `e5` families.
 
 pub(crate) mod bytes;
 pub(crate) mod cursor;

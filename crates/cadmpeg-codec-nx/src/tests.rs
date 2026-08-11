@@ -10625,9 +10625,7 @@ mod golden {
         );
     }
 
-    /// Freezes the collective arena coverage floor so a refactor cannot silently
-    /// stop populating an arena across the whole fixture set. Prints the fraction
-    /// under `--nocapture`.
+    /// Collective arena coverage floor across the fixture set.
     #[test]
     fn arena_coverage_meets_floor() {
         let covered = covered_arenas();

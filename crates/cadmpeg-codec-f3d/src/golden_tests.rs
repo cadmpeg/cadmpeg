@@ -4,16 +4,7 @@
 //! `tests/golden/fixtures/*.f3d` are frozen inputs, and every snapshot here is
 //! produced from the committed bytes. Regenerate the artifacts with
 //! `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden` and review the
-//! diff.
-//!
-//! `UPDATE_GOLDEN=1` deliberately cannot write a fixture. A snapshot separates
-//! a codec change from an input change only while the input holds still: once
-//! the same command rewrites both sides, a drifting artifact no longer says
-//! whether the decoder moved or the bytes under it did, and the tree stops
-//! being evidence. Regenerating an input is a separate decision, so it needs
-//! the separate `UPDATE_GOLDEN_FIXTURES=1`, and a builder that no longer
-//! reproduces its committed input fails
-//! [`golden_fixtures_match_builders`] rather than being papered over.
+//! diff. Fixture regeneration is separate: `UPDATE_GOLDEN_FIXTURES=1`.
 
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
@@ -30,9 +21,6 @@ use cadmpeg_ir::{CadIr, WritePath};
 use super::*;
 
 /// Covering fixture set as `(golden name, full .f3d bytes)`.
-// Fifty-three entries, one per line block, appended in the order a reader adds a
-// new fixture. A `vec![]` literal would hold the same content behind one more
-// level of indentation and gain nothing.
 #[allow(clippy::vec_init_then_push)]
 fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
     vec![
@@ -337,10 +325,7 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
     text
 }
 
-/// Encodes an unedited decode result. Every fixture carries its own baseline, so
-/// this lane takes the verbatim-replay branch and the assertion below pins that:
-/// without it the lane would silently become a byte copy of the input the day the
-/// baseline stopped matching, and pass either way.
+/// Encodes an unedited decode result via the verbatim-replay branch.
 fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let result = decode_result(bytes).ok()?;
     let mut out = Vec::new();
@@ -527,16 +512,6 @@ fn generated_container_snapshot(bytes: &[u8]) -> String {
 
 /// Compares produced bytes against a golden container by the document each
 /// decodes to, tolerating last-place disagreement in decoded numbers.
-///
-/// Byte equality short-circuits, so an unchanged writer costs one comparison.
-/// Otherwise both containers decode and their snapshots go through
-/// [`snapshots_agree`]. A golden that no longer decodes is reported rather than
-/// silently agreeing with a fresh snapshot that does not decode either, because
-/// the two error texts would have to match for that to happen.
-///
-/// The comparison covers the decoded document. It does not cover the decode
-/// report or source fidelity, which describe the container this lane just wrote
-/// rather than the document it carries.
 fn compare_decoded_bytes(update: bool, path: &Path, actual: &[u8], failures: &mut Vec<String>) {
     if update {
         compare_bytes(update, path, actual, failures);
@@ -578,24 +553,8 @@ fn remove_if_exists(path: &Path) {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ByteComparison {
     /// The bytes must match the golden exactly.
-    ///
-    /// Measured, not assumed: perturbing every libm transcendental by one unit
-    /// in the last place moves neither the replay lane's 53 artifacts nor the
-    /// patch lane's 52. Replay copies the retained container, and the patch
-    /// writer rewrites records whose values it carries across rather than
-    /// recomputing them, so no decoded double reaches either output.
     Exact,
     /// The bytes must decode to the same document as the golden does.
-    ///
-    /// The generate lane writes geometry the decoder derived through libm, so
-    /// five of its 53 artifacts — `projection_curve`, `silhouette_curve`,
-    /// `spring_curve`, `surface_intersection_curve`, and
-    /// `surface_offset_curve` — move under that same shim. A container's bytes
-    /// have no numeric structure to compare tolerantly, so the comparison moves
-    /// to the document inside them, where the repository's float tolerance
-    /// applies. Byte equality still short-circuits, and
-    /// [`golden_output_is_deterministic`] still requires two runs in one process
-    /// to agree bit for bit.
     Decoded,
 }
 
@@ -745,12 +704,6 @@ fn golden_output_is_deterministic() {
 }
 
 /// Every committed fixture replays its retained bytes back to itself.
-///
-/// The `replay` artifacts pin what the encoder produced; this pins that it
-/// equals the input, which is a different claim and the one "replay" names.
-/// [`cadmpeg_ir::roundtrip::verbatim_replay_holds`] asserts the write path too,
-/// so a fixture that stopped replaying could not pass here by having its writer
-/// happen to reproduce the container.
 #[test]
 fn fixtures_replay_verbatim() {
     for (name, _) in fixtures() {
@@ -759,15 +712,7 @@ fn fixtures_replay_verbatim() {
     }
 }
 
-/// Without its baseline, this codec refuses to write rather than guess.
-///
-/// [`cadmpeg_ir::roundtrip::semantic_roundtrip`] removes the document baseline,
-/// which is the only thing that can show the retained container still describes
-/// the document. Fusion's writer declines at that point, so the semantic write
-/// path is not reachable through this helper for this codec, and the refusal is
-/// what gets asserted. That refusal is the safety property: replaying a container
-/// whose currency cannot be established would silently discard edits, and this
-/// fails if the codec ever starts doing so.
+/// Without its baseline, this codec refuses to write.
 #[test]
 fn fixtures_refuse_to_write_without_a_baseline() {
     for (name, _) in fixtures() {
@@ -788,30 +733,12 @@ fn fixtures_refuse_to_write_without_a_baseline() {
 }
 
 /// How far the mutation lane moves a point, in millimetres.
-///
-/// Large enough that the tolerant comparator cannot mistake a dropped edit for
-/// last-place disagreement, and small enough to stay inside the coordinate range
-/// the fixtures already occupy.
 const MUTATION_MM: f64 = 1.0;
 
-/// The one committed fixture with no point to move.
-///
-/// `container_metadata_only` carries a container and no B-rep stream, so
-/// `model.points` is empty and there is nothing for the point patcher to
-/// rewrite. Naming it here rather than skipping empty arenas quietly means a
-/// fixture that stops carrying points fails this test instead of leaving the
-/// lane silently narrower.
+/// Fixtures with no point for the mutation lane to move.
 const FIXTURES_WITHOUT_POINTS: [&str; 1] = ["container_metadata_only"];
 
-/// Serializes the neutral document: the model and the unit and tolerance
-/// declarations it is expressed in.
-///
-/// This is deliberately narrower than the whole IR. `ir.source` describes the
-/// container the document came out of, and a patched container is a different
-/// container: its length and its digests move because the writer rewrote it,
-/// which is the write succeeding rather than the document changing. The native
-/// `f3d` arenas are likewise keyed by position in a container that just moved.
-/// What must survive a patch unchanged, apart from the edit, is the model.
+/// Serializes the neutral model plus unit and tolerance declarations.
 fn neutral_document(ir: &CadIr) -> String {
     snapshot_text(&serde_json::json!({
         "model": serde_json::to_value(&ir.model).expect("serialize model"),
@@ -821,18 +748,6 @@ fn neutral_document(ir: &CadIr) -> String {
 }
 
 /// An edit to a decoded document survives the patch writer.
-///
-/// [`cadmpeg_ir::roundtrip::semantic_roundtrip`] cannot reach this writer: it
-/// removes the baseline and this codec then refuses, which
-/// [`fixtures_refuse_to_write_without_a_baseline`] pins. A user reaches the
-/// writer the other way, by editing a value and leaving the baseline where the
-/// decoder stamped it, so that is what
-/// [`cadmpeg_ir::roundtrip::mutation_roundtrip`] does here.
-///
-/// The check is not that the bytes round-trip. Bytes that round-trip while the
-/// edit vanishes are the failure this exists to catch, so the patched container
-/// is decoded and its neutral document must equal the edited document: the moved
-/// coordinate comes back moved, and nothing else moved with it.
 #[test]
 fn an_edit_survives_the_patch_writer() {
     let mut edited_count = 0usize;
@@ -895,10 +810,7 @@ fn an_edit_survives_the_patch_writer() {
     );
 }
 
-/// The tripwire that makes a frozen input auditable: every committed fixture
-/// must still be exactly what its builder produces, so a builder edit surfaces
-/// here instead of silently invalidating the artifacts pinned against the old
-/// bytes.
+/// Every committed fixture must still match its builder bytes.
 #[test]
 fn golden_fixtures_match_builders() {
     if fixture_update_requested() {
@@ -908,9 +820,6 @@ fn golden_fixtures_match_builders() {
     for (name, builder_bytes) in fixtures() {
         match read_fixture(name) {
             Ok(bytes) if bytes == builder_bytes => {}
-            // Report the first differing offset, not just the lengths: a
-            // builder can rewrite a record in place and leave the length alone,
-            // and a length-only message reads as "no difference".
             Ok(bytes) => failures.push(format!(
                 "fixture `{name}`: {}",
                 first_byte_diff(&bytes, &builder_bytes)

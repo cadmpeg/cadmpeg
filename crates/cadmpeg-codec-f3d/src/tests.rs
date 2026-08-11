@@ -16143,9 +16143,7 @@ fn decode_succeeds_when_geometry_present() {
 fn decode_keeps_face_on_unknown_surface() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
-    // Rename the plane record so the face rests on a carrier this codec does not
-    // decode. The face must now be KEPT — topology intact — with an
-    // unknown-geometry surface linking to the preserved record bytes.
+    // Rename the plane so the face rests on an undecoded carrier.
     let mut smbh = synthetic_geometry_smbh();
     let needle = b"\x0e\x05plane";
     let pos = smbh
@@ -16160,14 +16158,12 @@ fn decode_keeps_face_on_unknown_surface() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    // Topology is transferred: the face, its loop, coedges, and vertices survive.
     assert!(result.report.geometry_transferred);
     assert_eq!(result.ir.model.faces.len(), 1);
     assert_eq!(result.ir.model.coedges.len(), 3);
     assert_eq!(result.ir.model.vertices.len(), 3);
     assert_eq!(result.ir.model.surfaces.len(), 1);
 
-    // The one surface is unknown-geometry and links to a preserved record.
     let SurfaceGeometry::Unknown { record } = &result.ir.model.surfaces[0].geometry else {
         panic!("expected unknown surface geometry");
     };
@@ -16182,7 +16178,6 @@ fn decode_keeps_face_on_unknown_surface() {
         "the linked unknown record is present in the arena"
     );
 
-    // The loss note is a Warning now (topology transferred), not an Error.
     let note = result
         .report
         .losses

@@ -47,15 +47,6 @@ struct ClassOutcome {
     first_object_type: u32,
 }
 
-/// Per-record transfer state.
-///
-/// `NativeRetained` is distinct from both `Retained` and `Decoded`: the record
-/// was framed and its payload was read, but the only neutral entity it produced
-/// carries the construction state as a `FeatureDefinition::Native` blob. Such a
-/// record is not "decoded" for census purposes, and it is not "retained"
-/// either, because a `Retained` record reports
-/// `RhinoLossCode::ObjectFamilyNotTransferred`, which claims the payload was
-/// never read.
 /// Outcome of resolving one foreign object UUID against the object table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ObjectReference {
@@ -383,10 +374,6 @@ impl ArenaLengths {
     }
 }
 
-// Instance expansion re-enters `decode_geometry` per member, which reaches the mesh decoder's
-// `begin_expand` path; these caps bound reference, member, and entity
-// amplification from a hostile definition graph independently of the platform
-// budget, and are kept as defense in depth.
 const MAX_INSTANCE_REFERENCES: usize = 1 << 20;
 const MAX_INSTANCE_MEMBERS: usize = 1 << 20;
 const MAX_INSTANCE_ENTITIES: usize = 1 << 20;
@@ -5041,10 +5028,6 @@ pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> De
             scale,
         )
     });
-    // History projection now appends carrier geometry, so it runs inside the
-    // same atomic transaction the object-record phases use. Before this it wrote
-    // straight into the document, and an invalid entity would have surfaced only
-    // at `cadmpeg validate` time.
     let untyped = context.validate_candidate(|candidate, _annotations| {
         crate::history::project(&scan.history, geometry_context, candidate)
     });

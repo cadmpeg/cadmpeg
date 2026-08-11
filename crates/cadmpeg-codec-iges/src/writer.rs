@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded IGES Fixed ASCII writing.
 //!
-//! The writer has two deliberately separate paths. An unchanged decode with a
-//! verified document baseline replays its retained source image byte for byte.
-//! Otherwise the semantic writer emits the current supported neutral profile
-//! and refuses a model or native record it cannot represent. A caller never
-//! receives a plausible file after an unsupported value was silently dropped.
+//! An unchanged decode with a verified document baseline replays its retained
+//! source image byte for byte. Otherwise the semantic writer emits the current
+//! supported neutral profile and refuses unsupported models or native records.
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{EncodeInput, ExportPlan};

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Eager, best-effort extraction of the native NX object model.
 //!
-//! [`NativeModel::extract`] runs the full extraction dependency DAG in the same
-//! hand-ordered topological order the decode tier previously inlined, grouping
-//! the resulting record vectors into domain sub-structs. Extraction is
-//! infallible: malformed data is omitted, never surfaced as an error.
+//! [`NativeModel::extract`] runs the full extraction dependency DAG in
+//! hand-ordered topological order, grouping the resulting record vectors into
+//! domain sub-structs. Extraction is infallible: malformed data is omitted,
+//! never surfaced as an error.
 
 use crate::container::Container;
 use crate::parasolid::Stream;

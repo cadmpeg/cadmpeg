@@ -105,26 +105,11 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     snapshot_text(&value)
 }
 
-/// Serializes one re-encoded document by archive membership rather than by
-/// archive bytes: the entry names in write order, and the length and digest of
-/// each entry's decompressed payload.
+/// Serializes one re-encoded document by archive membership: entry names in
+/// write order, plus length and digest of each decompressed payload.
 ///
-/// An `FCStd` file is a ZIP, and a ZIP's bytes are a function of the deflate
-/// implementation as much as of the content. Pinning them makes a `miniz_oxide`
-/// release read as codec drift, which is a false positive this harness cannot
-/// distinguish from a real one. The decompressed payloads are what this codec
-/// authors, so they are what the golden holds. Perturbing every libm
-/// transcendental by one unit in the last place leaves all 11 fixtures' payloads
-/// bit-identical, so these digests need no tolerance — unlike the numbers in the
-/// `decode` branch.
-///
-/// The compressed bytes are still held to something: the archive is produced
-/// twice in this process and the two must agree bit for bit, which is what
-/// catches map ordering and embedded timestamps. Reproducibility across
-/// compression-library versions is not this codec's contract.
-///
-/// An encode error is frozen too: refusing to write is contract-relevant
-/// behavior, so this never panics on codec output.
+/// ZIP bytes depend on the deflate implementation; pinning them would treat a
+/// `miniz_oxide` release as codec drift. Digests cover decompressed payloads.
 ///
 /// # Panics
 ///
@@ -238,16 +223,6 @@ fn step_snapshot(bytes: &[u8]) -> String {
 
 /// Compares two STEP texts, holding structure exact and numbers to a tolerance.
 ///
-/// [`cadmpeg_core::golden::snapshots_agree`] cannot do this: STEP is not
-/// JSON, so it falls back to a line comparison, and a line comparison of an
-/// exchange file reports a platform as a regression. These texts carry the same
-/// decoded geometry the `decode` branch compares tolerantly — a conical face's
-/// origin is `cos(half_angle)` scaled, and glibc, the MSVC runtime, and Apple's
-/// libm disagree in the last place — so the same tolerance has to reach here.
-///
-/// Every non-numeric character still compares exactly, so an entity name, an
-/// instance number, or a record's shape cannot move under this.
-///
 /// # Errors
 ///
 /// Returns a description locating the first line that disagrees.
@@ -312,15 +287,6 @@ enum StepToken<'a> {
 }
 
 /// Splits a STEP line into numeric literals and the text around them.
-///
-/// A literal starts at a digit and runs over digits, one decimal point, and one
-/// exponent. The sign is deliberately left in the surrounding text, so a sign
-/// flip is a difference rather than something a tolerance could absorb.
-///
-/// An instance reference such as `#307` stays in the surrounding text and
-/// compares exactly: it names a record rather than measuring anything, and one
-/// record standing where another used to must fail. The whole run is consumed
-/// either way, so the digits after the first cannot start a literal of their own.
 fn step_tokens(line: &str) -> Vec<StepToken<'_>> {
     let bytes = line.as_bytes();
     let mut tokens = Vec::new();
