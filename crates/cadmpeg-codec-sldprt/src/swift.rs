@@ -2223,6 +2223,45 @@ mod tests {
     }
 
     #[test]
+    fn empty_pattern_does_not_bind_an_unrelated_rendered_diameter() {
+        let mut root = semantic_root();
+        root.features
+            .entities
+            .first_mut()
+            .and_then(|pattern| pattern.related.first_mut())
+            .expect("pattern members")
+            .entity
+            .related
+            .clear();
+        root.annotations
+            .entities
+            .get_mut(2)
+            .expect("diameter")
+            .features
+            .references = vec![reference("FP", "GdtPattern")];
+
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(
+            &root,
+            &[RenderedDimension {
+                kind: RenderedDimensionKind::Diameter,
+                value: 0.25,
+                decimal_places: 3,
+            }],
+            &mut annotations,
+        );
+        let PmiDefinition::Dimension { nominal, .. } = &annotations
+            .iter()
+            .find(|annotation| annotation.id == pmi_id("A30"))
+            .expect("empty-pattern diameter")
+            .definition
+        else {
+            panic!("dimension definition");
+        };
+        assert_eq!(*nominal, None);
+    }
+
+    #[test]
     fn counterbore_pattern_supplies_distinct_hole_diameter() {
         let mut root = semantic_root();
         *root

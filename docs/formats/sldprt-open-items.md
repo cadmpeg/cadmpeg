@@ -526,7 +526,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** How does each `GdtAnalysis.CadRef.CadIdentifier` select a Parasolid body, face, edge, or vertex identity?
 
-**Known.** `sldprt.md` §2.1 defines the SWIFT annotation-to-feature graph. Each semantic feature owns a `CadReferences` collection. Each `CadRef` stores a `CadIdentifier`. The annotation target remains the stable GDT-analysis feature identity when that identifier does not resolve to one neutral topology object.
+**Known.** `sldprt.md` §2.1 defines the SWIFT annotation-to-feature graph. Each semantic feature can own a `CadReferences` collection. Each `CadRef` stores a `CadIdentifier`. An empty identifier supplies no topology identity. The annotation target remains the stable GDT-analysis feature identity when that identifier does not resolve to one neutral topology object.
 
 **Need.** We must know the identity conversion to attach semantic PMI to the exact neutral topology object.
 
@@ -534,9 +534,9 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** Which nominal-geometry rule applies to each remaining feature-size annotation whose `Nominal` field is zero and whose `Dimension` field is absent?
 
-**Known.** `sldprt.md` §2.1 defines zero as an omitted nominal sentinel. It defines diameter and depth nominal recovery from the rendered literal, declared decimal places, pattern or compound-feature traversal, and cylindrical or spherical nominal geometry. The rendered literal, not the unrounded geometry, supplies the labeled value. It defines width and length from named slot-geometry fields and radius from the named radius field of fillet, cylindrical, or spherical geometry. It defines counterbore diameter from the direct nominal cylinder and countersink diameter and angle from the direct nominal cone.
+**Known.** `sldprt.md` §2.1 defines zero as an omitted nominal sentinel. It defines diameter and depth nominal recovery from the rendered literal, declared decimal places, pattern or compound-feature traversal, and cylindrical or spherical nominal geometry. The rendered literal, not the unrounded geometry, supplies the labeled value. It defines width and length from named slot-geometry fields and radius from the named radius field of fillet, cylindrical, or spherical geometry. It defines counterbore diameter from the direct nominal cylinder and countersink diameter and angle from the direct nominal cone. An empty applied-feature graph and empty CAD identifiers supply no geometry and do not bind an unrelated rendered literal.
 
-**Need.** We must derive location and the remaining topology-only pattern diameter nominal without treating the zero sentinel as a measured dimension.
+**Need.** We must derive location nominals without treating the zero sentinel as a measured dimension.
 
 ## 6. Write-path evidence
 

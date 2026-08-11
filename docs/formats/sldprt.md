@@ -924,7 +924,10 @@ contributors supplies the evaluated nominal. This applies to direct features,
 patterns, and compound holes. A binding rendered literal has precedence over
 the unrounded evaluated geometry. A compound stack containing different
 diameters remains unresolved; the decoder does not select one contributor by
-position or magnitude.
+position or magnitude. An empty `SubFeatures` collection contributes no
+geometry. A `CadRef` whose `CadIdentifier` string is empty contributes no
+topology identity or nominal geometry. A rendered literal cannot bind without
+applied nominal geometry.
 
 A `GdtDiameter` on a multi-diameter counterbore pattern pairs with a
 `GdtCounterBore` annotation whose non-cylinder feature-reference set equals the
