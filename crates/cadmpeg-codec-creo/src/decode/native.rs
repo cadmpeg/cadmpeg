@@ -15,6 +15,17 @@ const CREO_NATIVE_VERSION: u32 = 1;
 /// [`store_arena`] asserts the key appears here.
 const CREO_ARENAS: &[&str] = &[
     "expanded_sections",
+    "legacy_integer_values",
+    "legacy_objects",
+    "legacy_real_values",
+    "legacy_string_values",
+    "legacy_type_3_values",
+    "legacy_type_4_values",
+    "legacy_type_5_values",
+    "legacy_type_6_values",
+    "legacy_type_7_values",
+    "legacy_type_9_values",
+    "legacy_type_11_values",
     "double_xar_tables",
     "primitive_scalar_arrays",
     "reference_lines",

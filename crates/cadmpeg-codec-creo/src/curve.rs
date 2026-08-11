@@ -4611,8 +4611,13 @@ fn infer_solve_variable_dimensions(
             components[4][index] = dimension.temperature;
         }
     }
+    let required_columns = known_dimensions
+        .iter()
+        .enumerate()
+        .filter_map(|(index, dimension)| dimension.is_none().then_some(index))
+        .collect::<BTreeSet<_>>();
     for (axis, rows) in axis_rows.iter_mut().enumerate() {
-        let solution = solve_dimension_axis(rows, variable_keys.len())?;
+        let solution = solve_dimension_axis(rows, variable_keys.len(), &required_columns)?;
         for (index, value) in solution.into_iter().enumerate() {
             if known_dimensions[index].is_some() {
                 continue;
@@ -4635,7 +4640,11 @@ fn infer_solve_variable_dimensions(
     )
 }
 
-fn solve_dimension_axis(rows: &mut [AffineEquationRow], variable_count: usize) -> Option<Vec<f64>> {
+fn solve_dimension_axis(
+    rows: &mut [AffineEquationRow],
+    variable_count: usize,
+    required_columns: &BTreeSet<usize>,
+) -> Option<Vec<f64>> {
     let mut pivot_row = 0;
     let mut pivot_rows = Vec::new();
     let coefficient_tolerance = 1e-12;
@@ -4686,6 +4695,10 @@ fn solve_dimension_axis(rows: &mut [AffineEquationRow], variable_count: usize) -
                 .any(|coefficient| coefficient.abs() > coefficient_tolerance);
             has_coefficients || row.rhs.abs() <= residual_tolerance
         })
+        .then_some(())?;
+    required_columns
+        .iter()
+        .all(|required| pivot_rows.iter().any(|(column, _)| column == required))
         .then_some(())?;
     let mut solution = vec![0.0; variable_count];
     for (column, row) in pivot_rows {
@@ -4790,29 +4803,27 @@ fn solve_nonlinear_expression_block(
         && variable_count <= MAX_NONLINEAR_SOLVE_VARIABLES
         && block.equations.len() >= variable_count)
         .then_some(())?;
-    let seeds = nonlinear_initial_guesses(initial_values, &variable_dimensions);
-    let mut solution = None;
+    let mut seeds = nonlinear_initial_guesses(initial_values, &variable_dimensions)?.into_iter();
+    let initial_seed = seeds.next()?;
+    let solution =
+        refine_nonlinear_solution(block, values, &variable_dimensions, &initial_seed, context)?;
     for seed in seeds {
         let Some(candidate) =
             refine_nonlinear_solution(block, values, &variable_dimensions, &seed, context)
         else {
             continue;
         };
-        if solution
-            .as_ref()
-            .is_some_and(|known: &Vec<f64>| !nonlinear_solutions_close(known, &candidate))
-        {
+        if !nonlinear_solutions_close(&solution, &candidate) {
             return None;
         }
-        solution = Some(candidate);
     }
-    solution.map(|values| {
-        values
+    Some(
+        solution
             .into_iter()
             .zip(variable_dimensions)
             .map(|(value, dimension)| quantity_value(value, dimension))
-            .collect()
-    })
+            .collect(),
+    )
 }
 
 fn nonlinear_equations_are_smooth(block: &CurveExpressionSolveBlock) -> bool {
@@ -4874,7 +4885,7 @@ fn nonlinear_expression_is_smooth(expression: &str) -> bool {
 fn nonlinear_initial_guesses(
     initial_values: &[Option<CurveExpressionValue>],
     variable_dimensions: &[RelationDimension],
-) -> Vec<Vec<f64>> {
+) -> Option<Vec<Vec<f64>>> {
     let variable_count = variable_dimensions.len();
     let mut seeds = Vec::new();
     let mut add_seed = |seed: Vec<f64>| {
@@ -4882,22 +4893,19 @@ fn nonlinear_initial_guesses(
             seeds.push(seed);
         }
     };
-    add_seed(vec![0.0; variable_count]);
-    if initial_values.len() == variable_count {
-        let initial = initial_values
-            .iter()
-            .zip(variable_dimensions)
-            .map(|(value, dimension)| {
-                value.as_ref().and_then(|value| {
-                    let (value, value_dimension) = quantity_parts_ref(value)?;
-                    (value_dimension == *dimension).then_some(value)
-                })
+    (initial_values.len() == variable_count).then_some(())?;
+    let initial = initial_values
+        .iter()
+        .zip(variable_dimensions)
+        .map(|(value, dimension)| {
+            value.as_ref().and_then(|value| {
+                let (value, value_dimension) = quantity_parts_ref(value)?;
+                (value_dimension == *dimension).then_some(value)
             })
-            .collect::<Option<Vec<_>>>();
-        if let Some(initial) = initial {
-            add_seed(initial);
-        }
-    }
+        })
+        .collect::<Option<Vec<_>>>()?;
+    add_seed(initial);
+    add_seed(vec![0.0; variable_count]);
     for magnitude in [0.01, 0.1, 1.0, 10.0, 100.0] {
         add_seed(vec![magnitude; variable_count]);
         add_seed(vec![-magnitude; variable_count]);
@@ -4912,7 +4920,7 @@ fn nonlinear_initial_guesses(
             add_seed(negative);
         }
     }
-    seeds
+    Some(seeds)
 }
 
 fn refine_nonlinear_solution(
@@ -6564,6 +6572,24 @@ mod tests {
     }
 
     #[test]
+    fn leaves_free_solve_dimensions_unresolved() {
+        let lines = ["SOLVE", "x+y=y", "x-y=x", "FOR x,y"]
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert!(evaluation.solve_solutions.is_empty());
+        assert!(evaluation.assignments.is_empty());
+    }
+
+    #[test]
     fn rejects_missing_solve_dimensions_with_conflicting_units() {
         let lines = ["SOLVE", "x=1[mm]", "x=1[s]", "FOR x"]
             .into_iter()
@@ -6775,8 +6801,8 @@ mod tests {
     }
 
     #[test]
-    fn rejects_nonlinear_systems_with_multiple_roots() {
-        let lines = ["SOLVE", "x*x=4", "FOR x"]
+    fn leaves_nonlinear_systems_without_previous_values_unsolved() {
+        let lines = ["SOLVE", "x*x*x=8", "FOR x"]
             .into_iter()
             .enumerate()
             .map(|(offset, text)| CurveExpressionLine {
@@ -6790,6 +6816,25 @@ mod tests {
 
         assert!(evaluation.solve_solutions.is_empty());
         assert!(evaluation.assignments.is_empty());
+    }
+
+    #[test]
+    fn rejects_nonlinear_systems_with_multiple_roots() {
+        let lines = ["x=1", "SOLVE", "x*x=4", "FOR x"]
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert!(evaluation.solve_solutions.is_empty());
+        assert_eq!(evaluation.assignments.len(), 1);
+        assert_eq!(evaluation.assignments[0].value, None);
     }
 
     #[test]
