@@ -5980,6 +5980,14 @@ fn validate_edge_operands<'a>(
                     operand.recipe_references.len(),
                 )
             });
+        let terminal_group_member = native
+            .design_construction_operand_groups
+            .iter()
+            .any(|group| {
+                design_stream(&group.id) == native_stream
+                    && group.scope_record_index == operand.scope_record_index
+                    && group.members.last() == Some(&operand.record_index)
+            });
         let valid = operand.class_tag.len() == 3
             && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && operand.paired_class_tag.len() == 3
@@ -5999,12 +6007,13 @@ fn validate_edge_operands<'a>(
             })
             && operand.paired_byte_offset > operand.byte_offset
             && operand.recipe_record_index == operand.record_index.saturating_add(3)
-            && operand.next_record_index
+            && (operand.next_record_index
                 == operand
                     .record_index
                     .saturating_add(scope.map_or(4, |scope| {
                         design::decode::operands::edge_recipe_terminal_delta(&scope.kind)
                     }))
+                || terminal_group_member)
             && operand.recipe_record_byte_offset > operand.paired_byte_offset
             && operand.next_byte_offset > operand.recipe_record_byte_offset
             && operand.recipe_prefix_offset == operand.recipe_record_byte_offset.saturating_add(11)

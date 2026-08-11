@@ -40,10 +40,21 @@ pub fn decode_edge_operands(
     headers: &[DesignRecordHeader],
     recipes: &[ConstructionRecipe],
 ) -> Result<Vec<DesignEdgeOperand>, CodecError> {
-    let headers = headers
+    let record_headers = headers;
+    let headers = record_headers
         .iter()
         .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
         .collect::<HashMap<_, _>>();
+    let terminal_group_members = groups
+        .iter()
+        .filter_map(|group| {
+            Some((
+                native_stream(&group.id)?.to_owned(),
+                group.scope_record_index,
+                *group.members.last()?,
+            ))
+        })
+        .collect::<HashSet<_>>();
     let mut out = Vec::new();
     for scope in scopes
         .iter()
@@ -98,7 +109,25 @@ pub fn decode_edge_operands(
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
-            let Some(operand) = parse_edge_operand(bytes, scope, ordinal, header, recipes) else {
+            let terminal_group_member = terminal_group_members.contains(&(
+                stream.to_owned(),
+                scope.record_index,
+                header.record_index,
+            ));
+            let terminal_group_limit = terminal_group_member.then(|| {
+                record_headers
+                    .iter()
+                    .filter(|candidate| {
+                        native_stream(&candidate.id) == Some(stream)
+                            && candidate.byte_offset > header.byte_offset
+                    })
+                    .map(|candidate| candidate.byte_offset)
+                    .min()
+                    .unwrap_or_else(|| u64::try_from(bytes.len()).unwrap_or(u64::MAX))
+            });
+            let Some(operand) =
+                parse_edge_operand(bytes, scope, ordinal, header, recipes, terminal_group_limit)
+            else {
                 continue;
             };
             out.push(operand);
@@ -3075,6 +3104,12 @@ struct ParsedRecipeOperand {
     next_byte_offset: u64,
 }
 
+#[derive(Clone, Copy)]
+enum RecipeOperandTerminator {
+    RecordDelta(u32),
+    NextIndexedAfterRecipe { limit: u64 },
+}
+
 /// Parse the exact vertex-recipe envelope used by a `WorkPoint` input.
 pub(crate) fn parse_work_point_vertex_recipe(
     bytes: &[u8],
@@ -3088,7 +3123,7 @@ pub(crate) fn parse_work_point_vertex_recipe(
         header,
         recipes,
         ConstructionRecipeKind::Vertex,
-        5,
+        RecipeOperandTerminator::RecordDelta(5),
     )?;
     Some(DesignWorkPointVertexRecipe {
         class_tag: header.class_tag.clone(),
@@ -3116,7 +3151,7 @@ fn parse_recipe_operand(
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
     recipe_kind: ConstructionRecipeKind,
-    next_record_delta: u32,
+    terminator: RecipeOperandTerminator,
 ) -> Option<ParsedRecipeOperand> {
     let family_name = crate::design::RECIPES
         .iter()
@@ -3129,11 +3164,30 @@ fn parse_recipe_operand(
         offsets.push(offset);
         position = offset.checked_add(11)?;
     }
-    offsets.push(next_indexed_record_offset_with_index(
-        bytes,
-        position,
-        header.record_index.checked_add(next_record_delta)?,
-    )?);
+    offsets.push(match terminator {
+        RecipeOperandTerminator::RecordDelta(delta) => next_indexed_record_offset_with_index(
+            bytes,
+            position,
+            header.record_index.checked_add(delta)?,
+        )?,
+        RecipeOperandTerminator::NextIndexedAfterRecipe { limit } => {
+            let recipe_record_byte_offset = u64::try_from(offsets[3]).ok()?;
+            let recipe = recipes
+                .iter()
+                .filter(|recipe| {
+                    native_stream(&recipe.id) == Some(stream)
+                        && recipe.kind == recipe_kind
+                        && recipe.byte_offset > recipe_record_byte_offset
+                        && recipe.byte_offset < limit
+                })
+                .min_by_key(|recipe| recipe.byte_offset)?;
+            let recipe_program_at = usize::try_from(recipe.byte_offset)
+                .ok()?
+                .checked_add(family_name.len())?;
+            let next = next_indexed_record_offset(bytes, recipe_program_at)?;
+            (u64::try_from(next).ok()? <= limit).then_some(next)?
+        }
+    });
     let indexed = offsets
         .iter()
         .map(|offset| {
@@ -3143,20 +3197,25 @@ fn parse_recipe_operand(
         })
         .collect::<Option<Vec<_>>>()?;
     let recipe_record_index = header.record_index.checked_add(3)?;
-    let next_record_index = header.record_index.checked_add(next_record_delta)?;
-    let expected = [
+    let expected_prefix = [
         header.record_index,
         header.record_index.checked_add(1)?,
         header.record_index.checked_add(2)?,
         recipe_record_index,
-        next_record_index,
     ];
     if !indexed
         .iter()
-        .zip(expected)
+        .take(4)
+        .zip(expected_prefix)
         .all(|((_, actual), expected)| *actual == expected)
     {
         return None;
+    }
+    let next_record_index = indexed[4].1;
+    if let RecipeOperandTerminator::RecordDelta(delta) = terminator {
+        if next_record_index != header.record_index.checked_add(delta)? {
+            return None;
+        }
     }
     let recipe_record_byte_offset = u64::try_from(offsets[3]).ok()?;
     let next_byte_offset = u64::try_from(offsets[4]).ok()?;
@@ -3222,6 +3281,7 @@ pub(crate) fn parse_edge_operand(
     scope_reference_ordinal: u32,
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
+    terminal_group_limit: Option<u64>,
 ) -> Option<DesignEdgeOperand> {
     let next_record_delta = edge_recipe_terminal_delta(&scope.kind);
     let stream = native_stream(&scope.id)?;
@@ -3231,8 +3291,19 @@ pub(crate) fn parse_edge_operand(
         header,
         recipes,
         ConstructionRecipeKind::Edge,
-        next_record_delta,
-    )?;
+        RecipeOperandTerminator::RecordDelta(next_record_delta),
+    )
+    .or_else(|| {
+        let limit = terminal_group_limit?;
+        parse_recipe_operand(
+            bytes,
+            stream,
+            header,
+            recipes,
+            ConstructionRecipeKind::Edge,
+            RecipeOperandTerminator::NextIndexedAfterRecipe { limit },
+        )
+    })?;
     let recipe_structure = edge_recipe_structure(&parsed.recipe_program);
     let surface_patch_recipe_structure = (scope.kind == "SurfacePatch")
         .then(|| {

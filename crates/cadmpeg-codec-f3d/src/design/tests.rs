@@ -13315,9 +13315,15 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         record_index: 303,
     };
 
-    let mut edge_operand =
-        parse_edge_operand(&bytes, &scope, 0, &record, std::slice::from_ref(&recipe))
-            .expect("edge recipe operand");
+    let mut edge_operand = parse_edge_operand(
+        &bytes,
+        &scope,
+        0,
+        &record,
+        std::slice::from_ref(&recipe),
+        None,
+    )
+    .expect("edge recipe operand");
     assert_eq!(edge_operand.record_index, 100);
     assert_eq!(edge_operand.paired_byte_offset, paired_at);
     assert_eq!(edge_operand.recipe_record_index, 103);
@@ -13333,6 +13339,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         0,
         &record,
         std::slice::from_ref(&recipe),
+        None,
     )
     .expect("WorkPoint edge recipe operand");
     assert_eq!(work_point_operand.next_record_index, 105);
@@ -13345,9 +13352,44 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         0,
         &record,
         std::slice::from_ref(&recipe),
+        None,
     )
     .expect("Sweep edge recipe operand");
     assert_eq!(sweep_operand.next_record_index, 107);
+    bytes[next_at as usize + 7..next_at as usize + 11].copy_from_slice(&160u32.to_le_bytes());
+    assert_eq!(
+        parse_edge_operand(
+            &bytes,
+            &scope,
+            0,
+            &record,
+            std::slice::from_ref(&recipe),
+            None,
+        ),
+        None
+    );
+    assert_eq!(
+        parse_edge_operand(
+            &bytes,
+            &scope,
+            0,
+            &record,
+            std::slice::from_ref(&recipe),
+            Some(recipe.byte_offset),
+        ),
+        None
+    );
+    let terminal_group_operand = parse_edge_operand(
+        &bytes,
+        &scope,
+        0,
+        &record,
+        std::slice::from_ref(&recipe),
+        Some(u64::try_from(bytes.len()).expect("generated stream length fits u64")),
+    )
+    .expect("terminal construction-group edge recipe operand");
+    assert_eq!(terminal_group_operand.next_record_index, 160);
+    assert_eq!(terminal_group_operand.next_byte_offset, next_at);
 
     let mut vertex_bytes = Vec::new();
     header(&mut vertex_bytes, *b"369", 200);
