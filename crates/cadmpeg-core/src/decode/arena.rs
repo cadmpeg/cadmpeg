@@ -22,13 +22,15 @@ impl DecodeArena {
         let mut buffers = self.buffers.borrow_mut();
         buffers.push(bytes);
         let slice: &[u8] = buffers.last().expect("a buffer was just pushed").as_ref();
-        // SAFETY: `slice` points into the heap allocation owned by the box we
-        // just pushed. That allocation is not freed or moved until the arena
-        // is dropped, and the arena outlives every borrow of `&self`, so the
-        // pointer is valid for the returned lifetime. The bytes are never
-        // mutated after being stored (the arena exposes no mutation), so
-        // aliasing `&[u8]` borrows do not conflict.
-        //
+        // SAFETY: three legs keep the returned `&[u8]` valid:
+        // 1. Each buffer is a `Box<[u8]>`; its heap address is stable when
+        //    the outer `Vec` reallocates (only the box pointers move).
+        // 2. `DecodeArena` is `!Sync` (`RefCell`), so no concurrent mutation
+        //    can invalidate or alias the stored bytes across threads.
+        // 3. The returned slice is tied to `&self`; it cannot outlive the
+        //    arena that owns the boxes.
+        // The bytes are never mutated after being stored (the arena exposes
+        // no mutation), so aliasing `&[u8]` borrows do not conflict.
         unsafe { std::slice::from_raw_parts(slice.as_ptr(), slice.len()) }
     }
 }
