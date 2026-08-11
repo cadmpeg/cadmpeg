@@ -140,15 +140,19 @@ fixtures, claims above L1 remain unproven.
   dependencies, block-local auxiliary assignments, and unknowns. Auxiliary
   assignments retain ordinary target, namespace, dependency, and evaluation
   semantics; simultaneous equations do not become sequential assignments.
-  Complete dimensionally valid affine systems over previously valued numeric
-  unknowns evaluate in canonical relation units when they have one finite
-  consistent solution. Fixed Boolean annihilators, equal conditional branches,
+  Complete dimensionally valid affine systems over previously valued or
+  uniquely dimension-constrained numeric unknowns evaluate in canonical
+  relation units when they have one finite consistent solution. Fixed Boolean
+  annihilators, equal conditional branches,
   signed zero, and identity or zero powers reduce within affine equations even
   when the controlling operand remains unknown. Unknowns may have different
   physical dimensions, and
   known dimensioned coefficients participate in the affine system. Nonlinear,
   dimensionally inconsistent, dependency-unresolved, underdetermined, and
   inconsistent systems retain absent aligned solution values.
+  Smooth nonlinear systems require one preceding finite numeric value of the
+  resolved dimension for each unknown. That value initializes the accepted
+  root; additional diagnostic starts can only reject competing roots.
   Constructs prohibited in datum-curve equations are retained but do not
   evaluate or generate a derived curve. Positive
   `exists()` queries resolve against the complete local assignment namespace

@@ -3844,18 +3844,22 @@ At the terminating `FOR` line, a declared unknown takes the physical dimension
 of its preceding value when that value is defined. An unknown without a
 preceding value receives dimensions from unit-qualified operands, dimensioned
 reserved constants, known quantities, and dimension-equality constraints imposed
-by the equation expressions. Free dimension exponents are zero. A dimension
-constraint is inconsistent when it has no integral solution in the five
-canonical axes: length, mass, time, angle, and temperature. A dimensionally
-valid affine equality is then evaluated after known dependencies and block-local
-auxiliary relations are applied. When the complete affine system has one finite
-consistent solution, the solution in canonical relation units replaces the
-unknown values at `FOR` and supplies following assignments. Unknowns may have
-different physical dimensions; multiplication or division by a known
-dimensioned value supplies the corresponding affine coefficient. A nonlinear
-system uses the same dimension checks and replaces the unknown values only when
-its numeric residual equations have one finite root with a full-rank local
-Jacobian. A root is not a solution when any residual is nonnumeric,
+by the equation expressions. Every exponent of every previously untyped
+unknown must have one integral solution in the five canonical axes: length,
+mass, time, angle, and temperature. An inconsistent or underdetermined
+dimension system remains unresolved. A dimensionally valid affine equality is
+then evaluated after known dependencies and block-local auxiliary relations are
+applied. When the complete affine system has one finite consistent solution,
+the solution in canonical relation units replaces the unknown values at `FOR`
+and supplies following assignments. Unknowns may have different physical
+dimensions; multiplication or division by a known dimensioned value supplies
+the corresponding affine coefficient. A nonlinear system requires one
+preceding finite numeric value of the resolved physical dimension for each
+unknown. Those values initialize the solve. The system uses the same dimension
+checks and replaces the unknown values only when its numeric residual equations
+have one finite root with a full-rank local Jacobian. Other diagnostic starting
+points can reject competing roots but cannot supply the accepted root. A root
+is not a solution when any residual is nonnumeric,
 dimensionally inconsistent, outside a function domain, or non-finite. Multiple
 roots, a rank-deficient root, an underdetermined system, an inconsistent system,
 or an unresolved dependency retains absent solution values. Non-smooth,

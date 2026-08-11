@@ -320,11 +320,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How must a simultaneous-solve block evaluate when an unknown does not have a previous numeric value?
 
-**Known.** The defined affine solver uses the ordered equations, declared unknowns, dimensions, and previous numeric values.
+**Known.** The defined affine solver uses the ordered equations, declared unknowns, and previous or uniquely constrained physical dimensions. An underdetermined dimension system remains unresolved. A nonlinear block without a preceding finite numeric value for every unknown remains unresolved.
 
 **Need.** We must know the initialization rule to evaluate the block deterministically.
-
-**Note.** The closure commit adds symbolic dimension inference and hand-built expression tests. It does not provide a native Creo witness, an external parser, or an authoritative rule for initialization. The specification records that implementation choice as a PSB rule. Reopen until evidence settles the initialization rule.
 
 ### SP-03. Section-to-datum joins
 
