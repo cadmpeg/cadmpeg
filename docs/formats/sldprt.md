@@ -896,6 +896,23 @@ feature-size annotation without the integer field `Dimension` is an omitted
 nominal sentinel, not a zero-length dimension. `ToleranceLowerTier` is the
 lower segment of a composite surface-profile tolerance.
 
+SWIFT rendered strings use bytes `ff fe ff`, a u8 UTF-16 code-unit count, and
+that many UTF-16LE code units. In a rendered dimension string,
+`<MOD-DIAM>` followed by optional whitespace and a positive decimal literal
+marks an explicit diameter nominal in the document display length unit. The
+number of digits after the decimal point equals
+`BlockToleranceDecimalPlaces` on the corresponding `GdtDiameter`.
+
+An omitted `GdtDiameter.Nominal` is recoverable from the rendered literal and
+the applied nominal geometry. Feature references traverse direct child feature
+references and `SubFeatures` applied-feature collections recursively. A
+`GdtCylinder` contributes twice `NomCylinder.R`; a `GdtSphere` contributes
+twice `NomSphere.R`. All reachable contributors must agree. The rendered
+literal binds when rounding this geometric diameter in a SolidWorks display
+length unit to `BlockToleranceDecimalPlaces` produces the literal. Conversion
+of every matching literal and unit must produce one millimetre value; multiple
+values leave the nominal absent.
+
 The geometric-tolerance classes map by their suffix: `GdtStraightness`,
 `GdtFlatness`, `GdtRoundness`, `GdtCircularity`, `GdtCylindricity`,
 `GdtCoaxiality`, `GdtLineProfile`, `GdtSurfaceProfile`,

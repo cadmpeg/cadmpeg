@@ -49,15 +49,22 @@ struct Entity {
     related: Vec<RelatedObject>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct DisplayedDiameter {
+    value: f64,
+    decimal_places: u32,
+}
+
 /// Decode the unique GDT-analysis root carried by a SWIFT schema stream.
 pub(crate) fn annotations(
     scan: &ContainerScan<'_>,
     annotations: &mut Annotations,
 ) -> Vec<PmiAnnotation> {
-    let Some((stream, root)) = scan_root(scan) else {
+    let Some((stream, root, displayed_diameters)) = scan_root(scan) else {
         return Vec::new();
     };
-    let projected = project(&root);
+    let mut projected = project(&root);
+    enrich_diameter_nominals(&root, &displayed_diameters, &mut projected);
     for (reference, entity) in root
         .annotations
         .references
@@ -82,7 +89,7 @@ pub(crate) fn annotations(
 }
 
 pub(crate) fn unsupported_annotation_classes(scan: &ContainerScan<'_>) -> BTreeMap<String, usize> {
-    let Some((_, root)) = scan_root(scan) else {
+    let Some((_, root, _)) = scan_root(scan) else {
         return if has_root_marker(scan) {
             BTreeMap::from([("GdtAnalysisGraphUnresolved".into(), 1)])
         } else {
@@ -125,7 +132,7 @@ fn has_root_marker(scan: &ContainerScan<'_>) -> bool {
     })
 }
 
-fn scan_root(scan: &ContainerScan<'_>) -> Option<(String, Entity)> {
+fn scan_root(scan: &ContainerScan<'_>) -> Option<(String, Entity, Vec<DisplayedDiameter>)> {
     let mut roots = scan
         .sections()
         .filter(|section| {
@@ -134,7 +141,13 @@ fn scan_root(scan: &ContainerScan<'_>) -> Option<(String, Entity)> {
                 .is_some_and(|name| name.starts_with("SWIFT/") && name.contains("Schema"))
         })
         .filter_map(|section| {
-            parse_unique_root(section.payload()).map(|root| (section.display_name(), root))
+            parse_unique_root(section.payload()).map(|root| {
+                (
+                    section.display_name(),
+                    root,
+                    displayed_diameters(section.payload()),
+                )
+            })
         });
     let root = roots.next()?;
     roots.next().is_none().then_some(root)
@@ -509,6 +522,216 @@ fn project_dimension(
             limits_and_fits: None,
         },
     })
+}
+
+fn enrich_diameter_nominals(
+    root: &Entity,
+    displayed: &[DisplayedDiameter],
+    annotations: &mut [PmiAnnotation],
+) {
+    let feature_index = feature_index(root);
+    for (reference, entity) in root
+        .annotations
+        .references
+        .iter()
+        .zip(&root.annotations.entities)
+    {
+        if short_class(&entity.class) != "GdtDiameter" || suppressed(entity) {
+            continue;
+        }
+        let Some(raw_nominal) = diameter_from_applied_geometry(entity, &feature_index) else {
+            continue;
+        };
+        let Some(decimal_places) = entity
+            .integers
+            .get("BlockToleranceDecimalPlaces")
+            .copied()
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value <= 9)
+        else {
+            continue;
+        };
+        let Some(nominal) = displayed_nominal(raw_nominal, decimal_places, displayed) else {
+            continue;
+        };
+        let Some(annotation) = annotations
+            .iter_mut()
+            .find(|annotation| annotation.id == pmi_id(&reference.id))
+        else {
+            continue;
+        };
+        let PmiDefinition::Dimension {
+            dimension: DimensionKind::Diameter,
+            nominal: slot,
+            lower_deviation,
+            upper_deviation,
+            ..
+        } = &mut annotation.definition
+        else {
+            continue;
+        };
+        if slot.is_none() {
+            *slot = Some(length(nominal));
+            *lower_deviation =
+                deviation(entity, Some(nominal), "LowerLimit", "MinusTolerance").map(length);
+            *upper_deviation =
+                deviation(entity, Some(nominal), "UpperLimit", "PlusTolerance").map(length);
+        }
+    }
+}
+
+fn diameter_from_applied_geometry(
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+) -> Option<f64> {
+    let candidates = annotation
+        .features
+        .references
+        .iter()
+        .filter_map(|reference| {
+            diameter_for_feature(&reference.id, feature_index, &mut BTreeSet::new(), 0)
+        })
+        .collect::<Vec<_>>();
+    unique_measurement(&candidates)
+}
+
+fn displayed_nominal(
+    raw_mm: f64,
+    decimal_places: u32,
+    displayed: &[DisplayedDiameter],
+) -> Option<f64> {
+    const LENGTH_SCALES_MM: &[f64] = &[
+        1.0e-7, 1.0e-6, 1.0e-3, 0.0254, 1.0, 10.0, 25.4, 304.8, 1000.0,
+    ];
+    let exponent = i32::try_from(decimal_places).ok()?;
+    let precision = 10.0_f64.powi(exponent);
+    let mut candidates = Vec::new();
+    for scale in LENGTH_SCALES_MM {
+        let rendered = (raw_mm / scale * precision).round() / precision;
+        for value in displayed
+            .iter()
+            .filter(|value| value.decimal_places == decimal_places)
+        {
+            if approximately_equal(value.value, rendered) {
+                candidates.push(value.value * scale);
+            }
+        }
+    }
+    unique_measurement(&candidates)
+}
+
+fn displayed_diameters(payload: &[u8]) -> Vec<DisplayedDiameter> {
+    const STRING_MARKER: &[u8] = &[0xff, 0xfe, 0xff];
+    payload
+        .windows(STRING_MARKER.len())
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == STRING_MARKER).then_some(offset))
+        .filter_map(|offset| {
+            let length_offset = offset.checked_add(STRING_MARKER.len())?;
+            let units = usize::from(*payload.get(length_offset)?);
+            if !(1..=128).contains(&units) {
+                return None;
+            }
+            let start = length_offset.checked_add(1)?;
+            let end = start.checked_add(units.checked_mul(2)?)?;
+            let code_units = payload
+                .get(start..end)?
+                .chunks_exact(2)
+                .map(|pair| Some(u16::from_le_bytes(pair.try_into().ok()?)))
+                .collect::<Option<Vec<_>>>()?;
+            let text = String::from_utf16(&code_units).ok()?;
+            Some(diameter_literals(&text))
+        })
+        .flatten()
+        .collect()
+}
+
+fn diameter_literals(text: &str) -> Vec<DisplayedDiameter> {
+    const TOKENS: &[&str] = &["<MOD-DIAM>", "&lt;MOD-DIAM&gt;"];
+    let mut values = Vec::new();
+    for token in TOKENS {
+        let mut remainder = text;
+        while let Some((_, tail)) = remainder.split_once(token) {
+            let literal = tail.trim_start();
+            let end = literal
+                .bytes()
+                .position(|byte| !byte.is_ascii_digit() && !matches!(byte, b'.' | b'+' | b'-'))
+                .unwrap_or(literal.len());
+            let literal = literal.get(..end).unwrap_or_default();
+            if let Some((_, fractional)) = literal.split_once('.') {
+                let parsed = literal.parse::<f64>().ok();
+                let places = u32::try_from(fractional.len()).ok();
+                if !fractional.is_empty() && fractional.bytes().all(|byte| byte.is_ascii_digit()) {
+                    if let (Some(value), Some(decimal_places)) = (parsed, places) {
+                        if value.is_finite() && value > 0.0 {
+                            values.push(DisplayedDiameter {
+                                value,
+                                decimal_places,
+                            });
+                        }
+                    }
+                }
+            }
+            remainder = tail;
+        }
+    }
+    values
+}
+
+fn diameter_for_feature(
+    id: &str,
+    feature_index: &BTreeMap<&str, &Entity>,
+    visited: &mut BTreeSet<String>,
+    depth: usize,
+) -> Option<f64> {
+    if depth >= MAX_DEPTH || !visited.insert(id.to_string()) {
+        return None;
+    }
+    let feature = feature_index.get(id)?;
+    let direct = match short_class(&feature.class) {
+        "GdtCylinder" => nominal_radius(feature, "NomCylinder"),
+        "GdtSphere" => nominal_radius(feature, "NomSphere"),
+        _ => None,
+    };
+    if let Some(radius) = direct {
+        return finite_positive(radius * 2.0);
+    }
+
+    let mut child_ids = feature
+        .features
+        .references
+        .iter()
+        .map(|reference| reference.id.as_str())
+        .collect::<Vec<_>>();
+    if let Some(subfeatures) = direct_subfeature_ids(feature) {
+        child_ids.extend(subfeatures);
+    }
+    let next_depth = depth.checked_add(1)?;
+    let candidates = child_ids
+        .into_iter()
+        .filter_map(|child| {
+            diameter_for_feature(child, feature_index, &mut visited.clone(), next_depth)
+        })
+        .collect::<Vec<_>>();
+    unique_measurement(&candidates)
+}
+
+fn nominal_radius(feature: &Entity, name: &str) -> Option<f64> {
+    let geometry = unique_related(feature, name)?;
+    geometry.entity.doubles.get("R").copied()
+}
+
+fn unique_measurement(values: &[f64]) -> Option<f64> {
+    let first = *values.first()?;
+    values
+        .iter()
+        .all(|value| approximately_equal(*value, first))
+        .then_some(first)
+}
+
+fn approximately_equal(left: f64, right: f64) -> bool {
+    let scale = left.abs().max(right.abs()).max(1.0);
+    (left - right).abs() <= scale * 1.0e-9
 }
 
 fn deviation(
@@ -1104,5 +1327,167 @@ mod tests {
             .expect("count field")
             .copy_from_slice(&u32::MAX.to_le_bytes());
         assert_eq!(parse_unique_root(&malformed), None);
+    }
+
+    fn cylinder_with_radius(radius: f64) -> Entity {
+        let mut cylinder = entity("GdtCylinder");
+        let mut geometry = Entity {
+            class: "PrizMetrik.Geometry.GeoCylinder".into(),
+            ..Entity::default()
+        };
+        geometry.doubles.insert("R".into(), radius);
+        cylinder.related.push(RelatedObject {
+            name: "NomCylinder".into(),
+            class: geometry.class.clone(),
+            entity: geometry,
+        });
+        cylinder
+    }
+
+    #[test]
+    fn rendered_diameter_resolves_rounded_applied_geometry() {
+        let mut root = semantic_root();
+        *root.features.entities.get_mut(1).expect("first cylinder") =
+            cylinder_with_radius(1.984_375);
+        *root.features.entities.get_mut(2).expect("second cylinder") =
+            cylinder_with_radius(1.984_375);
+        let diameter = root.annotations.entities.get_mut(2).expect("diameter");
+        diameter
+            .integers
+            .insert("BlockToleranceDecimalPlaces".into(), 3);
+        diameter.doubles.insert("MinusTolerance".into(), 0.0);
+        diameter.doubles.insert("PlusTolerance".into(), 0.0);
+        diameter.doubles.insert("LowerLimit".into(), 3.8);
+        diameter.doubles.insert("UpperLimit".into(), 4.1);
+        let displayed = [DisplayedDiameter {
+            value: 0.156,
+            decimal_places: 3,
+        }];
+        let mut annotations = project(&root);
+        enrich_diameter_nominals(&root, &displayed, &mut annotations);
+        let diameter = annotations
+            .iter()
+            .find(|annotation| annotation.name.as_deref() == Some("Diameter 1"))
+            .expect("diameter annotation");
+        let PmiDefinition::Dimension {
+            nominal,
+            lower_deviation,
+            upper_deviation,
+            ..
+        } = &diameter.definition
+        else {
+            panic!("dimension definition");
+        };
+        assert!(nominal
+            .as_ref()
+            .is_some_and(|value| approximately_equal(value.value, 3.962_4)));
+        assert!(lower_deviation
+            .as_ref()
+            .is_some_and(|value| approximately_equal(value.value, -0.162_4)));
+        assert!(upper_deviation
+            .as_ref()
+            .is_some_and(|value| approximately_equal(value.value, 0.137_6)));
+
+        root.annotations
+            .entities
+            .get_mut(2)
+            .expect("diameter")
+            .features
+            .references = vec![reference("FP", "GdtPattern")];
+        let mut annotations = project(&root);
+        enrich_diameter_nominals(&root, &displayed, &mut annotations);
+        let diameter = annotations
+            .iter()
+            .find(|annotation| annotation.name.as_deref() == Some("Diameter 1"))
+            .expect("diameter annotation");
+        let PmiDefinition::Dimension { nominal, .. } = &diameter.definition else {
+            panic!("dimension definition");
+        };
+        assert!(nominal
+            .as_ref()
+            .is_some_and(|value| approximately_equal(value.value, 3.962_4)));
+    }
+
+    #[test]
+    fn conflicting_pattern_sizes_do_not_resolve_a_nominal() {
+        let mut root = semantic_root();
+        *root.features.entities.get_mut(1).expect("first cylinder") = cylinder_with_radius(2.5);
+        *root.features.entities.get_mut(2).expect("second cylinder") = cylinder_with_radius(3.0);
+        let diameter = root.annotations.entities.get_mut(2).expect("diameter");
+        diameter
+            .integers
+            .insert("BlockToleranceDecimalPlaces".into(), 1);
+        diameter.features.references = vec![reference("FP", "GdtPattern")];
+        let mut annotations = project(&root);
+        enrich_diameter_nominals(
+            &root,
+            &[DisplayedDiameter {
+                value: 5.0,
+                decimal_places: 1,
+            }],
+            &mut annotations,
+        );
+        let diameter = annotations
+            .iter()
+            .find(|annotation| annotation.name.as_deref() == Some("Diameter 1"))
+            .expect("diameter annotation");
+        let PmiDefinition::Dimension { nominal, .. } = &diameter.definition else {
+            panic!("dimension definition");
+        };
+        assert_eq!(*nominal, None);
+    }
+
+    #[test]
+    fn conflicting_rendered_units_do_not_resolve_a_nominal() {
+        assert_eq!(
+            displayed_nominal(
+                5.0,
+                1,
+                &[
+                    DisplayedDiameter {
+                        value: 5.0,
+                        decimal_places: 1,
+                    },
+                    DisplayedDiameter {
+                        value: 0.2,
+                        decimal_places: 1,
+                    },
+                ],
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn scans_explicit_rendered_diameter_literals() {
+        let mut payload = Vec::new();
+        for text in [
+            "<COUNT=#X ><MOD-DIAM> .156",
+            "<MOD-DIAM> <sft_holeDia>",
+            "<MOD-DIAM> .281<HOLE-SPOT><MOD-DIAM> .438",
+        ] {
+            payload.extend_from_slice(&[0xff, 0xfe, 0xff]);
+            payload.push(u8::try_from(text.encode_utf16().count()).expect("fixture length"));
+            for unit in text.encode_utf16() {
+                payload.extend_from_slice(&unit.to_le_bytes());
+            }
+        }
+        assert_eq!(
+            displayed_diameters(&payload),
+            [
+                DisplayedDiameter {
+                    value: 0.156,
+                    decimal_places: 3,
+                },
+                DisplayedDiameter {
+                    value: 0.281,
+                    decimal_places: 3,
+                },
+                DisplayedDiameter {
+                    value: 0.438,
+                    decimal_places: 3,
+                },
+            ]
+        );
     }
 }
