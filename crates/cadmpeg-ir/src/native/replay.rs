@@ -1,19 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Replaying stored JSON text into a serializer or a single field.
+//! Replay stored JSON text into a serializer or a single field.
 //!
-//! A [`NativeRecord`](super::NativeRecord) keeps its fields as canonical JSON
-//! text, so every emit and every field read starts from that text. Going
-//! through [`serde_json::Value`] to get there builds a separately allocated map
-//! node, key string, and enum cell for every field at every depth, holds them
-//! for the length of the operation, and then walks them a second time to emit
-//! or to pick one member out. This module reads the text once and does the work
-//! as it goes: [`emit`] drives a serializer directly from the parse, and
-//! [`field`] materializes the one member asked for while skipping the rest.
-//!
-//! Emitting through a serializer rather than splicing the text keeps the
-//! caller's formatting: a pretty writer indents a native record the same way it
-//! indents every other document entity, which is what the document digest is
-//! taken over.
+//! [`emit`] drives a serializer from the parse; [`field`] materializes one
+//! member while skipping the rest.
 
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -24,17 +13,9 @@ use serde_json::Value;
 
 /// Emit the JSON value held in `json` into `serializer`.
 ///
-/// The bytes produced are the ones the serializer would produce for the
-/// equivalent [`Value`], with one deliberate difference: sequence and map
-/// lengths are not known ahead of the parse, so they reach the serializer as
-/// `None`. JSON writers ignore the hint — an empty container is written the
-/// same either way — and the record shape already carries a flattened field map,
-/// which no length-prefixed format can encode regardless.
-///
 /// # Panics
 ///
-/// Panics if `json` is not a complete JSON value. Callers hold text they
-/// produced by serializing.
+/// Panics if `json` is not a complete JSON value.
 pub(super) fn emit<S: ser::Serializer>(json: &str, serializer: S) -> Result<S::Ok, S::Error> {
     let mut deserializer = serde_json::Deserializer::from_str(json);
     let emitted = de::Deserializer::deserialize_any(&mut deserializer, Emit(serializer))
@@ -46,9 +27,6 @@ pub(super) fn emit<S: ser::Serializer>(json: &str, serializer: S) -> Result<S::O
 }
 
 /// Parse the `name` member of the JSON object held in `json`.
-///
-/// Members other than `name` are skipped without being materialized, so the
-/// cost is one scan of the text plus a tree for the one member returned.
 ///
 /// # Panics
 ///
@@ -63,15 +41,10 @@ pub(super) fn field(json: &str, name: &str) -> Option<Value> {
     found
 }
 
-/// Serializer errors surface to the deserializer driving the replay, and the
-/// deserializer's error surfaces back to the serializer that asked for the
-/// value. Neither trait lets a foreign error type through, so the message
-/// crosses each boundary and the concrete type does not.
 fn ser_to_de<S: ser::Error, D: de::Error>(error: S) -> D {
     de::Error::custom(error)
 }
 
-/// See [`ser_to_de`].
 fn de_to_ser<D: de::Error, S: ser::Error>(error: D) -> S {
     ser::Error::custom(error)
 }
@@ -252,25 +225,18 @@ mod tests {
     use super::{emit, field};
     use serde_json::Value;
 
-    /// Text covering the shapes the replay has to reproduce: every scalar
-    /// kind, empty and populated containers, escapes in both keys and values,
-    /// and key names reused at a different depth.
     const TEXT: &str = concat!(
         r#"{"id":"pin#0","a":[null,true,false,-1,0,1.5,2.0,1e-7,10000000000.0],"#,
         r#""b":{"":[],"c\td":{},"nested":{"a":[[[1]]]}},"#,
         r#""é key":"quote\" back\\ tab\t bell\u0007 é","z":18446744073709551615}"#
     );
 
-    /// The replay produces the value a `Value` parse would, so every
-    /// serializer sees the same thing either way.
     #[test]
     fn emits_the_value_a_parse_would_produce() {
         let replayed = emit(TEXT, serde_json::value::Serializer).unwrap();
         assert_eq!(replayed, serde_json::from_str::<Value>(TEXT).unwrap());
     }
 
-    /// A compact re-emit reproduces the source text byte for byte, which is
-    /// what makes the stored record text a fixed point of serialization.
     #[test]
     fn compact_emission_reproduces_the_source_text() {
         let mut out = Vec::new();

@@ -19,9 +19,6 @@ use crate::objects::{
 };
 use crate::wire::Uuid;
 /// Maximum direct table records retained or described in one document.
-///
-/// Bounds record-descriptor amplification from an attacker-controlled table body independently of the
-/// codec-local input limit; kept as defense in depth.
 pub(crate) const TABLE_RECORD_CAP: usize = 1 << 20;
 
 const TCODE_COMMENT: u32 = 0x0000_0001;
@@ -526,12 +523,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
     ))
 }
 
-/// Scans an owned buffer, leaking it so the borrowed [`Scan`] is `'static`.
-///
-/// Test-only. Production decode borrows the arena-backed root view; unit tests
-/// construct throwaway buffers, and leaking each keeps their `Scan` free of a
-/// borrow the test must thread. The leak is bounded by the fixture count in a
-/// short-lived test process.
+/// Test-only: leak `data` so the borrowed [`Scan`] is `'static`.
 #[cfg(test)]
 pub(crate) fn scan_owned(data: Vec<u8>) -> Result<Scan<'static>, CodecError> {
     scan_with_record_limit(Box::leak(data.into_boxed_slice()), TABLE_RECORD_CAP)

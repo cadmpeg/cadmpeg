@@ -44,7 +44,7 @@ const TCODE_COMPRESSED_MESH_GEOMETRY: u32 = 0x0010_0017;
 const TCODE_UNIT_AND_TOLERANCES: u32 = 0x0200_0010;
 const TCODE_ENDOFFILE: u32 = 0x8000_7fff;
 
-#[allow(clippy::needless_pass_by_value)] // This signature permits direct use with Result::map_err.
+#[allow(clippy::needless_pass_by_value)]
 fn malformed(error: FramingError) -> CodecError {
     CodecError::Malformed(error.to_string())
 }

@@ -54,14 +54,10 @@ pub(crate) fn annotate(
     annotations.exactness(id, exactness);
 }
 
-/// Judge one candidate neutral model in the form the pipeline publishes it.
+/// Judge one candidate neutral model after canonicalizing arena order.
 ///
-/// [`DecodeResult::new`](cadmpeg_ir::codec::DecodeResult::new) sorts every arena
-/// by entity id before a decoded document leaves the codec, so canonical arena
-/// order is a property of the pipeline rather than of any one emit pass. The
-/// candidate's model arenas are canonicalized here for the same reason: read in
-/// native traversal order, an otherwise complete model is rejected over an arena
-/// order the pipeline would have replaced.
+/// Matches [`DecodeResult::new`](cadmpeg_ir::codec::DecodeResult::new), which
+/// sorts arenas by entity id before a document leaves the codec.
 pub(crate) fn neutral_model_is_admissible(
     ir: &mut CadIr,
     pending_unknowns: &[UnknownRecord],
@@ -242,10 +238,7 @@ pub(crate) fn ordered_range(range: [f64; 2]) -> [f64; 2] {
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn circle_parameter_range_from_surface_branch(
     surface: &SurfaceGeometry,
     center: Point3,

@@ -11,10 +11,6 @@
 //!   [`bounded_len`] refuse any element count that could not physically fit
 //!   in the unread bytes, so a malformed count of `0xFFFF_FFFF` fails the
 //!   read instead of reserving gigabytes.
-//!
-//! New decoder modules should read through this cursor (or the free
-//! functions in [`crate::le`]/[`crate::be`]) rather than slicing payloads
-//! directly, and should carry this module's lint attributes.
 #![warn(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 
 /// Converts a declared element count into a safe `Vec` capacity.

@@ -1220,9 +1220,7 @@ pub(crate) fn global_parameter_owners(
 
 /// Replace evaluable expressions with canonical literals in a temporary history projection.
 ///
-/// Retained native histories keep their source expressions. This normalization exists only so
-/// typed feature projectors consume the same evaluated values exposed in the neutral parameter
-/// arena.
+/// Retained native histories keep their source expressions.
 pub(crate) fn apply_evaluated_parameters(histories: &mut [FeatureHistory]) {
     let evaluated = project_parameters(histories)
         .into_iter()
@@ -7501,11 +7499,8 @@ const EQUATION_DRIVEN_TOKEN: &str = "EquationDriven";
 
 /// The equations container identified by its Keywords operation-family token.
 ///
-/// The token is a role code, so it identifies the container without a native
-/// class or a reserved source identifier. Both the decode projection and the
-/// writer's retained-role map resolve node roles through
-/// [`feature_tree_node_role`], so the token satisfies the read and write sides
-/// together.
+/// The token is a role code: it identifies the container without a native class
+/// or a reserved source identifier.
 fn equation_container_role(feature: &Feature) -> Option<FeatureTreeNodeRole> {
     (feature.input_class.is_none()
         && feature.xml_tag.eq_ignore_ascii_case("Feature")
@@ -7790,10 +7785,7 @@ fn feature_family(feature: &Feature, family: &str) -> bool {
 
 /// Reject a neutral edit that retargets an existing native record to an
 /// operation family it did not originate in. A missing record (a freshly
-/// synthesized feature) always passes. The accepted native families are part of
-/// each feature type's write schema; centralizing them keeps the read
-/// classification and the write guard from drifting apart. The emitted
-/// `NotImplemented` message is byte-identical to the historical per-arm guard.
+/// synthesized feature) always passes.
 fn require_same_family(
     existing: Option<&Feature>,
     feature_id: &FeatureId,
@@ -11812,12 +11804,9 @@ pub(crate) fn apply_feature_name_changes(
 
 /// Resolve neutral/native feature edit authority and update the write history.
 ///
-/// The neutral baseline is a machine-local content digest and the comparison
-/// against it is bitwise, which is what an edit-detection question needs and all
-/// it can be; see [`cadmpeg_ir::hash::document_local_sha256`]. An absent baseline
-/// means the question cannot be answered, and the no-baseline branch below
-/// synchronizes the lanes from the neutral side rather than assuming either side
-/// is unedited.
+/// Bitwise comparison against the machine-local document baseline; see
+/// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
+/// the neutral side.
 pub fn prepare_features_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
@@ -12272,12 +12261,9 @@ fn validate_compact_surface_selection_edits(
 
 /// Resolve neutral/native configuration edit authority before writing.
 ///
-/// The neutral baseline is a machine-local content digest and the comparison
-/// against it is bitwise, which is what an edit-detection question needs and all
-/// it can be; see [`cadmpeg_ir::hash::document_local_sha256`]. An absent baseline
-/// means the question cannot be answered, and the no-baseline branch below
-/// synchronizes the lanes from the neutral side rather than assuming either side
-/// is unedited.
+/// Bitwise comparison against the machine-local document baseline; see
+/// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
+/// the neutral side.
 pub fn prepare_configurations_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
@@ -12586,12 +12572,9 @@ fn patch_configuration_parameter_scalars(
 
 /// Resolve neutral/native parameter edit authority before writing.
 ///
-/// The neutral baseline is a machine-local content digest and the comparison
-/// against it is bitwise, which is what an edit-detection question needs and all
-/// it can be; see [`cadmpeg_ir::hash::document_local_sha256`]. An absent baseline
-/// means the question cannot be answered, and the no-baseline branch below
-/// synchronizes the lanes from the neutral side rather than assuming either side
-/// is unedited.
+/// Bitwise comparison against the machine-local document baseline; see
+/// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
+/// the neutral side.
 pub fn prepare_parameters_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
@@ -14409,10 +14392,8 @@ pub fn sync_neutral_features(
                 length_along_profile_normal,
                 allow_multi_profile_faces,
             } => {
-                // Drafts and offsets live per side. The writer expresses only a
-                // first-side draft; a second-side draft or any side offset is
-                // rejected exactly as the removed `second_draft`/`first_offset`/
-                // `second_offset` fields were.
+                // Writer accepts only a first-side draft; second-side draft or
+                // any side offset is rejected.
                 let (first_draft, second_side_draft, any_side_offset) = match extent {
                     ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
                         (side.draft, None, side.offset.is_some())

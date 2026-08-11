@@ -1,0 +1,26 @@
+{
+  "container_kind": "stream",
+  "entries": [
+    {
+      "attributes": {
+        "acis_save_format_version": "23200",
+        "kernel_entity_count": "2",
+        "kernel_family": "asm",
+        "kernel_flags": "2",
+        "product_family": "Autodesk Neutron",
+        "product_version": "ASM 232.4.0.65535 OSX",
+        "records": "6",
+        "save_date": "Synthetic",
+        "scale": "1",
+        "terminator": "End-of-ASM-data"
+      },
+      "compressed_size": 389,
+      "compression": "stored",
+      "name": "stream",
+      "role": "brep-text",
+      "uncompressed_size": 389
+    }
+  ],
+  "format": "sat",
+  "notes": []
+}

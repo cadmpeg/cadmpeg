@@ -16,13 +16,8 @@ use crate::wire::{ExactVec, Uuid};
 const ANONYMOUS: u32 = 0x4000_8000;
 const ITEM_CAP: usize = 1 << 20;
 
-/// Minimum on-disk footprint of one polyedge segment, in bytes, used as the
-/// `counted` element width so `segment_count` is proved against a floor that
-/// reflects a segment's real size rather than a one-byte element. Each segment
-/// body reads a fixed 97-byte field layout (two `i32` + `uuid` + two `i32` +
-/// five 16-byte intervals + one `bool`, see [`segment`]) and is additionally
-/// wrapped in an anonymous chunk header, so 97 is a strict lower bound on the
-/// bytes each segment consumes from the record body.
+/// Lower bound on one polyedge segment's on-disk size (97-byte body layout
+/// before the anonymous chunk header; see [`segment`]).
 const MIN_SEGMENT_BYTES: usize = 97;
 pub(crate) const CURVE_CLASS: Uuid = Uuid::from_canonical([
     0x39, 0xff, 0x3d, 0xd3, 0xfe, 0x0f, 0x48, 0x07, 0x9d, 0x59, 0x18, 0x5f, 0x0d, 0x73, 0xc0, 0xe4,

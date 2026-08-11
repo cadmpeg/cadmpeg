@@ -17,8 +17,7 @@ use super::policy::{
 use super::space::{ByteRange, SpaceId};
 use super::view::View;
 
-/// Initial per-expand reservation clamp: an attacker's declared size cannot
-/// force a large up-front reservation before any output is produced.
+/// Cap on the initial per-expand reservation before any output is produced.
 const RESERVE_CLAMP: u64 = 8 * 1024 * 1024;
 
 /// Shared monotonic decode state.

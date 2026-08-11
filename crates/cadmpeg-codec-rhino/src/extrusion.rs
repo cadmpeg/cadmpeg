@@ -471,10 +471,7 @@ fn mitered_local(
     Ok(rodrigues(scaled, axis, normal.z.acos()))
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn read_mesh_cache(
     expand: crate::mesh::MeshExpand<'_>,
     data: &[u8],

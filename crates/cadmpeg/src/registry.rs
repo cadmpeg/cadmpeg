@@ -343,10 +343,7 @@ fn rhino(options: TargetOptions) -> Result<Box<dyn Encoder>, CodecError> {
     Ok(Box::new(cadmpeg_codec_rhino::RhinoEncoder::new(version)))
 }
 
-#[allow(
-    clippy::needless_pass_by_value,
-    reason = "EncoderFactory uses one by-value TargetOptions signature for every format."
-)]
+#[allow(clippy::needless_pass_by_value)]
 fn iges(options: TargetOptions) -> Result<Box<dyn Encoder>, CodecError> {
     match options {
         TargetOptions::Iges(options) => Ok(Box::new(cadmpeg_codec_iges::IgesEncoder::new(options))),

@@ -1,0 +1,133 @@
+{
+  "ir": {
+    "ir_version": "5",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {
+      "step": {
+        "arenas": {
+          "unknowns": [
+            {
+              "id": "step:data:example_record#1",
+              "links": [
+                "step:data:opaque_target#2"
+              ]
+            },
+            {
+              "id": "step:data:opaque_target#2"
+            }
+          ]
+        },
+        "version": 1
+      }
+    },
+    "source": {
+      "attributes": {
+        "bytes_named_opaque": "96",
+        "bytes_structural": "295",
+        "bytes_typed": "0",
+        "bytes_unclassified": "0",
+        "data_sections": "1",
+        "entity_instances": "2",
+        "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }"
+      },
+      "format": "step"
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "container_only": false,
+    "format": "step",
+    "geometry_transferred": false,
+    "losses": [
+      {
+        "code": "geometry_not_transferred",
+        "message": "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
+        "severity": "error"
+      },
+      {
+        "code": "geometry_not_transferred",
+        "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
+        "severity": "error"
+      },
+      {
+        "code": "record_not_typed",
+        "message": "preserved 1 EXAMPLE_RECORD instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": "record_not_typed",
+        "message": "preserved 1 OPAQUE_TARGET instance(s) as named opaque STEP records",
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "byte accounting: 295 structural, 0 typed, 96 named opaque, 0 unclassified"
+    ]
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "retained_records": [
+      {
+        "byte_len": 69,
+        "data": "IzE9RVhBTVBMRV9SRUNPUkQoJ2xpbmUKY29udGludWVzJywjMiwxLiwwLkUrMDAwLDFELTMsLlRSVUUuLCQsKiwoKSk7",
+        "id": "step:data:example_record#1",
+        "offset": 267,
+        "sha256": "d62cba64f3300f57a6a2ebd4701b5d9253130d1aef42dfd2b021910c25aa0c59",
+        "stream": "source"
+      },
+      {
+        "byte_len": 27,
+        "data": "IzI9T1BBUVVFX1RBUkdFVCgndGFyZ2V0Jyk7",
+        "id": "step:data:opaque_target#2",
+        "offset": 337,
+        "sha256": "75760ab0a42cf9aa82d38698bd9745835655906b302565e2425937f2c2085315",
+        "stream": "source"
+      }
+    ],
+    "version": "3"
+  }
+}

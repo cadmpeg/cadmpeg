@@ -1,0 +1,97 @@
+{
+  "ir": {
+    "ir_version": "5",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {
+      "step": {
+        "arenas": {
+          "unknowns": []
+        },
+        "version": 1
+      }
+    },
+    "source": {
+      "attributes": {
+        "bytes_named_opaque": "0",
+        "bytes_structural": "289",
+        "bytes_typed": "396",
+        "bytes_unclassified": "0",
+        "data_sections": "1",
+        "entity_instances": "7",
+        "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
+      },
+      "format": "step"
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "container_only": false,
+    "format": "step",
+    "geometry_transferred": false,
+    "losses": [
+      {
+        "code": "geometry_not_transferred",
+        "message": "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
+        "severity": "error"
+      },
+      {
+        "code": "geometry_not_transferred",
+        "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
+        "severity": "error"
+      }
+    ],
+    "notes": [
+      "external document SPEC-42 (Interface control drawing) from supplier vault",
+      "external source https://example.invalid/library item fastener-table",
+      "byte accounting: 289 structural, 396 typed, 0 named opaque, 0 unclassified"
+    ]
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "version": "3"
+  }
+}

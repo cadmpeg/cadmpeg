@@ -1299,8 +1299,6 @@ impl OccurrenceExpansion<'_, '_> {
     }
 }
 
-// Each argument is an independently owned decode table or session invariant;
-// grouping them would hide this stage's data dependencies without validating them.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn store(
     ir: &mut CadIr,

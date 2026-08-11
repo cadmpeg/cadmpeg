@@ -1,8 +1,6 @@
 //! Disjoint-set (union-find) over contiguous integer nodes.
 //!
-//! This is the single implementation shared by the topology combinatorial
-//! solvers and the decode-time face-component grouping. It carries no byte
-//! knowledge: callers map their domain onto `0..len` node indices.
+//! Callers map their domain onto `0..len` node indices.
 
 /// A disjoint-set forest with path compression on `find`.
 #[derive(Debug, Clone)]

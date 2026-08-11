@@ -1,18 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Two-view single-parse substrate for the expensive per-stream Parasolid scans.
 //!
-//! Four topology scanners ([`topology::offset_surfaces`], [`topology::blend_surfaces`],
-//! [`topology::trimmed_curves`], [`topology::surface_curves`]), [`topology::Graph::parse`],
-//! and [`intersection::scan`] were each run twice per Parasolid stream: once by the
-//! decode tier's geometry path on the delta-extended *semantic* stream bytes, and once
-//! by the native record extractors on the raw `stream.inflated` bytes. These are two
-//! distinct byte views — on delta-bearing files they legitimately differ, so a naive
-//! "parse once per stream" would silently change output.
-//!
-//! [`ParsedStreams`] holds both views per stream and shares one parse only when the
-//! byte views are identical (no delta residual and no auxiliary-replacement scan). It
-//! also absorbs the semantic-stream preparation so the decode geometry path reads its
-//! semantic bytes from here rather than recomputing them.
+//! Decode geometry and native extractors read different byte views of each
+//! Parasolid stream (delta-extended semantic bytes vs raw `stream.inflated`).
+//! [`ParsedStreams`] holds both and shares one parse only when the views are
+//! identical.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};

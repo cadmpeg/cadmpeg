@@ -1,0 +1,806 @@
+{
+  "ir": {
+    "ir_version": "5",
+    "model": {
+      "appearance_bindings": [
+        {
+          "appearance": "step:presentation:appearance#30",
+          "id": "step:presentation:binding#37:0-0",
+          "source_entity_id": "#37",
+          "target": {
+            "id": "step:data:curve#8",
+            "kind": "curve"
+          }
+        },
+        {
+          "appearance": "step:presentation:appearance#30",
+          "id": "step:presentation:binding#38:0-0",
+          "source_entity_id": "#38",
+          "target": {
+            "id": "step:data:surface#11",
+            "kind": "surface"
+          }
+        },
+        {
+          "appearance": "step:presentation:appearance#30",
+          "id": "step:presentation:binding#39:0-0",
+          "source_entity_id": "#39",
+          "target": {
+            "id": "step:data:point#3",
+            "kind": "point"
+          }
+        },
+        {
+          "appearance": "step:presentation:appearance#30",
+          "id": "step:presentation:binding#47:0-0",
+          "source_entity_id": "#47",
+          "target": {
+            "id": "step:data:point#3",
+            "kind": "point"
+          }
+        },
+        {
+          "appearance": "step:presentation:appearance#30",
+          "id": "step:presentation:binding#47:1-0",
+          "source_entity_id": "#47",
+          "target": {
+            "id": "step:data:curve#8",
+            "kind": "curve"
+          }
+        },
+        {
+          "appearance": "step:presentation:appearance#30",
+          "id": "step:presentation:binding#49:0-0",
+          "source_entity_id": "#49",
+          "target": {
+            "id": "step:data:curve#48",
+            "kind": "curve"
+          }
+        },
+        {
+          "appearance": "step:presentation:appearance#30",
+          "id": "step:presentation:binding#50:0-0",
+          "source_entity_id": "#50",
+          "target": {
+            "id": {
+              "source_id": "#6"
+            },
+            "kind": "source"
+          }
+        }
+      ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.800000011920929,
+            "g": 0.4000000059604645,
+            "r": 0.20000000298023224
+          },
+          "id": "step:presentation:appearance#30",
+          "name": "geometry blue",
+          "schema": "step_surface_style"
+        }
+      ],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
+      "curves": [
+        {
+          "geometry": {
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "center": {
+              "x": 1.0,
+              "y": 2.0,
+              "z": 3.0
+            },
+            "kind": "ellipse",
+            "major_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "major_radius": 6.0,
+            "minor_radius": 2.0
+          },
+          "id": "step:data:curve#10",
+          "source_object": {
+            "format": "step",
+            "object_id": "#10"
+          }
+        },
+        {
+          "geometry": {
+            "control_points": [
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 2.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            ],
+            "degree": 2,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "weights": [
+              1.0,
+              0.5,
+              1.0
+            ]
+          },
+          "id": "step:data:curve#20",
+          "source_object": {
+            "format": "step",
+            "object_id": "#20"
+          }
+        },
+        {
+          "geometry": {
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "center": {
+              "x": 1.0,
+              "y": 2.0,
+              "z": 3.0
+            },
+            "kind": "circle",
+            "radius": 4.0,
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:curve#22",
+          "source_object": {
+            "format": "step",
+            "object_id": "#22"
+          }
+        },
+        {
+          "geometry": {
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "center": {
+              "x": 1.0,
+              "y": 2.0,
+              "z": 3.0
+            },
+            "kind": "circle",
+            "radius": 4.0,
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:curve#26",
+          "source_object": {
+            "format": "step",
+            "object_id": "#26"
+          }
+        },
+        {
+          "geometry": {
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "center": {
+              "x": 1.0,
+              "y": 2.0,
+              "z": 3.0
+            },
+            "kind": "circle",
+            "radius": 4.0,
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:curve#29"
+        },
+        {
+          "geometry": {
+            "kind": "composite",
+            "segments": [
+              {
+                "curve": "step:data:curve#29",
+                "same_sense": true,
+                "transition": "continuous"
+              }
+            ],
+            "self_intersect": false
+          },
+          "id": "step:data:curve#45",
+          "source_object": {
+            "format": "step",
+            "object_id": "#45"
+          }
+        },
+        {
+          "geometry": {
+            "control_points": [
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 2.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            ],
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              2.0,
+              2.0
+            ],
+            "periodic": false
+          },
+          "id": "step:data:curve#48",
+          "source_object": {
+            "format": "step",
+            "name": "two segments",
+            "object_id": "#49"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 1.0,
+              "y": 2.0,
+              "z": 3.0
+            }
+          },
+          "id": "step:data:curve#7",
+          "source_object": {
+            "format": "step",
+            "object_id": "#7"
+          }
+        },
+        {
+          "geometry": {
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "center": {
+              "x": 1.0,
+              "y": 2.0,
+              "z": 3.0
+            },
+            "kind": "circle",
+            "radius": 4.0,
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:curve#8",
+          "source_object": {
+            "format": "step",
+            "object_id": "#8"
+          }
+        }
+      ],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [
+        {
+          "id": "step:data:point#3",
+          "position": {
+            "x": 1.0,
+            "y": 2.0,
+            "z": 3.0
+          },
+          "source_object": {
+            "format": "step",
+            "object_id": "#3"
+          }
+        }
+      ],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [
+        {
+          "curve": "step:data:curve#26",
+          "definition": {
+            "distance": 1.0,
+            "kind": "spatial_offset",
+            "reference_direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "self_intersect": null,
+            "source": "step:data:curve#8"
+          },
+          "id": "step:construction:offset_curve#26"
+        },
+        {
+          "cache_fit_tolerance": 0.0,
+          "curve": "step:data:curve#22",
+          "definition": {
+            "kind": "subset",
+            "parameter_range": [
+              0.0,
+              1.5707963267948966
+            ],
+            "sense": true,
+            "source": "step:data:curve#8"
+          },
+          "id": "step:construction:trimmed_curve#22"
+        },
+        {
+          "cache_fit_tolerance": 0.0,
+          "curve": "step:data:curve#29",
+          "definition": {
+            "kind": "subset",
+            "parameter_range": [
+              0.0,
+              1.5707963267948966
+            ],
+            "sense": true,
+            "source": "step:data:curve#8"
+          },
+          "id": "step:construction:trimmed_curve#29"
+        }
+      ],
+      "procedural_surfaces": [
+        {
+          "definition": {
+            "kind": "degenerate_torus",
+            "select_outer": true
+          },
+          "id": "step:construction:degenerate_torus#28",
+          "surface": "step:data:surface#28"
+        },
+        {
+          "definition": {
+            "distance": 0.5,
+            "kind": "parallel_offset",
+            "self_intersect": false,
+            "support": "step:data:surface#12"
+          },
+          "id": "step:construction:offset_surface#27",
+          "surface": "step:data:surface#27"
+        },
+        {
+          "definition": {
+            "direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 2.0
+            },
+            "directrix": "step:data:curve#8",
+            "kind": "linear_sweep"
+          },
+          "id": "step:construction:swept_surface#23",
+          "surface": "step:data:surface#23"
+        },
+        {
+          "definition": {
+            "axis_direction": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "axis_origin": {
+              "x": 1.0,
+              "y": 2.0,
+              "z": 3.0
+            },
+            "directrix": "step:data:curve#8",
+            "kind": "axis_revolution"
+          },
+          "id": "step:construction:swept_surface#25",
+          "surface": "step:data:surface#25"
+        }
+      ],
+      "product_definitions": [],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 1.0,
+              "y": 2.0,
+              "z": 3.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:surface#11",
+          "source_object": {
+            "format": "step",
+            "object_id": "#38"
+          }
+        },
+        {
+          "geometry": {
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "kind": "cylinder",
+            "origin": {
+              "x": 1.0,
+              "y": 2.0,
+              "z": 3.0
+            },
+            "radius": 5.0,
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:surface#12"
+        },
+        {
+          "geometry": {
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "half_angle": 0.25,
+            "kind": "cone",
+            "origin": {
+              "x": 1.0,
+              "y": 2.0,
+              "z": 3.0
+            },
+            "radius": 5.0,
+            "ratio": 1.0,
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:surface#13",
+          "source_object": {
+            "format": "step",
+            "object_id": "#13"
+          }
+        },
+        {
+          "geometry": {
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "center": {
+              "x": 1.0,
+              "y": 2.0,
+              "z": 3.0
+            },
+            "kind": "sphere",
+            "radius": 5.0,
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:surface#14",
+          "source_object": {
+            "format": "step",
+            "object_id": "#14"
+          }
+        },
+        {
+          "geometry": {
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "center": {
+              "x": 1.0,
+              "y": 2.0,
+              "z": 3.0
+            },
+            "kind": "torus",
+            "major_radius": 8.0,
+            "minor_radius": 2.0,
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:surface#15",
+          "source_object": {
+            "format": "step",
+            "object_id": "#15"
+          }
+        },
+        {
+          "geometry": {
+            "control_points": [
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 2.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            ],
+            "kind": "nurbs",
+            "u_count": 2,
+            "u_degree": 1,
+            "u_knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "u_periodic": false,
+            "v_count": 2,
+            "v_degree": 1,
+            "v_knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "v_periodic": false,
+            "weights": [
+              1.0,
+              1.0,
+              1.0,
+              0.75
+            ]
+          },
+          "id": "step:data:surface#21",
+          "source_object": {
+            "format": "step",
+            "object_id": "#21"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "unknown"
+          },
+          "id": "step:data:surface#23",
+          "source_object": {
+            "format": "step",
+            "object_id": "#23"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "unknown"
+          },
+          "id": "step:data:surface#25",
+          "source_object": {
+            "format": "step",
+            "object_id": "#25"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "unknown"
+          },
+          "id": "step:data:surface#27",
+          "source_object": {
+            "format": "step",
+            "object_id": "#27"
+          }
+        },
+        {
+          "geometry": {
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "center": {
+              "x": 1.0,
+              "y": 2.0,
+              "z": 3.0
+            },
+            "kind": "torus",
+            "major_radius": 2.0,
+            "minor_radius": 8.0,
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:surface#28",
+          "source_object": {
+            "format": "step",
+            "object_id": "#28"
+          }
+        }
+      ],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {
+      "step": {
+        "arenas": {
+          "unknowns": [
+            {
+              "id": "step:data:presentation_style_assignment#42"
+            },
+            {
+              "id": "step:data:styled_item#43",
+              "links": [
+                "step:data:curve#7",
+                "step:data:presentation_style_assignment#42"
+              ]
+            }
+          ]
+        },
+        "version": 1
+      }
+    },
+    "source": {
+      "attributes": {
+        "bytes_named_opaque": "85",
+        "bytes_structural": "314",
+        "bytes_typed": "2563",
+        "bytes_unclassified": "0",
+        "data_sections": "1",
+        "entity_instances": "52",
+        "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
+      },
+      "format": "step"
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "container_only": false,
+    "format": "step",
+    "geometry_transferred": true,
+    "losses": [
+      {
+        "code": "decode_diagnostic",
+        "message": "B_SPLINE_SURFACE_WITH_KNOTS V direction #21 has UNKNOWN periodicity; decoded as non-periodic",
+        "severity": "warning"
+      },
+      {
+        "code": "geometry_not_transferred",
+        "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
+        "severity": "error"
+      },
+      {
+        "code": "record_not_typed",
+        "message": "preserved 1 PRESENTATION_STYLE_ASSIGNMENT instance(s) as named opaque STEP records",
+        "severity": "warning"
+      },
+      {
+        "code": "record_not_typed",
+        "message": "preserved 1 STYLED_ITEM instance(s) as named opaque STEP records",
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "byte accounting: 314 structural, 2563 typed, 85 named opaque, 0 unclassified"
+    ]
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "retained_records": [
+      {
+        "byte_len": 56,
+        "data": "IzQyPVBSRVNFTlRBVElPTl9TVFlMRV9BU1NJR05NRU5UKChOVUxMX1NUWUxFKC5OVUxMLikpKTs=",
+        "id": "step:data:presentation_style_assignment#42",
+        "offset": 2448,
+        "sha256": "7ece4aa47b7248f7b08bd521dedf23f9c07a793e0d8320637cd9b0555a7a98ea",
+        "stream": "source"
+      },
+      {
+        "byte_len": 29,
+        "data": "IzQzPVNUWUxFRF9JVEVNKCcnLCgjNDIpLCM3KTs=",
+        "id": "step:data:styled_item#43",
+        "offset": 2505,
+        "sha256": "993aa7fb41284a84bc9e8c65099d76a2763b98d04b38cba7d48c74fa631b82ba",
+        "stream": "source"
+      }
+    ],
+    "version": "3"
+  }
+}

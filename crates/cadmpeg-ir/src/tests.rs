@@ -3015,8 +3015,6 @@ fn sketch_constraint_native_ref_must_resolve() {
 
 #[test]
 fn unresolved_unknown_record_link_is_reported_once() {
-    // The `unknowns` arena is one of the native namespace arenas, so the
-    // generic native-record loop is the only thing that needs to walk it.
     let mut ir = unit_cube();
     ir.set_native_unknowns(
         "test",
@@ -3184,7 +3182,6 @@ fn byte_payloads_use_nonempty_base64_and_reject_invalid_text() {
 #[test]
 fn schema_generation_produces_definitions() {
     let schema = crate::cadir_json_schema();
-    // The schema must reference the entity types, not just be an empty object.
     let json = serde_json::to_string(&schema).unwrap();
     assert!(json.contains("Body"));
     assert!(json.contains("Coedge"));
@@ -6356,9 +6353,8 @@ fn reference_images_require_valid_assets_and_plane_placements() {
     }));
 }
 
-/// Normalize the way the codecs did before the digest streamed: copy the whole
-/// document, order it, drop the recorded digest and the retained source image,
-/// and hash the serialized string.
+/// Copy the document, finalize order, drop the recorded digest and retained
+/// source image, and hash the serialized string.
 fn cloned_local_digest(ir: &CadIr, format: &str, source_image_id: &str) -> String {
     let mut normalized = ir.clone();
     normalized.finalize();
@@ -6430,8 +6426,6 @@ fn document_local_sha256_matches_the_cloned_normalization() {
         crate::hash::document_local_sha256(&ir, "synthetic", source_image),
         cloned_local_digest(&ir, "synthetic", source_image)
     );
-    // A format the document has no namespace for still hashes the same way:
-    // both paths add the empty unknown arena the codecs have always added.
     assert_eq!(
         crate::hash::document_local_sha256(&ir, "absent", source_image),
         cloned_local_digest(&ir, "absent", source_image)

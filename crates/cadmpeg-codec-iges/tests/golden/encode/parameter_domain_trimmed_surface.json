@@ -1,0 +1,3 @@
+{
+  "encode_error": "not implemented yet: IGES semantic writer requires at least one boundary loop per face (iges:model:face#D3)"
+}

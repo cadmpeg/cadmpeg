@@ -2,10 +2,7 @@
 //! `()`-returning wrappers over internal parsers for the `cadmpeg-fuzz` targets.
 //!
 //! Each wrapper feeds arbitrary bytes to one internal parser and discards the
-//! result. The contract is that no input may panic. This facade exists only to
-//! keep those parsers reachable from the fuzz harness without widening the
-//! crate's public API; it is gated behind the `fuzz` feature and hidden from
-//! documentation.
+//! result. The contract is that no input may panic.
 #![doc(hidden)]
 
 /// Exercise `V5_CFV2` container stream-directory parsing.

@@ -4,14 +4,8 @@
 //! byte image whose bytes exercise the real SPLMSSTR container parse, the
 //! Parasolid zlib extraction/classification, and the analytic geometry decode,
 //! and fail if the code regresses.
-//!
-//! JT codec primitives live in `jt` / `jt_topology`. OM wire parsers live in
-//! `om`. Feature-completeness predicates live in `decode`.
 #![allow(clippy::unwrap_used)]
-#![allow(
-    clippy::default_trait_access,
-    reason = "Test fixtures use type-inferred defaults for compact record construction."
-)]
+#![allow(clippy::default_trait_access)]
 
 use std::io::Cursor;
 
@@ -2022,6 +2016,17 @@ fn container_rejects_trailing_or_overlapping_footer_data() {
 }
 
 #[test]
+fn container_rejects_footer_offset_beyond_the_file_image() {
+    let mut bytes = single_part_prt();
+    bytes[0x11..0x17].copy_from_slice(&[0xff; 6]);
+    let error = container::scan_bytes(bytes).expect_err("required invariant");
+    assert_eq!(
+        error.to_string(),
+        "malformed container: FOOTER offset exceeds the file image"
+    );
+}
+
+#[test]
 fn inspect_reports_bounded_nx_object_model_entities() {
     let mut cur = Cursor::new(prt_with_indexed_om_section());
     let summary = NxCodec
@@ -2214,7 +2219,6 @@ fn decode_transfers_point_plane_cylinder_line() {
         .collect();
     assert_eq!(lines.len(), 1);
 
-    // No topology graph is fabricated; the loss is reported as blocking.
     assert!(result.ir.model.faces.is_empty() && result.ir.model.edges.is_empty());
     assert!(result.report.losses.iter().any(|l| l.code.category()
         == cadmpeg_ir::report::LossCategory::Topology
@@ -2233,7 +2237,6 @@ fn decode_transfers_point_plane_cylinder_line() {
         Exactness::Derived
     );
 
-    // The preserved stream owns partial-decode carriers without fabricating topology.
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
@@ -9693,34 +9696,12 @@ fn extraction_uses_ordered_segment_wrappers_in_indexed_payloads() {
     assert_eq!(streams[0].schema.as_deref(), Some("SCH_REAL_1_9999"));
 }
 
-/// Phase 0 golden serialized-output snapshots.
+/// Golden serialized decode/inspect snapshots.
 ///
-/// These freeze the NX codec's complete observable output before the native-tier
-/// refactor begins. For each fixture the harness runs `NxCodec::decode` and
-/// `NxCodec::inspect`, then serializes the full [`DecodeResult`] (the decoded
-/// `CadIr` including the `nx` native-namespace arenas, the [`DecodeReport`], and
-/// the [`SourceFidelity`] sidecar carrying provenance/exactness annotations) plus
-/// the [`ContainerSummary`] into one deterministic pretty-JSON document, compared
-/// byte-for-byte against a committed golden file under `tests/golden/`.
-///
-/// Serialization goes through `serde_json::to_value` (whose object maps are
-/// `BTreeMap`, so keys sort) and then `to_string_pretty`. Every IR container that
-/// reaches the wire is `BTreeMap`- or `Vec`-backed and codec output is sorted by
-/// id, so the bytes are stable across runs; `golden_output_is_deterministic`
-/// asserts that directly.
-///
-/// Regenerate after an intended output change with:
-///   `UPDATE_GOLDEN=1 cargo test-fast golden`
-/// then review the golden diff before committing. Regenerate with the workspace
-/// feature set (`test-fast` / `--workspace`), NOT `-p cadmpeg-codec-nx`: the
-/// fixtures zlib-compress their streams through `flate2`, and Cargo feature
-/// unification selects the `zlib-rs` backend for the full-workspace build but
-/// `miniz_oxide` for an isolated crate build. The two backends emit different
-/// compressed bytes, so the container byte length, `sha256`, and byte-ledger
-/// totals in these snapshots are only stable under the workspace build (the one
-/// the commit hook and CI run). This is a build-config sensitivity of the
-/// fixtures, not codec nondeterminism: `golden_output_is_deterministic` confirms
-/// decode output is a pure function of the input bytes.
+/// Each fixture pins pretty-JSON of [`DecodeResult`] plus [`ContainerSummary`].
+/// Regenerate with `UPDATE_GOLDEN=1 cargo test-fast golden` (workspace build,
+/// not `-p cadmpeg-codec-nx`: isolated builds pick `miniz_oxide` and diverge
+/// zlib bytes from the `zlib-rs` workspace backend).
 mod golden {
     use std::collections::BTreeSet;
     use std::io::Cursor;
@@ -9730,10 +9711,7 @@ mod golden {
 
     use super::*;
 
-    /// Every arena name production writes via the native catalogue, extracted
-    /// mechanically. This is the coverage denominator; `arena_coverage_is_a_subset`
-    /// fails if production introduces an arena name this list does not know, which
-    /// keeps the denominator honest as the code evolves.
+    /// Arena names the native catalogue can emit.
     const KNOWN_ARENAS: &[&str] = &[
         "class_definitions",
         "configuration_attribute_uses",
@@ -9967,17 +9945,10 @@ mod golden {
         "string_values",
     ];
 
-    /// A floor on distinct arenas the golden fixtures collectively populate.
-    /// Frozen from the generated snapshots; if a refactor drops an arena from
-    /// every fixture, `arena_coverage_meets_floor` fails. Raise it (never lower
-    /// it) when new covering fixtures are added.
+    /// Minimum distinct arenas the golden fixtures must collectively populate.
     const ARENA_COVERAGE_FLOOR: usize = 122;
 
-    /// Build the covering fixture set: `(golden name, full `.prt` bytes)`. Each
-    /// stream builder is wrapped exactly as its originating white-box test wraps
-    /// it (`prt_with_partition` for a lone partition, `prt_with_streams` for a
-    /// partition paired with an equal-schema deltas stream, `prt_with_named_payloads`
-    /// for an OM record area), so the bytes exercise the real decode path.
+    /// Covering fixture set as `(golden name, full `.prt` bytes)`.
     fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
         let mut f: Vec<(&'static str, Vec<u8>)> = Vec::new();
 
@@ -10477,10 +10448,7 @@ mod golden {
         f
     }
 
-    /// Serialize the complete decode + inspect output for one fixture as stable
-    /// pretty JSON. Decode/inspect errors are frozen too (a `.prt` that fails to
-    /// decode is a real, contract-relevant behavior), so this never panics on
-    /// codec output.
+    /// Serialize decode + inspect output as stable pretty JSON. Errors are frozen.
     fn snapshot(bytes: &[u8]) -> String {
         let decode =
             match NxCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
@@ -10611,7 +10579,6 @@ mod golden {
     }
 
     /// Every arena a fixture populates must be a name production actually writes.
-    /// A failure here means `KNOWN_ARENAS` (the coverage denominator) is stale.
     #[test]
     fn arena_coverage_is_a_subset() {
         let known: BTreeSet<&str> = KNOWN_ARENAS.iter().copied().collect();
@@ -10625,9 +10592,7 @@ mod golden {
         );
     }
 
-    /// Freezes the collective arena coverage floor so a refactor cannot silently
-    /// stop populating an arena across the whole fixture set. Prints the fraction
-    /// under `--nocapture`.
+    /// Collective arena coverage floor across the fixture set.
     #[test]
     fn arena_coverage_meets_floor() {
         let covered = covered_arenas();
@@ -10652,13 +10617,8 @@ mod golden {
         );
     }
 
-    /// The catalogue is the single source of truth for arena names: every arena
-    /// appears exactly once across `CATALOGUE`, there is one row per model field
-    /// (230), and the catalogue's arena set is exactly `KNOWN_ARENAS`. The exact
-    /// equality is the relationship the fixtures confirm — every arena a fixture
-    /// can populate is a catalogue arena, and every catalogue arena is a name
-    /// `KNOWN_ARENAS` tracks. A single production site (`native::attach`) emits
-    /// arenas, all of them catalogue-driven, so no non-catalogued arena exists.
+    /// Every catalogue arena appears once, and the catalogue arena set equals
+    /// `KNOWN_ARENAS`.
     #[test]
     fn catalogue_arenas_match_known_arenas() {
         use cadmpeg_ir::native::catalogue::Phase;

@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::items_after_test_module,
-    reason = "Feature projection helpers are grouped by operation after their focused form tests."
-)]
+#![allow(clippy::items_after_test_module)]
 //! Project parameter-design features and dispatch per feature family.
 
 use crate::bytes::lp_utf16_bounded;
@@ -416,10 +413,7 @@ fn ensure_feature_dependencies_precede(
 // Faithful reduced-arg entry point over the same slices as `ProjectInputs`;
 // its many test callers pass positional slices, so it defaults the fixed
 // edge-identity and body-binding tables and forwards through the bundle.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag; a context struct would hide those inputs."
-)]
+#[allow(clippy::too_many_arguments)]
 #[cfg(test)]
 pub fn project_parameter_design(
     native: &[DesignParameter],

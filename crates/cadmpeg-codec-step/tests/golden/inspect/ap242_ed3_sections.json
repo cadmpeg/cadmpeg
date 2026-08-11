@@ -1,0 +1,68 @@
+{
+  "container_kind": "iso-10303-21-clear-text",
+  "entries": [
+    {
+      "attributes": {},
+      "compressed_size": 0,
+      "compression": "none",
+      "name": "HEADER",
+      "role": "metadata",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "anchor_count": "2"
+      },
+      "compressed_size": 0,
+      "compression": "none",
+      "name": "ANCHOR",
+      "role": "in_file_anchors",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "external_count": "1",
+        "external_uris": "https://example.invalid/external-part"
+      },
+      "compressed_size": 0,
+      "compression": "none",
+      "name": "REFERENCE",
+      "role": "external_references",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "entity_count": "1",
+        "unknown_entities": ""
+      },
+      "compressed_size": 0,
+      "compression": "none",
+      "name": "DATA[0]",
+      "role": "entity_records",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "entity_count": "1",
+        "unknown_entities": "EXAMPLE_RECORD:1"
+      },
+      "compressed_size": 0,
+      "compression": "none",
+      "name": "DATA[1]",
+      "role": "entity_records",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {},
+      "compressed_size": 0,
+      "compression": "none",
+      "name": "SIGNATURE",
+      "role": "signature",
+      "uncompressed_size": 0
+    }
+  ],
+  "format": "step",
+  "notes": [
+    "schema AP242; edition unspecified"
+  ]
+}
