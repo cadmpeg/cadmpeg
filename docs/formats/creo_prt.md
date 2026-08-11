@@ -115,6 +115,17 @@ instead store its compact-real token in the immediately following value row at
 depth one greater and with the same attribute identifier. An incomplete array
 does not produce a typed value.
 
+Type 6 uses the type-2 compact-real scalar and array grammar. Its array run
+count must equal the product of the declared extents.
+
+Types 5, 7, 9, and 11 store unsigned decimal 32-bit scalars. Their arrays use
+the positive decimal extent headers, `$` continuation rows, comma separators,
+terminal-comma rule, and `n*value` run-length form defined for type 1. The sum
+of run counts must equal the product of the extents. A one-element `[1]` array
+can instead store its unsigned decimal value in the immediately following row
+at depth one greater and with the same attribute identifier. A header without
+element rows stores no default values.
+
 A type-10 scalar stores the remaining line payload as a byte string. The exact
 token `NULL` is a null string, while an empty payload is a stored zero-length
 string. The payload has no in-band character-set selector or normalization

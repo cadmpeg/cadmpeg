@@ -840,6 +840,9 @@ Type 10 selects null and byte-string scalars and direct-row arrays. The first
 array extent gives the number of string rows; later extents do not multiply
 that count. Valid UTF-8 strings transfer as text, and other encodings retain
 their exact bytes.
+Type 6 uses the type-2 compact-real scalar and array grammar. Types 5, 7, 9,
+and 11 use unsigned decimal 32-bit scalars and dimension-complete run-length
+arrays; their one-element arrays can store the element in a direct child row.
 
 **Need.** We must know the remaining type codes and payload grammars,
 the semantic axis order of multidimensional type-2 arrays, the character-set

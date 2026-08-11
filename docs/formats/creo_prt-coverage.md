@@ -106,10 +106,12 @@ fixtures, claims above L1 remain unproven.
   arrays transfer with the same scoped identity and retained run
   representation. Declared type-1 arrays without stored elements remain
   unresolved and are counted as typed-record losses; the decoder does not
-  synthesize zero elements. Type-0 null, arrow, inline, and array nodes transfer
-  with depth-defined parent links and direct array-element identities.
-  Incomplete object arrays retain their
-  headers and existing elements and produce a typed-record loss. Type-10 null,
+  synthesize zero elements. Type-6 compact-real values and type-5, type-7,
+  type-9, and type-11 unsigned-decimal values transfer with the same exact
+  scalar and run-length-array representation. Type-0 null, arrow, inline, and
+  array nodes transfer with depth-defined parent links and direct array-element
+  identities. Incomplete object arrays retain their headers and existing
+  elements and produce a typed-record loss. Type-10 null,
   UTF-8, opaque-byte, and direct-row array values transfer as exact native
   records. Incomplete string arrays retain their headers and present elements.
   Non-UTF-8 values retain their exact bytes and report the missing character

@@ -137,6 +137,10 @@ pub type IntegerRun = NumericRun<i32>;
 pub type IntegerPayload = NumericPayload<i32>;
 /// One completely decoded legacy type-1 attribute value.
 pub type IntegerRecord = NumericRecord<i32>;
+/// Complete semantic payload of one unsigned-decimal legacy value.
+pub type UnsignedPayload = NumericPayload<u32>;
+/// One completely decoded unsigned-decimal legacy attribute value.
+pub type UnsignedRecord = NumericRecord<u32>;
 
 /// Structural payload of one legacy type-0 object node.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -316,6 +320,26 @@ pub struct Persistence {
     pub incomplete_string_array_count: usize,
     /// Type-10 rows that use an undefined continuation form.
     pub unresolved_string_value_count: usize,
+    /// Type-5 unsigned-decimal scalars and arrays in source order.
+    pub type_5_values: Vec<UnsignedRecord>,
+    /// Type-5 rows not represented by a complete scalar or array.
+    pub unresolved_type_5_value_count: usize,
+    /// Type-6 compact-real scalars and arrays in source order.
+    pub type_6_values: Vec<RealRecord>,
+    /// Type-6 rows not represented by a complete finite scalar or array.
+    pub unresolved_type_6_value_count: usize,
+    /// Type-7 unsigned-decimal scalars and arrays in source order.
+    pub type_7_values: Vec<UnsignedRecord>,
+    /// Type-7 rows not represented by a complete scalar or array.
+    pub unresolved_type_7_value_count: usize,
+    /// Type-9 unsigned-decimal scalars and arrays in source order.
+    pub type_9_values: Vec<UnsignedRecord>,
+    /// Type-9 rows not represented by a complete scalar or array.
+    pub unresolved_type_9_value_count: usize,
+    /// Type-11 unsigned-decimal scalars and arrays in source order.
+    pub type_11_values: Vec<UnsignedRecord>,
+    /// Type-11 rows not represented by a complete scalar or array.
+    pub unresolved_type_11_value_count: usize,
 }
 
 impl Persistence {
@@ -464,6 +488,14 @@ fn signed_integer(bytes: &[u8]) -> Option<i32> {
             .bytes()
             .all(|byte| byte.is_ascii_digit())
     {
+        return None;
+    }
+    text.parse().ok()
+}
+
+fn unsigned_integer(bytes: &[u8]) -> Option<u32> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
     text.parse().ok()
@@ -990,6 +1022,16 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         numeric_records(data, &scopes, 2, "real", compact_real, &parents);
     let (integer_values, unresolved_integer_value_count) =
         numeric_records(data, &scopes, 1, "integer", signed_integer, &parents);
+    let (type_5_values, unresolved_type_5_value_count) =
+        numeric_records(data, &scopes, 5, "type_5", unsigned_integer, &parents);
+    let (type_6_values, unresolved_type_6_value_count) =
+        numeric_records(data, &scopes, 6, "type_6", compact_real, &parents);
+    let (type_7_values, unresolved_type_7_value_count) =
+        numeric_records(data, &scopes, 7, "type_7", unsigned_integer, &parents);
+    let (type_9_values, unresolved_type_9_value_count) =
+        numeric_records(data, &scopes, 9, "type_9", unsigned_integer, &parents);
+    let (type_11_values, unresolved_type_11_value_count) =
+        numeric_records(data, &scopes, 11, "type_11", unsigned_integer, &parents);
     Persistence {
         scopes,
         real_values,
@@ -1002,6 +1044,16 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         string_values,
         incomplete_string_array_count,
         unresolved_string_value_count,
+        type_5_values,
+        unresolved_type_5_value_count,
+        type_6_values,
+        unresolved_type_6_value_count,
+        type_7_values,
+        unresolved_type_7_value_count,
+        type_9_values,
+        unresolved_type_9_value_count,
+        type_11_values,
+        unresolved_type_11_value_count,
     }
 }
 
@@ -1198,6 +1250,78 @@ mod tests {
 
         assert!(persistence.integer_values.is_empty());
         assert_eq!(persistence.unresolved_integer_value_count, 2);
+    }
+
+    #[test]
+    fn remaining_numeric_types_decode_their_scalar_and_array_grammars() {
+        let data = b"@root 1 0\n@five 2 5\n@five_array 3 5\n@six 4 6\n@six_array 5 6\n\
+            @seven 6 7\n@seven_array 7 7\n@nine 8 9\n@eleven 9 11\n@eleven_single 10 11\n\
+            0 1 ->\n1 2 2700\n1 3 [3]\n$0,2*144\n1 4 400\n1 5 [2][2]\n$3FF,3*0\n\
+            1 6 7\n1 7 [4]\n$0,1,2,8\n1 8 [4]\n$0,67108864,2*1\n\
+            1 9 [3]\n$3,4,5\n1 10 [1]\n2 10 14633\n";
+        let root_offset = data
+            .windows(b"0 1 ->".len())
+            .position(|window| window == b"0 1 ->")
+            .expect("root offset");
+        let persistence = scan(data, std::iter::once(0..data.len()));
+
+        assert_eq!(persistence.type_5_values.len(), 2);
+        assert_eq!(persistence.unresolved_type_5_value_count, 0);
+        assert_eq!(
+            persistence.type_5_values[1].payload,
+            UnsignedPayload::Array {
+                dimensions: vec![3],
+                runs: vec![
+                    NumericRun { count: 1, value: 0 },
+                    NumericRun {
+                        count: 2,
+                        value: 144,
+                    },
+                ],
+            }
+        );
+        assert_eq!(persistence.type_6_values.len(), 2);
+        assert_eq!(persistence.unresolved_type_6_value_count, 0);
+        assert_eq!(
+            persistence.type_6_values[0].payload,
+            RealPayload::Scalar {
+                value: Real(2.0f64.to_bits())
+            }
+        );
+        assert_eq!(persistence.type_7_values.len(), 2);
+        assert_eq!(persistence.unresolved_type_7_value_count, 0);
+        assert_eq!(persistence.type_9_values.len(), 1);
+        assert_eq!(persistence.unresolved_type_9_value_count, 0);
+        assert_eq!(persistence.type_11_values.len(), 2);
+        assert_eq!(persistence.unresolved_type_11_value_count, 0);
+        assert_eq!(
+            persistence.type_11_values[1].payload,
+            UnsignedPayload::Array {
+                dimensions: vec![1],
+                runs: vec![NumericRun {
+                    count: 1,
+                    value: 14633,
+                }],
+            }
+        );
+        assert_eq!(
+            persistence.type_11_values[1].parent.as_deref(),
+            Some(object_node_id(root_offset).as_str())
+        );
+    }
+
+    #[test]
+    fn remaining_numeric_types_withhold_undefined_values() {
+        let data = b"@negative 1 5\n0 1 -1\n@nonfinite 2 6\n0 2 7FF\n\
+            @short 3 11\n0 3 [2]\n$1\n";
+        let persistence = scan(data, std::iter::once(0..data.len()));
+
+        assert!(persistence.type_5_values.is_empty());
+        assert_eq!(persistence.unresolved_type_5_value_count, 1);
+        assert!(persistence.type_6_values.is_empty());
+        assert_eq!(persistence.unresolved_type_6_value_count, 1);
+        assert!(persistence.type_11_values.is_empty());
+        assert_eq!(persistence.unresolved_type_11_value_count, 1);
     }
 
     #[test]

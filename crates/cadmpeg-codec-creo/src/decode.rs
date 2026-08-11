@@ -32717,6 +32717,36 @@ struct BuiltIr {
     coverage: BTreeMap<String, usize>,
 }
 
+fn legacy_source_stream<'a>(scan: &'a ContainerScan<'_>, offset: usize) -> &'a str {
+    scan.framing
+        .sections
+        .iter()
+        .find(|section| {
+            offset >= section.offset && offset < section.offset.saturating_add(section.length)
+        })
+        .map_or("legacy_ascii", |section| section.name.as_str())
+}
+
+fn emit_legacy_value_arena<T: Serialize>(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    key: &str,
+    records: &[crate::legacy::ValueRecord<T>],
+    tag: &str,
+) -> Result<(), CodecError> {
+    emit_arena(ir, annotations, key, records, |annotations, record| {
+        annotate(
+            annotations,
+            &record.id,
+            legacy_source_stream(scan, record.offset),
+            record.offset as u64,
+            tag,
+            Exactness::ByteExact,
+        );
+    })
+}
+
 fn emit_legacy_arenas(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -32724,15 +32754,6 @@ fn emit_legacy_arenas(
 ) -> Result<(), CodecError> {
     let Some(legacy) = &scan.framing.legacy_ascii else {
         return Ok(());
-    };
-    let source_stream = |offset: usize| {
-        scan.framing
-            .sections
-            .iter()
-            .find(|section| {
-                offset >= section.offset && offset < section.offset.saturating_add(section.length)
-            })
-            .map_or("legacy_ascii", |section| section.name.as_str())
     };
     emit_arena(
         ir,
@@ -32743,60 +32764,76 @@ fn emit_legacy_arenas(
             annotate(
                 annotations,
                 &record.id,
-                source_stream(record.offset),
+                legacy_source_stream(scan, record.offset),
                 record.offset as u64,
                 "legacy_type_0_object",
                 Exactness::ByteExact,
             );
         },
     )?;
-    emit_arena(
+    emit_legacy_value_arena(
+        scan,
         ir,
         annotations,
         "legacy_integer_values",
         &legacy.persistence.integer_values,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                source_stream(record.offset),
-                record.offset as u64,
-                "legacy_type_1_integer",
-                Exactness::ByteExact,
-            );
-        },
+        "legacy_type_1_integer",
     )?;
-    emit_arena(
+    emit_legacy_value_arena(
+        scan,
         ir,
         annotations,
         "legacy_real_values",
         &legacy.persistence.real_values,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                source_stream(record.offset),
-                record.offset as u64,
-                "legacy_type_2_real",
-                Exactness::ByteExact,
-            );
-        },
+        "legacy_type_2_real",
     )?;
-    emit_arena(
+    emit_legacy_value_arena(
+        scan,
         ir,
         annotations,
         "legacy_string_values",
         &legacy.persistence.string_values,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                source_stream(record.offset),
-                record.offset as u64,
-                "legacy_type_10_string",
-                Exactness::ByteExact,
-            );
-        },
+        "legacy_type_10_string",
+    )?;
+    emit_legacy_value_arena(
+        scan,
+        ir,
+        annotations,
+        "legacy_type_5_values",
+        &legacy.persistence.type_5_values,
+        "legacy_type_5_value",
+    )?;
+    emit_legacy_value_arena(
+        scan,
+        ir,
+        annotations,
+        "legacy_type_6_values",
+        &legacy.persistence.type_6_values,
+        "legacy_type_6_value",
+    )?;
+    emit_legacy_value_arena(
+        scan,
+        ir,
+        annotations,
+        "legacy_type_7_values",
+        &legacy.persistence.type_7_values,
+        "legacy_type_7_value",
+    )?;
+    emit_legacy_value_arena(
+        scan,
+        ir,
+        annotations,
+        "legacy_type_9_values",
+        &legacy.persistence.type_9_values,
+        "legacy_type_9_value",
+    )?;
+    emit_legacy_value_arena(
+        scan,
+        ir,
+        annotations,
+        "legacy_type_11_values",
+        &legacy.persistence.type_11_values,
+        "legacy_type_11_value",
     )
 }
 
@@ -35975,6 +36012,50 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
                 "undecoded_legacy_string_encoding_count".to_string(),
                 undecoded_encodings,
             );
+            let mut insert_numbered_numeric_coverage =
+                |type_code: u8, (scalars, arrays, elements), unresolved| {
+                    coverage.insert(
+                        format!("decoded_legacy_type_{type_code}_scalar_count"),
+                        scalars,
+                    );
+                    coverage.insert(
+                        format!("decoded_legacy_type_{type_code}_array_count"),
+                        arrays,
+                    );
+                    coverage.insert(
+                        format!("decoded_legacy_type_{type_code}_element_count"),
+                        elements,
+                    );
+                    coverage.insert(
+                        format!("unresolved_legacy_type_{type_code}_value_count"),
+                        unresolved,
+                    );
+                };
+            insert_numbered_numeric_coverage(
+                5,
+                legacy_numeric_coverage(&legacy.persistence.type_5_values),
+                legacy.persistence.unresolved_type_5_value_count,
+            );
+            insert_numbered_numeric_coverage(
+                6,
+                legacy_numeric_coverage(&legacy.persistence.type_6_values),
+                legacy.persistence.unresolved_type_6_value_count,
+            );
+            insert_numbered_numeric_coverage(
+                7,
+                legacy_numeric_coverage(&legacy.persistence.type_7_values),
+                legacy.persistence.unresolved_type_7_value_count,
+            );
+            insert_numbered_numeric_coverage(
+                9,
+                legacy_numeric_coverage(&legacy.persistence.type_9_values),
+                legacy.persistence.unresolved_type_9_value_count,
+            );
+            insert_numbered_numeric_coverage(
+                11,
+                legacy_numeric_coverage(&legacy.persistence.type_11_values),
+                legacy.persistence.unresolved_type_11_value_count,
+            );
         }
     }
     coverage.insert(
@@ -36765,6 +36846,32 @@ fn build_report(
             message: format!(
                 "{unresolved_legacy_integers} legacy type-1 value row(s) did not form a signed \
                  32-bit scalar or dimension-complete integer array."
+            ),
+            provenance: None,
+        });
+    }
+    for type_code in [5u8, 7, 9, 11] {
+        let unresolved = count(&format!("unresolved_legacy_type_{type_code}_value_count"));
+        if unresolved != 0 {
+            losses.push(LossNote {
+                code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+                severity: Severity::Warning,
+                message: format!(
+                    "{unresolved} legacy type-{type_code} value row(s) did not form an unsigned \
+                     32-bit scalar or dimension-complete unsigned array."
+                ),
+                provenance: None,
+            });
+        }
+    }
+    let unresolved_legacy_type_6 = count("unresolved_legacy_type_6_value_count");
+    if unresolved_legacy_type_6 != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_legacy_type_6} legacy type-6 value row(s) did not form a complete \
+                 finite compact-real scalar or dimension-complete real array."
             ),
             provenance: None,
         });

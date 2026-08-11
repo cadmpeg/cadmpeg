@@ -10032,6 +10032,86 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
 }
 
 #[test]
+fn legacy_numbered_numeric_families_emit_exact_native_values() {
+    let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
+        @root 1 0\n@five 2 5\n@five_array 3 5\n@six 4 6\n@six_array 5 6\n\
+        @seven 6 7\n@nine 7 9\n@eleven 8 11\n0 1 ->\n1 2 2700\n\
+        1 3 [3]\n$0,2*144\n1 4 400\n1 5 [2][2]\n$3FF,3*0\n1 6 7\n\
+        1 7 [4]\n$0,67108864,2*1\n1 8 [1]\n2 8 14633\n\
+        #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("legacy numbered numeric decode");
+    assert_eq!(
+        result.report.coverage["decoded_legacy_type_5_scalar_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["decoded_legacy_type_5_array_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["decoded_legacy_type_5_element_count"],
+        4
+    );
+    assert_eq!(
+        result.report.coverage["decoded_legacy_type_6_scalar_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["decoded_legacy_type_6_array_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["decoded_legacy_type_6_element_count"],
+        5
+    );
+    assert_eq!(
+        result.report.coverage["decoded_legacy_type_7_scalar_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["decoded_legacy_type_9_array_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["decoded_legacy_type_11_array_count"],
+        1
+    );
+    assert_eq!(
+        result.report.coverage["decoded_legacy_type_11_element_count"],
+        1
+    );
+
+    let native = result.ir.native.namespace("creo").expect("Creo namespace");
+    assert_eq!(native.arenas["legacy_type_5_values"].len(), 2);
+    assert_eq!(native.arenas["legacy_type_6_values"].len(), 2);
+    assert_eq!(native.arenas["legacy_type_7_values"].len(), 1);
+    assert_eq!(native.arenas["legacy_type_9_values"].len(), 1);
+    assert_eq!(native.arenas["legacy_type_11_values"].len(), 1);
+    assert_eq!(
+        native.arenas["legacy_type_6_values"]
+            .iter()
+            .find(|record| record.field("name") == Some(serde_json::json!("six")))
+            .and_then(|record| record.field("payload")),
+        Some(serde_json::json!({"form": "scalar", "value": 2.0}))
+    );
+    assert_eq!(
+        native.arenas["legacy_type_11_values"][0].field("payload"),
+        Some(serde_json::json!({
+            "form": "array",
+            "dimensions": [1],
+            "runs": [{"count": 1, "value": 14633}]
+        }))
+    );
+    assert_eq!(
+        native.arenas["legacy_type_11_values"][0].field("parent"),
+        Some(serde_json::json!(native.arenas["legacy_objects"][0].id()))
+    );
+}
+
+#[test]
 fn incomplete_legacy_values_are_reported() {
     let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
         @values 7 2\n0 7 [2]\n$0\n\
