@@ -6601,6 +6601,61 @@ fn reference_images_require_valid_assets_and_plane_placements() {
     }));
 }
 
+#[test]
+fn decals_require_valid_assets_faces_and_opacity() {
+    use crate::assets::{Asset, AssetContent, AssetId};
+    use crate::features::{DecalMapping, FaceSelection, Feature, FeatureDefinition, FeatureId};
+
+    let asset_id = AssetId("synthetic:test:asset#decal".into());
+    let feature_id = FeatureId("synthetic:test:feature#decal".into());
+    let mut ir = unit_cube();
+    let face_id = ir.model.faces[0].id.clone();
+    ir.model.assets.push(Asset {
+        id: asset_id.clone(),
+        name: Some("decal.png".into()),
+        media_type: Some("image/png".into()),
+        content: AssetContent::Embedded {
+            data: vec![1, 2, 3],
+        },
+        native_ref: None,
+    });
+    ir.model.features.push(Feature {
+        id: feature_id.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Decal {
+            asset: asset_id,
+            faces: FaceSelection::Faces(vec![face_id]),
+            mapping: DecalMapping::FitToFaces,
+            opacity: Some(0.75),
+        },
+        native_ref: None,
+    });
+    ir.finalize();
+    assert!(validate(&ir, Vec::new()).is_ok());
+
+    let FeatureDefinition::Decal {
+        ref mut opacity, ..
+    } = ir.model.features.last_mut().unwrap().definition
+    else {
+        unreachable!();
+    };
+    *opacity = Some(2.0);
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(feature_id.0.as_str())
+            && finding.message == "decal opacity is invalid"
+    }));
+}
+
 /// Normalize the way the codecs did before the digest streamed: copy the whole
 /// document, order it, drop the recorded digest and the retained source image,
 /// and hash the serialized string.

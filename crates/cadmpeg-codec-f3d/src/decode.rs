@@ -1058,6 +1058,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 face_selection(removed_faces);
             }
             FeatureDefinition::CosmeticThread { face, .. } => face_selection(face),
+            FeatureDefinition::Decal { faces, .. } => face_selection(faces),
             FeatureDefinition::SheetMetalHem { edges, .. } => edge_selection(edges),
             FeatureDefinition::MoveFace { faces, .. } => face_selection(faces),
             _ => {}
@@ -1609,6 +1610,15 @@ fn finish_model_decode<'a>(
         &mut ir.model.features,
     )?;
     extend_unique_assets(&mut ir.model.assets, canvas_assets)?;
+    let decal_assets = crate::design::decode::decal::project_decal_images(
+        scan,
+        &native.design_parameter_scopes,
+        &native.design_decal_images,
+        &native.design_construction_operand_groups,
+        &native.design_body_recipe_operands,
+        &mut ir.model.features,
+    )?;
+    extend_unique_assets(&mut ir.model.assets, decal_assets)?;
     crate::design::configurations::bind_configuration_parameter_overrides(
         &mut ir.model.configurations,
         &ir.model.parameters,
@@ -2167,6 +2177,15 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         &mut ir.model.features,
     )?;
     extend_unique_assets(&mut ir.model.assets, canvas_assets)?;
+    let decal_assets = crate::design::decode::decal::project_decal_images(
+        &scan,
+        &native.design_parameter_scopes,
+        &native.design_decal_images,
+        &native.design_construction_operand_groups,
+        &native.design_body_recipe_operands,
+        &mut ir.model.features,
+    )?;
+    extend_unique_assets(&mut ir.model.assets, decal_assets)?;
     crate::design::configurations::bind_configuration_parameter_overrides(
         &mut ir.model.configurations,
         &ir.model.parameters,
@@ -3428,6 +3447,8 @@ fn extend_related_design_records(
     native.design_feature_timelines = crate::design::decode::meta::decode_feature_timelines(scan)?;
     native.design_canvas_images =
         crate::design::decode::canvas::decode_canvas_images(scan, &native.design_parameter_scopes)?;
+    native.design_decal_images =
+        crate::design::decode::decal::decode_decal_images(scan, &native.design_parameter_scopes)?;
     crate::design::decode::operands::disambiguate_fixed_fillet_parameters(
         &mut native.design_parameter_scopes,
         &native.design_parameter_owners,

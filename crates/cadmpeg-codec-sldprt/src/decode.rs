@@ -1067,7 +1067,8 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 .assembly_joints
                 .iter()
                 .any(|candidate| candidate.id == *joint),
-            FeatureDefinition::ReferenceImage { asset, .. } => {
+            FeatureDefinition::ReferenceImage { asset, .. }
+            | FeatureDefinition::Decal { asset, .. } => {
                 !ir.model.assets.iter().any(|candidate| candidate.id == *asset)
             }
             FeatureDefinition::StoredGeometry => state.outputs.is_empty(),

@@ -2582,6 +2582,21 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     );
                 }
             }
+            FeatureDefinition::Decal {
+                asset,
+                faces,
+                opacity,
+                ..
+            } => {
+                if !asset_ids.contains(asset.0.as_str()) {
+                    ref_error(findings, &feature.id.0, "decal asset", &asset.0);
+                }
+                if opacity.is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
+                {
+                    feature_geometry_error(findings, feature, "decal opacity is invalid");
+                }
+                face_selections.push(faces);
+            }
             FeatureDefinition::Block {
                 dimensions,
                 placement,

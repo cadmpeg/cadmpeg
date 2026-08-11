@@ -16,7 +16,7 @@ compact `Loft` prefix and nested profile-region frames, the class-418
 operation prologues and cross-document selector, the axial `Assemble` carrier
 and selector prefixes, the non-axial assembly-operation operand-path locator run,
 locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
-(§3.1). ASM stream records are tabulated in `docs/layouts/asm.toml`.
+(§3.1), plus the `Decal` scope and image-record prefixes. ASM stream records are tabulated in `docs/layouts/asm.toml`.
 Container and manifest layers are text grammars and are listed under "Not
 tabulated".
 """
@@ -56,6 +56,143 @@ anchor = "then `u32 record_index`"
 path = "docs/formats/f3d.md"
 contains = "Its eleven-byte indexed header"
 note = "The 11-byte total is stated independently in the companion-record paragraph of the same section."
+
+[[record]]
+name = "design_decal_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A `Decal` scope is a presentation timeline object"
+size = 44
+note = "Offsets are relative to the Decal scope's primary indexed header. The remaining scope payload follows this fixed prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "scope offsets 11 through 20"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Ten zero bytes occupy scope offsets 11 through 20"
+
+[[record.field]]
+name = "asset_reference"
+offset = 21
+type = "bytes[5]"
+source = "spec"
+anchor = "A marked image-asset record reference occurs at offset 21"
+
+[[record.field]]
+name = "asset_reference_zero_run"
+offset = 26
+type = "bytes[6]"
+source = "spec"
+anchor = "with six trailing zero bytes"
+
+[[record.field]]
+name = "mapping_mode"
+offset = 32
+type = "u8"
+source = "spec"
+anchor = "Mapping mode `0x60` at offset 32"
+
+[[record.field]]
+name = "target_group_reference"
+offset = 33
+type = "bytes[5]"
+source = "spec"
+anchor = "A marked target-group reference occurs at offset 33"
+
+[[record.field]]
+name = "target_reference_zero_run"
+offset = 38
+type = "bytes[6]"
+source = "spec"
+anchor = "with six trailing zero bytes"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/decal.rs"
+contains = "let mapping_mode_at = scope_at + 32;"
+note = "The decoder reads the mapping mode after validating both marked-reference envelopes."
+
+[[record]]
+name = "design_decal_image_asset_record"
+kind = "byte"
+section = "3.1"
+anchor = "The referenced Decal image asset has two consecutive indexed records"
+size = 30
+note = "Complete primary Decal image-asset record. The image-name record begins at byte 30."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The primary record is 30 bytes"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "Eight zero bytes occupy offsets 11 through 18"
+
+[[record.field]]
+name = "design_entity_suffix_reference"
+offset = 19
+type = "bytes[5]"
+source = "spec"
+anchor = "a marked Fusion Design entity suffix at offset 19"
+
+[[record.field]]
+name = "zero_run_6"
+offset = 24
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes at offsets 24 through 29"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/decal.rs"
+contains = "if name_at != asset_at + 30"
+note = "The parser requires the paired image-name header at the exact end of this record."
+
+[[record]]
+name = "design_decal_image_name_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The image-name record begins at offset 30"
+size = 25
+note = "Fixed prefix through the LP-UTF16 code-unit count. The variable UTF-16LE basename starts at byte 25."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "has the primary record index plus one"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Ten zero bytes occupy its offsets 11 through 20"
+
+[[record.field]]
+name = "asset_name_code_unit_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "An LP-UTF16 archive-entry basename begins at offset 21"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/decal.rs"
+contains = "lp_utf16_bounded(bytes, name_at + 21, 1..=1024)"
+note = "The parser bounds the variable basename after this fixed prefix."
 
 [[record]]
 name = "design_parameter_owner_prefix"

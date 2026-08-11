@@ -670,6 +670,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_body_bindings(&ctx, &mut findings);
     validate_body_bounds(&ctx, &mut findings);
     validate_canvas_images(&ctx, &mut findings);
+    validate_decal_images(&ctx, &mut findings);
     validate_mesh_features(&ctx, &mut findings);
     validate_component_occurrences(&ctx, &mut findings);
     validate_configurations(&ctx, &mut findings);
@@ -1745,6 +1746,135 @@ fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
                 message: "Fusion Canvas image has an invalid frame or Design object join".into(),
+                entity: Some(image.id.clone()),
+            });
+        }
+    }
+}
+
+/// Validate exact Decal frames and their native and neutral object joins.
+fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
+    const TARGET_ROLE: u64 = 0x0000_0004_0000_0000;
+    let mut scope_bindings = HashSet::new();
+    let mut asset_records = HashSet::new();
+    let fusion_entities = ctx
+        .native
+        .design_types
+        .iter()
+        .filter(|design_type| design_type.module == records::DESIGN_MODULE_FUSION)
+        .flat_map(|design_type| {
+            let segment = ids::design_segment(&design_type.id);
+            design_type
+                .entity_ids
+                .iter()
+                .map(move |suffix| (segment, *suffix))
+        })
+        .collect::<HashSet<_>>();
+    for image in &ctx.native.design_decal_images {
+        let native_stream = design_stream(&image.id);
+        let design_segment = ids::design_segment(&image.id);
+        let scope = ctx
+            .scopes_by_index
+            .get(&(native_stream, image.scope_record_index));
+        let group = ctx
+            .operand_groups_by_index
+            .get(&(native_stream, image.target_group_record_index));
+        let operand = group.and_then(|group| {
+            let member = *group.members.first()?;
+            ctx.native
+                .design_body_recipe_operands
+                .iter()
+                .find(|operand| {
+                    design_stream(&operand.id) == native_stream
+                        && operand.scope_record_index == image.scope_record_index
+                        && operand.record_index == member
+                        && operand.owner.group() == Some((group.record_index, 0))
+                })
+        });
+        let projected = if image.mapping_mode == 0x60 {
+            operand.and_then(|operand| {
+                let mut faces = operand
+                    .references
+                    .iter()
+                    .flat_map(|reference| reference.candidate_faces.iter().cloned())
+                    .collect::<Vec<_>>();
+                faces.sort_by_key(|face| face.0.clone());
+                faces.dedup();
+                (!faces.is_empty()).then_some((operand, faces))
+            })
+        } else {
+            None
+        };
+        let neutral_is_valid = projected.is_none_or(|(operand, expected_faces)| {
+            scope.is_some_and(|scope| {
+                ctx.ir.model.features.iter().any(|feature| {
+                    feature.native_ref.as_deref() == Some(scope.id.as_str())
+                        && matches!(
+                            &feature.definition,
+                            cadmpeg_ir::features::FeatureDefinition::Decal {
+                                asset,
+                                faces: cadmpeg_ir::features::FaceSelection::Resolved { faces, native },
+                                mapping: cadmpeg_ir::features::DecalMapping::FitToFaces,
+                                opacity: None,
+                            } if faces == &expected_faces
+                                && native == &operand.id
+                                && ctx.ir.model.assets.iter().any(|candidate| {
+                                    candidate.id == *asset
+                                        && candidate.name.as_deref() == Some(image.asset_name.as_str())
+                                })
+                        )
+                })
+            })
+        });
+        let valid = scope.is_some_and(|scope| scope.kind == "Decal")
+            && scope_bindings.insert((native_stream, image.scope_record_index))
+            && asset_records.insert((native_stream, image.asset_record_index))
+            && image.asset_reference_offset
+                == scope
+                    .map(|scope| scope.byte_offset.saturating_add(22))
+                    .unwrap_or_default()
+            && image.mapping_mode_offset
+                == scope
+                    .map(|scope| scope.byte_offset.saturating_add(32))
+                    .unwrap_or_default()
+            && image.target_group_reference_offset
+                == scope
+                    .map(|scope| scope.byte_offset.saturating_add(34))
+                    .unwrap_or_default()
+            && image.asset_frame_length == 30
+            && image.name_byte_offset == image.asset_byte_offset.saturating_add(30)
+            && image.asset_entity_reference_offset == image.asset_byte_offset.saturating_add(20)
+            && image.name_record_index == image.asset_record_index.saturating_add(1)
+            && image.asset_name_offset == image.name_byte_offset.saturating_add(25)
+            && u64::try_from(image.asset_name.encode_utf16().count())
+                .ok()
+                .and_then(|units| units.checked_mul(2))
+                .and_then(|bytes| bytes.checked_add(25))
+                == Some(image.name_frame_length)
+            && !image.asset_class_tag.is_empty()
+            && image
+                .asset_class_tag
+                .bytes()
+                .all(|byte| byte.is_ascii_graphic())
+            && !image.name_class_tag.is_empty()
+            && image
+                .name_class_tag
+                .bytes()
+                .all(|byte| byte.is_ascii_graphic())
+            && !image.asset_name.is_empty()
+            && fusion_entities.contains(&(design_segment, u64::from(image.asset_entity_suffix)))
+            && group.is_some_and(|group| {
+                group.scope_record_index == image.scope_record_index
+                    && group.role == TARGET_ROLE
+                    && group.members.len() == 1
+            })
+            && operand.is_some()
+            && neutral_is_valid;
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Decal image has an invalid frame or Design object join".into(),
                 entity: Some(image.id.clone()),
             });
         }

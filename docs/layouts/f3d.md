@@ -17,7 +17,7 @@ compact `Loft` prefix and nested profile-region frames, the class-418
 operation prologues and cross-document selector, the axial `Assemble` carrier
 and selector prefixes, the non-axial assembly-operation operand-path locator run,
 locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
-(§3.1). ASM stream records are tabulated in `docs/layouts/asm.toml`.
+(§3.1), plus the `Decal` scope and image-record prefixes. ASM stream records are tabulated in `docs/layouts/asm.toml`.
 Container and manifest layers are text grammars and are listed under "Not
 tabulated".
 
@@ -36,6 +36,59 @@ The 11-byte size is the spec's own "eleven-byte indexed header". §3.1 states th
 Cross-checked against code:
 
 - `docs/formats/f3d.md` — The 11-byte total is stated independently in the companion-record paragraph of the same section.
+
+## `design_decal_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 44 B
+
+Offsets are relative to the Decal scope's primary indexed header. The remaining scope payload follows this fixed prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | scope offsets 11 through 20 |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Ten zero bytes occupy scope offsets 11 through 20 |
+| 21 | 5 | `asset_reference` | `bytes[5]` | little | spec | A marked image-asset record reference occurs at offset 21 |
+| 26 | 6 | `asset_reference_zero_run` | `bytes[6]` | little | spec | with six trailing zero bytes |
+| 32 | 1 | `mapping_mode` | `u8` | little | spec | Mapping mode `0x60` at offset 32 |
+| 33 | 5 | `target_group_reference` | `bytes[5]` | little | spec | A marked target-group reference occurs at offset 33 |
+| 38 | 6 | `target_reference_zero_run` | `bytes[6]` | little | spec | with six trailing zero bytes |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/decode/decal.rs` — The decoder reads the mapping mode after validating both marked-reference envelopes.
+
+## `design_decal_image_asset_record`
+
+Spec §3.1 · layout: byte offsets · size: 30 B
+
+Complete primary Decal image-asset record. The image-name record begins at byte 30.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The primary record is 30 bytes |
+| 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | Eight zero bytes occupy offsets 11 through 18 |
+| 19 | 5 | `design_entity_suffix_reference` | `bytes[5]` | little | spec | a marked Fusion Design entity suffix at offset 19 |
+| 24 | 6 | `zero_run_6` | `bytes[6]` | little | spec | six zero bytes at offsets 24 through 29 |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/decode/decal.rs` — The parser requires the paired image-name header at the exact end of this record.
+
+## `design_decal_image_name_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+Fixed prefix through the LP-UTF16 code-unit count. The variable UTF-16LE basename starts at byte 25.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | has the primary record index plus one |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Ten zero bytes occupy its offsets 11 through 20 |
+| 21 | 4 | `asset_name_code_unit_count` | `u32` | little | spec | An LP-UTF16 archive-entry basename begins at offset 21 |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/decode/decal.rs` — The parser bounds the variable basename after this fixed prefix.
 
 ## `design_parameter_owner_prefix`
 

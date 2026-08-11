@@ -462,6 +462,15 @@ pub enum DatumPointConstruction {
     },
 }
 
+/// Rule that maps a raster decal onto its selected faces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum DecalMapping {
+    /// Scale the complete raster to the selected faces' native parameter domain.
+    FitToFaces,
+}
+
 impl DatumPointConstruction {
     /// Return construction features referenced by this rule.
     pub fn feature_references(&self) -> Vec<&FeatureId> {
@@ -559,6 +568,18 @@ pub enum FeatureDefinition {
         /// Opposite corners of the image rectangle in plane-local millimeters.
         bounds: [Point2; 2],
         /// Normalized image opacity.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        opacity: Option<f64>,
+    },
+    /// Raster image applied to model faces.
+    Decal {
+        /// Embedded or external raster resource.
+        asset: AssetId,
+        /// Faces receiving the raster image.
+        faces: FaceSelection,
+        /// Rule relating image coordinates to the selected faces.
+        mapping: DecalMapping,
+        /// Normalized image opacity, or the source format's default when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         opacity: Option<f64>,
     },

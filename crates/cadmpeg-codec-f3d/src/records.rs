@@ -4962,6 +4962,50 @@ pub struct DesignCanvasImage {
     pub geometry_payload: Vec<u8>,
 }
 
+/// Exact image and target binding owned by one Design `Decal` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignDecalImage {
+    /// Globally unique deterministic identifier for this native binding.
+    pub id: String,
+    /// Decal scope record index.
+    pub scope_record_index: u32,
+    /// Byte offset of the scope's marked image-asset reference.
+    pub asset_reference_offset: u64,
+    /// Source mapping-mode byte.
+    pub mapping_mode: u8,
+    /// Byte offset of `mapping_mode`.
+    pub mapping_mode_offset: u64,
+    /// Target construction-group record index.
+    pub target_group_record_index: u32,
+    /// Byte offset of the scope's marked target-group reference.
+    pub target_group_reference_offset: u64,
+    /// Dynamic class tag of the primary image-asset record.
+    pub asset_class_tag: String,
+    /// Primary image-asset record index.
+    pub asset_record_index: u32,
+    /// Byte offset of the primary image-asset record.
+    pub asset_byte_offset: u64,
+    /// Byte length from the primary image header to the name-record header.
+    pub asset_frame_length: u64,
+    /// Design entity suffix carried by the primary image record.
+    pub asset_entity_suffix: u32,
+    /// Byte offset of the marked Design entity-suffix reference.
+    pub asset_entity_reference_offset: u64,
+    /// Dynamic class tag of the image-name record.
+    pub name_class_tag: String,
+    /// Image-name record index.
+    pub name_record_index: u32,
+    /// Byte offset of the image-name record.
+    pub name_byte_offset: u64,
+    /// Byte length of the complete image-name record.
+    pub name_frame_length: u64,
+    /// Archive entry basename stored by the image-name record.
+    pub asset_name: String,
+    /// Byte offset of the asset name's UTF-16LE code units.
+    pub asset_name_offset: u64,
+}
+
 /// One indexed record header in the recursive Design `BulkStream` tree.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

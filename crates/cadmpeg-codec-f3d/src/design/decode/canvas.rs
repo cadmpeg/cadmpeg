@@ -3,12 +3,13 @@
 
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::{role, ContainerScan};
+use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::sketch::next_indexed_record_offset_with_index;
 use crate::ids;
 use crate::records::{DesignCanvasImage, DesignParameterScope};
 use cadmpeg_core::le::{f32_at, f64_at, u32_at};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::assets::{Asset, AssetContent};
+use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -63,13 +64,6 @@ pub fn project_canvas_images(
         else {
             continue;
         };
-        let mut entries = scan.entries.iter().filter(|entry| {
-            scan.is_design_asset_entry(entry, role::IMAGE)
-                && entry.name.rsplit('/').next() == Some(image.asset_name.as_str())
-        });
-        let (Some(entry), None) = (entries.next(), entries.next()) else {
-            continue;
-        };
         let mut u_values = image
             .boundary_segments
             .iter()
@@ -92,26 +86,15 @@ pub fn project_canvas_images(
             v_min = v_min.min(value);
             v_max = v_max.max(value);
         }
-        let asset_id = crate::ids::neutral_asset_id(&entry.name);
-        if !assets.iter().any(|asset: &Asset| asset.id == asset_id) {
-            let media_type = std::path::Path::new(&image.asset_name)
-                .extension()
-                .and_then(|extension| extension.to_str())
-                .and_then(|extension| match extension.to_ascii_lowercase().as_str() {
-                    "jpg" | "jpeg" => Some("image/jpeg"),
-                    "png" => Some("image/png"),
-                    _ => None,
-                })
-                .map(str::to_owned);
-            assets.push(Asset {
-                id: asset_id.clone(),
-                name: Some(image.asset_name.clone()),
-                media_type,
-                content: AssetContent::Embedded {
-                    data: scan.entry_bytes(&entry.name)?.to_vec(),
-                },
-                native_ref: Some(crate::ids::native_scope(&entry.name)),
-            });
+        let Some(asset) = embedded_image_asset(scan, &image.asset_name)? else {
+            continue;
+        };
+        let asset_id = asset.id.clone();
+        if !assets
+            .iter()
+            .any(|candidate: &Asset| candidate.id == asset_id)
+        {
+            assets.push(asset);
         }
         feature.definition = FeatureDefinition::ReferenceImage {
             asset: asset_id,

@@ -667,6 +667,11 @@ native_record_id!(
     "design-canvas-image"
 );
 native_record_id!(
+    /// The native design Decal image and target binding key.
+    native_design_decal_image_id,
+    "design-decal-image"
+);
+native_record_id!(
     /// The native design-dimension-recipe-record key.
     native_design_dimension_recipe_record_id,
     "design-dimension-recipe-record"
