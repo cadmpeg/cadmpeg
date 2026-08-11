@@ -11,7 +11,8 @@
 //! makes the mode flaky there.
 //!
 //! [`snapshots_agree`] tolerates last-place float drift via
-//! [`crate::compare::values_agree`]. Byte equality is the fast path; the
+//! [`crate::compare::values_agree`], including fractional tokens embedded in
+//! string fields (IGES encode goldens). Byte equality is the fast path; the
 //! determinism check stays byte-exact. Local digests are elided; see
 //! [`elide_local_digests`].
 
