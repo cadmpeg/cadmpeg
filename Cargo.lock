@@ -329,6 +329,7 @@ dependencies = [
  "cadmpeg-ir",
  "crc32fast",
  "flate2",
+ "rmp",
  "roxmltree",
  "schemars",
  "serde",
@@ -930,6 +931,15 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
+
+[[package]]
+name = "rmp"
+version = "0.8.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ba8be72d372b2c9b35542551678538b562e7cf86c3315773cae48dfbfe7790c"
+dependencies = [
+ "num-traits",
+]
 
 [[package]]
 name = "roxmltree"

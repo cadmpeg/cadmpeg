@@ -1536,23 +1536,83 @@ fn pmi_semantic_payload_record_with_items(
     items: &[(&str, f64)],
     display_text: &str,
 ) -> Vec<u8> {
+    pmi_semantic_payload_record_configured(
+        cad_text,
+        guid,
+        items,
+        display_text,
+        PmiPayloadOptions::default(),
+    )
+}
+
+#[derive(Clone, Copy, Default)]
+struct PmiPayloadOptions {
+    /// Place `annoType` after `cadText` and add an extra map key.
+    reorder_and_extra_key: bool,
+    /// Embed a key-like `cadText` string inside `dimText`.
+    key_like_string_in_value: bool,
+    /// Truncate after writing `dimItems` so the map fails to parse.
+    truncate_after_dim_items_key: bool,
+}
+
+fn pmi_semantic_payload_record_configured(
+    cad_text: &str,
+    guid: &str,
+    items: &[(&str, f64)],
+    display_text: &str,
+    options: PmiPayloadOptions,
+) -> Vec<u8> {
     fn string(bytes: &mut Vec<u8>, value: &str) {
         assert!(value.len() < 32);
         bytes.push(0xa0 | value.len() as u8);
         bytes.extend_from_slice(value.as_bytes());
     }
+    fn push_array_header(bytes: &mut Vec<u8>, len: usize) {
+        if len < 16 {
+            bytes.push(0x90 | len as u8);
+        } else if let Ok(len16) = u16::try_from(len) {
+            bytes.push(0xdc);
+            bytes.extend_from_slice(&len16.to_be_bytes());
+        } else {
+            panic!("dimItems length exceeds array16");
+        }
+    }
+    fn push_map_header(bytes: &mut Vec<u8>, len: usize) {
+        if len < 16 {
+            bytes.push(0x80 | len as u8);
+        } else if let Ok(len16) = u16::try_from(len) {
+            bytes.push(0xde);
+            bytes.extend_from_slice(&len16.to_be_bytes());
+        } else {
+            panic!("map length exceeds map16");
+        }
+    }
     assert_eq!(guid.len(), 36);
     let mut payload = b"unqlite".to_vec();
     payload.extend_from_slice(&[0; 57]);
     payload.extend_from_slice(guid.as_bytes());
-    payload.push(0x87);
-    string(&mut payload, "annoType");
-    payload.push(1);
-    string(&mut payload, "cadText");
-    string(&mut payload, cad_text);
+    let outer_len = if options.reorder_and_extra_key { 8 } else { 7 };
+    push_map_header(&mut payload, outer_len);
+    if options.reorder_and_extra_key {
+        string(&mut payload, "cadText");
+        string(&mut payload, cad_text);
+        string(&mut payload, "extraKey");
+        string(&mut payload, "ignored");
+        string(&mut payload, "annoType");
+        payload.push(1);
+    } else {
+        string(&mut payload, "annoType");
+        payload.push(1);
+        string(&mut payload, "cadText");
+        string(&mut payload, cad_text);
+    }
     string(&mut payload, "dimItems");
-    assert!(items.len() < 16);
-    payload.push(0x90 | items.len() as u8);
+    if options.truncate_after_dim_items_key {
+        // Declare one element and stop so the outer map cannot finish.
+        push_array_header(&mut payload, 1);
+        return payload;
+    }
+    push_array_header(&mut payload, items.len());
     for (subtype, value) in items {
         payload.push(0x87);
         string(&mut payload, "class");
@@ -1572,7 +1632,11 @@ fn pmi_semantic_payload_record_with_items(
         payload.extend_from_slice(&value.to_be_bytes());
     }
     string(&mut payload, "dimText");
-    string(&mut payload, display_text);
+    if options.key_like_string_in_value {
+        string(&mut payload, "cadText");
+    } else {
+        string(&mut payload, display_text);
+    }
     string(&mut payload, "dimType");
     payload.push(0);
     string(&mut payload, "iDString");
@@ -21294,6 +21358,79 @@ fn decode_extracts_pmi_semantic_dimension() {
     assert!(!dimension.basic);
     assert!(dimension.inspection);
     assert!(!dimension.reference_only);
+}
+
+#[test]
+fn decode_extracts_array16_and_reordered_pmi_maps() {
+    let items = vec![("Linear", 0.025); 16];
+    let array16 = pmi_semantic_payload_record_with_items(
+        "D1@Sketch1",
+        "01234567-89ab-cdef-0123-456789abcdef",
+        &items,
+        "25.000 mm",
+    );
+    let reordered = pmi_semantic_payload_record_configured(
+        "D1@Sketch1",
+        "fedcba98-7654-3210-fedc-ba9876543210",
+        &[("Linear", 0.030)],
+        "30.000 mm",
+        PmiPayloadOptions {
+            reorder_and_extra_key: true,
+            ..PmiPayloadOptions::default()
+        },
+    );
+    for (payload, guid, value, item_count) in [
+        (
+            array16,
+            "01234567-89ab-cdef-0123-456789abcdef",
+            0.025,
+            16_u32,
+        ),
+        (reordered, "fedcba98-7654-3210-fedc-ba9876543210", 0.030, 1),
+    ] {
+        let mut source = sldprt_with_body(&triangle_body());
+        source.extend(make_block(0x49, "Contents/PMISemanticDataDB", &payload));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let native = sldprt_native(&decoded.ir);
+        let dimension = native
+            .pmi_dimensions
+            .iter()
+            .find(|record| record.guid == guid)
+            .expect("PMI dimension");
+        assert_eq!(dimension.value, value);
+        assert_eq!(dimension.item_count, item_count);
+        assert!(decoded.report.losses.iter().all(|loss| {
+            !loss.message.contains("semantic-record-malformed")
+                && !loss.message.contains("failed to parse MessagePack map")
+        }));
+    }
+}
+
+#[test]
+fn decode_reports_malformed_pmi_semantic_map() {
+    let payload = pmi_semantic_payload_record_configured(
+        "D1@Sketch1",
+        "01234567-89ab-cdef-0123-456789abcdef",
+        &[("Linear", 0.025)],
+        "25.000 mm",
+        PmiPayloadOptions {
+            truncate_after_dim_items_key: true,
+            ..PmiPayloadOptions::default()
+        },
+    );
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x49, "Contents/PMISemanticDataDB", &payload));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(sldprt_native(&decoded.ir).pmi_dimensions.is_empty());
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("01234567-89ab-cdef-0123-456789abcdef")
+            && loss.message.contains("failed to parse MessagePack map")
+    }));
 }
 
 #[test]

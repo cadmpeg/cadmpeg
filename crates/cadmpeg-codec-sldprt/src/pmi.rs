@@ -4,9 +4,12 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::annotations::Annotations;
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::Exactness;
+use rmp::Marker;
 
 use crate::container::ContainerScan;
+use crate::loss::SldprtLossCode;
 use crate::records::PmiDimension;
 
 fn exact_count(value: f64) -> Option<i64> {
@@ -260,6 +263,229 @@ mod tests {
         enrich_history_parameters(&mut history, &[first, second]);
 
         assert!(history[0].features[0].parameters.is_empty());
+    }
+
+    fn fixstr(bytes: &mut Vec<u8>, value: &str) {
+        assert!(value.len() < 32);
+        bytes.push(0xa0 | value.len() as u8);
+        bytes.extend_from_slice(value.as_bytes());
+    }
+
+    fn push_array_header(bytes: &mut Vec<u8>, len: usize) {
+        if len < 16 {
+            bytes.push(0x90 | len as u8);
+        } else {
+            bytes.push(0xdc);
+            bytes.extend_from_slice(&(len as u16).to_be_bytes());
+        }
+    }
+
+    fn push_map_header(bytes: &mut Vec<u8>, len: usize) {
+        bytes.push(0x80 | len as u8);
+    }
+
+    fn dim_sem_item(bytes: &mut Vec<u8>, subtype: &str, value: f64) {
+        bytes.push(0x87);
+        fixstr(bytes, "class");
+        fixstr(bytes, "DimSemData");
+        fixstr(bytes, "dimSubType");
+        fixstr(bytes, subtype);
+        fixstr(bytes, "isBasic");
+        bytes.push(0xc3);
+        fixstr(bytes, "isInspection");
+        bytes.push(0xc2);
+        fixstr(bytes, "isReferenceOnly");
+        bytes.push(0xc3);
+        fixstr(bytes, "valPrecision");
+        bytes.push(3);
+        fixstr(bytes, "value");
+        bytes.push(0xcb);
+        bytes.extend_from_slice(&value.to_be_bytes());
+    }
+
+    fn fixture_payload(
+        cad_text: &str,
+        guid: &str,
+        items: &[(&str, f64)],
+        display_text: &str,
+        reorder_and_extra_key: bool,
+        key_like_in_dim_text: bool,
+        truncate_after_dim_items_key: bool,
+    ) -> Vec<u8> {
+        assert_eq!(guid.len(), 36);
+        let mut payload = b"unqlite".to_vec();
+        payload.extend_from_slice(&[0; 57]);
+        payload.extend_from_slice(guid.as_bytes());
+        let outer_len = if reorder_and_extra_key { 8 } else { 7 };
+        push_map_header(&mut payload, outer_len);
+        if reorder_and_extra_key {
+            fixstr(&mut payload, "cadText");
+            fixstr(&mut payload, cad_text);
+            fixstr(&mut payload, "extraKey");
+            fixstr(&mut payload, "ignored");
+            fixstr(&mut payload, "annoType");
+            payload.push(1);
+        } else {
+            fixstr(&mut payload, "annoType");
+            payload.push(1);
+            fixstr(&mut payload, "cadText");
+            fixstr(&mut payload, cad_text);
+        }
+        fixstr(&mut payload, "dimItems");
+        if truncate_after_dim_items_key {
+            push_array_header(&mut payload, 1);
+            return payload;
+        }
+        push_array_header(&mut payload, items.len());
+        for (subtype, value) in items {
+            dim_sem_item(&mut payload, subtype, *value);
+        }
+        fixstr(&mut payload, "dimText");
+        if key_like_in_dim_text {
+            fixstr(&mut payload, "cadText");
+        } else {
+            fixstr(&mut payload, display_text);
+        }
+        fixstr(&mut payload, "dimType");
+        payload.push(0);
+        fixstr(&mut payload, "iDString");
+        fixstr(&mut payload, "native-id");
+        fixstr(&mut payload, "reserved");
+        payload.push(0xc0);
+        payload
+    }
+
+    #[test]
+    fn parses_array16_dim_items() {
+        let items = vec![("Linear", 0.025); 16];
+        let payload = fixture_payload(
+            "D1@Sketch1",
+            "01234567-89ab-cdef-0123-456789abcdef",
+            &items,
+            "25.000 mm",
+            false,
+            false,
+            false,
+        );
+        let mut losses = Vec::new();
+        let records = parse_payload(&payload, &mut losses);
+        assert!(losses.is_empty(), "{losses:?}");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].item_count, 16);
+        assert_eq!(records[0].value, 0.025);
+    }
+
+    #[test]
+    fn parses_reordered_map_with_extra_key() {
+        let payload = fixture_payload(
+            "D1@Sketch1",
+            "01234567-89ab-cdef-0123-456789abcdef",
+            &[("Linear", 0.025)],
+            "25.000 mm",
+            true,
+            false,
+            false,
+        );
+        let mut losses = Vec::new();
+        let records = parse_payload(&payload, &mut losses);
+        assert!(losses.is_empty(), "{losses:?}");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].cad_text, "D1@Sketch1");
+    }
+
+    #[test]
+    fn key_like_string_inside_value_does_not_steal_field_spans() {
+        let payload = fixture_payload(
+            "D1@Sketch1",
+            "01234567-89ab-cdef-0123-456789abcdef",
+            &[("Linear", 0.025)],
+            "25.000 mm",
+            false,
+            true,
+            false,
+        );
+        let mut losses = Vec::new();
+        let records = parse_payload(&payload, &mut losses);
+        assert!(losses.is_empty(), "{losses:?}");
+        let [record] = records.as_slice() else {
+            panic!("one record");
+        };
+        assert_eq!(record.display_text.as_deref(), Some("cadText"));
+        assert_eq!(record.cad_text, "D1@Sketch1");
+        let text_off = record.display_text_offset.expect("display text offset") as usize;
+        assert_eq!(&payload[text_off..text_off + 7], b"cadText");
+    }
+
+    #[test]
+    fn malformed_pmi_map_emits_attributed_loss() {
+        let payload = fixture_payload(
+            "D1@Sketch1",
+            "01234567-89ab-cdef-0123-456789abcdef",
+            &[("Linear", 0.025)],
+            "25.000 mm",
+            false,
+            false,
+            true,
+        );
+        let mut losses = Vec::new();
+        let records = parse_payload(&payload, &mut losses);
+        assert!(records.is_empty());
+        assert_eq!(losses.len(), 1);
+        assert!(
+            losses[0]
+                .message
+                .contains("01234567-89ab-cdef-0123-456789abcdef"),
+            "{}",
+            losses[0].message
+        );
+        assert!(
+            losses[0].message.contains("failed to parse"),
+            "{}",
+            losses[0].message
+        );
+    }
+
+    #[test]
+    fn patch_payload_offsets_round_trip_through_reparse() {
+        let payload = fixture_payload(
+            "D1@Sketch1",
+            "01234567-89ab-cdef-0123-456789abcdef",
+            &[("Linear", 0.025)],
+            "25.000 mm",
+            false,
+            false,
+            false,
+        );
+        let mut losses = Vec::new();
+        let records = parse_payload(&payload, &mut losses);
+        assert!(losses.is_empty(), "{losses:?}");
+        let [record] = records.as_slice() else {
+            panic!("one record");
+        };
+        let mut patched = payload.clone();
+        let start = record.value_offset as usize;
+        let edited = 0.05_f64;
+        patched[start..start + 8].copy_from_slice(&edited.to_be_bytes());
+        patched[record.precision_offset as usize] = 4;
+        patched[record.basic_offset as usize] = 0xc2;
+        patched[record.inspection_offset as usize] = 0xc3;
+        patched[record.reference_only_offset as usize] = 0xc2;
+        let text_off = record.display_text_offset.expect("display text") as usize;
+        patched[text_off..text_off + 9].copy_from_slice(b"50.000 mm");
+        let mut again_losses = Vec::new();
+        let again = parse_payload(&patched, &mut again_losses);
+        assert!(again_losses.is_empty(), "{again_losses:?}");
+        let [edited_record] = again.as_slice() else {
+            panic!("one edited record");
+        };
+        assert_eq!(edited_record.value, 0.05);
+        assert_eq!(edited_record.precision, 4);
+        assert!(!edited_record.basic);
+        assert!(edited_record.inspection);
+        assert!(!edited_record.reference_only);
+        assert_eq!(edited_record.display_text.as_deref(), Some("50.000 mm"));
+        assert_eq!(edited_record.value_offset, record.value_offset);
+        assert_eq!(edited_record.precision_offset, record.precision_offset);
     }
 }
 
@@ -651,18 +877,42 @@ pub(crate) fn apply_to_parameters(
     }
 }
 
+/// One `MessagePack` value with absolute source spans for in-place patching.
 #[derive(Debug, Clone)]
-enum Value {
+struct SpannedValue {
+    kind: ValueKind,
+    /// Absolute offset of this value's marker byte.
+    start: usize,
+    /// Exclusive end offset of this value (byte-range contract for visitors).
+    #[allow(dead_code)]
+    end: usize,
+    /// Absolute offset of the writable scalar payload (kind-dependent).
+    data_offset: usize,
+}
+
+#[derive(Debug, Clone)]
+enum ValueKind {
     Bool(bool),
     Int(i64),
     Float(f64),
     String(String),
-    Array(Vec<Value>),
-    Map(BTreeMap<String, Value>),
+    Array(Vec<SpannedValue>),
+    Map(BTreeMap<String, SpannedValue>),
     Nil,
+    /// `bin` / `ext` / out-of-range integers: cursor advanced, content opaque.
+    Opaque,
 }
 
-pub(crate) fn dimensions(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<PmiDimension> {
+/// Extract semantic dimensions from `PMISemanticDataDB` sections.
+///
+/// Parse failures on GUID-prefixed `MessagePack` maps emit
+/// [`SldprtLossCode::PmiSemanticRecordMalformed`] instead of shrinking the
+/// document silently. New losses are additive under sidecar v1.
+pub(crate) fn dimensions(
+    scan: &ContainerScan,
+    annotations: &mut Annotations,
+    losses: &mut Vec<LossNote>,
+) -> Vec<PmiDimension> {
     let mut records = Vec::new();
     let mut seen = HashSet::<String>::new();
     for source in scan.sections() {
@@ -672,127 +922,242 @@ pub(crate) fn dimensions(scan: &ContainerScan, annotations: &mut Annotations) ->
         if !section.eq_ignore_ascii_case("Contents/PMISemanticDataDB") {
             continue;
         }
-        let payload = source.payload();
-        for offset in map_offsets(payload) {
-            let mut cursor = offset;
-            let Some(Value::Map(outer)) = parse_value(payload, &mut cursor, 0) else {
-                continue;
-            };
-            let Some(cad_text) = string_field(&outer, "cadText") else {
-                continue;
-            };
-            let Some(Value::Array(items)) = outer.get("dimItems") else {
-                continue;
-            };
-            let Ok(item_count) = u32::try_from(items.len()) else {
-                continue;
-            };
-            let Some(Value::Map(item)) = items.first() else {
-                continue;
-            };
-            if string_field(item, "class") != Some("DimSemData") {
-                continue;
-            }
-            let Some(guid) = guid_before(payload, offset) else {
-                continue;
-            };
-            if !seen.insert(guid.clone()) {
-                continue;
-            }
-            let Some(value) = float_field(item, "value") else {
-                continue;
-            };
-            let Some(value_marker) = field_marker(payload, offset, cursor, "value") else {
-                continue;
-            };
-            if payload.get(value_marker) != Some(&0xcb) {
-                continue;
-            }
-            let Some(precision_offset) = field_marker(payload, offset, cursor, "valPrecision")
-            else {
-                continue;
-            };
-            let Some(basic_offset) = field_marker(payload, offset, cursor, "isBasic") else {
-                continue;
-            };
-            let Some(inspection_offset) = field_marker(payload, offset, cursor, "isInspection")
-            else {
-                continue;
-            };
-            let Some(reference_only_offset) =
-                field_marker(payload, offset, cursor, "isReferenceOnly")
-            else {
-                continue;
-            };
-            let display_text_offset = field_marker(payload, offset, cursor, "dimText")
-                .and_then(|marker| string_data_offset(payload, marker));
-            let id = format!("sldprt:pmi:dimension#{guid}");
-            crate::annotations::note(
-                annotations,
-                id.clone(),
-                section,
-                offset as u64,
-                "messagepack_dim_sem_data",
-                Exactness::ByteExact,
-            );
-            records.push(PmiDimension {
-                id,
-                parent: source.native_id(),
-                offset: offset as u64,
-                guid,
-                cad_text: cad_text.to_string(),
-                item_count,
-                subtype: string_field(item, "dimSubType")
-                    .unwrap_or_default()
-                    .to_string(),
-                value,
-                value_offset: (value_marker + 1) as u64,
-                precision: int_field(item, "valPrecision").unwrap_or_default(),
-                precision_offset: precision_offset as u64,
-                display_text: string_field(&outer, "dimText").map(str::to_string),
-                display_text_offset: display_text_offset.map(|offset| offset as u64),
-                basic: bool_field(item, "isBasic").unwrap_or(false),
-                basic_offset: basic_offset as u64,
-                inspection: bool_field(item, "isInspection").unwrap_or(false),
-                inspection_offset: inspection_offset as u64,
-                reference_only: bool_field(item, "isReferenceOnly").unwrap_or(false),
-                reference_only_offset: reference_only_offset as u64,
-            });
-        }
+        collect_dimensions(
+            source.payload(),
+            section,
+            &source.native_id(),
+            annotations,
+            losses,
+            &mut records,
+            &mut seen,
+        );
     }
     records.sort_by(|left, right| left.id.cmp(&right.id));
     records
 }
 
-fn field_marker(payload: &[u8], start: usize, end: usize, key: &str) -> Option<usize> {
+/// Parse PMI records from a raw `PMISemanticDataDB` payload.
+///
+/// Used by focused tests and the `sldprt_pmi` fuzz target. Parent/section are
+/// placeholders; production decode supplies real block identities.
+#[cfg(any(test, feature = "fuzzing"))]
+pub(crate) fn parse_payload(payload: &[u8], losses: &mut Vec<LossNote>) -> Vec<PmiDimension> {
+    let mut annotations = Annotations::default();
+    let mut records = Vec::new();
+    let mut seen = HashSet::<String>::new();
+    collect_dimensions(
+        payload,
+        "Contents/PMISemanticDataDB",
+        "sldprt:block#pmi-payload",
+        &mut annotations,
+        losses,
+        &mut records,
+        &mut seen,
+    );
+    records.sort_by(|left, right| left.id.cmp(&right.id));
+    records
+}
+
+fn collect_dimensions(
+    payload: &[u8],
+    section: &str,
+    parent: &str,
+    annotations: &mut Annotations,
+    losses: &mut Vec<LossNote>,
+    records: &mut Vec<PmiDimension>,
+    seen: &mut HashSet<String>,
+) {
+    for (guid, offset) in candidate_maps(payload) {
+        if !seen.insert(guid.clone()) {
+            continue;
+        }
+        match extract_dimension(payload, offset, &guid) {
+            Ok(Some(partial)) => {
+                let id = format!("sldprt:pmi:dimension#{guid}");
+                crate::annotations::note(
+                    annotations,
+                    id.clone(),
+                    section,
+                    offset as u64,
+                    "messagepack_dim_sem_data",
+                    Exactness::ByteExact,
+                );
+                records.push(PmiDimension {
+                    id,
+                    parent: parent.to_string(),
+                    offset: offset as u64,
+                    guid,
+                    cad_text: partial.cad_text,
+                    item_count: partial.item_count,
+                    subtype: partial.subtype,
+                    value: partial.value,
+                    value_offset: partial.value_offset,
+                    precision: partial.precision,
+                    precision_offset: partial.precision_offset,
+                    display_text: partial.display_text,
+                    display_text_offset: partial.display_text_offset,
+                    basic: partial.basic,
+                    basic_offset: partial.basic_offset,
+                    inspection: partial.inspection,
+                    inspection_offset: partial.inspection_offset,
+                    reference_only: partial.reference_only,
+                    reference_only_offset: partial.reference_only_offset,
+                });
+            }
+            Ok(None) => {}
+            Err(message) => {
+                losses.push(SldprtLossCode::PmiSemanticRecordMalformed.note(format!(
+                    "PMISemanticDataDB map at offset {offset} (guid {guid}) {message}"
+                )));
+            }
+        }
+    }
+}
+
+struct PartialDimension {
+    cad_text: String,
+    item_count: u32,
+    subtype: String,
+    value: f64,
+    value_offset: u64,
+    precision: i64,
+    precision_offset: u64,
+    display_text: Option<String>,
+    display_text_offset: Option<u64>,
+    basic: bool,
+    basic_offset: u64,
+    inspection: bool,
+    inspection_offset: u64,
+    reference_only: bool,
+    reference_only_offset: u64,
+}
+
+/// `Ok(None)` — not a PMI dimension map. `Err` — PMI candidate that failed.
+fn extract_dimension(
+    payload: &[u8],
+    offset: usize,
+    guid: &str,
+) -> Result<Option<PartialDimension>, String> {
+    let _ = guid;
+    let mut cursor = offset;
+    let Some(outer_value) = parse_value(payload, &mut cursor, 0) else {
+        // Only attribute a loss when the window still names the PMI keys; a
+        // bare GUID before an unrelated fixmap is common in UnQLite payloads.
+        return if looks_like_pmi_map(payload, offset) {
+            Err("failed to parse MessagePack map".into())
+        } else {
+            Ok(None)
+        };
+    };
+    let ValueKind::Map(outer) = outer_value.kind else {
+        return Ok(None);
+    };
+    let has_cad_text = outer.contains_key("cadText");
+    let has_dim_items = outer.contains_key("dimItems");
+    if !has_cad_text && !has_dim_items {
+        return Ok(None);
+    }
+    if !has_cad_text || !has_dim_items {
+        return Err("map is missing cadText or dimItems".into());
+    }
+    let Some(cad_text) = string_field(&outer, "cadText") else {
+        return Err("cadText is not a string".into());
+    };
+    let Some(items_value) = outer.get("dimItems") else {
+        return Err("dimItems missing after key check".into());
+    };
+    let ValueKind::Array(items) = &items_value.kind else {
+        return Err("dimItems is not an array".into());
+    };
+    let Ok(item_count) = u32::try_from(items.len()) else {
+        return Err("dimItems length exceeds u32".into());
+    };
+    let Some(item_value) = items.first() else {
+        return Err("dimItems is empty".into());
+    };
+    let ValueKind::Map(item) = &item_value.kind else {
+        return Err("first dimItems element is not a map".into());
+    };
+    if string_field(item, "class") != Some("DimSemData") {
+        return Err("first dimItems element is not DimSemData".into());
+    }
+    let value_field = item
+        .get("value")
+        .ok_or_else(|| "DimSemData lacks value".to_string())?;
+    if payload.get(value_field.start) != Some(&Marker::F64.to_u8()) {
+        return Err("value is not an f64 (0xcb) MessagePack float".into());
+    }
+    let value = float_from(value_field).ok_or_else(|| "value is not a finite float".to_string())?;
+    let precision_field = item
+        .get("valPrecision")
+        .ok_or_else(|| "DimSemData lacks valPrecision".to_string())?;
+    let basic_field = item
+        .get("isBasic")
+        .ok_or_else(|| "DimSemData lacks isBasic".to_string())?;
+    let inspection_field = item
+        .get("isInspection")
+        .ok_or_else(|| "DimSemData lacks isInspection".to_string())?;
+    let reference_field = item
+        .get("isReferenceOnly")
+        .ok_or_else(|| "DimSemData lacks isReferenceOnly".to_string())?;
+    Ok(Some(PartialDimension {
+        cad_text: cad_text.to_string(),
+        item_count,
+        subtype: string_field(item, "dimSubType")
+            .unwrap_or_default()
+            .to_string(),
+        value,
+        value_offset: value_field.data_offset as u64,
+        precision: int_from(precision_field).unwrap_or_default(),
+        precision_offset: precision_field.data_offset as u64,
+        display_text: string_field(&outer, "dimText").map(str::to_string),
+        display_text_offset: outer.get("dimText").map(|field| field.data_offset as u64),
+        basic: bool_from(basic_field).unwrap_or(false),
+        basic_offset: basic_field.data_offset as u64,
+        inspection: bool_from(inspection_field).unwrap_or(false),
+        inspection_offset: inspection_field.data_offset as u64,
+        reference_only: bool_from(reference_field).unwrap_or(false),
+        reference_only_offset: reference_field.data_offset as u64,
+    }))
+}
+
+/// True when a short window after `offset` still encodes the PMI map keys.
+///
+/// Used only to decide whether a failed parse is an attributed PMI loss or an
+/// unrelated GUID/map collision. It is not the field locator.
+fn looks_like_pmi_map(payload: &[u8], offset: usize) -> bool {
+    let end = offset.saturating_add(1024).min(payload.len());
+    let window = payload.get(offset..end).unwrap_or(&[]);
+    contains_fixstr_key(window, "cadText") && contains_fixstr_key(window, "dimItems")
+}
+
+fn contains_fixstr_key(window: &[u8], key: &str) -> bool {
     if key.len() >= 32 {
-        return None;
+        return false;
     }
     let mut encoded = Vec::with_capacity(key.len() + 1);
     encoded.push(0xa0 | key.len() as u8);
     encoded.extend_from_slice(key.as_bytes());
-    payload
-        .get(start..end)?
+    window
         .windows(encoded.len())
-        .position(|bytes| bytes == encoded)
-        .map(|relative| start + relative + encoded.len())
+        .any(|candidate| candidate == encoded)
 }
 
-fn string_data_offset(payload: &[u8], marker: usize) -> Option<usize> {
-    match *payload.get(marker)? {
-        0xa0..=0xbf => marker.checked_add(1),
-        0xd9 => marker.checked_add(2),
-        0xda => marker.checked_add(3),
-        _ => None,
+/// Locate GUID-prefixed `MessagePack` maps. Key order and map length do not matter.
+fn candidate_maps(payload: &[u8]) -> Vec<(String, usize)> {
+    let mut out = Vec::new();
+    for (offset, marker) in payload.iter().copied().enumerate() {
+        if !matches!(
+            Marker::from_u8(marker),
+            Marker::FixMap(_) | Marker::Map16 | Marker::Map32
+        ) {
+            continue;
+        }
+        if let Some(guid) = guid_before(payload, offset) {
+            out.push((guid, offset));
+        }
     }
-}
-
-fn map_offsets(payload: &[u8]) -> impl Iterator<Item = usize> + '_ {
-    const PREFIX: &[u8] = b"\x87\xa8annoType";
-    payload
-        .windows(PREFIX.len())
-        .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == PREFIX).then_some(offset))
+    out
 }
 
 fn guid_before(payload: &[u8], offset: usize) -> Option<String> {
@@ -810,58 +1175,247 @@ fn guid_before(payload: &[u8], offset: usize) -> Option<String> {
     .then(|| guid.to_ascii_lowercase())
 }
 
-fn parse_value(bytes: &[u8], cursor: &mut usize, depth: usize) -> Option<Value> {
+fn parse_value(bytes: &[u8], cursor: &mut usize, depth: usize) -> Option<SpannedValue> {
     if depth > 16 {
         return None;
     }
-    let marker = take_u8(bytes, cursor)?;
+    let start = *cursor;
+    let marker = Marker::from_u8(take_u8(bytes, cursor)?);
     match marker {
-        0x00..=0x7f => Some(Value::Int(i64::from(marker))),
-        0x80..=0x8f => parse_map(bytes, cursor, usize::from(marker & 0x0f), depth),
-        0x90..=0x9f => parse_array(bytes, cursor, usize::from(marker & 0x0f), depth),
-        0xa0..=0xbf => parse_string(bytes, cursor, usize::from(marker & 0x1f)),
-        0xc0 => Some(Value::Nil),
-        0xc2 => Some(Value::Bool(false)),
-        0xc3 => Some(Value::Bool(true)),
-        0xca => Some(Value::Float(f64::from(f32::from_bits(take_u32(
-            bytes, cursor,
-        )?)))),
-        0xcb => Some(Value::Float(f64::from_bits(take_u64(bytes, cursor)?))),
-        0xcc => Some(Value::Int(i64::from(take_u8(bytes, cursor)?))),
-        0xcd => Some(Value::Int(i64::from(take_u16(bytes, cursor)?))),
-        0xce => Some(Value::Int(i64::from(take_u32(bytes, cursor)?))),
-        0xd0 => Some(Value::Int(i64::from(take_u8(bytes, cursor)? as i8))),
-        0xd1 => Some(Value::Int(i64::from(take_u16(bytes, cursor)? as i16))),
-        0xd2 => Some(Value::Int(i64::from(take_u32(bytes, cursor)? as i32))),
-        0xd9 => {
+        Marker::FixPos(value) => Some(SpannedValue {
+            kind: ValueKind::Int(i64::from(value)),
+            start,
+            end: *cursor,
+            data_offset: start,
+        }),
+        Marker::FixNeg(value) => Some(SpannedValue {
+            kind: ValueKind::Int(i64::from(value)),
+            start,
+            end: *cursor,
+            data_offset: start,
+        }),
+        Marker::FixMap(len) => parse_map(bytes, cursor, usize::from(len), depth, start),
+        Marker::FixArray(len) => parse_array(bytes, cursor, usize::from(len), depth, start),
+        Marker::FixStr(len) => parse_string(bytes, cursor, usize::from(len), start),
+        Marker::Null => Some(SpannedValue {
+            kind: ValueKind::Nil,
+            start,
+            end: *cursor,
+            data_offset: start,
+        }),
+        Marker::False => Some(SpannedValue {
+            kind: ValueKind::Bool(false),
+            start,
+            end: *cursor,
+            data_offset: start,
+        }),
+        Marker::True => Some(SpannedValue {
+            kind: ValueKind::Bool(true),
+            start,
+            end: *cursor,
+            data_offset: start,
+        }),
+        Marker::Bin8 => {
             let len = usize::from(take_u8(bytes, cursor)?);
-            parse_string(bytes, cursor, len)
+            skip_bytes(bytes, cursor, len)?;
+            Some(opaque(start, *cursor))
         }
-        0xda => {
+        Marker::Bin16 => {
             let len = usize::from(take_u16(bytes, cursor)?);
-            parse_string(bytes, cursor, len)
+            skip_bytes(bytes, cursor, len)?;
+            Some(opaque(start, *cursor))
         }
-        0xde => {
+        Marker::Bin32 => {
+            let len = usize::try_from(take_u32(bytes, cursor)?).ok()?;
+            skip_bytes(bytes, cursor, len)?;
+            Some(opaque(start, *cursor))
+        }
+        Marker::Ext8 => {
+            let len = usize::from(take_u8(bytes, cursor)?);
+            let _typeid = take_u8(bytes, cursor)?;
+            skip_bytes(bytes, cursor, len)?;
+            Some(opaque(start, *cursor))
+        }
+        Marker::Ext16 => {
             let len = usize::from(take_u16(bytes, cursor)?);
-            parse_map(bytes, cursor, len, depth)
+            let _typeid = take_u8(bytes, cursor)?;
+            skip_bytes(bytes, cursor, len)?;
+            Some(opaque(start, *cursor))
         }
-        0xe0..=0xff => Some(Value::Int(i64::from(marker as i8))),
-        _ => None,
+        Marker::Ext32 => {
+            let len = usize::try_from(take_u32(bytes, cursor)?).ok()?;
+            let _typeid = take_u8(bytes, cursor)?;
+            skip_bytes(bytes, cursor, len)?;
+            Some(opaque(start, *cursor))
+        }
+        Marker::F32 => {
+            let bits = take_u32(bytes, cursor)?;
+            Some(SpannedValue {
+                kind: ValueKind::Float(f64::from(f32::from_bits(bits))),
+                start,
+                end: *cursor,
+                data_offset: start + 1,
+            })
+        }
+        Marker::F64 => {
+            let bits = take_u64(bytes, cursor)?;
+            Some(SpannedValue {
+                kind: ValueKind::Float(f64::from_bits(bits)),
+                start,
+                end: *cursor,
+                data_offset: start + 1,
+            })
+        }
+        Marker::U8 => Some(SpannedValue {
+            kind: ValueKind::Int(i64::from(take_u8(bytes, cursor)?)),
+            start,
+            end: *cursor,
+            data_offset: start + 1,
+        }),
+        Marker::U16 => Some(SpannedValue {
+            kind: ValueKind::Int(i64::from(take_u16(bytes, cursor)?)),
+            start,
+            end: *cursor,
+            data_offset: start + 1,
+        }),
+        Marker::U32 => Some(SpannedValue {
+            kind: ValueKind::Int(i64::from(take_u32(bytes, cursor)?)),
+            start,
+            end: *cursor,
+            data_offset: start + 1,
+        }),
+        Marker::U64 => {
+            let value = take_u64(bytes, cursor)?;
+            Some(SpannedValue {
+                kind: i64::try_from(value).map_or(ValueKind::Opaque, ValueKind::Int),
+                start,
+                end: *cursor,
+                data_offset: start + 1,
+            })
+        }
+        Marker::I8 => Some(SpannedValue {
+            kind: ValueKind::Int(i64::from(take_u8(bytes, cursor)? as i8)),
+            start,
+            end: *cursor,
+            data_offset: start + 1,
+        }),
+        Marker::I16 => Some(SpannedValue {
+            kind: ValueKind::Int(i64::from(take_u16(bytes, cursor)? as i16)),
+            start,
+            end: *cursor,
+            data_offset: start + 1,
+        }),
+        Marker::I32 => Some(SpannedValue {
+            kind: ValueKind::Int(i64::from(take_u32(bytes, cursor)? as i32)),
+            start,
+            end: *cursor,
+            data_offset: start + 1,
+        }),
+        Marker::I64 => Some(SpannedValue {
+            kind: ValueKind::Int(take_u64(bytes, cursor)? as i64),
+            start,
+            end: *cursor,
+            data_offset: start + 1,
+        }),
+        Marker::FixExt1 => {
+            let _typeid = take_u8(bytes, cursor)?;
+            skip_bytes(bytes, cursor, 1)?;
+            Some(opaque(start, *cursor))
+        }
+        Marker::FixExt2 => {
+            let _typeid = take_u8(bytes, cursor)?;
+            skip_bytes(bytes, cursor, 2)?;
+            Some(opaque(start, *cursor))
+        }
+        Marker::FixExt4 => {
+            let _typeid = take_u8(bytes, cursor)?;
+            skip_bytes(bytes, cursor, 4)?;
+            Some(opaque(start, *cursor))
+        }
+        Marker::FixExt8 => {
+            let _typeid = take_u8(bytes, cursor)?;
+            skip_bytes(bytes, cursor, 8)?;
+            Some(opaque(start, *cursor))
+        }
+        Marker::FixExt16 => {
+            let _typeid = take_u8(bytes, cursor)?;
+            skip_bytes(bytes, cursor, 16)?;
+            Some(opaque(start, *cursor))
+        }
+        Marker::Str8 => {
+            let len = usize::from(take_u8(bytes, cursor)?);
+            parse_string(bytes, cursor, len, start)
+        }
+        Marker::Str16 => {
+            let len = usize::from(take_u16(bytes, cursor)?);
+            parse_string(bytes, cursor, len, start)
+        }
+        Marker::Str32 => {
+            let len = usize::try_from(take_u32(bytes, cursor)?).ok()?;
+            parse_string(bytes, cursor, len, start)
+        }
+        Marker::Array16 => {
+            let len = usize::from(take_u16(bytes, cursor)?);
+            parse_array(bytes, cursor, len, depth, start)
+        }
+        Marker::Array32 => {
+            let len = usize::try_from(take_u32(bytes, cursor)?).ok()?;
+            parse_array(bytes, cursor, len, depth, start)
+        }
+        Marker::Map16 => {
+            let len = usize::from(take_u16(bytes, cursor)?);
+            parse_map(bytes, cursor, len, depth, start)
+        }
+        Marker::Map32 => {
+            let len = usize::try_from(take_u32(bytes, cursor)?).ok()?;
+            parse_map(bytes, cursor, len, depth, start)
+        }
+        Marker::Reserved => None,
     }
 }
 
-fn parse_map(bytes: &[u8], cursor: &mut usize, len: usize, depth: usize) -> Option<Value> {
+fn opaque(start: usize, end: usize) -> SpannedValue {
+    SpannedValue {
+        kind: ValueKind::Opaque,
+        start,
+        end,
+        data_offset: start,
+    }
+}
+
+fn parse_map(
+    bytes: &[u8],
+    cursor: &mut usize,
+    len: usize,
+    depth: usize,
+    start: usize,
+) -> Option<SpannedValue> {
+    let remaining = bytes.len().saturating_sub(*cursor);
+    // Each entry is at least a one-byte key marker and a one-byte value marker.
+    let len = cadmpeg_core::cursor::bounded_len(len as u64, 2, remaining)?;
     let mut values = BTreeMap::new();
     for _ in 0..len {
-        let Value::String(key) = parse_value(bytes, cursor, depth + 1)? else {
+        let key_value = parse_value(bytes, cursor, depth + 1)?;
+        let ValueKind::String(key) = key_value.kind else {
             return None;
         };
         values.insert(key, parse_value(bytes, cursor, depth + 1)?);
     }
-    Some(Value::Map(values))
+    Some(SpannedValue {
+        kind: ValueKind::Map(values),
+        start,
+        end: *cursor,
+        data_offset: start,
+    })
 }
 
-fn parse_array(bytes: &[u8], cursor: &mut usize, len: usize, depth: usize) -> Option<Value> {
+fn parse_array(
+    bytes: &[u8],
+    cursor: &mut usize,
+    len: usize,
+    depth: usize,
+    start: usize,
+) -> Option<SpannedValue> {
     // Every element encodes as at least one marker byte, so a length exceeding
     // the unread input cannot be satisfied and is rejected before allocating.
     let remaining = bytes.len().saturating_sub(*cursor);
@@ -870,16 +1424,39 @@ fn parse_array(bytes: &[u8], cursor: &mut usize, len: usize, depth: usize) -> Op
     for _ in 0..len {
         values.push(parse_value(bytes, cursor, depth + 1)?);
     }
-    Some(Value::Array(values))
+    Some(SpannedValue {
+        kind: ValueKind::Array(values),
+        start,
+        end: *cursor,
+        data_offset: start,
+    })
 }
 
-fn parse_string(bytes: &[u8], cursor: &mut usize, len: usize) -> Option<Value> {
+fn parse_string(
+    bytes: &[u8],
+    cursor: &mut usize,
+    len: usize,
+    start: usize,
+) -> Option<SpannedValue> {
+    let data_offset = *cursor;
     let end = cursor.checked_add(len)?;
     let value = std::str::from_utf8(bytes.get(*cursor..end)?)
         .ok()?
         .to_string();
     *cursor = end;
-    Some(Value::String(value))
+    Some(SpannedValue {
+        kind: ValueKind::String(value),
+        start,
+        end: *cursor,
+        data_offset,
+    })
+}
+
+fn skip_bytes(bytes: &[u8], cursor: &mut usize, len: usize) -> Option<()> {
+    let end = cursor.checked_add(len)?;
+    let _ = bytes.get(*cursor..end)?;
+    *cursor = end;
+    Some(())
 }
 
 fn take_u8(bytes: &[u8], cursor: &mut usize) -> Option<u8> {
@@ -909,31 +1486,31 @@ fn take_u64(bytes: &[u8], cursor: &mut usize) -> Option<u64> {
     Some(value)
 }
 
-fn string_field<'a>(map: &'a BTreeMap<String, Value>, key: &str) -> Option<&'a str> {
-    match map.get(key)? {
-        Value::String(value) => Some(value),
+fn string_field<'a>(map: &'a BTreeMap<String, SpannedValue>, key: &str) -> Option<&'a str> {
+    match &map.get(key)?.kind {
+        ValueKind::String(value) => Some(value),
         _ => None,
     }
 }
 
-fn bool_field(map: &BTreeMap<String, Value>, key: &str) -> Option<bool> {
-    match map.get(key)? {
-        Value::Bool(value) => Some(*value),
+fn bool_from(value: &SpannedValue) -> Option<bool> {
+    match value.kind {
+        ValueKind::Bool(value) => Some(value),
         _ => None,
     }
 }
 
-fn int_field(map: &BTreeMap<String, Value>, key: &str) -> Option<i64> {
-    match map.get(key)? {
-        Value::Int(value) => Some(*value),
+fn int_from(value: &SpannedValue) -> Option<i64> {
+    match value.kind {
+        ValueKind::Int(value) => Some(value),
         _ => None,
     }
 }
 
-fn float_field(map: &BTreeMap<String, Value>, key: &str) -> Option<f64> {
-    match map.get(key)? {
-        Value::Float(value) if value.is_finite() => Some(*value),
-        Value::Int(value) => Some(*value as f64),
+fn float_from(value: &SpannedValue) -> Option<f64> {
+    match value.kind {
+        ValueKind::Float(value) if value.is_finite() => Some(value),
+        ValueKind::Int(value) => Some(value as f64),
         _ => None,
     }
 }

@@ -75,6 +75,9 @@ proptest = "1"
 tempfile = "3"
 toml = "1"
 encoding_rs = "0.8"
+# Low-level MessagePack markers/length reads for sldprt PMI span recording.
+# Do not use rmpv Value traversal there — patch_payload needs byte ranges.
+rmp = "=0.8.15"
 
 [profile.dev]
 # Debug info dominates a linked test binary and the linker holds all of it.

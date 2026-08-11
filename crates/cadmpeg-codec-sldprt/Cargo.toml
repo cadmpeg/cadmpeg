@@ -31,6 +31,7 @@ roxmltree.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 schemars = { workspace = true, optional = true }
+rmp.workspace = true
 
 [dev-dependencies]
 # Enables `cadmpeg_core::golden`, the shared snapshot harness.

@@ -102,28 +102,31 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     let scan = container::scan(ctx, root)?;
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
-        let report = build_container_report(&scan, true);
+        let (ir, annotations, unknowns, mut pmi_losses) = build_metadata_ir(&scan)?;
+        let mut report = build_container_report(&scan, true);
+        report.losses.append(&mut pmi_losses);
         return decode_result(ctx, ir, report, annotations, unknowns);
     }
 
     let streams = active_body_streams(&scan);
     if !streams.is_empty() {
         if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams) {
-            let (ir, annotations, unknowns) = build_geometry_ir(
+            let (ir, annotations, unknowns, mut pmi_losses) = build_geometry_ir(
                 &scan,
                 &streams[decoded.selected].header,
                 decoded.brep,
                 &decoded.configuration_bodies,
             )?;
+            report.losses.append(&mut pmi_losses);
             append_tessellation_losses(&ir, &mut report);
             append_design_losses(&ir, &mut report);
             return decode_result(ctx, ir, report, annotations, unknowns);
         }
     }
 
-    let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
+    let (ir, annotations, unknowns, mut pmi_losses) = build_metadata_ir(&scan)?;
     let mut report = build_container_report(&scan, false);
+    report.losses.append(&mut pmi_losses);
     append_design_losses(&ir, &mut report);
     decode_result(ctx, ir, report, annotations, unknowns)
 }
@@ -2077,7 +2080,15 @@ fn build_geometry_ir(
     header: &StreamHeader,
     mut brep: Brep,
     configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
-) -> Result<(CadIr, Annotations, Vec<UnknownRecord>), CodecError> {
+) -> Result<
+    (
+        CadIr,
+        Annotations,
+        Vec<UnknownRecord>,
+        Vec<cadmpeg_ir::LossNote>,
+    ),
+    CodecError,
+> {
     let mut ir = CadIr::empty(Units::default());
     let materials = crate::appearance::materials(scan);
     let unique_material = materials.len() == 1;
@@ -2106,7 +2117,8 @@ fn build_geometry_ir(
         &histories,
         &mut supplemental_config_lanes,
     );
-    let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations);
+    let mut pmi_losses = Vec::new();
+    let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations, &mut pmi_losses);
     ir.model.pmi = crate::swift::annotations(scan, &mut annotations);
     project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
     crate::resolved_features::operations::bind_extrusion_operations(
@@ -2713,7 +2725,7 @@ fn build_geometry_ir(
     }
     preserve_source_image(scan, &mut annotations, &mut unknowns);
     stamp_local_digests(&mut ir);
-    Ok((ir, annotations, unknowns))
+    Ok((ir, annotations, unknowns, pmi_losses))
 }
 
 fn assign_native_configuration_indices(ir: &CadIr, native: &mut crate::native::SldprtNative) {
@@ -2980,7 +2992,15 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
 
 fn build_metadata_ir(
     scan: &ContainerScan,
-) -> Result<(CadIr, Annotations, Vec<UnknownRecord>), CodecError> {
+) -> Result<
+    (
+        CadIr,
+        Annotations,
+        Vec<UnknownRecord>,
+        Vec<cadmpeg_ir::LossNote>,
+    ),
+    CodecError,
+> {
     let mut ir = CadIr::empty(Units::default());
     let mut unknowns = Vec::new();
     let mut annotations = Annotations::default();
@@ -2994,7 +3014,8 @@ fn build_metadata_ir(
         &histories,
         &mut supplemental_config_lanes,
     );
-    let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations);
+    let mut pmi_losses = Vec::new();
+    let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations, &mut pmi_losses);
     ir.model.pmi = crate::swift::annotations(scan, &mut annotations);
     let (sketches, sketch_entities, sketch_constraints) =
         crate::resolved_features::sketch_projection::sketches(scan, &mut annotations);
@@ -3304,7 +3325,7 @@ fn build_metadata_ir(
     snapshot_active_configuration(&mut ir);
     preserve_source_image(scan, &mut annotations, &mut unknowns);
     stamp_local_digests(&mut ir);
-    Ok((ir, annotations, unknowns))
+    Ok((ir, annotations, unknowns, pmi_losses))
 }
 
 fn project_design_history(

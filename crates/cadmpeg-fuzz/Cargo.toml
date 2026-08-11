@@ -314,6 +314,13 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "sldprt_pmi"
+path = "fuzz_targets/sldprt_pmi.rs"
+test = false
+doc = false
+bench = false
+
 # CATIA parser targets
 [[bin]]
 name = "catia_geometry_vertices"
