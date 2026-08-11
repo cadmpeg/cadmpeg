@@ -24,8 +24,8 @@ use crate::records::{
     DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchProfileOperand,
     DesignSketchProfileRegion, DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection,
     DesignSurfaceOffsetSupport, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
-    DesignTopologyRecipeTriplet, DesignWorkPointInputCarrier, DesignWorkPointPlaneSelection,
-    DesignWorkPointVertexRecipe, LostEdgeReference, PersistentSubentityTag, SketchCurveIdentity,
+    DesignTopologyRecipeTriplet, DesignVertexRecipe, DesignWorkPointInputCarrier,
+    DesignWorkPointPlaneSelection, LostEdgeReference, PersistentSubentityTag, SketchCurveIdentity,
     SketchPoint, SketchRelationOperand,
 };
 use cadmpeg_core::le::{f64_at, i32_at, u32_at, u64_at as read_u64};
@@ -3116,7 +3116,7 @@ pub(crate) fn parse_work_point_vertex_recipe(
     stream: &str,
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
-) -> Option<DesignWorkPointVertexRecipe> {
+) -> Option<DesignVertexRecipe> {
     let parsed = parse_recipe_operand(
         bytes,
         stream,
@@ -3125,7 +3125,7 @@ pub(crate) fn parse_work_point_vertex_recipe(
         ConstructionRecipeKind::Vertex,
         RecipeOperandTerminator::RecordDelta(5),
     )?;
-    Some(DesignWorkPointVertexRecipe {
+    Some(DesignVertexRecipe {
         class_tag: header.class_tag.clone(),
         paired_byte_offset: parsed.paired_byte_offset,
         paired_class_tag: parsed.paired_class_tag,

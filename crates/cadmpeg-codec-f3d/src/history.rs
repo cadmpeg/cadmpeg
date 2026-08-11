@@ -7505,9 +7505,9 @@ mod tests {
             AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology, AsmHistory,
         };
         use crate::records::{
-            DesignFeatureTimeline, DesignRecipeReference, DesignWorkPointConstruction,
-            DesignWorkPointInput, DesignWorkPointInputCarrier, DesignWorkPointRule,
-            DesignWorkPointVertexRecipe,
+            DesignFeatureTimeline, DesignRecipeReference, DesignVertexRecipe,
+            DesignWorkPointConstruction, DesignWorkPointInput, DesignWorkPointInputCarrier,
+            DesignWorkPointRule,
         };
         use cadmpeg_ir::ids::FaceId;
         use cadmpeg_ir::math::Point3;
@@ -7531,7 +7531,7 @@ mod tests {
             alternate_selector_faces: Vec::new(),
             alternate_selector_edges: Vec::new(),
         };
-        let recipe = DesignWorkPointVertexRecipe {
+        let recipe = DesignVertexRecipe {
             class_tag: "369".into(),
             paired_byte_offset: 1,
             paired_class_tag: "261".into(),

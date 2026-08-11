@@ -1930,7 +1930,7 @@ pub enum DesignWorkPointInputCarrier {
     /// Persistent vertex recipe carried directly by this `WorkPoint` input.
     VertexRecipe {
         /// Exact vertex-recipe envelope.
-        recipe: DesignWorkPointVertexRecipe,
+        recipe: DesignVertexRecipe,
     },
     /// Persistent entity selection naming one `WorkPlane` scope.
     WorkPlane {
@@ -1939,10 +1939,10 @@ pub enum DesignWorkPointInputCarrier {
     },
 }
 
-/// Exact `vertex_recipe_data` envelope selected by a `WorkPoint` input.
+/// Exact persistent `vertex_recipe_data` envelope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct DesignWorkPointVertexRecipe {
+pub struct DesignVertexRecipe {
     /// Source per-file dynamic primary class tag.
     pub class_tag: String,
     /// Byte offset of the same-index paired header.

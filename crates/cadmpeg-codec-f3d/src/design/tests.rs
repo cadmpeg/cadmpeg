@@ -610,8 +610,8 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
 #[test]
 fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     use crate::records::{
-        DesignWorkPointConstruction, DesignWorkPointInput, DesignWorkPointInputCarrier,
-        DesignWorkPointRule, DesignWorkPointVertexRecipe,
+        DesignVertexRecipe, DesignWorkPointConstruction, DesignWorkPointInput,
+        DesignWorkPointInputCarrier, DesignWorkPointRule,
     };
     use cadmpeg_ir::features::{DatumPointConstruction, VertexSelection};
 
@@ -619,7 +619,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
         DesignParameterScope::empty("f3d:native:parameter-scope#10", "Extrude", 10);
     predecessor.history_state_id = Some(4);
     let recipe_id = "f3d:native:construction-recipe#vertex".to_string();
-    let recipe = DesignWorkPointVertexRecipe {
+    let recipe = DesignVertexRecipe {
         class_tag: "369".into(),
         paired_byte_offset: 1,
         paired_class_tag: "261".into(),
