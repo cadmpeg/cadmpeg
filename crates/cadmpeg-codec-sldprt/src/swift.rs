@@ -62,6 +62,15 @@ enum RenderedDimensionKind {
     Depth,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ImplicitNominal {
+    Exact(f64),
+    Rendered {
+        kind: RenderedDimensionKind,
+        geometry: f64,
+    },
+}
+
 /// Decode the unique GDT-analysis root carried by a SWIFT schema stream.
 pub(crate) fn annotations(
     scan: &ContainerScan<'_>,
@@ -71,7 +80,7 @@ pub(crate) fn annotations(
         return Vec::new();
     };
     let mut projected = project(&root);
-    enrich_rendered_nominals(&root, &rendered_dimensions, &mut projected);
+    enrich_implicit_nominals(&root, &rendered_dimensions, &mut projected);
     for (reference, entity) in root
         .annotations
         .references
@@ -531,7 +540,7 @@ fn project_dimension(
     })
 }
 
-fn enrich_rendered_nominals(
+fn enrich_implicit_nominals(
     root: &Entity,
     rendered: &[RenderedDimension],
     annotations: &mut [PmiAnnotation],
@@ -546,33 +555,47 @@ fn enrich_rendered_nominals(
         if suppressed(entity) {
             continue;
         }
-        let (rendered_kind, dimension_kind, raw_nominal) = match short_class(&entity.class) {
+        let (dimension_kind, source) = match short_class(&entity.class) {
             "GdtDiameter" => (
-                RenderedDimensionKind::Diameter,
                 DimensionKind::Diameter,
-                diameter_from_applied_geometry(entity, &feature_index),
+                diameter_from_applied_geometry(entity, &feature_index).map(|geometry| {
+                    ImplicitNominal::Rendered {
+                        kind: RenderedDimensionKind::Diameter,
+                        geometry,
+                    }
+                }),
             ),
             "GdtDepth" => (
-                RenderedDimensionKind::Depth,
                 DimensionKind::Size,
-                depth_from_applied_geometry(entity, &feature_index),
+                depth_from_applied_geometry(entity, &feature_index).map(|geometry| {
+                    ImplicitNominal::Rendered {
+                        kind: RenderedDimensionKind::Depth,
+                        geometry,
+                    }
+                }),
+            ),
+            "GdtWidth" => (
+                DimensionKind::Size,
+                width_from_applied_geometry(entity, &feature_index).map(ImplicitNominal::Exact),
             ),
             _ => continue,
         };
-        let Some(raw_nominal) = raw_nominal else {
+        let Some(source) = source else {
             continue;
         };
-        let Some(decimal_places) = entity
-            .integers
-            .get("BlockToleranceDecimalPlaces")
-            .copied()
-            .and_then(|value| u32::try_from(value).ok())
-            .filter(|value| *value <= 9)
-        else {
-            continue;
+        let nominal = match source {
+            ImplicitNominal::Exact(value) => Some(value),
+            ImplicitNominal::Rendered { kind, geometry } => entity
+                .integers
+                .get("BlockToleranceDecimalPlaces")
+                .copied()
+                .and_then(|value| u32::try_from(value).ok())
+                .filter(|value| *value <= 9)
+                .and_then(|decimal_places| {
+                    rendered_nominal(geometry, decimal_places, kind, rendered)
+                }),
         };
-        let Some(nominal) = rendered_nominal(raw_nominal, decimal_places, rendered_kind, rendered)
-        else {
+        let Some(nominal) = nominal else {
             continue;
         };
         let Some(annotation) = annotations
@@ -605,28 +628,38 @@ fn diameter_from_applied_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Option<f64> {
-    let candidates = annotation
-        .features
-        .references
-        .iter()
-        .filter_map(|reference| {
-            diameter_for_feature(&reference.id, feature_index, &mut BTreeSet::new(), 0)
-        })
-        .collect::<Vec<_>>();
-    unique_measurement(&candidates)
+    measurement_from_applied_geometry(annotation, |id| {
+        diameter_for_feature(id, feature_index, &mut BTreeSet::new(), 0)
+    })
 }
 
 fn depth_from_applied_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Option<f64> {
+    measurement_from_applied_geometry(annotation, |id| {
+        depth_for_feature(id, feature_index, &mut BTreeSet::new(), 0)
+    })
+}
+
+fn width_from_applied_geometry(
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+) -> Option<f64> {
+    measurement_from_applied_geometry(annotation, |id| {
+        width_for_feature(id, feature_index, &mut BTreeSet::new(), 0)
+    })
+}
+
+fn measurement_from_applied_geometry(
+    annotation: &Entity,
+    mut measurement: impl FnMut(&str) -> Option<f64>,
+) -> Option<f64> {
     let candidates = annotation
         .features
         .references
         .iter()
-        .filter_map(|reference| {
-            depth_for_feature(&reference.id, feature_index, &mut BTreeSet::new(), 0)
-        })
+        .filter_map(|reference| measurement(&reference.id))
         .collect::<Vec<_>>();
     unique_measurement(&candidates)
 }
@@ -773,6 +806,34 @@ fn depth_for_feature(
     unique_measurement(&candidates)
 }
 
+fn width_for_feature(
+    id: &str,
+    feature_index: &BTreeMap<&str, &Entity>,
+    visited: &mut BTreeSet<String>,
+    depth: usize,
+) -> Option<f64> {
+    if depth >= MAX_DEPTH || !visited.insert(id.to_string()) {
+        return None;
+    }
+    let feature = feature_index.get(id)?;
+    let direct = match short_class(&feature.class) {
+        "GdtCompoundWidth" => nominal_measurement(feature, "NomCompoundWidth", "Width"),
+        "GdtCompoundClosedSlot3D" => nominal_measurement(feature, "NomClosedSlot", "Width"),
+        _ => None,
+    };
+    if direct.is_some() {
+        return direct;
+    }
+    let next_depth = depth.checked_add(1)?;
+    let candidates = child_feature_ids(feature)
+        .into_iter()
+        .filter_map(|child| {
+            width_for_feature(child, feature_index, &mut visited.clone(), next_depth)
+        })
+        .collect::<Vec<_>>();
+    unique_measurement(&candidates)
+}
+
 fn child_feature_ids(feature: &Entity) -> Vec<&str> {
     let mut ids = feature
         .features
@@ -787,8 +848,17 @@ fn child_feature_ids(feature: &Entity) -> Vec<&str> {
 }
 
 fn nominal_radius(feature: &Entity, name: &str) -> Option<f64> {
-    let geometry = unique_related(feature, name)?;
-    geometry.entity.doubles.get("R").copied()
+    nominal_measurement(feature, name, "R")
+}
+
+fn nominal_measurement(feature: &Entity, object: &str, field: &str) -> Option<f64> {
+    finite_positive(
+        unique_related(feature, object)?
+            .entity
+            .doubles
+            .get(field)
+            .copied()?,
+    )
 }
 
 fn nominal_cylinder_depth(feature: &Entity) -> Option<f64> {
@@ -1466,6 +1536,27 @@ mod tests {
         cylinder
     }
 
+    fn feature_with_nominal_measurement(
+        feature_class: &str,
+        object_name: &str,
+        geometry_class: &str,
+        field: &str,
+        value: f64,
+    ) -> Entity {
+        let mut feature = entity(feature_class);
+        let mut geometry = Entity {
+            class: format!("PrizMetrik.Geometry.{geometry_class}"),
+            ..Entity::default()
+        };
+        geometry.doubles.insert(field.into(), value);
+        feature.related.push(RelatedObject {
+            name: object_name.into(),
+            class: geometry.class.clone(),
+            entity: geometry,
+        });
+        feature
+    }
+
     #[test]
     fn rendered_diameter_resolves_rounded_applied_geometry() {
         let mut root = semantic_root();
@@ -1487,7 +1578,7 @@ mod tests {
             decimal_places: 3,
         }];
         let mut annotations = project(&root);
-        enrich_rendered_nominals(&root, &displayed, &mut annotations);
+        enrich_implicit_nominals(&root, &displayed, &mut annotations);
         let diameter = annotations
             .iter()
             .find(|annotation| annotation.name.as_deref() == Some("Diameter 1"))
@@ -1518,7 +1609,7 @@ mod tests {
             .features
             .references = vec![reference("FP", "GdtPattern")];
         let mut annotations = project(&root);
-        enrich_rendered_nominals(&root, &displayed, &mut annotations);
+        enrich_implicit_nominals(&root, &displayed, &mut annotations);
         let diameter = annotations
             .iter()
             .find(|annotation| annotation.name.as_deref() == Some("Diameter 1"))
@@ -1542,7 +1633,7 @@ mod tests {
             .insert("BlockToleranceDecimalPlaces".into(), 1);
         diameter.features.references = vec![reference("FP", "GdtPattern")];
         let mut annotations = project(&root);
-        enrich_rendered_nominals(
+        enrich_implicit_nominals(
             &root,
             &[RenderedDimension {
                 kind: RenderedDimensionKind::Diameter,
@@ -1610,7 +1701,7 @@ mod tests {
         root.annotations.entities.push(depth);
 
         let mut annotations = project(&root);
-        enrich_rendered_nominals(
+        enrich_implicit_nominals(
             &root,
             &[RenderedDimension {
                 kind: RenderedDimensionKind::Depth,
@@ -1629,6 +1720,140 @@ mod tests {
         assert!(nominal
             .as_ref()
             .is_some_and(|value| approximately_equal(value.value, 7.62)));
+    }
+
+    #[test]
+    fn semantic_slot_width_resolves_exact_nominal() {
+        let mut root = semantic_root();
+        root.features
+            .references
+            .push(reference("FW", "GdtCompoundWidth"));
+        root.features
+            .entities
+            .push(feature_with_nominal_measurement(
+                "GdtCompoundWidth",
+                "NomCompoundWidth",
+                "GeoOpenSlot",
+                "Width",
+                12.7,
+            ));
+        let mut width = entity("GdtWidth");
+        width.strings.insert("ObjectName".into(), "Width 1".into());
+        width.doubles.insert("Nominal".into(), 0.0);
+        width.doubles.insert("MinusTolerance".into(), 0.0);
+        width.doubles.insert("PlusTolerance".into(), 0.0);
+        width.doubles.insert("LowerLimit".into(), 12.5);
+        width.doubles.insert("UpperLimit".into(), 12.9);
+        width
+            .features
+            .references
+            .push(reference("FW", "GdtCompoundWidth"));
+        root.annotations
+            .references
+            .push(reference("A50", "GdtWidth"));
+        root.annotations.entities.push(width);
+
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
+        let width = annotations
+            .iter()
+            .find(|annotation| annotation.name.as_deref() == Some("Width 1"))
+            .expect("width annotation");
+        let PmiDefinition::Dimension {
+            nominal,
+            lower_deviation,
+            upper_deviation,
+            ..
+        } = &width.definition
+        else {
+            panic!("dimension definition");
+        };
+        assert!(nominal
+            .as_ref()
+            .is_some_and(|value| approximately_equal(value.value, 12.7)));
+        assert!(lower_deviation
+            .as_ref()
+            .is_some_and(|value| approximately_equal(value.value, -0.2)));
+        assert!(upper_deviation
+            .as_ref()
+            .is_some_and(|value| approximately_equal(value.value, 0.2)));
+    }
+
+    #[test]
+    fn semantic_slot_width_traverses_patterns_and_rejects_disagreement() {
+        let mut root = semantic_root();
+        for (index, value) in [(1, 9.525), (2, 9.525)] {
+            *root
+                .features
+                .entities
+                .get_mut(index)
+                .expect("pattern member") = feature_with_nominal_measurement(
+                "GdtCompoundClosedSlot3D",
+                "NomClosedSlot",
+                "GeoClosedSlot",
+                "Width",
+                value,
+            );
+        }
+        let pattern_members = root
+            .features
+            .entities
+            .first_mut()
+            .and_then(|pattern| pattern.related.first_mut())
+            .expect("pattern members");
+        for applied in &mut pattern_members.entity.related {
+            applied
+                .entity
+                .features
+                .references
+                .first_mut()
+                .expect("pattern member reference")
+                .class = "PrizMetrik.GdtAnalysis.GdtCompoundClosedSlot3D,gdtanalysis.net".into();
+        }
+        let mut width = entity("GdtWidth");
+        width.doubles.insert("Nominal".into(), 0.0);
+        width
+            .features
+            .references
+            .push(reference("FP", "GdtPattern"));
+        root.annotations
+            .references
+            .push(reference("A50", "GdtWidth"));
+        root.annotations.entities.push(width);
+
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
+        let PmiDefinition::Dimension { nominal, .. } = &annotations
+            .iter()
+            .find(|annotation| annotation.id == pmi_id("A50"))
+            .expect("width annotation")
+            .definition
+        else {
+            panic!("dimension definition");
+        };
+        assert!(nominal
+            .as_ref()
+            .is_some_and(|value| approximately_equal(value.value, 9.525)));
+
+        root.features
+            .entities
+            .get_mut(2)
+            .and_then(|feature| feature.related.first_mut())
+            .expect("second nominal slot")
+            .entity
+            .doubles
+            .insert("Width".into(), 6.35);
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
+        let PmiDefinition::Dimension { nominal, .. } = &annotations
+            .iter()
+            .find(|annotation| annotation.id == pmi_id("A50"))
+            .expect("width annotation")
+            .definition
+        else {
+            panic!("dimension definition");
+        };
+        assert_eq!(*nominal, None);
     }
 
     #[test]

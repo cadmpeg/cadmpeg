@@ -532,11 +532,11 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 ### DI-34. SWIFT implicit nominal construction
 
-**Question.** Which nominal-geometry rule applies to each non-diameter, non-depth feature-size annotation whose `Nominal` field is zero and whose `Dimension` field is absent?
+**Question.** Which nominal-geometry rule applies to each non-diameter, non-depth, non-width feature-size annotation whose `Nominal` field is zero and whose `Dimension` field is absent?
 
-**Known.** `sldprt.md` §2.1 defines zero as an omitted nominal sentinel. It defines diameter and depth nominal recovery from the rendered literal, declared decimal places, pattern or compound-feature traversal, and cylindrical or spherical nominal geometry. The rendered literal, not the unrounded geometry, supplies the labeled value. Plane pairs, compound widths, slots, and countersinks carry other geometric objects.
+**Known.** `sldprt.md` §2.1 defines zero as an omitted nominal sentinel. It defines diameter and depth nominal recovery from the rendered literal, declared decimal places, pattern or compound-feature traversal, and cylindrical or spherical nominal geometry. The rendered literal, not the unrounded geometry, supplies the labeled value. It defines width from the named width field of open-slot and closed-slot nominal geometry. Plane pairs and countersinks carry other geometric objects.
 
-**Need.** We must derive radius, width, length, location, counterbore, countersink-diameter, and angular nominals without treating the zero sentinel as a measured dimension.
+**Need.** We must derive radius, length, location, counterbore, countersink-diameter, and angular nominals without treating the zero sentinel as a measured dimension.
 
 ## 6. Write-path evidence
 

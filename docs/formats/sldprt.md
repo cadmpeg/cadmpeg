@@ -920,6 +920,14 @@ plane origin to its `NomTop` plane origin. `NomCylinder.I`, `J`, and `K` must
 form a unit vector, and the complete top-to-bottom displacement must be
 parallel to that vector. All reachable cylindrical contributors must agree.
 
+An omitted `GdtWidth.Nominal` is the positive millimetre `Width` field of its
+applied nominal slot geometry. `GdtCompoundWidth` uses
+`NomCompoundWidth.Width`, and `GdtCompoundClosedSlot3D` uses
+`NomClosedSlot.Width`. Feature references use the same recursive direct-child
+and `SubFeatures` traversal. All reachable width contributors must agree.
+`NomHeight` and `NomLength` are feature extents and do not define the width
+dimension.
+
 The geometric-tolerance classes map by their suffix: `GdtStraightness`,
 `GdtFlatness`, `GdtRoundness`, `GdtCircularity`, `GdtCylindricity`,
 `GdtCoaxiality`, `GdtLineProfile`, `GdtSurfaceProfile`,
