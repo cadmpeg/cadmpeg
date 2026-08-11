@@ -47,39 +47,16 @@ pub const DOCUMENT_LOCAL_DIGEST_ATTRIBUTE: &str = "document_local_sha256";
 /// Returns the machine-local content digest of `ir` as seen by the `format`
 /// codec, for recording as the `document_local_sha256` source attribute.
 ///
-/// The digest covers the document in canonical arena order with two
-/// normalizations: the recorded `document_local_sha256` attribute is dropped so a
-/// document carrying its own digest hashes the same as one that does not, and
-/// the `format` unknown arena is reduced to record identities and links with
-/// `source_image_id` — the retained copy of the source container — excluded.
-/// Retained source bytes therefore never reach the digest, and the digest is
-/// stable across a decode that stores it.
+/// Covers the document in canonical arena order with two normalizations: the
+/// recorded `document_local_sha256` attribute is dropped, and the `format`
+/// unknown arena is reduced to identities and links with `source_image_id`
+/// excluded. Retained source bytes never reach the digest.
 ///
-/// # What this digest is, and is not
-///
-/// It is a bitwise SHA-256 over the decoded neutral content. Its one job is the
-/// write path's "was this document edited since it was decoded?" oracle: a
-/// writer that finds the recorded digest still equal to a freshly computed one
-/// replays the retained source bytes, and otherwise writes the document out
-/// through its own encoder.
-///
-/// It is not a portable identity. The decoded content includes values a codec
-/// derives through libm transcendentals, and glibc, MSVC, and Apple's libm
-/// disagree on those by one or two units in the last place, so the same file
-/// decoded on two platforms yields two different digests. It is equally not
-/// stable across a change to this function, to the serialized shape of any
-/// hashed type, or to a codec's arithmetic.
-///
-/// It is intentionally not tolerance-aware, and no amount of work can make it
-/// so. Tolerant equality — what [`cadmpeg_core::compare`] and
-/// [`crate::diff`] implement — is not transitive, and a hash imposes an
-/// equivalence relation, so no digest can ever agree with an epsilon comparison.
-/// The digest therefore stays bitwise and states its limits, rather than
-/// pretending to a semantic identity it cannot deliver.
-///
-/// Every attribute holding a digest with these properties carries the
-/// [`cadmpeg_core::compare::LOCAL_DIGEST_SUFFIX`] suffix; see
-/// [`crate::document::SourceMeta`] for the convention and for who relies on it.
+/// Bitwise SHA-256 for the write path's edit oracle. Not portable across
+/// platforms (libm last-place drift) and not tolerance-aware (tolerant equality
+/// is not transitive). Attributes with these properties use
+/// [`cadmpeg_core::compare::LOCAL_DIGEST_SUFFIX`]; see
+/// [`crate::document::SourceMeta`].
 pub fn document_local_sha256(ir: &CadIr, format: &str, source_image_id: &str) -> String {
     let unknowns = reduced_unknowns(ir, format, source_image_id);
     canonical_json_sha256(&NormalizedDocument {
@@ -117,8 +94,7 @@ fn reduced_unknowns(ir: &CadIr, format: &str, source_image_id: &str) -> Vec<Nati
         )
         .expect("unknown records serialize");
     if unreadable {
-        // An arena the reduction cannot read reduces to nothing, which is what
-        // it did back when the whole arena was read in one fallible step.
+        // Unreadable arenas reduce to empty.
         return Vec::new();
     }
     projected
@@ -246,9 +222,7 @@ mod tests {
         );
     }
 
-    /// A record exercising every JSON shape whose rendering could drift:
-    /// nested objects and arrays, escaped and non-ASCII strings, and integers,
-    /// negative integers, fractions, integral floats, and exponent-form floats.
+    /// Record covering JSON shapes whose rendering could drift.
     fn pinned_record() -> NativeRecord {
         let serde_json::Value::Object(fields) = serde_json::json!({
             "zeta": null,
@@ -277,10 +251,7 @@ mod tests {
         native
     }
 
-    /// A `NativeRecord` renders `id` first and then its codec-owned fields in
-    /// key order, honouring the caller's pretty formatting at every depth. The
-    /// bytes below are the ones the document digest covers, so any change to
-    /// how a record reaches a serializer changes every stored semantic hash.
+    /// Pretty-printed `NativeRecord` bytes covered by the document digest.
     #[test]
     fn pins_pretty_printed_native_record_bytes() {
         let expected = r#"{
@@ -314,8 +285,7 @@ mod tests {
         );
     }
 
-    /// The same bytes indented inside the enclosing namespace and arena, which
-    /// is how a record actually reaches `to_writer_pretty` during hashing.
+    /// Same record indented inside namespace and arena, as hashing sees it.
     #[test]
     fn pins_pretty_printed_native_arena_bytes() {
         let expected = r#"{
@@ -358,9 +328,8 @@ mod tests {
         );
     }
 
-    /// A digest over the arena above, pinned so that formatting drift anywhere
-    /// under `canonical_json_sha256` fails here rather than silently
-    /// invalidating every recorded document digest.
+    /// Digest over the arena above; formatting drift under
+    /// `canonical_json_sha256` fails here.
     #[test]
     fn pins_native_arena_digest() {
         assert_eq!(

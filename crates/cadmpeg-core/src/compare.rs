@@ -1,62 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tolerance-aware semantic comparison of decoded values.
 //!
-//! ## Why a tolerance exists
+//! Decoded geometry passes through platform libm, so last-place disagreement is
+//! not a model change. [`FLOAT_TOLERANCE`] (`1e-12` relative to the larger
+//! magnitude, floored at one) admits that noise. Integers, strings, and
+//! structure compare exactly; only a fractional pair may differ by the
+//! tolerance.
 //!
-//! Decoded geometry passes through `f64::cos`, `f64::sin`, and friends, which
-//! resolve to the platform's libm and are not bit-reproducible: glibc, the MSVC
-//! runtime, and Apple's libm disagree in the last one or two units in the last
-//! place. One conical face pins `origin.v` scaled by `cos(half_angle)`, which
-//! serializes as `1.802581857082682` on Linux and `1.8025818570826815` on
-//! Windows and macOS — two units in the last place apart, and identical to
-//! fourteen significant digits.
-//!
-//! Exact equality therefore reports a platform as a change. That makes it the
-//! wrong relation for any question of the form "do these two decodes describe
-//! the same model", whether the asker is a snapshot harness or a user running a
-//! semantic comparison over the same file decoded on two machines.
-//!
-//! ## Why `1e-12` relative with a floor of one
-//!
-//! Platform libm disagreement is a few units in the last place, near `1e-16`
-//! relative, so [`FLOAT_TOLERANCE`] leaves four decimal orders of headroom
-//! while still catching any change with physical meaning: at millimeter scale
-//! it admits a picometer. The tolerance applies to the larger of the two
-//! magnitudes, floored at one, so values below unit magnitude compare
-//! absolutely rather than demanding ever-finer agreement as they approach zero
-//! — a relative test against zero can never pass, and `0.0` against `1e-30` is
-//! agreement for every purpose this relation serves.
-//!
-//! ## Why integers stay exact
-//!
-//! Counts, indices, degrees, versions, and identifiers serialize as JSON
-//! integers. Not one of them passes through libm, and a change of one in any of
-//! them is a real change in the model. [`values_agree`] therefore admits a
-//! tolerance only when *both* sides are fractional; an integer pair, and a
-//! value that moved between integer and fractional form, compare exactly.
-//!
-//! ## Tolerant equality is not transitive
-//!
-//! `a` agreeing with `b` and `b` agreeing with `c` do not imply that `a` agrees
-//! with `c`: two steps of just under the tolerance sum to just over it. Every
-//! verdict this module produces is therefore strictly about the one pair it was
-//! given. Consequences:
-//!
-//! - The relation cannot back a hash, an equivalence class, a `BTreeMap` key,
-//!   or a deduplication pass, all of which need transitivity to be coherent.
-//! - A digest over tolerantly compared values is a bitwise fingerprint and
-//!   agrees only under exact equality, so no tolerance can rescue one.
-//! - Chaining comparisons through an intermediate proves nothing about the
-//!   endpoints. Compare the two values the question is actually about.
-//!
-//! ## Naming a digest that this relation cannot reconcile
-//!
-//! A codec still needs bitwise digests over decoded content: the write path asks
-//! "was this document edited since it was decoded?" and only a bitwise digest
-//! answers that cheaply. Such a digest is valid within one machine's decode and
-//! nowhere else, for exactly the reason stated above. It is therefore named with
-//! the [`LOCAL_DIGEST_SUFFIX`] suffix, and [`is_local_digest_attribute`] is the
-//! one place that decides whether a source attribute holds one.
+//! The relation is not transitive and cannot back a hash. Digests over decoded
+//! content use [`LOCAL_DIGEST_SUFFIX`] and are machine-local; see
+//! [`is_local_digest_attribute`].
 
 use std::fmt::Write as _;
 
@@ -65,28 +18,19 @@ use serde_json::Value;
 /// Relative tolerance for a fractional number in a semantic comparison.
 ///
 /// Applied against the larger magnitude of the two values, with a floor of one
-/// so small values compare absolutely. See the module documentation for why
-/// this magnitude.
+/// so small values compare absolutely.
 pub const FLOAT_TOLERANCE: f64 = 1e-12;
 
-/// Suffix reserved for a source attribute holding a machine-local content
-/// digest.
+/// Suffix for a source attribute holding a machine-local content digest.
 ///
-/// A key ending in this suffix holds a bitwise digest over decoded neutral
-/// content — the very values this module compares tolerantly. It is reproducible
-/// only under the same binary on the same platform, it is never a portable
-/// identity, and no tolerance can reconcile two of them. A codec that records a
-/// new digest of decoded content must name it with this suffix; a digest over
-/// retained source bytes is bit-exact everywhere and must not.
+/// Bitwise over decoded content; machine-local only. Digests over retained
+/// source bytes must not use this suffix.
 pub const LOCAL_DIGEST_SUFFIX: &str = "_local_sha256";
 
 /// Whether a source attribute key names a machine-local content digest under the
 /// [`LOCAL_DIGEST_SUFFIX`] convention.
 ///
-/// Two consumers depend on this: a structural diff reports such an attribute
-/// informationally rather than as a real difference, and the golden harness
-/// elides it from a snapshot. Both would otherwise report a platform as a
-/// change.
+/// Structural diffs report these informationally; the golden harness elides them.
 #[must_use]
 pub fn is_local_digest_attribute(key: &str) -> bool {
     key.ends_with(LOCAL_DIGEST_SUFFIX)
@@ -96,9 +40,8 @@ pub fn is_local_digest_attribute(key: &str) -> bool {
 /// the larger magnitude, with a floor of one so small values compare
 /// absolutely.
 ///
-/// Exact equality short-circuits, so two infinities of the same sign agree. Any
-/// other non-finite pair disagrees: `NaN` is not equal to itself, and an
-/// infinity against a finite value has no meaningful difference to bound.
+/// Exact equality short-circuits (including same-sign infinities). Other
+/// non-finite pairs disagree.
 #[must_use]
 pub fn floats_agree(left: f64, right: f64) -> bool {
     if left == right {

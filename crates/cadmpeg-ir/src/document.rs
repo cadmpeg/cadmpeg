@@ -405,23 +405,11 @@ impl CadIr {
 
 /// Source-container metadata preserved for reporting.
 ///
-/// # The `_local_sha256` attribute convention
-///
-/// An attribute key ending in
-/// [`cadmpeg_core::compare::LOCAL_DIGEST_SUFFIX`] holds a machine-local
-/// content digest: a bitwise digest over decoded neutral content, recorded so
-/// that a writer can ask whether the document was edited since it was decoded.
-/// Such a digest is reproducible only under the same binary on the same
-/// platform, because the decoded content it covers includes values derived
-/// through libm transcendentals that differ by one or two units in the last
-/// place between platforms. It is never a portable identity, and it is never
-/// tolerance-aware — tolerant equality is not transitive and cannot back a hash.
-/// [`crate::hash::document_local_sha256`] states this in full.
-///
-/// A codec that records a new digest of decoded content must name it with that
-/// suffix, and must not name a digest over retained source bytes with it: those
-/// are bit-exact everywhere, and a difference in one is a real difference.
-/// [`crate::diff`] and the golden harness both classify attributes through
+/// Attribute keys ending in [`cadmpeg_core::compare::LOCAL_DIGEST_SUFFIX`] hold
+/// machine-local digests over decoded content for the write-path edit oracle.
+/// Not portable across platforms; not tolerance-aware. Digests over retained
+/// source bytes must not use that suffix. See
+/// [`crate::hash::document_local_sha256`] and
 /// [`cadmpeg_core::compare::is_local_digest_attribute`].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

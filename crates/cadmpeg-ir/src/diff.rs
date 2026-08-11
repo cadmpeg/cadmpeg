@@ -73,7 +73,7 @@ pub struct SourceDiff {
 impl SourceDiff {
     /// Returns `true` when nothing that counts as a difference changed.
     ///
-    /// [`Self::local_digests`] is deliberately not consulted.
+    /// [`Self::local_digests`] is not consulted.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.format_change.is_none() && self.attributes.is_empty()
@@ -563,9 +563,7 @@ mod tests {
         );
     }
 
-    /// The carve-out follows the naming convention rather than a list of today's
-    /// keys, so a digest a codec adds tomorrow is classified without changing
-    /// this module.
+    /// Carve-out keys by `_local_sha256` suffix, not a fixed key list.
     #[test]
     fn the_carve_out_follows_the_suffix_convention() {
         let key = format!("future_codec_thing{}", compare::LOCAL_DIGEST_SUFFIX);
@@ -575,8 +573,7 @@ mod tests {
         assert!(result.is_empty(), "{result:?}");
         assert_eq!(result.source.local_digests[0].key, key);
 
-        // A digest over retained source bytes carries no such suffix, so a change
-        // in one stays a difference.
+        // Digests over retained source bytes have no suffix; a change stays a difference.
         let right = with_source(&[(&key, "b"), ("footer_fingerprint", "g")]);
         let result = diff(&left, &right);
         assert!(!result.is_empty());

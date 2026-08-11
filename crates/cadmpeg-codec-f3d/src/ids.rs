@@ -1,18 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The `f3d:` URN identifier scheme.
 //!
-//! Every persisted or compared identity key in this crate is a `f3d:` URN.
-//! This module owns the scheme: the segment vocabulary, separators, ordering,
-//! escaping, and the `#{len}:{key}` length-prefix conventions live here so the
-//! byte layout of an identity key is defined in exactly one place. Callers
-//! build IDs through the named functions below rather than by inlining
-//! `format!("f3d:...")` at the use site.
-//!
-//! The strings these builders produce are identity keys that are stored and
-//! compared. Source strings are escaped at identity-component boundaries so
-//! arbitrary archive entry names cannot alter the three-part ID grammar. Two
-//! sites that share a prefix but differ in tail structure get distinct builders
-//! rather than a single reshaped one.
+//! Segment vocabulary, separators, ordering, escaping, and `#{len}:{key}`
+//! length-prefixes. Callers build IDs through the named functions below.
 
 use crate::records::{
     DesignAssemblyAxialSelectorIdentity, DesignCombineExternalBodyIdentity, DesignParameter,

@@ -97,8 +97,7 @@ fn decode_snapshot(bytes: &[u8]) -> String {
 /// Serializes one re-encoded document by archive membership: entry names in
 /// write order, plus length and digest of each decompressed payload.
 ///
-/// ZIP bytes depend on the deflate implementation; pinning them would treat a
-/// `miniz_oxide` release as codec drift. Digests cover decompressed payloads.
+/// Digests cover decompressed payloads; ZIP bytes depend on the deflate library.
 ///
 /// # Panics
 ///
@@ -182,13 +181,8 @@ fn golden_output_is_deterministic() {
 
 /// Serializes what one fixture exports as, or the refusal the export reports.
 ///
-/// The STEP encoder writes these bytes, not this codec. The tree lives beside
-/// this crate's goldens because this crate owns their inputs, and the pairing is
-/// the point: this is the only artifact in the repository that pins STEP output
-/// by content, and what moves it is a change on either side of the pipeline.
-///
-/// An export error is frozen too: refusing to write is contract-relevant
-/// behavior, so this never panics on codec output.
+/// Pins STEP output by content for this crate's fixtures. Export errors are
+/// frozen too.
 fn step_snapshot(bytes: &[u8]) -> String {
     let decoded =
         match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {

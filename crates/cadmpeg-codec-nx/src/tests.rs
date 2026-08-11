@@ -10477,10 +10477,7 @@ mod golden {
         f
     }
 
-    /// Serialize the complete decode + inspect output for one fixture as stable
-    /// pretty JSON. Decode/inspect errors are frozen too (a `.prt` that fails to
-    /// decode is a real, contract-relevant behavior), so this never panics on
-    /// codec output.
+    /// Serialize decode + inspect output as stable pretty JSON. Errors are frozen.
     fn snapshot(bytes: &[u8]) -> String {
         let decode =
             match NxCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {

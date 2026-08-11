@@ -344,7 +344,6 @@ fn dimension_becomes_a_measured_semantic_annotation_with_resolvable_identities()
     let text_point = [2.0, 3.0];
     let result = decode(dimension_archive([0; 16], Some(text_point)));
     assert_eq!(result.ir.model.semantic_annotations.len(), 1);
-    // The dimension is no longer projected as a driving parameter.
     assert!(result.ir.model.parameters.is_empty());
     assert!(result.ir.model.features.is_empty());
 

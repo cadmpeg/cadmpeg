@@ -3,21 +3,9 @@
 //! fixtures.
 //!
 //! `tests/golden/fixtures/*.sldprt` are the frozen inputs.
-//! This harness never writes them: a snapshot test can only tell a decoder
-//! change apart from an input change while the inputs hold still, so
-//! regenerating an input destroys the evidence the snapshot exists to carry.
-//! `UPDATE_GOLDEN=1` rewrites `tests/golden/decode/` and
-//! `tests/golden/inspect/`, and nothing else.
-//!
-//! `tests/golden/inspect/` pins the container summary and
-//! `tests/golden/decode/` pins the decoded document: the IR, the decode
-//! report's losses, and source fidelity. A feature-typing or loss-accounting
-//! change moves the decode branch and `inspect` cannot see it, because an
-//! inspect summary describes the container, not what was transferred out of it.
-//!
-//! [`cadmpeg_core::golden`] holds the enumeration, comparison, and
-//! reporting shared with every other codec; this module supplies only this
-//! codec's branches.
+//! Fixtures stay frozen; `UPDATE_GOLDEN=1` rewrites goldens only.
+//! `inspect` pins the container summary; `decode` pins the IR, losses, and
+//! source fidelity. Shared harness: [`cadmpeg_core::golden`].
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
