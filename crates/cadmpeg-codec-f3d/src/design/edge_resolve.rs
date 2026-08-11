@@ -1292,6 +1292,43 @@ pub(crate) fn resolved_edge_operand(operand: &DesignEdgeOperand) -> Option<i64> 
     operand
         .resolved_edge_slot
         .or_else(|| resolve_edge_operand_candidates(operand))
+        .or_else(|| common_local_reference_shared_edge(operand))
+}
+
+/// Resolve an unchanged edge selected as the unique boundary intersection of
+/// two or more locally referenced support faces.
+fn common_local_reference_shared_edge(operand: &DesignEdgeOperand) -> Option<i64> {
+    let local_references = operand.local_topology_references.as_ref()?;
+    let mut reference_ordinals = local_references
+        .iter()
+        .filter_map(|ordinal| usize::try_from(ordinal.get()).ok()?.checked_sub(1))
+        .collect::<Vec<_>>();
+    reference_ordinals.sort_unstable();
+    reference_ordinals.dedup();
+
+    let mut shared_sets = reference_ordinals.into_iter().filter_map(|ordinal| {
+        let shared = operand
+            .recipe_reference_contexts
+            .get(ordinal)?
+            .shared_edge_slots
+            .as_slice();
+        (!shared.is_empty()).then_some(shared)
+    });
+    let mut candidates = shared_sets.next()?.to_vec();
+    let mut support_count = 1usize;
+    for shared in shared_sets {
+        support_count += 1;
+        candidates.retain(|candidate| shared.contains(candidate));
+    }
+    candidates.sort_unstable();
+    candidates.dedup();
+
+    (support_count >= 2
+        && candidates.len() == 1
+        && operand
+            .preceding_boundary_edge_slots
+            .contains(&candidates[0]))
+    .then_some(candidates[0])
 }
 
 pub(crate) fn edge_operand_reference_edge_sets(operand: &DesignEdgeOperand) -> Vec<&[i64]> {
@@ -1802,8 +1839,8 @@ pub(crate) fn project_fixed_fillet(
 mod radius_identity_tests {
     use super::{
         project_fixed_fillet, radius_edge_identity_group_candidates, resolved_edge_group,
-        resolved_edge_treatment_group, transition_chain_is_supported_by_recipe,
-        unique_hem_transition_edge_candidate,
+        resolved_edge_operand, resolved_edge_treatment_group,
+        transition_chain_is_supported_by_recipe, unique_hem_transition_edge_candidate,
     };
     use crate::records::{
         DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignEdgeOperand,
@@ -2068,6 +2105,45 @@ mod radius_identity_tests {
             "next_byte_offset": 0,
         }))
         .expect("edge recipe operand")
+    }
+
+    #[test]
+    fn local_support_face_references_resolve_one_unchanged_shared_edge() {
+        let context = |reference_ordinal, shared_edge_slots: &[i64]| {
+            serde_json::from_value(serde_json::json!({
+                "reference_ordinal": reference_ordinal,
+                "result_faces": [],
+                "result_shared_edge_slots": shared_edge_slots,
+                "preceding_faces": [],
+                "shared_edge_slots": shared_edge_slots,
+                "changed_shared_edge_slots": []
+            }))
+            .expect("edge recipe reference context")
+        };
+        let mut operand = recipe_edge_operand(10, &[63, 106, 109, 164], &[]);
+        operand.local_topology_references = Some(
+            [2, 1, 3, 1]
+                .into_iter()
+                .map(|ordinal| std::num::NonZeroU32::new(ordinal).expect("nonzero ordinal"))
+                .collect(),
+        );
+        operand.recipe_reference_contexts = vec![
+            context(0, &[]),
+            context(1, &[164, 180, 183, 210]),
+            context(2, &[106, 139, 180, 195]),
+            context(3, &[109, 142, 183, 197]),
+        ];
+        operand.preceding_boundary_edge_slots =
+            vec![63, 106, 109, 139, 142, 164, 168, 180, 183, 195, 197, 210];
+
+        assert_eq!(resolved_edge_operand(&operand), Some(180));
+
+        operand.recipe_reference_contexts[1].shared_edge_slots = vec![164, 180, 181];
+        operand.recipe_reference_contexts[2].shared_edge_slots = vec![106, 180, 181];
+        assert_eq!(resolved_edge_operand(&operand), None);
+
+        operand.local_topology_references = Some(vec![std::num::NonZeroU32::new(2).unwrap()]);
+        assert_eq!(resolved_edge_operand(&operand), None);
     }
 
     #[test]
