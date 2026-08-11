@@ -3499,6 +3499,33 @@ fn cap_proof_classifies_section_sweeps_without_overriding_revolves() {
 }
 
 #[test]
+fn unresolved_display_state_family_blocks_schema_sweep_fallback() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features
+        .operations
+        .push(crate::feature::FeatureOperation {
+            feature_id: 917,
+            kind: "Native Feature".to_string(),
+            display_name_stored: false,
+            stored_name: None,
+            stored_name_bytes: None,
+            identifier_keyword: None,
+            stored_name_prefix: None,
+            recipe: None,
+            recipe_conflict: false,
+            display_state_conflict: true,
+            root_schema_class: Some(917),
+            parent_feature_id: None,
+            offset: 0,
+            state_offset: 0,
+        });
+
+    assert!(!feature_allows_linear_extrusion(&scan, 917));
+    scan.features.operations[0].kind = "Extrude".to_string();
+    assert!(feature_allows_linear_extrusion(&scan, 917));
+}
+
+#[test]
 fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features
@@ -3513,6 +3540,7 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
             stored_name_prefix: None,
             recipe: None,
             recipe_conflict: false,
+            display_state_conflict: false,
             root_schema_class: Some(942),
             parent_feature_id: None,
             offset: 0,
@@ -3574,6 +3602,7 @@ fn class_942_schema_state_precedes_surface_body_tree_fallback() {
             stored_name_prefix: None,
             recipe: None,
             recipe_conflict: false,
+            display_state_conflict: false,
             root_schema_class: Some(942),
             parent_feature_id: None,
             offset: 0,
@@ -3601,6 +3630,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
             stored_name_prefix: None,
             recipe: None,
             recipe_conflict: false,
+            display_state_conflict: false,
             root_schema_class: Some(942),
             parent_feature_id: None,
             offset: 0,
@@ -4579,6 +4609,7 @@ fn current_feature_state_controls_recipe_and_parent_projection() {
         stored_name_prefix: None,
         recipe: Some(recipe),
         recipe_conflict: false,
+        display_state_conflict: false,
         root_schema_class: Some(917),
         parent_feature_id: Some(parent_feature_id),
         offset,
@@ -8193,6 +8224,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         stored_name_prefix: None,
         recipe: Some(crate::feature::FeatureRecipe::ProtrudeExtrude),
         recipe_conflict: false,
+        display_state_conflict: false,
         root_schema_class: Some(917),
         parent_feature_id: None,
         offset: 10,

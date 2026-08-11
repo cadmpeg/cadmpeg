@@ -967,6 +967,7 @@ fn operation(feature_id: u32, recipe: Option<FeatureRecipe>, offset: usize) -> F
         stored_name_prefix: None,
         recipe,
         recipe_conflict: false,
+        display_state_conflict: false,
         root_schema_class: None,
         parent_feature_id: None,
         offset,
@@ -3544,6 +3545,7 @@ fn preserves_mdlstatus_name_prefixes_without_using_them_as_state_selectors() {
         assert_eq!(state.feature_id, 7);
         assert_eq!(state.kind, "Extrude");
         assert_eq!(state.stored_name_prefix, Some(prefix));
+        assert!(state.display_state_conflict);
         assert_eq!(state.state_offset + 1, state.offset);
         assert_eq!(state.stored_name.as_deref(), Some(expected_name));
     }
@@ -3553,8 +3555,13 @@ fn preserves_mdlstatus_name_prefixes_without_using_them_as_state_selectors() {
     let [current] = current_operations.as_slice() else {
         panic!("one current operation");
     };
-    assert_eq!(current, &states[3]);
-    assert_eq!(current.stored_name_prefix, Some(b'z'));
+    assert_eq!(current.kind, "Extrude");
+    assert!(!current.display_name_stored);
+    assert_eq!(current.stored_name, None);
+    assert_eq!(current.stored_name_bytes, None);
+    assert_eq!(current.identifier_keyword, None);
+    assert_eq!(current.stored_name_prefix, None);
+    assert!(current.display_state_conflict);
 }
 
 #[test]

@@ -16,14 +16,11 @@
       "features": [
         {
           "definition": {
-            "definition": "hole",
-            "kind": {
-              "kind": "unresolved"
-            }
+            "definition": "native",
+            "kind": "Native Feature"
           },
           "id": "creo:model:feature#40",
-          "name": "Hole id 40",
-          "ordinal": 4,
+          "ordinal": 0,
           "suppressed": false
         },
         {
@@ -42,7 +39,7 @@
           },
           "id": "creo:model:feature#41",
           "name": "Round id 41",
-          "ordinal": 0,
+          "ordinal": 1,
           "suppressed": false
         },
         {
@@ -52,7 +49,7 @@
           },
           "id": "creo:model:feature#42",
           "name": "Future Feature id 42",
-          "ordinal": 1,
+          "ordinal": 2,
           "suppressed": false
         },
         {
@@ -61,7 +58,7 @@
           },
           "id": "creo:model:feature#43",
           "name": "Datum Plane id 43",
-          "ordinal": 2,
+          "ordinal": 3,
           "suppressed": false
         },
         {
@@ -79,7 +76,7 @@
           },
           "id": "creo:model:feature#44",
           "name": "Draft id 44",
-          "ordinal": 3,
+          "ordinal": 4,
           "suppressed": false
         },
         {
@@ -129,6 +126,7 @@
             {
               "current": false,
               "display_name_stored": true,
+              "display_state_conflict": true,
               "family": "Protrusion",
               "feature_id": 40,
               "id": "creo:mdlstatus:feature_state#40:0",
@@ -162,8 +160,9 @@
               "stored_name_prefix": "x"
             },
             {
-              "current": true,
+              "current": false,
               "display_name_stored": true,
+              "display_state_conflict": true,
               "family": "Hole",
               "feature_id": 40,
               "id": "creo:mdlstatus:feature_state#40:1",
@@ -552,7 +551,7 @@
       "transferred_first_instance_prototype_surface_count": 0,
       "transferred_geometry_generator_feature_count": 0,
       "transferred_hole_cylinder_count": 0,
-      "transferred_hole_feature_count": 1,
+      "transferred_hole_feature_count": 0,
       "transferred_incomplete_chamfer_feature_count": 0,
       "transferred_incomplete_draft_feature_count": 1,
       "transferred_incomplete_extrude_feature_count": 0,
@@ -560,12 +559,12 @@
       "transferred_incomplete_extrude_termination_feature_count": 0,
       "transferred_incomplete_filled_surface_feature_count": 0,
       "transferred_incomplete_fillet_feature_count": 1,
-      "transferred_incomplete_hole_feature_count": 1,
-      "transferred_incomplete_hole_termination_feature_count": 1,
+      "transferred_incomplete_hole_feature_count": 0,
+      "transferred_incomplete_hole_termination_feature_count": 0,
       "transferred_incomplete_knit_surface_feature_count": 0,
       "transferred_incomplete_other_construction_feature_count": 0,
       "transferred_incomplete_pattern_feature_count": 0,
-      "transferred_incomplete_recognized_feature_count": 3,
+      "transferred_incomplete_recognized_feature_count": 2,
       "transferred_incomplete_revolve_extent_feature_count": 0,
       "transferred_incomplete_revolve_feature_count": 0,
       "transferred_incomplete_section_shape_feature_count": 0,
@@ -578,7 +577,7 @@
       "transferred_native_draft_face_selection_feature_count": 0,
       "transferred_native_draft_neutral_plane_feature_count": 0,
       "transferred_native_extrude_profile_feature_count": 0,
-      "transferred_native_feature_count": 1,
+      "transferred_native_feature_count": 2,
       "transferred_native_feature_relation_constraint_count": 0,
       "transferred_native_feature_skamp_constraint_count": 0,
       "transferred_native_fillet_edge_selection_feature_count": 0,
@@ -605,7 +604,7 @@
       "transferred_thicken_feature_count": 0,
       "transferred_topological_point_count": 0,
       "transferred_topology_bound_plane_surface_count": 0,
-      "transferred_typed_feature_count": 5,
+      "transferred_typed_feature_count": 4,
       "transferred_typed_feature_relation_constraint_count": 0,
       "transferred_typed_feature_skamp_constraint_count": 0,
       "transferred_unresolved_boundary_surface_feature_count": 0,
@@ -628,11 +627,11 @@
       "transferred_unresolved_fillet_radius_feature_count": 1,
       "transferred_unresolved_fillet_radius_with_generated_surface_feature_count": 0,
       "transferred_unresolved_fillet_radius_without_generated_surface_feature_count": 1,
-      "transferred_unresolved_hole_diameter_feature_count": 1,
-      "transferred_unresolved_hole_direction_feature_count": 1,
+      "transferred_unresolved_hole_diameter_feature_count": 0,
+      "transferred_unresolved_hole_direction_feature_count": 0,
       "transferred_unresolved_hole_face_selection_feature_count": 0,
-      "transferred_unresolved_hole_kind_feature_count": 1,
-      "transferred_unresolved_hole_location_feature_count": 1,
+      "transferred_unresolved_hole_kind_feature_count": 0,
+      "transferred_unresolved_hole_location_feature_count": 0,
       "transferred_unresolved_hole_profile_feature_count": 0,
       "transferred_unresolved_knit_surface_faces_feature_count": 0,
       "transferred_unresolved_knit_surface_merge_feature_count": 0,
@@ -711,12 +710,12 @@
       },
       {
         "code": "feature_history_retained",
-        "message": "3 recognized non-sweep history feature(s) retain incomplete required construction operands (hole=1, fillet=1, draft=1).",
+        "message": "2 recognized non-sweep history feature(s) retain incomplete required construction operands (fillet=1, draft=1).",
         "severity": "warning"
       },
       {
         "code": "feature_history_retained",
-        "message": "1 history feature definition(s) retain only source-native semantics.",
+        "message": "2 history feature definition(s) retain only source-native semantics.",
         "severity": "warning"
       },
       {
@@ -734,6 +733,11 @@
   },
   "source_fidelity": {
     "annotations": {
+      "exactness": {
+        "creo:model:feature#40": {
+          "entity": "derived"
+        }
+      },
       "provenance": {
         "creo:mdlstatus:feature_state#40:0": {
           "offset": 93,
@@ -771,9 +775,9 @@
           "tag": "feature_operation_state"
         },
         "creo:model:feature#40": {
-          "offset": 174,
+          "offset": 94,
           "stream": 0,
-          "tag": "feature_operation_name"
+          "tag": "feature_operation_state_consensus"
         },
         "creo:model:feature#41": {
           "offset": 111,

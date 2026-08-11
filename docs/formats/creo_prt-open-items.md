@@ -719,13 +719,11 @@ endpoint to set `HoleBottom::Angled`.
 
 ### TP-18. `MdlStatus` prefix meanings
 
-**Question.** What stored-name state does each `MdlStatus` prefix `o`, `x`, `y`, and `z` represent?
+**Question.** What stored-name state does each `MdlStatus` prefix `o`, `x`, `y`, and `z` represent, and which field selects the current same-ID candidate?
 
-**Known.** `creo_prt.md` §6 "Operation names end in" states that the prefix is not part of the operation-family name and does not select the current same-ID state. Byte order selects the current state.
+**Known.** `creo_prt.md` §6 "Operation names end in" states that the prefix is not part of the operation-family name. Same-ID state candidates retain their byte order and exact prefixes. No candidate is projected as current without a selector.
 
-**Need.** We must know the prefix meanings to preserve the native state semantics.
-
-**Note.** The closure test only confirms that the current parser preserves prefixes and chooses the last hand-built record. It does not establish what `o`, `x`, `y`, and `z` mean or prove byte-order precedence in native `MdlStatus` data. The specification promotes that behavior without format evidence. Reopen until the state meanings and current-state selector are evidenced.
+**Need.** We must know the prefix meanings and current-state selector to preserve the native state semantics and project one current candidate.
 
 ## 5. Packed persistence data
 

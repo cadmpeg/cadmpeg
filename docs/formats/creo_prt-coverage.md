@@ -193,6 +193,9 @@ fixtures, claims above L1 remain unproven.
   identities when neutral semantics remain incomplete. A class-100 generated
   entity reference adds a history dependency when that entity has exactly one
   preceding feature-generated class-200 producer.
+- Same-ID operation display states retain their exact stored candidates. The
+  neutral operation projection retains only fields on which all candidates
+  agree and does not select a current candidate without a stored selector.
 - `AllFeatur` rows are discovered at section start, after the raw section
   header, or after an `e3` boundary only when a known feature identifier and
   the complete bounded `e3 f6 <compact-class> e1` root prefix are present.

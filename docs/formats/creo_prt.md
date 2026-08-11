@@ -2430,12 +2430,13 @@ identifies a reflection operation.
 Operation names end in ` id <N>` or ` ID <N>`; the stored case follows the
 name's localization. An ASCII `o`, `x`, `y`, or `z` byte immediately preceding
 an uppercase operation-family name is a stored-name prefix, not part of the
-family name and not a current-state selector. Multiple operation names with the same feature identifier are ordered
-stored states; the last occurrence is the current state. Decoding the current
-state does not discard the preceding state records. State ordinals are local to
-one feature identifier and increase in byte order from zero. A stored state
-retains the prefix-inclusive name bytes, the `id`/`ID` spelling, and the offset
-of the optional prefix; a recipe-only state has no stored operation name.
+family name. Multiple operation names with the same feature identifier are
+ordered stored-state candidates. No candidate is the current state without a
+state selector. State ordinals are local to one feature identifier and increase
+in byte order from zero. Each candidate retains the prefix-inclusive name
+bytes, the `id`/`ID` spelling, and the offset of the optional prefix. The
+neutral projection retains only operation fields on which all candidates
+agree. A recipe-only state has no stored operation name.
 
 `MdlRefInfo` feature-reference entries encode
 `f7 0x71 <own-ref-id> <reference-type> <feature-id> <name> 00 <own-ref-id> <own-ref-id>`.

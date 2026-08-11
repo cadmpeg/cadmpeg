@@ -10228,7 +10228,7 @@ fn incomplete_legacy_values_are_reported() {
 }
 
 #[test]
-fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
+fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
     let data = build_prt(
         "c",
         &[(
@@ -10257,15 +10257,19 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
     );
     assert_eq!(scan.features.operation_states[5].feature_id, 40);
     assert_eq!(scan.features.operation_states[5].kind, "Hole");
+    assert!(scan.features.operation_states[0].display_state_conflict);
+    assert!(scan.features.operation_states[5].display_state_conflict);
     assert_eq!(scan.features.operations.len(), 6);
-    assert_eq!(scan.features.operations[0].feature_id, 41);
-    assert_eq!(scan.features.operations[0].kind, "Round");
-    assert_eq!(scan.features.operations[1].kind, "Future Feature");
-    assert_eq!(scan.features.operations[2].kind, "Datum Plane");
-    assert_eq!(scan.features.operations[3].kind, "Draft");
-    assert_eq!(scan.features.operations[4].feature_id, 40);
-    assert_eq!(scan.features.operations[4].kind, "Hole");
-    assert_eq!(scan.features.operations[4].stored_name_prefix, None);
+    assert_eq!(scan.features.operations[0].feature_id, 40);
+    assert_eq!(scan.features.operations[0].kind, "Native Feature");
+    assert!(!scan.features.operations[0].display_name_stored);
+    assert!(scan.features.operations[0].display_state_conflict);
+    assert_eq!(scan.features.operations[0].stored_name_prefix, None);
+    assert_eq!(scan.features.operations[1].feature_id, 41);
+    assert_eq!(scan.features.operations[1].kind, "Round");
+    assert_eq!(scan.features.operations[2].kind, "Future Feature");
+    assert_eq!(scan.features.operations[3].kind, "Datum Plane");
+    assert_eq!(scan.features.operations[4].kind, "Draft");
     assert_eq!(scan.features.operations[5].kind, "Surface");
     assert_eq!(scan.features.operations[5].stored_name_prefix, Some(b'y'));
 
@@ -10292,30 +10296,34 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
         b"xProtrusion id 40"
     );
     assert_eq!(feature_40[0].fields()["identifier_keyword"], "id");
+    assert_eq!(feature_40[0].fields()["display_state_conflict"], true);
     assert_eq!(feature_40[1].fields()["state_ordinal"], 1);
-    assert_eq!(feature_40[1].fields()["current"], true);
+    assert_eq!(feature_40[1].fields()["current"], false);
+    assert_eq!(feature_40[1].fields()["display_state_conflict"], true);
     assert_eq!(result.ir.model.features.len(), 6);
     assert_eq!(
         result.ir.model.features[0].id.as_str(),
         "creo:model:feature#40"
     );
-    assert_eq!(result.ir.model.features[0].ordinal, 4);
+    assert_eq!(result.ir.model.features[0].ordinal, 0);
     assert_eq!(
         result.ir.model.features[1].id.as_str(),
         "creo:model:feature#41"
     );
-    assert_eq!(result.ir.model.features[1].ordinal, 0);
+    assert_eq!(result.ir.model.features[1].ordinal, 1);
     assert!(matches!(
         &result.ir.model.features[0].definition,
-        cadmpeg_ir::features::FeatureDefinition::Hole {
-            face: None,
-            position: None,
-            direction: None,
-            diameter: None,
-            extent: None,
-            ..
-        }
+        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
+            if kind == "Native Feature"
     ));
+    assert_annotation(
+        &result.source_fidelity.annotations,
+        "creo:model:feature#40",
+        "creo:MdlStatus",
+        scan.features.operations[0].offset as u64,
+        "feature_operation_state_consensus",
+        Exactness::Derived,
+    );
     assert!(matches!(
         &result.ir.model.features[1].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
@@ -10342,7 +10350,7 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
         &result.source_fidelity.annotations,
         "creo:model:feature#41",
         "creo:MdlStatus",
-        scan.features.operations[0].offset as u64,
+        scan.features.operations[1].offset as u64,
         "feature_operation_name",
         Exactness::ByteExact,
     );

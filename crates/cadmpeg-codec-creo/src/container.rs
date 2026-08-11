@@ -430,7 +430,7 @@ pub struct FeatureScan {
     pub section_transforms: Vec<FeatureSectionTransform>,
     /// Every stored feature-operation state from `MdlStatus`, in byte order.
     pub operation_states: Vec<FeatureOperation>,
-    /// Current feature-operation state for each feature identifier.
+    /// Unambiguous or consensus feature-operation projection for each identifier.
     pub operations: Vec<FeatureOperation>,
     /// Feature names joined to model feature identifiers by reference data.
     pub reference_names: Vec<FeatureReferenceName>,
@@ -2617,6 +2617,7 @@ mod feature_row_definition_tests {
             stored_name_prefix: None,
             recipe: None,
             recipe_conflict: false,
+            display_state_conflict: false,
             root_schema_class: None,
             parent_feature_id: None,
             offset: 0,
@@ -2728,6 +2729,7 @@ mod feature_row_definition_tests {
             stored_name_prefix: None,
             recipe,
             recipe_conflict: false,
+            display_state_conflict: false,
             root_schema_class: None,
             parent_feature_id: None,
             offset,
