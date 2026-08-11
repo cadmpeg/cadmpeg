@@ -2482,12 +2482,13 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     if mesh_projection.count > 0 {
         apply_mesh_body_classification(&mut report, &scan, mesh_projection.count);
     } else {
-        apply_sketch_only_classification(
+        apply_bodyless_design_classification(
             &mut report,
             container::design_breps(&scan).count(),
             container::text_brep_names(&scan).len(),
             native.design_body_bindings.len() + native.design_body_members.len(),
             ir.model.sketch_entities.len() + ir.model.spatial_sketch_entities.len(),
+            native.design_canvas_images.len(),
         );
     }
     report_unresolved_dimension_companions(&mut report, &native, &ir);
@@ -2954,19 +2955,24 @@ fn apply_mesh_body_classification(report: &mut DecodeReport, scan: &ContainerSca
     });
 }
 
-/// Classify a design whose geometry consists of sketch curves.
+/// Classify a bodyless design whose transferred content requires no BREP.
 ///
 /// The container has zero BREP streams and the Design segment has zero bodies.
-/// The decoder transferred sketch entities, so the report marks geometry as
-/// transferred and records a sketch-only summary.
-pub(crate) fn apply_sketch_only_classification(
+/// Sketch entities can supply the complete geometry. Reference-image timeline
+/// objects are presentation content and require no geometry carrier.
+pub(crate) fn apply_bodyless_design_classification(
     report: &mut DecodeReport,
     brep_streams: usize,
     text_brep_streams: usize,
     declared_bodies: usize,
     sketch_entities: usize,
+    reference_images: usize,
 ) {
-    if brep_streams != 0 || text_brep_streams != 0 || declared_bodies != 0 || sketch_entities == 0 {
+    if brep_streams != 0
+        || text_brep_streams != 0
+        || declared_bodies != 0
+        || (sketch_entities == 0 && reference_images == 0)
+    {
         return;
     }
     report.losses.retain(|loss| {
@@ -2978,13 +2984,21 @@ pub(crate) fn apply_sketch_only_classification(
         )
     });
     report.geometry_transferred = true;
+    let message = match (sketch_entities, reference_images) {
+        (0, reference_images) => format!(
+            "presentation-only design: the document declares no body, and its {reference_images} reference-image timeline object(s) require no BREP geometry"
+        ),
+        (sketch_entities, 0) => format!(
+            "sketch-only design: the document declares no body, and its {sketch_entities} sketch entity(s) are its complete geometry"
+        ),
+        (sketch_entities, reference_images) => format!(
+            "bodyless design: the document declares no body; its {sketch_entities} sketch entity(s) are its complete geometry, and its {reference_images} reference-image timeline object(s) require no BREP geometry"
+        ),
+    };
     report.losses.push(LossNote {
         code: LossKind::CarrierSummary,
         severity: Severity::Info,
-        message: format!(
-            "sketch-only design: the document declares no body, and its {sketch_entities} sketch \
-             entity(s) are its complete geometry"
-        ),
+        message,
         provenance: None,
     });
 }
