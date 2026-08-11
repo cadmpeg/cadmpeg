@@ -4907,6 +4907,60 @@ fn reflected_geometry_matches(
                 && reflect_point(*first_center, *axis_start, *axis_end)
                     .is_some_and(|reflected| sketch_points_close(reflected, *second_center))
         }
+        (
+            SketchGeometry::Arc {
+                center: first_center,
+                radius: first_radius,
+                start_angle: first_start,
+                end_angle: first_end,
+            },
+            SketchGeometry::Arc {
+                center: second_center,
+                radius: second_radius,
+                start_angle: second_start,
+                end_angle: second_end,
+            },
+        ) => {
+            let radius_scale = 1.0 + first_radius.0.abs().max(second_radius.0.abs());
+            let first_sweep = (first_end.0 - first_start.0).abs();
+            let second_sweep = (second_end.0 - second_start.0).abs();
+            let sweep_scale = 1.0 + first_sweep.max(second_sweep);
+            if first_radius.0 <= 0.0
+                || second_radius.0 <= 0.0
+                || (first_radius.0 - second_radius.0).abs() > 1.0e-9 * radius_scale
+                || (first_sweep - second_sweep).abs() > 1.0e-9 * sweep_scale
+                || !reflect_point(*first_center, *axis_start, *axis_end)
+                    .is_some_and(|reflected| sketch_points_close(reflected, *second_center))
+            {
+                return false;
+            }
+            let arc_point = |center: Point2, radius: f64, angle: f64| {
+                Point2::new(
+                    center.u + radius * angle.cos(),
+                    center.v + radius * angle.sin(),
+                )
+            };
+            let Some(reflected_start) = reflect_point(
+                arc_point(*first_center, first_radius.0, first_start.0),
+                *axis_start,
+                *axis_end,
+            ) else {
+                return false;
+            };
+            let Some(reflected_end) = reflect_point(
+                arc_point(*first_center, first_radius.0, first_end.0),
+                *axis_start,
+                *axis_end,
+            ) else {
+                return false;
+            };
+            let second_start = arc_point(*second_center, second_radius.0, second_start.0);
+            let second_end = arc_point(*second_center, second_radius.0, second_end.0);
+            sketch_points_close(reflected_start, second_start)
+                && sketch_points_close(reflected_end, second_end)
+                || sketch_points_close(reflected_start, second_end)
+                    && sketch_points_close(reflected_end, second_start)
+        }
         _ => false,
     }
 }
