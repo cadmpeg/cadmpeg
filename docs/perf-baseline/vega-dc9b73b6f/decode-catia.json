@@ -1,0 +1,35 @@
+{
+  "results": [
+    {
+      "command": "timeout 120 'target/release/cadmpeg' decode 'crates/cadmpeg-codec-catia/tests/golden/fixtures/consolidated_nurbs_surface_curve.catpart' >/dev/null",
+      "mean": 0.010450075280000002,
+      "stddev": 0.000597492584274316,
+      "median": 0.010369582680000001,
+      "user": 0.0036169999999999996,
+      "system": 0.0041843,
+      "min": 0.00975458368,
+      "max": 0.011061750680000001,
+      "times": [
+        0.011061750680000001,
+        0.010369582680000001,
+        0.011056708680000001,
+        0.01000775068,
+        0.00975458368
+      ],
+      "memory_usage_byte": [
+        9093120,
+        9093120,
+        9093120,
+        9093120,
+        9093120
+      ],
+      "exit_codes": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}
