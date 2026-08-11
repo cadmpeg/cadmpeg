@@ -391,33 +391,37 @@ fn jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
 /// selection.
 #[must_use]
 pub fn e5_record_stream(data: &[u8]) -> Option<Range<usize>> {
-    let segments = finjpl_segments(data, 0, data.len());
-    e5_record_stream_in_segments(data, &segments)
+    let body = outer_body_range(data)?;
+    let segments = finjpl_segments(data, body.start, body.end);
+    e5_record_stream_in_segments(data, body, &segments)
 }
 
-fn e5_record_stream_in_segments(data: &[u8], segments: &[FinjplSegment]) -> Option<Range<usize>> {
-    if !data.starts_with(OUTER_MAGIC) {
-        return None;
-    }
+fn outer_body_range(data: &[u8]) -> Option<Range<usize>> {
+    data.starts_with(OUTER_MAGIC).then_some(())?;
     let directory_offset = usize::try_from(u32_be(data, 8)?).ok()?;
     let directory_length = usize::try_from(u32_be(data, 12)?).ok()?;
-    if directory_offset.checked_add(directory_length)? != data.len()
-        || directory_length >= data.len()
-    {
-        return None;
-    }
-    let first_finjpl = data[directory_length..]
+    (directory_offset.checked_add(directory_length)? == data.len()
+        && directory_length <= directory_offset)
+        .then_some(directory_length..directory_offset)
+}
+
+fn e5_record_stream_in_segments(
+    data: &[u8],
+    body: Range<usize>,
+    segments: &[FinjplSegment],
+) -> Option<Range<usize>> {
+    let first_finjpl = data[body.clone()]
         .windows(FINJPL_MARKER.len())
         .position(|bytes| bytes == FINJPL_MARKER)
-        .map_or(data.len(), |relative| directory_length + relative);
-    let preamble = directory_length..first_finjpl;
+        .map_or(body.end, |relative| body.start + relative);
+    let preamble = body.start..first_finjpl;
     if coherent_e5_record_count(&data[preamble.clone()]) >= 10 {
         return Some(preamble);
     }
 
     let candidates = segments
         .iter()
-        .filter(|segment| segment.range.start >= directory_length)
+        .filter(|segment| segment.range.start >= body.start && segment.range.end <= body.end)
         .filter_map(|segment| {
             let count = coherent_e5_record_count(&data[segment.range.clone()]);
             (count >= 10).then_some((
@@ -620,7 +624,7 @@ pub struct Census {
     pub vertex_markers: usize,
     /// `a9 03` record-family markers in the whole file.
     pub a9_markers: usize,
-    /// `e5 0d 03` record-family markers in the whole file.
+    /// `e5 0d 03` record-family markers in the outer body.
     pub e5_markers: usize,
 }
 
@@ -1226,7 +1230,10 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let inner = parse_stream_directory(&data);
     let brep = inner.as_ref().and_then(|dir| brep_stream(&data, dir));
     let main_data_stream = inner.as_ref().and_then(|dir| main_data_stream(&data, dir));
-    let finjpl_segments = finjpl_segments(&data, 0, data.len());
+    let outer_body = outer_body_range(&data);
+    let finjpl_segments = outer_body.as_ref().map_or_else(Vec::new, |body| {
+        finjpl_segments(&data, body.start, body.end)
+    });
     let previews = preview_images_in_segments(&data, &finjpl_segments);
     let last_save_version = last_save_version_in_segments(&data, &finjpl_segments);
     let external_references = external_references_in_segments(&data, &finjpl_segments);
@@ -1236,7 +1243,9 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
 
     let mut census = Census {
         a9_markers: count_subslice(&data, A9_MARKER),
-        e5_markers: count_subslice(&data, E5_MARKER),
+        e5_markers: outer_body
+            .as_ref()
+            .map_or(0, |body| count_subslice(&data[body.clone()], E5_MARKER)),
         ..Default::default()
     };
     if let Some(b) = main_data_stream.as_deref() {
@@ -1254,7 +1263,9 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         inner.as_ref(),
         brep.as_deref(),
         &census,
-        e5_record_stream_in_segments(&data, &finjpl_segments).is_some(),
+        outer_body.is_some_and(|body| {
+            e5_record_stream_in_segments(&data, body, &finjpl_segments).is_some()
+        }),
     );
 
     ContainerScan {
@@ -1550,6 +1561,32 @@ mod tests {
             append_e5_test_record(&mut body, id);
         }
         assert!(super::e5_record_stream(&outer_with_preamble(&body)).is_none());
+    }
+
+    #[test]
+    fn e5_stream_and_finjpl_inventory_exclude_the_trailing_directory() {
+        let directory_length = 192usize;
+        let directory_offset = 512usize;
+        let mut bytes = vec![0u8; directory_length];
+        bytes[..super::OUTER_MAGIC.len()].copy_from_slice(super::OUTER_MAGIC);
+        bytes[8..12].copy_from_slice(&(directory_offset as u32).to_be_bytes());
+        bytes[12..16].copy_from_slice(&(directory_length as u32).to_be_bytes());
+        bytes.resize(directory_offset, 0);
+
+        let mut directory = vec![0u8; super::DIR_MAGIC.len()];
+        directory[..super::DIR_MAGIC.len()].copy_from_slice(super::DIR_MAGIC);
+        directory.extend_from_slice(super::FINJPL_MARKER);
+        directory.extend_from_slice(&0x0000_008eu32.to_be_bytes());
+        for id in 0..10 {
+            append_e5_test_record(&mut directory, id);
+        }
+        directory.resize(directory_length, 0);
+        bytes.extend_from_slice(&directory);
+
+        assert!(super::e5_record_stream(&bytes).is_none());
+        let scan = super::scan_bytes(bytes);
+        assert!(scan.finjpl_segments.is_empty());
+        assert_eq!(scan.census.e5_markers, 0);
     }
 
     #[test]

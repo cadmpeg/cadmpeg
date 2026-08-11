@@ -104,6 +104,22 @@ fn external_reference_segment(target: &str) -> Vec<u8> {
     bytes
 }
 
+fn outer_body_catpart(body: &[u8]) -> Vec<u8> {
+    let directory_length = DIR_MAGIC.len();
+    let directory_offset = 16usize.checked_add(body.len()).expect("bounded outer body");
+    let mut file = Vec::new();
+    file.extend_from_slice(OUTER_MAGIC);
+    file.extend_from_slice(&be32(
+        u32::try_from(directory_offset).expect("bounded directory offset"),
+    ));
+    file.extend_from_slice(&be32(
+        u32::try_from(directory_length).expect("bounded directory length"),
+    ));
+    file.extend_from_slice(body);
+    file.extend_from_slice(DIR_MAGIC);
+    file
+}
+
 fn assert_every_entity_has_v1_annotation(ir: &CadIr, annotations: &Annotations) {
     let mut entity_count = 0;
     macro_rules! check {
@@ -3968,7 +3984,8 @@ fn summary_preview_parser_extracts_exact_jpeg_and_dimensions() {
         &bytes[previews[0].range.clone()][previews[0].range.len() - 2..],
         [0xff, 0xd9]
     );
-    let summary = crate::container::summarize(&crate::container::scan_bytes(bytes.clone()));
+    let summary =
+        crate::container::summarize(&crate::container::scan_bytes(outer_body_catpart(&bytes)));
     assert!(summary.entries.iter().any(|entry| {
         entry.role == crate::container::role::FINJPL_SEGMENT
             && entry.name == "CATSummaryInformation"
@@ -4022,7 +4039,7 @@ fn storage_property_parser_enumerates_external_catia_documents() {
     assert_eq!(references[0].target, "Support.CATPart");
     assert_eq!(references[1].target, "Assembly.CATProduct");
 
-    let scan = crate::container::scan_bytes(bytes.clone());
+    let scan = crate::container::scan_bytes(outer_body_catpart(&bytes));
     let summary = crate::container::summarize(&scan);
     assert_eq!(
         summary

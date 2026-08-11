@@ -36,6 +36,10 @@ current scores require those matrices and representative fixtures.
 
 ## Implemented slices above the score
 
+- Outer-body FINJPL inventory and E5 candidate selection use the header-defined
+  `[directory_length,directory_offset)` range. The trailing stream directory
+  cannot contribute FINJPL segments, E5 census markers, E5 candidates,
+  previews, version metadata, or external references.
 - Stream-directory inspection retains every extent's raw flags word in logical
   extent order.
 - Admitted outer `Data` declarations bind canonical or leading-underscore

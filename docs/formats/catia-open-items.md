@@ -766,16 +766,6 @@ The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−
 
 **Need.** The sign reverses the cyclic member order of every loop in the component and toggles every member sense, which gives an inverted shell. The result stays radially coherent, so no gate rejects it, and the transfer loss note affirms that face and loop orientation transfer. We must know the field to fix the sign without a vote.
 
-### E5-11. E5 candidate boundary
-
-**Question.** What boundary excludes trailing-directory bytes from the E5 candidate scan?
-
-**Known.** `e5_record_stream_in_segments` scans FINJPL segments through the complete byte image and admits any coherent segment whose start is at or after the preamble start. The outer directory has a separate offset and length.
-
-**Need.** We must constrain E5 candidates to the owning outer body or prove that directory bytes cannot contain a competing coherent E5 walk.
-
-**Note.** Added by the 2026-08-10 hostile sweep. At `crates/cadmpeg-codec-catia/src/container.rs:393-440`, `finjpl_segments(data, 0, data.len())` includes the trailing directory and the filter checks `segment.range.start >= directory_length`, not containment before `directory_offset`. A directory segment with ten plausible E5 records can therefore compete with the body candidate; the coherent-walk and tie checks validate candidates but do not establish physical ownership. Confidence: high for code behavior; medium for real-file occurrence.
-
 ### E5-12. E5 occurrence-side fallback
 
 **Question.** Which intersection side is authoritative when an E5 edge has zero, one, or conflicting occurrence-side candidates?
