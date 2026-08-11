@@ -119,6 +119,10 @@ fixtures, claims above L1 remain unproven.
   encoding.
 - Compressed `THMB_IMG_MAIN` payloads expand to the JPEG marker before preview
   detection and retain the JPEG bytes as a derived native record.
+- Primitive triangle strips accept position-only and normal-position arrays in
+  either source order when every complete position representation agrees.
+  Agreeing normal-position arrays transfer their normals. Conflicting position
+  or normal representations withhold the strip and produce a geometry loss.
 - Axis-aligned coaxial cone-cylinder intersections transfer the unique circle
   whose axial center coordinate agrees with the repeated `fc 14` held
   world-coordinate token.

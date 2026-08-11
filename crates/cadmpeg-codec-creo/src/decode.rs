@@ -36105,6 +36105,15 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
         }
     }
     coverage.insert(
+        "decoded_primitive_triangle_strip_count".to_string(),
+        scan.primitives.triangle_strips.len(),
+    );
+    coverage.insert(
+        "conflicting_primitive_triangle_strip_representation_count".to_string(),
+        scan.primitives
+            .conflicting_triangle_strip_representation_count,
+    );
+    coverage.insert(
         "decoded_surface_row_count".to_string(),
         scan.surfaces.rows.len(),
     );
@@ -37004,6 +37013,20 @@ fn build_report(
             message: format!(
                 "{undecoded_legacy_string_encodings} legacy type-10 string element(s) retain \
                  exact source bytes because their character encoding is not UTF-8."
+            ),
+            provenance: None,
+        });
+    }
+
+    let conflicting_triangle_strip_representations =
+        count("conflicting_primitive_triangle_strip_representation_count");
+    if conflicting_triangle_strip_representations != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+            severity: Severity::Warning,
+            message: format!(
+                "{conflicting_triangle_strip_representations} primitive triangle-strip record(s) \
+                 contain complete position representations that disagree."
             ),
             provenance: None,
         });

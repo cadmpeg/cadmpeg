@@ -805,16 +805,6 @@ endpoint to set `HoleBottom::Angled`.
 
 **Need.** We must know the row semantics to transfer configuration parameters and values.
 
-### PP-12. Triangle-strip position-array selection
-
-**Question.** When one `prim_tristripsetwithatt` record contains complete `mv_p_xyz` and `mv_p_NxNyNzxyz` arrays, which array supplies the positions and normals?
-
-**Known.** `creo_prt.md` §8.4 defines `mv_p_xyz` as consecutive XYZ positions and `mv_p_NxNyNzxyz` as normal-position tuples. Both arrays can satisfy their declared scalar counts independently; the specification gives no conflict rule.
-
-**Need.** We must know the ownership and precedence rule to transfer the correct tessellation positions and normals.
-
-**Note.** `crates/cadmpeg-codec-creo/src/primdata.rs:69-95` scans complete arrays in byte order and accepts the first one. If both arrays contain different positions, the first array supplies the strip and the other representation is discarded; the normal-bearing array is ignored when `mv_p_xyz` appears first. No current item records this selection rule.
-
 ### PP-13. Legacy persistence bodies
 
 **Question.** What type and value grammar does each legacy ASCII `@<name>`

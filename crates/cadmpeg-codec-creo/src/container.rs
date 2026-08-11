@@ -276,6 +276,8 @@ pub struct PrimitiveScan {
     pub scalar_arrays: Vec<PrimitiveScalarArray>,
     /// Complete named position-only triangle strips from expanded primitive data.
     pub triangle_strips: Vec<PrimitiveTriangleStrip>,
+    /// Triangle-strip records whose complete position or normal representations disagree.
+    pub conflicting_triangle_strip_representation_count: usize,
 }
 
 /// Model-space reference entities decoded from `MdlRefInfo`.
@@ -2076,11 +2078,18 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         .filter(|section| section.name == "SolidPrimdata")
         .flat_map(|section| primdata::scalar_arrays(&section.data))
         .collect();
-    let primitive_triangle_strips = expanded_sections
-        .iter()
-        .filter(|section| section.name == "SolidPrimdata")
-        .flat_map(|section| primdata::triangle_strips(&section.data))
-        .collect();
+    let (primitive_triangle_strips, conflicting_triangle_strip_representation_count) =
+        expanded_sections
+            .iter()
+            .filter(|section| section.name == "SolidPrimdata")
+            .map(|section| primdata::triangle_strips(&section.data))
+            .fold((Vec::new(), 0usize), |(mut strips, conflicts), scan| {
+                strips.extend(scan.strips);
+                (
+                    strips,
+                    conflicts.saturating_add(scan.conflicting_representation_count),
+                )
+            });
     let reference_lines = sections
         .iter()
         .filter(|section| section.name == "MdlRefInfo")
@@ -2342,6 +2351,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             double_xar_tables,
             scalar_arrays: primitive_scalar_arrays,
             triangle_strips: primitive_triangle_strips,
+            conflicting_triangle_strip_representation_count,
         },
         references: ReferenceScan {
             lines: reference_lines,

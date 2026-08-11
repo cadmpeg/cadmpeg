@@ -4079,7 +4079,10 @@ differences are triangle-strip lengths and each is at least three.
 `mv_p_xyz` supplies exactly the final cumulative count of XYZ positions. An
 `mv_p_NxNyNzxyz` array supplies the same position count through complete
 normal-position tuples and transfers its first three tuple values as vertex
-normals.
+normals. When a record contains multiple complete position representations,
+their position sequences must be equal. Multiple complete normal-position
+arrays must also have equal normal sequences. A disagreement invalidates the
+triangle-strip record; source order does not select one representation.
 Strip triangles alternate winding: `[i,i+1,i+2]`, then `[i,i+2,i+1]`.
 
 ### 8.5 Model reference geometry
