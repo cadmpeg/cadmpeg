@@ -843,6 +843,71 @@ Legacy coordinate-frame groups without serialized plane-reference wrappers conta
 
 Each `PMISemanticDataDB` dimension uses `cadText` value `<dimension-name>@<feature-name>` to identify its owning history parameter. `dimItems` is a one-element array whose element is a `DimSemData` map. The binding is valid when the feature name is unique and all records for the same owner and dimension name encode one equivalent semantic dimension with the same subtype, value, precision, display text, and flags. `Linear`, `Diameter`, and `Radial` values are f64 metres. These values supply history dimensions when the Keywords record omits them; an explicit Keywords dimension has precedence.
 
+### 2.1 SWIFT semantic PMI
+
+A `SWIFT/ConfigN-SchemaM` stream contains one GDT-analysis part object. The
+part object begins with the Pascal string `Entity`, the Pascal string
+`PrizMetrik.GdtAnalysisSupport.GdtPart`, an assembly-name Pascal string, and a
+u32 LE object version. A Pascal string is one u8 byte length followed by that
+many UTF-8 bytes. The complete stream can contain other data before and after
+the part object. Exactly one complete part object selects the semantic graph.
+
+Each entity has this header and terminator:
+
+| Field | Encoding | Semantics |
+| --- | --- | --- |
+| marker | Pascal string `Entity` | Entity start |
+| class | Pascal string | Qualified runtime class |
+| assembly | Pascal string | Runtime assembly name |
+| version | u32 LE | Serialization version |
+| sections | section sequence | Typed fields and relations |
+| terminator | Pascal string `EndEntity` | Entity end |
+
+Entity sections use these grammars:
+
+| Start token | Counted values | End token |
+| --- | --- | --- |
+| `Strings` | u32 LE count; Pascal-string key and Pascal-string value | `EndStrings` |
+| `Integers` | u32 LE count; Pascal-string key and i32 LE value | `EndIntegers` |
+| `Doubles` | u32 LE count; Pascal-string key and f64 LE value | `EndDoubles` |
+| `Features` | u32 LE count; feature ID and type Pascal-string pairs; owned entity definitions follow the roster | `EndFeatures` |
+| `Annotations` | u32 LE count; annotation ID and type Pascal-string pairs; owned entity definitions follow the roster | `EndAnnotations` |
+| `RelatedObjects` | u32 LE count; relation name and type Pascal-string pairs; one entity for each pair | `EndRelatedObjects` |
+
+The part `Features` section owns the semantic feature definitions. The part
+`Annotations` section owns the semantic annotation definitions. Other feature
+and annotation rosters reference these part-owned identities. A
+`GdtAppliedDatumCollection` owns its ordered `GdtAppliedDatum` objects through
+`SubAnnotationN` related objects. Each applied datum references one part-owned
+`GdtDatum` annotation. The relation names `PrimaryDatums`, `SecondaryDatums`,
+and `TertiaryDatums` set datum precedence 1, 2, and 3.
+
+GDT-analysis double fields use millimetres for lengths and radians for angles.
+`Tolerance` is the geometric-tolerance magnitude. `Nominal`, `LowerLimit`,
+`UpperLimit`, `MinusTolerance`, and `PlusTolerance` are dimension values. A
+signed `MinusTolerance` is already the lower deviation. A zero `Nominal` on a
+feature-size annotation without the integer field `Dimension` delegates the
+nominal to the referenced semantic feature geometry. `ToleranceLowerTier` is
+the lower segment of a composite surface-profile tolerance.
+
+The geometric-tolerance classes map by their suffix: `GdtStraightness`,
+`GdtFlatness`, `GdtRoundness`, `GdtCircularity`, `GdtCylindricity`,
+`GdtCoaxiality`, `GdtLineProfile`, `GdtSurfaceProfile`,
+`GdtCompositeSurfaceProfile`, `GdtAngularity`, `GdtPerpendicularity`,
+`GdtParallelism`, `GdtPosition`, `GdtConcentricity`, `GdtSymmetry`,
+`GdtCircularRunout`, and `GdtTotalRunout`. Dimension classes include
+`GdtDiameter`, `GdtRadius`, `GdtAngle`, `GdtAngleBetween`,
+`GdtCounterSinkAngle`, `GdtDistanceBetween`, `GdtWidth`, `GdtLength`,
+`GdtDepth`, `GdtCounterBore`, and `GdtCounterSinkDiameter`.
+
+The integer field `Modifier` uses `0` for no material requirement, `1` for
+maximum material requirement, and `2` for least material requirement. The same
+values apply to `GdtAppliedDatum.Modifier`. `ProjectedZoneEnabled` selects the
+millimetre value in `ProjectedZoneValue`. `IsMaxTolerance` selects the
+millimetre value in `MaxTolerance`. `PerUnitAreaType` value `0` defines a
+rectangular unit from `PerUnitAreaLength` and `PerUnitAreaWidth`; value `1`
+defines a circular unit from `PerUnitAreaDiameter`.
+
 ---
 
 ## 3. Parasolid stream

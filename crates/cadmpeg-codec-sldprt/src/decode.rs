@@ -2106,6 +2106,7 @@ fn build_geometry_ir(
         &mut supplemental_config_lanes,
     );
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations);
+    ir.model.pmi = crate::swift::annotations(scan);
     project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
     crate::resolved_features::operations::bind_extrusion_operations(
         &mut ir.model.features,
@@ -2967,6 +2968,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
             ),
         );
     }
+    append_swift_pmi_losses(scan, &mut losses);
     DecodeReport {
         format: "sldprt".to_string(),
         container_only: false,
@@ -2995,6 +2997,7 @@ fn build_metadata_ir(
         &mut supplemental_config_lanes,
     );
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations);
+    ir.model.pmi = crate::swift::annotations(scan);
     let (sketches, sketch_entities, sketch_constraints) =
         crate::resolved_features::sketch_projection::sketches(scan, &mut annotations);
     let mut model_attributes = crate::metadata::attributes(scan, &mut annotations);
@@ -3997,6 +4000,15 @@ fn stamp_local_digests(ir: &mut CadIr) {
             }
         }
     }
+    if !ir.model.pmi.is_empty() {
+        if let Ok(hash) = crate::writer::pmi_local_sha256(ir) {
+            if let Some(source) = &mut ir.source {
+                source
+                    .attributes
+                    .insert(crate::writer::PMI_LOCAL_DIGEST_ATTRIBUTE.into(), hash);
+            }
+        }
+    }
     let hash = document_local_sha256(ir);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
@@ -4147,6 +4159,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
             ),
         );
     }
+    append_swift_pmi_losses(scan, &mut losses);
 
     DecodeReport {
         format: "sldprt".to_string(),
@@ -4157,6 +4170,22 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         losses,
         notes: summary.notes,
     }
+}
+
+fn append_swift_pmi_losses(scan: &ContainerScan<'_>, losses: &mut Vec<cadmpeg_ir::LossNote>) {
+    let unsupported = crate::swift::unsupported_annotation_classes(scan);
+    if unsupported.is_empty() {
+        return;
+    }
+    let count = unsupported.values().sum::<usize>();
+    let classes = unsupported
+        .iter()
+        .map(|(class, count)| format!("{class} ({count})"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    losses.push(SldprtLossCode::PmiSwiftAnnotationUnsupported.note(format!(
+        "{count} SWIFT semantic annotation(s) have no neutral PMI definition: {classes}."
+    )));
 }
 
 #[cfg(test)]

@@ -44,6 +44,8 @@ pub enum SldprtLossCode {
     ParameterAmbiguousIdentity,
     /// Semantic dimension record is unbound or retains a native subtype.
     PmiDimensionUnbound,
+    /// SWIFT annotation class has no format-neutral PMI representation.
+    PmiSwiftAnnotationUnsupported,
     /// Feature history record has duplicate identity or unresolved references.
     HistoryIncompleteReferences,
     /// Feature record has missing, repeated, or non-preceding tree edges.
@@ -112,6 +114,7 @@ impl SldprtLossCode {
         Self::ParameterUnevaluated,
         Self::ParameterAmbiguousIdentity,
         Self::PmiDimensionUnbound,
+        Self::PmiSwiftAnnotationUnsupported,
         Self::HistoryIncompleteReferences,
         Self::FeatureIncoherentEdges,
         Self::FeatureIncoherentContent,
@@ -155,6 +158,7 @@ impl SldprtLossCode {
             Self::ParameterUnevaluated => "parameter.unevaluated",
             Self::ParameterAmbiguousIdentity => "parameter.ambiguous-identity",
             Self::PmiDimensionUnbound => "pmi.dimension-unbound",
+            Self::PmiSwiftAnnotationUnsupported => "pmi.swift-annotation-unsupported",
             Self::HistoryIncompleteReferences => "history.incomplete-references",
             Self::FeatureIncoherentEdges => "feature.incoherent-edges",
             Self::FeatureIncoherentContent => "feature.incoherent-content",
@@ -252,6 +256,7 @@ mod tests {
                 "parameter.unevaluated",
                 "parameter.ambiguous-identity",
                 "pmi.dimension-unbound",
+                "pmi.swift-annotation-unsupported",
                 "history.incomplete-references",
                 "feature.incoherent-edges",
                 "feature.incoherent-content",

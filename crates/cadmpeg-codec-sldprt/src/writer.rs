@@ -23,6 +23,7 @@ pub(crate) const SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE: &str =
     "sldprt_swobjects_material_local_sha256";
 pub(crate) const SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE: &str =
     "sldprt_swobjects_metadata_identity_local_sha256";
+pub(crate) const PMI_LOCAL_DIGEST_ATTRIBUTE: &str = "sldprt_pmi_local_sha256";
 
 pub(crate) fn write_semantic_with_records(
     ir: &CadIr,
@@ -560,6 +561,17 @@ fn section_type_ids(
 }
 
 fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), CodecError> {
+    let pmi_baseline = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get(PMI_LOCAL_DIGEST_ATTRIBUTE));
+    if (pmi_baseline.is_some() || !ir.model.pmi.is_empty())
+        && pmi_baseline != Some(&pmi_local_sha256(ir)?)
+    {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT writer cannot edit retained SWIFT semantic PMI".into(),
+        ));
+    }
     if ir.source.as_ref().is_some_and(|source| {
         source
             .attributes
@@ -666,6 +678,12 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
         }
     }
     Ok(())
+}
+
+pub(crate) fn pmi_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
+    let bytes = serde_json::to_vec(&ir.model.pmi)
+        .map_err(|error| CodecError::Malformed(format!("cannot hash SLDPRT PMI: {error}")))?;
+    Ok(cadmpeg_ir::hash::sha256_hex(&bytes))
 }
 
 fn configuration_partitions(
@@ -3412,6 +3430,47 @@ mod nurbs_write_tests {
     use super::*;
     use cadmpeg_ir::geometry::SurfaceGeometry;
     use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn retained_swift_pmi_requires_an_unchanged_semantic_baseline() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.pmi.push(cadmpeg_ir::PmiAnnotation {
+            id: cadmpeg_ir::ids::PmiId("sldprt:model:pmi#A1".into()),
+            name: Some("datum A".into()),
+            targets: vec![cadmpeg_ir::PmiTarget::ShapeAspect {
+                source_id: "F1".into(),
+            }],
+            definition: cadmpeg_ir::PmiDefinition::Datum {
+                identification: "A".into(),
+            },
+        });
+        let hash = pmi_local_sha256(&ir).expect("PMI baseline hash");
+        ir.source = Some(cadmpeg_ir::document::SourceMeta {
+            format: "sldprt".into(),
+            attributes: std::collections::BTreeMap::from([(
+                PMI_LOCAL_DIGEST_ATTRIBUTE.into(),
+                hash,
+            )]),
+        });
+        assert!(check_semantic_support(&ir, &Annotations::default()).is_ok());
+
+        let cadmpeg_ir::PmiDefinition::Datum { identification } =
+            &mut ir.model.pmi.first_mut().expect("PMI annotation").definition
+        else {
+            panic!("datum definition");
+        };
+        *identification = "B".into();
+        assert!(matches!(
+            check_semantic_support(&ir, &Annotations::default()),
+            Err(CodecError::NotImplemented(message)) if message.contains("SWIFT semantic PMI")
+        ));
+
+        ir.model.pmi.clear();
+        assert!(matches!(
+            check_semantic_support(&ir, &Annotations::default()),
+            Err(CodecError::NotImplemented(message)) if message.contains("SWIFT semantic PMI")
+        ));
+    }
 
     #[test]
     fn writes_surface_degree_from_stored_descriptor() {

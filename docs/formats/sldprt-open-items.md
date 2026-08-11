@@ -522,6 +522,22 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs:258-444` accepts finite direction triples whose norm is within tolerance, and several layout branches return the first matching direction. The final ambiguous branch rejects distinct vectors, but the test in `axes_tests.rs:26-46` covers only that branch. If one record satisfies two layout predicates with different valid unit triples, the first branch wins without proving the other candidate invalid. Commit `e0037cf23` added negative coverage but did not establish the native width or trailer semantics from an independent record. Confidence: high.
 
+### DI-33. SWIFT feature-to-topology identity
+
+**Question.** How does each `GdtAnalysis.CadRef.CadIdentifier` select a Parasolid body, face, edge, or vertex identity?
+
+**Known.** `sldprt.md` §2.1 defines the SWIFT annotation-to-feature graph. Each semantic feature owns a `CadReferences` collection. Each `CadRef` stores a `CadIdentifier`. The annotation target remains the stable GDT-analysis feature identity when that identifier does not resolve to one neutral topology object.
+
+**Need.** We must know the identity conversion to attach semantic PMI to the exact neutral topology object.
+
+### DI-34. SWIFT implicit nominal construction
+
+**Question.** Which nominal-geometry rule applies to each feature-size annotation whose `Nominal` field is zero and whose `Dimension` field is absent?
+
+**Known.** `sldprt.md` §2.1 defines zero as delegation to semantic feature geometry. A cylinder's `NomCylinder.R` supplies its radius and twice that value supplies its diameter. Plane pairs, compound widths, patterns, holes, and countersinks carry different related nominal-geometry objects.
+
+**Need.** We must derive the nominal for every dimension class without treating the zero delegation value as a measured dimension.
+
 ## 6. Write-path evidence
 
 ### EV-03. Regenerated `SWObjects` record content

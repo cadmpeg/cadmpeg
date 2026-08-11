@@ -5576,6 +5576,12 @@ section = "10"
 anchor = "For a prefixed subrecord, `body[14] == 0x01`, each slot is `[01][hi][lo]`, and the first byte after the slot run is `00`"
 
 [[not_applicable]]
+area = "SWIFT semantic PMI object graph (§2.1)"
+reason = "Token-framed variable-length grammar. Every entity and section is delimited by Pascal-string tokens and counted key/value or relation rosters; no field has a fixed offset from the stream or entity start."
+section = "2.1"
+anchor = "Entity sections use these grammars"
+
+[[not_applicable]]
 area = "Compound File Binary directory entry (§1)"
 reason = "The spec states the 128-byte entry size and names the fields but states no offset for any of them; the layout is the external CFB specification, not a cadmpeg finding."
 section = "1"

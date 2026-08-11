@@ -108,6 +108,7 @@ pub mod parasolid;
 mod pmi;
 pub mod records;
 mod resolved_features;
+mod swift;
 mod tessellation;
 mod writer;
 mod writer_patch;
