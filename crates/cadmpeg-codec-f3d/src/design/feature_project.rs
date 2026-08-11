@@ -1427,9 +1427,12 @@ pub fn project_parameter_design_with_edge_identities(
             continue;
         };
         let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
-        for state_id in construction.rule.inputs().iter().filter_map(|input| {
-            work_point_edge_operand(scope, input, edge_operands)?.recipe_state_id
-        }) {
+        for state_id in construction
+            .rule
+            .inputs()
+            .iter()
+            .filter_map(|input| work_point_input_history_state_id(scope, input, edge_operands))
+        {
             let Some(Some(dependency)) = history_state_features.get(&(stream, state_id)) else {
                 continue;
             };
@@ -1669,6 +1672,36 @@ fn work_point_edge_operand<'a>(
     matching.next().is_none().then_some(operand)
 }
 
+pub(crate) fn work_point_input_history_state_id(
+    scope: &DesignParameterScope,
+    input: &crate::records::DesignWorkPointInput,
+    edge_operands: &[DesignEdgeOperand],
+) -> Option<i64> {
+    match input.carrier.as_deref()? {
+        crate::records::DesignWorkPointInputCarrier::EdgeRecipe { .. } => {
+            work_point_edge_operand(scope, input, edge_operands)?.recipe_state_id
+        }
+        crate::records::DesignWorkPointInputCarrier::VertexRecipe { recipe } => {
+            recipe.resolved_vertex_slot.and(recipe.recipe_state_id)
+        }
+        crate::records::DesignWorkPointInputCarrier::WorkPlane { .. } => None,
+    }
+}
+
+pub(crate) fn work_point_recipe_state_id(
+    scope: &DesignParameterScope,
+    edge_operands: &[DesignEdgeOperand],
+) -> Option<i64> {
+    let construction = scope.work_point_construction.as_ref()?;
+    let mut states = construction
+        .rule
+        .inputs()
+        .iter()
+        .filter_map(|input| work_point_input_history_state_id(scope, input, edge_operands));
+    let state = states.next()?;
+    states.all(|candidate| candidate == state).then_some(state)
+}
+
 fn project_work_point_construction(
     scope: &DesignParameterScope,
     construction: &crate::records::DesignWorkPointConstruction,
@@ -1731,9 +1764,26 @@ fn project_work_point_construction(
             else {
                 return None;
             };
-            DatumPointConstruction::Vertex {
-                vertex: VertexSelection::Native(recipe.recipe_id.clone()),
-            }
+            let vertex = recipe
+                .recipe_state_id
+                .zip(recipe.resolved_vertex_slot)
+                .map_or_else(
+                    || VertexSelection::Native(recipe.recipe_id.clone()),
+                    |(state_id, vertex_slot)| {
+                        let feature_id = neutral_feature_id(scope);
+                        let feature_key = feature_id
+                            .0
+                            .split_once('#')
+                            .map_or(feature_id.0.as_str(), |(_, key)| key);
+                        let prefix = ids::history_input_prefix(feature_key, state_id);
+                        VertexSelection::Historical {
+                            state: feature_input_topology_id(&feature_id, state_id),
+                            vertex: ids::history_input_vertex_id(&prefix, vertex_slot),
+                            native: recipe.recipe_id.clone(),
+                        }
+                    },
+                );
+            DatumPointConstruction::Vertex { vertex }
         }
         DesignWorkPointRule::EdgePlaneIntersection { inputs } => {
             DatumPointConstruction::EdgePlaneIntersection {

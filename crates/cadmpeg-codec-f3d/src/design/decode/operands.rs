@@ -221,6 +221,28 @@ pub fn bind_work_point_input_carriers(
     Ok(())
 }
 
+/// Bind persistent subentity candidates carried by decoded `WorkPoint` vertex recipes.
+pub fn bind_work_point_vertex_recipe_candidates(
+    scopes: &mut [DesignParameterScope],
+    tags: &[PersistentSubentityTag],
+) {
+    for scope in scopes.iter_mut().filter(|scope| scope.kind == "WorkPoint") {
+        let Some(construction) = &mut scope.work_point_construction else {
+            continue;
+        };
+        for input in construction.rule.inputs_mut() {
+            let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) =
+                input.carrier.as_deref_mut()
+            else {
+                continue;
+            };
+            for reference in &mut recipe.recipe_references {
+                bind_recipe_reference_candidates(reference, tags, Some(&scope.id));
+            }
+        }
+    }
+}
+
 /// Whether a feature family owns edge-recipe operands directly or through a
 /// counted construction-operand group.
 pub(crate) fn has_edge_recipe_operands(kind: &str) -> bool {
@@ -3066,6 +3088,8 @@ pub(crate) fn parse_work_point_vertex_recipe(
         recipe_references: parsed.recipe_references,
         recipe_program_offset: parsed.recipe_program_offset,
         recipe_program: parsed.recipe_program,
+        recipe_state_id: None,
+        resolved_vertex_slot: None,
         next_record_index: parsed.next_record_index,
         next_byte_offset: parsed.next_byte_offset,
     })

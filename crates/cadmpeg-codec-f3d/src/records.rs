@@ -1961,6 +1961,12 @@ pub struct DesignWorkPointVertexRecipe {
     pub recipe_program_offset: u64,
     /// Complete post-name i32 program.
     pub recipe_program: Vec<i32>,
+    /// Historical topology state against which the vertex recipe was evaluated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipe_state_id: Option<i64>,
+    /// Stable vertex slot proven by the persistent face references and solved point.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_vertex_slot: Option<i64>,
     /// Identity of the indexed record closing the envelope.
     pub next_record_index: u32,
     /// Byte offset of the indexed record closing the envelope.

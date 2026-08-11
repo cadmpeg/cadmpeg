@@ -3792,6 +3792,15 @@ fn extend_related_design_records(
         &native.construction_recipes,
         &native.design_edge_operands,
     )?;
+    crate::design::decode::operands::bind_work_point_vertex_recipe_candidates(
+        &mut native.design_parameter_scopes,
+        &native.persistent_subentity_tags,
+    );
+    crate::history::bind_work_point_vertex_history(
+        &mut native.design_parameter_scopes,
+        &native.design_feature_timelines,
+        &native.asm_histories,
+    )?;
     native.design_face_operands = crate::design::decode::operands::decode_face_operands(
         scan,
         &native.design_parameter_scopes,

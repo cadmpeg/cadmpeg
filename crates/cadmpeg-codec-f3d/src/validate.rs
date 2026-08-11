@@ -3380,11 +3380,18 @@ fn valid_work_point_construction(
                 }
                 Some(records::DesignWorkPointInputCarrier::VertexRecipe { recipe: vertex }) => {
                     let recipe = ctx.recipes_by_id.get(vertex.recipe_id.as_str());
-                    let expected_references =
+                    let mut expected_references =
                         design::decode::dimension_frames::decode_recipe_references(
                             &vertex.recipe_prefix_bytes,
                             vertex.recipe_prefix_offset,
                         );
+                    for reference in &mut expected_references {
+                        design::decode::dimension_frames::bind_recipe_reference_candidates(
+                            reference,
+                            &native.persistent_subentity_tags,
+                            Some(&scope.id),
+                        );
+                    }
                     let prefix_length = u64::try_from(vertex.recipe_prefix_bytes.len()).ok();
                     let family_name_length =
                         u64::try_from(design::construction_recipe_family_name_len(
@@ -3394,6 +3401,29 @@ fn valid_work_point_construction(
                     let program_byte_length = u64::try_from(vertex.recipe_program.len())
                         .ok()
                         .and_then(|length| length.checked_mul(4));
+                    let resolution_is_valid =
+                        match (vertex.recipe_state_id, vertex.resolved_vertex_slot) {
+                            (None, None) => true,
+                            (Some(state_id), Some(vertex_slot)) if vertex_slot >= 0 => {
+                                let mut states = native
+                                    .asm_histories
+                                    .iter()
+                                    .flat_map(|history| &history.states)
+                                    .filter(|state| state.state_id == state_id);
+                                states.next().is_some_and(|state| {
+                                    states.next().is_none()
+                                        && state.topology.as_ref().map_or_else(
+                                            || {
+                                                history::projection_was_finalized(
+                                                    &native.asm_histories,
+                                                )
+                                            },
+                                            |topology| topology.vertices.contains(&vertex_slot),
+                                        )
+                                })
+                            }
+                            _ => false,
+                        };
                     vertex.class_tag.len() == 3
                         && vertex.class_tag.bytes().all(|byte| byte.is_ascii_digit())
                         && header.is_some_and(|header| {
@@ -3415,6 +3445,7 @@ fn valid_work_point_construction(
                                     .map_or(u64::MAX, |recipe| recipe.byte_offset.saturating_sub(4))
                         })
                         && vertex.recipe_references == expected_references
+                        && resolution_is_valid
                         && recipe.is_some_and(|recipe| {
                             design_stream(&recipe.id) == native_stream
                                 && recipe.kind == records::ConstructionRecipeKind::Vertex

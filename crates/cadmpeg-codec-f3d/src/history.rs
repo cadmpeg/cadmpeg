@@ -25,6 +25,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 const DELTA: &[u8] = b"\x11\x0d\x0bdelta_state";
 const PREAMBLE: &[u8] = b"\x0d\x0ehistory_stream";
+/// Relative tolerance for matching independently decoded millimetre point carriers.
+const WORK_POINT_POSITION_TOLERANCE: f64 = 1.0e-9;
 
 pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
     if history.states.is_empty()
@@ -2092,19 +2094,7 @@ pub(crate) fn project_feature_input_topologies(
             let previous_state_id = scope
                 .previous_history_state_id
                 .or_else(|| {
-                    let stream = crate::ids::native_stream(&scope.id);
-                    let operands = edge_operands
-                        .iter()
-                        .filter(|operand| {
-                            operand.scope_record_index == scope.record_index
-                                && crate::ids::native_stream(&operand.id) == stream
-                        })
-                        .collect::<Vec<_>>();
-                    let state = operands.first()?.recipe_state_id?;
-                    operands
-                        .iter()
-                        .all(|operand| operand.recipe_state_id == Some(state))
-                        .then_some(state)
+                    crate::design::feature_project::work_point_recipe_state_id(scope, edge_operands)
                 })
                 .or_else(|| effective_scope_previous_history_state_id(scope, histories))?;
             let state = scope
@@ -2148,6 +2138,171 @@ pub(crate) fn project_feature_input_topologies(
             })
         })
         .collect()
+}
+
+/// Resolve `WorkPoint` vertex recipes in the last history-bearing feature state
+/// that precedes the point in authored timeline order.
+pub(crate) fn bind_work_point_vertex_history(
+    scopes: &mut [crate::records::DesignParameterScope],
+    timelines: &[crate::records::DesignFeatureTimeline],
+    histories: &[AsmHistory],
+) -> Result<(), cadmpeg_core::CodecError> {
+    let source_ordinals =
+        crate::design::feature_project::authored_scope_ordinals_per_stream(scopes, timelines)?;
+    let input_states = scopes
+        .iter()
+        .filter(|scope| scope.kind == "WorkPoint")
+        .filter_map(|scope| {
+            let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+            let ordinal = *source_ordinals.get(&(stream, scope.record_index))?;
+            let mut predecessors = scopes.iter().filter_map(|candidate| {
+                let candidate_stream =
+                    crate::ids::native_stream(&candidate.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+                let candidate_ordinal =
+                    *source_ordinals.get(&(candidate_stream, candidate.record_index))?;
+                (candidate_stream == stream && candidate_ordinal < ordinal)
+                    .then_some((candidate_ordinal, candidate.history_state_id?))
+            });
+            let predecessor = predecessors.next()?;
+            let predecessor = predecessors.fold(predecessor, |latest, candidate| {
+                if candidate.0 > latest.0 {
+                    candidate
+                } else {
+                    latest
+                }
+            });
+            Some((scope.id.clone(), predecessor.1))
+        })
+        .collect::<HashMap<_, _>>();
+
+    for scope in scopes.iter_mut().filter(|scope| scope.kind == "WorkPoint") {
+        let Some(construction) = &mut scope.work_point_construction else {
+            continue;
+        };
+        let solved_position = cadmpeg_ir::math::Point3::new(
+            construction.position[0] * 10.0,
+            construction.position[1] * 10.0,
+            construction.position[2] * 10.0,
+        );
+        for input in construction.rule.inputs_mut() {
+            let Some(crate::records::DesignWorkPointInputCarrier::VertexRecipe { recipe }) =
+                input.carrier.as_deref_mut()
+            else {
+                continue;
+            };
+            recipe.recipe_state_id = None;
+            recipe.resolved_vertex_slot = None;
+            let Some(state_id) = input_states.get(&scope.id).copied() else {
+                continue;
+            };
+            let Some((_, state)) = unique_history_state(histories, state_id) else {
+                continue;
+            };
+            let Some(topology) = state.topology.as_ref() else {
+                continue;
+            };
+            let face_slots = recipe
+                .recipe_references
+                .iter()
+                .map(|reference| {
+                    let mut slots = reference
+                        .candidate_faces
+                        .iter()
+                        .filter_map(|face| stable_ref(&face.0))
+                        .filter(|face| topology.faces.contains(face))
+                        .collect::<Vec<_>>();
+                    slots.sort_unstable();
+                    slots.dedup();
+                    let [slot] = slots.as_slice() else {
+                        return None;
+                    };
+                    Some(*slot)
+                })
+                .collect::<Option<Vec<_>>>();
+            let Some(face_slots) = face_slots.filter(|faces| !faces.is_empty()) else {
+                continue;
+            };
+            let Some(vertex) = common_face_vertex(&face_slots, topology) else {
+                continue;
+            };
+            let Some(position) = unique_historical_vertex_position(vertex, topology) else {
+                continue;
+            };
+            if !point_matches(position, solved_position) {
+                continue;
+            }
+            recipe.recipe_state_id = Some(state_id);
+            recipe.resolved_vertex_slot = Some(vertex);
+        }
+    }
+    Ok(())
+}
+
+fn common_face_vertex(face_slots: &[i64], topology: &AsmHistoricalTopology) -> Option<i64> {
+    let boundary_edges = face_boundary_edge_index(topology);
+    let mut sets = face_slots.iter().map(|face| {
+        boundary_edges
+            .get(face)?
+            .iter()
+            .map(|edge_slot| {
+                let mut edges = topology
+                    .edge_vertices
+                    .iter()
+                    .filter(|candidate| candidate.edge == *edge_slot);
+                let edge = edges.next()?;
+                (edges.next().is_none()
+                    && topology.vertices.contains(&edge.start_vertex)
+                    && topology.vertices.contains(&edge.end_vertex))
+                .then_some([edge.start_vertex, edge.end_vertex])
+            })
+            .collect::<Option<Vec<_>>>()
+            .map(|endpoints| endpoints.into_iter().flatten().collect::<HashSet<_>>())
+            .filter(|vertices| !vertices.is_empty())
+    });
+    let mut common = sets.next()??;
+    for vertices in sets {
+        let vertices = vertices?;
+        common.retain(|vertex| vertices.contains(vertex));
+    }
+    let mut common = common.into_iter().collect::<Vec<_>>();
+    common.sort_unstable();
+    let [vertex] = common.as_slice() else {
+        return None;
+    };
+    Some(*vertex)
+}
+
+fn unique_historical_vertex_position(
+    vertex: i64,
+    topology: &AsmHistoricalTopology,
+) -> Option<cadmpeg_ir::math::Point3> {
+    let mut bindings = topology
+        .vertex_points
+        .iter()
+        .filter(|binding| binding.entity == vertex);
+    let point = bindings.next()?.carrier;
+    if bindings.next().is_some() {
+        return None;
+    }
+    let mut positions = topology
+        .point_positions
+        .iter()
+        .filter(|position| position.point == point);
+    let position = positions.next()?.position;
+    (positions.next().is_none()
+        && position.x.is_finite()
+        && position.y.is_finite()
+        && position.z.is_finite())
+    .then_some(position)
+}
+
+fn point_matches(left: cadmpeg_ir::math::Point3, right: cadmpeg_ir::math::Point3) -> bool {
+    [(left.x, right.x), (left.y, right.y), (left.z, right.z)]
+        .into_iter()
+        .all(|(left, right)| {
+            let scale = left.abs().max(right.abs()).max(1.0);
+            (left - right).abs() <= WORK_POINT_POSITION_TOLERANCE * scale
+        })
 }
 
 fn feature_input_prefix(
@@ -6894,6 +7049,242 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn work_point_vertex_recipe_resolves_common_historical_vertex() {
+        use crate::history_records::{
+            AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge,
+            AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology, AsmHistory,
+        };
+        use crate::records::{
+            DesignFeatureTimeline, DesignRecipeReference, DesignWorkPointConstruction,
+            DesignWorkPointInput, DesignWorkPointInputCarrier, DesignWorkPointRule,
+            DesignWorkPointVertexRecipe,
+        };
+        use cadmpeg_ir::ids::FaceId;
+        use cadmpeg_ir::math::Point3;
+
+        let stream = "f3d:Design/BulkStream.dat";
+        let mut extrude = crate::records::DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#100"),
+            "Extrude",
+            100,
+        );
+        extrude.history_state_id = Some(4);
+        let reference = |face: i64| DesignRecipeReference {
+            selector: 1,
+            selector_offset: 0,
+            token: face.to_string(),
+            token_offset: 0,
+            design_reference: 200,
+            design_reference_offset: 0,
+            candidate_faces: vec![FaceId(crate::ids::brep_entity_id(face))],
+            candidate_edges: Vec::new(),
+            alternate_selector_faces: Vec::new(),
+            alternate_selector_edges: Vec::new(),
+        };
+        let recipe = DesignWorkPointVertexRecipe {
+            class_tag: "369".into(),
+            paired_byte_offset: 1,
+            paired_class_tag: "261".into(),
+            recipe_record_index: 203,
+            recipe_record_byte_offset: 2,
+            recipe_id: format!("{stream}:construction-recipe#vertex"),
+            recipe_prefix_offset: 3,
+            recipe_prefix_bytes: Vec::new(),
+            recipe_references: vec![reference(10), reference(11), reference(12)],
+            recipe_program_offset: 4,
+            recipe_program: vec![0],
+            recipe_state_id: None,
+            resolved_vertex_slot: None,
+            next_record_index: 205,
+            next_byte_offset: 5,
+        };
+        let mut work_point = crate::records::DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#200"),
+            "WorkPoint",
+            200,
+        );
+        work_point.work_point_construction = Some(DesignWorkPointConstruction {
+            point_record_index: 201,
+            point_record_byte_offset: 0,
+            position: [4.0, 3.0, 0.0],
+            position_offset: 0,
+            rule: DesignWorkPointRule::Vertex {
+                input: DesignWorkPointInput {
+                    record_index: 202,
+                    reference_offset: 0,
+                    carrier: Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
+                        recipe,
+                    })),
+                },
+            },
+            reference_type_offset: 0,
+        });
+        let relation = |owner_ref, member_refs| AsmHistoricalRelation {
+            owner_ref,
+            member_refs,
+        };
+        let coedge = |coedge, owner_loop, edge| AsmHistoricalCoedge {
+            coedge,
+            owner_loop,
+            edge,
+            next: coedge,
+            previous: coedge,
+            radial_next: coedge,
+        };
+        let edge = |edge, start_vertex, end_vertex| AsmHistoricalEdge {
+            edge,
+            start_vertex,
+            end_vertex,
+        };
+        let topology = AsmHistoricalTopology {
+            faces: vec![10, 11, 12],
+            loops: vec![110, 111, 112],
+            coedges: (1000..1009).collect(),
+            edges: (2000..2009).collect(),
+            vertices: vec![40, 41, 42, 43, 44, 45, 46],
+            points: vec![50],
+            face_loops: vec![
+                relation(10, vec![110]),
+                relation(11, vec![111]),
+                relation(12, vec![112]),
+            ],
+            loop_coedges: vec![
+                relation(110, vec![1000, 1001, 1002]),
+                relation(111, vec![1003, 1004, 1005]),
+                relation(112, vec![1006, 1007, 1008]),
+            ],
+            coedge_topology: vec![
+                coedge(1000, 110, 2000),
+                coedge(1001, 110, 2001),
+                coedge(1002, 110, 2002),
+                coedge(1003, 111, 2003),
+                coedge(1004, 111, 2004),
+                coedge(1005, 111, 2005),
+                coedge(1006, 112, 2006),
+                coedge(1007, 112, 2007),
+                coedge(1008, 112, 2008),
+            ],
+            edge_vertices: vec![
+                edge(2000, 40, 41),
+                edge(2001, 41, 42),
+                edge(2002, 42, 40),
+                edge(2003, 40, 43),
+                edge(2004, 43, 44),
+                edge(2005, 44, 40),
+                edge(2006, 40, 45),
+                edge(2007, 45, 46),
+                edge(2008, 46, 40),
+            ],
+            vertex_points: vec![AsmHistoricalCarrierBinding {
+                entity: 40,
+                carrier: 50,
+            }],
+            point_positions: vec![AsmHistoricalPoint {
+                point: 50,
+                position: Point3::new(40.0, 30.0, 0.0),
+            }],
+            ..AsmHistoricalTopology::default()
+        };
+        let history = AsmHistory {
+            id: "f3d:history".into(),
+            byte_offset: 0,
+            stream_size: None,
+            history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
+            states: vec![AsmDeltaState {
+                id: "f3d:history:state#4".into(),
+                parent: "f3d:history".into(),
+                byte_offset: 0,
+                state_id: 4,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: 0,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                entity_versions: Vec::new(),
+                record_table_complete: true,
+                topology: Some(topology),
+                transition: None,
+            }],
+        };
+        let timeline = DesignFeatureTimeline {
+            id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+            byte_offset: 0,
+            class_tag: "256".into(),
+            record_index: 1,
+            source_ordinal: 0,
+            frame_length: 0,
+            context_record_index: 1,
+            context_record_index_offset: 0,
+            item_count_offset: 0,
+            item_record_indices: vec![100, 200],
+            item_record_index_offsets: vec![0, 0],
+        };
+        let mut scopes = vec![extrude, work_point];
+
+        super::bind_work_point_vertex_history(
+            &mut scopes,
+            std::slice::from_ref(&timeline),
+            std::slice::from_ref(&history),
+        )
+        .expect("authored WorkPoint history");
+        let construction = scopes[1]
+            .work_point_construction
+            .as_ref()
+            .expect("WorkPoint construction");
+        let DesignWorkPointRule::Vertex { input } = &construction.rule else {
+            unreachable!("test construction is vertex-based")
+        };
+        let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier.as_deref()
+        else {
+            unreachable!("test input carries a vertex recipe")
+        };
+        assert_eq!(recipe.recipe_state_id, Some(4));
+        assert_eq!(recipe.resolved_vertex_slot, Some(40));
+
+        let mut ambiguous = scopes;
+        let construction = ambiguous[1]
+            .work_point_construction
+            .as_mut()
+            .expect("WorkPoint construction");
+        let DesignWorkPointRule::Vertex { input } = &mut construction.rule else {
+            unreachable!("test construction is vertex-based")
+        };
+        let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) =
+            input.carrier.as_deref_mut()
+        else {
+            unreachable!("test input carries a vertex recipe")
+        };
+        recipe.recipe_references[0]
+            .candidate_faces
+            .push(FaceId(crate::ids::brep_entity_id(11)));
+        super::bind_work_point_vertex_history(
+            &mut ambiguous,
+            std::slice::from_ref(&timeline),
+            std::slice::from_ref(&history),
+        )
+        .expect("authored WorkPoint history");
+        let construction = ambiguous[1]
+            .work_point_construction
+            .as_ref()
+            .expect("WorkPoint construction");
+        let DesignWorkPointRule::Vertex { input } = &construction.rule else {
+            unreachable!("test construction is vertex-based")
+        };
+        let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier.as_deref()
+        else {
+            unreachable!("test input carries a vertex recipe")
+        };
+        assert_eq!(recipe.recipe_state_id, None);
+        assert_eq!(recipe.resolved_vertex_slot, None);
+    }
+
     #[test]
     fn feature_input_topology_projects_historical_vertices() {
         use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};

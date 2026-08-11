@@ -602,6 +602,127 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
 }
 
 #[test]
+fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
+    use crate::records::{
+        DesignWorkPointConstruction, DesignWorkPointInput, DesignWorkPointInputCarrier,
+        DesignWorkPointRule, DesignWorkPointVertexRecipe,
+    };
+    use cadmpeg_ir::features::{DatumPointConstruction, VertexSelection};
+
+    let mut predecessor =
+        DesignParameterScope::empty("f3d:native:parameter-scope#10", "Extrude", 10);
+    predecessor.history_state_id = Some(4);
+    let recipe_id = "f3d:native:construction-recipe#vertex".to_string();
+    let recipe = DesignWorkPointVertexRecipe {
+        class_tag: "369".into(),
+        paired_byte_offset: 1,
+        paired_class_tag: "261".into(),
+        recipe_record_index: 23,
+        recipe_record_byte_offset: 2,
+        recipe_id: recipe_id.clone(),
+        recipe_prefix_offset: 3,
+        recipe_prefix_bytes: Vec::new(),
+        recipe_references: Vec::new(),
+        recipe_program_offset: 4,
+        recipe_program: vec![0],
+        recipe_state_id: Some(4),
+        resolved_vertex_slot: Some(43),
+        next_record_index: 25,
+        next_byte_offset: 5,
+    };
+    let mut point = DesignParameterScope::empty("f3d:native:parameter-scope#20", "WorkPoint", 20);
+    point.work_point_construction = Some(DesignWorkPointConstruction {
+        point_record_index: 21,
+        point_record_byte_offset: 0,
+        position: [4.0, 3.0, 0.0],
+        position_offset: 0,
+        rule: DesignWorkPointRule::Vertex {
+            input: DesignWorkPointInput {
+                record_index: 22,
+                reference_offset: 0,
+                carrier: Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
+                    recipe,
+                })),
+            },
+        },
+        reference_type_offset: 0,
+    });
+    let timeline = DesignFeatureTimeline {
+        id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:native", 0),
+        byte_offset: 0,
+        class_tag: "256".into(),
+        record_index: 1,
+        source_ordinal: 0,
+        frame_length: 0,
+        context_record_index: 1,
+        context_record_index_offset: 0,
+        item_count_offset: 0,
+        item_record_indices: vec![10, 20],
+        item_record_index_offsets: vec![0, 0],
+    };
+    let scopes = [predecessor, point];
+    let (features, _) = project_parameter_design_with_edge_identities(
+        &crate::design::feature_project::ProjectInputs {
+            native: &[],
+            owners: &[],
+            scopes: &scopes,
+            timelines: std::slice::from_ref(&timeline),
+            construction_groups: &[],
+            fillet_radius_groups: &[],
+            edge_operands: &[],
+            edge_identity_operands: &[],
+            entity_selection_operands: &[],
+            curve_identities: &[],
+            face_operands: &[],
+            body_recipe_operands: &[],
+            placements: &[],
+            body_bindings: &[],
+            histories: &[],
+        },
+    )
+    .expect("authored WorkPoint timeline");
+    let predecessor = features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(&scopes[0].id))
+        .expect("projected predecessor");
+    let point = features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(&scopes[1].id))
+        .expect("projected WorkPoint");
+    let FeatureDefinition::DatumPoint {
+        construction: Some(construction),
+        ..
+    } = &point.definition
+    else {
+        panic!("typed datum-point construction")
+    };
+    let DatumPointConstruction::Vertex {
+        vertex:
+            VertexSelection::Historical {
+                state,
+                vertex,
+                native,
+            },
+    } = construction.as_ref()
+    else {
+        panic!("historical vertex construction")
+    };
+    let feature_key = point
+        .id
+        .0
+        .split_once('#')
+        .map_or(point.id.0.as_str(), |(_, key)| key);
+    let prefix = crate::ids::history_input_prefix(feature_key, 4);
+    assert_eq!(
+        state,
+        &crate::design::edge_resolve::feature_input_topology_id(&point.id, 4)
+    );
+    assert_eq!(vertex, &crate::ids::history_input_vertex_id(&prefix, 43));
+    assert_eq!(native, &recipe_id);
+    assert_eq!(point.dependencies, [predecessor.id.clone()]);
+}
+
+#[test]
 fn dispatcher_projects_remaining_operand_feature_scopes() {
     use crate::records::{
         DesignBaseFeatureConstruction, DesignBaseFlangeOperation,
