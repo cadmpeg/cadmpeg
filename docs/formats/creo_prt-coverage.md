@@ -228,8 +228,9 @@ fixtures, claims above L1 remain unproven.
   complete outline-backed plane is the placement face, and the second defines
   the signed blind direction and depth.
 - Compact class-911 simple holes select the materialized cylinder in exact
-  four-entry tables and the unique materialized plane-and-cylinder core in
-  extended tables that retain non-materialized regeneration rows. The
+  four-entry tables and in extended tables that retain non-materialized
+  regeneration rows. The adjacent class-204 and class-203 topology pair is
+  rowless or has exactly one owned plane; either member can own that plane. The
   positional cylinder frame supplies the simple-hole position, direction,
   blind extent, and diameter. This structure does not identify a placement
   face.

@@ -22960,74 +22960,71 @@ fn compact_simple_hole_cylinder_id(
                 .collect::<Vec<_>>();
             (table.entry_ids == entry_ids).then_some(())?;
 
-            if let [topology_a, topology_b, bottom, side] = table.entries.as_slice() {
-                let valid = [
-                    topology_a.class_id,
-                    topology_b.class_id,
-                    bottom.class_id,
-                    side.class_id,
-                ] == [204, 203, 200, 200]
-                    && topology_a.source_entity_id.is_none()
-                    && topology_b.source_entity_id.is_none()
-                    && bottom.source_entity_id == Some(0)
-                    && side.source_entity_id.is_none()
-                    && table.surface_ids.iter().copied().collect::<BTreeSet<_>>()
-                        == BTreeSet::from([side.entity_id])
-                    && !rows.iter().any(|row| {
-                        row.id == topology_a.entity_id
-                            || row.id == topology_b.entity_id
-                            || row.id == bottom.entity_id
-                    })
-                    && rows.iter().filter(|row| row.id == side.entity_id).count() == 1
-                    && rows.iter().any(|row| {
-                        row.id == side.entity_id
-                            && row.feature_id == feature_id
-                            && row.kind == crate::surface::SurfaceKind::Cylinder
-                    });
-                return valid.then_some(side.entity_id);
-            }
-
-            let entry_candidates = table
+            let topology_candidates = table
                 .entries
                 .windows(2)
-                .filter_map(|pair| {
-                    let [entry, topology] = pair else {
+                .enumerate()
+                .filter_map(|(index, pair)| {
+                    let [class_204, class_203] = pair else {
                         unreachable!("two-entry window")
                     };
-                    (entry.class_id == 204
-                        && topology.class_id == 203
-                        && entry.source_entity_id.is_none()
-                        && topology.source_entity_id.is_none()
-                        && table.surface_ids.contains(&entry.entity_id)
-                        && !rows.iter().any(|row| row.id == topology.entity_id)
-                        && rows.iter().filter(|row| row.id == entry.entity_id).count() == 1
-                        && rows.iter().any(|row| {
-                            row.id == entry.entity_id
-                                && row.feature_id == feature_id
-                                && row.kind == crate::surface::SurfaceKind::Plane
-                        }))
-                    .then_some(entry)
+                    (class_204.class_id == 204
+                        && class_203.class_id == 203
+                        && class_204.source_entity_id.is_none()
+                        && class_203.source_entity_id.is_none())
+                    .then_some(())?;
+                    let planes = pair
+                        .iter()
+                        .filter(|candidate| {
+                            table.surface_ids.contains(&candidate.entity_id)
+                                && rows
+                                    .iter()
+                                    .filter(|row| row.id == candidate.entity_id)
+                                    .count()
+                                    == 1
+                                && rows.iter().any(|row| {
+                                    row.id == candidate.entity_id
+                                        && row.feature_id == feature_id
+                                        && row.kind == crate::surface::SurfaceKind::Plane
+                                })
+                        })
+                        .collect::<Vec<_>>();
+                    let plane = match planes.as_slice() {
+                        [] if table.entries.len() == 4 => None,
+                        [plane] => Some(plane.entity_id),
+                        _ => return None,
+                    };
+                    pair.iter()
+                        .filter(|candidate| Some(candidate.entity_id) != plane)
+                        .all(|candidate| {
+                            !table.surface_ids.contains(&candidate.entity_id)
+                                && !rows.iter().any(|row| row.id == candidate.entity_id)
+                        })
+                        .then_some((index, plane))
                 })
                 .collect::<Vec<_>>();
-            let [entry] = entry_candidates.as_slice() else {
+            let [(topology_index, plane)] = topology_candidates.as_slice() else {
                 return None;
             };
             let bottoms = table
                 .entries
                 .iter()
-                .filter(|candidate| {
+                .enumerate()
+                .filter(|(_, candidate)| {
                     candidate.class_id == 200
                         && candidate.source_entity_id == Some(0)
+                        && !table.surface_ids.contains(&candidate.entity_id)
                         && !rows.iter().any(|row| row.id == candidate.entity_id)
                 })
                 .collect::<Vec<_>>();
-            let [bottom] = bottoms.as_slice() else {
+            let [(bottom_index, _)] = bottoms.as_slice() else {
                 return None;
             };
             let sides = table
                 .entries
                 .iter()
-                .filter(|candidate| {
+                .enumerate()
+                .filter(|(_, candidate)| {
                     candidate.class_id == 200
                         && candidate.source_entity_id.is_none()
                         && table.surface_ids.contains(&candidate.entity_id)
@@ -23043,13 +23040,14 @@ fn compact_simple_hole_cylinder_id(
                         })
                 })
                 .collect::<Vec<_>>();
-            let [side] = sides.as_slice() else {
+            let [(side_index, side)] = sides.as_slice() else {
                 return None;
             };
-            let materialized = table.surface_ids.iter().copied().collect::<BTreeSet<_>>();
-            (materialized == BTreeSet::from([entry.entity_id, side.entity_id])
-                && entry.offset < bottom.offset
-                && bottom.offset < side.offset)
+            let mut expected_materialized = BTreeSet::from([side.entity_id]);
+            expected_materialized.extend(*plane);
+            (table.surface_ids.iter().copied().collect::<BTreeSet<_>>() == expected_materialized
+                && topology_index < bottom_index
+                && bottom_index < side_index)
                 .then_some(side.entity_id)
         })
         .collect::<Vec<_>>();

@@ -5318,6 +5318,26 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         ),
         Some(117)
     );
+    let mut exact_class_203_plane = table.clone();
+    exact_class_203_plane.surface_ids.push(112);
+    let topology_plane = crate::surface::SurfaceRow {
+        id: 112,
+        type_byte: 0x22,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 107,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 0,
+    };
+    assert_eq!(
+        compact_simple_hole_cylinder_id(
+            107,
+            std::slice::from_ref(&exact_class_203_plane),
+            &[topology_plane, row.clone()],
+        ),
+        Some(117)
+    );
     table.entries[2].source_entity_id = None;
     assert!(compact_simple_hole_cylinder_id(
         107,
@@ -5380,9 +5400,26 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         next_surface: 0,
         offset: 0,
     };
-    let rows = [plane, row];
+    let rows = [plane.clone(), row.clone()];
     assert_eq!(
         compact_simple_hole_cylinder_id(107, std::slice::from_ref(&extended), &rows),
+        Some(117)
+    );
+    let mut class_203_plane = extended.clone();
+    class_203_plane.surface_ids[0] = 112;
+    class_203_plane
+        .non_surface_entity_ids
+        .retain(|id| *id != 112);
+    class_203_plane.non_surface_entity_ids.push(109);
+    let mut second_topology_plane = plane;
+    second_topology_plane.id = 112;
+    let second_topology_rows = [second_topology_plane, row];
+    assert_eq!(
+        compact_simple_hole_cylinder_id(
+            107,
+            std::slice::from_ref(&class_203_plane),
+            &second_topology_rows,
+        ),
         Some(117)
     );
     extended.surface_ids.push(120);
