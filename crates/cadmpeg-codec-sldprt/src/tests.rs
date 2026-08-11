@@ -23606,6 +23606,10 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
             .parameters
             .insert("Depth".into(), "30000mm".into());
     });
+    decoded.ir.model.configurations[0].parameter_values.insert(
+        cadmpeg_ir::features::ParameterId("configuration-only".into()),
+        cadmpeg_ir::features::ParameterValue::Integer(3),
+    );
     decoded.source_fidelity.annotations.exactness.clear();
     assert_eq!(crate::decode::brep_local_sha256(&decoded.ir), brep_hash);
     assert_ne!(

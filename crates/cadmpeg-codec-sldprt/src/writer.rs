@@ -43,7 +43,6 @@ pub(crate) fn write_semantic_with_records(
             SldprtNative::load(namespace).map_err(Into::into)
         })
         .transpose()?;
-    let retained_partition = retained_partition(ir, retained_records);
     let mut normalized = ir.clone();
     drop_synthesized_configuration_snapshot(&mut normalized);
     sort_arenas(&mut normalized);
@@ -59,6 +58,7 @@ pub(crate) fn write_semantic_with_records(
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
     assign_configuration_indices(&mut normalized.model.configurations)?;
+    let retained_partition = retained_partition(&normalized, retained_records);
     let feature_name_changes = crate::history::feature_name_changes(&normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
         && crate::history::native_parameters_match_source(&normalized, native.as_ref());

@@ -2142,6 +2142,7 @@ fn build_geometry_ir(
         &lanes,
     );
     crate::history::align_configuration_parameter_kinds(&mut ir);
+    complete_resolved_configuration_parameter_snapshots(&mut ir);
     stamp_parameter_baseline(&mut ir);
     let (mut sketches, mut sketch_entities, mut sketch_constraints) =
         crate::resolved_features::sketch_projection::sketches(scan, &mut annotations);
@@ -3063,6 +3064,7 @@ fn build_metadata_ir(
         &lanes,
     );
     crate::history::align_configuration_parameter_kinds(&mut ir);
+    complete_resolved_configuration_parameter_snapshots(&mut ir);
     stamp_parameter_baseline(&mut ir);
     crate::resolved_features::profiles::bind_sketch_profiles(
         &mut ir.model.features,
@@ -3404,6 +3406,32 @@ fn stamp_parameter_baseline(ir: &mut CadIr) {
         source
             .attributes
             .insert("sldprt_neutral_parameter_local_sha256".into(), hash);
+    }
+}
+
+fn complete_resolved_configuration_parameter_snapshots(ir: &mut CadIr) {
+    let independent_values = ir
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.dependencies.is_empty())
+        .filter_map(|parameter| {
+            parameter
+                .value
+                .clone()
+                .map(|value| (parameter.id.clone(), value))
+        })
+        .collect::<Vec<_>>();
+    for configuration in &mut ir.model.configurations {
+        if configuration.parameter_values.is_empty() && configuration.feature_states.is_empty() {
+            continue;
+        }
+        for (parameter, value) in &independent_values {
+            configuration
+                .parameter_values
+                .entry(parameter.clone())
+                .or_insert_with(|| value.clone());
+        }
     }
 }
 
@@ -3990,14 +4018,32 @@ fn stamp_local_digests(ir: &mut CadIr) {
 pub(crate) fn brep_local_sha256(ir: &CadIr) -> String {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
-    // Normalize with a field-by-field clone so the dropped namespaces (source
-    // image, native records, annotations) are never copied.
+    // Admit only B-rep arenas so a new design, presentation, or product arena
+    // cannot silently change retained-partition eligibility.
     let mut normalized = CadIr {
         ir_version: ir.ir_version.clone(),
         source: None,
         units: ir.units.clone(),
         tolerances: ir.tolerances,
-        model: ir.model.clone(),
+        model: cadmpeg_ir::document::Model {
+            bodies: ir.model.bodies.clone(),
+            regions: ir.model.regions.clone(),
+            shells: ir.model.shells.clone(),
+            faces: ir.model.faces.clone(),
+            loops: ir.model.loops.clone(),
+            coedges: ir.model.coedges.clone(),
+            edges: ir.model.edges.clone(),
+            vertices: ir.model.vertices.clone(),
+            points: ir.model.points.clone(),
+            surfaces: ir.model.surfaces.clone(),
+            curves: ir.model.curves.clone(),
+            pcurves: ir.model.pcurves.clone(),
+            procedural_surfaces: ir.model.procedural_surfaces.clone(),
+            procedural_curves: ir.model.procedural_curves.clone(),
+            appearances: ir.model.appearances.clone(),
+            appearance_bindings: ir.model.appearance_bindings.clone(),
+            ..Default::default()
+        },
         native: cadmpeg_ir::Native::default(),
     };
     normalized.model.bodies.iter_mut().for_each(|body| {
@@ -4021,13 +4067,6 @@ pub(crate) fn brep_local_sha256(ir: &CadIr) -> String {
         .model
         .appearances
         .retain(|appearance| face_appearances.contains(&appearance.id));
-    normalized.model.tessellations.clear();
-    normalized.model.attributes.clear();
-    normalized.model.features.clear();
-    normalized.model.parameters.clear();
-    normalized.model.sketches.clear();
-    normalized.model.sketch_entities.clear();
-    normalized.model.sketch_constraints.clear();
     cadmpeg_ir::hash::canonical_json_sha256(&normalized)
 }
 
@@ -4752,6 +4791,80 @@ mod design_loss_tests {
             ParameterValue::Length(Length(25.0))
         );
         assert!(!ir.model.configurations[0].feature_states[&feature_id].suppressed);
+    }
+
+    #[test]
+    fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() {
+        let mut ir = CadIr::empty(Units::default());
+        let independent = ParameterId("independent".into());
+        let overridden = ParameterId("overridden".into());
+        let dependent = ParameterId("dependent".into());
+        let parameter = |id: ParameterId, value, dependencies| DesignParameter {
+            id,
+            owner: None,
+            ordinal: 0,
+            name: "D1".into(),
+            expression: "12mm".into(),
+            value: Some(value),
+            dependencies,
+            display: None,
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        };
+        ir.model.parameters = vec![
+            parameter(
+                independent.clone(),
+                ParameterValue::Length(Length(12.0)),
+                Vec::new(),
+            ),
+            parameter(
+                overridden.clone(),
+                ParameterValue::Length(Length(20.0)),
+                Vec::new(),
+            ),
+            parameter(
+                dependent.clone(),
+                ParameterValue::Length(Length(24.0)),
+                vec![independent.clone()],
+            ),
+        ];
+        let configuration = |id: &str, parameter_values| DesignConfiguration {
+            id: ConfigurationId(id.into()),
+            ordinal: 0,
+            active: false,
+            source_index: Some(0),
+            name: id.into(),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+            parameter_values,
+            suppressed_features: Vec::new(),
+            parameter_overrides: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: None,
+        };
+        ir.model.configurations = vec![
+            configuration(
+                "resolved",
+                BTreeMap::from([(overridden.clone(), ParameterValue::Length(Length(25.0)))]),
+            ),
+            configuration("unresolved", BTreeMap::new()),
+        ];
+
+        complete_resolved_configuration_parameter_snapshots(&mut ir);
+
+        assert_eq!(
+            ir.model.configurations[0].parameter_values,
+            BTreeMap::from([
+                (independent, ParameterValue::Length(Length(12.0))),
+                (overridden, ParameterValue::Length(Length(25.0))),
+            ])
+        );
+        assert!(!ir.model.configurations[0]
+            .parameter_values
+            .contains_key(&dependent));
+        assert!(ir.model.configurations[1].parameter_values.is_empty());
     }
 
     #[test]
