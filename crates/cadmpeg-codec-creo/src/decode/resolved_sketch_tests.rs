@@ -2064,12 +2064,279 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
         stepped_hole_form(9, std::slice::from_ref(&table), &rows),
         Some(HoleForm::Counterbore)
     );
+    assert_eq!(
+        stepped_hole_form(9, &[table.clone(), table.clone()], &rows),
+        None
+    );
 
     rows[4].kind = crate::surface::SurfaceKind::Cone;
     assert_eq!(
         stepped_hole_form(9, std::slice::from_ref(&table), &rows),
         None
     );
+}
+
+fn class_911_surface_row(
+    feature_id: u32,
+    id: u32,
+    kind: crate::surface::SurfaceKind,
+) -> crate::surface::SurfaceRow {
+    crate::surface::SurfaceRow {
+        id,
+        type_byte: kind.canonical_type_byte(),
+        kind,
+        feature_id,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 0,
+    }
+}
+
+fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::FeatureEntityTable {
+    let sourced_entry = |entity_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        entity_id,
+        class_id: 200,
+        source_entity_id: Some(source_entity_id),
+        related_entity_id: None,
+        related_entity_state: None,
+        prefixed: false,
+        offset: 0,
+        end_offset: 0,
+    };
+    let entries = vec![
+        sourced_entry(11, 1),
+        sourced_entry(12, 1),
+        sourced_entry(13, 2),
+        sourced_entry(14, 2),
+        sourced_entry(15, 3),
+        sourced_entry(16, 3),
+        sourced_entry(17, 4),
+        sourced_entry(18, 4),
+        crate::feature::FeatureEntityTableEntry {
+            entity_id: 19,
+            class_id: 200,
+            source_entity_id: None,
+            related_entity_id: None,
+            related_entity_state: None,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        },
+    ];
+    crate::feature::FeatureEntityTable {
+        feature_id: Some(feature_id),
+        table_class_id: 29,
+        entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
+        entries,
+        surface_ids: vec![11, 12, 13, 14],
+        non_surface_entity_ids: vec![15, 16, 17, 18, 19],
+        offset: 0,
+    }
+}
+
+fn simple_drilled_recipe_surface_rows(feature_id: u32) -> Vec<crate::surface::SurfaceRow> {
+    vec![
+        class_911_surface_row(feature_id, 11, crate::surface::SurfaceKind::Cone),
+        class_911_surface_row(feature_id, 12, crate::surface::SurfaceKind::Cone),
+        class_911_surface_row(feature_id, 13, crate::surface::SurfaceKind::Cylinder),
+        class_911_surface_row(feature_id, 14, crate::surface::SurfaceKind::Cylinder),
+    ]
+}
+
+#[test]
+fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
+    let table = simple_drilled_recipe_table(9);
+    let mut rows = simple_drilled_recipe_surface_rows(9);
+
+    assert!(simple_drilled_hole_recipe(
+        9,
+        std::slice::from_ref(&table),
+        &rows,
+    ));
+    assert!(!simple_drilled_hole_recipe(
+        9,
+        &[table.clone(), table.clone()],
+        &rows,
+    ));
+
+    rows[1].kind = crate::surface::SurfaceKind::Cylinder;
+    assert!(!simple_drilled_hole_recipe(9, &[table], &rows));
+}
+
+#[test]
+fn simple_drilled_dimensions_require_complete_agreeing_tables() {
+    let table = |diameter: f64, angle: f64, depth: f64| crate::feature::FeatureDimensionTable {
+        declared_count: 3,
+        entity_ref: Some(88),
+        rows: [
+            (2, diameter, 0, crate::feature::DimensionUnit::Millimeters),
+            (10, angle, 1, crate::feature::DimensionUnit::Radians),
+            (2, depth, 2, crate::feature::DimensionUnit::Millimeters),
+        ]
+        .into_iter()
+        .map(
+            |(dimension_type, value, external_id, value_unit)| crate::feature::FeatureDimension {
+                dimension_type,
+                value: Some(value),
+                value_body: Vec::new(),
+                unresolved_value_token: None,
+                value_unit,
+                direction_byte: 0,
+                auxiliary_value: Some(0.0),
+                auxiliary_body: Vec::new(),
+                external_id,
+                references: None,
+                offset: 0,
+            },
+        )
+        .collect(),
+        offset: 0,
+    };
+    let angle = 118.0_f64.to_radians();
+    let first = table(4.2, angle, -25.0);
+    let second = table(4.2, angle, -25.0);
+
+    assert_eq!(
+        simple_drilled_hole_dimension_values([&first, &second].into_iter()),
+        Some((4.2, angle, 25.0))
+    );
+    let conflicting = table(5.0, angle, -25.0);
+    assert_eq!(
+        simple_drilled_hole_dimension_values([&first, &conflicting].into_iter()),
+        None
+    );
+    let invalid_angle = table(4.2, std::f64::consts::PI, -25.0);
+    assert_eq!(
+        simple_drilled_hole_dimension_values([&invalid_angle].into_iter()),
+        None
+    );
+    assert_eq!(
+        simple_drilled_hole_dimension_values([&first, &invalid_angle].into_iter()),
+        None
+    );
+}
+
+#[test]
+fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features
+        .entity_tables
+        .push(simple_drilled_recipe_table(9));
+    scan.surfaces
+        .rows
+        .extend(simple_drilled_recipe_surface_rows(9));
+    let drill_point_angle = 118.0_f64.to_radians();
+    let dimension =
+        |dimension_type, external_id, value, value_unit| crate::feature::FeatureDimension {
+            dimension_type,
+            value: Some(value),
+            value_body: Vec::new(),
+            unresolved_value_token: None,
+            value_unit,
+            direction_byte: 0,
+            auxiliary_value: Some(0.0),
+            auxiliary_body: Vec::new(),
+            external_id,
+            references: None,
+            offset: 0,
+        };
+    scan.features
+        .definitions
+        .push(crate::feature::FeatureDefinition {
+            id: 911,
+            owner_feature_id: None,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: Some(crate::feature::FeatureDimensionTable {
+                declared_count: 3,
+                entity_ref: Some(88),
+                rows: vec![
+                    dimension(2, 0, 4.2, crate::feature::DimensionUnit::Millimeters),
+                    dimension(
+                        10,
+                        1,
+                        drill_point_angle,
+                        crate::feature::DimensionUnit::Radians,
+                    ),
+                    dimension(2, 2, -25.0, crate::feature::DimensionUnit::Millimeters),
+                ],
+                offset: 0,
+            }),
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        });
+
+    assert!(matches!(
+        schema_feature_definition(
+            &scan,
+            &CadIr::empty(Units::default()),
+            9,
+            911,
+            "Hole"
+        ),
+        IrFeatureDefinition::Hole {
+            kind: HoleKind::SimpleDrilled {
+                drill_point_angle: Angle(angle),
+            },
+            diameter: Some(Length(4.2)),
+            extent: Some(Termination::Blind {
+                length: Length(25.0),
+            }),
+            bottom: None,
+            ..
+        } if approximately_equal(angle, drill_point_angle)
+    ));
+
+    let compact_entry =
+        |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+            entity_id,
+            class_id,
+            source_entity_id,
+            related_entity_id: None,
+            related_entity_state: None,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
+    scan.features
+        .entity_tables
+        .push(crate::feature::FeatureEntityTable {
+            feature_id: Some(9),
+            table_class_id: 29,
+            entry_ids: vec![21, 22, 23, 24],
+            entries: vec![
+                compact_entry(21, 204, None),
+                compact_entry(22, 203, None),
+                compact_entry(23, 200, Some(0)),
+                compact_entry(24, 200, None),
+            ],
+            surface_ids: vec![24],
+            non_surface_entity_ids: Vec::new(),
+            offset: 0,
+        });
+    scan.surfaces.rows.push(class_911_surface_row(
+        9,
+        24,
+        crate::surface::SurfaceKind::Cylinder,
+    ));
+    assert!(matches!(
+        schema_feature_definition(&scan, &CadIr::empty(Units::default()), 9, 911, "Hole"),
+        IrFeatureDefinition::Hole {
+            kind: HoleKind::Simple,
+            diameter: None,
+            extent: None,
+            ..
+        }
+    ));
 }
 
 #[test]

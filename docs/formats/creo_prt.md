@@ -2706,6 +2706,26 @@ support and does not define the step depth. When the feature generates no conica
 selects counterbore form independently of whether both cylinder carriers and
 the counterbore dimensions are evaluable.
 
+A class-911 table-class-29 simple-drilled recipe has exactly four source
+section entity groups among its class-200 entries. One group generates two
+cone rows, one group generates two cylinder rows, and the other two groups
+each generate two rowless face uses. A complete three-row class-911 dimension
+table assigns external ID `0` to the hole diameter, ID `1` to the included
+drill-point angle, and ID `2` to the blind depth. IDs `0` and `2` have
+dimension type `2` and millimetre units. ID `1` has dimension type `10` and
+radian units. The diameter is positive, the depth is nonzero, and the included
+angle is strictly between zero and π. The depth magnitude is the blind length;
+its sign is an orientation state and does not change that length. When every
+complete three-row class-911 table in the document supplies one equal tuple,
+the recipe transfers as a simple drilled hole with that diameter, angle, and
+blind depth. An independently derived diameter or blind depth must agree. The
+dimension tuple does not assign the hole axis, entry position, placement face,
+or depth-to-tip state.
+Unsourced class-200 entries are admitted only when they are rowless
+non-surface entities; they do not create source section entity groups.
+When a feature owns multiple table-class-29 tables, exactly one table must have
+the simple-drilled recipe. Zero or multiple matching tables do not select it.
+
 An instantiated class-911 positional definition inherits schema identifier
 `911` from its preceding `feat_defs_911` template. Its complete four-row
 dimension table assigns external ID `0` to the bore radius, ID `1` to the

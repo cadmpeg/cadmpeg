@@ -560,6 +560,22 @@ that assign a dimension value to a dimension-driven solver variable.
 
 **Note.** `crates/cadmpeg-codec-creo/src/feature/operations.rs:287-303` falls back to `FEATURE_RECIPES.iter().find_map` when the binding count is not one. It accepts the first name in the static list, not a unique byte-backed candidate. If a record contains two recipe names or two bindings for one feature, the selected recipe can assign the wrong sweep family or Boolean effect.
 
+### SP-39. Simple-drilled template selection and depth endpoint
+
+**Question.** Which replay identity selects one class-911 three-row
+simple-drilled dimension table when the document stores multiple distinct
+tuples, and does its blind depth terminate at the cylindrical shoulder or the
+conical tip?
+
+**Known.** `creo_prt.md` §6 "A class-911 table-class-29 simple-drilled recipe"
+defines the generated-surface recipe and the diameter, included-angle, and
+blind-depth dimension roles. Equal complete three-row templates define one
+tuple without a per-feature selector. The neutral hole bottom retains no
+depth-to-tip state.
+
+**Need.** We must identify the per-feature template join and depth endpoint to
+transfer documents with competing tuples and to set `HoleBottom::Angled`.
+
 ## 4. Topology and appearance
 
 ### TP-01. DEPDB recipe-to-body binding

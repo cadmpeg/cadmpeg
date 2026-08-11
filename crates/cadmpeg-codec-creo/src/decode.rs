@@ -20780,6 +20780,13 @@ fn schema_feature_definition(
             && stepped_directed.is_none())
         .then(|| counterbore_axis_placement(scan, ir, feature_id))
         .flatten();
+        let drilled_dimensions = simple_drilled_hole_recipe(
+            feature_id,
+            &scan.features.entity_tables,
+            &scan.surfaces.rows,
+        )
+        .then(|| simple_drilled_hole_dimensions(scan))
+        .flatten();
         let placement = feature_outline_planes(scan, feature_id).and_then(hole_placement);
         let compact_cylinder_id = compact_simple_hole_cylinder_id(
             feature_id,
@@ -20861,6 +20868,19 @@ fn schema_feature_definition(
                 )
             },
         );
+        let drilled_dimensions =
+            drilled_dimensions.filter(|(drilled_diameter, _, drilled_depth)| {
+                !simple_form
+                    && stepped_form.is_none()
+                    && stepped_dimensions.is_none()
+                    && diameter
+                        .as_ref()
+                        .is_none_or(|diameter| approximately_equal(diameter.0, *drilled_diameter))
+                    && extent.as_ref().is_none_or(|extent| {
+                        matches!(extent, Termination::Blind { length }
+                        if approximately_equal(length.0, *drilled_depth))
+                    })
+            });
         return IrFeatureDefinition::Hole {
             profile: None,
             profile_filter: None,
@@ -20868,15 +20888,23 @@ fn schema_feature_definition(
             position,
             direction,
             placements: stepped_axis.into_iter().collect(),
-            kind: match (simple_form, stepped_form, stepped_dimensions) {
-                (true, None, None) => HoleKind::Simple,
-                (false, Some(HoleForm::Counterbore), Some((_, diameter, depth))) => {
+            kind: match (
+                drilled_dimensions,
+                simple_form,
+                stepped_form,
+                stepped_dimensions,
+            ) {
+                (Some((_, drill_point_angle, _)), false, None, None) => HoleKind::SimpleDrilled {
+                    drill_point_angle: Angle(drill_point_angle),
+                },
+                (None, true, None, None) => HoleKind::Simple,
+                (None, false, Some(HoleForm::Counterbore), Some((_, diameter, depth))) => {
                     HoleKind::Counterbore {
                         diameter: Length(diameter),
                         depth: Length(depth),
                     }
                 }
-                (_, form, dimensions) => HoleKind::Unresolved {
+                (_, _, form, dimensions) => HoleKind::Unresolved {
                     form,
                     counterbore_diameter: dimensions.map(|(_, diameter, _)| Length(diameter)),
                     counterbore_depth: dimensions.map(|(_, _, depth)| Length(depth)),
@@ -20886,8 +20914,13 @@ fn schema_feature_definition(
             },
             exit_kind: None,
             diameter: diameter
+                .or_else(|| drilled_dimensions.map(|(diameter, _, _)| Length(diameter)))
                 .or_else(|| stepped_dimensions.map(|(diameter, _, _)| Length(diameter))),
-            extent,
+            extent: extent.or_else(|| {
+                drilled_dimensions.map(|(_, _, depth)| Termination::Blind {
+                    length: Length(depth),
+                })
+            }),
             bottom,
             taper_angle: None,
             specification: None,
@@ -21908,16 +21941,58 @@ fn stepped_hole_form(
     tables: &[crate::feature::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
 ) -> Option<HoleForm> {
-    let tables = tables
+    let candidates = tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
-        .collect::<Vec<_>>();
-    let [table] = tables.as_slice() else {
-        return None;
-    };
+        .filter_map(|table| generated_hole_surfaces_by_source(feature_id, table, rows))
+        .filter(|generated_by_source| {
+            let cylinder_sources = generated_by_source
+                .values()
+                .filter(|entries| {
+                    matches!(
+                        entries.as_slice(),
+                        [
+                            Some(crate::surface::SurfaceKind::Cylinder),
+                            Some(crate::surface::SurfaceKind::Cylinder)
+                        ]
+                    )
+                })
+                .count();
+            let planar_support_sources = generated_by_source
+                .values()
+                .filter(|entries| {
+                    entries.len() == 2
+                        && entries
+                            .iter()
+                            .filter(|kind| **kind == Some(crate::surface::SurfaceKind::Plane))
+                            .count()
+                            == 1
+                        && entries.iter().filter(|kind| kind.is_none()).count() == 1
+                })
+                .count();
+            let has_cone = generated_by_source
+                .values()
+                .flatten()
+                .any(|kind| *kind == Some(crate::surface::SurfaceKind::Cone));
+            cylinder_sources == 2 && planar_support_sources == 1 && !has_cone
+        })
+        .count();
+    (candidates == 1).then_some(HoleForm::Counterbore)
+}
+
+fn generated_hole_surfaces_by_source(
+    feature_id: u32,
+    table: &crate::feature::FeatureEntityTable,
+    rows: &[crate::surface::SurfaceRow],
+) -> Option<BTreeMap<u32, Vec<Option<crate::surface::SurfaceKind>>>> {
     let mut generated_by_source = BTreeMap::<u32, Vec<Option<crate::surface::SurfaceKind>>>::new();
     for entry in table.entries.iter().filter(|entry| entry.class_id == 200) {
-        let source_id = entry.source_entity_id?;
+        let Some(source_id) = entry.source_entity_id else {
+            (table.non_surface_entity_ids.contains(&entry.entity_id)
+                && !table.surface_ids.contains(&entry.entity_id))
+            .then_some(())?;
+            continue;
+        };
         let kind = if table.surface_ids.contains(&entry.entity_id) {
             Some(
                 crate::surface::unique_surface_row(rows, entry.entity_id)
@@ -21933,36 +22008,89 @@ fn stepped_hole_form(
         };
         generated_by_source.entry(source_id).or_default().push(kind);
     }
-    let cylinder_sources = generated_by_source
-        .values()
-        .filter(|entries| {
-            matches!(
-                entries.as_slice(),
-                [
-                    Some(crate::surface::SurfaceKind::Cylinder),
-                    Some(crate::surface::SurfaceKind::Cylinder)
-                ]
-            )
-        })
-        .count();
-    let planar_support_sources = generated_by_source
-        .values()
-        .filter(|entries| {
-            entries.len() == 2
-                && entries
-                    .iter()
-                    .filter(|kind| **kind == Some(crate::surface::SurfaceKind::Plane))
+    Some(generated_by_source)
+}
+
+fn simple_drilled_hole_recipe(
+    feature_id: u32,
+    tables: &[crate::feature::FeatureEntityTable],
+    rows: &[crate::surface::SurfaceRow],
+) -> bool {
+    tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
+        .filter_map(|table| generated_hole_surfaces_by_source(feature_id, table, rows))
+        .filter(|generated_by_source| {
+            let paired = |kind| {
+                generated_by_source
+                    .values()
+                    .filter(|entries| entries.as_slice() == [Some(kind), Some(kind)])
                     .count()
-                    == 1
-                && entries.iter().filter(|kind| kind.is_none()).count() == 1
+            };
+            generated_by_source.len() == 4
+                && paired(crate::surface::SurfaceKind::Cone) == 1
+                && paired(crate::surface::SurfaceKind::Cylinder) == 1
+                && generated_by_source
+                    .values()
+                    .filter(|entries| entries.as_slice() == [None, None])
+                    .count()
+                    == 2
         })
-        .count();
-    let has_cone = generated_by_source
-        .values()
-        .flatten()
-        .any(|kind| *kind == Some(crate::surface::SurfaceKind::Cone));
-    (cylinder_sources == 2 && planar_support_sources == 1 && !has_cone)
-        .then_some(HoleForm::Counterbore)
+        .count()
+        == 1
+}
+
+fn simple_drilled_hole_dimensions(scan: &ContainerScan) -> Option<(f64, f64, f64)> {
+    simple_drilled_hole_dimension_values(
+        scan.features
+            .definitions
+            .iter()
+            .filter(|definition| definition.id == 911)
+            .filter_map(|definition| definition.dimensions.as_ref()),
+    )
+}
+
+fn simple_drilled_hole_dimension_values<'a>(
+    tables: impl Iterator<Item = &'a crate::feature::FeatureDimensionTable>,
+) -> Option<(f64, f64, f64)> {
+    let candidates = tables
+        .filter(|table| feature_dimension_table_complete(table) && table.rows.len() == 3)
+        .map(|table| {
+            let value = |external_id, dimension_type, unit| {
+                let rows = table
+                    .rows
+                    .iter()
+                    .filter(|row| {
+                        row.external_id == external_id
+                            && row.dimension_type == dimension_type
+                            && row.value_unit == unit
+                    })
+                    .collect::<Vec<_>>();
+                let [row] = rows.as_slice() else {
+                    return None;
+                };
+                row.value.filter(|value| value.is_finite())
+            };
+            let diameter = value(0, 2, crate::feature::DimensionUnit::Millimeters)?;
+            let drill_point_angle = value(1, 10, crate::feature::DimensionUnit::Radians)?;
+            let signed_depth = value(2, 2, crate::feature::DimensionUnit::Millimeters)?;
+            (diameter > 0.0
+                && drill_point_angle > 0.0
+                && drill_point_angle < std::f64::consts::PI
+                && signed_depth != 0.0)
+                .then_some((diameter, drill_point_angle, signed_depth.abs()))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let first = *candidates.first()?;
+    candidates
+        .iter()
+        .all(|candidate| {
+            [candidate.0, candidate.1, candidate.2]
+                .into_iter()
+                .zip([first.0, first.1, first.2])
+                .all(|(candidate, first)| approximately_equal(candidate, first))
+        })
+        .then_some(first)
 }
 
 fn counterbore_dimensions(
