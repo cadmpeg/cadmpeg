@@ -1,0 +1,35 @@
+{
+  "results": [
+    {
+      "command": "timeout 120 'target/release/cadmpeg' decode '/Users/irvel/side2/cadmpeg/.worktrees/feat/refactor-convergence/crates/cadmpeg-codec-catia/tests/golden/fixtures/consolidated_nurbs_surface_curve.catpart' >/dev/null",
+      "mean": 0.01271640144,
+      "stddev": 0.0008154797111934799,
+      "median": 0.012447485240000002,
+      "user": 0.0035908999999999997,
+      "system": 0.005776579999999999,
+      "min": 0.011994151239999999,
+      "max": 0.014087359240000001,
+      "times": [
+        0.01228731824,
+        0.011994151239999999,
+        0.014087359240000001,
+        0.012447485240000002,
+        0.012765693239999999
+      ],
+      "memory_usage_byte": [
+        9093120,
+        9093120,
+        9093120,
+        9306112,
+        9322496
+      ],
+      "exit_codes": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}
