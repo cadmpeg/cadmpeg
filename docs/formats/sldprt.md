@@ -917,6 +917,13 @@ length unit to `BlockToleranceDecimalPlaces` produces the literal. Conversion
 of every matching literal and unit must produce one millimetre value; multiple
 values leave the nominal absent.
 
+If a `GdtDiameter` directly references one or more `GdtCylinder` or `GdtSphere`
+features, their diameters supply the nominal when no rendered literal binds.
+Direct cylinders use twice `NomCylinder.R`, direct spheres use twice
+`NomSphere.R`, and all direct contributors must agree. A binding rendered
+literal has precedence over the unrounded evaluated geometry. This direct rule
+does not select one member from a pattern or compound hole.
+
 An omitted `GdtDepth.Nominal` uses the same rendered-literal binding. Each
 reachable `GdtCylinder` contributes the axial distance from its `NomBottom`
 plane origin to its `NomTop` plane origin. `NomCylinder.I`, `J`, and `K` must

@@ -561,12 +561,7 @@ fn enrich_implicit_nominals(
         let (dimension_kind, source) = match short_class(&entity.class) {
             "GdtDiameter" => (
                 DimensionKind::Diameter,
-                diameter_from_applied_geometry(entity, &feature_index).map(|geometry| {
-                    ImplicitNominal::Rendered {
-                        kind: RenderedDimensionKind::Diameter,
-                        geometry,
-                    }
-                }),
+                diameter_nominal(entity, &feature_index),
             ),
             "GdtDepth" => (
                 DimensionKind::Size,
@@ -673,6 +668,43 @@ fn diameter_from_applied_geometry(
     measurement_from_applied_geometry(annotation, |id| {
         diameter_for_feature(id, feature_index, &mut BTreeSet::new(), 0)
     })
+}
+
+fn diameter_nominal(
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+) -> Option<ImplicitNominal> {
+    if let Some(exact) = direct_diameter(annotation, feature_index) {
+        return Some(ImplicitNominal::RenderedOrExact {
+            kind: RenderedDimensionKind::Diameter,
+            geometry: exact,
+            exact,
+        });
+    }
+    diameter_from_applied_geometry(annotation, feature_index).map(|geometry| {
+        ImplicitNominal::Rendered {
+            kind: RenderedDimensionKind::Diameter,
+            geometry,
+        }
+    })
+}
+
+fn direct_diameter(annotation: &Entity, feature_index: &BTreeMap<&str, &Entity>) -> Option<f64> {
+    let candidates = annotation
+        .features
+        .references
+        .iter()
+        .filter_map(|reference| feature_index.get(reference.id.as_str()).copied())
+        .filter_map(|feature| {
+            let radius = match short_class(&feature.class) {
+                "GdtCylinder" => nominal_radius(feature, "NomCylinder"),
+                "GdtSphere" => nominal_radius(feature, "NomSphere"),
+                _ => None,
+            }?;
+            finite_positive(radius * 2.0)
+        })
+        .collect::<Vec<_>>();
+    unique_measurement(&candidates)
 }
 
 fn depth_from_applied_geometry(
@@ -2096,6 +2128,48 @@ mod tests {
             panic!("dimension definition");
         };
         assert_eq!(*nominal, None);
+    }
+
+    #[test]
+    fn direct_cylinder_and_sphere_supply_diameter_without_rendered_text() {
+        let mut root = semantic_root();
+        *root.features.entities.get_mut(1).expect("direct cylinder") = cylinder_with_radius(17.5);
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
+        let PmiDefinition::Dimension { nominal, .. } = &annotations
+            .iter()
+            .find(|annotation| annotation.id == pmi_id("A30"))
+            .expect("direct diameter")
+            .definition
+        else {
+            panic!("dimension definition");
+        };
+        assert_eq!(*nominal, Some(length(35.0)));
+
+        *root.features.entities.get_mut(1).expect("direct sphere") =
+            feature_with_nominal_measurement("GdtSphere", "NomSphere", "GeoSphere", "R", 15.875);
+        root.features
+            .references
+            .get_mut(1)
+            .expect("direct feature reference")
+            .class = "PrizMetrik.GdtAnalysis.GdtSphere,gdtanalysis.net".into();
+        root.annotations
+            .entities
+            .get_mut(2)
+            .and_then(|diameter| diameter.features.references.first_mut())
+            .expect("diameter feature reference")
+            .class = "PrizMetrik.GdtAnalysis.GdtSphere,gdtanalysis.net".into();
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
+        let PmiDefinition::Dimension { nominal, .. } = &annotations
+            .iter()
+            .find(|annotation| annotation.id == pmi_id("A30"))
+            .expect("direct diameter")
+            .definition
+        else {
+            panic!("dimension definition");
+        };
+        assert_eq!(*nominal, Some(length(31.75)));
     }
 
     #[test]
