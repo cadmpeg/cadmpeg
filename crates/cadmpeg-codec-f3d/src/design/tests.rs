@@ -44,6 +44,7 @@ use crate::design::decode::scopes::{
     exact_surface_extend_operation, exact_surface_offset_operation, exact_surface_stitch_operation,
     exact_thread_construction, exact_work_axis_construction, exact_work_plane_frame,
     exact_work_point_construction, parse_parameter_scope, parse_thread_payload,
+    select_circular_pattern_axis,
 };
 use crate::design::decode::sketch::{
     bind_sketch_graph, decode_constraint_kinds, decode_pattern_definition, identity_matrix,
@@ -24655,6 +24656,43 @@ fn assembly_operand_frame_fixture(scope_record_index: u32) -> Vec<u8> {
     bytes[641..644].copy_from_slice(b"259");
     bytes[644..648].copy_from_slice(&scope_record_index.to_le_bytes());
     bytes
+}
+
+#[test]
+fn circular_pattern_axis_prefers_one_inline_carrier() {
+    use crate::records::DesignCircularPatternAxis;
+
+    let historical = DesignCircularPatternAxis::HistoricalEdge {
+        wrapper_record_indices: vec![11],
+        persistent_identities: vec![17],
+        identity_offsets: vec![23],
+        resolved_origin: None,
+        resolved_direction: None,
+    };
+    let inline = DesignCircularPatternAxis::Inline {
+        origin: [1.0, 2.0, 3.0],
+        origin_offset: 29,
+        direction: [0.0, 0.0, 1.0],
+        direction_offset: 53,
+    };
+
+    let historical_only = [(historical.clone(), 10, 11)];
+    assert_eq!(
+        select_circular_pattern_axis(&historical_only).map(|candidate| (candidate.1, candidate.2)),
+        Some((10, 11))
+    );
+
+    let mixed = [(historical.clone(), 10, 11), (inline.clone(), 20, 21)];
+    assert_eq!(
+        select_circular_pattern_axis(&mixed).map(|candidate| (candidate.1, candidate.2)),
+        Some((20, 21))
+    );
+
+    let duplicate_inline = [(inline.clone(), 20, 21), (inline, 30, 31)];
+    assert!(select_circular_pattern_axis(&duplicate_inline).is_none());
+
+    let duplicate_historical = [(historical.clone(), 10, 11), (historical, 12, 13)];
+    assert!(select_circular_pattern_axis(&duplicate_historical).is_none());
 }
 
 #[allow(

@@ -2174,9 +2174,8 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
             }
         }
     }
-    let [(axis, record_index, selection_record_index)] = axis_candidates.as_slice() else {
-        return None;
-    };
+    let (axis, record_index, selection_record_index) =
+        select_circular_pattern_axis(&axis_candidates)?;
     let owner_count_candidates = parameter_owners.iter().filter_map(|owner| {
         if native_stream(&owner.id) != native_stream(&scope.id)
             || owner.scope_record_index != scope.record_index
@@ -2249,6 +2248,32 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
         axis_record_index: *record_index,
         selection_record_index: *selection_record_index,
     })
+}
+
+pub(crate) type CircularPatternAxisCandidate =
+    (crate::records::DesignCircularPatternAxis, u32, u32);
+
+/// Select one circular-pattern axis, preferring the explicit solved carrier.
+pub(crate) fn select_circular_pattern_axis(
+    candidates: &[CircularPatternAxisCandidate],
+) -> Option<&CircularPatternAxisCandidate> {
+    let inline = candidates
+        .iter()
+        .filter(|(axis, _, _)| {
+            matches!(
+                axis,
+                crate::records::DesignCircularPatternAxis::Inline { .. }
+            )
+        })
+        .collect::<Vec<_>>();
+    match inline.as_slice() {
+        [candidate] => Some(*candidate),
+        [] => match candidates {
+            [candidate] => Some(candidate),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 fn exact_legacy_circular_pattern_axis(
