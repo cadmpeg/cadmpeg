@@ -1,12 +1,14 @@
 //! Boolean operation codes for extrusion, revolution and sweep.
 
 use super::scalars::feature_object_name;
-use crate::records::{FeatureInputLane, FeatureInputName};
+use crate::classification::{classify, FeatureClass};
+use crate::records::{Feature, FeatureInputLane, FeatureInputName};
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition};
 use std::collections::HashMap;
 
 pub(crate) const SPLIT_LINE_MODE_PROPERTY: &str = "SplitLineMode";
 pub(crate) const SPLIT_LINE_PROJECTION_MODE: &str = "Projection";
+pub(crate) const SPLIT_LINE_TOOL_PROPERTY: &str = "SplitLineTool";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FormCodePadding {
@@ -340,9 +342,9 @@ pub(crate) fn bind_extrusion_operations(
     }
 }
 
-/// Establish projected split-line mode from the class owned by each
-/// `moPLine_c` feature-input object.
-pub(crate) fn enrich_history_split_line_modes(
+/// Establish projected split-line mode and source sketch from each
+/// `moPLine_c` feature-input object while native dimension values remain raw.
+pub(crate) fn enrich_history_split_lines(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
@@ -379,6 +381,17 @@ pub(crate) fn enrich_history_split_line_modes(
             }
         }
     }
+    let tools = histories
+        .iter()
+        .flat_map(|history| {
+            history.features.iter().filter_map(|feature| {
+                (observations.get(&feature.id) == Some(&(true, false)))
+                    .then(|| split_line_source_sketch(feature, &history.features))
+                    .flatten()
+                    .map(|tool| (feature.id.clone(), tool.id.clone()))
+            })
+        })
+        .collect::<HashMap<_, _>>();
     for feature in histories
         .iter_mut()
         .flat_map(|history| &mut history.features)
@@ -388,8 +401,36 @@ pub(crate) fn enrich_history_split_line_modes(
                 SPLIT_LINE_MODE_PROPERTY.into(),
                 SPLIT_LINE_PROJECTION_MODE.into(),
             );
+            if let Some(tool) = tools.get(&feature.id) {
+                feature
+                    .properties
+                    .insert(SPLIT_LINE_TOOL_PROPERTY.into(), tool.clone());
+            }
         }
     }
+}
+
+fn split_line_source_sketch<'a>(
+    feature: &Feature,
+    history_features: &'a [Feature],
+) -> Option<&'a Feature> {
+    if feature.parameters.is_empty() {
+        return None;
+    }
+    let source = feature.source_id.as_deref()?.parse::<u32>().ok()?;
+    let mut candidates = history_features.iter().filter(|candidate| {
+        candidate.parent == feature.parent
+            && classify(candidate) == Some(FeatureClass::Sketch)
+            && candidate.input_class.as_deref() == Some("moProfileFeature_c")
+            && candidate.parameters == feature.parameters
+            && candidate
+                .source_id
+                .as_deref()
+                .and_then(|value| value.parse::<u32>().ok())
+                .is_some_and(|candidate_source| candidate_source > 0 && candidate_source < source)
+    });
+    let tool = candidates.next()?;
+    candidates.next().is_none().then_some(tool)
 }
 
 #[cfg(test)]

@@ -28,16 +28,20 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
         text: None,
         content: Vec::new(),
     };
-    let history = FeatureHistory {
+    let dimensions = BTreeMap::from([("D1".into(), "2".into())]);
+    let mut split = native_feature("split", "40", "moPLine_c");
+    split.parameters.clone_from(&dimensions);
+    let mut sketch = native_feature("sketch", "30", "moProfileFeature_c");
+    sketch.xml_tag = "Sketch".into();
+    sketch.kind = "Sketch".into();
+    sketch.parameters = dimensions;
+    let mut history = FeatureHistory {
         id: "history".into(),
         part_name: None,
         properties: BTreeMap::new(),
         content: Vec::new(),
         configurations: Vec::new(),
-        features: vec![
-            native_feature("split", "40", "moPLine_c"),
-            native_feature("next", "50", "moExtrusion_c"),
-        ],
+        features: vec![split, sketch, native_feature("next", "50", "moExtrusion_c")],
     };
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -81,7 +85,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
     };
 
     let mut projected = vec![history.clone()];
-    enrich_history_split_line_modes(&mut projected, std::slice::from_ref(&lane));
+    enrich_history_split_lines(&mut projected, std::slice::from_ref(&lane));
     assert_eq!(
         projected[0].features[0]
             .properties
@@ -89,8 +93,15 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
             .map(String::as_str),
         Some(SPLIT_LINE_PROJECTION_MODE)
     );
+    assert_eq!(
+        projected[0].features[0]
+            .properties
+            .get(SPLIT_LINE_TOOL_PROPERTY)
+            .map(String::as_str),
+        Some("sketch")
+    );
 
-    let mut ambiguous_lane = lane;
+    let mut ambiguous_lane = lane.clone();
     ambiguous_lane.classes.push(FeatureInputClass {
         id: "second-project".into(),
         parent: "lane".into(),
@@ -99,11 +110,28 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
         name: "moPLineProject_c".into(),
         role: FeatureInputClassRole::Auxiliary,
     });
-    let mut ambiguous = vec![history];
-    enrich_history_split_line_modes(&mut ambiguous, &[ambiguous_lane]);
+    let mut ambiguous = vec![history.clone()];
+    enrich_history_split_lines(&mut ambiguous, &[ambiguous_lane]);
     assert!(!ambiguous[0].features[0]
         .properties
         .contains_key(SPLIT_LINE_MODE_PROPERTY));
+
+    let mut duplicate_sketch = history.features[1].clone();
+    duplicate_sketch.id = "duplicate-sketch".into();
+    duplicate_sketch.source_id = Some("20".into());
+    history.features.insert(2, duplicate_sketch);
+    let mut ambiguous_tool = vec![history];
+    enrich_history_split_lines(&mut ambiguous_tool, &[lane]);
+    assert_eq!(
+        ambiguous_tool[0].features[0]
+            .properties
+            .get(SPLIT_LINE_MODE_PROPERTY)
+            .map(String::as_str),
+        Some(SPLIT_LINE_PROJECTION_MODE)
+    );
+    assert!(!ambiguous_tool[0].features[0]
+        .properties
+        .contains_key(SPLIT_LINE_TOOL_PROPERTY));
 }
 #[test]
 fn inline_operation_binds_join_and_cut_to_their_family_words() {

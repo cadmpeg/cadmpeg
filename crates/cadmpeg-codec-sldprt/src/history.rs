@@ -2500,7 +2500,7 @@ mod history_reference_tests {
     }
 
     #[test]
-    fn projected_split_line_uses_the_unique_lower_source_sketch_signature() {
+    fn split_face_path_uses_the_prebound_source_sketch() {
         let dimensions = BTreeMap::from([("D1".into(), "<MOD-DIAM>85".into())]);
         let mut split = feature("split", Some("711"), 0);
         split.kind = "Split Line".into();
@@ -2510,11 +2510,15 @@ mod history_reference_tests {
             crate::resolved_features::operations::SPLIT_LINE_MODE_PROPERTY.into(),
             crate::resolved_features::operations::SPLIT_LINE_PROJECTION_MODE.into(),
         );
+        split.properties.insert(
+            crate::resolved_features::operations::SPLIT_LINE_TOOL_PROPERTY.into(),
+            "sketch".into(),
+        );
         let mut sketch = feature("sketch", Some("705"), 1);
         sketch.xml_tag = "Sketch".into();
         sketch.kind = "Sketch".into();
         sketch.input_class = Some("moProfileFeature_c".into());
-        sketch.parameters = dimensions;
+        sketch.parameters = BTreeMap::from([("D1".into(), "<MOD-DIAM>2159mm".into())]);
         let history = FeatureHistory {
             id: "history".into(),
             part_name: None,
@@ -2540,20 +2544,6 @@ mod history_reference_tests {
             split_feature.dependencies,
             vec![neutral_feature_id(&sketch.id)]
         );
-
-        let mut ambiguous = history;
-        let mut duplicate = sketch;
-        duplicate.id = "duplicate-sketch".into();
-        duplicate.source_id = Some("704".into());
-        ambiguous.features.push(duplicate);
-        let projected = project_features(&[ambiguous]);
-        assert!(matches!(
-            projected
-                .iter()
-                .find(|candidate| candidate.native_ref.as_deref() == Some(split.id.as_str()))
-                .map(|candidate| &candidate.definition),
-            Some(FeatureDefinition::Native { .. })
-        ));
     }
 
     #[test]
@@ -7355,8 +7345,7 @@ fn project_definition(
     } else if class == Some(FeatureClass::Draft) {
         project_draft(feature)
     } else if class == Some(FeatureClass::SplitFace) {
-        project_split_face(feature, native_by_source, history_features)
-            .unwrap_or_else(|| native_definition(feature))
+        project_split_face(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Combine) {
         project_combine(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::CutWithSurface) {
@@ -7394,41 +7383,23 @@ fn project_definition(
     }
 }
 
-fn project_split_face(
-    feature: &Feature,
-    native_by_source: &HashMap<&str, &str>,
-    history_features: &[Feature],
-) -> Option<FeatureDefinition> {
+fn project_split_face(feature: &Feature) -> Option<FeatureDefinition> {
     if feature.input_class.as_deref() != Some("moPLine_c")
         || feature
             .properties
             .get(crate::resolved_features::operations::SPLIT_LINE_MODE_PROPERTY)
             .map(String::as_str)
             != Some(crate::resolved_features::operations::SPLIT_LINE_PROJECTION_MODE)
-        || feature.parameters.is_empty()
     {
         return None;
     }
-    let source = feature.source_id.as_deref()?.parse::<u32>().ok()?;
-    let mut candidates = history_features.iter().filter(|candidate| {
-        candidate.parent == feature.parent
-            && classify(candidate) == Some(FeatureClass::Sketch)
-            && candidate.input_class.as_deref() == Some("moProfileFeature_c")
-            && candidate.parameters == feature.parameters
-            && candidate
-                .source_id
-                .as_deref()
-                .and_then(|value| value.parse::<u32>().ok())
-                .is_some_and(|candidate_source| candidate_source > 0 && candidate_source < source)
-    });
-    let tool = candidates.next()?;
-    if candidates.next().is_some() {
-        return None;
-    }
-    let native = native_by_source.get(tool.source_id.as_deref()?)?;
+    let native = feature
+        .properties
+        .get(crate::resolved_features::operations::SPLIT_LINE_TOOL_PROPERTY)
+        .map(String::as_str)?;
     Some(FeatureDefinition::SplitFace {
         targets: FaceSelection::Unresolved,
-        tool: SplitFaceTool::Path(PathRef::Native((*native).into())),
+        tool: SplitFaceTool::Path(PathRef::Native(native.into())),
     })
 }
 
@@ -10837,7 +10808,7 @@ pub(crate) fn enrich_history_parameters_values_only(
 
 /// The shared native-lane enrichment prefix, declared once for both codec
 /// directions. Runs the ordered extrusion-termination, combine, sweep-path,
-/// sketch-block, parameter, reference-plane, reference-point,
+/// sketch-block, split-line, parameter, reference-plane, reference-point,
 /// coordinate-system, PMI, evaluated-parameter, reference-axis, and
 /// revolution-input enrichments; the read path additionally applies
 /// hole-construction enrichment (selected by `mode`).
@@ -10853,10 +10824,10 @@ pub(crate) fn enrich_history_semantic(
     crate::resolved_features::reference_geometry::enrich_history_sketch_block_references(
         histories, lanes,
     );
+    crate::resolved_features::operations::enrich_history_split_lines(histories, lanes);
     crate::resolved_features::direct_edits::enrich_history_move_face_translations(histories, lanes);
     crate::resolved_features::direct_edits::enrich_history_move_body_translations(histories, lanes);
     enrich_history_parameters_semantic(histories, lanes);
-    crate::resolved_features::operations::enrich_history_split_line_modes(histories, lanes);
     if matches!(mode, HistoryEnrichment::Read) {
         crate::resolved_features::holes::enrich_history_hole_constructions(histories, lanes);
         crate::resolved_features::holes::enrich_history_cosmetic_thread_diameters(histories, lanes);
