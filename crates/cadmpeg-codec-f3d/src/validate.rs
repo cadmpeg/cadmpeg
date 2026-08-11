@@ -1720,6 +1720,9 @@ fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
             })
             && image.geometry_payload.len() == 77
             && design::decode::canvas::valid_geometry_prologue(&image.geometry_prologue)
+            && image.visibility_offset == image.geometry_byte_offset.saturating_add(25)
+            && design::decode::canvas::geometry_prologue_visibility(&image.geometry_prologue)
+                == Some(image.visible)
             && design::decode::canvas::opposite_rectangle_edges(image.boundary_segments)
             && !image.geometry_class_tag.is_empty()
             && image

@@ -2554,6 +2554,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 v_axis,
                 bounds,
                 opacity,
+                ..
             } => {
                 if !asset_ids.contains(asset.0.as_str()) {
                     ref_error(findings, &feature.id.0, "reference-image asset", &asset.0);

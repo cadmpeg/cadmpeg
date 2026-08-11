@@ -4912,6 +4912,10 @@ pub struct DesignCanvasImage {
     pub geometry_byte_offset: u64,
     /// Fixed geometry prologue immediately following the primary record header.
     pub geometry_prologue: [u8; 15],
+    /// Whether the Canvas raster is visible.
+    pub visible: bool,
+    /// Byte offset of the visibility byte in the geometry prologue.
+    pub visibility_offset: u64,
     /// Byte length from the primary geometry header to its paired header.
     pub geometry_frame_length: u64,
     /// Dynamic class tag of the paired geometry record.

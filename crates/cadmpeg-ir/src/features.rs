@@ -559,6 +559,9 @@ pub enum FeatureDefinition {
     ReferenceImage {
         /// Embedded or external raster resource.
         asset: AssetId,
+        /// Whether the raster is visible in the source presentation.
+        #[serde(default = "default_true")]
+        visible: bool,
         /// Origin of the image plane in model space.
         origin: Point3,
         /// Unit direction of increasing image u coordinate.

@@ -5510,11 +5510,16 @@ fn named_parameter_scope_tail_is_valid(
     if marker.checked_add(59)? != paired_at || bytes.get(label_end..marker)? != [0; 7] {
         return Some(false);
     }
+    let first_lane_value = read_u64(bytes, marker + 2)?;
+    let second_lane_value = read_u64(bytes, marker + 34)?;
+    let third_lane_value = read_u64(bytes, marker + 48)?;
     Some(
         bytes.get(kind_end + 4..kind_end + 8)? == [0; 4]
             && bytes.get(marker) == Some(&1)
             && bytes.get(marker + 1).is_some_and(|field_id| *field_id != 0)
-            && read_u64(bytes, marker + 2)? == 1
+            && matches!(first_lane_value, 0 | 1)
+            && second_lane_value == first_lane_value
+            && third_lane_value == first_lane_value
             && bytes.get(marker + 10..marker + 12)? == [0; 2]
             && u32_at(bytes, marker + 12)? > 0
             && u32_at(bytes, marker + 16)? == 0xfc
@@ -5524,13 +5529,11 @@ fn named_parameter_scope_tail_is_valid(
             && bytes
                 .get(marker + 33)
                 .is_some_and(|field_id| *field_id != 0)
-            && read_u64(bytes, marker + 34)? == 1
             && bytes.get(marker + 42..marker + 46)? == [0, 1, 0, 0]
             && bytes.get(marker + 46) == Some(&1)
             && bytes
                 .get(marker + 47)
                 .is_some_and(|field_id| *field_id != 0)
-            && read_u64(bytes, marker + 48)? == 1
             && bytes.get(marker + 56..marker + 59)? == [0; 3],
     )
 }
@@ -7204,8 +7207,9 @@ mod mirror_tests {
 mod tests {
     use super::{
         exact_coil_placement, exact_hole_construction, exact_path_feature_construction,
-        exact_pattern_identity_wrapper, exact_work_point_construction, parse_parameter_scope,
-        HOLE_POINT_DATA_TYPE_GUID, POINT_DATA_TYPE_GUID,
+        exact_pattern_identity_wrapper, exact_work_point_construction,
+        named_parameter_scope_tail_is_valid, parse_parameter_scope, HOLE_POINT_DATA_TYPE_GUID,
+        POINT_DATA_TYPE_GUID,
     };
     use crate::design::decode::sketch::IndexedRecordOffsets;
     use crate::records::{
@@ -7227,6 +7231,62 @@ mod tests {
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(&class_tag);
         bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+
+    fn named_scope_tail(lane_value: u64) -> Vec<u8> {
+        let label = "Canvas";
+        let label_code_units = label.encode_utf16().count();
+        let marker = 19 + label_code_units * 2;
+        let mut bytes = vec![0; marker + 59];
+        bytes[0..4].copy_from_slice(&1u32.to_le_bytes());
+        let mut label_bytes = Vec::new();
+        lp_utf16(&mut label_bytes, label);
+        bytes[8..8 + label_bytes.len()].copy_from_slice(&label_bytes);
+        bytes[marker] = 1;
+        bytes[marker + 1] = 0xd5;
+        bytes[marker + 2..marker + 10].copy_from_slice(&lane_value.to_le_bytes());
+        bytes[marker + 12..marker + 16].copy_from_slice(&u32::MAX.to_le_bytes());
+        bytes[marker + 16..marker + 20].copy_from_slice(&0xfcu32.to_le_bytes());
+        bytes[marker + 20..marker + 28].copy_from_slice(&0.25f64.to_le_bytes());
+        bytes[marker + 28..marker + 32].copy_from_slice(&0xfcu32.to_le_bytes());
+        bytes[marker + 32] = 1;
+        bytes[marker + 33] = 0xd4;
+        bytes[marker + 34..marker + 42].copy_from_slice(&lane_value.to_le_bytes());
+        bytes[marker + 42..marker + 46].copy_from_slice(&[0, 1, 0, 0]);
+        bytes[marker + 46] = 1;
+        bytes[marker + 47] = 0xd3;
+        bytes[marker + 48..marker + 56].copy_from_slice(&lane_value.to_le_bytes());
+        bytes
+    }
+
+    #[test]
+    fn named_scope_tail_requires_one_repeated_binary_lane_value() {
+        for lane_value in [0, 1] {
+            let bytes = named_scope_tail(lane_value);
+            assert_eq!(
+                named_parameter_scope_tail_is_valid(&bytes, 0, bytes.len(), bytes.len()),
+                Some(true)
+            );
+        }
+
+        let mut mismatched = named_scope_tail(0);
+        let marker = mismatched.len() - 59;
+        mismatched[marker + 34..marker + 42].copy_from_slice(&1u64.to_le_bytes());
+        assert_eq!(
+            named_parameter_scope_tail_is_valid(&mismatched, 0, mismatched.len(), mismatched.len()),
+            Some(false)
+        );
+
+        let outside_domain = named_scope_tail(2);
+        assert_eq!(
+            named_parameter_scope_tail_is_valid(
+                &outside_domain,
+                0,
+                outside_domain.len(),
+                outside_domain.len()
+            ),
+            Some(false)
+        );
     }
 
     #[test]
