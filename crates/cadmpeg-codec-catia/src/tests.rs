@@ -21939,6 +21939,15 @@ fn outer_alias_parser_classifies_both_ordinal_linked_storage_leads() {
 }
 
 #[test]
+fn outer_alias_parser_rejects_marker_literals_without_an_alias_lead() {
+    for lead in [0u32, 0x15] {
+        let mut bytes = surface_alias_stream();
+        bytes[..4].copy_from_slice(&lead.to_le_bytes());
+        assert!(crate::object_graph::surface_aliases(&bytes).is_empty());
+    }
+}
+
+#[test]
 fn outer_alias_parser_closes_group_header_and_overlapping_target_slot() {
     let mut bytes = vec![0x02, 0x00];
     bytes.extend_from_slice(&0xafu32.to_le_bytes());

@@ -16,14 +16,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container and roster
 
-### CR-01. Non-surface outer alias rows
-
-**Question.** What grammar and role do outer `01 00 04 00 <tag>` rows have when they do not satisfy the surface-alias production?
-
-**Known.** `catia.md` §7.5 `alias_row` defines the complete outer surface-alias row. Each freeform surface tag has one matching alias row. Vertex tags do not use that alias.
-
-**Need.** We must distinguish other row classes from surface aliases and vertex registrations.
-
 ### CR-02. Extent flags
 
 **Question.** What does each bit of the extent `flags` word control?

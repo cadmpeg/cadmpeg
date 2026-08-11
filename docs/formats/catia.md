@@ -812,10 +812,12 @@ Resolve every in-range selector to the exact entry in the block's source schema 
 ### 7.5 Outer alias rows
 
 ```text
-alias_row := <lead:u32le> 01 00 04 00 <tag:u32le> <flag:u8> <f1:3B> <f2:u32le> <f3:u32le>
+surface_alias_lead := <u32le whose low byte is 01> | 8e 00 00 00 | 8f 00 00 00
+alias_row         := surface_alias_lead 01 00 04 00 <tag:u32le> <flag:u8>
+                     <f1:3B> <f2:u32le> <f3:u32le>
 ```
 
-The low 24 bits of `tag` are the persistent roster tag; the high byte remains part of the stored word. An alias core overlapping a complete `7C02`, `7C08`, or `7C0B` extent is framed field or payload data rather than an outer roster row. Exact lead values `0x8e` and `0x8f` are ordinal-linked storage forms. `f1[2]` is a one-based `7C09` ordinal in the unique object graph physically contained by the declared `CATPrtCont` stream. An in-range ordinal links the row to that exact record. When the selected record carries an `owner_ref`, the row also links to the corresponding design object. A missing or multiply matching part-container graph, ordinal zero, and values beyond that graph's record population carry no object-record or design-object link. The complete lead, flag, F1, F2, and F3 fields remain attached to the alias row.
+The low 24 bits of `tag` are the persistent roster tag; the high byte remains part of the stored word. A literal `01 00 04 00` without `surface_alias_lead` or a complete `alias_group_header` and `alias_group_storage` is not an alias row. The same literal occurs in outer container declarations, counted allocation tables, and framed geometry payloads. An alias core overlapping a complete `7C02`, `7C08`, or `7C0B` extent is framed field or payload data rather than an outer roster row. Exact lead values `0x8e` and `0x8f` are ordinal-linked storage forms. `f1[2]` is a one-based `7C09` ordinal in the unique object graph physically contained by the declared `CATPrtCont` stream. An in-range ordinal links the row to that exact record. When the selected record carries an `owner_ref`, the row also links to the corresponding design object. A missing or multiply matching part-container graph, ordinal zero, and values beyond that graph's record population carry no object-record or design-object link. The complete lead, flag, F1, F2, and F3 fields remain attached to the alias row.
 
 Grouped alias rows carry this header before a bounded storage prefix:
 

@@ -249,9 +249,9 @@ pub enum AliasLead {
     E5LinkedSurfaceStorage,
     /// Exact value `0x8f`: ordinal-linked alias storage.
     OrdinalLinkedStorage8f,
-    /// Zero lead: alias-like row outside surface storage.
+    /// Zero word preceding a complete grouped-alias core.
     NonSurfaceAlias,
-    /// Other lead value whose role is not assigned.
+    /// Other word preceding a complete grouped-alias core.
     Unclassified(u32),
 }
 
@@ -344,19 +344,21 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
                 return None;
             }
             let lead_raw = u32_le(data, pos.checked_sub(4)?)?;
+            let group = alias_group_membership(data, pos);
             let lead = if lead_raw & 0xff == 1 {
                 AliasLead::SurfaceSupportStorage
             } else if lead_raw == 0x8e {
                 AliasLead::E5LinkedSurfaceStorage
             } else if lead_raw == 0x8f {
                 AliasLead::OrdinalLinkedStorage8f
+            } else if group.is_none() {
+                return None;
             } else if lead_raw == 0 {
                 AliasLead::NonSurfaceAlias
             } else {
                 AliasLead::Unclassified(lead_raw)
             };
             let f1 = [data[pos + 9], data[pos + 10], data[pos + 11]];
-            let group = alias_group_membership(data, pos);
             Some(SurfaceAlias {
                 pos,
                 lead,
