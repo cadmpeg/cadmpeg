@@ -5270,7 +5270,7 @@ pub struct SketchText {
     pub class_version: u32,
     /// Byte offset of this record within its Design `BulkStream`.
     pub byte_offset: u64,
-    /// Persistent genesis identity, a property key absent from most records.
+    /// Optional `EntityGenesis` origin bitfield.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity_genesis: Option<u64>,
     /// Persistent identity of the text entity. A `txt_tag` record below class
@@ -5463,7 +5463,7 @@ pub struct SketchPoint {
     pub byte_offset: u64,
     /// Byte offset of the first coordinate relative to the record start.
     pub coordinate_offset: u32,
-    /// Optional persistent genesis identity carried ahead of the point identity.
+    /// Optional `EntityGenesis` origin bitfield carried ahead of the point identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity_genesis: Option<u64>,
     /// Serialized point-record member sequence and class version.
@@ -5508,7 +5508,7 @@ pub struct SketchCurveIdentity {
     pub byte_offset: u64,
     /// Byte offset of the fixed analytic geometry payload relative to the record start.
     pub geometry_offset: u32,
-    /// Optional persistent genesis identity carried ahead of the curve identities.
+    /// Optional `EntityGenesis` origin bitfield carried ahead of the curve identities.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity_genesis: Option<u64>,
     /// Primary persistent identifier of the source sketch curve.
@@ -5537,7 +5537,7 @@ pub struct SketchSurface {
     pub class_tag: String,
     /// Byte offset of this record within its Design `BulkStream`.
     pub byte_offset: u64,
-    /// Optional persistent genesis identity carried ahead of the surface identity.
+    /// Optional `EntityGenesis` origin bitfield carried ahead of the surface identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity_genesis: Option<u64>,
     /// Persistent Fusion identifier for the sketch surface.
