@@ -578,6 +578,10 @@ fn enrich_implicit_nominals(
                 DimensionKind::Size,
                 width_from_applied_geometry(entity, &feature_index).map(ImplicitNominal::Exact),
             ),
+            "GdtRadius" => (
+                DimensionKind::Radius,
+                radius_from_applied_geometry(entity, &feature_index).map(ImplicitNominal::Exact),
+            ),
             _ => continue,
         };
         let Some(source) = source else {
@@ -648,6 +652,15 @@ fn width_from_applied_geometry(
 ) -> Option<f64> {
     measurement_from_applied_geometry(annotation, |id| {
         width_for_feature(id, feature_index, &mut BTreeSet::new(), 0)
+    })
+}
+
+fn radius_from_applied_geometry(
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+) -> Option<f64> {
+    measurement_from_applied_geometry(annotation, |id| {
+        radius_for_feature(id, feature_index, &mut BTreeSet::new(), 0)
     })
 }
 
@@ -760,27 +773,14 @@ fn diameter_for_feature(
     visited: &mut BTreeSet<String>,
     depth: usize,
 ) -> Option<f64> {
-    if depth >= MAX_DEPTH || !visited.insert(id.to_string()) {
-        return None;
-    }
-    let feature = feature_index.get(id)?;
-    let direct = match short_class(&feature.class) {
-        "GdtCylinder" => nominal_radius(feature, "NomCylinder"),
-        "GdtSphere" => nominal_radius(feature, "NomSphere"),
-        _ => None,
-    };
-    if let Some(radius) = direct {
-        return finite_positive(radius * 2.0);
-    }
-
-    let next_depth = depth.checked_add(1)?;
-    let candidates = child_feature_ids(feature)
-        .into_iter()
-        .filter_map(|child| {
-            diameter_for_feature(child, feature_index, &mut visited.clone(), next_depth)
-        })
-        .collect::<Vec<_>>();
-    unique_measurement(&candidates)
+    measurement_for_feature(id, feature_index, visited, depth, |feature| {
+        let radius = match short_class(&feature.class) {
+            "GdtCylinder" => nominal_radius(feature, "NomCylinder"),
+            "GdtSphere" => nominal_radius(feature, "NomSphere"),
+            _ => None,
+        }?;
+        finite_positive(radius * 2.0)
+    })
 }
 
 fn depth_for_feature(
@@ -789,21 +789,11 @@ fn depth_for_feature(
     visited: &mut BTreeSet<String>,
     depth: usize,
 ) -> Option<f64> {
-    if depth >= MAX_DEPTH || !visited.insert(id.to_string()) {
-        return None;
-    }
-    let feature = feature_index.get(id)?;
-    if short_class(&feature.class) == "GdtCylinder" {
-        return nominal_cylinder_depth(feature);
-    }
-    let next_depth = depth.checked_add(1)?;
-    let candidates = child_feature_ids(feature)
-        .into_iter()
-        .filter_map(|child| {
-            depth_for_feature(child, feature_index, &mut visited.clone(), next_depth)
-        })
-        .collect::<Vec<_>>();
-    unique_measurement(&candidates)
+    measurement_for_feature(id, feature_index, visited, depth, |feature| {
+        (short_class(&feature.class) == "GdtCylinder")
+            .then(|| nominal_cylinder_depth(feature))
+            .flatten()
+    })
 }
 
 fn width_for_feature(
@@ -812,23 +802,68 @@ fn width_for_feature(
     visited: &mut BTreeSet<String>,
     depth: usize,
 ) -> Option<f64> {
+    measurement_for_feature(
+        id,
+        feature_index,
+        visited,
+        depth,
+        |feature| match short_class(&feature.class) {
+            "GdtCompoundWidth" => nominal_measurement(feature, "NomCompoundWidth", "Width"),
+            "GdtCompoundClosedSlot3D" => nominal_measurement(feature, "NomClosedSlot", "Width"),
+            _ => None,
+        },
+    )
+}
+
+fn radius_for_feature(
+    id: &str,
+    feature_index: &BTreeMap<&str, &Entity>,
+    visited: &mut BTreeSet<String>,
+    depth: usize,
+) -> Option<f64> {
+    measurement_for_feature(
+        id,
+        feature_index,
+        visited,
+        depth,
+        |feature| match short_class(&feature.class) {
+            "GdtFillet" => feature
+                .doubles
+                .get("Radius")
+                .copied()
+                .and_then(finite_positive),
+            "GdtCylinder" => nominal_radius(feature, "NomCylinder"),
+            "GdtSphere" => nominal_radius(feature, "NomSphere"),
+            _ => None,
+        },
+    )
+}
+
+fn measurement_for_feature(
+    id: &str,
+    feature_index: &BTreeMap<&str, &Entity>,
+    visited: &mut BTreeSet<String>,
+    depth: usize,
+    direct_measurement: impl Copy + Fn(&Entity) -> Option<f64>,
+) -> Option<f64> {
     if depth >= MAX_DEPTH || !visited.insert(id.to_string()) {
         return None;
     }
     let feature = feature_index.get(id)?;
-    let direct = match short_class(&feature.class) {
-        "GdtCompoundWidth" => nominal_measurement(feature, "NomCompoundWidth", "Width"),
-        "GdtCompoundClosedSlot3D" => nominal_measurement(feature, "NomClosedSlot", "Width"),
-        _ => None,
-    };
-    if direct.is_some() {
-        return direct;
+    if let Some(measurement) = direct_measurement(feature) {
+        return Some(measurement);
     }
     let next_depth = depth.checked_add(1)?;
     let candidates = child_feature_ids(feature)
         .into_iter()
         .filter_map(|child| {
-            width_for_feature(child, feature_index, &mut visited.clone(), next_depth)
+            measurement_for_feature(
+                child,
+                feature_index,
+                &mut visited.clone(),
+                next_depth,
+                direct_measurement,
+            )
         })
         .collect::<Vec<_>>();
     unique_measurement(&candidates)
@@ -914,7 +949,15 @@ fn deviation(
     if tolerance != Some(0.0) {
         return tolerance;
     }
-    if let (Some(nominal), Some(limit)) = (nominal, entity.doubles.get(limit_key).copied()) {
+    if let (Some(nominal), Some(limit)) = (
+        nominal,
+        entity
+            .doubles
+            .get(limit_key)
+            .copied()
+            .and_then(finite)
+            .filter(|limit| *limit != 0.0),
+    ) {
         return finite(limit - nominal);
     }
     tolerance
@@ -1849,6 +1892,99 @@ mod tests {
             .iter()
             .find(|annotation| annotation.id == pmi_id("A50"))
             .expect("width annotation")
+            .definition
+        else {
+            panic!("dimension definition");
+        };
+        assert_eq!(*nominal, None);
+    }
+
+    #[test]
+    fn semantic_radius_resolves_fillets_cylinders_and_spheres() {
+        let mut root = semantic_root();
+        let mut fillet = entity("GdtFillet");
+        fillet.doubles.insert("Radius".into(), 3.175);
+        *root.features.entities.get_mut(1).expect("first member") = fillet;
+        *root.features.entities.get_mut(2).expect("second member") = cylinder_with_radius(3.175);
+        root.features
+            .references
+            .get_mut(1)
+            .expect("first feature reference")
+            .class = "PrizMetrik.GdtAnalysis.GdtFillet,gdtanalysis.net".into();
+        let pattern_members = root
+            .features
+            .entities
+            .first_mut()
+            .and_then(|pattern| pattern.related.first_mut())
+            .expect("pattern members");
+        for (applied, class) in pattern_members
+            .entity
+            .related
+            .iter_mut()
+            .zip(["GdtFillet", "GdtCylinder"])
+        {
+            applied
+                .entity
+                .features
+                .references
+                .first_mut()
+                .expect("pattern member reference")
+                .class = format!("PrizMetrik.GdtAnalysis.{class},gdtanalysis.net");
+        }
+        let mut radius = entity("GdtRadius");
+        radius.doubles.insert("Nominal".into(), 0.0);
+        radius.doubles.insert("MinusTolerance".into(), -0.1);
+        radius.doubles.insert("PlusTolerance".into(), 0.0);
+        radius.doubles.insert("UpperLimit".into(), 0.0);
+        radius
+            .features
+            .references
+            .push(reference("FP", "GdtPattern"));
+        root.annotations
+            .references
+            .push(reference("A50", "GdtRadius"));
+        root.annotations.entities.push(radius);
+
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
+        let PmiDefinition::Dimension {
+            nominal,
+            upper_deviation,
+            ..
+        } = &annotations
+            .iter()
+            .find(|annotation| annotation.id == pmi_id("A50"))
+            .expect("radius annotation")
+            .definition
+        else {
+            panic!("dimension definition");
+        };
+        assert!(nominal
+            .as_ref()
+            .is_some_and(|value| approximately_equal(value.value, 3.175)));
+        assert_eq!(*upper_deviation, Some(length(0.0)));
+
+        *root.features.entities.get_mut(2).expect("second member") =
+            feature_with_nominal_measurement("GdtSphere", "NomSphere", "GeoSphere", "R", 4.0);
+        root.features
+            .references
+            .get_mut(2)
+            .expect("second feature reference")
+            .class = "PrizMetrik.GdtAnalysis.GdtSphere,gdtanalysis.net".into();
+        root.features
+            .entities
+            .first_mut()
+            .and_then(|pattern| pattern.related.first_mut())
+            .and_then(|members| members.entity.related.get_mut(1))
+            .and_then(|applied| applied.entity.features.references.first_mut())
+            .expect("second pattern member reference")
+            .class = "PrizMetrik.GdtAnalysis.GdtSphere,gdtanalysis.net".into();
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
+        let PmiDefinition::Dimension { nominal, .. } = &annotations
+            .iter()
+            .find(|annotation| annotation.id == pmi_id("A50"))
+            .expect("radius annotation")
             .definition
         else {
             panic!("dimension definition");

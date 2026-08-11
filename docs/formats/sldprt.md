@@ -894,7 +894,10 @@ GDT-analysis double fields use millimetres for lengths and radians for angles.
 signed `MinusTolerance` is already the lower deviation. A zero `Nominal` on a
 feature-size annotation without the integer field `Dimension` is an omitted
 nominal sentinel, not a zero-length dimension. `ToleranceLowerTier` is the
-lower segment of a composite surface-profile tolerance.
+lower segment of a composite surface-profile tolerance. A zero `LowerLimit`
+or `UpperLimit` is an omitted limit sentinel and does not replace a zero
+`MinusTolerance` or `PlusTolerance`. A nonzero limit supplies the corresponding
+deviation relative to the recovered nominal when the tolerance field is zero.
 
 SWIFT rendered strings use bytes `ff fe ff`, a u8 UTF-16 code-unit count, and
 that many UTF-16LE code units. In a rendered dimension string,
@@ -927,6 +930,12 @@ applied nominal slot geometry. `GdtCompoundWidth` uses
 and `SubFeatures` traversal. All reachable width contributors must agree.
 `NomHeight` and `NomLength` are feature extents and do not define the width
 dimension.
+
+An omitted `GdtRadius.Nominal` is the positive millimetre radius of its
+applied semantic geometry. `GdtFillet` uses its `Radius` field,
+`GdtCylinder` uses `NomCylinder.R`, and `GdtSphere` uses `NomSphere.R`.
+Feature references use the same recursive traversal, and all reachable radius
+contributors must agree.
 
 The geometric-tolerance classes map by their suffix: `GdtStraightness`,
 `GdtFlatness`, `GdtRoundness`, `GdtCircularity`, `GdtCylindricity`,
