@@ -7,8 +7,10 @@
 //! human-readable message text, so a reworded message is not a contract change
 //! and a new drop path without a code does not compile.
 //!
-//! [`SldprtLossCode::note`] builds each decode-time [`LossNote`]: category and
-//! severity come from the code; only the per-instance message is caller-supplied.
+//! [`SldprtLossCode::note`] is the single practical construction path for a
+//! decode-time [`LossNote`] in this crate: it fixes the loss category and
+//! severity from the code so the two cannot drift apart across sites, and it
+//! leaves only the per-instance message to the caller.
 //!
 use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 

@@ -1,15 +1,43 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Round-trip test entry points, one per write path.
 //!
-//! A retaining codec copies source bytes when the document baseline still
-//! matches, and runs the writer otherwise. A decode/encode/compare-bytes test
-//! over an unedited document always takes the copy and never exercises the
-//! writer. The three helpers here name the path they cover:
+//! A codec that retains its source bytes answers "write this document" two ways:
+//! it copies the retained bytes out when the document is unchanged since the
+//! decode that stamped its baseline, and it runs the writer otherwise. A test
+//! spelled decode, encode, compare bytes reads the same at the call site in both
+//! cases, and over an unedited document it always takes the copy. It then passes
+//! no matter what the writer does, because the writer never ran.
 //!
-//! - [`verbatim_replay_holds`] — copy happened and is byte-faithful.
-//! - [`semantic_roundtrip`] — baseline removed; copy must not happen.
-//! - [`mutation_roundtrip`] — baseline kept, one value edited; asserts the
-//!   named write path and that the edit survives.
+//! There are exactly three entry points here, one per way the question can be
+//! asked:
+//!
+//! - [`verbatim_replay_holds`] covers the copy. It asserts the copy happened and
+//!   that the copy is faithful. It says nothing about the writer.
+//! - [`semantic_roundtrip`] covers the writer with the baseline taken away, so
+//!   the copy is not available, and asserts the copy did not happen.
+//! - [`mutation_roundtrip`] covers the writer with the baseline left in place
+//!   and a value edited, which is how a user reaches it. It asserts the write
+//!   path the caller named.
+//!
+//! Each names the path it covers, so choosing wrong is an assertion-time event.
+//! There is deliberately no path-agnostic entry point. One would be the trap
+//! this module exists to close.
+//!
+//! ## Why the third one is not the trap
+//!
+//! Removing the baseline and editing a value both deny the copy, but they are
+//! not the same test and one does not subsume the other. Removing the baseline
+//! asks a codec what it does when it cannot establish whether its retained bytes
+//! are current; a codec that needs the baseline to write at all answers by
+//! refusing, and its writer is then unreachable from that helper. Editing a
+//! value asks what the writer produces for a document that differs from the
+//! retained bytes in one known place, which is the only question whose answer
+//! can be checked against the edit. `Fusion` needs both: it refuses the first
+//! and patches the second.
+//!
+//! This lives in `cadmpeg-ir` rather than beside the golden harness in
+//! `cadmpeg_core::golden` because it drives [`Encoder`], which
+//! `cadmpeg-core` cannot name: the dependency runs the other way.
 
 use cadmpeg_core::CodecError;
 

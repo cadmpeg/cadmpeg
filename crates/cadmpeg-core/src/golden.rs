@@ -1,20 +1,62 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared golden-snapshot harness for the codec crates.
 //!
-//! Each codec supplies fixture extension, regeneration hint, and branch
-//! functions. The harness enumerates frozen fixtures, runs each branch,
-//! compares against committed goldens, and refuses an empty branch.
-//! `UPDATE_GOLDEN=1` rewrites golden outputs only; fixtures stay frozen.
+//! Every codec that pins snapshots does the same six things: enumerate frozen
+//! fixture inputs, run each input through one or more branches, serialize the
+//! result as stable pretty JSON, compare it against a committed golden, report
+//! every difference at once, and refuse to pass when a branch has no inputs.
+//! Only the codec type, the fixture extension, and the regeneration hint differ,
+//! so the harness lives here once and each crate supplies those three values
+//! plus its branch functions.
+//!
+//! Fixture inputs are frozen. A snapshot test can only tell a decoder change
+//! apart from an input change while the inputs hold still, so this harness
+//! never writes them; `UPDATE_GOLDEN=1` rewrites golden outputs and nothing
+//! else.
+//!
 //! `GOLDEN_STRICT=1` compares golden text byte-exactly instead of through
 //! [`snapshots_agree`]; use it on one machine to confirm a change is exactly
 //! behavior-preserving. Never enable it in CI — cross-platform libm drift
 //! makes the mode flaky there.
 //!
-//! [`snapshots_agree`] tolerates last-place float drift via
-//! [`crate::compare::values_agree`], including fractional tokens embedded in
-//! string fields (IGES encode goldens). Byte equality is the fast path; the
-//! determinism check stays byte-exact. Local digests are elided; see
-//! [`elide_local_digests`].
+//! ## Why the comparison is not byte-exact
+//!
+//! Decoded geometry passes through `f64::cos`, `f64::sin`, and friends, which
+//! resolve to the platform's libm and are not bit-reproducible: glibc, the MSVC
+//! runtime, and Apple's libm disagree in the last one or two units in the last
+//! place. A `FreeCAD` conical face pins one such value, `origin.v` scaled by
+//! `cos(half_angle)`, which serializes as `1.802581857082682` on Linux and
+//! `1.8025818570826815` on Windows and macOS — two units in the last place
+//! apart, and identical to fourteen significant digits.
+//!
+//! A byte-exact comparison therefore reports a platform as a regression. That
+//! is the case the repository rule against comparing decoded doubles for exact
+//! equality already covers, so [`snapshots_agree`] parses both sides and defers
+//! to [`crate::compare::values_agree`], which holds structure exact, tolerates
+//! fractional numbers, and also tolerates fractional tokens embedded in string
+//! fields (IGES encode goldens). Byte equality remains the fast path, and the
+//! determinism check stays byte-exact because two runs in one process share one
+//! libm and must agree bit for bit.
+//!
+//! The tolerance hides drift below [`crate::compare::FLOAT_TOLERANCE`] relative
+//! magnitude. It does not make decode reproducible across platforms; it only
+//! stops the goldens from reporting that as codec drift.
+//!
+//! ## What this does not cover
+//!
+//! Perturbing every libm transcendental by one unit in the last place, which
+//! stands in for the disagreement between platforms, leaves seven of the eight
+//! codecs' snapshot suites passing. Two kinds of golden remain exposed, and
+//! neither has a fix at this layer:
+//!
+//! - A **byte-exact binary golden over written geometry** admits no tolerance,
+//!   because a container's bytes have no numeric structure to compare. Fusion's
+//!   `tests/golden/generate/*.bin` move under the shim while every JSON
+//!   comparison holds. Comparing such a golden semantically — per archive entry,
+//!   with geometry compared numerically — is the only real remedy.
+//! - A **digest over decoded geometry** is a bitwise fingerprint of tolerantly
+//!   compared values, so it cannot agree across platforms either. See
+//!   [`elide_local_digests`].
 
 use std::path::{Path, PathBuf};
 

@@ -7,9 +7,15 @@
 //! human-readable message text, so a reworded message is not a contract change
 //! and a new drop path without a code does not compile.
 //!
-//! [`RhinoLossCode::note`] builds each [`LossNote`]: category and severity
-//! come from the code; only the per-instance message is caller-supplied.
-//! [`RhinoLossCode::shared_code`] matches exhaustively.
+//! [`RhinoLossCode::note`] is the single construction path for a
+//! [`LossNote`] in this crate: it fixes the shared loss category and the
+//! severity from the code so the two cannot drift apart across sites, and it
+//! leaves only the per-instance message to the caller.
+//!
+//! [`RhinoLossCode::shared_code`] is an exhaustive match with no fall-through
+//! arm. A default arm would silently assign a category to a code added later,
+//! and the categories this codec spans (geometry, annotation, attribute,
+//! diagnostic) have no honest common default.
 
 use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 
