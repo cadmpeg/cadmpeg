@@ -526,8 +526,13 @@ fn project_dimension(
 ) -> Option<PmiAnnotation> {
     let dimension = dimension_kind(short_class(&entity.class))?;
     let quantity = dimension_quantity(&dimension);
-    let nominal = finite(entity.doubles.get("Nominal").copied()?)
-        .filter(|value| *value != 0.0 || entity.integers.contains_key("Dimension"));
+    let nominal = finite(entity.doubles.get("Nominal").copied()?).filter(|value| {
+        *value != 0.0
+            || entity
+                .integers
+                .get("Dimension")
+                .is_some_and(|dimension| *dimension != 0)
+    });
     let lower_deviation = deviation(entity, nominal, "LowerLimit", "MinusTolerance");
     let upper_deviation = deviation(entity, nominal, "UpperLimit", "PlusTolerance");
     Some(PmiAnnotation {
@@ -579,6 +584,10 @@ fn enrich_implicit_nominals(
             "GdtLength" => (
                 DimensionKind::Size,
                 length_from_applied_geometry(entity, &feature_index).map(ImplicitNominal::Exact),
+            ),
+            "GdtDistanceBetween" => (
+                DimensionKind::Location,
+                directional_distance(entity, &feature_index).map(ImplicitNominal::Exact),
             ),
             "GdtCounterBore" => (
                 DimensionKind::Size,
@@ -667,6 +676,153 @@ fn diameter_from_applied_geometry(
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Option<f64> {
     unique_diameter(&diameter_contributors(annotation, feature_index))
+}
+
+fn directional_distance(
+    annotation: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
+) -> Option<f64> {
+    if annotation.integers.get("ComputeAnswerBy") != Some(&0)
+        || annotation.integers.get("Direction") != Some(&4)
+        || annotation.integers.get("NormalTo") != Some(&1)
+        || !identity_transform(&unique_related(annotation, "NominalTransform")?.entity)
+    {
+        return None;
+    }
+    let direction_entity = &unique_related(annotation, "DirectionVector")?.entity;
+    let direction = vector(direction_entity, ["I", "J", "K"])?;
+    if !approximately_equal(direction[0].hypot(direction[1]).hypot(direction[2]), 1.0) {
+        return None;
+    }
+    let [first, second] = annotation.features.references.as_slice() else {
+        return None;
+    };
+    let first = location_projection(&first.id, feature_index, direction)?;
+    let second = location_projection(&second.id, feature_index, direction)?;
+    finite_positive((second - first).abs())
+}
+
+fn identity_transform(transform: &Entity) -> bool {
+    [
+        ("R1C1", 1.0),
+        ("R1C2", 0.0),
+        ("R1C3", 0.0),
+        ("R2C1", 0.0),
+        ("R2C2", 1.0),
+        ("R2C3", 0.0),
+        ("R3C1", 0.0),
+        ("R3C2", 0.0),
+        ("R3C3", 1.0),
+        ("X", 0.0),
+        ("Y", 0.0),
+        ("Z", 0.0),
+    ]
+    .into_iter()
+    .all(|(name, expected)| {
+        transform
+            .doubles
+            .get(name)
+            .is_some_and(|value| approximately_equal(*value, expected))
+    })
+}
+
+fn location_projection(
+    id: &str,
+    feature_index: &BTreeMap<&str, &Entity>,
+    direction: [f64; 3],
+) -> Option<f64> {
+    let feature = feature_index.get(id)?;
+    match short_class(&feature.class) {
+        "GdtPlane" | "GdtIntersectPlane" => plane_projection(feature, direction),
+        "GdtCylinder" => axis_projection(feature, "NomCylinder", direction),
+        "GdtCone" => axis_projection(feature, "NomCone", direction),
+        "GdtCompoundHole" => {
+            let mut projections = Vec::new();
+            collect_rotational_projections(
+                id,
+                feature_index,
+                direction,
+                &mut BTreeSet::new(),
+                0,
+                &mut projections,
+            );
+            unique_measurement(&projections)
+        }
+        _ => None,
+    }
+}
+
+fn plane_projection(feature: &Entity, direction: [f64; 3]) -> Option<f64> {
+    let plane = &unique_related(feature, "NomPlane")?.entity;
+    let normal = vector(plane, ["I", "J", "K"])?;
+    let point = vector(plane, ["X", "Y", "Z"])?;
+    if !approximately_equal(normal[0].hypot(normal[1]).hypot(normal[2]), 1.0)
+        || !approximately_equal(
+            (normal[0] * direction[0] + normal[1] * direction[1] + normal[2] * direction[2]).abs(),
+            1.0,
+        )
+    {
+        return None;
+    }
+    finite(point[0] * direction[0] + point[1] * direction[1] + point[2] * direction[2])
+}
+
+fn axis_projection(feature: &Entity, geometry: &str, direction: [f64; 3]) -> Option<f64> {
+    let axis = &unique_related(feature, geometry)?.entity;
+    let axis_direction = vector(axis, ["I", "J", "K"])?;
+    let point = vector(axis, ["X", "Y", "Z"])?;
+    if !approximately_equal(
+        axis_direction[0]
+            .hypot(axis_direction[1])
+            .hypot(axis_direction[2]),
+        1.0,
+    ) || !approximately_equal(
+        axis_direction[0] * direction[0]
+            + axis_direction[1] * direction[1]
+            + axis_direction[2] * direction[2],
+        0.0,
+    ) {
+        return None;
+    }
+    finite(point[0] * direction[0] + point[1] * direction[1] + point[2] * direction[2])
+}
+
+fn collect_rotational_projections(
+    id: &str,
+    feature_index: &BTreeMap<&str, &Entity>,
+    direction: [f64; 3],
+    visited: &mut BTreeSet<String>,
+    depth: usize,
+    projections: &mut Vec<f64>,
+) {
+    if depth >= MAX_DEPTH || !visited.insert(id.to_string()) {
+        return;
+    }
+    let Some(feature) = feature_index.get(id) else {
+        return;
+    };
+    let projection = match short_class(&feature.class) {
+        "GdtCylinder" => axis_projection(feature, "NomCylinder", direction),
+        "GdtCone" => axis_projection(feature, "NomCone", direction),
+        _ => None,
+    };
+    if let Some(projection) = projection {
+        projections.push(projection);
+        return;
+    }
+    let Some(next_depth) = depth.checked_add(1) else {
+        return;
+    };
+    for child in child_feature_ids(feature) {
+        collect_rotational_projections(
+            child,
+            feature_index,
+            direction,
+            &mut visited.clone(),
+            next_depth,
+            projections,
+        );
+    }
 }
 
 fn diameter_nominal(
@@ -2075,6 +2231,94 @@ mod tests {
         feature
     }
 
+    fn plane_at(point: [f64; 3], normal: [f64; 3]) -> Entity {
+        let mut feature = entity("GdtPlane");
+        let mut plane = Entity {
+            class: "PrizMetrik.Geometry.GeoPlane".into(),
+            ..Entity::default()
+        };
+        for (name, value) in ["X", "Y", "Z"].into_iter().zip(point) {
+            plane.doubles.insert(name.into(), value);
+        }
+        for (name, value) in ["I", "J", "K"].into_iter().zip(normal) {
+            plane.doubles.insert(name.into(), value);
+        }
+        feature.related.push(RelatedObject {
+            name: "NomPlane".into(),
+            class: plane.class.clone(),
+            entity: plane,
+        });
+        feature
+    }
+
+    fn cylinder_at(point: [f64; 3], axis: [f64; 3]) -> Entity {
+        let mut feature = cylinder_with_radius(3.0);
+        let cylinder = &mut feature
+            .related
+            .first_mut()
+            .expect("nominal cylinder")
+            .entity;
+        for (name, value) in ["X", "Y", "Z"].into_iter().zip(point) {
+            cylinder.doubles.insert(name.into(), value);
+        }
+        for (name, value) in ["I", "J", "K"].into_iter().zip(axis) {
+            cylinder.doubles.insert(name.into(), value);
+        }
+        feature
+    }
+
+    fn distance_annotation(first: Reference, second: Reference, direction: [f64; 3]) -> Entity {
+        let mut annotation = entity("GdtDistanceBetween");
+        annotation.doubles.insert("Nominal".into(), 0.0);
+        annotation.doubles.insert("MinusTolerance".into(), -0.5);
+        annotation.doubles.insert("PlusTolerance".into(), 0.5);
+        annotation.doubles.insert("LowerLimit".into(), 0.0);
+        annotation.doubles.insert("UpperLimit".into(), 0.0);
+        annotation.integers.insert("ComputeAnswerBy".into(), 0);
+        annotation.integers.insert("Dimension".into(), 0);
+        annotation.integers.insert("Direction".into(), 4);
+        annotation.integers.insert("NormalTo".into(), 1);
+        annotation.features.references = vec![first, second];
+        let mut transform = Entity {
+            class: "PrizMetrik.Geometry.GeoTransform".into(),
+            ..Entity::default()
+        };
+        for (name, value) in [
+            ("R1C1", 1.0),
+            ("R1C2", 0.0),
+            ("R1C3", 0.0),
+            ("R2C1", 0.0),
+            ("R2C2", 1.0),
+            ("R2C3", 0.0),
+            ("R3C1", 0.0),
+            ("R3C2", 0.0),
+            ("R3C3", 1.0),
+            ("X", 0.0),
+            ("Y", 0.0),
+            ("Z", 0.0),
+        ] {
+            transform.doubles.insert(name.into(), value);
+        }
+        annotation.related.push(RelatedObject {
+            name: "NominalTransform".into(),
+            class: transform.class.clone(),
+            entity: transform,
+        });
+        let mut vector = Entity {
+            class: "PrizMetrik.Geometry.GeoUnitVector".into(),
+            ..Entity::default()
+        };
+        for (name, value) in ["I", "J", "K"].into_iter().zip(direction) {
+            vector.doubles.insert(name.into(), value);
+        }
+        annotation.related.push(RelatedObject {
+            name: "DirectionVector".into(),
+            class: vector.class.clone(),
+            entity: vector,
+        });
+        annotation
+    }
+
     fn feature_with_nominal_measurement(
         feature_class: &str,
         object_name: &str,
@@ -2405,6 +2649,101 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn directional_plane_distance_supplies_location_nominal() {
+        let mut root = semantic_root();
+        root.features.references.push(reference("FL1", "GdtPlane"));
+        root.features
+            .entities
+            .push(plane_at([3.0, 4.0, 5.0], [0.0, 0.0, 1.0]));
+        root.features.references.push(reference("FL2", "GdtPlane"));
+        root.features
+            .entities
+            .push(plane_at([8.0, 9.0, 25.0], [0.0, 0.0, 1.0]));
+        root.annotations
+            .references
+            .push(reference("A50", "GdtDistanceBetween"));
+        root.annotations.entities.push(distance_annotation(
+            reference("FL1", "GdtPlane"),
+            reference("FL2", "GdtPlane"),
+            [0.0, 0.0, -1.0],
+        ));
+
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
+        let PmiDefinition::Dimension {
+            nominal,
+            lower_deviation,
+            upper_deviation,
+            ..
+        } = &annotations
+            .iter()
+            .find(|annotation| annotation.id == pmi_id("A50"))
+            .expect("location dimension")
+            .definition
+        else {
+            panic!("dimension definition");
+        };
+        assert_eq!(*nominal, Some(length(20.0)));
+        assert_eq!(*lower_deviation, Some(length(-0.5)));
+        assert_eq!(*upper_deviation, Some(length(0.5)));
+
+        *root.features.entities.last_mut().expect("second plane") =
+            plane_at([8.0, 9.0, 25.0], [1.0, 0.0, 0.0]);
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
+        let PmiDefinition::Dimension { nominal, .. } = &annotations
+            .iter()
+            .find(|annotation| annotation.id == pmi_id("A50"))
+            .expect("location dimension")
+            .definition
+        else {
+            panic!("dimension definition");
+        };
+        assert_eq!(*nominal, None);
+    }
+
+    #[test]
+    fn directional_compound_hole_axes_supply_location_nominal() {
+        let mut root = semantic_root();
+        for (hole_id, cylinder_id, y) in [("FH1", "FC1", 210.0), ("FH2", "FC2", 285.0)] {
+            let mut hole = entity("GdtCompoundHole");
+            hole.features
+                .references
+                .push(reference(cylinder_id, "GdtCylinder"));
+            root.features
+                .references
+                .push(reference(hole_id, "GdtCompoundHole"));
+            root.features.entities.push(hole);
+            root.features
+                .references
+                .push(reference(cylinder_id, "GdtCylinder"));
+            root.features
+                .entities
+                .push(cylinder_at([230.0, y, 27.0], [0.0, 0.0, 1.0]));
+        }
+        root.annotations
+            .references
+            .push(reference("A50", "GdtDistanceBetween"));
+        root.annotations.entities.push(distance_annotation(
+            reference("FH1", "GdtCompoundHole"),
+            reference("FH2", "GdtCompoundHole"),
+            [0.0, 1.0, 0.0],
+        ));
+
+        let mut annotations = project(&root);
+        enrich_implicit_nominals(&root, &[], &mut annotations);
+        let PmiDefinition::Dimension { nominal, .. } = &annotations
+            .iter()
+            .find(|annotation| annotation.id == pmi_id("A50"))
+            .expect("hole-axis location")
+            .definition
+        else {
+            panic!("dimension definition");
+        };
+        assert_eq!(*nominal, Some(length(75.0)));
     }
 
     #[test]

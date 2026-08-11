@@ -532,11 +532,11 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 ### DI-34. SWIFT implicit nominal construction
 
-**Question.** Which nominal-geometry rule applies to each remaining feature-size annotation whose `Nominal` field is zero and whose `Dimension` field is absent?
+**Question.** Which nominal-geometry rule applies to each remaining feature-size annotation whose `Nominal` field is zero and whose `Dimension` field is absent or zero?
 
-**Known.** `sldprt.md` §2.1 defines zero as an omitted nominal sentinel. It defines diameter and depth nominal recovery from the rendered literal, declared decimal places, pattern or compound-feature traversal, and cylindrical or spherical nominal geometry. The rendered literal, not the unrounded geometry, supplies the labeled value. It defines width and length from named slot-geometry fields and radius from the named radius field of fillet, cylindrical, or spherical geometry. It defines counterbore diameter from the direct nominal cylinder and countersink diameter and angle from the direct nominal cone. An empty applied-feature graph and empty CAD identifiers supply no geometry and do not bind an unrelated rendered literal.
+**Known.** `sldprt.md` §2.1 defines zero as an omitted nominal sentinel when `Dimension` is absent or zero. It defines diameter and depth nominal recovery from the rendered literal, declared decimal places, pattern or compound-feature traversal, and cylindrical or spherical nominal geometry. The rendered literal, not the unrounded geometry, supplies the labeled value. It defines width and length from named slot-geometry fields and radius from the named radius field of fillet, cylindrical, or spherical geometry. It defines counterbore diameter from the direct nominal cylinder and countersink diameter and angle from the direct nominal cone. An empty applied-feature graph and empty CAD identifiers supply no geometry and do not bind an unrelated rendered literal. Directional distance annotations recover plane, axis, and compound-hole locations by projection along their explicit direction.
 
-**Need.** We must derive location nominals without treating the zero sentinel as a measured dimension.
+**Need.** We must derive the remaining feature-of-size closed-slot location form without treating the zero sentinel as a measured dimension.
 
 ## 6. Write-path evidence
 

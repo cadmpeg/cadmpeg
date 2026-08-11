@@ -891,13 +891,14 @@ Nested patterns apply the same rule recursively.
 GDT-analysis double fields use millimetres for lengths and radians for angles.
 `Tolerance` is the geometric-tolerance magnitude. `Nominal`, `LowerLimit`,
 `UpperLimit`, `MinusTolerance`, and `PlusTolerance` are dimension values. A
-signed `MinusTolerance` is already the lower deviation. A zero `Nominal` on a
-feature-size annotation without the integer field `Dimension` is an omitted
-nominal sentinel, not a zero-length dimension. `ToleranceLowerTier` is the
-lower segment of a composite surface-profile tolerance. A zero `LowerLimit`
-or `UpperLimit` is an omitted limit sentinel and does not replace a zero
-`MinusTolerance` or `PlusTolerance`. A nonzero limit supplies the corresponding
-deviation relative to the recovered nominal when the tolerance field is zero.
+signed `MinusTolerance` is already the lower deviation. A zero `Nominal` with
+an absent or zero integer `Dimension` is an omitted nominal sentinel, not a
+zero-length dimension. A nonzero `Dimension` retains zero as the dimension
+value. `ToleranceLowerTier` is the lower segment of a composite surface-profile
+tolerance. A zero `LowerLimit` or `UpperLimit` is an omitted limit sentinel and
+does not replace a zero `MinusTolerance` or `PlusTolerance`. A nonzero limit
+supplies the corresponding deviation relative to the recovered nominal when
+the tolerance field is zero.
 
 SWIFT rendered strings use bytes `ff fe ff`, a u8 UTF-16 code-unit count, and
 that many UTF-16LE code units. In a rendered dimension string,
@@ -960,6 +961,18 @@ depth annotation has one direct `GdtPlane`. The plane's `NomOrigin` equals the
 cylinder's `NomBottom` origin, the origin lies on `NomPlane`, and the plane
 normal is parallel to the cylinder axis. The cylinder's axial top-to-bottom
 distance supplies the depth. Multiple valid sibling cylinders must agree.
+
+An omitted `GdtDistanceBetween.Nominal` with `ComputeAnswerBy` zero,
+`Direction` 4, `NormalTo` 1, and an identity `NominalTransform` uses its unit
+`DirectionVector` and exactly two applied features. A `GdtPlane` or
+`GdtIntersectPlane` contributes the projection of `NomPlane.X`, `Y`, and `Z`
+when its unit normal is parallel to the direction. A direct `GdtCylinder` or
+`GdtCone` contributes the projection of its nominal-axis origin when its unit
+axis is perpendicular to the direction. A `GdtCompoundHole` recursively uses
+its cylindrical and conical axes; all such axes must have one common
+projection. Support planes do not define the compound-hole location. The
+positive absolute difference between the two feature projections is the
+location nominal.
 
 An omitted `GdtWidth.Nominal` is the positive millimetre `Width` field of its
 applied nominal slot geometry. `GdtCompoundWidth` uses
