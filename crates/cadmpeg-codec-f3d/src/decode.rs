@@ -434,6 +434,15 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
 
     match definition {
         FeatureDefinition::Native { kind, .. } => !matches!(kind.as_str(), "Canvas" | "Decal"),
+        FeatureDefinition::ReferenceImage { .. }
+        | FeatureDefinition::DatumPrincipalPlane { .. } => false,
+        FeatureDefinition::MeshImport { tessellations } => tessellations.is_empty(),
+        FeatureDefinition::Decal { faces, .. } => !face_selection_is_resolved(faces),
+        FeatureDefinition::CosmeticThread {
+            face,
+            diameter,
+            extent,
+        } => !face_selection_is_resolved(face) || diameter.is_none() || extent.is_none(),
         FeatureDefinition::DatumPlaneUnresolved
         | FeatureDefinition::DatumPointUnresolved
         | FeatureDefinition::DatumCoordinateSystemUnresolved
@@ -698,7 +707,9 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                         )
                 })
         }
-        _ => false,
+        // A typed family is not replayable until this match states and checks
+        // its complete construction invariants.
+        _ => true,
     }
 }
 
@@ -6129,7 +6140,7 @@ mod tests {
             design_projection_gaps(&ir, &native),
             DesignProjectionGaps {
                 unresolved_body_bindings: 0,
-                incomplete_features: 5,
+                incomplete_features: 6,
                 native_reference_images: 0,
                 native_decals: 0,
                 unprojected_feature_scopes: 1,
