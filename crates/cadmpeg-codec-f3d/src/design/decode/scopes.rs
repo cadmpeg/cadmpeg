@@ -322,7 +322,7 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
             }
         }
         if let Some((joint_origin, frame)) = exact_single_joint_origin_frame(bytes, scope) {
-            envelopes.push((scope.record_index, joint_origin));
+            envelopes.push((scope.record_index, joint_origin, frame.transform));
             candidates.push((
                 joint_origin,
                 frame.transform,
@@ -357,11 +357,11 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
     }
     let resolved_origins = scopes
         .iter()
-        .filter(|scope| scope.kind == "JointOrigin" && scope.joint_origin_transform.is_some())
-        .map(|scope| scope.record_index)
-        .collect::<HashSet<_>>();
-    for (assembly_record_index, joint_origin_record_index) in envelopes {
-        if !resolved_origins.contains(&joint_origin_record_index) {
+        .filter(|scope| scope.kind == "JointOrigin")
+        .filter_map(|scope| Some((scope.record_index, scope.joint_origin_transform?)))
+        .collect::<HashMap<_, _>>();
+    for (assembly_record_index, joint_origin_record_index, transform) in envelopes {
+        if resolved_origins.get(&joint_origin_record_index) != Some(&transform) {
             continue;
         }
         let mut assemblies = scopes.iter_mut().filter(|scope| {

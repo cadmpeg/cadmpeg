@@ -25963,6 +25963,21 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(alignment.angle, 0.25);
     assert_eq!(alignment.offset, [4.0, 5.0, 6.0]);
     assert_eq!(alignment.owner_record_indices, [60, 61, 62, 63]);
+    scope.frame_length = 604;
+    let datum_envelope_alignment = exact_assembly_alignment(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &placement_and_alignment_owners,
+    )
+    .expect("JointOrigin datum-envelope alignment after four placement lanes");
+    assert_eq!(datum_envelope_alignment.angle, 0.25);
+    assert_eq!(datum_envelope_alignment.offset, [4.0, 5.0, 6.0]);
+    assert_eq!(
+        datum_envelope_alignment.owner_record_indices,
+        [60, 61, 62, 63]
+    );
+    assert!(datum_envelope_alignment.operand_frames.is_none());
 
     let mut short_axial_owners = rectangular_owners.to_vec();
     short_axial_owners.extend([owner(64, 4, 0.5, 605), owner(65, 5, 2.0, 606)]);
@@ -26203,7 +26218,11 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     single_frame_assembly.paired_class_tag = "258".into();
     single_frame_assembly.frame_length = 604;
     single_frame_assembly.paired_byte_offset = 604;
-    single_frame_assembly.assembly_alignment = Some(alignment.clone());
+    single_frame_assembly.reference_members = placement_and_alignment_owners
+        .iter()
+        .map(|owner| owner.record_index)
+        .collect();
+    single_frame_assembly.assembly_alignment = Some(datum_envelope_alignment);
     let mut single_frame_joint_origin = scope.clone();
     single_frame_joint_origin.kind = "JointOrigin".into();
     single_frame_joint_origin.record_index = 91;
@@ -26229,6 +26248,27 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             .as_ref()
             .and_then(|alignment| alignment.joint_origin_scope_record_index),
         Some(91)
+    );
+
+    let mut conflicting_assembly = single_frame_scopes[0].clone();
+    conflicting_assembly
+        .assembly_alignment
+        .as_mut()
+        .unwrap()
+        .joint_origin_scope_record_index = None;
+    let mut conflicting_joint_origin = single_frame_scopes[1].clone();
+    conflicting_joint_origin
+        .joint_origin_transform
+        .as_mut()
+        .unwrap()[2][3] += 1.0;
+    let mut conflicting_scopes = [conflicting_assembly, conflicting_joint_origin];
+    bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut conflicting_scopes);
+    assert_eq!(
+        conflicting_scopes[0]
+            .assembly_alignment
+            .as_ref()
+            .and_then(|alignment| alignment.joint_origin_scope_record_index),
+        None
     );
 
     single_frame_bytes[175..179].copy_from_slice(&2_u32.to_le_bytes());
