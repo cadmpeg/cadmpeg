@@ -4,16 +4,18 @@
 //! An export whose report carries no losses must decode back to an IR that
 //! [`cadmpeg_ir::diff`] reports as empty against the pre-write document.
 //!
-//! Fixture-decoded documents always carry an IGES source baseline. Planning
-//! with `fidelity: None` therefore always records
-//! `PreservedSourceUnavailable` (and typically native passthrough warnings),
-//! so the no-loss path here is retained-fidelity export — usually
-//! [`WritePath::VerbatimReplay`].
+//! Prefer `fidelity: None` (semantic synthesis). On this fixture set that path
+//! always records losses (`PreservedSourceUnavailable` and native passthrough
+//! warnings), so the retained-fidelity no-loss path — usually
+//! [`WritePath::VerbatimReplay`] — is what keeps the invariant non-vacuous.
+//! Refusals and lossy semantic exports stay pinned by the encode golden.
 
 use std::io::Cursor;
 
 use cadmpeg_core::golden::Harness;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::SourceFidelity;
 
 use super::IgesCodec;
 
@@ -27,6 +29,32 @@ fn harness() -> Harness {
     Harness::new(env!("CARGO_MANIFEST_DIR"), FIXTURE_EXTENSION, REGENERATE)
 }
 
+fn try_lossless_round_trip(
+    stem: &str,
+    original: &CadIr,
+    ir: &CadIr,
+    fidelity: Option<&SourceFidelity>,
+) -> bool {
+    let Ok(plan) = Encoder::plan(&IgesCodec, EncodeInput { ir, fidelity }) else {
+        return false;
+    };
+    let mut produced = Vec::new();
+    let Ok(report) = plan.write_to(&mut produced) else {
+        return false;
+    };
+    if !report.losses.is_empty() {
+        return false;
+    }
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(produced), &DecodeOptions::default())
+        .unwrap_or_else(|e| panic!("{stem}: written file failed to decode: {e}"));
+    let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
+    assert!(validation.is_ok(), "{stem}: {:#?}", validation.findings);
+    let d = cadmpeg_ir::diff::diff(original, &round_trip.ir);
+    assert!(d.is_empty(), "{stem}: no-loss export drifted: {d:#?}");
+    true
+}
+
 #[test]
 fn lossless_exports_round_trip_to_identical_ir() {
     let harness = harness();
@@ -37,35 +65,18 @@ fn lossless_exports_round_trip_to_identical_ir() {
         else {
             continue;
         };
-        // Retained fidelity is required for a no-loss export on these fixtures:
-        // `fidelity: None` always emits PreservedSourceUnavailable for an IGES
-        // source baseline (see writer.rs plan()). Refusals and lossy semantic
-        // exports stay pinned by the encode golden.
-        let plan = Encoder::plan(
-            &IgesCodec,
-            EncodeInput {
-                ir: &decoded.ir,
-                fidelity: Some(&decoded.source_fidelity),
-            },
-        );
-        let Ok(plan) = plan else {
-            continue;
-        };
-        let mut produced = Vec::new();
-        let Ok(report) = plan.write_to(&mut produced) else {
-            continue;
-        };
-        if !report.losses.is_empty() {
-            continue;
+        // Semantic path first (plan). Fall back to retained fidelity so the
+        // invariant stays non-vacuous on this fixture set.
+        if try_lossless_round_trip(&stem, &decoded.ir, &decoded.ir, None)
+            || try_lossless_round_trip(
+                &stem,
+                &decoded.ir,
+                &decoded.ir,
+                Some(&decoded.source_fidelity),
+            )
+        {
+            written_any = true;
         }
-        written_any = true;
-        let round_trip = IgesCodec
-            .decode(&mut Cursor::new(produced), &DecodeOptions::default())
-            .unwrap_or_else(|e| panic!("{stem}: written file failed to decode: {e}"));
-        let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
-        assert!(validation.is_ok(), "{stem}: {:#?}", validation.findings);
-        let d = cadmpeg_ir::diff::diff(&decoded.ir, &round_trip.ir);
-        assert!(d.is_empty(), "{stem}: no-loss export drifted: {d:#?}");
     }
     assert!(
         written_any,
