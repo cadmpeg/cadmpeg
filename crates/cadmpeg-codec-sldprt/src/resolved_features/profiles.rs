@@ -807,7 +807,7 @@ pub(crate) fn project_marker_backed_sketches(
                 start,
                 end,
             );
-            let Some((origin, normal, u_axis)) = frame
+            let frame = frame
                 .or_else(|| feature_frames.get(native_feature.id.as_str()).copied())
                 .or_else(|| {
                     block_definition.then_some((
@@ -815,10 +815,7 @@ pub(crate) fn project_marker_backed_sketches(
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
                     ))
-                })
-            else {
-                continue;
-            };
+                });
             let lane_key = lane
                 .id
                 .rsplit_once('#')
@@ -850,11 +847,14 @@ pub(crate) fn project_marker_backed_sketches(
                 id: sketch_id.clone(),
                 name: Some(native_feature.name.clone()),
                 configuration: lane.configuration.clone(),
-                placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
-                    origin,
-                    normal,
-                    u_axis,
-                },
+                placement: frame.map_or(
+                    cadmpeg_ir::sketches::SketchPlacement::Unresolved,
+                    |(origin, normal, u_axis)| cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                        origin,
+                        normal,
+                        u_axis,
+                    },
+                ),
                 profiles: Vec::new(),
                 native_ref: Some(lane.id.clone()),
             };

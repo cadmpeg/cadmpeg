@@ -647,6 +647,95 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
 }
 
 #[test]
+fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
+    let native_feature = NativeFeature {
+        id: "feature-native".into(),
+        parent: "history".into(),
+        xml_tag: "Sketch".into(),
+        tree_parent: None,
+        source_id: Some("1".into()),
+        parent_source_id: None,
+        ordinal: 1,
+        name: "generated-profile".into(),
+        kind: String::new(),
+        input_class: None,
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let histories = vec![FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![native_feature],
+    }];
+    let mut features = vec![Feature {
+        id: FeatureId("feature".into()),
+        ordinal: 0,
+        name: Some("generated-profile".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
+            sketch: None,
+        },
+        native_ref: Some("feature-native".into()),
+    }];
+    let lanes = vec![FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: vec![0],
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: vec![marker("point", Some([0.001, 0.002]))],
+    }];
+    let mut sketches = Vec::new();
+    let mut entities = Vec::new();
+
+    project_marker_backed_sketches(
+        &mut features,
+        &mut sketches,
+        &mut entities,
+        &histories,
+        &lanes,
+    );
+
+    assert_eq!(sketches.len(), 1);
+    assert_eq!(sketches[0].placement, SketchPlacement::Unresolved);
+    assert!(matches!(
+        entities.as_slice(),
+        [SketchEntity {
+            geometry: SketchGeometry::Point { position },
+            ..
+        }] if *position == Point2::new(1.0, 2.0)
+    ));
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::Sketch { sketch: Some(sketch), .. }
+            if sketch == &sketches[0].id
+    ));
+}
+
+#[test]
 fn marker_circle_fit_requires_one_circle_through_every_endpoint() {
     let points = [
         Point2::new(-2.0, 0.0),

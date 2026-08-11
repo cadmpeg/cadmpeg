@@ -105,6 +105,15 @@ pub(super) fn sketch_frame_marker_transform(
     sketch: &cadmpeg_ir::sketches::Sketch,
     quantum: f64,
 ) -> Option<MarkerTransform> {
+    if sketch.placement == cadmpeg_ir::sketches::SketchPlacement::Unresolved {
+        return Some(MarkerTransform {
+            swap: false,
+            u_sign: 1,
+            v_sign: 1,
+            affine_matrix: None,
+            translation: (0, 0),
+        });
+    }
     axis_aligned_sketch_frame_marker_transform(sketch, quantum)
         .or_else(|| affine_sketch_frame_marker_transform(sketch, quantum))
 }
