@@ -4872,6 +4872,12 @@ fn validate_fillet_operand_groups<'a>(
         let is_fixed_edge_group = fixed_edge_groups
             .iter()
             .any(|candidate| candidate.record_index == group.record_index);
+        let has_radius_assignment =
+            fillet_radius_group_records.contains(&(native_stream, group.record_index));
+        let has_parameter_owner = native.design_parameter_owners.iter().any(|owner| {
+            design_stream(&owner.id) == native_stream
+                && owner.scope_record_index == group.scope_record_index
+        });
         let sole_compact_group_shape = scope.is_some_and(|scope| {
             native
                 .design_construction_operand_groups
@@ -4893,6 +4899,8 @@ fn validate_fillet_operand_groups<'a>(
         });
         let full_round_group_shape = is_fillet
             && group.role == 0x0000_0004_0000_0000
+            && !has_radius_assignment
+            && !has_parameter_owner
             && scope.is_some_and(|scope| {
                 native
                     .design_construction_operand_groups
@@ -4919,11 +4927,6 @@ fn validate_fillet_operand_groups<'a>(
                     })
             });
         let valid_full_round_group = full_round_group_shape
-            && !fillet_radius_group_records.contains(&(native_stream, group.record_index))
-            && native.design_parameter_owners.iter().all(|owner| {
-                design_stream(&owner.id) != native_stream
-                    || owner.scope_record_index != group.scope_record_index
-            })
             && !group.frame.variant
             && group.frame.trailing_record_indices.len() == 1
             && group.frame.trailing_flags.len() == 1
@@ -5011,7 +5014,7 @@ fn validate_fillet_operand_groups<'a>(
         if is_fillet
             && (group.role == 0x0000_0008_0000_0000 || sole_compact_group_shape)
             && !has_fixed_assignment
-            && !fillet_radius_group_records.contains(&(native_stream, group.record_index))
+            && !has_radius_assignment
         {
             findings.push(Finding {
                 check: Check::NativeLinks,
