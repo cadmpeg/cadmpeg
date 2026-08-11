@@ -11216,6 +11216,13 @@ pub(crate) fn termination_is_incomplete(termination: &Termination) -> bool {
             VertexSelection::Generated { vertex, native } => {
                 native.trim().is_empty() || vertex.local_id.trim().is_empty()
             }
+            VertexSelection::Historical {
+                state,
+                vertex,
+                native,
+            } => {
+                state.0.trim().is_empty() || vertex.0.trim().is_empty() || native.trim().is_empty()
+            }
             VertexSelection::Unresolved | VertexSelection::Native(_) => true,
         },
         Termination::OffsetFromFace { face, offset } => {

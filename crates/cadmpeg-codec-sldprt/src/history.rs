@@ -10524,7 +10524,9 @@ fn face_selection_value(selection: &FaceSelection) -> Option<String> {
 
 fn vertex_selection_value(selection: &VertexSelection) -> Option<String> {
     match selection {
-        VertexSelection::Native(native) | VertexSelection::Generated { native, .. }
+        VertexSelection::Native(native)
+        | VertexSelection::Generated { native, .. }
+        | VertexSelection::Historical { native, .. }
             if !native.trim().is_empty() =>
         {
             Some(native.clone())

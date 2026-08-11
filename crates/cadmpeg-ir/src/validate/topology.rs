@@ -2335,6 +2335,14 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     .map(crate::ids::HistoricalEdgeId::as_str)
                     .collect::<Vec<_>>(),
             ),
+            (
+                "historical vertex",
+                state
+                    .vertices
+                    .iter()
+                    .map(crate::ids::HistoricalVertexId::as_str)
+                    .collect::<Vec<_>>(),
+            ),
         ] {
             let mut seen = HashSet::new();
             for member in members {
@@ -2517,6 +2525,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
         let mut paths = Vec::new();
         let mut edge_selections = Vec::new();
         let mut face_selections = Vec::new();
+        let mut vertex_selections = Vec::new();
         let mut body_selections = Vec::new();
         let definition = match &feature.definition {
             FeatureDefinition::PostProcess {
@@ -4359,39 +4368,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             planes,
                         } => plane_references.extend(planes.iter()),
                         crate::features::DatumPointConstruction::Vertex { vertex } => {
-                            match vertex {
-                                crate::features::VertexSelection::Generated { vertex, native } => {
-                                    if native.trim().is_empty()
-                                        || vertex.local_id.trim().is_empty()
-                                        || features
-                                            .get(vertex.feature.0.as_str())
-                                            .is_none_or(|ordinal| *ordinal >= feature.ordinal)
-                                        || !feature.dependencies.contains(&vertex.feature)
-                                        || result_topologies_by_feature
-                                            .get(vertex.feature.as_str())
-                                            .is_some_and(|state| {
-                                                !state.vertices.contains(&vertex.local_id)
-                                            })
-                                    {
-                                        feature_geometry_error(
-                                            findings,
-                                            feature,
-                                            "generated datum-point vertex is invalid",
-                                        );
-                                    }
-                                }
-                                crate::features::VertexSelection::Native(native)
-                                    if native.trim().is_empty() =>
-                                {
-                                    feature_geometry_error(
-                                        findings,
-                                        feature,
-                                        "native datum-point vertex is invalid",
-                                    );
-                                }
-                                crate::features::VertexSelection::Unresolved
-                                | crate::features::VertexSelection::Native(_) => {}
-                            }
+                            vertex_selections.push((vertex, "datum-point"));
                         }
                         crate::features::DatumPointConstruction::EdgePlaneIntersection {
                             edge,
@@ -4816,26 +4793,58 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     |identity| ids.faces(identity).is_some(),
                 );
             }
-            if let Termination::ToVertex {
-                vertex: crate::features::VertexSelection::Generated { vertex, native },
-            } = termination
-            {
-                if native.trim().is_empty()
-                    || vertex.local_id.trim().is_empty()
-                    || features
-                        .get(vertex.feature.0.as_str())
-                        .is_none_or(|ordinal| *ordinal >= feature.ordinal)
-                    || !feature.dependencies.contains(&vertex.feature)
-                    || result_topologies_by_feature
-                        .get(vertex.feature.as_str())
-                        .is_some_and(|state| !state.vertices.contains(&vertex.local_id))
-                {
+            if let Termination::ToVertex { vertex } = termination {
+                vertex_selections.push((vertex, "termination"));
+            }
+        }
+        for (selection, consumer) in vertex_selections {
+            match selection {
+                crate::features::VertexSelection::Generated { vertex, native } => {
+                    if native.trim().is_empty()
+                        || vertex.local_id.trim().is_empty()
+                        || features
+                            .get(vertex.feature.0.as_str())
+                            .is_none_or(|ordinal| *ordinal >= feature.ordinal)
+                        || !feature.dependencies.contains(&vertex.feature)
+                        || result_topologies_by_feature
+                            .get(vertex.feature.as_str())
+                            .is_some_and(|state| !state.vertices.contains(&vertex.local_id))
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            &format!("generated {consumer} vertex is invalid"),
+                        );
+                    }
+                }
+                crate::features::VertexSelection::Historical {
+                    state,
+                    vertex,
+                    native,
+                } => check_historical_selection(
+                    findings,
+                    &feature.id,
+                    (state, std::iter::once(vertex.as_str()), native),
+                    "vertex",
+                    false,
+                    &input_topologies,
+                    |topology| {
+                        topology
+                            .vertices
+                            .iter()
+                            .map(crate::ids::HistoricalVertexId::as_str)
+                            .collect()
+                    },
+                ),
+                crate::features::VertexSelection::Native(native) if native.trim().is_empty() => {
                     feature_geometry_error(
                         findings,
                         feature,
-                        "generated termination vertex is invalid",
+                        &format!("native {consumer} vertex is invalid"),
                     );
                 }
+                crate::features::VertexSelection::Unresolved
+                | crate::features::VertexSelection::Native(_) => {}
             }
         }
         for selection in edge_selections {

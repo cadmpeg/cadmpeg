@@ -2139,6 +2139,11 @@ pub(crate) fn project_feature_input_topologies(
                     .iter()
                     .map(|slot| crate::ids::history_input_edge_id(&prefix, slot))
                     .collect(),
+                vertices: topology
+                    .vertices
+                    .iter()
+                    .map(|slot| crate::ids::history_input_vertex_id(&prefix, slot))
+                    .collect(),
                 native_ref: Some(state.id.clone()),
             })
         })
@@ -6889,6 +6894,80 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn feature_input_topology_projects_historical_vertices() {
+        use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
+        use cadmpeg_ir::features::{Feature, FeatureDefinition};
+
+        let mut scope = crate::records::DesignParameterScope::empty(
+            "f3d:design:scope#work-point",
+            "WorkPoint",
+            7,
+        );
+        scope.previous_history_state_id = Some(4);
+        let feature = Feature {
+            id: cadmpeg_ir::features::FeatureId("f3d:model:feature#work-point".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: Some("WorkPoint".into()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::DatumPointUnresolved,
+            native_ref: Some(scope.id.clone()),
+        };
+        let history = AsmHistory {
+            id: "f3d:history".into(),
+            byte_offset: 0,
+            stream_size: None,
+            history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
+            states: vec![AsmDeltaState {
+                id: "f3d:history:state#4".into(),
+                parent: "f3d:history".into(),
+                byte_offset: 0,
+                state_id: 4,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: 0,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                entity_versions: Vec::new(),
+                record_table_complete: true,
+                topology: Some(AsmHistoricalTopology {
+                    vertices: vec![43, 59],
+                    ..AsmHistoricalTopology::default()
+                }),
+                transition: None,
+            }],
+        };
+
+        let projected = super::project_feature_input_topologies(
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&scope),
+            std::slice::from_ref(&history),
+            &[],
+        );
+        let prefix = super::feature_input_prefix(&feature.id, 4);
+        assert_eq!(projected.len(), 1);
+        assert_eq!(
+            projected[0].vertices,
+            [
+                crate::ids::history_input_vertex_id(&prefix, 43),
+                crate::ids::history_input_vertex_id(&prefix, 59),
+            ]
+        );
+    }
+
     #[test]
     fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
         use crate::history_records::{

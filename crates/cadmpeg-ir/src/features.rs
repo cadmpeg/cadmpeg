@@ -6,7 +6,8 @@ use std::collections::BTreeMap;
 use crate::assets::AssetId;
 use crate::ids::{
     BodyId, CurveId, EdgeId, FaceId, FeatureInputTopologyId, FeatureResultTopologyId,
-    HistoricalBodyId, HistoricalEdgeId, HistoricalFaceId, OccurrenceId, SubdId, VertexId,
+    HistoricalBodyId, HistoricalEdgeId, HistoricalFaceId, HistoricalVertexId, OccurrenceId, SubdId,
+    VertexId,
 };
 use crate::math::{Point2, Point3, Vector3};
 use crate::products::JointId;
@@ -346,6 +347,9 @@ pub struct FeatureInputTopology {
     /// Edges present in this state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub edges: Vec<HistoricalEdgeId>,
+    /// Vertices present in this state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub vertices: Vec<HistoricalVertexId>,
     /// Full-fidelity source state reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
@@ -2425,6 +2429,15 @@ pub enum VertexSelection {
     Generated {
         /// Feature-local vertex identity.
         vertex: GeneratedVertexRef,
+        /// Format-native persistent selection reference.
+        native: String,
+    },
+    /// Vertex resolved in the containing feature's input topology.
+    Historical {
+        /// Input topology containing the selected vertex.
+        state: FeatureInputTopologyId,
+        /// State-local vertex identity.
+        vertex: HistoricalVertexId,
         /// Format-native persistent selection reference.
         native: String,
     },

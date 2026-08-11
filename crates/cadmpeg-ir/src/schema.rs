@@ -503,7 +503,7 @@ impl_entity_schema!(
     crate::features::FeatureInputTopology,
     FeatureInputTopology,
     id.0;
-    id, input_of, bodies, faces, edges, native_ref
+    id, input_of, bodies, faces, edges, vertices, native_ref
 );
 impl_entity_schema!(
     crate::features::FeatureResultTopology,

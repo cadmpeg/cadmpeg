@@ -134,6 +134,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         bodies: Vec::new(),
         faces: Vec::new(),
         edges: vec![historical_edge.clone()],
+        vertices: Vec::new(),
         native_ref: None,
     };
     let feature = Feature {
@@ -192,6 +193,86 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         finding.check == Check::ReferentialIntegrity
             && finding.entity.as_deref() == Some(feature_id.as_str())
             && finding.message == format!("references missing historical edge `{missing}`")
+    }));
+}
+
+#[test]
+fn historical_vertex_selection_requires_input_state_membership() {
+    use crate::features::{
+        DatumPointConstruction, Feature, FeatureDefinition, FeatureId, FeatureInputTopology,
+        VertexSelection,
+    };
+    use crate::ids::{FeatureInputTopologyId, HistoricalVertexId};
+    use crate::schema::EntitySchema;
+
+    let feature_id = FeatureId("test:model:feature#datum-point".into());
+    let state_id = FeatureInputTopologyId("test:model:feature-input#datum-point".into());
+    let historical_vertex = HistoricalVertexId("test:model:historical-vertex#local".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model
+        .feature_input_topologies
+        .push(FeatureInputTopology {
+            id: state_id.clone(),
+            input_of: feature_id.clone(),
+            bodies: Vec::new(),
+            faces: Vec::new(),
+            edges: Vec::new(),
+            vertices: vec![historical_vertex.clone()],
+            native_ref: None,
+        });
+    ir.model.features.push(Feature {
+        id: feature_id.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::DatumPoint {
+            position: crate::math::Point3::new(1.0, 2.0, 3.0),
+            construction: Some(Box::new(DatumPointConstruction::Vertex {
+                vertex: VertexSelection::Historical {
+                    state: state_id.clone(),
+                    vertex: historical_vertex,
+                    native: "vertex:local".into(),
+                },
+            })),
+        },
+        native_ref: None,
+    });
+
+    let mut references = Vec::new();
+    ir.model.features[0].visit_references(&mut |reference| references.push(reference.target));
+    assert_eq!(references, vec![state_id.0]);
+
+    assert!(!validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.check == Check::ReferentialIntegrity));
+
+    let missing = "test:model:historical-vertex#missing";
+    let FeatureDefinition::DatumPoint {
+        construction: Some(construction),
+        ..
+    } = &mut ir.model.features[0].definition
+    else {
+        unreachable!("test feature is a constructed datum point")
+    };
+    let DatumPointConstruction::Vertex {
+        vertex: VertexSelection::Historical { vertex, .. },
+    } = construction.as_mut()
+    else {
+        unreachable!("test datum point uses a historical vertex")
+    };
+    *vertex = HistoricalVertexId(missing.into());
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.check == Check::ReferentialIntegrity
+            && finding.entity.as_deref() == Some(feature_id.as_str())
+            && finding.message == format!("references missing historical vertex `{missing}`")
     }));
 }
 

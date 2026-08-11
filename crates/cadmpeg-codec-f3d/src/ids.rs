@@ -572,6 +572,14 @@ pub(crate) fn history_input_edge_id(
     cadmpeg_ir::ids::HistoricalEdgeId(format!("f3d:history-input:edge#{prefix}:{slot}"))
 }
 
+/// The history-input vertex key for `slot` under a `prefix`.
+pub(crate) fn history_input_vertex_id(
+    prefix: &str,
+    slot: impl std::fmt::Display,
+) -> cadmpeg_ir::ids::HistoricalVertexId {
+    cadmpeg_ir::ids::HistoricalVertexId(format!("f3d:history-input:vertex#{prefix}:{slot}"))
+}
+
 /// The history-input face key for `slot` under a `prefix`.
 pub(crate) fn history_input_face_id(
     prefix: &str,
