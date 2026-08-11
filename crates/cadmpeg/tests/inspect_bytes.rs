@@ -209,8 +209,6 @@ fn find_rejects_a_positional_pattern_and_names_the_three_flags() {
     let dir = tempdir().unwrap();
     let file = write(dir.path(), "hits.bin", b"prefix");
 
-    // A bare word does not say how to encode it, so the positional form stays
-    // an error. The error names the flag that carries each encoding.
     cadmpeg()
         .args(["inspect", "find", file.to_str().unwrap(), "prefix"])
         .assert()
@@ -244,7 +242,6 @@ fn find_notes_truncation_after_the_last_hit() {
             "note: output truncated at 2 matches; pass --max 0 for all",
         ));
 
-    // Every hit fits under the default limit, so no note is printed.
     cadmpeg()
         .args(["inspect", "find", file.to_str().unwrap(), "--ascii", "a"])
         .assert()
@@ -323,11 +320,6 @@ fn the_bytes_group_prefix_reaches_the_tool_and_its_help() {
     let dir = tempdir().unwrap();
     let file = write(dir.path(), "counter.bin", &(0u8..16).collect::<Vec<u8>>());
 
-    // `inspect bytes hex --help` prints the tool's help rather than a
-    // subcommand-conflict error. The usage line carries both path segments and
-    // the arguments belong to `hex`. The predicate omits the leading executable
-    // name, which clap takes from `argv[0]` and renders as `cadmpeg.exe` on
-    // Windows.
     cadmpeg()
         .args(["inspect", "bytes", "hex", "--help"])
         .assert()
@@ -830,21 +822,17 @@ fn inspect_input_flag_positional_and_subcommand_interplay() {
     let file = write(dir.path(), "plain.bin", b"not a container");
     let path = file.to_str().unwrap();
 
-    // `inspect --input FILE` reaches the container summary (which then
-    // rejects this non-container file with its own operational error).
     cadmpeg()
         .args(["inspect", "--input", path])
         .assert()
         .code(2)
         .stderr(predicate::str::contains("no codec recognized"));
 
-    // A byte subcommand still parses with no top-level input.
     cadmpeg()
         .args(["inspect", "hex", path, "--len", "1"])
         .assert()
         .success();
 
-    // Top-level `--input` cannot be combined with a byte subcommand.
     cadmpeg()
         .args(["inspect", "--input", path, "hex"])
         .assert()
@@ -958,7 +946,6 @@ fn find_context_prints_a_window_around_each_hit() {
     let file = write(dir.path(), "ctx.bin", b"AAAAneedleBBBB");
     let path = file.to_str().unwrap();
 
-    // --context 0 output is exactly the old hit-line format.
     cadmpeg()
         .args(["inspect", "find", path, "--ascii", "needle"])
         .assert()

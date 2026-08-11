@@ -1,0 +1,114 @@
+{
+  "ir": {
+    "ir_version": "5",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
+      "curves": [],
+      "drawings": [],
+      "edges": [],
+      "faces": [],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [],
+      "semantic_annotations": [],
+      "shells": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {
+      "step": {
+        "arenas": {
+          "unknowns": [
+            {
+              "id": "step:data:example_strings#1"
+            }
+          ]
+        },
+        "version": 1
+      }
+    },
+    "source": {
+      "attributes": {
+        "bytes_named_opaque": "95",
+        "bytes_structural": "220",
+        "bytes_typed": "0",
+        "bytes_unclassified": "0",
+        "data_sections": "1",
+        "entity_instances": "1",
+        "schema": "AP214"
+      },
+      "format": "step"
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "container_only": false,
+    "format": "step",
+    "geometry_transferred": false,
+    "losses": [
+      {
+        "code": "geometry_not_transferred",
+        "message": "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
+        "severity": "error"
+      },
+      {
+        "code": "geometry_not_transferred",
+        "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
+        "severity": "error"
+      },
+      {
+        "code": "record_not_typed",
+        "message": "preserved 1 EXAMPLE_STRINGS instance(s) as named opaque STEP records",
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "byte accounting: 220 structural, 0 typed, 95 named opaque, 0 unclassified"
+    ]
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "retained_records": [
+      {
+        "byte_len": 95,
+        "data": "IzE9RVhBTVBMRV9TVFJJTkdTKCdpdCcncycsJ2FcXGInLCdcWFxFOScsJ1xYMlwwM0E5XFgwXCcsJ1xYNFwwMDAxRjY0MlxYMFwnLCdcU1xEJywnXFBBXFxTXEQnKTs=",
+        "id": "step:data:example_strings#1",
+        "offset": 193,
+        "sha256": "c85b49d96ac3523d3e2308874f0b245001c0e1dcf3f0989cd32cc693a4255a87",
+        "stream": "source"
+      }
+    ],
+    "version": "3"
+  }
+}

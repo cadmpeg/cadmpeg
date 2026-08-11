@@ -56,9 +56,13 @@ Known gaps: surface-family coverage, sheet classification, multi-shell writing, 
 Raise every declared envelope to the same read, write, and translation bar:
 
 - Autodesk Fusion `.f3d`
+- Autodesk Inventor `.ipt`/`.iam`
+- FreeCAD `.FCStd`
+- Rhino `.3dm`
 - Siemens NX `.prt`
 - CATIA V5 `.CATPart`
 - Creo Parametric `.prt`
+- Bare ASM/ACIS `.sat`/`.smt`/`.smb`/`.sab` streams
 - SolidWorks assemblies and related native documents
 
 New formats enter through byte specification, container decode, semantic decode, validation, native write, translation, and hardening. Ladder scores and proof criteria stay in [format-support.md](format-support.md).

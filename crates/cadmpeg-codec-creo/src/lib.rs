@@ -30,12 +30,15 @@
 //!
 //! # Format model
 //!
-//! A PSB file begins with the `#UGC:2` ASCII signature, an ASCII header and
-//! table of contents, then named binary sections. Detection uses this signature
-//! because Siemens NX also uses the `.prt` extension.
+//! A PSB file begins with the `#UGC:2` ASCII signature and an ASCII header.
+//! Legacy persistence uses a `P_OBJECT` body with optional named sections;
+//! later persistence uses a table of contents and named binary sections.
+//! Detection uses the signature because Siemens NX also uses `.prt`.
 //!
-//! [`container`] identifies ND and DEPDB layouts, classifies sections, reads
-//! surface and curve namespace counts, and discovers typed namespace rows.
+//! [`container`] identifies legacy, ND, and DEPDB layouts, classifies sections,
+//! reads surface and curve namespace counts, and discovers typed namespace
+//! rows. [`legacy`] resolves scoped ASCII declarations, values, and array
+//! continuations.
 //! [`psb`] and [`scalar`] expose the context-independent primitive decoders.
 //! [`surface`], [`curve`], [`reference`], [`primdata`], [`feature`], and
 //! [`topology`] expose the typed structural model.
@@ -63,6 +66,7 @@ pub mod curve;
 pub mod datum;
 pub mod decode;
 pub mod feature;
+pub mod legacy;
 pub mod placement;
 pub mod primdata;
 pub mod psb;

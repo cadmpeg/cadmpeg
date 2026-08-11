@@ -759,13 +759,9 @@ impl<'a> Builder<'a> {
             }
         }
 
-        // Every colored face carries its own face-level STYLED_ITEM. A face's
-        // color is its own override when present, otherwise the color of the
-        // body that owns it. Whole-solid styling is intentionally not emitted:
-        // common OCCT/VTK-based viewers (f3d, CAD Assistant) read STEP surface
-        // colors only from ADVANCED_FACE and ignore MANIFOLD_SOLID_BREP. A
-        // body with no emitted face instead uses its emitted shape carrier so
-        // wire and reduced bodies retain a writable whole-body color.
+        // Face-level STYLED_ITEM only: OCCT/VTK viewers read colors from
+        // ADVANCED_FACE and ignore MANIFOLD_SOLID_BREP. Bodies with no face use
+        // the shape carrier for whole-body color.
         let mut style_refs: HashMap<String, Ref> = HashMap::new();
         let mut styled = Vec::new();
         let mut faces: Vec<(String, Ref)> = self
@@ -4732,5 +4728,7 @@ fn is_rigid_transform(rows: &[[f64; 4]; 4]) -> bool {
     cadmpeg_ir::transform::Transform { rows: *rows }.is_proper_rigid()
 }
 
+#[cfg(test)]
+mod golden_tests;
 #[cfg(test)]
 mod tests;

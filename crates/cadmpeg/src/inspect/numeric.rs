@@ -225,7 +225,6 @@ impl ScalarType {
         if endian == Endian::Big {
             raw[..bytes.len()].reverse();
         }
-        // `raw` now holds the value little-endian in its low `width` bytes.
         let bits = u64::from_le_bytes(raw);
         match self {
             Self::U8 | Self::U16 | Self::U32 | Self::U64 => ScalarValue::Unsigned(bits),

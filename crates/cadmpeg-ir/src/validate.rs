@@ -62,8 +62,6 @@ use topology::{
 };
 
 /// A radius/length that is not a finite positive number is invalid geometry.
-/// Written without a negated comparison operator so it stays clippy-clean while
-/// still rejecting NaN and non-positive values.
 fn nonpositive(x: f64) -> bool {
     !(x.is_finite() && x > 0.0)
 }

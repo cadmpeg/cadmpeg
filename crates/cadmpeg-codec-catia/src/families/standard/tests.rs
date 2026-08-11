@@ -6729,7 +6729,6 @@ fn distinct_coordinate_bijections_remain_ambiguous() {
     );
 }
 
-/// Record-decoder tests migrated from the crate-level `tests` module.
 mod record_decoders {
     use cadmpeg_ir::geometry::SurfaceGeometry;
     use cadmpeg_ir::math::{Point3, Vector3};

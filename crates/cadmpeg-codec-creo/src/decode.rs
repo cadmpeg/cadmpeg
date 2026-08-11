@@ -18,13 +18,13 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent,
-    ExtrudeSide, ExtrudeStart, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId, FeatureResultTopology, FeatureSourceContent, FeatureTreeNodeRole,
-    GeneratedEdgeRef, GeneratedFaceRef, HoleBottom, HoleForm, HoleKind, Length, ParameterId,
-    ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec,
-    RevolutionAxis, RevolutionConstruction, RevolveExtent, SurfaceBoundary, SurfaceContinuity,
-    Termination, ThickenSide, VertexSelection,
+    Angle, BodySelection, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection,
+    ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection, Feature,
+    FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId, FeatureResultTopology,
+    FeatureSourceContent, FeatureTreeNodeRole, GeneratedEdgeRef, GeneratedFaceRef, HoleBottom,
+    HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm, PatternKind,
+    ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction, RevolveExtent,
+    SurfaceBoundary, SurfaceContinuity, Termination, ThickenSide, VertexSelection,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -65,10 +65,7 @@ use crate::topology::HalfEdgeId;
 mod native;
 mod records;
 use native::{annotate, emit_arena, emit_uniform, store_arena};
-#[allow(
-    clippy::wildcard_imports,
-    reason = "Split check modules share a private orchestration prelude via wildcard import."
-)]
+#[allow(clippy::wildcard_imports)]
 use records::*;
 
 /// The sole item of `iter`, or `None` when `iter` is empty or ambiguous.
@@ -117,17 +114,6 @@ fn unique_feature_definition_for_transform<'a>(
                 .as_ref()
                 .is_some_and(|section| section.offset == transform.offset)
     }))
-}
-
-fn unique_owned_transformed_definition<'a>(
-    definitions: &'a [crate::feature::FeatureDefinition],
-    transforms: &[crate::placement::FeatureSectionTransform],
-    feature_id: u32,
-) -> Option<&'a crate::feature::FeatureDefinition> {
-    let definition = unique_owned_feature_definition(definitions, feature_id)?;
-    let section = definition.section_3d.as_ref()?;
-    let transform = unique_feature_section_transform(transforms, definition.id, section.offset)?;
-    (transform.feature_id == Some(feature_id)).then_some(definition)
 }
 
 fn unique_feature_profile_definition<'a>(
@@ -560,6 +546,10 @@ struct CreoFeatureOperationState {
     identifier_keyword: Option<String>,
     stored_name_prefix: Option<String>,
     recipe: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recipe_conflict: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    display_state_conflict: Option<bool>,
     root_schema_class: Option<u32>,
     parent_feature_id: Option<u32>,
     offset: usize,
@@ -4134,23 +4124,40 @@ fn section_equation_scalar_equality_components(
         .rows
         .iter()
         .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
-        .filter(|equation| equation.function_id == 2 && equation.arguments.len() == 2)
     {
-        let [Some(first), Some(second)] = equation.arguments.as_slice() else {
-            continue;
+        let (first, second, selector) = match (equation.function_id, equation.arguments.as_slice())
+        {
+            (2, [Some(first), Some(second)]) => (*first, *second, None),
+            (5, [Some(first), Some(second), Some(selector)]) => (*first, *second, Some(*selector)),
+            _ => continue,
         };
-        let Some(first) = usize::try_from(*first)
+        let Some(first) = usize::try_from(first)
             .ok()
             .and_then(|ordinal| variables.rows.get(ordinal))
         else {
             continue;
         };
-        let Some(second) = usize::try_from(*second)
+        let Some(second) = usize::try_from(second)
             .ok()
             .and_then(|ordinal| variables.rows.get(ordinal))
         else {
             continue;
         };
+        if let Some(selector) = selector {
+            let Some(selector) = usize::try_from(selector)
+                .ok()
+                .and_then(|ordinal| variables.rows.get(ordinal))
+            else {
+                continue;
+            };
+            if first.variable_type != 6
+                || second.variable_type != 6
+                || selector.variable_type != 5
+                || selector.value != Some(0.0)
+            {
+                continue;
+            }
+        }
         if first.variable_type != second.variable_type
             || matches!(first.variable_type, 1 | 2)
             || first.key == second.key
@@ -11979,6 +11986,15 @@ fn feature_recipe_effect(
         .map(crate::feature::FeatureRecipe::effect)
 }
 
+fn feature_section_sweep_semantics_conflict(scan: &ContainerScan, feature_id: u32) -> bool {
+    current_feature_operation(&scan.features.operations, feature_id).is_some_and(|operation| {
+        operation.recipe_conflict
+            || (operation.display_state_conflict
+                && operation.recipe.is_none()
+                && operation.kind == "Native Feature")
+    })
+}
+
 fn current_additive_feature_recipe(
     operations: &[crate::feature::FeatureOperation],
     feature_id: u32,
@@ -13197,58 +13213,6 @@ fn unique_bounded_curve_segment(
     (segments.external_id_count(external_id) == 1).then_some(segment)
 }
 
-fn unique_decoded_section_entity(
-    definition: &crate::feature::FeatureDefinition,
-    external_id: u32,
-) -> Option<()> {
-    let segments = definition.segments.as_ref()?;
-    segments.is_complete().then_some(())?;
-    (segments.external_id_count(external_id) == 1).then_some(())?;
-    let mut decoded = segments
-        .rows
-        .iter()
-        .map(|segment| segment.external_id)
-        .chain(
-            segments
-                .circle_rows
-                .iter()
-                .map(|segment| segment.external_id),
-        )
-        .chain(
-            segments
-                .point_rows
-                .iter()
-                .map(|segment| segment.external_id),
-        )
-        .chain(
-            segments
-                .centered_line_rows
-                .iter()
-                .map(|segment| segment.external_id),
-        )
-        .chain(
-            segments
-                .reference_line_rows
-                .iter()
-                .map(|segment| segment.external_id),
-        )
-        .chain(
-            segments
-                .bounded_curve_rows
-                .iter()
-                .map(|segment| segment.external_id),
-        )
-        .chain(
-            segments
-                .conic_rows
-                .iter()
-                .map(|segment| segment.external_id),
-        );
-    decoded
-        .any(|candidate| candidate == external_id)
-        .then_some(())
-}
-
 fn section_skamp_locus(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
@@ -14399,18 +14363,6 @@ fn section_skamp_constraints_for_geometry(
                             SketchConstraintDefinition::HorizontalLoci { first, second }
                         } else {
                             SketchConstraintDefinition::VerticalLoci { first, second }
-                        }
-                    }
-                    (33, [item]) if item.sense == 10 => {
-                        let entity = sketch_entity_id(sketch, item.entity_id);
-                        let emitted_entity_is_unique =
-                            geometry.is_some_and(|geometry| geometry.contains_key(&entity));
-                        if emitted_entity_is_unique
-                            || unique_decoded_section_entity(definition, item.entity_id).is_some()
-                        {
-                            SketchConstraintDefinition::Fixed { entity }
-                        } else {
-                            native_constraint()?
                         }
                     }
                     (37, [source, result])
@@ -20152,7 +20104,7 @@ fn filled_surface_feature_definition(
     ir: &CadIr,
     feature_id: u32,
 ) -> IrFeatureDefinition {
-    let boundary = unique_owned_transformed_definition(
+    let boundary = unique_feature_profile_definition(
         &scan.features.definitions,
         &scan.features.section_transforms,
         feature_id,
@@ -20527,9 +20479,9 @@ fn thicken_plane_offset(
 /// Return the materialized surface identities that one feature can expose as
 /// faces in its regenerated result.
 ///
-/// A class-200 generated entry is a result-face identity only when the entry
-/// is a materialized surface, that surface row is unique, and the row names
-/// the same owning feature. Duplicate entries or malformed materialized rows
+/// Every materialized surface in an owned generated-entity table is a
+/// result-face identity when its surface row is unique and names the same
+/// owning feature. Duplicate identifiers or malformed materialized rows
 /// invalidate the complete result state for that feature.
 fn feature_result_surface_ids(
     tables: &[crate::feature::FeatureEntityTable],
@@ -20542,15 +20494,12 @@ fn feature_result_surface_ids(
         .iter()
         .filter(|table| table.feature_id == Some(feature_id))
     {
-        for entry in table.entries.iter().filter(|entry| entry.class_id == 200) {
-            if !table.surface_ids.contains(&entry.entity_id) {
-                continue;
-            }
-            let row = crate::surface::unique_surface_row(rows, entry.entity_id)?;
-            if row.feature_id != feature_id || !seen.insert(entry.entity_id) {
+        for &surface_id in &table.surface_ids {
+            let row = crate::surface::unique_surface_row(rows, surface_id)?;
+            if row.feature_id != feature_id || !seen.insert(surface_id) {
                 return None;
             }
-            surface_ids.push(entry.entity_id);
+            surface_ids.push(surface_id);
         }
     }
     (!surface_ids.is_empty()).then_some(surface_ids)
@@ -20764,6 +20713,24 @@ fn schema_feature_definition(
             && stepped_directed.is_none())
         .then(|| counterbore_axis_placement(scan, ir, feature_id))
         .flatten();
+        let drilled_recipe = simple_drilled_hole_recipe(
+            feature_id,
+            &scan.features.entity_tables,
+            &scan.surfaces.rows,
+        );
+        let drilled_dimensions = drilled_recipe.and_then(|recipe| {
+            simple_drilled_hole_dimensions(
+                scan,
+                simple_drilled_hole_envelope_spans(scan, recipe.table),
+                recipe.dimension_family,
+            )
+        });
+        let drilled_placement =
+            drilled_recipe
+                .zip(drilled_dimensions)
+                .and_then(|(recipe, (diameter, _, depth))| {
+                    simple_drilled_hole_placement(scan, recipe.table, diameter, depth)
+                });
         let placement = feature_outline_planes(scan, feature_id).and_then(hole_placement);
         let compact_cylinder_id = compact_simple_hole_cylinder_id(
             feature_id,
@@ -20786,6 +20753,10 @@ fn schema_feature_definition(
                     faces: vec![face],
                     native,
                 }
+            } else if crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)
+                .is_some_and(|row| row.feature_id == feature_id)
+            {
+                FaceSelection::Native(native)
             } else if let Some(faces) = generated_surface_face_refs(
                 &[surface_id],
                 &scan.surfaces.rows,
@@ -20801,8 +20772,15 @@ fn schema_feature_definition(
             || {
                 stepped_directed.map_or_else(
                     || {
-                        placement.map_or(
-                            (None, None, None, None, None, None),
+                        placement.map_or_else(
+                            || {
+                                drilled_placement.map_or(
+                                    (None, None, None, None, None, None),
+                                    |(position, direction)| {
+                                        (None, Some(position), Some(direction), None, None, None)
+                                    },
+                                )
+                            },
                             |(entry_surface_id, direction, extent)| {
                                 (
                                     Some(face_selection(entry_surface_id)),
@@ -20817,7 +20795,7 @@ fn schema_feature_definition(
                     },
                     |(entry_surface_id, position, direction, extent)| {
                         (
-                            Some(face_selection(entry_surface_id)),
+                            entry_surface_id.map(face_selection),
                             Some(position),
                             Some(direction),
                             None,
@@ -20845,22 +20823,49 @@ fn schema_feature_definition(
                 )
             },
         );
+        let drilled_dimensions =
+            drilled_dimensions.filter(|(drilled_diameter, _, drilled_depth)| {
+                !simple_form
+                    && stepped_form.is_none()
+                    && stepped_dimensions.is_none()
+                    && diameter
+                        .as_ref()
+                        .is_none_or(|diameter| approximately_equal(diameter.0, *drilled_diameter))
+                    && extent.as_ref().is_none_or(|extent| {
+                        matches!(extent, Termination::Blind { length }
+                        if approximately_equal(length.0, *drilled_depth))
+                    })
+            });
+        let drilled_axis = (drilled_placement.is_none())
+            .then(|| {
+                let (recipe, (diameter, _, _)) = drilled_recipe.zip(drilled_dimensions)?;
+                simple_drilled_hole_axis_placement(scan, recipe.table, diameter)
+            })
+            .flatten();
         return IrFeatureDefinition::Hole {
             profile: None,
             profile_filter: None,
             face,
             position,
             direction,
-            placements: stepped_axis.into_iter().collect(),
-            kind: match (simple_form, stepped_form, stepped_dimensions) {
-                (true, None, None) => HoleKind::Simple,
-                (false, Some(HoleForm::Counterbore), Some((_, diameter, depth))) => {
+            placements: stepped_axis.into_iter().chain(drilled_axis).collect(),
+            kind: match (
+                drilled_dimensions,
+                simple_form,
+                stepped_form,
+                stepped_dimensions,
+            ) {
+                (Some((_, drill_point_angle, _)), false, None, None) => HoleKind::SimpleDrilled {
+                    drill_point_angle: Angle(drill_point_angle),
+                },
+                (None, true, None, None) => HoleKind::Simple,
+                (None, false, Some(HoleForm::Counterbore), Some((_, diameter, depth))) => {
                     HoleKind::Counterbore {
                         diameter: Length(diameter),
                         depth: Length(depth),
                     }
                 }
-                (_, form, dimensions) => HoleKind::Unresolved {
+                (_, _, form, dimensions) => HoleKind::Unresolved {
                     form,
                     counterbore_diameter: dimensions.map(|(_, diameter, _)| Length(diameter)),
                     counterbore_depth: dimensions.map(|(_, _, depth)| Length(depth)),
@@ -20870,8 +20875,13 @@ fn schema_feature_definition(
             },
             exit_kind: None,
             diameter: diameter
+                .or_else(|| drilled_dimensions.map(|(diameter, _, _)| Length(diameter)))
                 .or_else(|| stepped_dimensions.map(|(diameter, _, _)| Length(diameter))),
-            extent,
+            extent: extent.or_else(|| {
+                drilled_dimensions.map(|(_, _, depth)| Termination::Blind {
+                    length: Length(depth),
+                })
+            }),
             bottom,
             taper_angle: None,
             specification: None,
@@ -20925,6 +20935,7 @@ fn schema_feature_definition(
         };
     }
     if schema_class == 917
+        && !feature_section_sweep_semantics_conflict(scan, feature_id)
         && section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id))
     {
         if let Some(sweep) = circular_sweep_geometry(scan, feature_id) {
@@ -20999,7 +21010,8 @@ fn schema_feature_definition(
         };
     }
     let recipe = feature_recipe(scan, feature_id);
-    if section_sweep_allows_linear_extrusion(schema_class, recipe)
+    if (!feature_section_sweep_semantics_conflict(scan, feature_id)
+        && section_sweep_allows_linear_extrusion(schema_class, recipe))
         || feature_is_sheet_extrusion(scan, feature_id)
     {
         let transforms = scan
@@ -21328,13 +21340,16 @@ fn feature_is_sheet_extrusion(scan: &ContainerScan, feature_id: u32) -> bool {
 }
 
 fn feature_allows_linear_extrusion(scan: &ContainerScan, feature_id: u32) -> bool {
-    feature_schema_class(scan, feature_id).is_some_and(|schema_class| {
-        section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id))
-    }) || feature_is_sheet_extrusion(scan, feature_id)
+    (!feature_section_sweep_semantics_conflict(scan, feature_id)
+        && feature_schema_class(scan, feature_id).is_some_and(|schema_class| {
+            section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id))
+        }))
+        || feature_is_sheet_extrusion(scan, feature_id)
 }
 
 fn feature_allows_additive_linear_extrusion(scan: &ContainerScan, feature_id: u32) -> bool {
-    feature_schema_class(scan, feature_id) == Some(917)
+    !feature_section_sweep_semantics_conflict(scan, feature_id)
+        && feature_schema_class(scan, feature_id) == Some(917)
         && section_sweep_allows_linear_extrusion(917, feature_recipe(scan, feature_id))
         && feature_recipe_effect(scan, feature_id)
             .is_none_or(|effect| effect == crate::feature::FeatureRecipeEffect::Protrude)
@@ -21453,6 +21468,9 @@ fn named_feature_definition(
     }
     if numbered_feature_name_has_family(kind, "Merge") {
         return Some(knit_surface_feature_definition(scan, feature_id));
+    }
+    if let Some(definition) = surface_intersect_feature_definition(scan, feature_id, kind) {
+        return Some(definition);
     }
     if let Some(definition) = reference_named_feature_definition(kind) {
         return Some(definition);
@@ -21616,6 +21634,26 @@ fn unresolved_extrude_extent() -> ExtrudeExtent {
             offset: None,
         },
     }
+}
+
+fn surface_intersect_feature_definition(
+    scan: &ContainerScan,
+    feature_id: u32,
+    kind: &str,
+) -> Option<IrFeatureDefinition> {
+    numbered_feature_name_has_family(kind, "Intersect").then_some(())?;
+    let mut surface_tables = scan.features.entity_tables.iter().filter(|table| {
+        table.feature_id == Some(feature_id)
+            && table.table_class_id == 29
+            && !table.surface_ids.is_empty()
+    });
+    surface_tables.next()?;
+    surface_tables.next().is_none().then_some(())?;
+    Some(IrFeatureDefinition::SectionShape {
+        first: BodySelection::Unresolved,
+        second: BodySelection::Unresolved,
+        approximate: None,
+    })
 }
 
 fn reference_named_feature_definition(kind: &str) -> Option<IrFeatureDefinition> {
@@ -21892,61 +21930,785 @@ fn stepped_hole_form(
     tables: &[crate::feature::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
 ) -> Option<HoleForm> {
-    let tables = tables
+    let candidates = tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
-        .collect::<Vec<_>>();
-    let [table] = tables.as_slice() else {
-        return None;
-    };
-    let mut generated_by_source = BTreeMap::<u32, Vec<Option<crate::surface::SurfaceKind>>>::new();
-    for entry in table.entries.iter().filter(|entry| entry.class_id == 200) {
-        let source_id = entry.source_entity_id?;
-        let kind = if table.surface_ids.contains(&entry.entity_id) {
-            Some(
+        .filter_map(|table| paired_hole_replay_surfaces_by_source(feature_id, table, rows))
+        .filter(|generated_by_source| {
+            let cylinder_sources = generated_by_source
+                .values()
+                .filter(|entries| {
+                    matches!(
+                        entries.as_slice(),
+                        [
+                            Some(crate::surface::SurfaceKind::Cylinder),
+                            Some(crate::surface::SurfaceKind::Cylinder)
+                        ]
+                    )
+                })
+                .count();
+            let planar_support_sources = generated_by_source
+                .values()
+                .filter(|entries| {
+                    entries
+                        .iter()
+                        .filter(|kind| **kind == Some(crate::surface::SurfaceKind::Plane))
+                        .count()
+                        == 1
+                        && entries.iter().filter(|kind| kind.is_none()).count() == 1
+                })
+                .count();
+            let has_cone = generated_by_source
+                .values()
+                .flatten()
+                .any(|kind| *kind == Some(crate::surface::SurfaceKind::Cone));
+            cylinder_sources == 2 && planar_support_sources == 1 && !has_cone
+        })
+        .count();
+    (candidates == 1).then_some(HoleForm::Counterbore)
+}
+
+fn paired_hole_replay_surfaces_by_source(
+    feature_id: u32,
+    table: &crate::feature::FeatureEntityTable,
+    rows: &[crate::surface::SurfaceRow],
+) -> Option<BTreeMap<u32, [Option<crate::surface::SurfaceKind>; 2]>> {
+    let entry_kind = |entry: &crate::feature::FeatureEntityTableEntry| {
+        if table.surface_ids.contains(&entry.entity_id) {
+            Some(Some(
                 crate::surface::unique_surface_row(rows, entry.entity_id)
                     .filter(|row| row.feature_id == feature_id)?
                     .kind,
-            )
+            ))
         } else {
-            table
-                .non_surface_entity_ids
-                .contains(&entry.entity_id)
-                .then_some(())?;
-            None
+            (table.non_surface_entity_ids.contains(&entry.entity_id)
+                && !table.surface_ids.contains(&entry.entity_id))
+            .then_some(None)
+        }
+    };
+    let mut runs = Vec::<BTreeMap<u32, Option<crate::surface::SurfaceKind>>>::new();
+    let mut framed_class_200_count = 0;
+    let mut source_zero_count = 0;
+    let mut index = 0;
+    while index < table.entries.len() {
+        let Some(class_203) = table.entries.get(index + 1) else {
+            break;
         };
-        generated_by_source.entry(source_id).or_default().push(kind);
+        let class_204 = &table.entries[index];
+        if class_204.class_id != 204 || class_203.class_id != 203 {
+            index += 1;
+            continue;
+        }
+        entry_kind(class_204)?.is_none().then_some(())?;
+        entry_kind(class_203)?.is_none().then_some(())?;
+        index += 2;
+        let mut run = BTreeMap::new();
+        while let Some(entry) = table
+            .entries
+            .get(index)
+            .filter(|entry| entry.class_id == 200)
+        {
+            framed_class_200_count += 1;
+            let kind = entry_kind(entry)?;
+            match entry.source_entity_id {
+                Some(0) => {
+                    kind.is_none().then_some(())?;
+                    source_zero_count += 1;
+                }
+                Some(source_id) => {
+                    run.insert(source_id, kind).is_none().then_some(())?;
+                }
+                None => kind.is_none().then_some(())?,
+            }
+            index += 1;
+        }
+        runs.push(run);
     }
-    let cylinder_sources = generated_by_source
-        .values()
-        .filter(|entries| {
-            matches!(
-                entries.as_slice(),
-                [
-                    Some(crate::surface::SurfaceKind::Cylinder),
-                    Some(crate::surface::SurfaceKind::Cylinder)
-                ]
+    (source_zero_count <= 1
+        && framed_class_200_count
+            == table
+                .entries
+                .iter()
+                .filter(|entry| entry.class_id == 200)
+                .count())
+    .then_some(())?;
+    let materialized = runs
+        .iter()
+        .filter(|run| run.values().any(Option::is_some))
+        .collect::<Vec<_>>();
+    let [first, second] = materialized.as_slice() else {
+        return None;
+    };
+    (first.keys().eq(second.keys())).then_some(())?;
+    let mut paired_by_source = BTreeMap::new();
+    for (source_id, first_kind) in *first {
+        paired_by_source.insert(*source_id, [*first_kind, *second.get(source_id)?]);
+    }
+    Some(paired_by_source)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SimpleDrilledDimensionFamily {
+    ExternalId2Depth,
+    ExternalId4Depth,
+}
+
+impl SimpleDrilledDimensionFamily {
+    fn depth_external_id(self) -> u32 {
+        match self {
+            Self::ExternalId2Depth => 2,
+            Self::ExternalId4Depth => 4,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SimpleDrilledHoleRecipe<'a> {
+    table: &'a crate::feature::FeatureEntityTable,
+    dimension_family: SimpleDrilledDimensionFamily,
+}
+
+fn simple_drilled_hole_recipe<'a>(
+    feature_id: u32,
+    tables: &'a [crate::feature::FeatureEntityTable],
+    rows: &[crate::surface::SurfaceRow],
+) -> Option<SimpleDrilledHoleRecipe<'a>> {
+    let candidates = tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
+        .filter_map(|table| {
+            let generated_by_source =
+                paired_hole_replay_surfaces_by_source(feature_id, table, rows)?;
+            let recipe_groups = generated_by_source.values().collect::<Vec<_>>();
+            let paired = |kind| {
+                recipe_groups
+                    .iter()
+                    .filter(|entries| entries.as_slice() == [Some(kind), Some(kind)])
+                    .count()
+            };
+            let rowless = recipe_groups
+                .iter()
+                .filter(|entries| entries.as_slice() == [None, None])
+                .count();
+            let dimension_family = match rowless {
+                2 => SimpleDrilledDimensionFamily::ExternalId2Depth,
+                3 => SimpleDrilledDimensionFamily::ExternalId4Depth,
+                _ => return None,
+            };
+            (paired(crate::surface::SurfaceKind::Cone) == 1
+                && paired(crate::surface::SurfaceKind::Cylinder) == 1
+                && recipe_groups.len() == rowless + 2)
+                .then_some(SimpleDrilledHoleRecipe {
+                    table,
+                    dimension_family,
+                })
+        })
+        .collect::<Vec<_>>();
+    let [recipe] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*recipe)
+}
+
+fn simple_drilled_hole_envelope_spans(
+    scan: &ContainerScan,
+    table: &crate::feature::FeatureEntityTable,
+) -> Option<[[Option<f64>; 2]; 3]> {
+    let [first, second] = simple_drilled_hole_corner_envelopes(scan, table)?;
+    paired_corner_envelope_axis_spans(first, second)
+}
+
+fn simple_drilled_hole_corner_envelopes(
+    scan: &ContainerScan,
+    table: &crate::feature::FeatureEntityTable,
+) -> Option<[[[f64; 3]; 2]; 2]> {
+    let feature_id = table.feature_id?;
+    let envelopes = table
+        .surface_ids
+        .iter()
+        .filter_map(|surface_id| {
+            crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id)
+                .filter(|row| row.feature_id == feature_id)
+                .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
+        })
+        .map(|row| {
+            unique_surface_parameter_record(scan, row)?
+                .type24_terminal_corner_envelope(row.type_byte)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let [first, second] = envelopes.as_slice() else {
+        return None;
+    };
+    Some([*first, *second])
+}
+
+fn simple_drilled_hole_cone_terminal_points(
+    scan: &ContainerScan,
+    table: &crate::feature::FeatureEntityTable,
+) -> Option<[[f64; 3]; 2]> {
+    let feature_id = table.feature_id?;
+    let points = table
+        .surface_ids
+        .iter()
+        .filter_map(|surface_id| {
+            crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id)
+                .filter(|row| row.feature_id == feature_id)
+                .filter(|row| row.kind == crate::surface::SurfaceKind::Cone)
+        })
+        .map(|row| {
+            let record = unique_surface_parameter_record(scan, row)?;
+            (record.boundary == crate::surface::SurfaceBodyBoundary::CompoundClose
+                && record.scalar_tokens.len() == 7)
+                .then_some(())?;
+            record.scalar_tokens[4..]
+                .iter()
+                .map(|slot| slot.value.filter(|value| value.is_finite()))
+                .collect::<Option<Vec<_>>>()?
+                .try_into()
+                .ok()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    points.try_into().ok()
+}
+
+fn simple_drilled_hole_placement(
+    scan: &ContainerScan,
+    table: &crate::feature::FeatureEntityTable,
+    diameter: f64,
+    depth: f64,
+) -> Option<(Point3, Vector3)> {
+    let corners = simple_drilled_hole_corner_envelopes(scan, table)?;
+    drilled_hole_placement_from_corner_envelopes(corners, diameter, depth).or_else(|| {
+        clipped_drilled_hole_placement_from_cone_points(
+            corners,
+            simple_drilled_hole_cone_terminal_points(scan, table)?,
+            diameter,
+            depth,
+        )
+    })
+}
+
+fn simple_drilled_hole_axis_placement(
+    scan: &ContainerScan,
+    table: &crate::feature::FeatureEntityTable,
+    diameter: f64,
+) -> Option<cadmpeg_ir::features::HolePlacement> {
+    let feature_id = table.feature_id?;
+    let cylinder_ids = table
+        .surface_ids
+        .iter()
+        .copied()
+        .filter(|surface_id| {
+            crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id).is_some_and(
+                |row| {
+                    row.feature_id == feature_id
+                        && row.kind == crate::surface::SurfaceKind::Cylinder
+                },
             )
         })
-        .count();
-    let planar_support_sources = generated_by_source
-        .values()
-        .filter(|entries| {
-            entries.len() == 2
-                && entries
-                    .iter()
-                    .filter(|kind| **kind == Some(crate::surface::SurfaceKind::Plane))
-                    .count()
-                    == 1
-                && entries.iter().filter(|kind| kind.is_none()).count() == 1
+        .collect::<BTreeSet<_>>();
+    let frames =
+        unique_available_positional_cylinder_frames(&cylinder_ids, &scan.surfaces.parameters)?;
+    simple_drilled_axis_placement_from_frames(&frames, diameter)
+}
+
+fn simple_drilled_axis_placement_from_frames(
+    frames: &[crate::surface::PositionalCylinderFrame],
+    diameter: f64,
+) -> Option<cadmpeg_ir::features::HolePlacement> {
+    let first = *frames.first()?;
+    let axis = normalized(first.axis)?;
+    let coordinate_scale = frames
+        .iter()
+        .flat_map(|frame| frame.origin)
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    (diameter.is_finite() && diameter > 0.0 && first.origin.into_iter().all(f64::is_finite))
+        .then_some(())?;
+    let radius = 0.5 * diameter;
+    frames
+        .iter()
+        .all(|frame| {
+            let Some(candidate_axis) = normalized(frame.axis) else {
+                return false;
+            };
+            let radius_scale = frame.radius.abs().max(radius.abs()).max(1.0);
+            if !frame.origin.into_iter().all(f64::is_finite)
+                || !frame.radius.is_finite()
+                || frame.radius <= 0.0
+                || (frame.radius - radius).abs() > 1e-9 * radius_scale
+            {
+                return false;
+            }
+            let alignment = axis
+                .into_iter()
+                .zip(candidate_axis)
+                .map(|(left, right)| left * right)
+                .sum::<f64>();
+            if alignment.abs() < 1.0 - 1e-9 {
+                return false;
+            }
+            let delta =
+                std::array::from_fn::<_, 3, _>(|index| frame.origin[index] - first.origin[index]);
+            let axial_delta = delta
+                .into_iter()
+                .zip(axis)
+                .map(|(component, axis)| component * axis)
+                .sum::<f64>();
+            delta
+                .into_iter()
+                .zip(axis)
+                .map(|(component, axis)| component - axial_delta * axis)
+                .map(|component| component * component)
+                .sum::<f64>()
+                .sqrt()
+                <= 1e-9 * coordinate_scale
         })
-        .count();
-    let has_cone = generated_by_source
-        .values()
+        .then_some(cadmpeg_ir::features::HolePlacement::Axis {
+            origin: Point3::new(first.origin[0], first.origin[1], first.origin[2]),
+            axis: Vector3::new(axis[0], axis[1], axis[2]),
+        })
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DrilledHoleEnvelopeLayout {
+    corners: [[[f64; 3]; 2]; 2],
+    intervals: [[[f64; 2]; 3]; 2],
+    axis: usize,
+    radial: [usize; 2],
+    axial_delta: f64,
+    scale: f64,
+}
+
+fn drilled_hole_envelope_layout(
+    corners: [[[f64; 3]; 2]; 2],
+    diameter: f64,
+    depth: f64,
+) -> Option<DrilledHoleEnvelopeLayout> {
+    corners
+        .iter()
         .flatten()
-        .any(|kind| *kind == Some(crate::surface::SurfaceKind::Cone));
-    (cylinder_sources == 2 && planar_support_sources == 1 && !has_cone)
-        .then_some(HoleForm::Counterbore)
+        .flatten()
+        .all(|value| value.is_finite())
+        .then_some(())?;
+    let scale = corners
+        .iter()
+        .flatten()
+        .flatten()
+        .chain([&diameter, &depth])
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    (diameter > 1e-12 * scale && depth > 1e-12 * scale).then_some(())?;
+    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    let intervals = corners.map(|patch| {
+        std::array::from_fn::<_, 3, _>(|axis| {
+            [
+                patch[0][axis].min(patch[1][axis]),
+                patch[0][axis].max(patch[1][axis]),
+            ]
+        })
+    });
+    let shared = |axis: usize| {
+        close(intervals[0][axis][0], intervals[1][axis][0])
+            && close(intervals[0][axis][1], intervals[1][axis][1])
+    };
+    let span = |axis: usize| {
+        intervals[0][axis][1].max(intervals[1][axis][1])
+            - intervals[0][axis][0].min(intervals[1][axis][0])
+    };
+    let axial_axes = (0..3)
+        .filter(|axis| shared(*axis) && close(span(*axis), depth))
+        .collect::<Vec<_>>();
+    let [axis] = axial_axes.as_slice() else {
+        return None;
+    };
+    let radial = (0..3)
+        .filter(|candidate| candidate != axis)
+        .collect::<Vec<_>>();
+    let [first_radial, second_radial] = radial.as_slice() else {
+        unreachable!("three-dimensional axis complement")
+    };
+    let axial_deltas = corners.map(|patch| patch[1][*axis] - patch[0][*axis]);
+    (close(axial_deltas[0], axial_deltas[1]) && close(axial_deltas[0].abs(), depth))
+        .then_some(())?;
+    Some(DrilledHoleEnvelopeLayout {
+        corners,
+        intervals,
+        axis: *axis,
+        radial: [*first_radial, *second_radial],
+        axial_delta: axial_deltas[0],
+        scale,
+    })
+}
+
+fn drilled_hole_layout_close(layout: &DrilledHoleEnvelopeLayout, left: f64, right: f64) -> bool {
+    (left - right).abs() <= 1e-9 * layout.scale
+}
+
+fn drilled_hole_layout_shared(layout: &DrilledHoleEnvelopeLayout, axis: usize) -> bool {
+    drilled_hole_layout_close(
+        layout,
+        layout.intervals[0][axis][0],
+        layout.intervals[1][axis][0],
+    ) && drilled_hole_layout_close(
+        layout,
+        layout.intervals[0][axis][1],
+        layout.intervals[1][axis][1],
+    )
+}
+
+fn drilled_hole_layout_adjacent(layout: &DrilledHoleEnvelopeLayout, axis: usize) -> bool {
+    drilled_hole_layout_close(
+        layout,
+        layout.intervals[0][axis][1],
+        layout.intervals[1][axis][0],
+    ) || drilled_hole_layout_close(
+        layout,
+        layout.intervals[1][axis][1],
+        layout.intervals[0][axis][0],
+    )
+}
+
+fn drilled_hole_layout_span(layout: &DrilledHoleEnvelopeLayout, axis: usize) -> f64 {
+    layout.intervals[0][axis][1].max(layout.intervals[1][axis][1])
+        - layout.intervals[0][axis][0].min(layout.intervals[1][axis][0])
+}
+
+fn drilled_hole_layout_placement(
+    layout: &DrilledHoleEnvelopeLayout,
+    radial_coordinates: [f64; 2],
+) -> (Point3, Vector3) {
+    let mut position = [0.0; 3];
+    position[layout.axis] = f64::midpoint(
+        layout.corners[0][0][layout.axis],
+        layout.corners[1][0][layout.axis],
+    );
+    for (radial_axis, coordinate) in layout.radial.into_iter().zip(radial_coordinates) {
+        position[radial_axis] = coordinate;
+    }
+    let mut direction = [0.0; 3];
+    direction[layout.axis] = layout.axial_delta.signum();
+    (
+        Point3::new(position[0], position[1], position[2]),
+        Vector3::new(direction[0], direction[1], direction[2]),
+    )
+}
+
+fn drilled_hole_placement_from_corner_envelopes(
+    corners: [[[f64; 3]; 2]; 2],
+    diameter: f64,
+    depth: f64,
+) -> Option<(Point3, Vector3)> {
+    let layout = drilled_hole_envelope_layout(corners, diameter, depth)?;
+    let radial_forms = layout.radial.map(|radial_axis| {
+        (
+            drilled_hole_layout_shared(&layout, radial_axis),
+            drilled_hole_layout_adjacent(&layout, radial_axis),
+            drilled_hole_layout_span(&layout, radial_axis),
+        )
+    });
+    let complementary =
+        (radial_forms[0].0 && radial_forms[1].1) || (radial_forms[0].1 && radial_forms[1].0);
+    if complementary
+        && radial_forms
+            .iter()
+            .all(|(_, _, span)| drilled_hole_layout_close(&layout, *span, diameter))
+    {
+        let radial_coordinates = layout.radial.map(|radial_axis| {
+            f64::midpoint(
+                layout.intervals[0][radial_axis][0].min(layout.intervals[1][radial_axis][0]),
+                layout.intervals[0][radial_axis][1].max(layout.intervals[1][radial_axis][1]),
+            )
+        });
+        return Some(drilled_hole_layout_placement(&layout, radial_coordinates));
+    }
+
+    let nonshared_bounds = layout.radial.map(|radial_axis| {
+        let intervals = layout.intervals.map(|patch| patch[radial_axis]);
+        match (
+            drilled_hole_layout_close(&layout, intervals[0][0], intervals[1][0]),
+            drilled_hole_layout_close(&layout, intervals[0][1], intervals[1][1]),
+        ) {
+            (true, false) => Some([intervals[0][1], intervals[1][1]]),
+            (false, true) => Some([intervals[0][0], intervals[1][0]]),
+            _ => None,
+        }
+    });
+    let common_diameter = layout.radial.map(|radial_axis| {
+        drilled_hole_layout_shared(&layout, radial_axis)
+            && drilled_hole_layout_close(
+                &layout,
+                drilled_hole_layout_span(&layout, radial_axis),
+                diameter,
+            )
+    });
+    let (clipped_index, [first, second]) = match (common_diameter, nonshared_bounds) {
+        ([true, false], [None, Some(bounds)]) => (1, bounds),
+        ([false, true], [Some(bounds), None]) => (0, bounds),
+        _ => return None,
+    };
+    drilled_hole_layout_close(&layout, (first - second).abs(), diameter).then_some(())?;
+    let radial_coordinates = std::array::from_fn(|index| {
+        let radial_axis = layout.radial[index];
+        if index == clipped_index {
+            f64::midpoint(first, second)
+        } else {
+            f64::midpoint(
+                layout.intervals[0][radial_axis][0],
+                layout.intervals[0][radial_axis][1],
+            )
+        }
+    });
+    Some(drilled_hole_layout_placement(&layout, radial_coordinates))
+}
+
+fn clipped_drilled_hole_placement_from_cone_points(
+    corners: [[[f64; 3]; 2]; 2],
+    cone_points: [[f64; 3]; 2],
+    diameter: f64,
+    depth: f64,
+) -> Option<(Point3, Vector3)> {
+    let layout = drilled_hole_envelope_layout(corners, diameter, depth)?;
+    cone_points
+        .iter()
+        .flatten()
+        .all(|value| value.is_finite())
+        .then_some(())?;
+    let adjacent_diameter = layout
+        .radial
+        .iter()
+        .copied()
+        .filter(|axis| {
+            drilled_hole_layout_adjacent(&layout, *axis)
+                && drilled_hole_layout_close(
+                    &layout,
+                    drilled_hole_layout_span(&layout, *axis),
+                    diameter,
+                )
+        })
+        .collect::<Vec<_>>();
+    let [diameter_axis] = adjacent_diameter.as_slice() else {
+        return None;
+    };
+    let clipped_axis = layout
+        .radial
+        .iter()
+        .copied()
+        .find(|axis| axis != diameter_axis)?;
+    (drilled_hole_layout_shared(&layout, clipped_axis)
+        && drilled_hole_layout_span(&layout, clipped_axis) > 0.0
+        && !drilled_hole_layout_close(
+            &layout,
+            drilled_hole_layout_span(&layout, clipped_axis),
+            diameter,
+        ))
+    .then_some(())?;
+    (0..2)
+        .all(|patch| {
+            drilled_hole_layout_close(
+                &layout,
+                cone_points[patch][layout.axis],
+                corners[patch][0][layout.axis],
+            ) && layout.radial.iter().all(|axis| {
+                drilled_hole_layout_close(
+                    &layout,
+                    cone_points[patch][*axis],
+                    corners[patch][1][*axis],
+                )
+            })
+        })
+        .then_some(())?;
+    drilled_hole_layout_close(
+        &layout,
+        cone_points[0][clipped_axis],
+        cone_points[1][clipped_axis],
+    )
+    .then_some(())?;
+    let radial_coordinates = layout.radial.map(|axis| {
+        if axis == clipped_axis {
+            f64::midpoint(cone_points[0][axis], cone_points[1][axis])
+        } else {
+            f64::midpoint(
+                layout.intervals[0][axis][0].min(layout.intervals[1][axis][0]),
+                layout.intervals[0][axis][1].max(layout.intervals[1][axis][1]),
+            )
+        }
+    });
+    Some(drilled_hole_layout_placement(&layout, radial_coordinates))
+}
+
+fn paired_corner_envelope_axis_spans(
+    first: [[f64; 3]; 2],
+    second: [[f64; 3]; 2],
+) -> Option<[[Option<f64>; 2]; 3]> {
+    first
+        .iter()
+        .chain(&second)
+        .flatten()
+        .all(|value| value.is_finite())
+        .then_some(())?;
+    let intervals = |corners: [[f64; 3]; 2]| {
+        std::array::from_fn::<_, 3, _>(|axis| {
+            let values = [corners[0][axis], corners[1][axis]];
+            [values[0].min(values[1]), values[0].max(values[1])]
+        })
+    };
+    let first = intervals(first);
+    let second = intervals(second);
+    let spans = std::array::from_fn::<_, 3, _>(|axis| {
+        let common_lower = approximately_equal(first[axis][0], second[axis][0]);
+        let common_upper = approximately_equal(first[axis][1], second[axis][1]);
+        let shared = common_lower && common_upper;
+        let shared_span = shared.then(|| {
+            f64::midpoint(
+                first[axis][1] - first[axis][0],
+                second[axis][1] - second[axis][0],
+            )
+        });
+        let shared_span = shared_span.filter(|span| *span > 0.0);
+        let adjacent = approximately_equal(first[axis][1], second[axis][0])
+            || approximately_equal(second[axis][1], first[axis][0]);
+        let adjacent_span = adjacent
+            .then(|| first[axis][1].max(second[axis][1]) - first[axis][0].min(second[axis][0]));
+        let one_sided_span = (common_lower != common_upper).then(|| {
+            if common_lower {
+                (first[axis][1] - second[axis][1]).abs()
+            } else {
+                (first[axis][0] - second[axis][0]).abs()
+            }
+        });
+        let paired_span = adjacent_span.or(one_sided_span).filter(|span| *span > 0.0);
+        [shared_span, paired_span]
+    });
+    Some(spans)
+}
+
+fn simple_drilled_hole_dimensions(
+    scan: &ContainerScan,
+    observed_envelope_spans: Option<[[Option<f64>; 2]; 3]>,
+    family: SimpleDrilledDimensionFamily,
+) -> Option<(f64, f64, f64)> {
+    simple_drilled_hole_dimension_values(
+        scan.features
+            .definitions
+            .iter()
+            .filter(|definition| definition.id == 911)
+            .filter_map(|definition| definition.dimensions.as_ref()),
+        observed_envelope_spans,
+        family,
+    )
+}
+
+fn simple_drilled_hole_dimension_values<'a>(
+    tables: impl Iterator<Item = &'a crate::feature::FeatureDimensionTable>,
+    observed_envelope_spans: Option<[[Option<f64>; 2]; 3]>,
+    family: SimpleDrilledDimensionFamily,
+) -> Option<(f64, f64, f64)> {
+    let tables = tables
+        .filter(|table| feature_dimension_table_complete(table) && table.rows.len() == 3)
+        .collect::<Vec<_>>();
+    let depth_external_id = family.depth_external_id();
+    let has_simple_drilled_signature = |table: &crate::feature::FeatureDimensionTable| {
+        [
+            (0, 2, crate::feature::DimensionUnit::Millimeters),
+            (1, 10, crate::feature::DimensionUnit::Radians),
+            (
+                depth_external_id,
+                2,
+                crate::feature::DimensionUnit::Millimeters,
+            ),
+        ]
+        .into_iter()
+        .all(|(external_id, dimension_type, unit)| {
+            table
+                .rows
+                .iter()
+                .filter(|row| {
+                    row.external_id == external_id
+                        && row.dimension_type == dimension_type
+                        && row.value_unit == unit
+                })
+                .count()
+                == 1
+        })
+    };
+    let candidates =
+        tables
+            .into_iter()
+            .filter(|table| has_simple_drilled_signature(table))
+            .map(|table| {
+                let value = |external_id, dimension_type, unit| {
+                    let rows = table
+                        .rows
+                        .iter()
+                        .filter(|row| {
+                            row.external_id == external_id
+                                && row.dimension_type == dimension_type
+                                && row.value_unit == unit
+                        })
+                        .collect::<Vec<_>>();
+                    let [row] = rows.as_slice() else {
+                        return None;
+                    };
+                    row.value.filter(|value| value.is_finite())
+                };
+                let bore_radius = value(0, 2, crate::feature::DimensionUnit::Millimeters)?;
+                let signed_depth = value(
+                    depth_external_id,
+                    2,
+                    crate::feature::DimensionUnit::Millimeters,
+                )?;
+                let bore_diameter = 2.0 * bore_radius;
+                (bore_diameter.is_finite() && bore_diameter > 0.0 && signed_depth != 0.0)
+                    .then_some(())?;
+                let blind_depth = signed_depth.abs();
+                if observed_envelope_spans.is_some_and(|spans| {
+                    !dimension_pair_matches_envelope_spans(bore_diameter, blind_depth, spans)
+                }) {
+                    return Some(None);
+                }
+                let drill_point_angle = value(1, 10, crate::feature::DimensionUnit::Radians)?;
+                (drill_point_angle > 0.0 && drill_point_angle < std::f64::consts::PI)
+                    .then_some(Some((bore_diameter, drill_point_angle, blind_depth)))
+            })
+            .collect::<Option<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+    let first = *candidates.first()?;
+    candidates
+        .iter()
+        .all(|candidate| {
+            [candidate.0, candidate.1, candidate.2]
+                .into_iter()
+                .zip([first.0, first.1, first.2])
+                .all(|(candidate, first)| approximately_equal(candidate, first))
+        })
+        .then_some(first)
+}
+
+fn dimension_pair_matches_envelope_spans(
+    bore_diameter: f64,
+    blind_depth: f64,
+    spans: [[Option<f64>; 2]; 3],
+) -> bool {
+    for diameter_axis in 0..3 {
+        for depth_axis in 0..3 {
+            if diameter_axis != depth_axis
+                && spans[diameter_axis]
+                    .into_iter()
+                    .flatten()
+                    .any(|span| approximately_equal(span, bore_diameter))
+                && spans[depth_axis]
+                    .into_iter()
+                    .flatten()
+                    .any(|span| approximately_equal(span, blind_depth))
+            {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn counterbore_dimensions(
@@ -21954,15 +22716,7 @@ fn counterbore_dimensions(
     ir: &CadIr,
     feature_id: u32,
 ) -> Option<(f64, f64, f64)> {
-    let tables = scan
-        .features
-        .entity_tables
-        .iter()
-        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
-        .collect::<Vec<_>>();
-    let [table] = tables.as_slice() else {
-        return None;
-    };
+    let table = counterbore_entity_table(scan, feature_id)?;
     let generated_cylinders = table
         .surface_ids
         .iter()
@@ -21994,14 +22748,37 @@ fn counterbore_dimensions(
             Some(radius)
         })
         .collect::<Vec<_>>();
-    counterbore_dimension_values(
+    let dimension_tables = || {
         scan.features
             .definitions
             .iter()
             .filter(|definition| definition.id == 911)
-            .filter_map(|definition| definition.dimensions.as_ref()),
-        &generated_radii,
-    )
+            .filter_map(|definition| definition.dimensions.as_ref())
+    };
+    counterbore_dimension_values(dimension_tables(), &generated_radii).or_else(|| {
+        let source_spans = counterbore_cylinder_sources(scan, feature_id)?
+            .into_iter()
+            .map(|ids| {
+                let [first_id, second_id] = ids.as_slice() else {
+                    return None;
+                };
+                let envelope = |id: &u32| {
+                    let row = crate::surface::unique_surface_row(&scan.surfaces.rows, *id)?;
+                    unique_surface_parameter_record(scan, row)?
+                        .type24_terminal_corner_envelope(row.type_byte)
+                };
+                paired_corner_envelope_axis_spans(envelope(first_id)?, envelope(second_id)?)
+            })
+            .collect::<Vec<_>>();
+        let [first_source, second_source] = source_spans.as_slice() else {
+            return None;
+        };
+        if first_source.is_some() || second_source.is_some() {
+            counterbore_envelope_dimension_values(dimension_tables(), &source_spans)
+        } else {
+            counterbore_unenveloped_dimension_values(dimension_tables())
+        }
+    })
 }
 
 fn counterbore_dimension_values<'a>(
@@ -22059,6 +22836,156 @@ fn counterbore_dimension_values<'a>(
         .then_some(first)
 }
 
+fn counterbore_envelope_dimension_values<'a>(
+    tables: impl Iterator<Item = &'a crate::feature::FeatureDimensionTable>,
+    source_spans: &[Option<[[Option<f64>; 2]; 3]>],
+) -> Option<(f64, f64, f64)> {
+    let [first_source, second_source] = source_spans else {
+        return None;
+    };
+    let cylinder_diameter_matches = |diameter: f64, spans: [[Option<f64>; 2]; 3]| {
+        (0..3)
+            .filter(|axis| {
+                spans[*axis]
+                    .into_iter()
+                    .flatten()
+                    .any(|span| approximately_equal(span, diameter))
+            })
+            .count()
+            == 2
+    };
+    let counterbore_matches = |diameter: f64, depth: f64, spans: [[Option<f64>; 2]; 3]| {
+        let diameter_axes = (0..3)
+            .filter(|axis| {
+                spans[*axis]
+                    .into_iter()
+                    .flatten()
+                    .any(|span| approximately_equal(span, diameter))
+            })
+            .collect::<Vec<_>>();
+        let [first_axis, second_axis] = diameter_axes.as_slice() else {
+            return false;
+        };
+        (0..3)
+            .find(|axis| axis != first_axis && axis != second_axis)
+            .is_some_and(|axis| {
+                spans[axis]
+                    .into_iter()
+                    .flatten()
+                    .any(|span| approximately_equal(span, depth))
+            })
+    };
+    let candidates = tables
+        .filter_map(|table| {
+            let (bore_diameter, counterbore_diameter, counterbore_depth) =
+                counterbore_envelope_dimension_tuple(table)?;
+            let matches = match (first_source, second_source) {
+                (Some(first), Some(second)) => {
+                    [
+                        cylinder_diameter_matches(bore_diameter, *first)
+                            && counterbore_matches(
+                                counterbore_diameter,
+                                counterbore_depth,
+                                *second,
+                            ),
+                        cylinder_diameter_matches(bore_diameter, *second)
+                            && counterbore_matches(counterbore_diameter, counterbore_depth, *first),
+                    ]
+                    .into_iter()
+                    .filter(|matches| *matches)
+                    .count()
+                        == 1
+                }
+                (Some(spans), None) | (None, Some(spans)) => {
+                    cylinder_diameter_matches(bore_diameter, *spans)
+                        != counterbore_matches(counterbore_diameter, counterbore_depth, *spans)
+                }
+                (None, None) => false,
+            };
+            matches.then_some((bore_diameter, counterbore_diameter, counterbore_depth))
+        })
+        .collect::<Vec<_>>();
+    unique_counterbore_dimension_tuple(&candidates)
+}
+
+fn counterbore_unenveloped_dimension_values<'a>(
+    tables: impl Iterator<Item = &'a crate::feature::FeatureDimensionTable>,
+) -> Option<(f64, f64, f64)> {
+    let candidates = tables
+        .filter(|table| {
+            feature_dimension_table_complete(table) && matches!(table.rows.len(), 4 | 5)
+        })
+        .map(counterbore_envelope_dimension_tuple)
+        .collect::<Option<Vec<_>>>()?;
+    unique_counterbore_dimension_tuple(&candidates)
+}
+
+fn counterbore_envelope_dimension_tuple(
+    table: &crate::feature::FeatureDimensionTable,
+) -> Option<(f64, f64, f64)> {
+    (feature_dimension_table_complete(table) && matches!(table.rows.len(), 4 | 5)).then_some(())?;
+    let value = |external_id, dimension_type, unit| {
+        let rows = table
+            .rows
+            .iter()
+            .filter(|row| {
+                row.external_id == external_id
+                    && row.dimension_type == dimension_type
+                    && row.value_unit == unit
+            })
+            .collect::<Vec<_>>();
+        let [row] = rows.as_slice() else {
+            return None;
+        };
+        row.value.filter(|value| value.is_finite())
+    };
+    let signed_counterbore_depth = value(0, 1, crate::feature::DimensionUnit::Millimeters)?;
+    let bore_radius = value(1, 2, crate::feature::DimensionUnit::Millimeters)?;
+    let (counterbore_radius, _placement_distance) = if table.rows.len() == 4 {
+        let shifted = value(2, 2, crate::feature::DimensionUnit::Millimeters).zip(value(
+            3,
+            2,
+            crate::feature::DimensionUnit::Millimeters,
+        ));
+        let retained = value(3, 2, crate::feature::DimensionUnit::Millimeters).zip(value(
+            4,
+            2,
+            crate::feature::DimensionUnit::Millimeters,
+        ));
+        match (shifted, retained) {
+            (Some(layout), None) | (None, Some(layout)) => layout,
+            _ => return None,
+        }
+    } else {
+        let drill_point_angle = value(2, 10, crate::feature::DimensionUnit::Radians)?;
+        (drill_point_angle > 0.0 && drill_point_angle < std::f64::consts::PI).then_some(())?;
+        (
+            value(3, 2, crate::feature::DimensionUnit::Millimeters)?,
+            value(4, 2, crate::feature::DimensionUnit::Millimeters)?,
+        )
+    };
+    (signed_counterbore_depth != 0.0 && bore_radius > 0.0 && counterbore_radius > bore_radius)
+        .then_some(())?;
+    Some((
+        2.0 * bore_radius,
+        2.0 * counterbore_radius,
+        signed_counterbore_depth.abs(),
+    ))
+}
+
+fn unique_counterbore_dimension_tuple(candidates: &[(f64, f64, f64)]) -> Option<(f64, f64, f64)> {
+    let first = *candidates.first()?;
+    candidates
+        .iter()
+        .all(|candidate| {
+            [candidate.0, candidate.1, candidate.2]
+                .into_iter()
+                .zip([first.0, first.1, first.2])
+                .all(|(candidate, first)| approximately_equal(candidate, first))
+        })
+        .then_some(first)
+}
+
 fn counterbore_patch_geometries(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -22089,15 +23016,7 @@ fn counterbore_patch_geometries(
 }
 
 fn counterbore_cylinder_sources(scan: &ContainerScan, feature_id: u32) -> Option<Vec<Vec<u32>>> {
-    let tables = scan
-        .features
-        .entity_tables
-        .iter()
-        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
-        .collect::<Vec<_>>();
-    let [table] = tables.as_slice() else {
-        return None;
-    };
+    let table = counterbore_entity_table(scan, feature_id)?;
     let mut cylinders_by_source = BTreeMap::<u32, Vec<u32>>::new();
     for entry in table.entries.iter().filter(|entry| entry.class_id == 200) {
         if !table.surface_ids.contains(&entry.entity_id) {
@@ -22124,32 +23043,107 @@ fn counterbore_cylinder_sources(scan: &ContainerScan, feature_id: u32) -> Option
     )
 }
 
+fn counterbore_entity_table<'a>(
+    scan: &'a ContainerScan<'_>,
+    feature_id: u32,
+) -> Option<&'a crate::feature::FeatureEntityTable> {
+    let tables = scan
+        .features
+        .entity_tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
+        .filter(|table| {
+            table.entries.iter().any(|entry| {
+                entry.class_id == 200
+                    && entry.source_entity_id.is_some()
+                    && table.surface_ids.contains(&entry.entity_id)
+                    && crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id)
+                        .is_some_and(|row| {
+                            row.feature_id == feature_id
+                                && row.kind == crate::surface::SurfaceKind::Cylinder
+                        })
+            })
+        })
+        .collect::<Vec<_>>();
+    let [table] = tables.as_slice() else {
+        return None;
+    };
+    Some(*table)
+}
+
 fn counterbore_axis_placement(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
 ) -> Option<cadmpeg_ir::features::HolePlacement> {
-    let (_, counterbore_diameter, _) = counterbore_dimensions(scan, ir, feature_id)?;
-    let cylinder_sources = counterbore_cylinder_sources(scan, feature_id)?;
-    let existing_geometries = ir
-        .model
-        .surfaces
+    let cylinder_axis =
+        counterbore_dimensions(scan, ir, feature_id).and_then(|(_, counterbore_diameter, _)| {
+            let cylinder_sources = counterbore_cylinder_sources(scan, feature_id)?;
+            let existing_geometries = ir
+                .model
+                .surfaces
+                .iter()
+                .filter_map(|surface| {
+                    let id = surface
+                        .id
+                        .0
+                        .strip_prefix("creo:visibgeom:surface#")?
+                        .parse::<u32>()
+                        .ok()?;
+                    Some((id, surface.geometry.clone()))
+                })
+                .collect::<BTreeMap<_, _>>();
+            counterbore_axis_placement_from_sources(
+                &cylinder_sources,
+                &existing_geometries,
+                counterbore_diameter,
+            )
+        });
+    cylinder_axis.or_else(|| {
+        counterbore_support_axis_placement(
+            feature_id,
+            counterbore_entity_table(scan, feature_id)?,
+            &scan.surfaces.rows,
+            &scan.planes.local_systems,
+        )
+    })
+}
+
+fn counterbore_support_axis_placement(
+    feature_id: u32,
+    table: &crate::feature::FeatureEntityTable,
+    rows: &[crate::surface::SurfaceRow],
+    frames: &[crate::surface::PlaneLocalSystem],
+) -> Option<cadmpeg_ir::features::HolePlacement> {
+    (table.feature_id == Some(feature_id)).then_some(())?;
+    let plane_ids = table
+        .surface_ids
         .iter()
-        .filter_map(|surface| {
-            let id = surface
-                .id
-                .0
-                .strip_prefix("creo:visibgeom:surface#")?
-                .parse::<u32>()
-                .ok()?;
-            Some((id, surface.geometry.clone()))
+        .copied()
+        .filter(|surface_id| {
+            crate::surface::unique_surface_row(rows, *surface_id).is_some_and(|row| {
+                row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
+            })
         })
-        .collect::<BTreeMap<_, _>>();
-    counterbore_axis_placement_from_sources(
-        &cylinder_sources,
-        &existing_geometries,
-        counterbore_diameter,
-    )
+        .collect::<Vec<_>>();
+    let [plane_id] = plane_ids.as_slice() else {
+        return None;
+    };
+    let matching_frames = frames
+        .iter()
+        .filter(|frame| frame.surface_id == *plane_id)
+        .collect::<Vec<_>>();
+    let [frame] = matching_frames.as_slice() else {
+        return None;
+    };
+    let origin = frame
+        .origin
+        .filter(|origin| origin.iter().all(|value| value.is_finite()))?;
+    let axis = normalized(frame.normal?)?;
+    Some(cadmpeg_ir::features::HolePlacement::Axis {
+        origin: Point3::new(origin[0], origin[1], origin[2]),
+        axis: Vector3::new(axis[0], axis[1], axis[2]),
+    })
 }
 
 fn counterbore_axis_placement_from_sources(
@@ -22179,7 +23173,7 @@ fn counterbore_directed_placement(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
-) -> Option<(u32, Point3, Vector3, Termination)> {
+) -> Option<(Option<u32>, Point3, Vector3, Termination)> {
     let (bore_diameter, counterbore_diameter, counterbore_depth) =
         counterbore_dimensions(scan, ir, feature_id)?;
     let sources = counterbore_cylinder_sources(scan, feature_id)?;
@@ -22191,15 +23185,196 @@ fn counterbore_directed_placement(
     };
     let bore_radius = 0.5 * bore_diameter;
     let counterbore_radius = 0.5 * counterbore_diameter;
-    let ((Some(counterbore), None, None, Some(bore)) | (None, Some(bore), Some(counterbore), None)) = (
+    let boundaries = (
         boundary(first, counterbore_radius),
         boundary(first, bore_radius),
         boundary(second, counterbore_radius),
         boundary(second, bore_radius),
-    ) else {
+    );
+    let boundary_placement = match boundaries {
+        (Some(counterbore), None, None, Some(bore))
+        | (None, Some(bore), Some(counterbore), None) => {
+            counterbore_directed_span(counterbore, bore, counterbore_depth).map(
+                |(face, position, direction, extent)| (Some(face), position, direction, extent),
+            )
+        }
+        _ => None,
+    };
+    boundary_placement.or_else(|| {
+        let source_corners = sources
+            .iter()
+            .map(|ids| {
+                let [first_id, second_id] = ids.as_slice() else {
+                    return None;
+                };
+                let envelope = |id| {
+                    let row = crate::surface::unique_surface_row(&scan.surfaces.rows, id)?;
+                    unique_surface_parameter_record(scan, row)?
+                        .type24_terminal_corner_envelope(row.type_byte)
+                };
+                Some([envelope(*first_id)?, envelope(*second_id)?])
+            })
+            .collect::<Option<Vec<_>>>()?;
+        counterbore_placement_from_corner_envelopes(
+            &source_corners,
+            bore_diameter,
+            counterbore_diameter,
+            counterbore_depth,
+        )
+        .map(|(position, direction, extent)| (None, position, direction, extent))
+    })
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CounterboreEnvelopeLayout {
+    axis: usize,
+    radial: [usize; 2],
+    center: [f64; 3],
+    axial_interval: [f64; 2],
+}
+
+fn counterbore_source_envelope_layout(
+    corners: [[[f64; 3]; 2]; 2],
+    diameter: f64,
+    axial_depth: Option<f64>,
+    scale: f64,
+) -> Option<CounterboreEnvelopeLayout> {
+    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    let intervals = corners.map(|patch| {
+        std::array::from_fn::<_, 3, _>(|axis| {
+            [
+                patch[0][axis].min(patch[1][axis]),
+                patch[0][axis].max(patch[1][axis]),
+            ]
+        })
+    });
+    let shared = |axis: usize| {
+        close(intervals[0][axis][0], intervals[1][axis][0])
+            && close(intervals[0][axis][1], intervals[1][axis][1])
+    };
+    let adjacent = |axis: usize| {
+        close(intervals[0][axis][1], intervals[1][axis][0])
+            || close(intervals[1][axis][1], intervals[0][axis][0])
+    };
+    let union = |axis: usize| {
+        [
+            intervals[0][axis][0].min(intervals[1][axis][0]),
+            intervals[0][axis][1].max(intervals[1][axis][1]),
+        ]
+    };
+    let diameter_axes = (0..3)
+        .filter(|axis| {
+            let union = union(*axis);
+            (shared(*axis) || adjacent(*axis)) && close(union[1] - union[0], diameter)
+        })
+        .collect::<Vec<_>>();
+    let [first_radial, second_radial] = diameter_axes.as_slice() else {
         return None;
     };
-    counterbore_directed_span(counterbore, bore, counterbore_depth)
+    let axis = (0..3).find(|axis| axis != first_radial && axis != second_radial)?;
+    shared(axis).then_some(())?;
+    let axial_interval = intervals[0][axis];
+    let axial_span = axial_interval[1] - axial_interval[0];
+    (axial_span > 0.0 && axial_depth.is_none_or(|depth| close(axial_span, depth))).then_some(())?;
+    let mut center = [0.0; 3];
+    for radial_axis in [*first_radial, *second_radial] {
+        let bounds = union(radial_axis);
+        center[radial_axis] = f64::midpoint(bounds[0], bounds[1]);
+    }
+    Some(CounterboreEnvelopeLayout {
+        axis,
+        radial: [*first_radial, *second_radial],
+        center,
+        axial_interval,
+    })
+}
+
+fn counterbore_placement_from_corner_envelopes(
+    source_corners: &[[[[f64; 3]; 2]; 2]],
+    bore_diameter: f64,
+    counterbore_diameter: f64,
+    counterbore_depth: f64,
+) -> Option<(Point3, Vector3, Termination)> {
+    let [first_source, second_source] = source_corners else {
+        return None;
+    };
+    let scale = source_corners
+        .iter()
+        .flatten()
+        .flatten()
+        .flatten()
+        .chain([&bore_diameter, &counterbore_diameter, &counterbore_depth])
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    source_corners
+        .iter()
+        .flatten()
+        .flatten()
+        .flatten()
+        .all(|value| value.is_finite())
+        .then_some(())?;
+    (bore_diameter > 0.0 && counterbore_diameter > bore_diameter && counterbore_depth > 0.0)
+        .then_some(())?;
+    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    let assignments = [
+        (
+            counterbore_source_envelope_layout(*first_source, bore_diameter, None, scale),
+            counterbore_source_envelope_layout(
+                *second_source,
+                counterbore_diameter,
+                Some(counterbore_depth),
+                scale,
+            ),
+        ),
+        (
+            counterbore_source_envelope_layout(*second_source, bore_diameter, None, scale),
+            counterbore_source_envelope_layout(
+                *first_source,
+                counterbore_diameter,
+                Some(counterbore_depth),
+                scale,
+            ),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(bore, counterbore)| Some((bore?, counterbore?)))
+    .collect::<Vec<_>>();
+    let [(bore, counterbore)] = assignments.as_slice() else {
+        return None;
+    };
+    (bore.axis == counterbore.axis && bore.radial == counterbore.radial).then_some(())?;
+    bore.radial
+        .iter()
+        .all(|axis| close(bore.center[*axis], counterbore.center[*axis]))
+        .then_some(())?;
+    let (entry, direction_sign, length) =
+        if close(counterbore.axial_interval[1], bore.axial_interval[0]) {
+            (
+                counterbore.axial_interval[0],
+                1.0,
+                bore.axial_interval[1] - counterbore.axial_interval[0],
+            )
+        } else if close(bore.axial_interval[1], counterbore.axial_interval[0]) {
+            (
+                counterbore.axial_interval[1],
+                -1.0,
+                counterbore.axial_interval[1] - bore.axial_interval[0],
+            )
+        } else {
+            return None;
+        };
+    (length > counterbore_depth && length.is_finite()).then_some(())?;
+    let mut position = counterbore.center;
+    position[counterbore.axis] = entry;
+    let mut direction = [0.0; 3];
+    direction[counterbore.axis] = direction_sign;
+    Some((
+        Point3::new(position[0], position[1], position[2]),
+        Vector3::new(direction[0], direction[1], direction[2]),
+        Termination::Blind {
+            length: Length(length),
+        },
+    ))
 }
 
 fn counterbore_directed_span(
@@ -22497,48 +23672,112 @@ fn compact_simple_hole_cylinder_id(
     tables: &[crate::feature::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
 ) -> Option<u32> {
-    let ids = tables
+    let candidates = tables
         .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
         .filter_map(|table| {
-            let [topology_a, topology_b, bottom, side] = table.entries.as_slice() else {
+            let entry_ids = table
+                .entries
+                .iter()
+                .map(|entry| entry.entity_id)
+                .collect::<Vec<_>>();
+            (table.entry_ids == entry_ids).then_some(())?;
+
+            let topology_candidates = table
+                .entries
+                .windows(2)
+                .enumerate()
+                .filter_map(|(index, pair)| {
+                    let [class_204, class_203] = pair else {
+                        unreachable!("two-entry window")
+                    };
+                    (class_204.class_id == 204
+                        && class_203.class_id == 203
+                        && class_204.source_entity_id.is_none()
+                        && class_203.source_entity_id.is_none())
+                    .then_some(())?;
+                    let planes = pair
+                        .iter()
+                        .filter(|candidate| {
+                            table.surface_ids.contains(&candidate.entity_id)
+                                && rows
+                                    .iter()
+                                    .filter(|row| row.id == candidate.entity_id)
+                                    .count()
+                                    == 1
+                                && rows.iter().any(|row| {
+                                    row.id == candidate.entity_id
+                                        && row.feature_id == feature_id
+                                        && row.kind == crate::surface::SurfaceKind::Plane
+                                })
+                        })
+                        .collect::<Vec<_>>();
+                    let plane = match planes.as_slice() {
+                        [] if table.entries.len() == 4 => None,
+                        [plane] => Some(plane.entity_id),
+                        _ => return None,
+                    };
+                    pair.iter()
+                        .filter(|candidate| Some(candidate.entity_id) != plane)
+                        .all(|candidate| {
+                            !table.surface_ids.contains(&candidate.entity_id)
+                                && !rows.iter().any(|row| row.id == candidate.entity_id)
+                        })
+                        .then_some((index, plane))
+                })
+                .collect::<Vec<_>>();
+            let [(topology_index, plane)] = topology_candidates.as_slice() else {
                 return None;
             };
-            (table.entry_ids
-                == [
-                    topology_a.entity_id,
-                    topology_b.entity_id,
-                    bottom.entity_id,
-                    side.entity_id,
-                ]
-                && [
-                    topology_a.class_id,
-                    topology_b.class_id,
-                    bottom.class_id,
-                    side.class_id,
-                ] == [204, 203, 200, 200]
-                && topology_a.source_entity_id.is_none()
-                && topology_b.source_entity_id.is_none()
-                && bottom.source_entity_id == Some(0)
-                && side.source_entity_id.is_none()
-                && !rows.iter().any(|row| {
-                    row.id == topology_a.entity_id
-                        || row.id == topology_b.entity_id
-                        || row.id == bottom.entity_id
+            let bottoms = table
+                .entries
+                .iter()
+                .enumerate()
+                .filter(|(_, candidate)| {
+                    candidate.class_id == 200
+                        && candidate.source_entity_id == Some(0)
+                        && !table.surface_ids.contains(&candidate.entity_id)
+                        && !rows.iter().any(|row| row.id == candidate.entity_id)
                 })
-                && rows.iter().filter(|row| row.id == side.entity_id).count() == 1
-                && rows.iter().any(|row| {
-                    row.id == side.entity_id
-                        && row.feature_id == feature_id
-                        && row.kind == crate::surface::SurfaceKind::Cylinder
-                }))
-            .then_some(side.entity_id)
+                .collect::<Vec<_>>();
+            let [(bottom_index, _)] = bottoms.as_slice() else {
+                return None;
+            };
+            let sides = table
+                .entries
+                .iter()
+                .enumerate()
+                .filter(|(_, candidate)| {
+                    candidate.class_id == 200
+                        && candidate.source_entity_id.is_none()
+                        && table.surface_ids.contains(&candidate.entity_id)
+                        && rows
+                            .iter()
+                            .filter(|row| row.id == candidate.entity_id)
+                            .count()
+                            == 1
+                        && rows.iter().any(|row| {
+                            row.id == candidate.entity_id
+                                && row.feature_id == feature_id
+                                && row.kind == crate::surface::SurfaceKind::Cylinder
+                        })
+                })
+                .collect::<Vec<_>>();
+            let [(side_index, side)] = sides.as_slice() else {
+                return None;
+            };
+            let mut expected_materialized = BTreeSet::from([side.entity_id]);
+            expected_materialized.extend(*plane);
+            (table.surface_ids.iter().copied().collect::<BTreeSet<_>>() == expected_materialized
+                && topology_index < bottom_index
+                && bottom_index < side_index)
+                .then_some(side.entity_id)
         })
         .collect::<Vec<_>>();
-    let [id] = ids.as_slice() else {
+    let [cylinder_id] = candidates.as_slice() else {
         return None;
     };
-    Some(*id)
+    Some(*cylinder_id)
 }
 
 fn compact_simple_hole_geometry(
@@ -32234,6 +33473,7 @@ fn transfer_circular_sweep_cylinders(
         .iter()
         .filter(|row| {
             row.root_schema_class == Some(917)
+                && !feature_section_sweep_semantics_conflict(scan, row.feature_id)
                 && section_sweep_allows_linear_extrusion(917, feature_recipe(scan, row.feature_id))
         })
         .map(|row| row.feature_id)
@@ -32478,11 +33718,148 @@ struct BuiltIr {
     coverage: BTreeMap<String, usize>,
 }
 
+fn legacy_source_stream<'a>(scan: &'a ContainerScan<'_>, offset: usize) -> &'a str {
+    scan.framing
+        .sections
+        .iter()
+        .find(|section| {
+            offset >= section.offset && offset < section.offset.saturating_add(section.length)
+        })
+        .map_or("legacy_ascii", |section| section.name.as_str())
+}
+
+fn emit_legacy_value_arena<T: Serialize>(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    key: &str,
+    records: &[crate::legacy::ValueRecord<T>],
+    tag: &str,
+) -> Result<(), CodecError> {
+    emit_arena(ir, annotations, key, records, |annotations, record| {
+        annotate(
+            annotations,
+            &record.id,
+            legacy_source_stream(scan, record.offset),
+            record.offset as u64,
+            tag,
+            Exactness::ByteExact,
+        );
+    })
+}
+
+fn emit_legacy_arenas(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> Result<(), CodecError> {
+    let Some(legacy) = &scan.framing.legacy_ascii else {
+        return Ok(());
+    };
+    emit_arena(
+        ir,
+        annotations,
+        "legacy_objects",
+        &legacy.persistence.objects,
+        |annotations, record| {
+            annotate(
+                annotations,
+                &record.id,
+                legacy_source_stream(scan, record.offset),
+                record.offset as u64,
+                "legacy_type_0_object",
+                Exactness::ByteExact,
+            );
+        },
+    )?;
+    emit_legacy_value_arena(
+        scan,
+        ir,
+        annotations,
+        "legacy_integer_values",
+        &legacy.persistence.integer_values,
+        "legacy_type_1_integer",
+    )?;
+    emit_legacy_value_arena(
+        scan,
+        ir,
+        annotations,
+        "legacy_real_values",
+        &legacy.persistence.real_values,
+        "legacy_type_2_real",
+    )?;
+    emit_legacy_value_arena(
+        scan,
+        ir,
+        annotations,
+        "legacy_type_3_values",
+        &legacy.persistence.type_3_values,
+        "legacy_type_3_value",
+    )?;
+    emit_legacy_value_arena(
+        scan,
+        ir,
+        annotations,
+        "legacy_type_4_values",
+        &legacy.persistence.type_4_values,
+        "legacy_type_4_value",
+    )?;
+    emit_legacy_value_arena(
+        scan,
+        ir,
+        annotations,
+        "legacy_string_values",
+        &legacy.persistence.string_values,
+        "legacy_type_10_string",
+    )?;
+    emit_legacy_value_arena(
+        scan,
+        ir,
+        annotations,
+        "legacy_type_5_values",
+        &legacy.persistence.type_5_values,
+        "legacy_type_5_value",
+    )?;
+    emit_legacy_value_arena(
+        scan,
+        ir,
+        annotations,
+        "legacy_type_6_values",
+        &legacy.persistence.type_6_values,
+        "legacy_type_6_value",
+    )?;
+    emit_legacy_value_arena(
+        scan,
+        ir,
+        annotations,
+        "legacy_type_7_values",
+        &legacy.persistence.type_7_values,
+        "legacy_type_7_value",
+    )?;
+    emit_legacy_value_arena(
+        scan,
+        ir,
+        annotations,
+        "legacy_type_9_values",
+        &legacy.persistence.type_9_values,
+        "legacy_type_9_value",
+    )?;
+    emit_legacy_value_arena(
+        scan,
+        ir,
+        annotations,
+        "legacy_type_11_values",
+        &legacy.persistence.type_11_values,
+        "legacy_type_11_value",
+    )
+}
+
 fn build_container_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     let (meta, coverage) = source_meta(scan);
     ir.source = Some(meta);
+    emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
     let unknowns = preserve_passthrough_sections(scan, &mut annotations);
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
     Ok(BuiltIr {
@@ -32499,6 +33876,13 @@ fn face_selection_has_unresolved_operands(selection: &FaceSelection) -> bool {
         FaceSelection::Unresolved
             | FaceSelection::HistoricalPartial { .. }
             | FaceSelection::Native(_)
+    )
+}
+
+fn body_selection_has_unresolved_operands(selection: &BodySelection) -> bool {
+    matches!(
+        selection,
+        BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_)
     )
 }
 
@@ -32577,6 +33961,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let mut annotations = AnnotationBuilder::new();
     let (meta, mut coverage) = source_meta(scan);
     ir.source = Some(meta);
+    emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
     let unknowns = preserve_passthrough_sections(scan, &mut annotations);
     emit_reference_arenas(scan, &mut ir, &mut annotations)?;
     let line3d_id_counts =
@@ -33533,17 +34918,20 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             }
             continue;
         }
+        let (operation_annotation_kind, operation_exactness) = if operation.display_state_conflict {
+            ("feature_operation_state_consensus", Exactness::Derived)
+        } else if operation.display_name_stored {
+            ("feature_operation_name", Exactness::ByteExact)
+        } else {
+            ("feature_recipe", Exactness::ByteExact)
+        };
         annotate(
             &mut annotations,
             &id,
             operation_section,
             operation.offset as u64,
-            if operation.display_name_stored {
-                "feature_operation_name"
-            } else {
-                "feature_recipe"
-            },
-            Exactness::ByteExact,
+            operation_annotation_kind,
+            operation_exactness,
         );
         ir.model.features.push(Feature {
             id,
@@ -34687,6 +36075,8 @@ fn collect_feature_coverage(
     let mut unresolved_thicken_faces_feature_count = 0;
     let mut unresolved_thicken_thickness_feature_count = 0;
     let mut unresolved_thicken_side_feature_count = 0;
+    let mut section_shape_feature_count = 0;
+    let mut incomplete_section_shape_feature_count = 0;
     let mut pattern_feature_count = 0;
     let mut incomplete_pattern_feature_count = 0;
     let mut unresolved_pattern_seed_feature_count = 0;
@@ -35008,6 +36398,13 @@ fn collect_feature_coverage(
                 incomplete_thicken_feature_count +=
                     usize::from(unresolved_faces || unresolved_thickness || unresolved_side);
             }
+            IrFeatureDefinition::SectionShape { first, second, .. } => {
+                section_shape_feature_count += 1;
+                incomplete_section_shape_feature_count += usize::from(
+                    body_selection_has_unresolved_operands(first)
+                        || body_selection_has_unresolved_operands(second),
+                );
+            }
             IrFeatureDefinition::Pattern { seeds, pattern } => {
                 pattern_feature_count += 1;
                 let unresolved_seeds = seeds.is_empty()
@@ -35052,8 +36449,9 @@ fn collect_feature_coverage(
     let incomplete_surface_operation_feature_count = incomplete_filled_surface_feature_count
         + incomplete_knit_surface_feature_count
         + incomplete_thicken_feature_count;
-    let incomplete_other_construction_feature_count =
-        incomplete_pattern_feature_count + native_axis_helix_feature_count;
+    let incomplete_other_construction_feature_count = incomplete_section_shape_feature_count
+        + incomplete_pattern_feature_count
+        + native_axis_helix_feature_count;
     coverage.insert(
         "transferred_feature_count".to_string(),
         ir.model.features.len(),
@@ -35371,6 +36769,14 @@ fn collect_feature_coverage(
         incomplete_other_construction_feature_count,
     );
     coverage.insert(
+        "transferred_section_shape_feature_count".to_string(),
+        section_shape_feature_count,
+    );
+    coverage.insert(
+        "transferred_incomplete_section_shape_feature_count".to_string(),
+        incomplete_section_shape_feature_count,
+    );
+    coverage.insert(
         "transferred_pattern_feature_count".to_string(),
         pattern_feature_count,
     );
@@ -35437,6 +36843,31 @@ fn torus_parameter_coverage(scan: &ContainerScan) -> TorusParameterCoverage {
     }
 }
 
+fn legacy_numeric_coverage<T>(
+    records: &[crate::legacy::NumericRecord<T>],
+) -> (usize, usize, usize) {
+    records.iter().fold(
+        (0usize, 0usize, 0usize),
+        |(scalars, arrays, elements), record| {
+            (
+                scalars
+                    + usize::from(matches!(
+                        record.payload,
+                        crate::legacy::NumericPayload::Scalar { .. }
+                    )),
+                arrays
+                    + usize::from(matches!(
+                        record.payload,
+                        crate::legacy::NumericPayload::Array { .. }
+                    )),
+                elements.saturating_add(
+                    usize::try_from(record.payload.element_count()).unwrap_or(usize::MAX),
+                ),
+            )
+        },
+    )
+}
+
 fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
     let mut attributes = BTreeMap::new();
     let mut coverage = BTreeMap::new();
@@ -35451,6 +36882,39 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
         "layout".to_string(),
         scan.framing.layout.token().to_string(),
     );
+    if let Some(legacy) = &scan.framing.legacy_ascii {
+        attributes.insert("legacy_ascii_schema".to_string(), legacy.schema.clone());
+        if let Some(release) = &legacy.product_release {
+            attributes.insert("legacy_ascii_product_release".to_string(), release.clone());
+        }
+        attributes.insert(
+            "legacy_ascii_declaration_count".to_string(),
+            legacy.persistence.declaration_count().to_string(),
+        );
+        attributes.insert(
+            "legacy_ascii_scope_count".to_string(),
+            legacy.persistence.scopes.len().to_string(),
+        );
+        attributes.insert(
+            "legacy_ascii_value_count".to_string(),
+            legacy.persistence.value_count().to_string(),
+        );
+        attributes.insert(
+            "legacy_ascii_continuation_count".to_string(),
+            legacy.persistence.continuation_count().to_string(),
+        );
+        attributes.insert(
+            "legacy_ascii_unresolved_value_count".to_string(),
+            legacy.persistence.unresolved_value_count().to_string(),
+        );
+        attributes.insert(
+            "legacy_ascii_conflicting_declaration_count".to_string(),
+            legacy
+                .persistence
+                .conflicting_declaration_count()
+                .to_string(),
+        );
+    }
     attributes.insert("file_size".to_string(), scan.framing.data.len().to_string());
     attributes.insert(
         "section_count".to_string(),
@@ -35471,8 +36935,213 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
         attributes.insert("crv_array_count".to_string(), c.to_string());
     }
     if let Some(unit) = &scan.framing.principal_unit {
-        attributes.insert("principal_unit".to_string(), unit.clone());
+        attributes.insert("principal_unit".to_string(), unit.token());
+        if scan.framing.layout == crate::container::Layout::LegacyAscii {
+            if let Some(scale) = unit.length_scale_mm() {
+                attributes.insert("source_length_scale_mm".to_string(), scale.to_string());
+            }
+        }
     }
+    if scan.framing.layout == crate::container::Layout::LegacyAscii {
+        coverage.insert(
+            "decoded_legacy_principal_unit_count".to_string(),
+            usize::from(scan.framing.principal_unit.is_some()),
+        );
+        if let Some(legacy) = &scan.framing.legacy_ascii {
+            let mut object_arrows = 0usize;
+            let mut object_inlines = 0usize;
+            let mut object_nulls = 0usize;
+            let mut object_arrays = 0usize;
+            for record in &legacy.persistence.objects {
+                match record.payload {
+                    crate::legacy::ObjectPayload::Arrow => object_arrows += 1,
+                    crate::legacy::ObjectPayload::Inline => object_inlines += 1,
+                    crate::legacy::ObjectPayload::Null => object_nulls += 1,
+                    crate::legacy::ObjectPayload::Array { .. } => object_arrays += 1,
+                    crate::legacy::ObjectPayload::Opaque { .. } => {}
+                }
+            }
+            coverage.insert(
+                "decoded_legacy_object_arrow_count".to_string(),
+                object_arrows,
+            );
+            coverage.insert(
+                "decoded_legacy_object_inline_count".to_string(),
+                object_inlines,
+            );
+            coverage.insert("decoded_legacy_object_null_count".to_string(), object_nulls);
+            coverage.insert(
+                "decoded_legacy_object_array_count".to_string(),
+                object_arrays,
+            );
+            coverage.insert(
+                "incomplete_legacy_object_array_count".to_string(),
+                legacy.persistence.incomplete_object_array_count,
+            );
+            coverage.insert(
+                "unresolved_legacy_object_value_count".to_string(),
+                legacy.persistence.unresolved_object_value_count,
+            );
+            let (integer_scalars, integer_arrays, integer_elements) =
+                legacy_numeric_coverage(&legacy.persistence.integer_values);
+            coverage.insert(
+                "decoded_legacy_integer_scalar_count".to_string(),
+                integer_scalars,
+            );
+            coverage.insert(
+                "decoded_legacy_integer_array_count".to_string(),
+                integer_arrays,
+            );
+            coverage.insert(
+                "decoded_legacy_integer_element_count".to_string(),
+                integer_elements,
+            );
+            coverage.insert(
+                "unresolved_legacy_integer_value_count".to_string(),
+                legacy.persistence.unresolved_integer_value_count,
+            );
+            let (real_scalars, real_arrays, real_elements) =
+                legacy_numeric_coverage(&legacy.persistence.real_values);
+            coverage.insert("decoded_legacy_real_scalar_count".to_string(), real_scalars);
+            coverage.insert("decoded_legacy_real_array_count".to_string(), real_arrays);
+            coverage.insert(
+                "decoded_legacy_real_element_count".to_string(),
+                real_elements,
+            );
+            coverage.insert(
+                "unresolved_legacy_real_value_count".to_string(),
+                legacy.persistence.unresolved_real_value_count,
+            );
+            let (string_scalars, string_arrays, string_elements, undecoded_encodings) =
+                legacy.persistence.string_values.iter().fold(
+                    (0usize, 0usize, 0usize, 0usize),
+                    |(scalars, arrays, elements, undecoded_encodings), record| {
+                        (
+                            scalars
+                                + usize::from(matches!(
+                                    record.payload,
+                                    crate::legacy::StringPayload::Scalar { .. }
+                                )),
+                            arrays
+                                + usize::from(matches!(
+                                    record.payload,
+                                    crate::legacy::StringPayload::Array { .. }
+                                )),
+                            elements.saturating_add(record.payload.element_count()),
+                            undecoded_encodings
+                                .saturating_add(record.payload.undecoded_encoding_count()),
+                        )
+                    },
+                );
+            coverage.insert(
+                "decoded_legacy_string_scalar_count".to_string(),
+                string_scalars,
+            );
+            coverage.insert(
+                "decoded_legacy_string_array_count".to_string(),
+                string_arrays,
+            );
+            coverage.insert(
+                "decoded_legacy_string_element_count".to_string(),
+                string_elements,
+            );
+            coverage.insert(
+                "incomplete_legacy_string_array_count".to_string(),
+                legacy.persistence.incomplete_string_array_count,
+            );
+            coverage.insert(
+                "unresolved_legacy_string_value_count".to_string(),
+                legacy.persistence.unresolved_string_value_count,
+            );
+            coverage.insert(
+                "undecoded_legacy_string_encoding_count".to_string(),
+                undecoded_encodings,
+            );
+            for (type_code, records, unresolved) in [
+                (
+                    3u8,
+                    legacy.persistence.type_3_values.as_slice(),
+                    legacy.persistence.unresolved_type_3_value_count,
+                ),
+                (
+                    4u8,
+                    legacy.persistence.type_4_values.as_slice(),
+                    legacy.persistence.unresolved_type_4_value_count,
+                ),
+            ] {
+                let scalars = records.len();
+                let undecoded_encodings = records
+                    .iter()
+                    .map(|record| record.payload.undecoded_encoding_count())
+                    .sum();
+                coverage.insert(
+                    format!("decoded_legacy_type_{type_code}_scalar_count"),
+                    scalars,
+                );
+                coverage.insert(
+                    format!("unresolved_legacy_type_{type_code}_value_count"),
+                    unresolved,
+                );
+                coverage.insert(
+                    format!("undecoded_legacy_type_{type_code}_encoding_count"),
+                    undecoded_encodings,
+                );
+            }
+            let mut insert_numbered_numeric_coverage =
+                |type_code: u8, (scalars, arrays, elements), unresolved| {
+                    coverage.insert(
+                        format!("decoded_legacy_type_{type_code}_scalar_count"),
+                        scalars,
+                    );
+                    coverage.insert(
+                        format!("decoded_legacy_type_{type_code}_array_count"),
+                        arrays,
+                    );
+                    coverage.insert(
+                        format!("decoded_legacy_type_{type_code}_element_count"),
+                        elements,
+                    );
+                    coverage.insert(
+                        format!("unresolved_legacy_type_{type_code}_value_count"),
+                        unresolved,
+                    );
+                };
+            insert_numbered_numeric_coverage(
+                5,
+                legacy_numeric_coverage(&legacy.persistence.type_5_values),
+                legacy.persistence.unresolved_type_5_value_count,
+            );
+            insert_numbered_numeric_coverage(
+                6,
+                legacy_numeric_coverage(&legacy.persistence.type_6_values),
+                legacy.persistence.unresolved_type_6_value_count,
+            );
+            insert_numbered_numeric_coverage(
+                7,
+                legacy_numeric_coverage(&legacy.persistence.type_7_values),
+                legacy.persistence.unresolved_type_7_value_count,
+            );
+            insert_numbered_numeric_coverage(
+                9,
+                legacy_numeric_coverage(&legacy.persistence.type_9_values),
+                legacy.persistence.unresolved_type_9_value_count,
+            );
+            insert_numbered_numeric_coverage(
+                11,
+                legacy_numeric_coverage(&legacy.persistence.type_11_values),
+                legacy.persistence.unresolved_type_11_value_count,
+            );
+        }
+    }
+    coverage.insert(
+        "decoded_primitive_triangle_strip_count".to_string(),
+        scan.primitives.triangle_strips.len(),
+    );
+    coverage.insert(
+        "conflicting_primitive_triangle_strip_representation_count".to_string(),
+        scan.primitives
+            .conflicting_triangle_strip_representation_count,
+    );
     coverage.insert(
         "decoded_surface_row_count".to_string(),
         scan.surfaces.rows.len(),
@@ -36241,6 +37910,157 @@ fn build_report(
         provenance: None,
     });
 
+    let unresolved_legacy_reals = count("unresolved_legacy_real_value_count");
+    if unresolved_legacy_reals != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_legacy_reals} legacy type-2 value row(s) did not form a complete \
+                 finite scalar or dimension-complete real array."
+            ),
+            provenance: None,
+        });
+    }
+    let unresolved_legacy_integers = count("unresolved_legacy_integer_value_count");
+    if unresolved_legacy_integers != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_legacy_integers} legacy type-1 value row(s) did not form a signed \
+                 32-bit scalar or dimension-complete integer array."
+            ),
+            provenance: None,
+        });
+    }
+    for type_code in [3u8, 4] {
+        let unresolved = count(&format!("unresolved_legacy_type_{type_code}_value_count"));
+        if unresolved != 0 {
+            losses.push(LossNote {
+                code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+                severity: Severity::Warning,
+                message: format!(
+                    "{unresolved} legacy type-{type_code} value row(s) use an undefined \
+                     continuation form."
+                ),
+                provenance: None,
+            });
+        }
+        let undecoded = count(&format!("undecoded_legacy_type_{type_code}_encoding_count"));
+        if undecoded != 0 {
+            losses.push(LossNote {
+                code: cadmpeg_ir::report::LossKind::AttributesNotTransferred,
+                severity: Severity::Warning,
+                message: format!(
+                    "{undecoded} legacy type-{type_code} byte-string value(s) retain exact \
+                     source bytes because their character encoding is not UTF-8."
+                ),
+                provenance: None,
+            });
+        }
+    }
+    for type_code in [5u8, 7, 9, 11] {
+        let unresolved = count(&format!("unresolved_legacy_type_{type_code}_value_count"));
+        if unresolved != 0 {
+            losses.push(LossNote {
+                code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+                severity: Severity::Warning,
+                message: format!(
+                    "{unresolved} legacy type-{type_code} value row(s) did not form an unsigned \
+                     32-bit scalar or dimension-complete unsigned array."
+                ),
+                provenance: None,
+            });
+        }
+    }
+    let unresolved_legacy_type_6 = count("unresolved_legacy_type_6_value_count");
+    if unresolved_legacy_type_6 != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_legacy_type_6} legacy type-6 value row(s) did not form a complete \
+                 finite compact-real scalar or dimension-complete real array."
+            ),
+            provenance: None,
+        });
+    }
+    let incomplete_legacy_object_arrays = count("incomplete_legacy_object_array_count");
+    if incomplete_legacy_object_arrays != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+            severity: Severity::Warning,
+            message: format!(
+                "{incomplete_legacy_object_arrays} legacy type-0 object array(s) have a direct \
+                 element count that differs from their declared extents."
+            ),
+            provenance: None,
+        });
+    }
+    let unresolved_legacy_objects = count("unresolved_legacy_object_value_count");
+    if unresolved_legacy_objects != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_legacy_objects} legacy type-0 value row(s) use an undefined object \
+                 payload form."
+            ),
+            provenance: None,
+        });
+    }
+    let incomplete_legacy_string_arrays = count("incomplete_legacy_string_array_count");
+    if incomplete_legacy_string_arrays != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+            severity: Severity::Warning,
+            message: format!(
+                "{incomplete_legacy_string_arrays} legacy type-10 string array(s) have a direct \
+                 element count that differs from their first extent."
+            ),
+            provenance: None,
+        });
+    }
+    let unresolved_legacy_strings = count("unresolved_legacy_string_value_count");
+    if unresolved_legacy_strings != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::RecordNotTyped,
+            severity: Severity::Warning,
+            message: format!(
+                "{unresolved_legacy_strings} legacy type-10 value row(s) use an undefined \
+                 continuation form."
+            ),
+            provenance: None,
+        });
+    }
+    let undecoded_legacy_string_encodings = count("undecoded_legacy_string_encoding_count");
+    if undecoded_legacy_string_encodings != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::AttributesNotTransferred,
+            severity: Severity::Warning,
+            message: format!(
+                "{undecoded_legacy_string_encodings} legacy type-10 string element(s) retain \
+                 exact source bytes because their character encoding is not UTF-8."
+            ),
+            provenance: None,
+        });
+    }
+
+    let conflicting_triangle_strip_representations =
+        count("conflicting_primitive_triangle_strip_representation_count");
+    if conflicting_triangle_strip_representations != 0 {
+        losses.push(LossNote {
+            code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
+            severity: Severity::Warning,
+            message: format!(
+                "{conflicting_triangle_strip_representations} primitive triangle-strip record(s) \
+                 contain complete position representations that disagree."
+            ),
+            provenance: None,
+        });
+    }
+
     // The core prototype-vs-instance limitation.
     losses.push(LossNote {
         code: cadmpeg_ir::report::LossKind::GeometryNotTransferred,
@@ -36831,6 +38651,10 @@ fn build_report(
         count("transferred_incomplete_other_construction_feature_count");
     if incomplete_other_constructions != 0 {
         let families = [
+            (
+                "section shape",
+                count("transferred_incomplete_section_shape_feature_count"),
+            ),
             (
                 "pattern",
                 count("transferred_incomplete_pattern_feature_count"),

@@ -559,10 +559,7 @@ pub(crate) fn parse_parameter_companion(prefix: &[u8]) -> Option<DesignParameter
 
 /// Bind each companion to its exact owned byte interval and the construction
 /// recipes nested in that interval.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Each argument is one independently decoded native arena."
-)]
+#[allow(clippy::too_many_arguments)]
 pub fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
     companions: &mut [DesignParameterCompanion],
     parameters: &[DesignParameter],

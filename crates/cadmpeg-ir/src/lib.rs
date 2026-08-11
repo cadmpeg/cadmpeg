@@ -145,4 +145,6 @@ pub fn decode_sidecar_json_schema() -> schemars::Schema {
 }
 
 #[cfg(test)]
+mod proptests;
+#[cfg(test)]
 mod tests;

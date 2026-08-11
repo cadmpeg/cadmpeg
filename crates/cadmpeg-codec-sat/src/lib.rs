@@ -419,4 +419,6 @@ fn unsupported_result(message: &str, attributes: BTreeMap<String, String>) -> De
 }
 
 #[cfg(test)]
+mod golden_tests;
+#[cfg(test)]
 mod tests;

@@ -5,14 +5,6 @@
 //! typed value into an untyped tree, edit the tree, and rebuild the typed value
 //! from it. [`serde_value::Value`] holds an `f64` directly, so a non-finite
 //! coordinate survives the rebuild; JSON has no such number.
-//!
-//! [`from_value`] names [`serde_json::Error`] as the deserializer error type.
-//! Serde buffers `tag`, `untagged`, and `flatten` members through its internal
-//! `ContentDeserializer<E>`, which is monomorphized once for every distinct `E`
-//! that reaches the whole IR type surface. Naming the error type the `.cadir`
-//! JSON reader already uses keeps one such family in the binary instead of two.
-//! The error type carries no encoding, so this does not put the rebuild through
-//! JSON.
 
 use serde::de::DeserializeOwned;
 use serde_value::{Value, ValueDeserializer};

@@ -1098,10 +1098,7 @@ fn loop_head(attr: u16, first_coedge: u16, bridge_attr: u16) -> Vec<u8> {
 
 /// Coedge `00 11`: `refs[1]` owner loop, `refs[3]` next, `refs[4]` start
 /// vertex-use, `refs[5]` twin, `refs[6]` edge-use; marker is the local sense.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn coedge(
     attr: u16,
     owner_loop: u16,
@@ -1285,7 +1282,7 @@ fn suffix_prefixed_edge_triangle_body() -> Vec<u8> {
 
 /// One triangular planar face: a plane carrier, a bridge, a loop, three coedges
 /// forming a closed ring, three edge-uses, three vertex-uses, and three points.
-fn triangle_body() -> Vec<u8> {
+pub(crate) fn triangle_body() -> Vec<u8> {
     let mut b = Vec::new();
     b.extend(plane_carrier(
         100,
@@ -1405,7 +1402,7 @@ fn untyped_triangle(x: f64) -> Vec<u8> {
 }
 
 /// A `.sldprt` whose partition block carries `triangle_body`.
-fn sldprt_with_body(body: &[u8]) -> Vec<u8> {
+pub(crate) fn sldprt_with_body(body: &[u8]) -> Vec<u8> {
     let mut f = outer_header();
     f.extend_from_slice(&make_block(
         0x20,
@@ -11191,10 +11188,6 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
     assert_eq!(depth.dependencies, vec![width.id.clone()]);
     assert_eq!(depth.value, Some(ParameterValue::Length(Length(8.0))));
 
-    // Edit both arenas so the write path enters `sync_neutral_features` (which
-    // checks the retained tree-node role) and `sync_neutral_parameters` (which
-    // recomputes dependency edges against the global-owner set) instead of the
-    // unchanged-baseline short circuits.
     let extrusion = decoded
         .ir
         .model
@@ -14033,10 +14026,6 @@ fn semantic_writer_round_trips_extrusion_with_unrecognized_end_condition() {
         }
     ));
 
-    // The retained record still spells the draft angle as authored; only the
-    // neutral write path canonicalizes it to radians. Asserting both spellings
-    // proves this round trip reached `sync_neutral_features` instead of the
-    // unchanged-baseline short circuit.
     assert_eq!(
         sldprt_native(&decoded.ir).feature_histories[0].features[0].parameters["Draft"],
         "3deg"

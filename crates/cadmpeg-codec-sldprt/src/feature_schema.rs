@@ -1,18 +1,8 @@
 //! Per-feature schema declarations shared across history projection, neutral
 //! synchronization, and design-loss auditing.
 //!
-//! A feature type's native enum tokens (for example the filled-surface
-//! continuity order, or the trim-surface keep region) were historically spelled
-//! out twice: once in the read path that maps native records to typed
-//! [`cadmpeg_ir::features::FeatureDefinition`] values, and once in the write path that
-//! rebuilds native records from them. The two `match` blocks had to stay in
-//! lockstep by hand; drift between them is a silent round-trip bug.
-//!
-//! This module holds each such token map as a single static table. The read
-//! path parses against it case-insensitively (preserving the historical
-//! `to_ascii_lowercase` matching), and the write path formats through it to the
-//! canonical native spelling. Adding or renaming a token is now a one-line edit
-//! that both directions inherit.
+//! Native enum tokens are single static tables. The read path parses them
+//! case-insensitively; the write path formats the canonical spelling.
 
 use cadmpeg_ir::features::{SurfaceContinuity, SurfaceExtension, TrimRegion};
 

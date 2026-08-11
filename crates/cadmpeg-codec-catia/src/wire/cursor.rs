@@ -147,7 +147,6 @@ mod tests {
             Cursor::new_at(&[0x30, 0x07, 0x00], 0).object_ref(false),
             None
         );
-        // Shared leads still decode under the restricted dialect.
         assert_eq!(Cursor::new_at(&[0x8b], 0).object_ref(false), Some(11));
     }
 

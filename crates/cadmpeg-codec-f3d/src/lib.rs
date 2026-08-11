@@ -138,21 +138,8 @@ impl F3dCodec {
         Self::write_preserved_bytes(ir, data, record.byte_len, &record.sha256, writer)
     }
 
-    /// Replay the retained source bytes when the document is untouched since the
-    /// decode that recorded its baseline, and patch the container otherwise.
-    ///
-    /// The `document_local_sha256` baseline answers only "was this edited since
-    /// it was decoded?", bitwise and on this machine; see
-    /// [`decode::document_local_sha256`]. Without it the question cannot be
-    /// answered at all, and this codec refuses rather than guess: replaying the
-    /// bytes could discard edits, and patching could rewrite a container that
-    /// needed no change.
-    ///
-    /// The returned [`WritePath`] is the branch this function took, not a
-    /// judgement made about its output afterwards. The two branches can produce
-    /// the same bytes — a patch that changes nothing observable rewrites the
-    /// container back to what it was — so the output cannot answer which one
-    /// ran, and only this value can.
+    /// Replay retained source bytes when the document baseline still matches;
+    /// otherwise patch. Absent baseline: refuse. Returns which branch ran.
     fn write_preserved_bytes(
         ir: &CadIr,
         data: &[u8],

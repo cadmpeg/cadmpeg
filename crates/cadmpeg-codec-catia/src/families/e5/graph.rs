@@ -1137,6 +1137,9 @@ fn records(bytes: &[u8]) -> Vec<Record<'_>> {
             break;
         };
         let start = position + relative;
+        if start + 13 > bytes.len() {
+            break;
+        }
         let size = usize::from(u16::from_le_bytes([bytes[start + 5], bytes[start + 6]]));
         let Some(end) = start.checked_add(13 + size) else {
             break;
@@ -1761,5 +1764,13 @@ mod tests {
         assert_eq!(second[0].serialized_index, 1);
         assert_eq!(second[1].serialized_index, 0);
         assert!(second.iter().all(|member| member.reversed));
+    }
+
+    #[test]
+    fn records_stop_at_a_marker_without_a_full_header() {
+        let mut bytes = vec![0; 20];
+        bytes.extend_from_slice(&[0xe5, 0x0d, 0x03, 0x00]);
+        assert!(records(&bytes).is_empty());
+        assert!(parse_topology(&bytes).is_none());
     }
 }

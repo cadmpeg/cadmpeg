@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parasolid source-record extractors and their record types.
 
-#[allow(
-    clippy::wildcard_imports,
-    reason = "Split check modules share a private orchestration prelude via wildcard import."
-)]
+#[allow(clippy::wildcard_imports)]
 use super::*;
 
 use super::substrate::StreamView;

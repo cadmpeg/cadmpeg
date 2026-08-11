@@ -30,10 +30,7 @@ pub(crate) fn requires_alpha_conversion(program_version: Option<&str>) -> bool {
     program_version.is_some_and(|version| version.starts_with('0') || version.starts_with("1.0"))
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "GUI transfer receives independent source and neutral arenas plus document-version state."
-)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn transfer(
     ir: &mut CadIr,
     bytes: &[u8],
@@ -1409,10 +1406,7 @@ impl TopologyColorKind {
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn transfer_topology_colors(
     ir: &mut CadIr,
     provider_name: &str,

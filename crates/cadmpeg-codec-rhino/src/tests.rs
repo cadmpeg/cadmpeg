@@ -3040,8 +3040,6 @@ fn instance_bakes_mesh_subd_and_normals_without_changing_subd_metadata() {
 
 #[test]
 fn failed_instance_expansion_retains_inflated_member_mesh_budget() {
-    // Failed expansions cannot reclaim bytes retained in the shared arena. Their
-    // mesh-budget charge must survive to prevent repeated failures bypassing the cap.
     let archive = ArchiveVersion::V5;
     let mesh_id = [0x54; 16];
     let missing_id = [0x99; 16];

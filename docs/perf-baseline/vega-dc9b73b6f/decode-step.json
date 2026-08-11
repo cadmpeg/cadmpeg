@@ -1,0 +1,35 @@
+{
+  "results": [
+    {
+      "command": "timeout 120 'target/release/cadmpeg' decode 'crates/cadmpeg-codec-step/tests/fixtures/ap242_tessellation.p21' >/dev/null",
+      "mean": 0.00970066876,
+      "stddev": 0.00023588222671918295,
+      "median": 0.00967587676,
+      "user": 0.00319346,
+      "system": 0.004676560000000001,
+      "min": 0.00946996076,
+      "max": 0.01008841876,
+      "times": [
+        0.009565168760000001,
+        0.00946996076,
+        0.009703918760000001,
+        0.01008841876,
+        0.00967587676
+      ],
+      "memory_usage_byte": [
+        7143424,
+        7143424,
+        7192576,
+        7192576,
+        7192576
+      ],
+      "exit_codes": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

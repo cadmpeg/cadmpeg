@@ -2,11 +2,7 @@
 //! High-level CATPart-to-IR decoding.
 //!
 //! [`decode`] scans the container, selects a decoder from the identified storage
-//! variant, and returns the transferred model with a [`DecodeReport`]. The
-//! per-family pipelines live in `families/*/decode.rs`; this module is the
-//! orchestrator: container scan, the ordered route table in [`crate::families`],
-//! the metadata fallback, and the `Codec`-facing glue (native side-channel and
-//! result assembly).
+//! variant, and returns the transferred model with a [`DecodeReport`].
 //!
 //! Partial paths preserve the reconstructed B-rep stream or complete file as an
 //! [`UnknownRecord`]. Their report identifies unresolved model layers.

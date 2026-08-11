@@ -33,13 +33,6 @@
 //!
 //! Byte-level format semantics are documented in
 //! [`docs/formats/catia.md`](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md).
-//!
-//! # Internal layout
-//!
-//! `wire` reads endian scalars and tag records; `solve` holds the pure topology
-//! solvers; `families/*` pair each record vocabulary with its decode route; and
-//! `assemble` lowers decoded records into the neutral IR. All of these are
-//! crate-private; nothing but `CatiaCodec` is part of the public API.
 
 pub(crate) mod analytic;
 mod appearance;

@@ -1,0 +1,28 @@
+{
+  "container_kind": "iso-10303-21-clear-text",
+  "entries": [
+    {
+      "attributes": {},
+      "compressed_size": 0,
+      "compression": "none",
+      "name": "HEADER",
+      "role": "metadata",
+      "uncompressed_size": 0
+    },
+    {
+      "attributes": {
+        "entity_count": "52",
+        "unknown_entities": "PRESENTATION_STYLE_ASSIGNMENT:1,STYLED_ITEM:1"
+      },
+      "compressed_size": 0,
+      "compression": "none",
+      "name": "DATA[0]",
+      "role": "entity_records",
+      "uncompressed_size": 0
+    }
+  ],
+  "format": "step",
+  "notes": [
+    "schema AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF; edition unspecified"
+  ]
+}

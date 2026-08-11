@@ -2425,10 +2425,7 @@ fn emit_vertex_blend_surface(
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn emit_blend_surface(
     out: &mut AsmBrep,
     i: i64,
@@ -3887,10 +3884,7 @@ pub(crate) fn emit_faces(
 
 /// Emit shells, regions, and bodies for every record so back-references
 /// resolve, filtering child lists to reachable entities.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn emit_containers(
     out: &mut AsmBrep,
     records: &[Record],

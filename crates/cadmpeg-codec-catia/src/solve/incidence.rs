@@ -3336,10 +3336,7 @@ pub(crate) fn partial_face_orientability_viable(
     solve_boundary_orientation_constraints(boundary_count, &edge_uses, false).is_some()
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 #[cfg(test)]
 pub(crate) fn component_incidence_pair_solutions<F>(
     choices: &[Vec<[usize; 2]>],
@@ -3367,10 +3364,7 @@ where
     .into_option()
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 #[cfg(test)]
 pub(crate) fn component_incidence_pair_solution_outcome<F>(
     choices: &[Vec<[usize; 2]>],
@@ -3416,10 +3410,7 @@ where
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 #[cfg(test)]
 pub(crate) fn visit_component_incidence_pair_solutions<F, V>(
     choices: &[Vec<[usize; 2]>],
@@ -3452,10 +3443,7 @@ where
     )
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 fn visit_component_incidence_pair_solutions_with_coordinate_root_policy<F, V>(
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
@@ -3473,10 +3461,7 @@ where
     F: Fn(&[[usize; 2]]) -> bool,
     V: FnMut(&[[usize; 2]]) -> ControlFlow<()>,
 {
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-    )]
+    #[allow(clippy::too_many_arguments)]
     fn solve_component_domain(
         component: &[usize],
         choices: &[Vec<[usize; 2]>],
@@ -3595,10 +3580,7 @@ where
         search.exhausted
     }
 
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-    )]
+    #[allow(clippy::too_many_arguments)]
     fn visit_components<F, V>(
         component_index: usize,
         choices: &[Vec<[usize; 2]>],
@@ -4181,10 +4163,7 @@ pub(crate) fn reconstruct_incidence_candidates(
     )
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn visit_incidence_endpoint_pair_solutions<F, V>(
     edge_rows: &[EdgeRow],
     vertex_points: &[[f64; 3]],
@@ -4218,10 +4197,7 @@ where
     )
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
-)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy<F, V>(
     edge_rows: &[EdgeRow],
     vertex_points: &[[f64; 3]],

@@ -966,6 +966,8 @@ fn operation(feature_id: u32, recipe: Option<FeatureRecipe>, offset: usize) -> F
         identifier_keyword: None,
         stored_name_prefix: None,
         recipe,
+        recipe_conflict: false,
+        display_state_conflict: false,
         root_schema_class: None,
         parent_feature_id: None,
         offset,
@@ -2196,6 +2198,40 @@ fn positional_skamp_table_replays_counted_nested_items() {
     assert_eq!(skamps[1].flags, 34);
     assert_eq!(skamps[1].status, 35);
     assert_eq!(skamps[1].items[0].entity_id, 8);
+}
+
+#[test]
+fn positional_skamp_table_skips_row_auxiliary_frames() {
+    let payload = b"\xf8\x03\xf7\x58\xfb\xe2\xf7\x59\
+            \x01\x00\x00\x23\xf8\x02\xf7\x60\xfb\xe2\xf7\x61\
+            \x06\x03\xf1\xf7\x60\xe2\x07\x02\xf3\xf7\x58\xe2\
+            \x02\x04\x00\x22\xe0\x02aux\0\xf8\x02\x0a\x0b\xf7\x60\
+            \xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x08\x00\xf3\xf7\x58\xe2\
+            \x03\x02\x00\x23\xf7\x60\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x09\x00";
+
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+
+    assert_eq!(skamps.len(), 3);
+    assert_eq!(skamps[1].id, 2);
+    assert_eq!(skamps[1].kind, 4);
+    assert_eq!(skamps[1].items[0].entity_id, 8);
+    assert_eq!(skamps[2].id, 3);
+    assert_eq!(skamps[2].kind, 2);
+    assert_eq!(skamps[2].items[0].entity_id, 9);
+}
+
+#[test]
+fn positional_skamp_table_rejects_ambiguous_nested_item_arrays() {
+    let payload = b"\xf8\x02\xf7\x58\xfb\xe2\xf7\x59\
+            \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00\
+            \xf3\xf7\x58\xe2\x02\x04\x00\x22\
+            \xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x07\x00\
+            \xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x08\x00";
+
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+
+    assert_eq!(skamps.len(), 1);
+    assert_eq!(skamps[0].id, 1);
 }
 
 #[test]
@@ -3543,6 +3579,7 @@ fn preserves_mdlstatus_name_prefixes_without_using_them_as_state_selectors() {
         assert_eq!(state.feature_id, 7);
         assert_eq!(state.kind, "Extrude");
         assert_eq!(state.stored_name_prefix, Some(prefix));
+        assert!(state.display_state_conflict);
         assert_eq!(state.state_offset + 1, state.offset);
         assert_eq!(state.stored_name.as_deref(), Some(expected_name));
     }
@@ -3552,8 +3589,13 @@ fn preserves_mdlstatus_name_prefixes_without_using_them_as_state_selectors() {
     let [current] = current_operations.as_slice() else {
         panic!("one current operation");
     };
-    assert_eq!(current, &states[3]);
-    assert_eq!(current.stored_name_prefix, Some(b'z'));
+    assert_eq!(current.kind, "Extrude");
+    assert!(!current.display_name_stored);
+    assert_eq!(current.stored_name, None);
+    assert_eq!(current.stored_name_bytes, None);
+    assert_eq!(current.identifier_keyword, None);
+    assert_eq!(current.stored_name_prefix, None);
+    assert!(current.display_state_conflict);
 }
 
 #[test]
@@ -3584,14 +3626,21 @@ fn preserves_competing_depdb_recipe_bindings() {
     assert_eq!(states.len(), 2);
     assert_eq!(states[0].feature_id, 8053);
     assert_eq!(states[0].recipe, Some(FeatureRecipe::ProtrudeExtrude));
+    assert!(states[0].recipe_conflict);
     assert_eq!(states[0].root_schema_class, Some(917));
     assert_eq!(states[1].feature_id, 8053);
     assert_eq!(states[1].recipe, Some(FeatureRecipe::CutExtrude));
+    assert!(states[1].recipe_conflict);
     assert_eq!(states[1].root_schema_class, Some(916));
 
     let current = operations(payload);
     assert_eq!(current.len(), 1);
-    assert_eq!(current[0], states[1]);
+    assert_eq!(current[0].feature_id, 8053);
+    assert_eq!(current[0].kind, "Native Feature");
+    assert_eq!(current[0].recipe, None);
+    assert!(current[0].recipe_conflict);
+    assert_eq!(current[0].root_schema_class, None);
+    assert_eq!(current[0].parent_feature_id, None);
 
     let repeated = b"\xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0\
             \xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 2\0\xf6\0protextrude\0";
@@ -3599,6 +3648,58 @@ fn preserves_competing_depdb_recipe_bindings() {
     assert_eq!(repeated_states.len(), 2);
     assert_eq!(repeated_states[0].recipe, repeated_states[1].recipe);
     assert_ne!(repeated_states[0].offset, repeated_states[1].offset);
+    let repeated_current = operations(repeated);
+    assert_eq!(repeated_current.len(), 1);
+    assert_eq!(repeated_current[0].kind, "Extrude");
+    assert_eq!(
+        repeated_current[0].recipe,
+        Some(FeatureRecipe::ProtrudeExtrude)
+    );
+    assert_eq!(repeated_current[0].root_schema_class, Some(917));
+    assert_eq!(repeated_current[0].parent_feature_id, Some(8051));
+}
+
+#[test]
+fn conflicting_bindings_do_not_use_an_inline_recipe_fallback() {
+    let payload = b"\xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0\
+            \xf7\x50\x9f\x75\x83\x94\xf6\x9f\x73Profile 2\0\xf6\0cutextrude\0\
+            \xe3icon\0protextrude\0Extrude id 8053\0";
+
+    let states = operation_states(payload);
+    let display = states
+        .iter()
+        .find(|state| state.display_name_stored)
+        .expect("stored display state");
+    assert_eq!(display.kind, "Extrude");
+    assert_eq!(display.recipe, None);
+    assert!(display.recipe_conflict);
+    assert_eq!(display.root_schema_class, None);
+    assert_eq!(display.parent_feature_id, None);
+
+    let current = operations(payload);
+    let [current] = current.as_slice() else {
+        panic!("one current operation");
+    };
+    assert_eq!(current.kind, "Extrude");
+    assert!(current.display_name_stored);
+    assert_eq!(current.recipe, None);
+    assert!(current.recipe_conflict);
+}
+
+#[test]
+fn leaves_inline_recipe_conflicts_unresolved() {
+    let payload = b"\xe3icon\0protextrude\0cutextrude\0Extrude id 9\0";
+
+    let states = operation_states(payload);
+    let [state] = states.as_slice() else {
+        panic!("one operation state");
+    };
+    assert_eq!(state.feature_id, 9);
+    assert_eq!(state.kind, "Extrude");
+    assert_eq!(state.recipe, None);
+    assert!(state.recipe_conflict);
+    assert_eq!(state.root_schema_class, None);
+    assert_eq!(state.parent_feature_id, None);
 }
 
 #[test]
