@@ -11656,8 +11656,8 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             SketchConstraintDefinition::Native { .. }
         ));
     }
-    let mut fixed_bounded_curve = definition.clone();
-    fixed_bounded_curve
+    let mut type_33_bounded_curve = definition.clone();
+    type_33_bounded_curve
         .segments
         .as_mut()
         .expect("segments")
@@ -11672,12 +11672,12 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         external_id: 18,
         offset: 86,
     }];
-    fixed_bounded_curve
+    type_33_bounded_curve
         .segments
         .as_mut()
         .expect("segments")
         .declared_count = 6;
-    fixed_bounded_curve
+    type_33_bounded_curve
         .relations
         .as_mut()
         .expect("relations")
@@ -11692,36 +11692,54 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         }],
         offset: 87,
     }];
-    synchronize_skamp_count(&mut fixed_bounded_curve);
-    let fixed_constraints = section_skamp_constraints(
-        &fixed_bounded_curve,
+    synchronize_skamp_count(&mut type_33_bounded_curve);
+    let type_33_constraints = section_skamp_constraints(
+        &type_33_bounded_curve,
         &SketchId("creo:model:sketch#917".into()),
     );
+    let SketchConstraintDefinition::Native {
+        native_kind,
+        native_state,
+        native_flags,
+        entities,
+        operands,
+        ..
+    } = &type_33_constraints[0].0.definition
+    else {
+        panic!("native type-33 incidence");
+    };
+    assert_eq!(native_kind, "creo:skamp:33");
+    assert_eq!(*native_state, Some(35));
+    assert_eq!(*native_flags, Some(34));
     assert_eq!(
-        fixed_constraints[0].0.definition,
-        SketchConstraintDefinition::Fixed {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#917:18".to_string()),
-        }
+        entities,
+        &[SketchEntityId(
+            "creo:featdefs:sketch_entity#917:18".to_string()
+        )]
     );
-    assert_eq!(fixed_constraints[0].0.active, Some(true));
-    fixed_bounded_curve
+    assert_eq!(operands.len(), 1);
+    assert_eq!(operands[0].native_role, Some(10));
+    assert_eq!(type_33_constraints[0].0.active, Some(true));
+    type_33_bounded_curve
         .relations
         .as_mut()
         .expect("relations")
         .skamps[0]
         .status = 34;
-    let inactive_fixed = section_skamp_constraints(
-        &fixed_bounded_curve,
+    let inactive_type_33 = section_skamp_constraints(
+        &type_33_bounded_curve,
         &SketchId("creo:model:sketch#917".into()),
     );
-    assert_eq!(
-        inactive_fixed[0].0.definition,
-        SketchConstraintDefinition::Fixed {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#917:18".to_string()),
+    assert!(matches!(
+        inactive_type_33[0].0.definition,
+        SketchConstraintDefinition::Native {
+            native_state: Some(34),
+            native_flags: Some(34),
+            ..
         }
-    );
-    assert_eq!(inactive_fixed[0].0.active, Some(false));
-    fixed_bounded_curve
+    ));
+    assert_eq!(inactive_type_33[0].0.active, Some(false));
+    type_33_bounded_curve
         .relations
         .as_mut()
         .expect("relations")
@@ -11729,20 +11747,23 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .flags = 0;
     assert!(matches!(
         section_skamp_constraints(
-            &fixed_bounded_curve,
+            &type_33_bounded_curve,
             &SketchId("creo:model:sketch#917".into()),
         )[0]
         .0
         .definition,
-        SketchConstraintDefinition::Fixed { .. }
+        SketchConstraintDefinition::Native {
+            native_flags: Some(0),
+            ..
+        }
     ));
-    fixed_bounded_curve
+    type_33_bounded_curve
         .relations
         .as_mut()
         .expect("relations")
         .skamps[0]
         .flags = 34;
-    fixed_bounded_curve
+    type_33_bounded_curve
         .relations
         .as_mut()
         .expect("relations")
@@ -11751,21 +11772,21 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .sense = 0;
     assert!(matches!(
         section_skamp_constraints(
-            &fixed_bounded_curve,
+            &type_33_bounded_curve,
             &SketchId("creo:model:sketch#917".into()),
         )[0]
         .0
         .definition,
         SketchConstraintDefinition::Native { .. }
     ));
-    fixed_bounded_curve
+    type_33_bounded_curve
         .relations
         .as_mut()
         .expect("relations")
         .skamps[0]
         .items[0]
         .sense = 10;
-    fixed_bounded_curve
+    type_33_bounded_curve
         .segments
         .as_mut()
         .expect("segments")
@@ -11773,59 +11794,65 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .clear();
     assert!(matches!(
         section_skamp_constraints(
-            &fixed_bounded_curve,
+            &type_33_bounded_curve,
             &SketchId("creo:model:sketch#917".into()),
         )[0]
         .0
         .definition,
         SketchConstraintDefinition::Native { .. }
     ));
-    let emitted_fixed_geometry = BTreeMap::from([(
+    let emitted_type_33_geometry = BTreeMap::from([(
         SketchEntityId("creo:featdefs:sketch_entity#917:18".to_string()),
         SketchGeometry::Native {
             native_kind: "bounded_curve".to_string(),
         },
     )]);
-    let emitted_fixed_constraints = section_skamp_constraints_for_geometry(
-        &fixed_bounded_curve,
+    let emitted_type_33_constraints = section_skamp_constraints_for_geometry(
+        &type_33_bounded_curve,
         &SketchId("creo:model:sketch#917".into()),
-        Some(&emitted_fixed_geometry),
+        Some(&emitted_type_33_geometry),
     );
-    assert_eq!(
-        emitted_fixed_constraints[0].0.definition,
-        SketchConstraintDefinition::Fixed {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#917:18".to_string()),
-        }
-    );
-
-    let mut fixed_line = definition.clone();
-    fixed_line.relations.as_mut().expect("relations").skamps = vec![crate::feature::FeatureSkamp {
-        id: 20,
-        kind: 33,
-        flags: 393_216,
-        status: 35,
-        items: vec![crate::feature::FeatureSkampItem {
-            entity_id: 12,
-            sense: 10,
-        }],
-        offset: 88,
-    }];
-    synchronize_skamp_count(&mut fixed_line);
-    assert_eq!(
-        section_skamp_constraints(&fixed_line, &SketchId("creo:model:sketch#917".into()),)[0]
-            .0
-            .definition,
-        SketchConstraintDefinition::Fixed {
-            entity: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
-        }
-    );
-
-    fixed_line.relations.as_mut().expect("relations").skamps[0].flags = 0;
     assert!(matches!(
-        section_skamp_constraints(&fixed_line, &SketchId("creo:model:sketch#917".into()),)[0]
+        &emitted_type_33_constraints[0].0.definition,
+        SketchConstraintDefinition::Native { entities, .. }
+            if entities == &[SketchEntityId(
+                "creo:featdefs:sketch_entity#917:18".to_string()
+            )]
+    ));
+
+    let mut type_33_line = definition.clone();
+    type_33_line.relations.as_mut().expect("relations").skamps =
+        vec![crate::feature::FeatureSkamp {
+            id: 20,
+            kind: 33,
+            flags: 393_216,
+            status: 35,
+            items: vec![crate::feature::FeatureSkampItem {
+                entity_id: 12,
+                sense: 10,
+            }],
+            offset: 88,
+        }];
+    synchronize_skamp_count(&mut type_33_line);
+    assert!(matches!(
+        section_skamp_constraints(&type_33_line, &SketchId("creo:model:sketch#917".into()),)[0]
             .0
             .definition,
-        SketchConstraintDefinition::Fixed { .. }
+        SketchConstraintDefinition::Native {
+            native_flags: Some(393_216),
+            ..
+        }
+    ));
+
+    type_33_line.relations.as_mut().expect("relations").skamps[0].flags = 0;
+    assert!(matches!(
+        section_skamp_constraints(&type_33_line, &SketchId("creo:model:sketch#917".into()),)[0]
+            .0
+            .definition,
+        SketchConstraintDefinition::Native {
+            native_flags: Some(0),
+            ..
+        }
     ));
     let point_entity = crate::feature::FeatureSkampItem {
         entity_id: 14,

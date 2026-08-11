@@ -13216,58 +13216,6 @@ fn unique_bounded_curve_segment(
     (segments.external_id_count(external_id) == 1).then_some(segment)
 }
 
-fn unique_decoded_section_entity(
-    definition: &crate::feature::FeatureDefinition,
-    external_id: u32,
-) -> Option<()> {
-    let segments = definition.segments.as_ref()?;
-    segments.is_complete().then_some(())?;
-    (segments.external_id_count(external_id) == 1).then_some(())?;
-    let mut decoded = segments
-        .rows
-        .iter()
-        .map(|segment| segment.external_id)
-        .chain(
-            segments
-                .circle_rows
-                .iter()
-                .map(|segment| segment.external_id),
-        )
-        .chain(
-            segments
-                .point_rows
-                .iter()
-                .map(|segment| segment.external_id),
-        )
-        .chain(
-            segments
-                .centered_line_rows
-                .iter()
-                .map(|segment| segment.external_id),
-        )
-        .chain(
-            segments
-                .reference_line_rows
-                .iter()
-                .map(|segment| segment.external_id),
-        )
-        .chain(
-            segments
-                .bounded_curve_rows
-                .iter()
-                .map(|segment| segment.external_id),
-        )
-        .chain(
-            segments
-                .conic_rows
-                .iter()
-                .map(|segment| segment.external_id),
-        );
-    decoded
-        .any(|candidate| candidate == external_id)
-        .then_some(())
-}
-
 fn section_skamp_locus(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
@@ -14418,18 +14366,6 @@ fn section_skamp_constraints_for_geometry(
                             SketchConstraintDefinition::HorizontalLoci { first, second }
                         } else {
                             SketchConstraintDefinition::VerticalLoci { first, second }
-                        }
-                    }
-                    (33, [item]) if item.sense == 10 => {
-                        let entity = sketch_entity_id(sketch, item.entity_id);
-                        let emitted_entity_is_unique =
-                            geometry.is_some_and(|geometry| geometry.contains_key(&entity));
-                        if emitted_entity_is_unique
-                            || unique_decoded_section_entity(definition, item.entity_id).is_some()
-                        {
-                            SketchConstraintDefinition::Fixed { entity }
-                        } else {
-                            native_constraint()?
                         }
                     }
                     (37, [source, result])

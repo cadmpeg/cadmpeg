@@ -466,8 +466,6 @@ that assign a dimension value to a dimension-driven solver variable.
 
 **Need.** We must know the constraint to transfer its design intent.
 
-**Note.** The closure commit only constructs this tuple in a unit test and asserts the intended neutral mapping. It supplies no native file witness or independent evidence that kind 33, flags 34, and sense 10 mean `Fixed`. The specification records the implementation's guess as settled. Reopen until the constraint meaning is evidenced.
-
 ### SP-16. Other `skamp_ptr` geometry families
 
 **Question.** What geometry family does each `skamp_ptr` entity code outside the defined point, endpoint-bearing curve, line, arc, and circle roles identify?
