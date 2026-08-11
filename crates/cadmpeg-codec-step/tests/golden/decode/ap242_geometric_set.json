@@ -1,0 +1,215 @@
+{
+  "ir": {
+    "ir_version": "5",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "step:data:body#13",
+          "kind": "sheet",
+          "regions": [
+            "step:data:region#13"
+          ]
+        }
+      ],
+      "coedges": [],
+      "configurations": [],
+      "curves": [
+        {
+          "geometry": {
+            "kind": "composite",
+            "segments": [
+              {
+                "curve": "step:data:curve#7",
+                "same_sense": true,
+                "transition": "continuous"
+              }
+            ],
+            "self_intersect": false
+          },
+          "id": "step:data:curve#10"
+        },
+        {
+          "geometry": {
+            "axis": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "center": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "circle",
+            "radius": 5.0,
+            "ref_direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:curve#7"
+        }
+      ],
+      "drawings": [],
+      "edges": [],
+      "faces": [
+        {
+          "id": "step:data:face#11-geometric-set-13",
+          "loops": [],
+          "sense": "forward",
+          "shell": "step:data:shell#geometric-set-13",
+          "surface": "step:data:surface#11"
+        }
+      ],
+      "features": [],
+      "loops": [],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [
+        {
+          "definition": {
+            "boundaries": [
+              "step:data:curve#10"
+            ],
+            "implicit_outer": false,
+            "kind": "curve_bounded",
+            "support": "step:data:surface#8"
+          },
+          "id": "step:construction:curve_bounded_surface#11",
+          "surface": "step:data:surface#11"
+        }
+      ],
+      "product_definitions": [],
+      "regions": [
+        {
+          "body": "step:data:body#13",
+          "id": "step:data:region#13",
+          "shells": [
+            "step:data:shell#geometric-set-13"
+          ]
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [
+        {
+          "faces": [
+            "step:data:face#11-geometric-set-13"
+          ],
+          "id": "step:data:shell#geometric-set-13",
+          "region": "step:data:region#13"
+        }
+      ],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:surface#11"
+        },
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "step:data:surface#8"
+        }
+      ],
+      "tessellations": [],
+      "vertices": [],
+      "view_presentations": []
+    },
+    "native": {
+      "step": {
+        "arenas": {
+          "unknowns": []
+        },
+        "version": 1
+      }
+    },
+    "source": {
+      "attributes": {
+        "bytes_named_opaque": "0",
+        "bytes_structural": "283",
+        "bytes_typed": "695",
+        "bytes_unclassified": "0",
+        "data_sections": "1",
+        "entity_instances": "13",
+        "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
+      },
+      "format": "step"
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "container_only": false,
+    "format": "step",
+    "geometry_transferred": true,
+    "losses": [
+      {
+        "code": "geometry_not_transferred",
+        "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
+        "severity": "error"
+      }
+    ],
+    "notes": [
+      "byte accounting: 283 structural, 695 typed, 0 named opaque, 0 unclassified"
+    ]
+  },
+  "source_fidelity": {
+    "annotations": {},
+    "version": "3"
+  }
+}

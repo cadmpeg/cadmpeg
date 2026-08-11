@@ -330,6 +330,7 @@ dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
  "encoding_rs",
+ "serde_json",
  "thiserror",
  "zip",
 ]
